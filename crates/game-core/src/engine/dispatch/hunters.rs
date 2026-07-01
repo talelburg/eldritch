@@ -387,9 +387,11 @@ pub(super) fn candidate_options<T: std::fmt::Debug>(candidates: &[T]) -> Vec<Cho
     candidates
         .iter()
         .enumerate()
-        .map(|(i, c)| ChoiceOption {
-            id: OptionId(u32::try_from(i).expect("candidate count fits u32")),
-            label: format!("{c:?}"),
+        .map(|(i, c)| {
+            ChoiceOption::global(
+                OptionId(u32::try_from(i).expect("candidate count fits u32")),
+                format!("{c:?}"),
+            )
         })
         .collect()
 }

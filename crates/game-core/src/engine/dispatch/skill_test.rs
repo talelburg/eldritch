@@ -131,14 +131,8 @@ pub(in crate::engine) fn start_skill_test(
                      (PickSingle(0) = use {use_skill:?}, PickSingle(1) = keep {skill:?})",
                 ),
                 vec![
-                    ChoiceOption {
-                        id: OptionId(0),
-                        label: format!("Use {use_skill:?}"),
-                    },
-                    ChoiceOption {
-                        id: OptionId(1),
-                        label: format!("Keep {skill:?}"),
-                    },
+                    ChoiceOption::global(OptionId(0), format!("Use {use_skill:?}")),
+                    ChoiceOption::global(OptionId(1), format!("Keep {skill:?}")),
                 ],
             ),
             resume_token: ResumeToken(0),

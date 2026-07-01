@@ -110,9 +110,11 @@ fn turn_menu(state: &crate::state::GameState) -> crate::engine::InputRequest {
     let options = crate::engine::enumerate::legal_actions(state)
         .iter()
         .enumerate()
-        .map(|(i, a)| crate::engine::ChoiceOption {
-            id: crate::engine::OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
-            label: a.label(state),
+        .map(|(i, a)| {
+            crate::engine::ChoiceOption::global(
+                crate::engine::OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
+                a.label(state),
+            )
         })
         .collect();
     crate::engine::InputRequest::pick_single("Choose an action", options)

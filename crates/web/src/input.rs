@@ -101,7 +101,7 @@ pub fn AwaitingInputView() -> impl IntoView {
                         .iter()
                         .cloned()
                         .map(|opt: ChoiceOption| {
-                            let ChoiceOption { id, label } = opt;
+                            let ChoiceOption { id, label, .. } = opt;
                             let tx = tx.clone();
                             let header = label.clone();
                             view! {

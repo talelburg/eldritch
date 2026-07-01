@@ -148,14 +148,8 @@ pub fn awaiting_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
         request: InputRequest::pick_single(
             prompt,
             vec![
-                ChoiceOption {
-                    id: OptionId(0),
-                    label: "End turn".into(),
-                },
-                ChoiceOption {
-                    id: OptionId(1),
-                    label: "Investigate".into(),
-                },
+                ChoiceOption::global(OptionId(0), "End turn"),
+                ChoiceOption::global(OptionId(1), "Investigate"),
             ],
         ),
         resume_token: ResumeToken(0),
@@ -182,10 +176,7 @@ pub fn awaiting_skippable_pick_single_input(prompt: impl Into<String>) -> Engine
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
             prompt,
-            vec![ChoiceOption {
-                id: OptionId(0),
-                label: "Resolve".into(),
-            }],
+            vec![ChoiceOption::global(OptionId(0), "Resolve")],
         )
         .skippable(),
         resume_token: ResumeToken(0),

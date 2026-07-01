@@ -606,10 +606,10 @@ fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOpt
                     format!("Resolve reaction: {}", cand.code)
                 }
             };
-            ChoiceOption {
-                id: OptionId(u32::try_from(i).expect("option count fits in u32")),
+            ChoiceOption::global(
+                OptionId(u32::try_from(i).expect("option count fits in u32")),
                 label,
-            }
+            )
         })
         .collect()
 }
@@ -1804,9 +1804,11 @@ pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
     let options = plays
         .iter()
         .enumerate()
-        .map(|(i, a)| ChoiceOption {
-            id: OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
-            label: a.label(cx.state),
+        .map(|(i, a)| {
+            ChoiceOption::global(
+                OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
+                a.label(cx.state),
+            )
         })
         .collect::<Vec<_>>();
     EngineOutcome::AwaitingInput {

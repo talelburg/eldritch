@@ -43,9 +43,11 @@ pub(crate) fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) ->
     let options: Vec<ChoiceOption> = labels
         .into_iter()
         .enumerate()
-        .map(|(i, label)| ChoiceOption {
-            id: OptionId(u32::try_from(i).expect("offered option count fits in u32")),
-            label,
+        .map(|(i, label)| {
+            ChoiceOption::global(
+                OptionId(u32::try_from(i).expect("offered option count fits in u32")),
+                label,
+            )
         })
         .collect();
     EngineOutcome::AwaitingInput {
