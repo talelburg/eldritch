@@ -185,6 +185,40 @@ mod tests {
     }
 
     #[test]
+    fn applied_round_trips_awaiting_input_option_target() {
+        use game_core::OptionTarget;
+
+        let state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        // The fixture's options are Global-anchored; this proves the new
+        // ChoiceOption.target field survives the ServerMessage envelope
+        // (game-core covers a non-Global value directly). See the interactivity
+        // S0 plan.
+        let outcome =
+            game_core::test_support::fixtures::awaiting_pick_single_input("Choose an action");
+        let msg = ServerMessage::Applied {
+            state: Box::new(state),
+            events: Vec::new(),
+            outcome,
+        };
+
+        let json = serde_json::to_string(&msg).expect("serialize");
+        let back: ServerMessage = serde_json::from_str(&json).expect("deserialize");
+
+        let ServerMessage::Applied { outcome, .. } = back else {
+            panic!("expected Applied, got {back:?}");
+        };
+        let game_core::EngineOutcome::AwaitingInput { request, .. } = outcome else {
+            panic!("expected AwaitingInput outcome");
+        };
+        assert!(
+            request.options.iter().all(|o| o.target == OptionTarget::Global),
+            "option targets survive the envelope"
+        );
+    }
+
+    #[test]
     fn create_game_request_round_trips_with_a_roster() {
         use game_core::action::RosterEntry;
         use game_core::state::CardCode;
