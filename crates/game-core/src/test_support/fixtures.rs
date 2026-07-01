@@ -156,6 +156,22 @@ pub fn awaiting_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
     }
 }
 
+/// An [`AwaitingInput`](EngineOutcome::AwaitingInput) `PickSingle` outcome over
+/// caller-supplied `options` — for host/UI tests that need a specific
+/// [`OptionTarget`](crate::OptionTarget) anchor (the no-arg
+/// [`awaiting_pick_single_input`] fixture is `Global`-only). `ResumeToken(0)`
+/// matches the other fixtures (the UI never inspects it).
+#[must_use]
+pub fn awaiting_pick_single_with(
+    prompt: impl Into<String>,
+    options: Vec<ChoiceOption>,
+) -> EngineOutcome {
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::pick_single(prompt, options),
+        resume_token: ResumeToken(0),
+    }
+}
+
 /// A sample [`Confirm`](crate::InputKind::Confirm)
 /// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome, for client/UI
 /// fixtures. Models the Mythos encounter-draw prompt.
