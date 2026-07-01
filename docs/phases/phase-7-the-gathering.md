@@ -240,9 +240,19 @@ the now-stable set of input shapes:
       string. Required wire field (#453 precedent). Engine + protocol only — no web behavior
       change (the bar still reads `label`). Plan:
       `docs/superpowers/plans/2026-07-01-interactivity-s0-optiontarget.md`.
-    - **S1–S6** (#536–#541) queued: web plumbing + location menus (S1), enemies (S2), hand +
-      multi-select (S3), in-play/threat + window triggers (S4), act/soak/effect-choices (S5),
-      global-action homes + bar retirement (S6).
+    - **S1 — web plumbing + location context menus (#536, PR #543).** The shared routing seam:
+      a `web::interaction` module (pure `pending_options` / `options_for` + a `PendingOptions`
+      context signal, native-tested) and a wasm-only `ContextMenu` component (backdrop + a
+      button per option; a click submits `ResolveInput(PickSingle)` and closes). Map nodes glow
+      (`.map-location.actionable`) and open their menu; the flat action bar is untouched (bar
+      keeps everything until S6), so S1 is purely additive. Per-entity placement, shared
+      component; `ContextMenu` is wasm-gated (submits via the wasm-only `OutboundTx`) while the
+      glow/open/`on:click` stay non-gated so the node compiles on host. Plan:
+      `docs/superpowers/plans/2026-07-01-interactivity-s1-location-menus.md`.
+    - **S2–S6** (#537–#541) queued: enemies (S2), hand + multi-select (S3), in-play/threat +
+      window triggers (S4), act/soak/effect-choices (S5), global-action homes + bar retirement
+      (S6). `TODO(#206)` in `map.rs` flags that the reused `ContextMenu` must escape its
+      `overflow:hidden` anchor (portal / drop overflow) before S2's denser menus.
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —
