@@ -14,6 +14,20 @@ pub fn App() -> impl IntoView {
     let pending = Signal::derive(move || store.with(crate::interaction::pending_options));
     provide_context(crate::interaction::PendingOptions(pending));
 
+    // Multi-select (PickMultiple) selection state, shared by the hand cards and
+    // the prompt banner; cleared whenever a PickMultiple isn't live (#538).
+    let selected = RwSignal::new(std::collections::BTreeSet::<u32>::new());
+    let multi_active = Signal::derive(move || store.with(crate::interaction::is_multi_select));
+    Effect::new(move |_| {
+        if !multi_active.get() {
+            selected.set(std::collections::BTreeSet::new());
+        }
+    });
+    provide_context(crate::interaction::MultiSelect {
+        active: multi_active,
+        selected,
+    });
+
     // Spawn the browser transport only on wasm; native/headless-reducer
     // builds render from a signal that tests drive directly.
     #[cfg(target_arch = "wasm32")]
@@ -42,6 +56,7 @@ pub fn App() -> impl IntoView {
                                 <crate::skill_test_result::SkillTestResultView/>
                                 <crate::input::AwaitingInputView/>
                             </div>
+                            <crate::prompt_banner::PromptBanner/>
                         }.into_any() }
                         #[cfg(not(target_arch = "wasm32"))]
                         { ().into_any() }

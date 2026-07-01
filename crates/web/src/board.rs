@@ -49,11 +49,18 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                 || "—".to_string(),
                 |id| crate::names::location_name(game, id),
             );
+            let inv_id = inv.id;
             let hand: Vec<_> = inv
                 .hand
                 .iter()
                 .cloned()
-                .map(|code| view! { <crate::card::Card code=code/> })
+                .enumerate()
+                .map(|(i, code)| {
+                    let index = u8::try_from(i).unwrap_or(u8::MAX);
+                    view! {
+                        <crate::card::HandCardView code=code investigator=inv_id index=index/>
+                    }
+                })
                 .collect();
             let in_play: Vec<_> = inv
                 .cards_in_play

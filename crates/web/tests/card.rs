@@ -1,11 +1,19 @@
 //! Headless render tests for the `Card` component. wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
-use game_core::state::{CardCode, CardInPlay, CardInstanceId};
+use futures::channel::mpsc;
+use game_core::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId};
+use game_core::test_support::fixtures::awaiting_pick_single_with;
+use game_core::{ChoiceOption, InputResponse, OptionId, OptionTarget, PlayerAction};
 use leptos::prelude::*;
+use protocol::ClientMessage;
+use std::collections::BTreeSet;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
-use web::card::Card;
+use web::card::{Card, HandCardView};
+use web::interaction::{MultiSelect, PendingOptions};
+use web::store::ClientState;
+use web::transport::OutboundTx;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -156,5 +164,109 @@ async fn in_play_ready_asset_is_not_dimmed() {
     assert!(
         !last_card_html().contains("card-cost"),
         "in-play card must not show a cost corner regardless of exhaustion"
+    );
+}
+
+/// The last-mounted `.hand-slot`.
+fn last_slot() -> web_sys::Element {
+    let slots = leptos::prelude::document()
+        .query_selector_all(".hand-slot")
+        .expect("query");
+    slots
+        .item(slots.length() - 1)
+        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .expect("a .hand-slot")
+}
+
+/// Mount a `HandCardView` (Machete 01020, investigator 1, index 0) with a store
+/// carrying `outcome`, `PendingOptions` derived from it, a `MultiSelect` whose
+/// `active` reflects the outcome, and a capturing outbound channel.
+async fn mount_hand(
+    outcome: game_core::EngineOutcome,
+) -> (
+    RwSignal<BTreeSet<u32>>,
+    mpsc::UnboundedReceiver<ClientMessage>,
+) {
+    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let store = RwSignal::new(ClientState::default());
+    store.update(|s| s.outcome = Some(outcome));
+    let selected = RwSignal::new(BTreeSet::<u32>::new());
+    let (tx, rx) = mpsc::unbounded::<ClientMessage>();
+    let tx_for_mount: OutboundTx = tx;
+    leptos::mount::mount_to_body(move || {
+        provide_context(store);
+        provide_context::<OutboundTx>(tx_for_mount.clone());
+        let pending = Signal::derive(move || store.with(web::interaction::pending_options));
+        provide_context(PendingOptions(pending));
+        let active = Signal::derive(move || store.with(web::interaction::is_multi_select));
+        provide_context(MultiSelect { active, selected });
+        view! {
+            <HandCardView code=CardCode::new("01020") investigator=InvestigatorId(1) index=0/>
+        }
+    });
+    leptos::task::tick().await;
+    (selected, rx)
+}
+
+#[wasm_bindgen_test]
+async fn playable_hand_card_opens_a_play_menu_and_submits() {
+    let outcome = awaiting_pick_single_with(
+        "Choose an action",
+        vec![ChoiceOption::new(
+            OptionId(0),
+            "Play Machete",
+            OptionTarget::HandCard {
+                investigator: InvestigatorId(1),
+                hand_index: 0,
+            },
+        )],
+    );
+    let (_selected, mut rx) = mount_hand(outcome).await;
+
+    let slot = last_slot();
+    assert!(slot.class_name().contains("actionable"), "slot glows");
+    slot.query_selector(".menu-hit")
+        .expect("query")
+        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .expect("a .menu-hit")
+        .click();
+    leptos::task::tick().await;
+    let item = slot
+        .query_selector(".context-menu .menu-item")
+        .expect("query")
+        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .expect("a menu item");
+    assert_eq!(item.text_content().unwrap_or_default(), "Play Machete");
+    item.click();
+    leptos::task::tick().await;
+    let msg = rx.try_recv().expect("a frame after tick");
+    match msg {
+        ClientMessage::Submit {
+            action: PlayerAction::ResolveInput { response },
+        } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
+        other @ ClientMessage::Submit { .. } => panic!("expected ResolveInput, got {other:?}"),
+    }
+}
+
+#[wasm_bindgen_test]
+async fn multi_select_active_makes_hand_card_toggle_selected() {
+    let (selected, _rx) = mount_hand(game_core::test_support::fixtures::awaiting_commit_input(
+        "Commit cards",
+    ))
+    .await;
+    let slot = last_slot();
+    assert!(
+        !slot.class_name().contains("actionable"),
+        "no Play menu in select mode"
+    );
+    slot.clone()
+        .dyn_into::<web_sys::HtmlElement>()
+        .expect("HtmlElement")
+        .click();
+    leptos::task::tick().await;
+    assert!(selected.get_untracked().contains(&0), "index 0 selected");
+    assert!(
+        last_slot().class_name().contains("selected"),
+        "selected ring shown"
     );
 }
