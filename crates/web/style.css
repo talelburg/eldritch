@@ -177,3 +177,8 @@
 .hand-slot { position: relative; }
 .hand-slot.actionable { box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; }
 .hand-slot.selected { box-shadow: 0 0 0 3px #4a90d9; cursor: pointer; }
+.prompt-banner {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 25;
+    display: flex; align-items: center; gap: 0.5rem;
+    background: #1b1b1b; color: #eee; padding: 0.4rem 0.75rem;
+}

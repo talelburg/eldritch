@@ -134,6 +134,17 @@ pub fn awaiting_commit_input(prompt: impl Into<String>) -> EngineOutcome {
     }
 }
 
+/// A skippable [`PickMultiple`](crate::InputKind::PickMultiple)
+/// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome — for UI tests of the
+/// Pass/Skip control on a multi-select prompt.
+#[must_use]
+pub fn awaiting_skippable_commit_input(prompt: impl Into<String>) -> EngineOutcome {
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::pick_multiple(prompt).skippable(),
+        resume_token: ResumeToken(0),
+    }
+}
+
 /// A sample structured [`PickSingle`](crate::InputResponse::PickSingle)
 /// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome, for client/UI
 /// fixtures (#447). Carries two options:

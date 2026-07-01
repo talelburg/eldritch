@@ -26,4 +26,7 @@ pub mod transport;
 pub mod input;
 
 #[cfg(target_arch = "wasm32")]
+pub mod prompt_banner;
+
+#[cfg(target_arch = "wasm32")]
 pub mod picker;
