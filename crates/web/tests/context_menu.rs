@@ -19,9 +19,14 @@ wasm_bindgen_test_configure!(run_in_browser);
 /// Mount a `ContextMenu` with one `Location(10)`-anchored option, a fresh store
 /// and outbound channel, and the given initial `open` state. Returns the `open`
 /// signal and the receiver for submitted frames.
-async fn mount(open_initial: bool) -> (RwSignal<bool>, mpsc::UnboundedReceiver<ClientMessage>) {
+async fn mount(
+    open_initial: bool,
+) -> (
+    RwSignal<Option<(i32, i32)>>,
+    mpsc::UnboundedReceiver<ClientMessage>,
+) {
     let store = RwSignal::new(ClientState::default());
-    let open = RwSignal::new(open_initial);
+    let open = RwSignal::new(if open_initial { Some((0, 0)) } else { None });
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
     let options = vec![ChoiceOption::new(
@@ -91,5 +96,8 @@ async fn clicking_an_item_submits_pick_single_and_closes() {
         } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
         other @ ClientMessage::Submit { .. } => panic!("expected ResolveInput, got {other:?}"),
     }
-    assert!(!open.get_untracked(), "menu closes after a selection");
+    assert!(
+        open.get_untracked().is_none(),
+        "menu closes after a selection"
+    );
 }

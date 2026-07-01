@@ -36,16 +36,17 @@ pub fn options_for(options: &[ChoiceOption], target: OptionTarget) -> Vec<Choice
 #[derive(Clone)]
 pub struct PendingOptions(pub Signal<Vec<ChoiceOption>>);
 
-/// A popover of a board entity's offered options (#536). When `open`, renders a
-/// full-screen transparent backdrop (click → close, the no-document-listener
-/// dismiss) and a button per option; a click submits
-/// `ResolveInput(PickSingle(id))` and closes. wasm-only — it submits via the
-/// wasm-only `OutboundTx` (mirrors the `input.rs` submit path, which S6 folds in).
+/// A popover of a board entity's offered options (#536, #537). When `open` is
+/// `Some((x, y))`, renders a full-screen transparent `.menu-backdrop` (click →
+/// close) and a `.context-menu` positioned `fixed` at viewport coords `(x, y)`
+/// (so it escapes any `overflow`/positioning ancestor); a click submits
+/// `ResolveInput(PickSingle(id))` and closes. wasm-only — submits via the
+/// wasm-only `OutboundTx`.
 #[cfg(target_arch = "wasm32")]
 #[leptos::component]
 pub fn ContextMenu(
     options: Vec<ChoiceOption>,
-    open: leptos::prelude::RwSignal<bool>,
+    open: leptos::prelude::RwSignal<Option<(i32, i32)>>,
 ) -> impl leptos::prelude::IntoView {
     use leptos::prelude::*;
 
@@ -60,9 +61,9 @@ pub fn ContextMenu(
 
     view! {
         {move || {
-            if !open.get() {
+            let Some((x, y)) = open.get() else {
                 return ().into_any();
-            }
+            };
             let tx = tx.clone();
             let buttons: Vec<_> = options
                 .iter()
@@ -84,7 +85,7 @@ pub fn ContextMenu(
                                         },
                                     });
                                 }
-                                open.set(false);
+                                open.set(None);
                             }
                         >
                             {label}
@@ -92,18 +93,41 @@ pub fn ContextMenu(
                     }
                 })
                 .collect();
+            let style = format!("left:{x}px;top:{y}px;");
             view! {
                 <div
                     class="menu-backdrop"
                     on:click=move |ev| {
                         ev.stop_propagation();
-                        open.set(false);
+                        open.set(None);
                     }
                 ></div>
-                <div class="context-menu">{buttons}</div>
+                <div class="context-menu" style=style>{buttons}</div>
             }
             .into_any()
         }}
+    }
+}
+
+/// The interactive trigger for a board entity's context menu (#537), wasm-only.
+/// A transparent hit-layer covering the anchor captures the open click's viewport
+/// coords into `open`; the [`ContextMenu`] renders there. Embedded by each entity
+/// under `#[cfg(target_arch = "wasm32")]` so no `web_sys` touches the host build;
+/// the anchor supplies the `actionable` glow class + `position: relative`.
+#[cfg(target_arch = "wasm32")]
+pub fn menu_layer(
+    options: Vec<ChoiceOption>,
+    open: leptos::prelude::RwSignal<Option<(i32, i32)>>,
+) -> impl leptos::prelude::IntoView {
+    use leptos::prelude::*;
+    view! {
+        <div
+            class="menu-hit"
+            on:click=move |ev: web_sys::MouseEvent| {
+                open.set(Some((ev.client_x(), ev.client_y())));
+            }
+        ></div>
+        <ContextMenu options=options open=open/>
     }
 }
 

@@ -185,7 +185,8 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                 game_core::OptionTarget::Location(loc.id),
             );
             let actionable = !menu_opts.is_empty();
-            let open = RwSignal::new(false);
+            #[cfg(target_arch = "wasm32")]
+            let open = RwSignal::new(None::<(i32, i32)>);
             let base = if loc.revealed {
                 "map-location"
             } else {
@@ -244,36 +245,18 @@ pub fn location_map(game: &GameState) -> impl IntoView {
             let unrevealed_head =
                 (!loc.revealed).then(|| view! { <div class="loc-head">{loc.name.clone()}</div> });
             view! {
-                <div
-                    class=node_class
-                    data-loc=loc.name.clone()
-                    style=style
-                    on:click=move |_| {
-                        if actionable {
-                            open.update(|o| *o = !*o);
-                        }
-                    }
-                >
+                <div class=node_class data-loc=loc.name.clone() style=style>
                     {detail}
                     {unrevealed_head}
                     <span class="loc-revealed">{revealed_label}</span>
                     {invs}
                     {enemies}
                     {
-                        // wasm-only: ContextMenu submits via the wasm-only OutboundTx.
-                        // On host the block is empty; `menu_opts` is still used above
-                        // by `actionable`, so no unused-variable warning.
-                        //
-                        // TODO(#206): `.map-location` sets `overflow: hidden`, so the
-                        // absolutely-positioned menu is clipped to the node. Fine for S1's
-                        // <=2 short options; S2 (enemies: Fight/Evade/Engage) and S3 (hand,
-                        // denser boxes) will need the menu to escape its anchor — a
-                        // board-level portal layer, or dropping `overflow` on actionable
-                        // nodes. Decide the escape strategy in the shared ContextMenu then.
+                        // wasm-only: the menu trigger + menu read/submit via web_sys /
+                        // the wasm-only OutboundTx. On host the block is empty; `menu_opts`
+                        // is still used above by `actionable`, so no unused-var warning.
                         #[cfg(target_arch = "wasm32")]
-                        actionable.then(|| view! {
-                            <crate::interaction::ContextMenu options=menu_opts open=open/>
-                        })
+                        actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
                     }
                 </div>
             }

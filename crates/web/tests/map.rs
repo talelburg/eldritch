@@ -342,16 +342,17 @@ async fn actionable_location_glows_opens_menu_and_submits() {
         "node has the actionable class"
     );
 
-    // Clicking the node opens its menu.
+    // Clicking the node's hit-layer opens its menu (events bubble up, so the
+    // hit-layer — not the node — carries the open handler).
     let maps = document().query_selector_all(".map").expect("query");
     let last = maps
         .item(maps.length() - 1)
         .and_then(|n| n.dyn_into::<Element>().ok())
         .expect("last .map");
-    last.query_selector(".map-location[data-loc=\"Study\"]")
+    last.query_selector(".map-location[data-loc=\"Study\"] .menu-hit")
         .expect("query")
         .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
-        .expect("HtmlElement")
+        .expect("a .menu-hit layer")
         .click();
     leptos::task::tick().await;
 
