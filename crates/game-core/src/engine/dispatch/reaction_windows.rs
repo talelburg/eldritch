@@ -600,16 +600,28 @@ fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOpt
         .iter()
         .enumerate()
         .map(|(i, cand)| {
-            let label = match cand.source {
-                CandidateSource::Hand => format!("Play {} from hand", cand.code),
-                CandidateSource::InPlay(_) | CandidateSource::Board => {
-                    format!("Resolve reaction: {}", cand.code)
-                }
+            let id = OptionId(u32::try_from(i).expect("option count fits in u32"));
+            // Anchor the option to its source card so a host can render it there
+            // (#539): an in-play reaction on its card instance; a Fast hand event
+            // by code (every copy); a board-wide effect has no card.
+            let (label, target) = match cand.source {
+                CandidateSource::Hand => (
+                    format!("Play {} from hand", cand.code),
+                    crate::engine::OptionTarget::HandCardByCode {
+                        investigator: cand.controller,
+                        code: cand.code.clone(),
+                    },
+                ),
+                CandidateSource::InPlay(instance_id) => (
+                    format!("Resolve reaction: {}", cand.code),
+                    crate::engine::OptionTarget::CardInstance(instance_id),
+                ),
+                CandidateSource::Board => (
+                    format!("Resolve reaction: {}", cand.code),
+                    crate::engine::OptionTarget::Global,
+                ),
             };
-            ChoiceOption::global(
-                OptionId(u32::try_from(i).expect("option count fits in u32")),
-                label,
-            )
+            ChoiceOption::new(id, label, target)
         })
         .collect()
 }
@@ -1805,9 +1817,10 @@ pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
         .iter()
         .enumerate()
         .map(|(i, a)| {
-            ChoiceOption::global(
+            ChoiceOption::new(
                 OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
                 a.label(cx.state),
+                a.target(cx.state),
             )
         })
         .collect::<Vec<_>>();
@@ -2088,6 +2101,50 @@ mod any_fast_play_eligible_tests {
             .with_investigator(test_investigator(1))
             .build();
         assert!(!any_fast_play_eligible(&state));
+    }
+}
+
+#[cfg(test)]
+mod resolution_option_anchor_tests {
+    use super::*;
+
+    #[test]
+    fn resolution_options_anchor_by_candidate_source() {
+        use crate::engine::OptionTarget;
+        use crate::state::{CardCode, CardInstanceId, InvestigatorId, ResolutionCandidate};
+        let cands = vec![
+            ResolutionCandidate {
+                code: CardCode::new("_inplay"),
+                controller: InvestigatorId(1),
+                ability_index: 0,
+                source: CandidateSource::InPlay(CardInstanceId(9)),
+            },
+            ResolutionCandidate {
+                code: CardCode::new("01022"),
+                controller: InvestigatorId(1),
+                ability_index: 0,
+                source: CandidateSource::Hand,
+            },
+            ResolutionCandidate {
+                code: CardCode::new("_board"),
+                controller: InvestigatorId(1),
+                ability_index: 0,
+                source: CandidateSource::Board,
+            },
+        ];
+        let opts = build_resolution_options(&cands);
+        assert_eq!(
+            opts[0].target,
+            OptionTarget::CardInstance(CardInstanceId(9))
+        );
+        assert_eq!(
+            opts[1].target,
+            OptionTarget::HandCardByCode {
+                investigator: InvestigatorId(1),
+                code: CardCode::new("01022"),
+            }
+        );
+        assert_eq!(opts[2].target, OptionTarget::Global);
     }
 }
 
