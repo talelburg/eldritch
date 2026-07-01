@@ -21,11 +21,42 @@ pub fn pending_options(state: &ClientState) -> Vec<ChoiceOption> {
 
 /// The options anchored to `target`, in offered order. Pure; a linear scan
 /// (option counts are tiny, so `OptionTarget` needs no `Hash`).
+// Callers pass a freshly-constructed anchor (a temporary) which is only compared,
+// so by-value is natural even though `OptionTarget` is no longer `Copy` (#539).
+#[allow(clippy::needless_pass_by_value)]
 #[must_use]
 pub fn options_for(options: &[ChoiceOption], target: OptionTarget) -> Vec<ChoiceOption> {
     options
         .iter()
         .filter(|o| o.target == target)
+        .cloned()
+        .collect()
+}
+
+/// The options actionable for a specific hand card: those anchored to its exact
+/// slot (`HandCard { investigator, hand_index }`, the Play menu) or to its code
+/// (`HandCardByCode { investigator, code }`, a Fast reaction event — every copy).
+/// Pure.
+#[must_use]
+pub fn options_for_hand_card(
+    options: &[ChoiceOption],
+    investigator: game_core::state::InvestigatorId,
+    index: u8,
+    code: &game_core::state::CardCode,
+) -> Vec<ChoiceOption> {
+    options
+        .iter()
+        .filter(|o| match &o.target {
+            OptionTarget::HandCard {
+                investigator: i,
+                hand_index,
+            } => *i == investigator && *hand_index == index,
+            OptionTarget::HandCardByCode {
+                investigator: i,
+                code: c,
+            } => *i == investigator && c == code,
+            _ => false,
+        })
         .cloned()
         .collect()
 }
@@ -215,5 +246,49 @@ mod tests {
             ),
         );
         assert!(!is_multi_select(&state));
+    }
+
+    #[test]
+    fn options_for_hand_card_matches_index_and_code() {
+        use game_core::state::{CardCode, InvestigatorId};
+        let inv = InvestigatorId(1);
+        let code = CardCode::new("01022");
+        let opts = vec![
+            ChoiceOption::new(
+                OptionId(0),
+                "Play",
+                OptionTarget::HandCard {
+                    investigator: inv,
+                    hand_index: 0,
+                },
+            ),
+            ChoiceOption::new(
+                OptionId(1),
+                "Trigger",
+                OptionTarget::HandCardByCode {
+                    investigator: inv,
+                    code: code.clone(),
+                },
+            ),
+            ChoiceOption::new(
+                OptionId(2),
+                "Other",
+                OptionTarget::HandCard {
+                    investigator: inv,
+                    hand_index: 5,
+                },
+            ),
+            ChoiceOption::new(
+                OptionId(3),
+                "OtherCode",
+                OptionTarget::HandCardByCode {
+                    investigator: inv,
+                    code: CardCode::new("zzz"),
+                },
+            ),
+        ];
+        let got = options_for_hand_card(&opts, inv, 0, &code);
+        let ids: Vec<u32> = got.iter().map(|o| o.id.0).collect();
+        assert_eq!(ids, vec![0, 1]); // exact index 0 + matching code; not index 5 / other code
     }
 }

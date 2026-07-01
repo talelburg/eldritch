@@ -270,3 +270,45 @@ async fn multi_select_active_makes_hand_card_toggle_selected() {
         "selected ring shown"
     );
 }
+
+#[wasm_bindgen_test]
+async fn hand_card_glows_for_a_reaction_anchored_by_code() {
+    // A HandCardByCode-anchored option (a Fast reaction event) glows the hand
+    // card of that code (Machete 01020 as a stand-in) and opens its menu.
+    let outcome = awaiting_pick_single_with(
+        "You may play a card",
+        vec![ChoiceOption::new(
+            OptionId(0),
+            "Play Machete from hand",
+            OptionTarget::HandCardByCode {
+                investigator: InvestigatorId(1),
+                code: CardCode::new("01020"),
+            },
+        )],
+    );
+    let (_selected, mut rx) = mount_hand(outcome).await;
+    let slot = last_slot();
+    assert!(
+        slot.class_name().contains("actionable"),
+        "reaction card glows by code"
+    );
+    slot.query_selector(".menu-hit")
+        .expect("query")
+        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .expect("a .menu-hit")
+        .click();
+    leptos::task::tick().await;
+    slot.query_selector(".context-menu .menu-item")
+        .expect("query")
+        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .expect("a menu item")
+        .click();
+    leptos::task::tick().await;
+    let msg = rx.try_recv().expect("a frame after tick");
+    match msg {
+        ClientMessage::Submit {
+            action: PlayerAction::ResolveInput { response },
+        } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
+        other @ ClientMessage::Submit { .. } => panic!("expected ResolveInput, got {other:?}"),
+    }
+}

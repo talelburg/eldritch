@@ -204,3 +204,7 @@
     background: transparent; color: #1a1a1a; border: 1px solid #1a1a1a;
     border-radius: 4px; padding: 0.4rem 0.9rem; cursor: pointer;
 }
+
+/* Interactivity S4 (#539): in-play/threat card wrapper glow. */
+.card-slot { position: relative; }
+.card-slot.actionable { box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; }
