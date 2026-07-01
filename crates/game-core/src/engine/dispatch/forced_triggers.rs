@@ -537,10 +537,7 @@ pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
             format!("Forced — {name}"),
-            vec![ChoiceOption {
-                id: OptionId(0),
-                label: "Resolve".into(),
-            }],
+            vec![ChoiceOption::global(OptionId(0), "Resolve")],
         ),
         resume_token: ResumeToken(0),
     }

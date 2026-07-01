@@ -4,6 +4,8 @@ use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};
 
+use crate::state::{CardInstanceId, EnemyId, InvestigatorId, LocationId};
+
 /// The terminal status of an [`apply`](super::apply) call.
 ///
 /// After the engine finishes applying an action, it is in one of three
@@ -50,14 +52,62 @@ pub enum EngineOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct OptionId(pub u32);
 
+/// The board surface an offered [`ChoiceOption`] acts on, letting a host render
+/// the option on the entity it targets rather than in a flat list. `Global`
+/// means no board anchor (e.g. End turn, a Confirm). Anchors are derived from
+/// the engine's own action / candidate targets, so a host never re-computes
+/// legality (#535, #206).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum OptionTarget {
+    /// No board anchor — a global / contextual control.
+    Global,
+    /// A location on the map.
+    Location(LocationId),
+    /// An enemy.
+    Enemy(EnemyId),
+    /// A card in an investigator's hand, by zero-based hand index.
+    HandCard {
+        /// The hand's owner.
+        investigator: InvestigatorId,
+        /// Zero-based position in that investigator's hand.
+        hand_index: u8,
+    },
+    /// An in-play / threat-area / investigator card instance.
+    CardInstance(CardInstanceId),
+    /// The current act.
+    Act,
+}
+
 /// One selectable option in a structured choice prompt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChoiceOption {
     /// The id the host echoes back via
     /// [`InputResponse::PickSingle`](crate::action::InputResponse::PickSingle).
     pub id: OptionId,
-    /// Human-readable label for the host to render.
+    /// Human-readable label for the host to render (full and unambiguous,
+    /// e.g. `"Fight Ghoul"`; a host may shorten it for display).
     pub label: String,
+    /// The board surface this option acts on (`Global` if none).
+    pub target: OptionTarget,
+}
+
+impl ChoiceOption {
+    /// An option anchored to `target`.
+    #[must_use]
+    pub fn new(id: OptionId, label: impl Into<String>, target: OptionTarget) -> Self {
+        Self {
+            id,
+            label: label.into(),
+            target,
+        }
+    }
+
+    /// An option with no board anchor ([`OptionTarget::Global`]).
+    #[must_use]
+    pub fn global(id: OptionId, label: impl Into<String>) -> Self {
+        Self::new(id, label, OptionTarget::Global)
+    }
 }
 
 /// Which [`InputResponse`](crate::action::InputResponse) variant the host must
@@ -174,13 +224,8 @@ mod tests {
 
     #[test]
     fn pick_single_sets_kind_and_not_skippable() {
-        let req = InputRequest::pick_single(
-            "Choose one",
-            vec![ChoiceOption {
-                id: OptionId(0),
-                label: "A".into(),
-            }],
-        );
+        let req =
+            InputRequest::pick_single("Choose one", vec![ChoiceOption::global(OptionId(0), "A")]);
         assert_eq!(req.kind, InputKind::PickSingle);
         assert!(!req.skippable);
         assert_eq!(req.options.len(), 1);
@@ -216,14 +261,8 @@ mod tests {
         let req = InputRequest::pick_single(
             "Choose one",
             vec![
-                ChoiceOption {
-                    id: OptionId(0),
-                    label: "Take 2 horror".into(),
-                },
-                ChoiceOption {
-                    id: OptionId(1),
-                    label: "Each discards 1".into(),
-                },
+                ChoiceOption::global(OptionId(0), "Take 2 horror"),
+                ChoiceOption::global(OptionId(1), "Each discards 1"),
             ],
         )
         .skippable();
@@ -232,5 +271,35 @@ mod tests {
         assert_eq!(back, req);
         assert_eq!(back.kind, InputKind::PickSingle);
         assert!(back.skippable);
+    }
+
+    #[test]
+    fn global_constructor_sets_global_target() {
+        let opt = ChoiceOption::global(OptionId(3), "End turn");
+        assert_eq!(opt.id, OptionId(3));
+        assert_eq!(opt.label, "End turn");
+        assert_eq!(opt.target, OptionTarget::Global);
+    }
+
+    #[test]
+    fn awaiting_input_round_trips_option_target() {
+        use crate::state::EnemyId;
+        let outcome = EngineOutcome::AwaitingInput {
+            request: InputRequest::pick_single(
+                "Choose an action",
+                vec![
+                    ChoiceOption::global(OptionId(0), "End turn"),
+                    ChoiceOption::new(OptionId(1), "Fight Ghoul", OptionTarget::Enemy(EnemyId(7))),
+                ],
+            ),
+            resume_token: ResumeToken(0),
+        };
+        let json = serde_json::to_string(&outcome).expect("serialize");
+        let back: EngineOutcome = serde_json::from_str(&json).expect("deserialize");
+        let EngineOutcome::AwaitingInput { request, .. } = back else {
+            panic!("expected AwaitingInput, got {back:?}");
+        };
+        assert_eq!(request.options[0].target, OptionTarget::Global);
+        assert_eq!(request.options[1].target, OptionTarget::Enemy(EnemyId(7)));
     }
 }

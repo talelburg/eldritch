@@ -126,6 +126,40 @@ impl TurnAction {
             TurnAction::AdvanceAct { .. } => "Advance act".into(),
         }
     }
+
+    /// The board surface this action anchors to, for host rendering (#535).
+    /// Mirrors [`label`](Self::label): it takes `state` because some actions'
+    /// anchors are implicit — Investigate acts at the investigator's current
+    /// location, which is not a field on the variant.
+    #[must_use]
+    pub fn target(&self, state: &GameState) -> crate::engine::OptionTarget {
+        use crate::engine::OptionTarget;
+        match self {
+            TurnAction::EndTurn | TurnAction::Resource { .. } | TurnAction::Draw { .. } => {
+                OptionTarget::Global
+            }
+            TurnAction::Move { destination, .. } => OptionTarget::Location(*destination),
+            TurnAction::Investigate { investigator } => state
+                .investigators
+                .get(investigator)
+                .and_then(|inv| inv.current_location)
+                .map_or(OptionTarget::Global, OptionTarget::Location),
+            TurnAction::Fight { enemy, .. }
+            | TurnAction::Evade { enemy, .. }
+            | TurnAction::Engage { enemy, .. } => OptionTarget::Enemy(*enemy),
+            TurnAction::PlayCard {
+                investigator,
+                hand_index,
+            } => OptionTarget::HandCard {
+                investigator: *investigator,
+                hand_index: *hand_index,
+            },
+            TurnAction::ActivateAbility { instance_id, .. } => {
+                OptionTarget::CardInstance(*instance_id)
+            }
+            TurnAction::AdvanceAct { .. } => OptionTarget::Act,
+        }
+    }
 }
 
 /// The legal [`TurnAction`]s the active investigator may take at the open
@@ -850,6 +884,95 @@ mod tests {
             !matches!(result.outcome, crate::EngineOutcome::Rejected { .. }),
             "open-turn OptionId dispatch rejected: {:?}",
             result.outcome
+        );
+    }
+
+    #[test]
+    fn target_maps_each_variant() {
+        use crate::engine::OptionTarget;
+        use crate::state::{CardInstanceId, EnemyId, LocationId};
+
+        // A state where investigator 1 stands on a location, so Investigate's
+        // implicit anchor resolves to that location.
+        let mut state = open_turn_state();
+        let loc = crate::test_support::test_location(10, "Study");
+        let loc_id = loc.id;
+        state.locations.insert(loc_id, loc);
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(loc_id);
+        let inv = InvestigatorId(1);
+
+        assert_eq!(TurnAction::EndTurn.target(&state), OptionTarget::Global);
+        assert_eq!(
+            TurnAction::Resource { investigator: inv }.target(&state),
+            OptionTarget::Global
+        );
+        assert_eq!(
+            TurnAction::Draw { investigator: inv }.target(&state),
+            OptionTarget::Global
+        );
+        assert_eq!(
+            TurnAction::Move {
+                investigator: inv,
+                destination: LocationId(11)
+            }
+            .target(&state),
+            OptionTarget::Location(LocationId(11))
+        );
+        assert_eq!(
+            TurnAction::Investigate { investigator: inv }.target(&state),
+            OptionTarget::Location(loc_id)
+        );
+        assert_eq!(
+            TurnAction::Fight {
+                investigator: inv,
+                enemy: EnemyId(7)
+            }
+            .target(&state),
+            OptionTarget::Enemy(EnemyId(7))
+        );
+        assert_eq!(
+            TurnAction::Evade {
+                investigator: inv,
+                enemy: EnemyId(7)
+            }
+            .target(&state),
+            OptionTarget::Enemy(EnemyId(7))
+        );
+        assert_eq!(
+            TurnAction::Engage {
+                investigator: inv,
+                enemy: EnemyId(7)
+            }
+            .target(&state),
+            OptionTarget::Enemy(EnemyId(7))
+        );
+        assert_eq!(
+            TurnAction::PlayCard {
+                investigator: inv,
+                hand_index: 2
+            }
+            .target(&state),
+            OptionTarget::HandCard {
+                investigator: inv,
+                hand_index: 2
+            }
+        );
+        assert_eq!(
+            TurnAction::ActivateAbility {
+                investigator: inv,
+                instance_id: CardInstanceId(5),
+                ability_index: 0,
+            }
+            .target(&state),
+            OptionTarget::CardInstance(CardInstanceId(5))
+        );
+        assert_eq!(
+            TurnAction::AdvanceAct { investigator: inv }.target(&state),
+            OptionTarget::Act
         );
     }
 }
