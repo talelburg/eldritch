@@ -259,10 +259,21 @@ the now-stable set of input shapes:
       `.action-bar` (cards set no `z-index`, so theirs escape to root). **Deferred:** map-token
       (co-located/unengaged) enemy menus — rare in 1p (enemies auto-engage). Plan:
       `docs/superpowers/plans/2026-07-01-interactivity-s2-enemy-menus.md`.
-    - **S3–S6** (#538–#541) queued: hand + multi-select (S3), in-play/threat + window triggers
-      (S4), act/soak/effect-choices (S5), global-action homes + bar retirement (S6). The shared
-      `menu_layer` / fixed-at-cursor pattern is the seam they extend; new anchors inside a
-      `z-index`ed ancestor must float their menu like the map node does.
+    - **S3 — hand Play menu + multi-select + prompt banner (#538, PR #545).** A `HandCardView`
+      wrapper (keeps `Card` display-only) gives a playable hand card a "Play" `menu_layer`, and —
+      when a `PickMultiple` is live — turns hand cards into click-to-select (`.hand-slot.selected`
+      ring). Introduces the deferred **prompt banner** (`prompt_banner.rs`, bottom-fixed): for a
+      `PickMultiple` it renders prompt text + Confirm (submits the selection) + Pass (Skip). New
+      `MultiSelect` context ({`active` derived from the outcome, `selected` set}) + a pure
+      `is_multi_select`. **`input.rs`'s `PickMultiple` arm is removed** (the board hand + banner
+      replace it; bar keeps `PickSingle`/`Confirm`/`Skip`; `tests/input.rs` deleted) — the agreed
+      deviation from "bar keeps everything", since two selection UIs would collide. Selection
+      click is non-gated (no coords). Plan:
+      `docs/superpowers/plans/2026-07-01-interactivity-s3-hand-and-multiselect.md`.
+    - **S4–S6** (#539–#541) queued: in-play/threat + window triggers (S4), act/soak/effect-choices
+      (S5), global-action homes + bar retirement (S6). The shared `menu_layer` / fixed-at-cursor
+      pattern + the `PromptBanner` (extend it to non-`PickMultiple` prompts) are the seams they
+      extend; new anchors inside a `z-index`ed ancestor must float their menu like the map node.
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —
