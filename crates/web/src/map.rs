@@ -141,6 +141,12 @@ pub fn location_map(game: &GameState) -> impl IntoView {
         .collect();
     let positions = layout_positions(&locs);
 
+    // The live prompt's options, for glow + per-node context menus (#536).
+    // Absent (native / no prompt) → empty → no node is actionable.
+    let pending = use_context::<crate::interaction::PendingOptions>()
+        .map(|p| p.0.get())
+        .unwrap_or_default();
+
     let nodes: Vec<_> = game
         .locations
         .values()
@@ -174,10 +180,21 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                 })
                 .collect();
             let style = format!("left:{left}px;top:{top}px;width:{NODE_W}px;height:{NODE_H}px;");
-            let node_class = if loc.revealed {
+            let menu_opts = crate::interaction::options_for(
+                &pending,
+                game_core::OptionTarget::Location(loc.id),
+            );
+            let actionable = !menu_opts.is_empty();
+            let open = RwSignal::new(false);
+            let base = if loc.revealed {
                 "map-location"
             } else {
                 "map-location unrevealed"
+            };
+            let node_class = if actionable {
+                format!("{base} actionable")
+            } else {
+                base.to_string()
             };
             let revealed_label = if loc.revealed {
                 "revealed"
@@ -227,12 +244,37 @@ pub fn location_map(game: &GameState) -> impl IntoView {
             let unrevealed_head =
                 (!loc.revealed).then(|| view! { <div class="loc-head">{loc.name.clone()}</div> });
             view! {
-                <div class=node_class data-loc=loc.name.clone() style=style>
+                <div
+                    class=node_class
+                    data-loc=loc.name.clone()
+                    style=style
+                    on:click=move |_| {
+                        if actionable {
+                            open.update(|o| *o = !*o);
+                        }
+                    }
+                >
                     {detail}
                     {unrevealed_head}
                     <span class="loc-revealed">{revealed_label}</span>
                     {invs}
                     {enemies}
+                    {
+                        // wasm-only: ContextMenu submits via the wasm-only OutboundTx.
+                        // On host the block is empty; `menu_opts` is still used above
+                        // by `actionable`, so no unused-variable warning.
+                        //
+                        // TODO(#206): `.map-location` sets `overflow: hidden`, so the
+                        // absolutely-positioned menu is clipped to the node. Fine for S1's
+                        // <=2 short options; S2 (enemies: Fight/Evade/Engage) and S3 (hand,
+                        // denser boxes) will need the menu to escape its anchor — a
+                        // board-level portal layer, or dropping `overflow` on actionable
+                        // nodes. Decide the escape strategy in the shared ContextMenu then.
+                        #[cfg(target_arch = "wasm32")]
+                        actionable.then(|| view! {
+                            <crate::interaction::ContextMenu options=menu_opts open=open/>
+                        })
+                    }
                 </div>
             }
         })
