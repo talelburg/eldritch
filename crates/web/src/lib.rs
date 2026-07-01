@@ -4,6 +4,7 @@
 //! Components live here so integration tests in `tests/` — and later Phase-6
 //! components — can import them.
 
+pub mod act_agenda;
 pub mod app;
 pub mod board;
 pub mod card;
@@ -12,7 +13,9 @@ pub mod event_log;
 pub mod map;
 pub mod names;
 pub mod skill_test_result;
+pub mod status_bar;
 pub mod store;
+pub mod turn_tracker;
 pub mod url;
 
 #[cfg(target_arch = "wasm32")]

@@ -212,6 +212,20 @@ the now-stable set of input shapes:
     their own action buttons; retire the sticky `.action-bar`). Spec/plan:
     `docs/superpowers/specs/2026-06-30-treachery-card-rendering-design.md`,
     `docs/superpowers/plans/2026-06-30-treachery-card-rendering.md`.
+  - **Slice 6 — act/agenda cards + turn tracker + collapsible log (#532, PR #533).** A
+    three-column layout. **Act/Agenda render as cards** atop the board (`act_agenda.rs`, a
+    `location_map`-style pure fn in `BoardView` — act shows `clues to advance: N` since the
+    act has no running clue counter; agenda shows real `doom d/N`). A **right-hand
+    `TurnTrackerView`** outlines the round's four phases with their RR sub-steps + structural
+    player windows (the `ROUND` const is transcribed from RR Appendix II pp. 23-25 — step
+    labels, loop tails elided — and cited in the module doc; reviewer-verified against the
+    pinned PDF), highlighting the current phase. The **left event log is collapsible**. The
+    `phase_bar` is **retired** (phase/round → tracker, act/agenda → cards). This finishes
+    the display-only card/layout pass for every zone. **The remaining web work is the
+    interactivity pass** (cards/locations/enemies grow their own action buttons; retire the
+    sticky `.action-bar`). Spec/plan:
+    `docs/superpowers/specs/2026-06-30-act-agenda-and-sidebars-design.md`,
+    `docs/superpowers/plans/2026-06-30-act-agenda-and-sidebars.md`.
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —

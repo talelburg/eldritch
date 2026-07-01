@@ -6,7 +6,7 @@ use game_core::state::GameState;
 use game_core::Resolution;
 use leptos::prelude::*;
 
-use crate::store::{use_store, ConnStatus};
+use crate::store::use_store;
 
 /// Read-only board. Always renders a status line (connection status +
 /// last rejection); renders the panels when a game is present, else a
@@ -15,22 +15,12 @@ use crate::store::{use_store, ConnStatus};
 pub fn BoardView() -> impl IntoView {
     let store = use_store();
 
-    let status = move || match store.get().status {
-        ConnStatus::Connecting => "connecting",
-        ConnStatus::Connected => "connected",
-        ConnStatus::Reconnecting => "reconnecting",
-        ConnStatus::Failed => "failed",
-        ConnStatus::AwaitingRoster => "awaiting-roster",
-        ConnStatus::VersionMismatch => "version mismatch — restart the server and reload",
-    };
-    let rejection = move || store.get().last_rejection.unwrap_or_default();
-
     let board = move || match store.get().game {
         None => view! { <p class="no-game">"<no game>"</p> }.into_any(),
         Some(game) => view! {
             <div class="game">
                 {resolution_banner(&game)}
-                {phase_bar(&game)}
+                {crate::act_agenda::act_agenda_view(&game)}
                 <div class="board-main">
                     {crate::map::location_map(&game)}
                     {investigators_panel(&game)}
@@ -42,26 +32,6 @@ pub fn BoardView() -> impl IntoView {
 
     view! {
         <section class="board">
-            <p class="status">"status: " {status}</p>
-            <p class="rejection">"rejection: " {rejection}</p>
-            {
-                #[cfg(target_arch = "wasm32")]
-                {
-                    view! {
-                        <button
-                            class="new-game"
-                            on:click=move |_| crate::transport::start_new_game()
-                        >
-                            "New game"
-                        </button>
-                    }
-                    .into_any()
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    ().into_any()
-                }
-            }
             {board}
         </section>
     }
@@ -113,16 +83,22 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
             view! {
                 <article class="investigator">
                     <h3 class="inv-name">{inv.name.clone()}</h3>
-                    <span class="inv-location">{location}</span>
-                    <span class="inv-actions">"actions " {inv.actions_remaining}</span>
-                    <span class="inv-resources">"resources " {inv.resources}</span>
-                    <span class="inv-health">"health " {inv.damage()} "/" {inv.max_health()}</span>
-                    <span class="inv-sanity">"sanity " {inv.horror()} "/" {inv.max_sanity()}</span>
-                    <span class="inv-clues">"clues " {inv.clues}</span>
-                    <span class="inv-status">{format!("{:?}", inv.status)}</span>
-                    <div class="hand"><h4>"Hand"</h4><div class="card-row">{hand}</div></div>
-                    <div class="in-play"><h4>"In play"</h4><div class="card-row">{in_play}</div></div>
-                    <div class="threat"><h4>"Threat area"</h4><div class="card-row">{threat}{engaged}</div></div>
+                    <div class="inv-zones-top">
+                        <div class="in-play"><h4>"In play"</h4><div class="card-row">{in_play}</div></div>
+                        <div class="threat"><h4>"Threat area"</h4><div class="card-row">{threat}{engaged}</div></div>
+                    </div>
+                    <div class="inv-zones-bottom">
+                        <div class="inv-stats">
+                            <span class="inv-location">{location}</span>
+                            <span class="inv-actions">"actions " {inv.actions_remaining}</span>
+                            <span class="inv-resources">"resources " {inv.resources}</span>
+                            <span class="inv-health">"health " {inv.damage()} "/" {inv.max_health()}</span>
+                            <span class="inv-sanity">"sanity " {inv.horror()} "/" {inv.max_sanity()}</span>
+                            <span class="inv-clues">"clues " {inv.clues}</span>
+                            <span class="inv-status">{format!("{:?}", inv.status)}</span>
+                        </div>
+                        <div class="hand"><h4>"Hand"</h4><div class="card-row">{hand}</div></div>
+                    </div>
                 </article>
             }
         })
@@ -136,7 +112,7 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
 }
 
 /// Win/loss banner — rendered only once `GameState.resolution` latches.
-/// Read-only display of state, matching the `phase_bar` pattern; keeps
+/// Read-only display of state, matching the pure-fn display pattern; keeps
 /// `board.rs` read-only (no new interactivity).
 fn resolution_banner(game: &GameState) -> impl IntoView {
     game.resolution.as_ref().map(|r| {
@@ -149,28 +125,4 @@ fn resolution_banner(game: &GameState) -> impl IntoView {
         };
         view! { <section class="resolution">{text}</section> }
     })
-}
-
-/// Phase + round, plus the current act's clue threshold and the current
-/// agenda's doom (`doom/threshold`). Act/agenda lines are omitted when
-/// their decks are empty (fixtures may omit them).
-fn phase_bar(game: &GameState) -> impl IntoView {
-    let phase = format!("{:?}", game.phase);
-    let round = game.round;
-    let act = game
-        .act_deck
-        .get(game.act_index)
-        .map(|a| format!("clues 0/{}", a.clue_threshold));
-    let agenda = game
-        .agenda_deck
-        .get(game.agenda_index)
-        .map(|a| format!("doom {}/{}", game.agenda_doom, a.doom_threshold));
-    view! {
-        <header class="phase-bar">
-            <span class="phase">{phase}</span>
-            <span class="round">"round " {round}</span>
-            {agenda.map(|t| view! { <span class="agenda">{t}</span> })}
-            {act.map(|t| view! { <span class="act">{t}</span> })}
-        </header>
-    }
 }

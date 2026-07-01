@@ -1,14 +1,26 @@
 /* P6.5 board — minimal functional layout. */
 .board { font-family: system-ui, sans-serif; margin: 1rem; }
+/* Compact header: the title and the status strip share one horizontal row. */
+.app-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 1rem; margin: 1rem; }
+.app-header h1 { margin: 0; font-size: 1.4rem; }
+.status-bar { display: flex; align-items: baseline; flex-wrap: wrap; gap: 1rem; }
 .status, .rejection { font-size: 0.85rem; color: #555; }
-.phase-bar { display: flex; gap: 1rem; font-weight: 600; padding: 0.5rem 0; border-bottom: 1px solid #ccc; }
-.game { display: flex; flex-direction: column; gap: 1rem; }
+/* Center the board content (act/agenda, map, investigators) horizontally in the
+   center column rather than hugging the left edge. */
+.game { display: flex; flex-direction: column; gap: 1rem; align-items: center; }
 .investigators { display: flex; flex-wrap: wrap; gap: 1rem; }
 /* Full-width so the heading wraps onto its own line ABOVE the panels rather
    than sitting beside them as a flex sibling. */
 .investigators h2 { flex-basis: 100%; margin: 0 0 0.25rem; }
-.investigator { border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.25rem; min-width: 16rem; }
+.investigator { border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; min-width: 30rem; }
 .investigator span { font-size: 0.9rem; }
+/* Top row: in-play (left) and threat (right), each boxed for clear separation. */
+.inv-zones-top { display: flex; gap: 1rem; align-items: flex-start; }
+.inv-zones-top > div { flex: 1; border: 1px solid #e3e3e3; border-radius: 4px; padding: 0.4rem; min-width: 0; }
+/* Bottom row: the stat block (left) beside the hand (right). */
+.inv-zones-bottom { display: flex; gap: 1rem; align-items: flex-start; }
+.inv-stats { flex: 0 0 auto; min-width: 9rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.inv-zones-bottom .hand { flex: 1; min-width: 0; }
 .card-line { font-family: ui-monospace, monospace; font-size: 0.85rem; }
 
 /* Spatial board map (#497). Nodes are absolutely positioned at computed
@@ -26,11 +38,11 @@
 .loc-head { font-weight: 600; margin-bottom: 0.15rem; }
 .inv-token { color: #157a3a; }
 .enemy-token { color: #a3261b; }
-/* Map stacked above the investigators panel (not side-by-side): the map's
-   location nodes are absolutely positioned, so in a flex *row* a shrunk map
-   lets them overflow onto the panel. A column gives each full width — the map
-   reserves its inline height, the panel flows below it. */
-.board-main { display: flex; flex-direction: column; gap: 1rem; align-items: flex-start; }
+/* Column direction stacks the map above the investigators panel: the map's
+   location nodes are absolutely positioned, so a flex *row* would let a shrunk
+   map overflow them onto the panel. The map reserves its inline height; the
+   panel flows below it. (Children are centered via align-items: center.) */
+.board-main { display: flex; flex-direction: column; gap: 1rem; align-items: center; }
 /* Interactive controls pinned to the viewport bottom so they stay reachable
    however far the (tall) board is scrolled. Transparent/zero-height when no
    prompt is pending; the white background sits behind the controls so they
@@ -45,12 +57,29 @@
    column shrink within the flex row instead of overflowing. */
 .main-column { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
 .event-log { flex: 0 0 auto; width: 22rem; }
+/* Collapsed: shrink to a thin strip (just the expand toggle) so the log frees
+   the left side when hidden, instead of leaving a 22rem empty column. */
+.event-log.collapsed { width: auto; }
+.event-log.collapsed h2 { display: none; }
 .event-log h2 { font-size: 1rem; margin: 0 0 0.25rem; }
+.event-log-head { display: flex; align-items: baseline; justify-content: space-between; }
+.log-toggle { font-size: 0.75rem; }
+.hidden { display: none; }
 .log-scroll { max-height: 80vh; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 0.8rem; border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem; }
 .log-batch { border-top: 1px solid #eee; padding: 0.25rem 0; }
 .log-batch:first-child { border-top: none; }
 .log-action { font-weight: 600; color: #2a4d69; }
 .log-event { white-space: pre-wrap; word-break: break-word; color: #333; }
+
+.turn-tracker { flex: 0 0 auto; width: 18rem; font-size: 0.8rem; }
+.turn-tracker h2 { font-size: 1rem; margin: 0 0 0.25rem; }
+.tracker-round { font-weight: 600; margin-bottom: 0.4rem; }
+.tracker-phase { border-left: 3px solid transparent; padding: 0.15rem 0 0.15rem 0.4rem; margin-bottom: 0.3rem; }
+.tracker-phase.current { border-left-color: #2f6fb3; background: #eef4fb; }
+.tracker-phase-label { font-weight: 600; }
+.tracker-phase ul { list-style: none; padding-left: 0.5rem; margin: 0.1rem 0; }
+.tracker-step { color: #444; }
+.tracker-window { color: #8a5a00; font-style: italic; }
 
 /* --- Cards (hand slice) ------------------------------------------------ */
 .card-row {
@@ -120,6 +149,10 @@
 .card--mythos   { border-color: #555; }
 .card--enemy    { border-color: #a3261b; }
 .card--unknown, .card--generic { border-style: dashed; }
+.act-agenda { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }
+.card--act { border-color: #c8a020; }
+.card--agenda { border-color: #7a2f2f; }
+.card-kind { font-size: 0.7rem; text-transform: uppercase; opacity: 0.7; margin-right: 0.3rem; }
 /* Exhausted in-play asset: dimmed + dashed so it reads as unavailable.
    Declared after the class palette so its border-color wins over the class hue. */
 .card--exhausted { opacity: 0.6; border-style: dashed; border-color: #aaa; }

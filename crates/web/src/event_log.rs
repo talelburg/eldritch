@@ -10,6 +10,7 @@ use leptos::prelude::*;
 #[component]
 pub fn EventLogView() -> impl IntoView {
     let store = use_store();
+    let collapsed = RwSignal::new(false);
     let scroll_ref = NodeRef::<leptos::html::Div>::new();
 
     // Keep the panel pinned to the newest line. Re-runs whenever a batch is
@@ -20,6 +21,7 @@ pub fn EventLogView() -> impl IntoView {
     {
         Effect::new(move |_| {
             let _ = store.with(|s| s.log.len());
+            let _ = collapsed.get();
             request_animation_frame(move || {
                 if let Some(el) = scroll_ref.get() {
                     el.set_scroll_top(el.scroll_height());
@@ -50,9 +52,21 @@ pub fn EventLogView() -> impl IntoView {
     };
 
     view! {
-        <aside class="event-log">
-            <h2>"Event log"</h2>
-            <div class="log-scroll" node_ref=scroll_ref>
+        <aside class="event-log" class:collapsed=move || collapsed.get()>
+            <div class="event-log-head">
+                <h2>"Event log"</h2>
+                <button
+                    class="log-toggle"
+                    on:click=move |_| collapsed.update(|c| *c = !*c)
+                >
+                    {move || if collapsed.get() { "▸ log" } else { "◂ hide" }}
+                </button>
+            </div>
+            <div
+                class="log-scroll"
+                class:hidden=move || collapsed.get()
+                node_ref=scroll_ref
+            >
                 {batches}
             </div>
         </aside>

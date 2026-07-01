@@ -4,7 +4,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use game_core::state::GameStateBuilder;
-use game_core::state::{Act, Agenda, CardCode, Phase};
+use game_core::state::{Act, Agenda, CardCode};
 use game_core::test_support::fixtures::{test_investigator, test_location};
 use game_core::EngineOutcome;
 use leptos::prelude::{provide_context, RwSignal, Update};
@@ -51,11 +51,9 @@ async fn render_state(state: game_core::state::GameState) -> String {
 }
 
 #[wasm_bindgen_test]
-async fn phase_bar_renders_phase_round_act_agenda() {
+async fn act_agenda_cards_render_name_and_thresholds() {
     let mut state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
-        .with_phase(Phase::Investigation)
-        .with_round(3)
         .build();
     state.act_deck = vec![Act {
         code: CardCode("_test_act".into()),
@@ -71,17 +69,9 @@ async fn phase_bar_renders_phase_round_act_agenda() {
 
     let html = render_state(state).await;
 
-    assert!(html.contains("Investigation"), "phase missing: {html}");
+    assert!(html.contains("doom 1/5"), "agenda doom missing: {html}");
     assert!(
-        html.contains("round 3") || html.contains("Round 3"),
-        "round missing: {html}"
-    );
-    assert!(
-        html.contains("doom 1/5") || html.contains("1/5"),
-        "agenda doom missing: {html}"
-    );
-    assert!(
-        html.contains("clues 0/2") || html.contains("0/2"),
+        html.contains("clues to advance: 2"),
         "act threshold missing: {html}"
     );
 }
@@ -162,6 +152,21 @@ async fn investigators_panel_renders_stats_and_hand() {
         cards.length() >= 1,
         "hand should render Card rectangles: {html}"
     );
+
+    // Layout: in-play + threat sit in the top zone row; the stat block + hand sit
+    // in the bottom row (stats left, hand right).
+    let doc = leptos::prelude::document();
+    for sel in [
+        ".investigator .inv-zones-top .in-play",
+        ".investigator .inv-zones-top .threat",
+        ".investigator .inv-zones-bottom .inv-stats",
+        ".investigator .inv-zones-bottom .hand",
+    ] {
+        assert!(
+            doc.query_selector(sel).expect("query ok").is_some(),
+            "expected layout element {sel}: {html}"
+        );
+    }
 }
 
 #[wasm_bindgen_test]
@@ -247,38 +252,6 @@ async fn resolution_banner_renders_lost() {
     assert!(
         html.contains("cultist-surge"),
         "lost reason missing: {html}"
-    );
-}
-
-#[wasm_bindgen_test]
-async fn version_mismatch_status_renders_actionable_message() {
-    use web::store::ConnStatus;
-    let store = RwSignal::new(ClientState::default());
-    leptos::mount::mount_to_body(move || {
-        provide_context(store);
-        leptos::view! { <BoardView/> }
-    });
-    store.update(|s| s.status = ConnStatus::VersionMismatch);
-    leptos::task::tick().await;
-
-    // Scope to the last mounted .status line (DOM accumulates across tests).
-    let lines = leptos::prelude::document()
-        .query_selector_all(".status")
-        .expect("query_selector_all");
-    let html = lines
-        .item(lines.length() - 1)
-        .expect("at least one .status line")
-        .dyn_ref::<web_sys::Element>()
-        .expect("Element")
-        .inner_html();
-
-    assert!(
-        html.contains("version mismatch"),
-        "status line must name the version mismatch: {html}"
-    );
-    assert!(
-        html.contains("restart the server"),
-        "status line must tell the user what to do: {html}"
     );
 }
 
@@ -374,29 +347,5 @@ async fn threat_area_treachery_renders_as_card() {
     assert!(
         card.is_some(),
         "threat-area treachery should render as a card: {html}"
-    );
-}
-
-#[wasm_bindgen_test]
-async fn board_renders_a_new_game_button() {
-    let store = RwSignal::new(ClientState::default());
-    leptos::mount::mount_to_body(move || {
-        provide_context(store);
-        leptos::view! { <BoardView/> }
-    });
-    leptos::task::tick().await;
-
-    // Scope to the last mounted .board (DOM accumulates across tests).
-    let boards = leptos::prelude::document()
-        .query_selector_all(".board")
-        .expect("query_selector_all");
-    let last = boards
-        .item(boards.length() - 1)
-        .expect("at least one .board section")
-        .dyn_into::<web_sys::Element>()
-        .expect("Element");
-    assert!(
-        last.query_selector(".new-game").expect("query").is_some(),
-        "BoardView must render a .new-game button"
     );
 }
