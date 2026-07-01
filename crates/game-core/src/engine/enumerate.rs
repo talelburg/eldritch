@@ -915,7 +915,11 @@ mod tests {
             OptionTarget::Global
         );
         assert_eq!(
-            TurnAction::Move { investigator: inv, destination: LocationId(11) }.target(&state),
+            TurnAction::Move {
+                investigator: inv,
+                destination: LocationId(11)
+            }
+            .target(&state),
             OptionTarget::Location(LocationId(11))
         );
         assert_eq!(
@@ -923,20 +927,39 @@ mod tests {
             OptionTarget::Location(loc_id)
         );
         assert_eq!(
-            TurnAction::Fight { investigator: inv, enemy: EnemyId(7) }.target(&state),
+            TurnAction::Fight {
+                investigator: inv,
+                enemy: EnemyId(7)
+            }
+            .target(&state),
             OptionTarget::Enemy(EnemyId(7))
         );
         assert_eq!(
-            TurnAction::Evade { investigator: inv, enemy: EnemyId(7) }.target(&state),
+            TurnAction::Evade {
+                investigator: inv,
+                enemy: EnemyId(7)
+            }
+            .target(&state),
             OptionTarget::Enemy(EnemyId(7))
         );
         assert_eq!(
-            TurnAction::Engage { investigator: inv, enemy: EnemyId(7) }.target(&state),
+            TurnAction::Engage {
+                investigator: inv,
+                enemy: EnemyId(7)
+            }
+            .target(&state),
             OptionTarget::Enemy(EnemyId(7))
         );
         assert_eq!(
-            TurnAction::PlayCard { investigator: inv, hand_index: 2 }.target(&state),
-            OptionTarget::HandCard { investigator: inv, hand_index: 2 }
+            TurnAction::PlayCard {
+                investigator: inv,
+                hand_index: 2
+            }
+            .target(&state),
+            OptionTarget::HandCard {
+                investigator: inv,
+                hand_index: 2
+            }
         );
         assert_eq!(
             TurnAction::ActivateAbility {

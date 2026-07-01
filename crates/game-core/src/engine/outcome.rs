@@ -224,10 +224,8 @@ mod tests {
 
     #[test]
     fn pick_single_sets_kind_and_not_skippable() {
-        let req = InputRequest::pick_single(
-            "Choose one",
-            vec![ChoiceOption::global(OptionId(0), "A")],
-        );
+        let req =
+            InputRequest::pick_single("Choose one", vec![ChoiceOption::global(OptionId(0), "A")]);
         assert_eq!(req.kind, InputKind::PickSingle);
         assert!(!req.skippable);
         assert_eq!(req.options.len(), 1);

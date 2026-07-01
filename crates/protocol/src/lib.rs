@@ -213,7 +213,10 @@ mod tests {
             panic!("expected AwaitingInput outcome");
         };
         assert!(
-            request.options.iter().all(|o| o.target == OptionTarget::Global),
+            request
+                .options
+                .iter()
+                .all(|o| o.target == OptionTarget::Global),
             "option targets survive the envelope"
         );
     }

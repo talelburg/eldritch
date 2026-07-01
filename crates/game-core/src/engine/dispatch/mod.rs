@@ -736,7 +736,9 @@ mod turn_menu_tests {
             .with_phase(Phase::Investigation)
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1)])
-            .with_chaos_bag(crate::state::ChaosBag::new([crate::state::ChaosToken::Numeric(0)]))
+            .with_chaos_bag(crate::state::ChaosBag::new([
+                crate::state::ChaosToken::Numeric(0),
+            ]))
             .with_phase_anchor(Continuation::InvestigationPhase {
                 resume: InvestigationResume::TurnBegins,
             })
