@@ -158,7 +158,11 @@
 .card--exhausted { opacity: 0.6; border-style: dashed; border-color: #aaa; }
 
 /* Interactivity S1/S2 (#536/#537): actionable glow + cursor-anchored menu. */
-.map-location.actionable { box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; }
+/* `.map-location` sets `z-index:1` (a stacking context), so its fixed menu is
+   confined to that band and would be overpainted by the sticky `.action-bar`
+   (z-index:10). Float actionable nodes above the bar so their menu wins. Cards
+   (`.card.actionable`) set no z-index, so their menu escapes to the root context. */
+.map-location.actionable { box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; z-index: 20; }
 .card.actionable { position: relative; box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; }
 .menu-hit { position: absolute; inset: 0; z-index: 5; }
 .menu-backdrop { position: fixed; inset: 0; z-index: 15; }

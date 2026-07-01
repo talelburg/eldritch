@@ -124,6 +124,7 @@ pub fn menu_layer(
         <div
             class="menu-hit"
             on:click=move |ev: web_sys::MouseEvent| {
+                ev.stop_propagation();
                 open.set(Some((ev.client_x(), ev.client_y())));
             }
         ></div>

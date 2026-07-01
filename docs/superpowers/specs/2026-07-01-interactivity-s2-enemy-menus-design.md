@@ -23,9 +23,19 @@ clipped by that node's `overflow: hidden` (the S1 `TODO(#206)`). `.card` sets
 neither `position` nor `overflow`, so an absolute menu inside an enemy card would
 escape to the wrong ancestor. Rather than patch per-anchor, the menu moves to
 `position: fixed` at the click's viewport coordinates: fixed is viewport-relative,
-so it escapes *every* `overflow`/positioning ancestor uniformly, reads naturally
-(menu at the pointer), and is paid for once in the shared component (S3/S4
-inherit it). Alternatives weighed and rejected: per-anchor `position: relative` +
+so it escapes every *overflow*-clipping ancestor, reads naturally (menu at the
+pointer), and is paid for once in the shared component (S3/S4 inherit it).
+
+**Stacking caveat (does *not* escape a `z-index` stacking context).** `position:
+fixed` escapes overflow *clipping* but is still painted inside the nearest
+ancestor **stacking context**. `.map-location` sets `z-index: 1`, which is a
+stacking context, so a map node's menu is confined to that band and would be
+overpainted by the sticky `.action-bar` (`z-index: 10`); `.map-location.actionable`
+therefore gets `z-index: 20` to float above the bar while its menu is open. Cards
+(`.card.actionable`) set no `z-index`, so their menu escapes to the root context
+directly. Any future anchor that lives inside a `z-index`ed ancestor must do the
+same. (Verified none of the ancestors set `transform`/`filter`/`perspective`,
+which would additionally re-anchor the fixed element.) Alternatives weighed and rejected: per-anchor `position: relative` +
 dropping the map's clip (menu pins to a fixed corner, node text can spill); a
 leptos `Portal` (strictly heavier than fixed for the same result).
 
