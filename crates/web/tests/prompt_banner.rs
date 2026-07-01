@@ -34,17 +34,26 @@ async fn mount(
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let active = Signal::derive(move || store.with(web::interaction::is_multi_select));
         provide_context(MultiSelect { active, selected });
-        view! { <PromptBanner/> }
+        view! { <div class="pb-root"><PromptBanner/></div> }
     });
     leptos::task::tick().await;
     rx
 }
 
+/// The last-mounted `.pb-root` wrapper — scopes queries to this test's mount so
+/// DOM accumulation across tests can't shadow an "absence" assertion.
+fn last_root() -> web_sys::Element {
+    let roots = document().query_selector_all(".pb-root").expect("query");
+    roots
+        .item(roots.length() - 1)
+        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .expect("a .pb-root")
+}
+
 fn last_banner() -> web_sys::Element {
-    let bs = document()
-        .query_selector_all(".prompt-banner")
-        .expect("query");
-    bs.item(bs.length() - 1)
+    last_root()
+        .query_selector(".prompt-banner")
+        .expect("query")
         .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
         .expect("a .prompt-banner")
 }
@@ -103,4 +112,32 @@ async fn skippable_prompt_shows_pass_that_submits_skip() {
         } => assert_eq!(response, InputResponse::Skip),
         other @ ClientMessage::Submit { .. } => panic!("expected Skip, got {other:?}"),
     }
+}
+
+#[wasm_bindgen_test]
+async fn renders_the_prompt_text() {
+    let _rx = mount(awaiting_commit_input("Redraw your opening hand"), &[]).await;
+    assert!(
+        last_banner()
+            .text_content()
+            .unwrap_or_default()
+            .contains("Redraw your opening hand"),
+        "banner shows the prompt text"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn no_banner_for_non_pick_multiple() {
+    let _rx = mount(
+        game_core::test_support::fixtures::awaiting_confirm_input("Draw"),
+        &[],
+    )
+    .await;
+    assert!(
+        last_root()
+            .query_selector(".prompt-banner")
+            .expect("query")
+            .is_none(),
+        "banner renders nothing for a non-PickMultiple outcome"
+    );
 }

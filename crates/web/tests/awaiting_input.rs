@@ -3,8 +3,9 @@
 //! through the store, assert the option buttons render with their labels, and
 //! that clicking one submits the matching `ResolveInput(PickSingle(id))` frame.
 //!
-//! The `PickMultiple` (commit/mulligan) branch is covered by `tests/input.rs`.
-//! wasm32-only (browser DOM + the wasm-only transport types).
+//! `PickMultiple` (commit/mulligan/discard) moved off this view in #538 — its
+//! coverage is `tests/prompt_banner.rs` (Confirm/Pass) + `tests/card.rs`
+//! (hand-card selection). wasm32-only (browser DOM + the wasm-only transport types).
 #![cfg(target_arch = "wasm32")]
 
 use futures::channel::mpsc;
@@ -62,7 +63,7 @@ async fn mount(
 }
 
 /// The last mounted `.awaiting-input` section (DOM accumulates across tests
-/// in one browser page — same approach as `tests/input.rs`).
+/// in one browser page — scope to the latest subtree).
 fn last_section() -> web_sys::Element {
     let secs = leptos::prelude::document()
         .query_selector_all(".awaiting-input")

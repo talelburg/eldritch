@@ -33,12 +33,14 @@ use crate::transport::OutboundTx;
 /// render-only contexts, so read as `Option`).
 ///
 /// Dispatches on the [`InputRequest`](game_core::InputRequest)'s
-/// [`kind`](game_core::InputRequest::kind): a `PickSingle` option-list, a
-/// `Confirm` button, or the `PickMultiple` hand-card commit UI — plus a "Skip"
-/// button when [`skippable`](game_core::InputRequest::skippable) (#205).
-// Three parallel `view!` rendering arms (PickSingle / Confirm / PickMultiple)
-// plus the Skip control; the length is inherent to the per-kind dispatch, not
-// extractable without fighting leptos's closure captures.
+/// [`kind`](game_core::InputRequest::kind): a `PickSingle` option-list or a
+/// `Confirm` button — plus a "Skip" button when
+/// [`skippable`](game_core::InputRequest::skippable) (#205). `PickMultiple` is
+/// handled by the [`PromptBanner`](crate::prompt_banner::PromptBanner), not here
+/// (#538) — this view returns nothing for it.
+// The `PickSingle` / `Confirm` `view!` arms (plus the fallback + the Skip
+// control); the length is inherent to the per-kind dispatch, not extractable
+// without fighting leptos's closure captures.
 #[allow(clippy::too_many_lines)]
 #[component]
 pub fn AwaitingInputView() -> impl IntoView {
