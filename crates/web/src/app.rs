@@ -7,13 +7,17 @@ use crate::store::provide_store;
 
 #[component]
 pub fn App() -> impl IntoView {
-    provide_store();
+    let store = provide_store();
+
+    // Derive the live prompt's options and expose them so board entities can
+    // route each option to itself and open a context menu (#536).
+    let pending = Signal::derive(move || store.with(crate::interaction::pending_options));
+    provide_context(crate::interaction::PendingOptions(pending));
 
     // Spawn the browser transport only on wasm; native/headless-reducer
     // builds render from a signal that tests drive directly.
     #[cfg(target_arch = "wasm32")]
     {
-        let store = crate::store::use_store();
         crate::transport::start(store);
     }
 

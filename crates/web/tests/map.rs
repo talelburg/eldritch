@@ -2,15 +2,19 @@
 //! feed a constructed `GameState`, assert on the rendered DOM. wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
-use game_core::state::{GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::fixtures::{test_enemy, test_investigator, test_location};
-use game_core::EngineOutcome;
-use leptos::prelude::{document, provide_context, RwSignal, Update};
-use protocol::ServerMessage;
+use futures::channel::mpsc;
+use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::fixtures::{
+    awaiting_pick_single_with, test_enemy, test_investigator, test_location,
+};
+use game_core::{ChoiceOption, EngineOutcome, InputResponse, OptionId, OptionTarget, PlayerAction};
+use leptos::prelude::{document, provide_context, RwSignal, Signal, Update, With};
+use protocol::{ClientMessage, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
 use web::store::{reduce, ClientState};
+use web::transport::OutboundTx;
 use web_sys::Element;
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -258,4 +262,129 @@ async fn unengaged_enemy_renders_inside_its_location_node() {
         "unengaged enemy must render inside its location node; Study node = {:?}",
         node_text("Study"),
     );
+}
+
+/// Mount `BoardView` with a store, an outbound channel, and a `PendingOptions`
+/// signal derived from the store (as `app.rs` does), then feed one `Hello`
+/// carrying `state` + `outcome`. Returns the submitted-frame receiver.
+async fn mount_interactive(
+    state: game_core::state::GameState,
+    outcome: EngineOutcome,
+) -> mpsc::UnboundedReceiver<ClientMessage> {
+    game_core::test_support::install_test_registry();
+    let store = RwSignal::new(ClientState::default());
+    let (tx, rx) = mpsc::unbounded::<ClientMessage>();
+    let tx_for_mount: OutboundTx = tx;
+    leptos::mount::mount_to_body(move || {
+        provide_context(store);
+        provide_context::<OutboundTx>(tx_for_mount.clone());
+        let pending = Signal::derive(move || store.with(web::interaction::pending_options));
+        provide_context(web::interaction::PendingOptions(pending));
+        leptos::view! { <BoardView/> }
+    });
+    store.update(|s| {
+        reduce(
+            s,
+            ServerMessage::Hello {
+                state: Box::new(state),
+                outcome,
+                events: Vec::new(),
+            },
+        );
+    });
+    leptos::task::tick().await;
+    rx
+}
+
+/// A one-location ("Study", id 10) game with investigator 1 standing on it.
+fn study_game() -> game_core::state::GameState {
+    let mut loc = test_location(10, "Study");
+    loc.revealed = true;
+    loc.code = CardCode::new("01111");
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    let mut game = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_active_investigator(InvestigatorId(1))
+        .build();
+    game.locations.insert(LocationId(10), loc);
+    game
+}
+
+/// The `class` attribute of the last-mounted map node named `loc_name`.
+fn node_class(loc_name: &str) -> String {
+    let maps = document().query_selector_all(".map").expect("query");
+    let last = maps
+        .item(maps.length() - 1)
+        .and_then(|n| n.dyn_into::<Element>().ok())
+        .expect("last .map");
+    let sel = format!(".map-location[data-loc=\"{loc_name}\"]");
+    last.query_selector(&sel)
+        .expect("query")
+        .and_then(|el| el.get_attribute("class"))
+        .unwrap_or_default()
+}
+
+#[wasm_bindgen_test]
+async fn actionable_location_glows_opens_menu_and_submits() {
+    let outcome = awaiting_pick_single_with(
+        "Choose an action",
+        vec![ChoiceOption::new(
+            OptionId(0),
+            "Investigate",
+            OptionTarget::Location(LocationId(10)),
+        )],
+    );
+    let mut rx = mount_interactive(study_game(), outcome).await;
+
+    assert!(
+        node_class("Study").contains("actionable"),
+        "node has the actionable class"
+    );
+
+    // Clicking the node opens its menu.
+    let maps = document().query_selector_all(".map").expect("query");
+    let last = maps
+        .item(maps.length() - 1)
+        .and_then(|n| n.dyn_into::<Element>().ok())
+        .expect("last .map");
+    last.query_selector(".map-location[data-loc=\"Study\"]")
+        .expect("query")
+        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .expect("HtmlElement")
+        .click();
+    leptos::task::tick().await;
+
+    let item = last
+        .query_selector(".context-menu .menu-item")
+        .expect("query")
+        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .expect("a menu item rendered");
+    assert_eq!(item.text_content().unwrap_or_default(), "Investigate");
+
+    // Clicking the item submits the anchored option.
+    item.click();
+    leptos::task::tick().await;
+    let msg = rx.try_recv().expect("a frame was sent after tick");
+    match msg {
+        ClientMessage::Submit {
+            action: PlayerAction::ResolveInput { response },
+        } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
+        other @ ClientMessage::Submit { .. } => panic!("expected ResolveInput, got {other:?}"),
+    }
+}
+
+#[wasm_bindgen_test]
+async fn location_without_a_matching_option_is_not_actionable() {
+    // The only option anchors to a DIFFERENT location — the Study node stays inert.
+    let outcome = awaiting_pick_single_with(
+        "Choose an action",
+        vec![ChoiceOption::new(
+            OptionId(0),
+            "Investigate",
+            OptionTarget::Location(LocationId(11)),
+        )],
+    );
+    let _ = mount_interactive(study_game(), outcome).await;
+    assert!(!node_class("Study").contains("actionable"));
 }

@@ -124,11 +124,15 @@ mod tests {
 
     #[test]
     fn pending_options_returns_the_awaiting_requests_options() {
-        let mut state = ClientState::default();
-        state.outcome = Some(game_core::test_support::fixtures::awaiting_pick_single_with(
-            "x",
-            vec![opt(0, OptionTarget::Location(LocationId(10)))],
-        ));
+        let state = ClientState {
+            outcome: Some(
+                game_core::test_support::fixtures::awaiting_pick_single_with(
+                    "x",
+                    vec![opt(0, OptionTarget::Location(LocationId(10)))],
+                ),
+            ),
+            ..Default::default()
+        };
         assert_eq!(pending_options(&state).len(), 1);
     }
 
