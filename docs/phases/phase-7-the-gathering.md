@@ -281,11 +281,19 @@ the now-stable set of input shapes:
       windows (prompt + Pass); `input.rs`'s Skip removed (the bar keeps window *options* so `Board`/
       `Global` stays reachable until S6). Plan:
       `docs/superpowers/plans/2026-07-02-interactivity-s4-in-play-and-window-triggers.md`.
-    - **S5–S6** (#540–#541) queued: act/soak/effect-choices (S5), global-action homes + bar
-      retirement (S6). The shared `menu_layer` / fixed-at-cursor + `PromptBanner` (now also skippable
-      windows) are the seams they extend; new anchors inside a `z-index`ed ancestor must float their
-      menu like the map node. A queued follow-up (display-only) reworks the **investigator panel**
-      (card + folded skills/vitals + actions/resources beside the hand).
+    - **S6 reprioritised ahead of S5.** During an S4 skippable window the bottom `PromptBanner`
+      (`z-index: 25`, fixed) covers the sticky `.action-bar` (`z-index: 10`), so a `Board`/`Global`
+      window option that lives *only* in the bar — the **round-end act-advance reaction** — is hidden
+      behind the banner. The proper fix is S6 (bar retirement): its scope must include **the banner
+      rendering a skippable window's *options*, not just its Pass**, or those bar-only options strand.
+    - **S5–S6** (#540–#541) queued: global-action homes + bar retirement (S6, next), then
+      act/soak/effect-choices (S5). The shared `menu_layer` / fixed-at-cursor + `PromptBanner` (now
+      also skippable windows) are the seams they extend; new anchors inside a `z-index`ed ancestor
+      must float their menu like the map node.
+    - **Investigator panel rework (#547, PR #548) — display-only.** The investigator card is the home
+      for the character's live state: skills (W/I/C/A) + hp/san folded onto the card, actions (pips)/
+      resources/clues/status beside it, next to the hand; the loose stats line + the map-redundant
+      location display are gone. Built on S4's `InPlayCardView` (reused untouched).
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —
