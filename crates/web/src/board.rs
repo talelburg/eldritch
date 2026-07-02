@@ -45,10 +45,6 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
         .investigators
         .values()
         .map(|inv| {
-            let location = inv.current_location.map_or_else(
-                || "—".to_string(),
-                |id| crate::names::location_name(game, id),
-            );
             let inv_id = inv.id;
             let hand: Vec<_> = inv
                 .hand
@@ -81,25 +77,38 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                 .cloned()
                 .map(|e| view! { <crate::enemy_card::EnemyCard enemy=e/> })
                 .collect();
+            let vitals = view! {
+                <div class="inv-vitals">
+                    <span class="inv-skills">
+                        "W" {inv.skills.willpower} " I" {inv.skills.intellect}
+                        " C" {inv.skills.combat} " A" {inv.skills.agility}
+                    </span>
+                    <span class="inv-hp">"hp " {inv.damage()} "/" {inv.max_health()}</span>
+                    <span class="inv-san">"san " {inv.horror()} "/" {inv.max_sanity()}</span>
+                </div>
+            };
+            let pips: Vec<_> = (0..inv.actions_remaining)
+                .map(|_| view! { <span class="pip">"●"</span> })
+                .collect();
             view! {
                 <article class="investigator">
                     <h3 class="inv-name">{inv.name.clone()}</h3>
-                    <div class="investigator-card">
-                        <crate::card::InPlayCardView instance=inv.investigator_card.clone()/>
-                    </div>
                     <div class="inv-zones-top">
                         <div class="in-play"><h4>"In play"</h4><div class="card-row">{in_play}</div></div>
                         <div class="threat"><h4>"Threat area"</h4><div class="card-row">{threat}{engaged}</div></div>
                     </div>
                     <div class="inv-zones-bottom">
-                        <div class="inv-stats">
-                            <span class="inv-location">{location}</span>
-                            <span class="inv-actions">"actions " {inv.actions_remaining}</span>
-                            <span class="inv-resources">"resources " {inv.resources}</span>
-                            <span class="inv-health">"health " {inv.damage()} "/" {inv.max_health()}</span>
-                            <span class="inv-sanity">"sanity " {inv.horror()} "/" {inv.max_sanity()}</span>
-                            <span class="inv-clues">"clues " {inv.clues}</span>
-                            <span class="inv-status">{format!("{:?}", inv.status)}</span>
+                        <div class="investigator-block">
+                            <div class="investigator-card">
+                                <crate::card::InPlayCardView instance=inv.investigator_card.clone()/>
+                                {vitals}
+                            </div>
+                            <div class="inv-meta">
+                                <span class="inv-actions">"actions " {pips}</span>
+                                <span class="inv-resources">"resources " {inv.resources}</span>
+                                <span class="inv-clues">"clues " {inv.clues}</span>
+                                <span class="inv-status">{format!("{:?}", inv.status)}</span>
+                            </div>
                         </div>
                         <div class="hand"><h4>"Hand"</h4><div class="card-row">{hand}</div></div>
                     </div>
