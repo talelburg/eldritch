@@ -470,13 +470,7 @@ pub fn HandCardView(
     let pending = use_context::<crate::interaction::PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
-    let menu_opts = crate::interaction::options_for(
-        &pending,
-        game_core::OptionTarget::HandCard {
-            investigator,
-            hand_index: index,
-        },
-    );
+    let menu_opts = crate::interaction::options_for_hand_card(&pending, investigator, index, &code);
     let actionable = !menu_opts.is_empty();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
@@ -491,6 +485,37 @@ pub fn HandCardView(
         </div>
     }
     .into_any()
+}
+
+/// Interactive wrapper for an in-play / threat-area card (#539). Keeps [`Card`]
+/// display-only: reads `PendingOptions` and, via the card's `CardInstance` anchor,
+/// offers an Activate (open-turn) / Trigger (reaction-window) menu. No selection
+/// mode — that is hand-only.
+#[allow(clippy::needless_pass_by_value)]
+#[component]
+pub fn InPlayCardView(instance: CardInPlay) -> impl IntoView {
+    let code = instance.code.clone();
+    let instance_id = instance.instance_id;
+    let pending = use_context::<crate::interaction::PendingOptions>()
+        .map(|p| p.0.get())
+        .unwrap_or_default();
+    let menu_opts = crate::interaction::options_for(
+        &pending,
+        game_core::OptionTarget::CardInstance(instance_id),
+    );
+    let actionable = !menu_opts.is_empty();
+    #[cfg(target_arch = "wasm32")]
+    let open = RwSignal::new(None::<(i32, i32)>);
+    view! {
+        <div class="card-slot" class:actionable=actionable>
+            <Card code=code in_play=instance/>
+            {
+                // wasm-only Activate/Trigger trigger + menu (web_sys / OutboundTx).
+                #[cfg(target_arch = "wasm32")]
+                actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
+            }
+        </div>
+    }
 }
 
 /// Render parsed card text to views (known symbols → chips; unknown tokens keep

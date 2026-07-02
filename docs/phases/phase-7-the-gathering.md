@@ -270,10 +270,22 @@ the now-stable set of input shapes:
       deviation from "bar keeps everything", since two selection UIs would collide. Selection
       click is non-gated (no coords). Plan:
       `docs/superpowers/plans/2026-07-01-interactivity-s3-hand-and-multiselect.md`.
-    - **S4–S6** (#539–#541) queued: in-play/threat + window triggers (S4), act/soak/effect-choices
-      (S5), global-action homes + bar retirement (S6). The shared `menu_layer` / fixed-at-cursor
-      pattern + the `PromptBanner` (extend it to non-`PickMultiple` prompts) are the seams they
-      extend; new anchors inside a `z-index`ed ancestor must float their menu like the map node.
+    - **S4 — in-play/investigator card menus + reaction-window triggers (#539, PR #546).** The
+      first engine change since S0: `build_resolution_options` anchors reaction candidates by
+      `CandidateSource` (`InPlay`→`CardInstance`, `Hand`→a new `OptionTarget::HandCardByCode` — every
+      copy of a Fast reaction event, so `OptionTarget` drops `Copy`, `Board`→`Global`); `drive_fast_window`
+      reuses `TurnAction::target`. The anchor is **display-only** (the resolve path indexes
+      `candidates[i]` by the echoed `OptionId`, never the anchor). Web: `InPlayCardView` wraps in-play,
+      threat, **and the investigator card** (so Roland's signature reaction glows — a review catch);
+      `HandCardView` dual-matches via `options_for_hand_card`. `PromptBanner` extended to skippable
+      windows (prompt + Pass); `input.rs`'s Skip removed (the bar keeps window *options* so `Board`/
+      `Global` stays reachable until S6). Plan:
+      `docs/superpowers/plans/2026-07-02-interactivity-s4-in-play-and-window-triggers.md`.
+    - **S5–S6** (#540–#541) queued: act/soak/effect-choices (S5), global-action homes + bar
+      retirement (S6). The shared `menu_layer` / fixed-at-cursor + `PromptBanner` (now also skippable
+      windows) are the seams they extend; new anchors inside a `z-index`ed ancestor must float their
+      menu like the map node. A queued follow-up (display-only) reworks the **investigator panel**
+      (card + folded skills/vitals + actions/resources beside the hand).
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
 Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —

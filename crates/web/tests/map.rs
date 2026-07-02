@@ -389,3 +389,38 @@ async fn location_without_a_matching_option_is_not_actionable() {
     let _ = mount_interactive(study_game(), outcome).await;
     assert!(!node_class("Study").contains("actionable"));
 }
+
+#[wasm_bindgen_test]
+async fn investigator_card_glows_for_a_reaction_anchored_to_it() {
+    // A reaction on the investigator card (Roland-style) anchors to that card's
+    // instance; the panel now renders it as an InPlayCardView, so it glows (#539).
+    let game = GameStateBuilder::new()
+        .with_investigator(test_investigator(1))
+        .build();
+    let iid = game
+        .investigators
+        .get(&InvestigatorId(1))
+        .expect("investigator")
+        .investigator_card
+        .instance_id;
+    let outcome = awaiting_pick_single_with(
+        "You may trigger",
+        vec![ChoiceOption::new(
+            OptionId(0),
+            "Trigger",
+            OptionTarget::CardInstance(iid),
+        )],
+    );
+    let _ = mount_interactive(game, outcome).await;
+    let slots = document()
+        .query_selector_all(".investigator-card .card-slot")
+        .expect("query");
+    let last = slots
+        .item(slots.length() - 1)
+        .and_then(|n| n.dyn_into::<Element>().ok())
+        .expect("an investigator-card .card-slot");
+    assert!(
+        last.class_name().contains("actionable"),
+        "investigator card glows for a reaction anchored to it"
+    );
+}

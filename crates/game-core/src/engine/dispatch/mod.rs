@@ -769,7 +769,10 @@ mod turn_menu_tests {
                 .iter()
                 .any(|o| matches!(o.target, OptionTarget::Enemy(_))),
             "expected at least one Enemy-anchored option, got {:?}",
-            menu.options.iter().map(|o| o.target).collect::<Vec<_>>()
+            menu.options
+                .iter()
+                .map(|o| o.target.clone())
+                .collect::<Vec<_>>()
         );
     }
 }

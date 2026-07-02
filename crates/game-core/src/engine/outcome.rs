@@ -4,7 +4,7 @@ use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{CardInstanceId, EnemyId, InvestigatorId, LocationId};
+use crate::state::{CardCode, CardInstanceId, EnemyId, InvestigatorId, LocationId};
 
 /// The terminal status of an [`apply`](super::apply) call.
 ///
@@ -57,7 +57,7 @@ pub struct OptionId(pub u32);
 /// means no board anchor (e.g. End turn, a Confirm). Anchors are derived from
 /// the engine's own action / candidate targets, so a host never re-computes
 /// legality (#535, #206).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum OptionTarget {
     /// No board anchor — a global / contextual control.
@@ -72,6 +72,15 @@ pub enum OptionTarget {
         investigator: InvestigatorId,
         /// Zero-based position in that investigator's hand.
         hand_index: u8,
+    },
+    /// A card in an investigator's hand, matched by **code** (every copy) — for a
+    /// queued Fast reaction event, which is code-identified (either copy plays), so
+    /// all matching hand cards are actionable (#539).
+    HandCardByCode {
+        /// The hand's owner.
+        investigator: InvestigatorId,
+        /// The card code; all hand cards of this code are actionable.
+        code: CardCode,
     },
     /// An in-play / threat-area / investigator card instance.
     CardInstance(CardInstanceId),
