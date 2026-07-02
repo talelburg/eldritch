@@ -56,7 +56,10 @@ card** (an engine change — the first since S0), and a reaction/Fast window's *
   open-turn Activate and reaction Trigger options. When non-empty: `.card-slot`
   gets `actionable` + a wasm-only `menu_layer`. No selection mode.
 - **`board.rs`:** the in-play **and** threat lists switch from `<Card in_play=c/>`
-  to `<InPlayCardView instance=c/>`.
+  to `<InPlayCardView instance=c/>`. The **investigator card** (`inv.investigator_card`,
+  a `CardInPlay`) is also rendered as an `InPlayCardView` (a `.investigator-card`
+  slot under the name) — reactions on it (Roland's signature) anchor to its
+  `CardInstance`, so it must be a card view to glow (review finding).
 - **`HandCardView` dual-match** (`card.rs`): its non-multiselect branch swaps
   `options_for(HandCard{index})` for a new
   `interaction::options_for_hand_card(options, investigator, index, code) ->
@@ -121,6 +124,11 @@ shows the window prompt + Pass.
 
 - Act advance + soak + effect-choices (S5), global-action homes + bar retirement (S6).
 - `Board` reaction candidates getting a non-`Global` home (no card; deferred).
+- **Duplicate-copy menu dedup:** two copies of a Fast reaction event in hand yield
+  two candidates (one per copy), both anchored `HandCardByCode` by the same code, so
+  each glowing copy's menu shows two identically-labeled rows. Benign (either
+  submits an equivalent copy — no double-fire), but the redundant rows are a
+  follow-up (dedup by code before building options, or in `options_for_hand_card`).
 - Moving the window's *option list* fully off the bar (a `Board` option would be
   unreachable) — the bar keeps rendering options until S6.
 - Multi-investigator selection scoping (still solo).

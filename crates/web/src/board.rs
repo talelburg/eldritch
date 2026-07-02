@@ -84,6 +84,9 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
             view! {
                 <article class="investigator">
                     <h3 class="inv-name">{inv.name.clone()}</h3>
+                    <div class="investigator-card">
+                        <crate::card::InPlayCardView instance=inv.investigator_card.clone()/>
+                    </div>
                     <div class="inv-zones-top">
                         <div class="in-play"><h4>"In play"</h4><div class="card-row">{in_play}</div></div>
                         <div class="threat"><h4>"Threat area"</h4><div class="card-row">{threat}{engaged}</div></div>

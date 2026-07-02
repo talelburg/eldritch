@@ -127,7 +127,9 @@ async fn renders_the_prompt_text() {
 }
 
 #[wasm_bindgen_test]
-async fn no_banner_for_non_pick_multiple() {
+async fn no_banner_for_non_skippable_non_multi() {
+    // A non-skippable, non-PickMultiple prompt (the encounter-draw Confirm) is not
+    // a banner concern — it stays in the flat bar.
     let _rx = mount(
         game_core::test_support::fixtures::awaiting_confirm_input("Draw"),
         &[],
@@ -138,7 +140,7 @@ async fn no_banner_for_non_pick_multiple() {
             .query_selector(".prompt-banner")
             .expect("query")
             .is_none(),
-        "banner renders nothing for a non-PickMultiple outcome"
+        "banner renders nothing for a non-skippable non-PickMultiple outcome"
     );
 }
 
