@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use game_core::{EngineOutcome, InputKind, InputResponse, OptionId, PlayerAction};
+use game_core::{ChoiceOption, EngineOutcome, InputKind, InputResponse, OptionId, PlayerAction};
 use leptos::prelude::*;
 use protocol::ClientMessage;
 
@@ -15,8 +15,10 @@ use crate::interaction::MultiSelect;
 use crate::store::use_store;
 use crate::transport::OutboundTx;
 
-/// The bottom-fixed multi-select banner. Renders nothing unless a `PickMultiple`
-/// prompt is live and a [`MultiSelect`] context is present.
+/// The bottom-fixed prompt banner. Renders nothing unless the live prompt is a
+/// `PickMultiple` commit or a skippable window; for a skippable window it also
+/// renders the window's `PickSingle` options as buttons (#549), so a
+/// `Board`/`Global` option reachable nowhere else has a home.
 #[component]
 pub fn PromptBanner() -> impl IntoView {
     let store = use_store();
@@ -35,6 +37,32 @@ pub fn PromptBanner() -> impl IntoView {
                 return ().into_any();
             }
             let prompt = request.prompt.clone();
+
+            // Option buttons — a skippable window's `PickSingle` options
+            // (`PickMultiple` carries none). This homes `Board`/`Global` window
+            // options that live nowhere else — e.g. the round-end act-advance
+            // reaction (#549), which the sticky bar hid behind this banner.
+            let option_btns: Vec<_> = request
+                .options
+                .iter()
+                .cloned()
+                .map(|opt: ChoiceOption| {
+                    let ChoiceOption { id, label, .. } = opt;
+                    let tx = tx.clone();
+                    let header = label.clone();
+                    let submit = move |_| {
+                        if let Some(tx) = tx.clone() {
+                            store.update(|s| s.pending_label = Some(header.clone()));
+                            let _ = tx.unbounded_send(ClientMessage::Submit {
+                                action: PlayerAction::ResolveInput {
+                                    response: InputResponse::PickSingle(id),
+                                },
+                            });
+                        }
+                    };
+                    view! { <button class="banner-option" on:click=submit>{label}</button> }
+                })
+                .collect();
 
             // Confirm — PickMultiple only (submits the MultiSelect selection).
             let confirm_btn = is_multi.then(|| ms.clone()).flatten().map(|ms| {
@@ -77,6 +105,7 @@ pub fn PromptBanner() -> impl IntoView {
             view! {
                 <div class="prompt-banner">
                     <span class="prompt">{prompt}</span>
+                    {option_btns}
                     {confirm_btn}
                     {pass_btn}
                 </div>

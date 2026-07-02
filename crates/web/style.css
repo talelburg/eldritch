@@ -212,6 +212,10 @@
     background: transparent; color: #1a1a1a; border: 1px solid #1a1a1a;
     border-radius: 4px; padding: 0.4rem 0.9rem; cursor: pointer;
 }
+.prompt-banner .banner-option {
+    background: #1a1a1a; color: #fff; border: none; border-radius: 4px;
+    padding: 0.4rem 0.9rem; cursor: pointer;
+}
 
 /* Interactivity S4 (#539): in-play/threat card wrapper glow. */
 .card-slot { position: relative; }

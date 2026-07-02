@@ -181,3 +181,29 @@ async fn non_skippable_pick_single_renders_no_banner() {
         "no banner for a non-skippable PickSingle"
     );
 }
+
+#[wasm_bindgen_test]
+async fn skippable_window_renders_options_that_submit_pick_single() {
+    // The round-end-advance fix (#549): a skippable window's options render as
+    // banner buttons (not only Pass), so a Board/Global option is reachable.
+    let mut rx = mount(
+        game_core::test_support::fixtures::awaiting_skippable_pick_single_input("You may advance"),
+        &[],
+    )
+    .await;
+    let btn = last_banner()
+        .query_selector(".banner-option")
+        .expect("query")
+        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .expect("an option button");
+    assert_eq!(btn.text_content().unwrap_or_default(), "Resolve");
+    btn.click();
+    leptos::task::tick().await;
+    let msg = rx.try_recv().expect("a frame after tick");
+    match msg {
+        ClientMessage::Submit {
+            action: PlayerAction::ResolveInput { response },
+        } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
+        other @ ClientMessage::Submit { .. } => panic!("expected PickSingle, got {other:?}"),
+    }
+}
