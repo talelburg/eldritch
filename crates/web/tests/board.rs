@@ -95,12 +95,18 @@ async fn map_renders_location_name_shroud_clues() {
 
 #[wasm_bindgen_test]
 async fn investigators_panel_renders_stats_and_hand() {
-    use game_core::state::{CardCode, CardInPlay, CardInstanceId};
+    use game_core::state::{CardCode, CardInPlay, CardInstanceId, Skills};
 
     let mut inv = test_investigator(1);
     inv.name = "Roland Banks".to_string();
-    inv.investigator_card.accumulated_damage = 2; // 2/8
-    inv.investigator_card.accumulated_horror = 1; // 1/8
+    inv.skills = Skills {
+        willpower: 5,
+        intellect: 4,
+        combat: 3,
+        agility: 2,
+    };
+    inv.investigator_card.accumulated_damage = 2; // hp 2/8
+    inv.investigator_card.accumulated_horror = 1; // san 1/8
     inv.clues = 3;
     inv.resources = 4;
     inv.actions_remaining = 2;
@@ -115,51 +121,60 @@ async fn investigators_panel_renders_stats_and_hand() {
     let state = GameStateBuilder::new().with_investigator(inv).build();
 
     let html = render_state(state).await;
+    let doc = leptos::prelude::document();
 
+    // Identity + folded vitals (skills + hp/san) live in the investigator block.
     assert!(html.contains("Roland Banks"), "name missing: {html}");
-    assert!(html.contains("2/8"), "health damage missing: {html}");
-    assert!(html.contains("1/8"), "horror missing: {html}");
-    assert!(html.contains("actions 2"), "actions missing: {html}");
+    assert!(html.contains("W5"), "willpower missing: {html}");
+    assert!(html.contains("I4"), "intellect missing: {html}");
+    assert!(html.contains("C3"), "combat missing: {html}");
+    assert!(html.contains("A2"), "agility missing: {html}");
+    assert!(html.contains("2/8"), "hp missing: {html}");
+    assert!(html.contains("1/8"), "san missing: {html}");
+    // Meta cluster: actions as pips (scoped to this test's panel — the last
+    // `.investigator`, since DOM accumulates across tests on the shared page).
+    let invs = doc.query_selector_all(".investigator").expect("query");
+    let last_inv = invs
+        .item(invs.length() - 1)
+        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .expect("an .investigator panel");
+    let pips = last_inv
+        .query_selector_all(".inv-meta .inv-actions .pip")
+        .expect("query");
+    assert_eq!(pips.length(), 2, "two action pips: {html}");
     assert!(html.contains("resources 4"), "resources missing: {html}");
     assert!(html.contains("clues 3"), "clues missing: {html}");
+    // Location is no longer shown in the panel (it's on the map token).
+    assert!(
+        !html.contains("inv-location"),
+        "location line should be gone: {html}"
+    );
+
+    // Cards still render (hand + in-play).
     assert!(
         html.contains("_synth_fast_event"),
         "hand card missing: {html}"
     );
     assert!(
-        html.contains("_synth_treachery"),
-        "hand card missing: {html}"
-    );
-    assert!(html.contains("In play"), "in-play heading missing: {html}");
-    assert!(
         html.contains("_synth_asset"),
         "in-play card missing: {html}"
     );
-    // In-play assets now render as Card rectangles in their own card-row.
-    let in_play_cards = leptos::prelude::document()
-        .query_selector_all(".in-play .card-row .card")
-        .expect("query_selector_all");
     assert!(
-        in_play_cards.length() >= 1,
-        "in-play should render a Card: {html}"
-    );
-    // Hand cards now render as Card rectangles (fallback to raw code without
-    // metadata in the test registry).
-    let cards = leptos::prelude::document()
-        .query_selector_all(".card-row .card")
-        .expect("query_selector_all");
-    assert!(
-        cards.length() >= 1,
-        "hand should render Card rectangles: {html}"
+        doc.query_selector_all(".in-play .card-row .card")
+            .expect("query")
+            .length()
+            >= 1,
+        "in-play Card: {html}"
     );
 
-    // Layout: in-play + threat sit in the top zone row; the stat block + hand sit
-    // in the bottom row (stats left, hand right).
-    let doc = leptos::prelude::document();
+    // Layout: in-play + threat in the top row; investigator block (card + vitals +
+    // meta) and hand in the bottom row.
     for sel in [
         ".investigator .inv-zones-top .in-play",
         ".investigator .inv-zones-top .threat",
-        ".investigator .inv-zones-bottom .inv-stats",
+        ".investigator .inv-zones-bottom .investigator-block .investigator-card .card-slot",
+        ".investigator .inv-zones-bottom .investigator-block .inv-vitals",
+        ".investigator .inv-zones-bottom .investigator-block .inv-meta",
         ".investigator .inv-zones-bottom .hand",
     ] {
         assert!(
