@@ -590,11 +590,6 @@ fn trigger_matches(
     }
 }
 
-/// Build the structured option list for a resolution frame: one
-/// [`ChoiceOption`] per pending candidate, in `pending_triggers` order.
-/// `OptionId(i)` is the index into the returned list — the Axis-A convention
-/// shared with [`super::choice`]. The label distinguishes a hand Fast-event
-/// play ([`CandidateSource::Hand`]) from an in-play reaction.
 /// The current act's card code, if an act deck is loaded — used to anchor the
 /// round-end act-advance reaction (a [`CandidateSource::Board`] candidate whose
 /// code is the act) to the act card (S5, #540). `None` for fixtures with no act.
@@ -605,6 +600,11 @@ fn current_act_code(state: &GameState) -> Option<CardCode> {
         .map(|act| act.code.clone())
 }
 
+/// Build the structured option list for a resolution frame: one
+/// [`ChoiceOption`] per pending candidate, in `pending_triggers` order.
+/// `OptionId(i)` is the index into the returned list — the Axis-A convention
+/// shared with [`super::choice`]. The label distinguishes a hand Fast-event
+/// play ([`CandidateSource::Hand`]) from an in-play reaction.
 fn build_resolution_options(
     candidates: &[ResolutionCandidate],
     current_act: Option<&CardCode>,
