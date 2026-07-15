@@ -210,6 +210,21 @@ pub fn awaiting_skippable_pick_single_input(prompt: impl Into<String>) -> Engine
     }
 }
 
+/// A skippable [`PickSingle`](crate::InputKind::PickSingle)
+/// [`AwaitingInput`](EngineOutcome::AwaitingInput) over caller-supplied `options`
+/// (so a test can mix anchored and `Global` targets). Like
+/// [`awaiting_pick_single_with`] but with the Skip affordance a window carries.
+#[must_use]
+pub fn awaiting_skippable_pick_single_with(
+    prompt: impl Into<String>,
+    options: Vec<ChoiceOption>,
+) -> EngineOutcome {
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::pick_single(prompt, options).skippable(),
+        resume_token: ResumeToken(0),
+    }
+}
+
 /// Put `state` at the upkeep hand-size discard prompt by pushing a
 /// [`Continuation::HandSizeDiscard`] frame for `remaining`. A fixture because
 /// [`HandSizeDiscard`] is `#[non_exhaustive]`, so downstream test crates

@@ -207,3 +207,40 @@ async fn skippable_window_renders_options_that_submit_pick_single() {
         other @ ClientMessage::Submit { .. } => panic!("expected PickSingle, got {other:?}"),
     }
 }
+
+#[wasm_bindgen_test]
+async fn banner_renders_only_unanchored_options() {
+    // S5 (#540): once the round-end advance is anchored to the act card, the banner
+    // stops duplicating anchored options — it renders only Global-anchored ones.
+    use game_core::test_support::fixtures::awaiting_skippable_pick_single_with;
+    use game_core::{ChoiceOption, OptionTarget};
+    let outcome = awaiting_skippable_pick_single_with(
+        "You may advance",
+        vec![
+            ChoiceOption::new(OptionId(0), "Advance act", OptionTarget::Act),
+            ChoiceOption::new(OptionId(1), "Some global", OptionTarget::Global),
+        ],
+    );
+    let mut rx = mount(outcome, &[]).await;
+    let banner = last_banner();
+    let btns = banner.query_selector_all(".banner-option").expect("query");
+    assert_eq!(
+        btns.length(),
+        1,
+        "only the Global option renders as a button"
+    );
+    let btn = btns
+        .item(0)
+        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .expect("the one banner button");
+    assert_eq!(btn.text_content().unwrap_or_default(), "Some global");
+    btn.click();
+    leptos::task::tick().await;
+    let msg = rx.try_recv().expect("a frame after tick");
+    match msg {
+        ClientMessage::Submit {
+            action: PlayerAction::ResolveInput { response },
+        } => assert_eq!(response, InputResponse::PickSingle(OptionId(1))),
+        other @ ClientMessage::Submit { .. } => panic!("expected PickSingle, got {other:?}"),
+    }
+}
