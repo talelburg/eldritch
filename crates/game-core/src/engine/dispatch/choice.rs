@@ -301,6 +301,9 @@ mod tests {
         let EngineOutcome::AwaitingInput { request, .. } = out else {
             panic!("expected AwaitingInput");
         };
-        assert!(request.options.iter().all(|o| o.target == OptionTarget::Global));
+        assert!(request
+            .options
+            .iter()
+            .all(|o| o.target == OptionTarget::Global));
     }
 }

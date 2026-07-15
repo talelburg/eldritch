@@ -5100,7 +5100,10 @@ mod tests {
         );
         match out {
             Err(EngineOutcome::AwaitingInput { request, .. }) => {
-                assert!(request.options.iter().all(|o| o.target == OptionTarget::Global));
+                assert!(request
+                    .options
+                    .iter()
+                    .all(|o| o.target == OptionTarget::Global));
             }
             other => panic!("2 candidates suspend, got {other:?}"),
         }

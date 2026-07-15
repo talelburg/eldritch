@@ -2046,7 +2046,10 @@ mod combat_tests {
         let opts = super::soak_options(&targets);
         // Anchors: the investigator has no card home; a soaker asset points at its card.
         assert_eq!(opts[0].target, OptionTarget::Global);
-        assert_eq!(opts[1].target, OptionTarget::CardInstance(CardInstanceId(7)));
+        assert_eq!(
+            opts[1].target,
+            OptionTarget::CardInstance(CardInstanceId(7))
+        );
         // Labels unchanged from the former `hunters::candidate_options` debug repr.
         assert_eq!(opts[0].label, "Investigator");
         assert_eq!(opts[1].label, "Asset(CardInstanceId(7))");
