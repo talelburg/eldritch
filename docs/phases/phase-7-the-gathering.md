@@ -288,12 +288,30 @@ the now-stable set of input shapes:
       just its Pass), so such options have a visible home. A load-bearing early piece of S6 (bar
       retirement then relies on the banner as the catch-all for un-anchored options); ordering is
       #550 → S5 → S6.
-    - **S5–S6** (#540–#541) queued: **S5 next** (act-advance menu on the act card, interactive soak,
-      effect `ChooseOne` — the act menu is a prerequisite for retiring the bar, since `AdvanceAct`
-      anchors to `OptionTarget::Act`), then **S6** (global-action homes + bar retirement). The shared
-      `menu_layer` / fixed-at-cursor + `PromptBanner` (now also skippable windows, options included)
-      are the seams they extend; new anchors inside a `z-index`ed ancestor must float their menu like
-      the map node.
+    - **S5 — act-advance menu + interactive soak + effect choices (#540, PR #552).** Re-anchors the
+      last three `Global` prompt families onto their board entities. Engine: soak options →
+      `CardInstance` (a soak-local `soak_options` builder in `combat.rs`; the shared
+      `hunters::candidate_options` and its five other callers are untouched); effect `ChooseOne` →
+      `Enemy`/`Location` (a `target` closure threaded through `resolve_grounded_choice` into a new
+      `choice::awaiting_choice_anchored`); the round-end act-advance reaction → `OptionTarget::Act`
+      (`build_resolution_options` maps a `CandidateSource::Board` candidate whose code is the current
+      act, via `current_act_code`), so open-turn *and* round-end advance share the act-card home under
+      one matcher. Web: the act renders as a glow-capable `ActCard` (mirrors `EnemyCard`, the only new
+      component); soak/choice glow for free via the existing `InPlayCardView` (`CardInstance`) and
+      `EnemyCard`/`location_map` (`Enemy`/`Location`) matchers. The `PromptBanner` now filters its
+      option buttons to `Global` only (anchored options have card homes) — a load-bearing early piece
+      of S6's bar retirement. Anchors stay **display-only** (resolve indexes `candidates[i]` by the
+      echoed `OptionId`, never the anchor). **Deferred (still `Global`):** #492 (surfacing
+      single-option soak/attack-order auto-binds — a surfacing-gate change, its own PR),
+      investigator-choice (`ground_investigator_choice`), agenda `Board` reactions (no
+      `OptionTarget::Agenda`), and `step_choose_one` effect-branch choices (no board entity). Plan:
+      `docs/superpowers/plans/2026-07-15-interactivity-s5-act-soak-effect-choices.md`.
+    - **S6 — globals + bar retirement (#541), the closer, queued.** Homes for the genuinely-global
+      End turn / Gain resource / Draw + an encounter-deck element for the draw `Confirm`, then
+      **delete `.action-bar`** (folding picker + skill-test-result into their own surfaces). The
+      shared `menu_layer` / fixed-at-cursor + `PromptBanner` (now `Global`-only options) are the seams
+      it extends; the banner is the catch-all for any remaining un-anchored option. New anchors inside
+      a `z-index`ed ancestor must float their menu like the map node.
     - **Investigator panel rework (#547, PR #548) — display-only.** The investigator card is the home
       for the character's live state: skills (W/I/C/A) + hp/san folded onto the card, actions (pips)/
       resources/clues/status beside it, next to the hand; the loose stats line + the map-redundant
