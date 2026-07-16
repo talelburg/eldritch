@@ -471,9 +471,10 @@ pub enum Continuation {
     /// pick so the player "performs" it before it lands (#466). Pushed by
     /// `fire_forced_triggers` (the single-hit path) *above* the forced effect's
     /// root frame; the `drive` loop suspends here, and on resume pops, letting the
-    /// effect frame beneath resolve. `source` is the card the forced ability is
-    /// printed on (for the prompt's display name).
-    AcknowledgeForced { source: CardCode },
+    /// effect frame beneath resolve. `candidate` is the forced ability's
+    /// [`ResolutionCandidate`] — its `code` names the prompt and its `source`
+    /// anchors the option to its source card (an in-play instance, or the act) (#553).
+    AcknowledgeForced { candidate: ResolutionCandidate },
     /// A skill test is mid-resolution. Carries the in-flight test's data
     /// directly (the former `GameState::in_flight_skill_test` singleton, folded
     /// onto the frame — #348). Pushed at test start; popped when the test fully

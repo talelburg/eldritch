@@ -170,7 +170,7 @@ pub(crate) fn fire_forced_triggers(
                 cx.state
                     .continuations
                     .push(crate::state::Continuation::AcknowledgeForced {
-                        source: hit.code.clone(),
+                        candidate: hit.clone(),
                     });
             }
             out
@@ -526,18 +526,20 @@ fn forced_source_name(code: &CardCode) -> String {
 /// Mirrors `advance_reverse::drive`'s `AwaitAck` suspend.
 pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
     use crate::engine::{ChoiceOption, InputRequest, OptionId, ResumeToken};
-    let Some(crate::state::Continuation::AcknowledgeForced { source }) =
+    let Some(crate::state::Continuation::AcknowledgeForced { candidate }) =
         cx.state.continuations.last()
     else {
         return EngineOutcome::Rejected {
             reason: "drive_acknowledge_forced: top frame is not AcknowledgeForced".into(),
         };
     };
-    let name = forced_source_name(source);
+    let name = forced_source_name(&candidate.code);
+    let act = super::reaction_windows::current_act_code(cx.state);
+    let anchor = super::reaction_windows::candidate_anchor(candidate, act.as_ref());
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
             format!("Forced — {name}"),
-            vec![ChoiceOption::global(OptionId(0), "Resolve")],
+            vec![ChoiceOption::new(OptionId(0), "Resolve", anchor)],
         ),
         resume_token: ResumeToken(0),
     }
@@ -581,7 +583,12 @@ mod tests {
 
         let mut state = GameStateBuilder::default().build();
         state.continuations.push(Continuation::AcknowledgeForced {
-            source: CardCode("01113".into()),
+            candidate: ResolutionCandidate::new(
+                CardCode::new("01113"),
+                InvestigatorId(1),
+                0,
+                CandidateSource::Board,
+            ),
         });
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -618,7 +625,12 @@ mod tests {
         // and leaves the frame in place.
         let mut state = GameStateBuilder::default().build();
         state.continuations.push(Continuation::AcknowledgeForced {
-            source: CardCode("01113".into()),
+            candidate: ResolutionCandidate::new(
+                CardCode::new("01113"),
+                InvestigatorId(1),
+                0,
+                CandidateSource::Board,
+            ),
         });
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -634,5 +646,39 @@ mod tests {
             ),
             "a rejected resume must leave the frame in place"
         );
+    }
+
+    #[test]
+    fn acknowledge_forced_anchors_the_option_to_its_source_card() {
+        use crate::engine::OptionTarget;
+        use crate::state::Continuation;
+        use crate::test_support::GameStateBuilder;
+
+        // A forced ability on an in-play instance surfaces a one-option pick
+        // anchored to that card (#553), not Global.
+        let mut state = GameStateBuilder::default().build();
+        state.continuations.push(Continuation::AcknowledgeForced {
+            candidate: ResolutionCandidate::new(
+                CardCode::new("01020"),
+                InvestigatorId(1),
+                0,
+                CandidateSource::InPlay(CardInstanceId(5)),
+            ),
+        });
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        match super::drive_acknowledge_forced(&mut cx) {
+            EngineOutcome::AwaitingInput { request, .. } => {
+                assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
+                assert_eq!(
+                    request.options[0].target,
+                    OptionTarget::CardInstance(CardInstanceId(5)),
+                );
+            }
+            other => panic!("expected one-option suspend, got {other:?}"),
+        }
     }
 }
