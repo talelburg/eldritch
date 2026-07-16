@@ -563,7 +563,9 @@ pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
     };
     let name = forced_source_name(&candidate.code);
     let act = super::reaction_windows::current_act_code(cx.state);
-    let anchor = super::reaction_windows::candidate_anchor(candidate, act.as_ref());
+    let agenda = super::reaction_windows::current_agenda_code(cx.state);
+    let anchor =
+        super::reaction_windows::candidate_anchor(candidate, act.as_ref(), agenda.as_ref());
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
             format!("Forced — {name}"),
@@ -740,6 +742,43 @@ mod tests {
                     request.options[0].target,
                     OptionTarget::Location(LocationId(3)),
                 );
+            }
+            other => panic!("expected one-option suspend, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn acknowledge_forced_anchors_an_agenda_source_to_the_agenda_card() {
+        use crate::engine::OptionTarget;
+        use crate::state::{Agenda, Continuation};
+        use crate::test_support::GameStateBuilder;
+
+        // A forced ability on the current agenda (What's Going On?! 01105's
+        // on-advance reverse) anchors its "Resolve" to the agenda card (#556).
+        let mut state = GameStateBuilder::default().build();
+        state.agenda_deck = vec![Agenda {
+            code: CardCode::new("01105"),
+            doom_threshold: 3,
+            resolution: None,
+        }];
+        state.agenda_index = 0;
+        state.continuations.push(Continuation::AcknowledgeForced {
+            candidate: ResolutionCandidate::new(
+                CardCode::new("01105"),
+                InvestigatorId(1),
+                0,
+                CandidateSource::Board,
+            ),
+        });
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        match super::drive_acknowledge_forced(&mut cx) {
+            EngineOutcome::AwaitingInput { request, .. } => {
+                assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
+                assert_eq!(request.options[0].target, OptionTarget::Agenda);
             }
             other => panic!("expected one-option suspend, got {other:?}"),
         }

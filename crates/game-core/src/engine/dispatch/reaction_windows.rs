@@ -600,14 +600,27 @@ pub(super) fn current_act_code(state: &GameState) -> Option<CardCode> {
         .map(|act| act.code.clone())
 }
 
+/// The current agenda's printed code, if the agenda deck is non-empty. The mirror
+/// of [`current_act_code`]; anchors an agenda-sourced forced effect to the agenda
+/// card (#556). Correct at forced-ack time even for an `AgendaAdvanced` reverse:
+/// the forced fires at `FireReverse`, before `Finalize` bumps `agenda_index`.
+pub(super) fn current_agenda_code(state: &GameState) -> Option<CardCode> {
+    state
+        .agenda_deck
+        .get(state.agenda_index)
+        .map(|agenda| agenda.code.clone())
+}
+
 /// The board anchor for a resolution candidate's source: an in-play instance to
 /// its card (#539); a location's own forced ability to its map node (the Attic's
 /// horror, #553); a Fast hand event by code — every copy (#539); a board-wide
-/// effect to the act card when its code is the current act, else no card home
-/// (#540/#553). Shared by [`build_resolution_options`] and the forced-ack path.
+/// effect to the act or agenda card when its code matches the current one, else no
+/// card home (#540/#553/#556). Shared by [`build_resolution_options`] and the
+/// forced-ack path.
 pub(super) fn candidate_anchor(
     cand: &ResolutionCandidate,
     current_act: Option<&CardCode>,
+    current_agenda: Option<&CardCode>,
 ) -> crate::engine::OptionTarget {
     use crate::engine::OptionTarget;
     match cand.source {
@@ -620,6 +633,8 @@ pub(super) fn candidate_anchor(
         CandidateSource::Board => {
             if current_act == Some(&cand.code) {
                 OptionTarget::Act
+            } else if current_agenda == Some(&cand.code) {
+                OptionTarget::Agenda
             } else {
                 OptionTarget::Global
             }
@@ -635,6 +650,7 @@ pub(super) fn candidate_anchor(
 fn build_resolution_options(
     candidates: &[ResolutionCandidate],
     current_act: Option<&CardCode>,
+    current_agenda: Option<&CardCode>,
 ) -> Vec<ChoiceOption> {
     candidates
         .iter()
@@ -651,7 +667,11 @@ fn build_resolution_options(
                     format!("Resolve reaction: {}", cand.code)
                 }
             };
-            ChoiceOption::new(id, label, candidate_anchor(cand, current_act))
+            ChoiceOption::new(
+                id,
+                label,
+                candidate_anchor(cand, current_act, current_agenda),
+            )
         })
         .collect()
 }
@@ -676,11 +696,13 @@ pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
         ", or InputResponse::Skip to close"
     };
     let current_act = current_act_code(cx.state);
+    let current_agenda = current_agenda_code(cx.state);
     let options = build_resolution_options(
         window
             .pending_candidates()
             .expect("open_queued_reaction_window: top window has candidates"),
         current_act.as_ref(),
+        current_agenda.as_ref(),
     );
     let mut request = InputRequest::pick_single(
         format!(
@@ -993,7 +1015,9 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
         ", or InputResponse::Skip to close"
     };
     let current_act = current_act_code(cx.state);
-    let options = build_resolution_options(candidates, current_act.as_ref());
+    let current_agenda = current_agenda_code(cx.state);
+    let options =
+        build_resolution_options(candidates, current_act.as_ref(), current_agenda.as_ref());
     let mut request = InputRequest::pick_single(
         format!(
             "Resolution window: {} option(s). \
@@ -2168,7 +2192,7 @@ mod resolution_option_anchor_tests {
                 source: CandidateSource::Board,
             },
         ];
-        let opts = build_resolution_options(&cands, None);
+        let opts = build_resolution_options(&cands, None, None);
         assert_eq!(
             opts[0].target,
             OptionTarget::CardInstance(CardInstanceId(9))
@@ -2202,7 +2226,7 @@ mod resolution_option_anchor_tests {
                 source: CandidateSource::Board,
             },
         ];
-        let opts = build_resolution_options(&cands, Some(&act));
+        let opts = build_resolution_options(&cands, Some(&act), None);
         assert_eq!(opts[0].target, OptionTarget::Act);
         assert_eq!(opts[1].target, OptionTarget::Global);
     }
@@ -2214,6 +2238,7 @@ mod resolution_option_anchor_tests {
             CardCode, CardInstanceId, InvestigatorId, LocationId, ResolutionCandidate,
         };
         let act = CardCode::new("01109");
+        let agenda = CardCode::new("01105");
         let inplay = ResolutionCandidate::new(
             CardCode::new("01020"),
             InvestigatorId(1),
@@ -2242,25 +2267,37 @@ mod resolution_option_anchor_tests {
             0,
             CandidateSource::Board,
         );
+        // A board candidate whose code is the current agenda anchors to the agenda
+        // card (What's Going On?! 01105's on-advance forced, #556).
+        let board_agenda =
+            ResolutionCandidate::new(agenda.clone(), InvestigatorId(1), 0, CandidateSource::Board);
         assert_eq!(
-            candidate_anchor(&inplay, Some(&act)),
+            candidate_anchor(&inplay, Some(&act), Some(&agenda)),
             OptionTarget::CardInstance(CardInstanceId(5))
         );
         assert_eq!(
-            candidate_anchor(&hand, Some(&act)),
+            candidate_anchor(&hand, Some(&act), Some(&agenda)),
             OptionTarget::HandCardByCode {
                 investigator: InvestigatorId(2),
                 code: CardCode::new("01022"),
             }
         );
-        assert_eq!(candidate_anchor(&board_act, Some(&act)), OptionTarget::Act);
+        // An act-coded board candidate still wins Act even with an agenda present.
         assert_eq!(
-            candidate_anchor(&board_other, Some(&act)),
+            candidate_anchor(&board_act, Some(&act), Some(&agenda)),
+            OptionTarget::Act
+        );
+        assert_eq!(
+            candidate_anchor(&board_other, Some(&act), Some(&agenda)),
             OptionTarget::Global
         );
         assert_eq!(
-            candidate_anchor(&location, Some(&act)),
+            candidate_anchor(&location, Some(&act), Some(&agenda)),
             OptionTarget::Location(LocationId(7))
+        );
+        assert_eq!(
+            candidate_anchor(&board_agenda, Some(&act), Some(&agenda)),
+            OptionTarget::Agenda
         );
     }
 }
