@@ -351,7 +351,7 @@ the now-stable set of input shapes:
       unchanged. **Advance-flip is shipped (slices 1–3):** a forced advance flips the card on-screen to its
       1b face showing the effect, then resolves there. Slice 4 (01110 `#466` suppression — a forced
       ability whose sole effect is an advance stacks a redundant `#466` ack over the flip's `AwaitAck`)
-      **deferred**, its own terminal once-per-scenario issue. The advance pick still double-renders
+      **deferred** to its own terminal once-per-scenario issue, #562. The advance pick still double-renders
       on-card *and* in the flat input bar (every anchored `PickSingle` does today); reconciled by S6/#541,
       not here.
     - **S6 — globals + bar retirement (#541), the closer, queued.** Homes for the genuinely-global

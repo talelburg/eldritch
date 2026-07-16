@@ -142,8 +142,9 @@ reverse name+text), which needs no art.
    forced-flip `PickSingle` / skips for chosen advances; `resume` accepts the pick.
    Covers agenda + chosen-act.
 3. **Web** — render front/reverse by `step`; reverse shows the ingested back text.
-4. **Later** — fold 01110's forced-ability advance into the flip (suppress its
-   redundant `#466`). Terminal / once-per-scenario; rides behind the common cases.
+4. **Later (#562)** — fold 01110's forced-ability advance into the flip (suppress
+   its redundant `#466`). Terminal / once-per-scenario; rides behind the common
+   cases.
 
 Slices 1–3 deliver the full flip for the agenda and the chosen act. Each is an
 independently reviewable PR; the flip is user-visible once slice 3 lands.
