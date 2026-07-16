@@ -7,7 +7,9 @@
 //! card-local natives. No replay, no separate choice frame (umbrella §3.4).
 
 use crate::action::InputResponse;
-use crate::engine::{ChoiceOption, Cx, EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::engine::{
+    ChoiceOption, Cx, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
+};
 use crate::state::{Continuation, EffectFrame};
 
 /// Outcome of applying the uniform resolve convention to a count of legal
@@ -34,19 +36,25 @@ pub fn resolve_choice_count(n: usize, interactive: bool) -> ChoiceResolution {
     }
 }
 
-/// Build the `AwaitingInput` for a controller choice from one render label per
-/// offered option, in offered order (`OptionId(i)` is the index). Pushes
-/// **nothing** — the suspending effect node's own `Leaf` frame stays on the
-/// stack as the prompt (#422); resume re-derives the option set and validates
-/// the pick by checked indexing.
-pub(crate) fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) -> EngineOutcome {
-    let options: Vec<ChoiceOption> = labels
+/// Build the `AwaitingInput` for a controller choice from one `(label, anchor)`
+/// per offered option, in offered order (`OptionId(i)` is the index). Like
+/// [`awaiting_choice`] but each option carries its board [`OptionTarget`] so a
+/// host renders it on the chosen entity (S5, #540). Pushes **nothing** — the
+/// suspending effect node's own `Leaf` frame stays on the stack as the prompt
+/// (#422); resume re-derives the option set and validates the pick by checked
+/// indexing.
+pub(crate) fn awaiting_choice_anchored(
+    prompt: impl Into<String>,
+    options: Vec<(String, OptionTarget)>,
+) -> EngineOutcome {
+    let options: Vec<ChoiceOption> = options
         .into_iter()
         .enumerate()
-        .map(|(i, label)| {
-            ChoiceOption::global(
+        .map(|(i, (label, target))| {
+            ChoiceOption::new(
                 OptionId(u32::try_from(i).expect("offered option count fits in u32")),
                 label,
+                target,
             )
         })
         .collect();
@@ -54,6 +62,20 @@ pub(crate) fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) ->
         request: InputRequest::pick_single(prompt, options),
         resume_token: ResumeToken(0),
     }
+}
+
+/// Build the `AwaitingInput` for a controller choice from one render label per
+/// offered option, each anchored `Global` (no board home). Delegates to
+/// [`awaiting_choice_anchored`]. Used by native-leaf choices and the effect-branch
+/// `ChooseOne`, whose options are not board entities.
+pub(crate) fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) -> EngineOutcome {
+    awaiting_choice_anchored(
+        prompt,
+        labels
+            .into_iter()
+            .map(|l| (l, OptionTarget::Global))
+            .collect(),
+    )
 }
 
 /// Suspend a card-local native leaf for a controller pick (#422): build the
@@ -251,5 +273,37 @@ mod tests {
             matches!(out, EngineOutcome::Done),
             "flag off: auto-binds, no suspend"
         );
+    }
+
+    #[test]
+    fn awaiting_choice_anchored_carries_per_option_targets() {
+        use crate::engine::OptionTarget;
+        use crate::state::EnemyId;
+        let out = awaiting_choice_anchored(
+            "Choose an enemy",
+            vec![
+                ("Ghoul".into(), OptionTarget::Enemy(EnemyId(1))),
+                ("Nobody".into(), OptionTarget::Global),
+            ],
+        );
+        let EngineOutcome::AwaitingInput { request, .. } = out else {
+            panic!("expected AwaitingInput");
+        };
+        assert_eq!(request.options[0].id, OptionId(0));
+        assert_eq!(request.options[0].target, OptionTarget::Enemy(EnemyId(1)));
+        assert_eq!(request.options[1].target, OptionTarget::Global);
+    }
+
+    #[test]
+    fn awaiting_choice_defaults_every_option_to_global() {
+        use crate::engine::OptionTarget;
+        let out = awaiting_choice("Pick", vec!["x".into(), "y".into()]);
+        let EngineOutcome::AwaitingInput { request, .. } = out else {
+            panic!("expected AwaitingInput");
+        };
+        assert!(request
+            .options
+            .iter()
+            .all(|o| o.target == OptionTarget::Global));
     }
 }

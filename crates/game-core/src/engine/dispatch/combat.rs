@@ -853,6 +853,26 @@ fn credit_point(assignment: &mut Assignment, target: DistributionTarget, damage_
     }
 }
 
+/// Build the per-point soak options, anchoring each to its board home so a host
+/// renders it on the right card (S5, #540): a soaker asset to its card instance,
+/// the investigator to `Global` (no card). Labels match the former
+/// `hunters::candidate_options` debug repr, so the flat bar is byte-unchanged.
+fn soak_options(targets: &[DistributionTarget]) -> Vec<crate::engine::ChoiceOption> {
+    use crate::engine::{ChoiceOption, OptionId, OptionTarget};
+    targets
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let id = OptionId(u32::try_from(i).expect("soak target count fits u32"));
+            let target = match t {
+                DistributionTarget::Asset(instance) => OptionTarget::CardInstance(*instance),
+                DistributionTarget::Investigator => OptionTarget::Global,
+            };
+            ChoiceOption::new(id, format!("{t:?}"), target)
+        })
+        .collect()
+}
+
 /// Build the `PickSingle` over the eligible targets for the next point (the top
 /// `DamageAssignment` frame must already be in place). Damage points precede horror.
 fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
@@ -876,7 +896,7 @@ fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
          ({rd} damage / {rh} horror left)"
     );
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(prompt, super::hunters::candidate_options(&targets)),
+        request: InputRequest::pick_single(prompt, soak_options(&targets)),
         resume_token: ResumeToken(0),
     }
 }
@@ -2013,5 +2033,25 @@ mod combat_tests {
             "damage() accessor must read from investigator_card"
         );
         assert!(!defeated, "3 < 8 health — investigator not defeated");
+    }
+
+    #[test]
+    fn soak_options_anchor_assets_to_card_instances() {
+        use crate::engine::OptionTarget;
+        use crate::state::CardInstanceId;
+        let targets = vec![
+            super::DistributionTarget::Investigator,
+            super::DistributionTarget::Asset(CardInstanceId(7)),
+        ];
+        let opts = super::soak_options(&targets);
+        // Anchors: the investigator has no card home; a soaker asset points at its card.
+        assert_eq!(opts[0].target, OptionTarget::Global);
+        assert_eq!(
+            opts[1].target,
+            OptionTarget::CardInstance(CardInstanceId(7))
+        );
+        // Labels unchanged from the former `hunters::candidate_options` debug repr.
+        assert_eq!(opts[0].label, "Investigator");
+        assert_eq!(opts[1].label, "Asset(CardInstanceId(7))");
     }
 }

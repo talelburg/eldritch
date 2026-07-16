@@ -7,7 +7,9 @@
 
 use std::collections::BTreeSet;
 
-use game_core::{ChoiceOption, EngineOutcome, InputKind, InputResponse, OptionId, PlayerAction};
+use game_core::{
+    ChoiceOption, EngineOutcome, InputKind, InputResponse, OptionId, OptionTarget, PlayerAction,
+};
 use leptos::prelude::*;
 use protocol::ClientMessage;
 
@@ -17,8 +19,9 @@ use crate::transport::OutboundTx;
 
 /// The bottom-fixed prompt banner. Renders nothing unless the live prompt is a
 /// `PickMultiple` commit or a skippable window; for a skippable window it also
-/// renders the window's `PickSingle` options as buttons (#549), so a
-/// `Board`/`Global` option reachable nowhere else has a home.
+/// renders the window's **un-anchored** (`Global`) `PickSingle` options as buttons
+/// (#549/#540), so an option reachable nowhere else has a home (anchored options
+/// live on their board cards).
 #[component]
 pub fn PromptBanner() -> impl IntoView {
     let store = use_store();
@@ -38,13 +41,14 @@ pub fn PromptBanner() -> impl IntoView {
             }
             let prompt = request.prompt.clone();
 
-            // Option buttons — a skippable window's `PickSingle` options
-            // (`PickMultiple` carries none). This homes `Board`/`Global` window
-            // options that live nowhere else — e.g. the round-end act-advance
-            // reaction (#549), which the sticky bar hid behind this banner.
+            // Option buttons — a skippable window's **un-anchored** (`Global`)
+            // `PickSingle` options only; anchored options have board homes (S5,
+            // #540). This still homes a genuinely-`Global`/`Board` window option
+            // that lives nowhere else (the catch-all the bar retirement relies on).
             let option_btns: Vec<_> = request
                 .options
                 .iter()
+                .filter(|opt| opt.target == OptionTarget::Global)
                 .cloned()
                 .map(|opt: ChoiceOption| {
                     let ChoiceOption { id, label, .. } = opt;

@@ -1594,17 +1594,21 @@ fn ground_chosen_targets(
 /// `Leaf` step re-pushes itself as the suspension). `bind` applies the chosen
 /// id to the context; resume re-enumerates the same deterministic candidate list
 /// and indexes it.
+// Six closures/params past the resolver essentials (S5 added the `target`
+// anchor); a param struct would obscure the four thin `ground_*` call sites.
+#[allow(clippy::too_many_arguments)]
 fn resolve_grounded_choice<Id: Copy>(
     eval_ctx: EvalContext,
     candidates: &[Id],
     empty_reason: &'static str,
     prompt: &'static str,
     label: impl Fn(&Id) -> String,
+    target: impl Fn(&Id) -> crate::engine::OptionTarget,
     bind: impl Fn(Id) -> EvalContext,
     interactive: bool,
 ) -> Result<EvalContext, EngineOutcome> {
     use crate::engine::dispatch::choice::{
-        awaiting_choice, resolve_choice_count, ChoiceResolution,
+        awaiting_choice_anchored, resolve_choice_count, ChoiceResolution,
     };
     match resolve_choice_count(candidates.len(), interactive) {
         ChoiceResolution::Empty => Err(EngineOutcome::Rejected {
@@ -1624,8 +1628,11 @@ fn resolve_grounded_choice<Id: Copy>(
                     }),
                 }
             } else {
-                let labels = candidates.iter().map(label).collect();
-                Err(awaiting_choice(prompt, labels))
+                let options = candidates
+                    .iter()
+                    .map(|id| (label(id), target(id)))
+                    .collect();
+                Err(awaiting_choice_anchored(prompt, options))
             }
         }
     }
@@ -1647,6 +1654,7 @@ fn ground_investigator_choice(
         "Chosen investigator: no candidate in scope",
         "Choose an investigator",
         |id| format!("{id:?}"),
+        |_id| crate::engine::OptionTarget::Global, // investigator-choice anchoring is out of S5 scope
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_investigator(id);
@@ -1672,6 +1680,7 @@ fn ground_location_choice(
         "Chosen location: no candidate in scope",
         "Choose a location",
         |id| format!("{id:?}"),
+        |id| crate::engine::OptionTarget::Location(*id),
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_location(id);
@@ -1697,6 +1706,7 @@ fn ground_enemy_choice(
         "Chosen enemy: no candidate in scope",
         "Choose an enemy",
         |id| format!("{id:?}"),
+        |id| crate::engine::OptionTarget::Enemy(*id),
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_enemy(id);
@@ -1737,6 +1747,7 @@ fn ground_fight_target_choice(
         "Fight: no enemy at your location",
         "Choose an enemy to attack",
         |id| format!("{id:?}"),
+        |id| crate::engine::OptionTarget::Enemy(*id),
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_enemy(id);
@@ -5046,5 +5057,55 @@ mod tests {
         inv2.investigator_card.code = CardCode::new("PLAIN");
         let state2 = GameStateBuilder::new().with_investigator(inv2).build();
         assert_eq!(super::elder_sign_modifier(&state2, &registry, inv_id2), 0);
+    }
+
+    #[test]
+    fn grounded_choice_anchors_enemy_options() {
+        use crate::engine::{EngineOutcome, OptionTarget};
+        let ctx = super::EvalContext::for_controller(InvestigatorId(1));
+        let cands = [EnemyId(4), EnemyId(9)];
+        let out = super::resolve_grounded_choice(
+            ctx,
+            &cands,
+            "empty",
+            "Choose an enemy",
+            |id| format!("{id:?}"),
+            |id| OptionTarget::Enemy(*id),
+            |_id| ctx,
+            false, // 2 candidates → suspend regardless of the flag
+        );
+        match out {
+            Err(EngineOutcome::AwaitingInput { request, .. }) => {
+                assert_eq!(request.options[0].target, OptionTarget::Enemy(EnemyId(4)));
+                assert_eq!(request.options[1].target, OptionTarget::Enemy(EnemyId(9)));
+            }
+            other => panic!("2 candidates suspend for a pick, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn grounded_choice_investigator_stays_global() {
+        use crate::engine::{EngineOutcome, OptionTarget};
+        let ctx = super::EvalContext::for_controller(InvestigatorId(1));
+        let cands = [InvestigatorId(1), InvestigatorId(2)];
+        let out = super::resolve_grounded_choice(
+            ctx,
+            &cands,
+            "empty",
+            "Choose an investigator",
+            |id| format!("{id:?}"),
+            |_id| OptionTarget::Global, // out of scope for S5
+            |_id| ctx,
+            false,
+        );
+        match out {
+            Err(EngineOutcome::AwaitingInput { request, .. }) => {
+                assert!(request
+                    .options
+                    .iter()
+                    .all(|o| o.target == OptionTarget::Global));
+            }
+            other => panic!("2 candidates suspend, got {other:?}"),
+        }
     }
 }

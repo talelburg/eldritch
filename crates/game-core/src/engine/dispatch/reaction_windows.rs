@@ -590,12 +590,25 @@ fn trigger_matches(
     }
 }
 
+/// The current act's card code, if an act deck is loaded — used to anchor the
+/// round-end act-advance reaction (a [`CandidateSource::Board`] candidate whose
+/// code is the act) to the act card (S5, #540). `None` for fixtures with no act.
+fn current_act_code(state: &GameState) -> Option<CardCode> {
+    state
+        .act_deck
+        .get(state.act_index)
+        .map(|act| act.code.clone())
+}
+
 /// Build the structured option list for a resolution frame: one
 /// [`ChoiceOption`] per pending candidate, in `pending_triggers` order.
 /// `OptionId(i)` is the index into the returned list — the Axis-A convention
 /// shared with [`super::choice`]. The label distinguishes a hand Fast-event
 /// play ([`CandidateSource::Hand`]) from an in-play reaction.
-fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOption> {
+fn build_resolution_options(
+    candidates: &[ResolutionCandidate],
+    current_act: Option<&CardCode>,
+) -> Vec<ChoiceOption> {
     candidates
         .iter()
         .enumerate()
@@ -603,7 +616,8 @@ fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOpt
             let id = OptionId(u32::try_from(i).expect("option count fits in u32"));
             // Anchor the option to its source card so a host can render it there
             // (#539): an in-play reaction on its card instance; a Fast hand event
-            // by code (every copy); a board-wide effect has no card.
+            // by code (every copy); a board-wide effect has no card — except the
+            // round-end act-advance, whose Board candidate is the act (#540).
             let (label, target) = match cand.source {
                 CandidateSource::Hand => (
                     format!("Play {} from hand", cand.code),
@@ -616,10 +630,17 @@ fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOpt
                     format!("Resolve reaction: {}", cand.code),
                     crate::engine::OptionTarget::CardInstance(instance_id),
                 ),
-                CandidateSource::Board => (
-                    format!("Resolve reaction: {}", cand.code),
-                    crate::engine::OptionTarget::Global,
-                ),
+                CandidateSource::Board => {
+                    // The round-end act-advance reaction is the one Board candidate
+                    // whose code is the current act → anchor it to the act card
+                    // (#540). Any other board-wide reaction has no card home.
+                    let target = if current_act == Some(&cand.code) {
+                        crate::engine::OptionTarget::Act
+                    } else {
+                        crate::engine::OptionTarget::Global
+                    };
+                    (format!("Resolve reaction: {}", cand.code), target)
+                }
             };
             ChoiceOption::new(id, label, target)
         })
@@ -645,10 +666,12 @@ pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
     } else {
         ", or InputResponse::Skip to close"
     };
+    let current_act = current_act_code(cx.state);
     let options = build_resolution_options(
         window
             .pending_candidates()
             .expect("open_queued_reaction_window: top window has candidates"),
+        current_act.as_ref(),
     );
     let mut request = InputRequest::pick_single(
         format!(
@@ -960,7 +983,8 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
     } else {
         ", or InputResponse::Skip to close"
     };
-    let options = build_resolution_options(candidates);
+    let current_act = current_act_code(cx.state);
+    let options = build_resolution_options(candidates, current_act.as_ref());
     let mut request = InputRequest::pick_single(
         format!(
             "Resolution window: {} option(s). \
@@ -2132,7 +2156,7 @@ mod resolution_option_anchor_tests {
                 source: CandidateSource::Board,
             },
         ];
-        let opts = build_resolution_options(&cands);
+        let opts = build_resolution_options(&cands, None);
         assert_eq!(
             opts[0].target,
             OptionTarget::CardInstance(CardInstanceId(9))
@@ -2145,6 +2169,30 @@ mod resolution_option_anchor_tests {
             }
         );
         assert_eq!(opts[2].target, OptionTarget::Global);
+    }
+
+    #[test]
+    fn board_candidate_matching_current_act_anchors_to_act() {
+        use crate::engine::OptionTarget;
+        use crate::state::{CardCode, InvestigatorId, ResolutionCandidate};
+        let act = CardCode::new("01109");
+        let cands = vec![
+            ResolutionCandidate {
+                code: act.clone(), // the round-end act-advance reaction
+                controller: InvestigatorId(1),
+                ability_index: 0,
+                source: CandidateSource::Board,
+            },
+            ResolutionCandidate {
+                code: CardCode::new("_other_board"), // some other board-wide reaction
+                controller: InvestigatorId(1),
+                ability_index: 0,
+                source: CandidateSource::Board,
+            },
+        ];
+        let opts = build_resolution_options(&cands, Some(&act));
+        assert_eq!(opts[0].target, OptionTarget::Act);
+        assert_eq!(opts[1].target, OptionTarget::Global);
     }
 }
 
