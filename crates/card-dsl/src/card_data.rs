@@ -235,12 +235,17 @@ pub struct CardMetadata {
     pub traits: Vec<String>,
     /// Card text (game rules text), as printed.
     pub text: Option<String>,
-    /// Reverse-side display name (double-sided act/agenda cards — the "1b" face,
-    /// e.g. `"A Lapse in Time"`). `None` for single-sided cards. From `ArkhamDB`
-    /// `back_name`.
+    /// Reverse-side display name, verbatim from `ArkhamDB` `back_name`. The
+    /// motivating case is the act/agenda "1b" face (e.g. `"A Lapse in Time"`),
+    /// but the field carries whatever back name a double-sided card prints
+    /// (also many locations); `None` when absent.
     pub back_name: Option<String>,
-    /// Reverse-side rules text (the on-advance effect printed on the "1b" face).
-    /// `None` for single-sided cards. From `ArkhamDB` `back_text`.
+    /// Reverse-side text, verbatim from `ArkhamDB` `back_text`. For an
+    /// act/agenda this is the on-advance effect on the "1b" face — but the
+    /// field is generic (locations carry reverse rules; investigator backs
+    /// carry the deckbuilding block), so a consumer keying off "advance
+    /// effect" must first confirm the card is an act/agenda. `None` when
+    /// absent.
     pub back_text: Option<String>,
     /// Pack code this card belongs to (e.g. `"core"`, `"dwl"`).
     pub pack_code: String,
