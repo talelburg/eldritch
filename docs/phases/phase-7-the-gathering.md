@@ -319,6 +319,16 @@ the now-stable set of input shapes:
       sites states its origin); `candidate_anchor` maps `Location → OptionTarget::Location`, so both the
       ack path and the ordered run glow the map node (S1's existing matcher). Plan:
       `docs/superpowers/plans/2026-07-16-forced-effect-card-anchor.md`.
+    - **Agenda forced anchor (#556, PR #557) — act↔agenda parity.** The agenda was the last board
+      card rendered display-only while the act (`ActCard`) glowed beside it. Added `OptionTarget::Agenda`
+      + `current_agenda_code` + a `candidate_anchor` agenda arm (`Board` code == current agenda →
+      `Agenda`), so an agenda-sourced forced ack (What's Going On?! 01105's on-advance reverse) glows the
+      agenda and offers "Resolve" there — single-hit ack and the ordered run both anchor. Web: an
+      interactive `AgendaCard` mirrors `ActCard`. Timing verified: the `AgendaAdvanced` forced fires at
+      `FireReverse`, before `Finalize` bumps `agenda_index`, so the equality anchor holds for the advance.
+      The effect-internal `ChooseOne` on such agendas (01105's discard-vs-horror) stays `Global` — the
+      general effect-source-anchor machinery is deferred to #555. Plan:
+      `docs/superpowers/plans/2026-07-16-agenda-forced-anchor.md`.
     - **S6 — globals + bar retirement (#541), the closer, queued.** Homes for the genuinely-global
       End turn / Gain resource / Draw + an encounter-deck element for the draw `Confirm`, then
       **delete `.action-bar`** (folding picker + skill-test-result into their own surfaces). The
