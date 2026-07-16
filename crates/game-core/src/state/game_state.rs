@@ -2445,6 +2445,8 @@ mod add_location_tests {
             name: name.to_string(),
             traits: vec![],
             text: None,
+            back_name: None,
+            back_text: None,
             pack_code: "core".to_string(),
             weakness: false,
             kind: CardKind::Location {
@@ -2492,6 +2494,8 @@ mod add_location_tests {
             name: name.to_string(),
             traits: vec![],
             text: None,
+            back_name: None,
+            back_text: None,
             pack_code: "core".to_string(),
             weakness: false,
             kind: CardKind::Enemy {
@@ -2539,6 +2543,8 @@ mod add_location_tests {
             name: "Trapped".to_string(),
             traits: vec![],
             text: None,
+            back_name: None,
+            back_text: None,
             pack_code: "core".to_string(),
             weakness: false,
             kind: CardKind::Act {

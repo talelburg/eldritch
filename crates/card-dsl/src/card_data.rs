@@ -235,6 +235,13 @@ pub struct CardMetadata {
     pub traits: Vec<String>,
     /// Card text (game rules text), as printed.
     pub text: Option<String>,
+    /// Reverse-side display name (double-sided act/agenda cards — the "1b" face,
+    /// e.g. `"A Lapse in Time"`). `None` for single-sided cards. From `ArkhamDB`
+    /// `back_name`.
+    pub back_name: Option<String>,
+    /// Reverse-side rules text (the on-advance effect printed on the "1b" face).
+    /// `None` for single-sided cards. From `ArkhamDB` `back_text`.
+    pub back_text: Option<String>,
     /// Pack code this card belongs to (e.g. `"core"`, `"dwl"`).
     pub pack_code: String,
     /// Whether this card is a weakness (`ArkhamDB` subtype `"weakness"` or
@@ -638,6 +645,8 @@ mod is_fast_tests {
             name: "Magnifying Glass".into(),
             text: Some("Fast.\nYou get +1 [intellect] while investigating.".into()),
             traits: vec!["Item".into(), "Tool".into()],
+            back_name: None,
+            back_text: None,
             pack_code: "core".into(),
             weakness: false,
             kind: CardKind::Asset {
@@ -667,6 +676,8 @@ mod is_fast_tests {
             name: "Mind over Matter".into(),
             traits: vec!["Insight".into()],
             text: Some("Fast. Play only during your turn. …".into()),
+            back_name: None,
+            back_text: None,
             pack_code: "core".into(),
             weakness: false,
             kind: CardKind::Event {
@@ -690,6 +701,8 @@ mod is_fast_tests {
             name: "Physical Training".into(),
             traits: vec![],
             text: None,
+            back_name: None,
+            back_text: None,
             pack_code: "core".into(),
             weakness: false,
             kind: CardKind::Asset {
@@ -715,6 +728,8 @@ mod is_fast_tests {
             name: "Emergency Cache".into(),
             traits: vec![],
             text: None,
+            back_name: None,
+            back_text: None,
             pack_code: "core".into(),
             weakness: false,
             kind: CardKind::Event {
@@ -735,6 +750,8 @@ mod is_fast_tests {
             name: "Guts".into(),
             traits: vec![],
             text: None,
+            back_name: None,
+            back_text: None,
             pack_code: "core".into(),
             weakness: false,
             kind: CardKind::Skill {
@@ -767,6 +784,8 @@ mod is_fast_tests {
             name: "Synth Surge Treachery".into(),
             text: None,
             traits: Vec::new(),
+            back_name: None,
+            back_text: None,
             pack_code: "_synth".into(),
             weakness: false,
             kind: CardKind::Treachery {
@@ -795,6 +814,8 @@ mod is_fast_tests {
             name: "X".into(),
             traits: vec![],
             text: None,
+            back_name: None,
+            back_text: None,
             pack_code: "core".into(),
             weakness: false,
             kind: CardKind::Skill {
@@ -816,6 +837,8 @@ mod is_fast_tests {
             name: "Y".into(),
             traits: vec![],
             text: None,
+            back_name: None,
+            back_text: None,
             pack_code: "core".into(),
             weakness: false,
             kind: CardKind::Treachery {
@@ -835,6 +858,8 @@ mod is_fast_tests {
             name: "Study".into(),
             traits: vec![],
             text: None,
+            back_name: None,
+            back_text: None,
             pack_code: "core".into(),
             weakness: false,
             kind: CardKind::Location {
@@ -851,6 +876,8 @@ mod is_fast_tests {
             name: "Agenda".into(),
             traits: vec![],
             text: None,
+            back_name: None,
+            back_text: None,
             pack_code: "core".into(),
             weakness: false,
             kind: CardKind::Agenda { doom_threshold: 3 },
@@ -945,6 +972,8 @@ mod spawn_tests {
             name: "Synth Enemy".into(),
             text: None,
             traits: Vec::new(),
+            back_name: None,
+            back_text: None,
             pack_code: "_synth".into(),
             weakness: false,
             kind: CardKind::Enemy {
@@ -977,6 +1006,8 @@ mod spawn_tests {
             name: "Random Basic Weakness".into(),
             text: None,
             traits: Vec::new(),
+            back_name: None,
+            back_text: None,
             pack_code: "core".into(),
             weakness: false,
             kind: CardKind::Treachery {
@@ -1003,6 +1034,8 @@ mod slots_tests {
             name: "X".into(),
             text: None,
             traits: vec![],
+            back_name: None,
+            back_text: None,
             pack_code: "core".into(),
             weakness: false,
             kind: CardKind::Asset {
@@ -1026,6 +1059,8 @@ mod slots_tests {
             name: "Y".into(),
             text: None,
             traits: vec![],
+            back_name: None,
+            back_text: None,
             pack_code: "core".into(),
             weakness: false,
             kind: CardKind::Event {
@@ -1052,6 +1087,8 @@ mod is_weakness_tests {
             name: "Test".into(),
             text: None,
             traits: Vec::new(),
+            back_name: None,
+            back_text: None,
             pack_code: "_test".into(),
             weakness,
             kind: CardKind::Treachery {
