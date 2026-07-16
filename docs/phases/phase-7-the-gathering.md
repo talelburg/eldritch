@@ -333,8 +333,7 @@ the now-stable set of input shapes:
       an act/agenda advance into an on-card flip → resolve. This slice is pure data: `CardMetadata` gains
       `back_name`/`back_text` (verbatim ArkhamDB reverse side, generic across double-sided cards), the
       pipeline maps them, and the corpus regenerates (agenda 01105 → "A Lapse in Time"). Not user-visible
-      alone. Slice 3 (web front/reverse render, closes #558) follows; slice 4 (01110 `#466`
-      suppression) deferred. Design/plan: `docs/superpowers/specs/2026-07-16-advance-flip-design.md`,
+      alone. Design/plan: `docs/superpowers/specs/2026-07-16-advance-flip-design.md`,
       `docs/superpowers/plans/2026-07-16-advance-flip.md`.
     - **Advance-flip slice 2 — the on-card flip pick (#558, PR #560).** `Continuation::AdvanceReverse`
       gains an `AdvanceTrigger { Forced, Deliberate }`: a **forced** advance (agenda doom; act 01110 on
@@ -345,6 +344,16 @@ the now-stable set of input shapes:
       act-vs-agenda. Display-only anchor (resolve validates only the echoed `OptionId`). Engine-only —
       the client renders whatever it does for an anchored `PickSingle` until slice 3 draws the actual
       face flip.
+    - **Advance-flip slice 3 — render the flip (#558, PR #561), closes #558.** The `AdvanceReverse`
+      frame's `step` drives which face `ActCard`/`AgendaCard` render: front while `AwaitAck`, the reverse
+      (`back_name`/`back_text`, tagged `card--reverse`) from `FireReverse`/`Finalize` on — via a
+      `deck_face(game, deck)` pure fn. The glow/menu still come from `options_for(OptionTarget::Act/Agenda)`
+      unchanged. **Advance-flip is shipped (slices 1–3):** a forced advance flips the card on-screen to its
+      1b face showing the effect, then resolves there. Slice 4 (01110 `#466` suppression — a forced
+      ability whose sole effect is an advance stacks a redundant `#466` ack over the flip's `AwaitAck`)
+      **deferred**, its own terminal once-per-scenario issue. The advance pick still double-renders
+      on-card *and* in the flat input bar (every anchored `PickSingle` does today); reconciled by S6/#541,
+      not here.
     - **S6 — globals + bar retirement (#541), the closer, queued.** Homes for the genuinely-global
       End turn / Gain resource / Draw + an encounter-deck element for the draw `Confirm`, then
       **delete `.action-bar`** (folding picker + skill-test-result into their own surfaces). The
