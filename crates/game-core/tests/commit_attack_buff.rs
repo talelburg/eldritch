@@ -33,6 +33,8 @@ fn skill_metadata() -> CardMetadata {
             "If this skill test is successful during an attack, that attack deals +1 damage."
                 .to_owned(),
         ),
+        back_name: None,
+        back_text: None,
         pack_code: "_mock".to_owned(),
         weakness: false,
         kind: CardKind::Skill {

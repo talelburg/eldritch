@@ -44,6 +44,8 @@ fn asset_metadata(code: &str, name: &str, text: &str) -> CardMetadata {
         name: name.to_owned(),
         traits: vec!["Item".to_owned()],
         text: Some(text.to_owned()),
+        back_name: None,
+        back_text: None,
         pack_code: "_mock".to_owned(),
         weakness: false,
         kind: CardKind::Asset {

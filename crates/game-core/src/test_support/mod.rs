@@ -26,6 +26,8 @@ fn test_inv_metadata() -> &'static crate::card_data::CardMetadata {
         name: "Test Investigator".to_owned(),
         traits: vec![],
         text: None,
+        back_name: None,
+        back_text: None,
         pack_code: "_test".to_owned(),
         weakness: false,
         kind: CardKind::Investigator {

@@ -185,6 +185,8 @@ struct RawCard {
     code: String,
     name: Option<String>,
     text: Option<String>,
+    back_name: Option<String>,
+    back_text: Option<String>,
     traits: Option<String>,
     slot: Option<String>,
     cost: Option<i32>,
@@ -227,6 +229,8 @@ struct NormalizedCard {
     cost: Option<i8>,
     xp: Option<u8>,
     text: Option<String>,
+    back_name: Option<String>,
+    back_text: Option<String>,
     traits: Vec<String>,
     slots: Vec<&'static str>,
     skill_willpower: u8,
@@ -319,6 +323,8 @@ fn normalize(raw: RawCard) -> Result<NormalizedCard, String> {
         cost,
         xp: raw.xp.and_then(|n| u8::try_from(n).ok()),
         text: raw.text,
+        back_name: raw.back_name,
+        back_text: raw.back_text,
         traits: parse_traits(raw.traits.as_deref()),
         slots: parse_slots(raw.slot.as_deref()),
         skill_willpower: raw.skill_willpower.unwrap_or(0),
@@ -471,6 +477,16 @@ fn render_card(out: &mut String, c: &NormalizedCard) {
         out,
         "            text: {},",
         opt_owned_str(c.text.as_deref())
+    );
+    let _ = writeln!(
+        out,
+        "            back_name: {},",
+        opt_owned_str(c.back_name.as_deref())
+    );
+    let _ = writeln!(
+        out,
+        "            back_text: {},",
+        opt_owned_str(c.back_text.as_deref())
     );
     let _ = writeln!(
         out,
@@ -962,6 +978,8 @@ mod tests {
             sanity: None,
             deck_limit: None,
             quantity: None,
+            back_name: None,
+            back_text: None,
             pack_code: "core".to_owned(),
             faction_code: Some("seeker".to_owned()),
             type_code: Some("asset".to_owned()),
@@ -1006,6 +1024,8 @@ mod tests {
             sanity: None,
             deck_limit: 0,
             quantity: 1,
+            back_name: None,
+            back_text: None,
             pack_code: "core".into(),
             is_fast: false,
             play_only_during_turn: false,
@@ -1347,6 +1367,8 @@ mod tests {
             sanity: None,
             deck_limit: Some(2),
             quantity: Some(1),
+            back_name: None,
+            back_text: None,
             pack_code: "core".into(),
             faction_code: Some("seeker".into()),
             type_code: Some("asset".into()),
@@ -1452,6 +1474,8 @@ mod tests {
             sanity: None,
             deck_limit: Some(2),
             quantity: Some(1),
+            back_name: None,
+            back_text: None,
             pack_code: "core".into(),
             faction_code: Some("seeker".into()),
             type_code: Some("asset".into()),
@@ -1497,6 +1521,24 @@ mod tests {
         assert!(
             n.weakness,
             "subtype_code=basicweakness should set weakness=true"
+        );
+    }
+
+    // ---- reverse side (back_name / back_text) ------------------------
+
+    #[test]
+    fn normalize_carries_back_name_and_text() {
+        // A raw agenda with a reverse side keeps back_name/back_text through normalize.
+        let mut raw = raw_card("01105");
+        raw.faction_code = Some("mythos".to_owned());
+        raw.type_code = Some("agenda".to_owned());
+        raw.back_name = Some("A Lapse in Time".to_owned());
+        raw.back_text = Some("The lead investigator must decide…".to_owned());
+        let n = normalize(raw).expect("agenda normalizes");
+        assert_eq!(n.back_name.as_deref(), Some("A Lapse in Time"));
+        assert_eq!(
+            n.back_text.as_deref(),
+            Some("The lead investigator must decide…")
         );
     }
 

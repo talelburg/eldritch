@@ -33,6 +33,8 @@ fn weapon_metadata() -> CardMetadata {
         name: "Mock Firearm".to_owned(),
         traits: vec!["Item".to_owned(), "Weapon".to_owned(), "Firearm".to_owned()],
         text: Some("Uses (4 ammo).\n[action] Spend 1 ammo: Fight.".to_owned()),
+        back_name: None,
+        back_text: None,
         pack_code: "_mock".to_owned(),
         weakness: false,
         kind: CardKind::Asset {

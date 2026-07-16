@@ -46,6 +46,8 @@ fn probe_metadata(code: &CardCode) -> Option<&'static CardMetadata> {
         name: "Rollback Probe".to_string(),
         text: None,
         traits: vec![],
+        back_name: None,
+        back_text: None,
         pack_code: "test".to_string(),
         weakness: false,
         kind: CardKind::Asset {

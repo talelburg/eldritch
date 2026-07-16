@@ -32,6 +32,8 @@ fn synth_enemy_metadata() -> &'static CardMetadata {
         name: "Synth Enemy".into(),
         text: None,
         traits: Vec::new(),
+        back_name: None,
+        back_text: None,
         pack_code: "_synth".into(),
         weakness: false,
         kind: CardKind::Enemy {
