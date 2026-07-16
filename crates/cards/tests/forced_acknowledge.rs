@@ -7,7 +7,7 @@
 //! interactive pause is then resumed through the public `apply(ResolveInput)`
 //! path (the same way a host resumes an `AwaitingInput`).
 
-use game_core::engine::EngineOutcome;
+use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::state::{CardCode, Continuation, GameState, InvestigatorId, LocationId};
 use game_core::test_support::{
     fire_forced_on_enter, test_investigator, test_location, GameStateBuilder,
@@ -59,6 +59,11 @@ fn attic_forced_acknowledges_before_horror_when_interactive() {
     match out {
         EngineOutcome::AwaitingInput { request, .. } => {
             assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
+            assert_eq!(
+                request.options[0].target,
+                OptionTarget::Location(LOC),
+                "the forced-on-enter option anchors to the location on the map (#553), not the flat bar"
+            );
         }
         other => panic!("expected a one-option acknowledge, got {other:?}"),
     }
@@ -109,6 +114,11 @@ fn cellar_forced_acknowledges_before_damage_when_interactive() {
     match out {
         EngineOutcome::AwaitingInput { request, .. } => {
             assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
+            assert_eq!(
+                request.options[0].target,
+                OptionTarget::Location(LOC),
+                "the forced-on-enter option anchors to the location on the map (#553)"
+            );
         }
         other => panic!("expected a one-option acknowledge, got {other:?}"),
     }

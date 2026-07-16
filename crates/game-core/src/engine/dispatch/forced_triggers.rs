@@ -8,8 +8,7 @@
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
 use crate::state::{
-    CandidateSource, CardCode, CardInstanceId, InvestigatorId, LocationId, Phase,
-    ResolutionCandidate,
+    CandidateSource, CardCode, InvestigatorId, LocationId, Phase, ResolutionCandidate,
 };
 
 use super::super::evaluator::{push_effect, EvalContext};
@@ -170,7 +169,7 @@ pub(crate) fn fire_forced_triggers(
                 cx.state
                     .continuations
                     .push(crate::state::Continuation::AcknowledgeForced {
-                        source: hit.code.clone(),
+                        candidate: hit.clone(),
                     });
             }
             out
@@ -202,7 +201,7 @@ pub(super) fn collect_forced_hits(
                 reg,
                 &loc.code,
                 *investigator,
-                None,
+                CandidateSource::Location(*location),
                 &mut hits,
                 bucket,
                 |p| matches!(p, EventPattern::EnteredLocation),
@@ -220,7 +219,7 @@ pub(super) fn collect_forced_hits(
                     reg,
                     &act.code,
                     lead,
-                    None,
+                    CandidateSource::Board,
                     &mut hits,
                     bucket,
                     |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
@@ -231,7 +230,7 @@ pub(super) fn collect_forced_hits(
                     reg,
                     &agenda.code,
                     lead,
-                    None,
+                    CandidateSource::Board,
                     &mut hits,
                     bucket,
                     |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
@@ -242,30 +241,50 @@ pub(super) fn collect_forced_hits(
             let Some(lead) = state.turn_order.first().copied() else {
                 return hits;
             };
-            push_matching(reg, code, lead, None, &mut hits, bucket, |p| {
-                matches!(p, EventPattern::ActAdvanced)
-            });
+            push_matching(
+                reg,
+                code,
+                lead,
+                CandidateSource::Board,
+                &mut hits,
+                bucket,
+                |p| matches!(p, EventPattern::ActAdvanced),
+            );
         }
         ForcedTriggerPoint::AgendaAdvanced { code } => {
             let Some(lead) = state.turn_order.first().copied() else {
                 return hits;
             };
-            push_matching(reg, code, lead, None, &mut hits, bucket, |p| {
-                matches!(p, EventPattern::AgendaAdvanced)
-            });
+            push_matching(
+                reg,
+                code,
+                lead,
+                CandidateSource::Board,
+                &mut hits,
+                bucket,
+                |p| matches!(p, EventPattern::AgendaAdvanced),
+            );
         }
         ForcedTriggerPoint::EnemyDefeated { code } => {
             let Some(lead) = state.turn_order.first().copied() else {
                 return hits;
             };
             if let Some(act) = state.act_deck.get(state.act_index) {
-                push_matching(reg, &act.code, lead, None, &mut hits, bucket, |p| {
-                    matches!(
-                        p,
-                        EventPattern::EnemyDefeated { code: narrow, .. }
-                            if narrow.as_deref().is_none_or(|c| c == code.as_str())
-                    )
-                });
+                push_matching(
+                    reg,
+                    &act.code,
+                    lead,
+                    CandidateSource::Board,
+                    &mut hits,
+                    bucket,
+                    |p| {
+                        matches!(
+                            p,
+                            EventPattern::EnemyDefeated { code: narrow, .. }
+                                if narrow.as_deref().is_none_or(|c| c == code.as_str())
+                        )
+                    },
+                );
             }
         }
         ForcedTriggerPoint::RoundEnded => {
@@ -273,14 +292,26 @@ pub(super) fn collect_forced_hits(
                 return hits;
             };
             if let Some(act) = state.act_deck.get(state.act_index) {
-                push_matching(reg, &act.code, lead, None, &mut hits, bucket, |p| {
-                    matches!(p, EventPattern::RoundEnded)
-                });
+                push_matching(
+                    reg,
+                    &act.code,
+                    lead,
+                    CandidateSource::Board,
+                    &mut hits,
+                    bucket,
+                    |p| matches!(p, EventPattern::RoundEnded),
+                );
             }
             if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
-                push_matching(reg, &agenda.code, lead, None, &mut hits, bucket, |p| {
-                    matches!(p, EventPattern::RoundEnded)
-                });
+                push_matching(
+                    reg,
+                    &agenda.code,
+                    lead,
+                    CandidateSource::Board,
+                    &mut hits,
+                    bucket,
+                    |p| matches!(p, EventPattern::RoundEnded),
+                );
             }
             // Persistent threat-area treacheries discard on RoundEnded
             // (Dissonant Voices 01165). Scan every investigator's
@@ -292,7 +323,7 @@ pub(super) fn collect_forced_hits(
                         reg,
                         &card.code,
                         *inv_id,
-                        Some(card.instance_id),
+                        CandidateSource::InPlay(card.instance_id),
                         &mut hits,
                         bucket,
                         |p| matches!(p, EventPattern::RoundEnded),
@@ -313,7 +344,7 @@ pub(super) fn collect_forced_hits(
                     reg,
                     &card.code,
                     *investigator,
-                    Some(card.instance_id),
+                    CandidateSource::InPlay(card.instance_id),
                     &mut hits,
                     bucket,
                     |p| matches!(p, EventPattern::EndOfTurn),
@@ -348,7 +379,7 @@ pub(super) fn collect_forced_hits(
                     reg,
                     &card.code,
                     *investigator,
-                    Some(card.instance_id),
+                    CandidateSource::InPlay(card.instance_id),
                     &mut hits,
                     bucket,
                     want,
@@ -365,7 +396,7 @@ pub(super) fn collect_forced_hits(
                             reg,
                             &att.code,
                             *investigator,
-                            Some(att.instance_id),
+                            CandidateSource::InPlay(att.instance_id),
                             &mut hits,
                             bucket,
                             want,
@@ -385,7 +416,7 @@ pub(super) fn collect_forced_hits(
                         reg,
                         &card.code,
                         *inv_id,
-                        Some(card.instance_id),
+                        CandidateSource::InPlay(card.instance_id),
                         &mut hits,
                         bucket,
                         |p| matches!(p, EventPattern::GameEnd),
@@ -405,7 +436,7 @@ pub(super) fn collect_forced_hits(
                         reg,
                         &att.code,
                         *investigator,
-                        Some(att.instance_id),
+                        CandidateSource::InPlay(att.instance_id),
                         &mut hits,
                         bucket,
                         |p| matches!(p, EventPattern::LeftLocation),
@@ -446,7 +477,7 @@ fn push_matching(
     reg: &card_registry::CardRegistry,
     code: &CardCode,
     controller: InvestigatorId,
-    source: Option<CardInstanceId>,
+    source: CandidateSource,
     out: &mut Vec<ResolutionCandidate>,
     bucket: EventTiming,
     want: impl Fn(&EventPattern) -> bool,
@@ -474,12 +505,9 @@ fn push_matching(
                     controller,
                     ability_index: u8::try_from(idx)
                         .expect("ability_index fits u8 — abilities vecs are tiny"),
-                    // Forced hits are in-play instances or scenario board
-                    // cards — never hand events.
-                    source: match source {
-                        Some(id) => CandidateSource::InPlay(id),
-                        None => CandidateSource::Board,
-                    },
+                    // Origin set by the caller: an in-play / threat-area instance,
+                    // a scenario board card, or a location's own forced ability.
+                    source,
                 });
             }
         }
@@ -526,18 +554,20 @@ fn forced_source_name(code: &CardCode) -> String {
 /// Mirrors `advance_reverse::drive`'s `AwaitAck` suspend.
 pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
     use crate::engine::{ChoiceOption, InputRequest, OptionId, ResumeToken};
-    let Some(crate::state::Continuation::AcknowledgeForced { source }) =
+    let Some(crate::state::Continuation::AcknowledgeForced { candidate }) =
         cx.state.continuations.last()
     else {
         return EngineOutcome::Rejected {
             reason: "drive_acknowledge_forced: top frame is not AcknowledgeForced".into(),
         };
     };
-    let name = forced_source_name(source);
+    let name = forced_source_name(&candidate.code);
+    let act = super::reaction_windows::current_act_code(cx.state);
+    let anchor = super::reaction_windows::candidate_anchor(candidate, act.as_ref());
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
             format!("Forced — {name}"),
-            vec![ChoiceOption::global(OptionId(0), "Resolve")],
+            vec![ChoiceOption::new(OptionId(0), "Resolve", anchor)],
         ),
         resume_token: ResumeToken(0),
     }
@@ -571,6 +601,7 @@ pub(crate) fn resume_acknowledge_forced(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::CardInstanceId;
 
     #[test]
     fn acknowledge_forced_suspends_then_pops_on_pick() {
@@ -581,7 +612,12 @@ mod tests {
 
         let mut state = GameStateBuilder::default().build();
         state.continuations.push(Continuation::AcknowledgeForced {
-            source: CardCode("01113".into()),
+            candidate: ResolutionCandidate::new(
+                CardCode::new("01113"),
+                InvestigatorId(1),
+                0,
+                CandidateSource::Board,
+            ),
         });
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -618,7 +654,12 @@ mod tests {
         // and leaves the frame in place.
         let mut state = GameStateBuilder::default().build();
         state.continuations.push(Continuation::AcknowledgeForced {
-            source: CardCode("01113".into()),
+            candidate: ResolutionCandidate::new(
+                CardCode::new("01113"),
+                InvestigatorId(1),
+                0,
+                CandidateSource::Board,
+            ),
         });
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -634,5 +675,73 @@ mod tests {
             ),
             "a rejected resume must leave the frame in place"
         );
+    }
+
+    #[test]
+    fn acknowledge_forced_anchors_the_option_to_its_source_card() {
+        use crate::engine::OptionTarget;
+        use crate::state::Continuation;
+        use crate::test_support::GameStateBuilder;
+
+        // A forced ability on an in-play instance surfaces a one-option pick
+        // anchored to that card (#553), not Global.
+        let mut state = GameStateBuilder::default().build();
+        state.continuations.push(Continuation::AcknowledgeForced {
+            candidate: ResolutionCandidate::new(
+                CardCode::new("01020"),
+                InvestigatorId(1),
+                0,
+                CandidateSource::InPlay(CardInstanceId(5)),
+            ),
+        });
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        match super::drive_acknowledge_forced(&mut cx) {
+            EngineOutcome::AwaitingInput { request, .. } => {
+                assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
+                assert_eq!(
+                    request.options[0].target,
+                    OptionTarget::CardInstance(CardInstanceId(5)),
+                );
+            }
+            other => panic!("expected one-option suspend, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn acknowledge_forced_anchors_a_location_source_to_its_map_node() {
+        use crate::engine::OptionTarget;
+        use crate::state::{Continuation, LocationId};
+        use crate::test_support::GameStateBuilder;
+
+        // A location's own forced ability (the Attic's on-enter horror) surfaces a
+        // one-option pick anchored to the location on the map (#553), not Global.
+        let mut state = GameStateBuilder::default().build();
+        state.continuations.push(Continuation::AcknowledgeForced {
+            candidate: ResolutionCandidate::new(
+                CardCode::new("01113"),
+                InvestigatorId(1),
+                0,
+                CandidateSource::Location(LocationId(3)),
+            ),
+        });
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        match super::drive_acknowledge_forced(&mut cx) {
+            EngineOutcome::AwaitingInput { request, .. } => {
+                assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
+                assert_eq!(
+                    request.options[0].target,
+                    OptionTarget::Location(LocationId(3)),
+                );
+            }
+            other => panic!("expected one-option suspend, got {other:?}"),
+        }
     }
 }

@@ -593,11 +593,38 @@ fn trigger_matches(
 /// The current act's card code, if an act deck is loaded — used to anchor the
 /// round-end act-advance reaction (a [`CandidateSource::Board`] candidate whose
 /// code is the act) to the act card (S5, #540). `None` for fixtures with no act.
-fn current_act_code(state: &GameState) -> Option<CardCode> {
+pub(super) fn current_act_code(state: &GameState) -> Option<CardCode> {
     state
         .act_deck
         .get(state.act_index)
         .map(|act| act.code.clone())
+}
+
+/// The board anchor for a resolution candidate's source: an in-play instance to
+/// its card (#539); a location's own forced ability to its map node (the Attic's
+/// horror, #553); a Fast hand event by code — every copy (#539); a board-wide
+/// effect to the act card when its code is the current act, else no card home
+/// (#540/#553). Shared by [`build_resolution_options`] and the forced-ack path.
+pub(super) fn candidate_anchor(
+    cand: &ResolutionCandidate,
+    current_act: Option<&CardCode>,
+) -> crate::engine::OptionTarget {
+    use crate::engine::OptionTarget;
+    match cand.source {
+        CandidateSource::Hand => OptionTarget::HandCardByCode {
+            investigator: cand.controller,
+            code: cand.code.clone(),
+        },
+        CandidateSource::InPlay(instance_id) => OptionTarget::CardInstance(instance_id),
+        CandidateSource::Location(location_id) => OptionTarget::Location(location_id),
+        CandidateSource::Board => {
+            if current_act == Some(&cand.code) {
+                OptionTarget::Act
+            } else {
+                OptionTarget::Global
+            }
+        }
+    }
 }
 
 /// Build the structured option list for a resolution frame: one
@@ -614,35 +641,17 @@ fn build_resolution_options(
         .enumerate()
         .map(|(i, cand)| {
             let id = OptionId(u32::try_from(i).expect("option count fits in u32"));
-            // Anchor the option to its source card so a host can render it there
-            // (#539): an in-play reaction on its card instance; a Fast hand event
-            // by code (every copy); a board-wide effect has no card — except the
-            // round-end act-advance, whose Board candidate is the act (#540).
-            let (label, target) = match cand.source {
-                CandidateSource::Hand => (
-                    format!("Play {} from hand", cand.code),
-                    crate::engine::OptionTarget::HandCardByCode {
-                        investigator: cand.controller,
-                        code: cand.code.clone(),
-                    },
-                ),
-                CandidateSource::InPlay(instance_id) => (
-                    format!("Resolve reaction: {}", cand.code),
-                    crate::engine::OptionTarget::CardInstance(instance_id),
-                ),
-                CandidateSource::Board => {
-                    // The round-end act-advance reaction is the one Board candidate
-                    // whose code is the current act → anchor it to the act card
-                    // (#540). Any other board-wide reaction has no card home.
-                    let target = if current_act == Some(&cand.code) {
-                        crate::engine::OptionTarget::Act
-                    } else {
-                        crate::engine::OptionTarget::Global
-                    };
-                    (format!("Resolve reaction: {}", cand.code), target)
+            // Label distinguishes a hand Fast-event play from an in-play/board
+            // reaction; the board anchor is the shared `candidate_anchor` (#553).
+            let label = match cand.source {
+                CandidateSource::Hand => format!("Play {} from hand", cand.code),
+                CandidateSource::InPlay(_)
+                | CandidateSource::Board
+                | CandidateSource::Location(_) => {
+                    format!("Resolve reaction: {}", cand.code)
                 }
             };
-            ChoiceOption::new(id, label, target)
+            ChoiceOption::new(id, label, candidate_anchor(cand, current_act))
         })
         .collect()
 }
@@ -1011,8 +1020,8 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
 /// the investigator card, a card in play, or a threat-area card, resolved by
 /// instance id over all three zones (#448 cp3a folded the investigator card,
 /// e.g. Roland Banks's seated `[reaction]`, onto this path; its usage now lives
-/// on `investigator_card.ability_usage`). `Board` and `Hand` candidates carry
-/// no usage limits and are `unreachable!` here.
+/// on `investigator_card.ability_usage`). `Board`, `Hand`, and `Location`
+/// candidates carry no per-instance usage limits and are `unreachable!` here.
 ///
 /// **TODO (cancellation-counts-against-limit).** Rules Reference
 /// page 14: *"If the effects of a card or ability with a limit or
@@ -1053,10 +1062,13 @@ fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
                 });
             card.bump_ability_usage(trigger.ability_index, current_round);
         }
-        CandidateSource::Board | CandidateSource::Hand => unreachable!(
-            "bump_usage_counter: a usage-limited candidate must be an in-play instance \
-             (board / hand candidates carry no usage limits); candidate {trigger:?}"
-        ),
+        CandidateSource::Board | CandidateSource::Hand | CandidateSource::Location(_) => {
+            unreachable!(
+                "bump_usage_counter: a usage-limited candidate must be an in-play instance \
+                 (board / hand / location candidates carry no per-instance usage limits); \
+                 candidate {trigger:?}"
+            )
+        }
     }
 }
 
@@ -2193,6 +2205,63 @@ mod resolution_option_anchor_tests {
         let opts = build_resolution_options(&cands, Some(&act));
         assert_eq!(opts[0].target, OptionTarget::Act);
         assert_eq!(opts[1].target, OptionTarget::Global);
+    }
+
+    #[test]
+    fn candidate_anchor_maps_each_source() {
+        use crate::engine::OptionTarget;
+        use crate::state::{
+            CardCode, CardInstanceId, InvestigatorId, LocationId, ResolutionCandidate,
+        };
+        let act = CardCode::new("01109");
+        let inplay = ResolutionCandidate::new(
+            CardCode::new("01020"),
+            InvestigatorId(1),
+            0,
+            CandidateSource::InPlay(CardInstanceId(5)),
+        );
+        // A location's own forced ability (the Attic, 01113) anchors to its map
+        // node, independent of the current act (#553).
+        let location = ResolutionCandidate::new(
+            CardCode::new("01113"),
+            InvestigatorId(1),
+            0,
+            CandidateSource::Location(LocationId(7)),
+        );
+        let hand = ResolutionCandidate::new(
+            CardCode::new("01022"),
+            InvestigatorId(2),
+            0,
+            CandidateSource::Hand,
+        );
+        let board_act =
+            ResolutionCandidate::new(act.clone(), InvestigatorId(1), 0, CandidateSource::Board);
+        let board_other = ResolutionCandidate::new(
+            CardCode::new("_other"),
+            InvestigatorId(1),
+            0,
+            CandidateSource::Board,
+        );
+        assert_eq!(
+            candidate_anchor(&inplay, Some(&act)),
+            OptionTarget::CardInstance(CardInstanceId(5))
+        );
+        assert_eq!(
+            candidate_anchor(&hand, Some(&act)),
+            OptionTarget::HandCardByCode {
+                investigator: InvestigatorId(2),
+                code: CardCode::new("01022"),
+            }
+        );
+        assert_eq!(candidate_anchor(&board_act, Some(&act)), OptionTarget::Act);
+        assert_eq!(
+            candidate_anchor(&board_other, Some(&act)),
+            OptionTarget::Global
+        );
+        assert_eq!(
+            candidate_anchor(&location, Some(&act)),
+            OptionTarget::Location(LocationId(7))
+        );
     }
 }
 

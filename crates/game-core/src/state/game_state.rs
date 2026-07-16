@@ -471,9 +471,10 @@ pub enum Continuation {
     /// pick so the player "performs" it before it lands (#466). Pushed by
     /// `fire_forced_triggers` (the single-hit path) *above* the forced effect's
     /// root frame; the `drive` loop suspends here, and on resume pops, letting the
-    /// effect frame beneath resolve. `source` is the card the forced ability is
-    /// printed on (for the prompt's display name).
-    AcknowledgeForced { source: CardCode },
+    /// effect frame beneath resolve. `candidate` is the forced ability's
+    /// [`ResolutionCandidate`] — its `code` names the prompt and its `source`
+    /// anchors the option to its source card (an in-play instance, or the act) (#553).
+    AcknowledgeForced { candidate: ResolutionCandidate },
     /// A skill test is mid-resolution. Carries the in-flight test's data
     /// directly (the former `GameState::in_flight_skill_test` singleton, folded
     /// onto the frame — #348). Pushed at test start; popped when the test fully
@@ -1617,6 +1618,10 @@ pub enum CandidateSource {
     /// weapon, …). The instance id drives `Effect::DiscardSelf`, usage-limit
     /// bumping, and the soak self-binding.
     InPlay(CardInstanceId),
+    /// A location's own ability (the Attic's forced horror). Anchors to the
+    /// location on the map. Locations have a [`LocationId`], not a
+    /// [`CardInstanceId`], so this can't fold into `InPlay` (#553).
+    Location(LocationId),
     /// A scenario board card (act / agenda) — no instance; fires by `code`.
     Board,
     /// A Fast event in the controller's hand (Axis C) — *played* rather than
@@ -1628,13 +1633,14 @@ impl CandidateSource {
     /// The firing in-play instance, if any — `Some` for [`InPlay`](Self::InPlay)
     /// (a card in play, a threat-area card, or the investigator card, which is a
     /// real `CardInPlay` since #448), `None` for [`Board`](Self::Board)
-    /// (scenario card) and [`Hand`](Self::Hand) (event not yet in play). Feeds
+    /// (scenario card), [`Hand`](Self::Hand) (event not yet in play), and
+    /// [`Location`](Self::Location) (a location, keyed by `LocationId`). Feeds
     /// [`EvalContext::for_controller_with_optional_source`](crate::engine::EvalContext::for_controller_with_optional_source).
     #[must_use]
     pub fn instance(self) -> Option<CardInstanceId> {
         match self {
             CandidateSource::InPlay(id) => Some(id),
-            CandidateSource::Board | CandidateSource::Hand => None,
+            CandidateSource::Board | CandidateSource::Hand | CandidateSource::Location(_) => None,
         }
     }
 }
