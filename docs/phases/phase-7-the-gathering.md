@@ -329,6 +329,14 @@ the now-stable set of input shapes:
       The effect-internal `ChooseOne` on such agendas (01105's discard-vs-horror) stays `Global` — the
       general effect-source-anchor machinery is deferred to #555. Plan:
       `docs/superpowers/plans/2026-07-16-agenda-forced-anchor.md`.
+    - **Advance-flip slice 1 — reverse-side ingestion (#558, PR #559).** First of three slices turning
+      an act/agenda advance into an on-card flip → resolve. This slice is pure data: `CardMetadata` gains
+      `back_name`/`back_text` (verbatim ArkhamDB reverse side, generic across double-sided cards), the
+      pipeline maps them, and the corpus regenerates (agenda 01105 → "A Lapse in Time"). Not user-visible
+      alone. Slice 2 (`AdvanceReverse.trigger` + on-card `AwaitAck` pick for forced advances, skip for
+      deliberate) and slice 3 (web front/reverse render, closes #558) follow; slice 4 (01110 `#466`
+      suppression) deferred. Design/plan: `docs/superpowers/specs/2026-07-16-advance-flip-design.md`,
+      `docs/superpowers/plans/2026-07-16-advance-flip.md`.
     - **S6 — globals + bar retirement (#541), the closer, queued.** Homes for the genuinely-global
       End turn / Gain resource / Draw + an encounter-deck element for the draw `Confirm`, then
       **delete `.action-bar`** (folding picker + skill-test-result into their own surfaces). The
