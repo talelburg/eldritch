@@ -601,7 +601,8 @@ pub(super) fn current_act_code(state: &GameState) -> Option<CardCode> {
 }
 
 /// The board anchor for a resolution candidate's source: an in-play instance to
-/// its card (#539); a Fast hand event by code — every copy (#539); a board-wide
+/// its card (#539); a location's own forced ability to its map node (the Attic's
+/// horror, #553); a Fast hand event by code — every copy (#539); a board-wide
 /// effect to the act card when its code is the current act, else no card home
 /// (#540/#553). Shared by [`build_resolution_options`] and the forced-ack path.
 pub(super) fn candidate_anchor(
@@ -615,6 +616,7 @@ pub(super) fn candidate_anchor(
             code: cand.code.clone(),
         },
         CandidateSource::InPlay(instance_id) => OptionTarget::CardInstance(instance_id),
+        CandidateSource::Location(location_id) => OptionTarget::Location(location_id),
         CandidateSource::Board => {
             if current_act == Some(&cand.code) {
                 OptionTarget::Act
@@ -643,7 +645,9 @@ fn build_resolution_options(
             // reaction; the board anchor is the shared `candidate_anchor` (#553).
             let label = match cand.source {
                 CandidateSource::Hand => format!("Play {} from hand", cand.code),
-                CandidateSource::InPlay(_) | CandidateSource::Board => {
+                CandidateSource::InPlay(_)
+                | CandidateSource::Board
+                | CandidateSource::Location(_) => {
                     format!("Resolve reaction: {}", cand.code)
                 }
             };
@@ -1016,8 +1020,8 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
 /// the investigator card, a card in play, or a threat-area card, resolved by
 /// instance id over all three zones (#448 cp3a folded the investigator card,
 /// e.g. Roland Banks's seated `[reaction]`, onto this path; its usage now lives
-/// on `investigator_card.ability_usage`). `Board` and `Hand` candidates carry
-/// no usage limits and are `unreachable!` here.
+/// on `investigator_card.ability_usage`). `Board`, `Hand`, and `Location`
+/// candidates carry no per-instance usage limits and are `unreachable!` here.
 ///
 /// **TODO (cancellation-counts-against-limit).** Rules Reference
 /// page 14: *"If the effects of a card or ability with a limit or
@@ -1058,10 +1062,13 @@ fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
                 });
             card.bump_ability_usage(trigger.ability_index, current_round);
         }
-        CandidateSource::Board | CandidateSource::Hand => unreachable!(
-            "bump_usage_counter: a usage-limited candidate must be an in-play instance \
-             (board / hand candidates carry no usage limits); candidate {trigger:?}"
-        ),
+        CandidateSource::Board | CandidateSource::Hand | CandidateSource::Location(_) => {
+            unreachable!(
+                "bump_usage_counter: a usage-limited candidate must be an in-play instance \
+                 (board / hand / location candidates carry no per-instance usage limits); \
+                 candidate {trigger:?}"
+            )
+        }
     }
 }
 
@@ -2203,13 +2210,23 @@ mod resolution_option_anchor_tests {
     #[test]
     fn candidate_anchor_maps_each_source() {
         use crate::engine::OptionTarget;
-        use crate::state::{CardCode, CardInstanceId, InvestigatorId, ResolutionCandidate};
+        use crate::state::{
+            CardCode, CardInstanceId, InvestigatorId, LocationId, ResolutionCandidate,
+        };
         let act = CardCode::new("01109");
         let inplay = ResolutionCandidate::new(
             CardCode::new("01020"),
             InvestigatorId(1),
             0,
             CandidateSource::InPlay(CardInstanceId(5)),
+        );
+        // A location's own forced ability (the Attic, 01113) anchors to its map
+        // node, independent of the current act (#553).
+        let location = ResolutionCandidate::new(
+            CardCode::new("01113"),
+            InvestigatorId(1),
+            0,
+            CandidateSource::Location(LocationId(7)),
         );
         let hand = ResolutionCandidate::new(
             CardCode::new("01022"),
@@ -2240,6 +2257,10 @@ mod resolution_option_anchor_tests {
         assert_eq!(
             candidate_anchor(&board_other, Some(&act)),
             OptionTarget::Global
+        );
+        assert_eq!(
+            candidate_anchor(&location, Some(&act)),
+            OptionTarget::Location(LocationId(7))
         );
     }
 }
