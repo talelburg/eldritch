@@ -94,9 +94,17 @@ pub fn ActCard(act: Act, face: Face) -> impl IntoView {
                 <span class="card-name">{name}</span>
             </div>
             <div class="card-text">{text}</div>
-            <div class="loc-stats">
-                <span>{format!("clues to advance: {threshold}")}</span>
-            </div>
+            {
+                // Thresholds belong to the front face only — the reverse ("1b")
+                // side prints the on-advance effect, not the advance cost (#558).
+                (face == Face::Front).then(|| {
+                    view! {
+                        <div class="loc-stats">
+                            <span>{format!("clues to advance: {threshold}")}</span>
+                        </div>
+                    }
+                })
+            }
             {
                 // wasm-only trigger + menu; host build: empty, `menu_opts` consumed
                 // above by `actionable` (no unused-var warning).
@@ -139,9 +147,17 @@ pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
                 <span class="card-name">{name}</span>
             </div>
             <div class="card-text">{text}</div>
-            <div class="loc-stats">
-                <span>{format!("doom {doom}/{threshold}")}</span>
-            </div>
+            {
+                // Doom belongs to the front face only — the reverse ("1b") side
+                // prints the on-advance effect, not the doom track (#558).
+                (face == Face::Front).then(|| {
+                    view! {
+                        <div class="loc-stats">
+                            <span>{format!("doom {doom}/{threshold}")}</span>
+                        </div>
+                    }
+                })
+            }
             {
                 // wasm-only trigger + menu; host build: empty, `menu_opts` consumed
                 // above by `actionable` (no unused-var warning).

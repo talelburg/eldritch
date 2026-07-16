@@ -291,13 +291,17 @@ async fn agenda_shows_reverse_face_while_advancing() {
         agenda_card().class_name().contains("card--reverse"),
         "the flipped agenda is tagged card--reverse"
     );
+    assert!(
+        !text.contains("doom"),
+        "the doom track belongs to the front face, not the reverse: {text}"
+    );
 }
 
 #[wasm_bindgen_test]
 async fn agenda_shows_front_face_before_the_flip() {
     use game_core::state::{AdvanceDeck, AdvanceStep};
-    // Before the flip is clicked (step AwaitAck), the front face is still shown and
-    // the card is not tagged reverse.
+    // Before the flip is clicked (step AwaitAck), the front face is still shown, the
+    // card is not tagged reverse, and the doom track is present.
     mount_advancing(AdvanceDeck::Agenda, "01105", AdvanceStep::AwaitAck).await;
     let text = section_text();
     assert!(
@@ -311,6 +315,10 @@ async fn agenda_shows_front_face_before_the_flip() {
     assert!(
         !agenda_card().class_name().contains("card--reverse"),
         "pre-flip agenda is NOT tagged card--reverse"
+    );
+    assert!(
+        text.contains("doom 0/3"),
+        "the front face shows the doom track: {text}"
     );
 }
 
@@ -329,5 +337,9 @@ async fn act_shows_reverse_face_while_advancing() {
     assert!(
         act_card().class_name().contains("card--reverse"),
         "the flipped act is tagged card--reverse"
+    );
+    assert!(
+        !text.contains("clues to advance"),
+        "the advance-cost line belongs to the front face, not the reverse: {text}"
     );
 }
