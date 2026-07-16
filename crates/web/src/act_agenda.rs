@@ -6,19 +6,60 @@
 //! fake `0/N`. Both cards glow + open a context menu when the live prompt anchors
 //! an option to them (`OptionTarget::Act`/`Agenda`); inert otherwise.
 
-use game_core::state::{Act, Agenda, CardCode, GameState};
+use game_core::state::{Act, AdvanceDeck, Agenda, CardCode, GameState};
 use leptos::prelude::*;
 
 use crate::card::{parse_card_text, render_segments};
 
+/// Which face of an act/agenda to show. During an advance the card flips from its
+/// front to its reverse (the "1b" side that carries the on-advance effect) once
+/// the flip is clicked (#558). `pub` because it rides in the generated component
+/// props struct.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Face {
+    /// The printed front (`name`/`text`).
+    Front,
+    /// The reverse (`back_name`/`back_text`).
+    Reverse,
+}
+
+/// Which face an advancing act/agenda should show: `Reverse` once the advance has
+/// passed its acknowledge (`step` ≥ `FireReverse`), else `Front`. `Front` when the
+/// deck isn't advancing (#558).
+fn deck_face(game: &GameState, deck: AdvanceDeck) -> Face {
+    use game_core::state::{AdvanceStep, Continuation};
+    for c in &game.continuations {
+        if let Continuation::AdvanceReverse { deck: d, step, .. } = c {
+            if *d == deck {
+                return match step {
+                    AdvanceStep::AwaitAck => Face::Front,
+                    AdvanceStep::FireReverse | AdvanceStep::Finalize => Face::Reverse,
+                };
+            }
+        }
+    }
+    Face::Front
+}
+
 /// Name (printed, or the raw code when no metadata) + rendered ability text for
-/// an act/agenda card code.
-fn name_and_text(code: &CardCode) -> (String, Option<Vec<AnyView>>) {
+/// an act/agenda card code, on the given [`Face`]. The reverse falls back to the
+/// front name if a card carries no `back_name` (defensive — a real advancing
+/// act/agenda always prints one).
+fn name_and_text(code: &CardCode, face: Face) -> (String, Option<Vec<AnyView>>) {
     let meta = game_core::card_registry::current().and_then(|r| (r.metadata_for)(code));
-    let name = meta.map_or_else(|| code.to_string(), |m| m.name.clone());
-    let text = meta
-        .and_then(|m| m.text.as_deref())
-        .map(|t| render_segments(parse_card_text(t)));
+    let (name_src, text_src) = match face {
+        Face::Front => (
+            meta.map(|m| m.name.clone()),
+            meta.and_then(|m| m.text.clone()),
+        ),
+        Face::Reverse => (
+            meta.and_then(|m| m.back_name.clone())
+                .or_else(|| meta.map(|m| m.name.clone())),
+            meta.and_then(|m| m.back_text.clone()),
+        ),
+    };
+    let name = name_src.unwrap_or_else(|| code.to_string());
+    let text = text_src.map(|t| render_segments(parse_card_text(&t)));
     (name, text)
 }
 
@@ -29,8 +70,8 @@ fn name_and_text(code: &CardCode) -> (String, Option<Vec<AnyView>>) {
 // `act` is taken by value: Leptos `#[component]` generates an owned props struct.
 #[allow(clippy::needless_pass_by_value)]
 #[component]
-pub fn ActCard(act: Act) -> impl IntoView {
-    let (name, text) = name_and_text(&act.code);
+pub fn ActCard(act: Act, face: Face) -> impl IntoView {
+    let (name, text) = name_and_text(&act.code, face);
     let threshold = act.clue_threshold;
     let pending = use_context::<crate::interaction::PendingOptions>()
         .map(|p| p.0.get())
@@ -40,6 +81,9 @@ pub fn ActCard(act: Act) -> impl IntoView {
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
     let mut root_class = String::from("card card--act");
+    if face == Face::Reverse {
+        root_class.push_str(" card--reverse");
+    }
     if actionable {
         root_class.push_str(" actionable");
     }
@@ -71,8 +115,8 @@ pub fn ActCard(act: Act) -> impl IntoView {
 // `agenda` is taken by value: Leptos `#[component]` generates an owned props struct.
 #[allow(clippy::needless_pass_by_value)]
 #[component]
-pub fn AgendaCard(agenda: Agenda, doom: u8) -> impl IntoView {
-    let (name, text) = name_and_text(&agenda.code);
+pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
+    let (name, text) = name_and_text(&agenda.code, face);
     let threshold = agenda.doom_threshold;
     let pending = use_context::<crate::interaction::PendingOptions>()
         .map(|p| p.0.get())
@@ -82,6 +126,9 @@ pub fn AgendaCard(agenda: Agenda, doom: u8) -> impl IntoView {
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
     let mut root_class = String::from("card card--agenda");
+    if face == Face::Reverse {
+        root_class.push_str(" card--reverse");
+    }
     if actionable {
         root_class.push_str(" actionable");
     }
@@ -108,16 +155,18 @@ pub fn AgendaCard(agenda: Agenda, doom: u8) -> impl IntoView {
 /// The current act + agenda as cards. Each is omitted when its deck is empty
 /// (fixtures may carry neither).
 pub fn act_agenda_view(game: &GameState) -> impl IntoView {
+    let act_face = deck_face(game, AdvanceDeck::Act);
     let act = game
         .act_deck
         .get(game.act_index)
         .cloned()
-        .map(|act| view! { <ActCard act=act/> });
+        .map(|act| view! { <ActCard act=act face=act_face/> });
     let doom = game.agenda_doom;
+    let agenda_face = deck_face(game, AdvanceDeck::Agenda);
     let agenda = game
         .agenda_deck
         .get(game.agenda_index)
         .cloned()
-        .map(|ag| view! { <AgendaCard agenda=ag doom=doom/> });
+        .map(|ag| view! { <AgendaCard agenda=ag doom=doom face=agenda_face/> });
     view! { <section class="act-agenda">{act}{agenda}</section> }
 }

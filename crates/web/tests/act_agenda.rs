@@ -226,3 +226,108 @@ async fn agenda_card_inert_without_an_agenda_anchored_option() {
     let _rx = mount_with_prompt(outcome).await;
     assert!(!agenda_card().class_name().contains("actionable"));
 }
+
+/// Mount `act_agenda_view` with the given deck's leaving card mid-advance at
+/// `step`. Pushes an `AdvanceReverse` frame as the engine would (#558).
+async fn mount_advancing(
+    deck: game_core::state::AdvanceDeck,
+    code: &str,
+    step: game_core::state::AdvanceStep,
+) {
+    use game_core::state::{AdvanceDeck, AdvanceTrigger, Continuation};
+    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let mut state = GameStateBuilder::new().build();
+    match deck {
+        AdvanceDeck::Agenda => {
+            state.agenda_deck = vec![Agenda {
+                code: CardCode::new(code),
+                doom_threshold: 3,
+                resolution: None,
+            }];
+            state.agenda_index = 0;
+        }
+        AdvanceDeck::Act => {
+            state.act_deck = vec![Act {
+                code: CardCode::new(code),
+                clue_threshold: 2,
+                resolution: None,
+            }];
+            state.act_index = 0;
+        }
+    }
+    state.continuations.push(Continuation::AdvanceReverse {
+        deck,
+        from: 0,
+        leaving_code: CardCode::new(code),
+        step,
+        trigger: AdvanceTrigger::Forced,
+    });
+    leptos::mount::mount_to_body(move || web::act_agenda::act_agenda_view(&state));
+    leptos::task::tick().await;
+}
+
+#[wasm_bindgen_test]
+async fn agenda_shows_reverse_face_while_advancing() {
+    use game_core::state::{AdvanceDeck, AdvanceStep};
+    // Once the advance has passed its acknowledge, the agenda flips to its reverse
+    // (name + on-advance text) and tags `card--reverse`. `Finalize` is the step the
+    // client actually observes — `drive` sets it before firing the reverse, so the
+    // reverse renders while 01105's discard-vs-horror ChooseOne is live.
+    mount_advancing(AdvanceDeck::Agenda, "01105", AdvanceStep::Finalize).await;
+    let text = section_text();
+    assert!(
+        text.contains("A Lapse in Time"),
+        "reverse name shown: {text}"
+    );
+    assert!(
+        text.contains("discard"),
+        "reverse text (discard-or-horror choice) shown: {text}"
+    );
+    assert!(
+        !text.contains("What's Going On?!"),
+        "front name must NOT show once flipped: {text}"
+    );
+    assert!(
+        agenda_card().class_name().contains("card--reverse"),
+        "the flipped agenda is tagged card--reverse"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn agenda_shows_front_face_before_the_flip() {
+    use game_core::state::{AdvanceDeck, AdvanceStep};
+    // Before the flip is clicked (step AwaitAck), the front face is still shown and
+    // the card is not tagged reverse.
+    mount_advancing(AdvanceDeck::Agenda, "01105", AdvanceStep::AwaitAck).await;
+    let text = section_text();
+    assert!(
+        text.contains("What's Going On?!"),
+        "front name shown pre-flip: {text}"
+    );
+    assert!(
+        !text.contains("A Lapse in Time"),
+        "reverse name must NOT show pre-flip: {text}"
+    );
+    assert!(
+        !agenda_card().class_name().contains("card--reverse"),
+        "pre-flip agenda is NOT tagged card--reverse"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn act_shows_reverse_face_while_advancing() {
+    use game_core::state::{AdvanceDeck, AdvanceStep};
+    // The act side flips too: act 01109 "The Barrier" → reverse "Breaking the
+    // Barrier" (back_text reveals the Parlor).
+    mount_advancing(AdvanceDeck::Act, "01109", AdvanceStep::Finalize).await;
+    let text = section_text();
+    assert!(
+        text.contains("Breaking the Barrier"),
+        "act reverse name shown: {text}"
+    );
+    assert!(text.contains("Parlor"), "act reverse text shown: {text}");
+    assert!(
+        act_card().class_name().contains("card--reverse"),
+        "the flipped act is tagged card--reverse"
+    );
+}
