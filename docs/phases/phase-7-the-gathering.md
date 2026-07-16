@@ -306,6 +306,13 @@ the now-stable set of input shapes:
       investigator-choice (`ground_investigator_choice`), agenda `Board` reactions (no
       `OptionTarget::Agenda`), and `step_choose_one` effect-branch choices (no board entity). Plan:
       `docs/superpowers/plans/2026-07-15-interactivity-s5-act-soak-effect-choices.md`.
+    - **Forced-effect card anchor (#553, PR #554) — S5 follow-up.** The one forced path still emitting
+      `Global`: a single interactive forced-acknowledge (`drive_acknowledge_forced`) now anchors its
+      "Resolve" to the source card (the 2+ ordered run already anchored via `build_resolution_options`).
+      `Continuation::AcknowledgeForced` carries the `ResolutionCandidate`; the `CandidateSource →
+      OptionTarget` mapping is now a shared `candidate_anchor` helper (extracted from
+      `build_resolution_options`, no drift). Engine-only — in-play sources glow via the existing
+      `InPlayCardView` matcher. Plan: `docs/superpowers/plans/2026-07-16-forced-effect-card-anchor.md`.
     - **S6 — globals + bar retirement (#541), the closer, queued.** Homes for the genuinely-global
       End turn / Gain resource / Draw + an encounter-deck element for the draw `Confirm`, then
       **delete `.action-bar`** (folding picker + skill-test-result into their own surfaces). The
