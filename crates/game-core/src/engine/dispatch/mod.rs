@@ -619,8 +619,9 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
                 .into(),
         },
         Some(Continuation::SkillTest(_)) => resume_skill_test_commit(cx, response),
-        // The #482 advance acknowledge pause: a Confirm resumes the AdvanceReverse
-        // frame past its AwaitAck step into firing the leaving card's reverse.
+        // The advance acknowledge pause (#482/#558): the single on-card advance
+        // pick (`PickSingle(0)`) resumes the AdvanceReverse frame past its AwaitAck
+        // step into firing the leaving card's reverse.
         Some(Continuation::AdvanceReverse { .. }) => advance_reverse::resume(cx, response),
         // #466: the one-option forced-effect acknowledge — its PickSingle pops the
         // frame so the `drive` loop resolves the effect beneath.

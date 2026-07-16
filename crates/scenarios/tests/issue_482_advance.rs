@@ -92,25 +92,30 @@ fn mythos_agenda_advance_choose_one_resolves_without_panic() {
 
 #[test]
 fn mythos_agenda_advance_acknowledge_precedes_the_choice() {
-    // Flag on (server path): the acknowledge Confirm precedes the ChooseOne.
+    use game_core::engine::OptionTarget;
+    // Flag on (server path): the forced agenda advance surfaces as an on-card
+    // flip pick anchored to the agenda, and it precedes the ChooseOne (#558).
     let r = drive_to_mythos_advance(true);
     let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
-        panic!(
-            "expected the advance acknowledge Confirm, got {:?}",
-            r.outcome
-        );
+        panic!("expected the advance flip pick, got {:?}", r.outcome);
     };
-    assert_eq!(request.kind, InputKind::Confirm, "{request:?}");
-    // Acknowledge → the ChooseOne becomes the live prompt.
+    assert_eq!(request.kind, InputKind::PickSingle, "{request:?}");
+    assert_eq!(request.options.len(), 1, "a single 'Advance' option");
+    assert_eq!(
+        request.options[0].target,
+        OptionTarget::Agenda,
+        "the flip pick anchors to the agenda card"
+    );
+    // Click the flip → the ChooseOne becomes the live prompt.
     let r2 = apply(
         r.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Confirm,
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     let EngineOutcome::AwaitingInput { request, .. } = &r2.outcome else {
         panic!(
-            "expected the ChooseOne after acknowledge, got {:?}",
+            "expected the ChooseOne after the flip pick, got {:?}",
             r2.outcome
         );
     };

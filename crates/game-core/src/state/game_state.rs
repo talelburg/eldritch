@@ -393,13 +393,31 @@ pub enum AdvanceDeck {
 /// Step cursor for the [`AdvanceReverse`](Continuation::AdvanceReverse) frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AdvanceStep {
-    /// Push the observable `…Advanced` event; if interactive acknowledgment is
-    /// on, suspend with a `Confirm` here (the cursor stays until resumed).
+    /// Push the observable `…Advanced` event; for a **forced** advance in
+    /// interactive mode, suspend here with a one-option on-card pick (the flip,
+    /// anchored to the act/agenda — cursor stays until resumed). A **deliberate**
+    /// advance skips the pause and falls through (#558).
     AwaitAck,
     /// Fire the leaving card's Forced on-advance reverse via `emit_event`.
     FireReverse,
     /// The reverse has resolved: bump the deck cursor and pop the frame.
     Finalize,
+}
+
+/// Why an act/agenda is advancing — decides whether the acknowledge prompts.
+///
+/// A **forced** advance (agenda doom threshold; act 01110 on Ghoul Priest
+/// defeat) surfaces the flip as an on-card pick the player clicks. A
+/// **deliberate** advance (the `AdvanceAct` action, or the round-end
+/// objective) was already the player's choice, so the ack is skipped — the
+/// action *was* the flip (#558).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AdvanceTrigger {
+    /// Game-forced (doom threshold / a forced ability). Prompts the flip pick.
+    Forced,
+    /// Player-chosen (spend clues / round-end objective). The advance action
+    /// was the flip, so the ack is skipped.
+    Deliberate,
 }
 
 /// A frame on the [`GameState::continuations`] suspend/resume stack
@@ -448,14 +466,14 @@ pub enum Continuation {
         kind: FastWindowKind,
     },
     /// An act/agenda is advancing (#482). A small resumable sub-process that
-    /// pushes the observable `…Advanced` event, optionally pauses for a gated
-    /// acknowledge `Confirm`, fires the leaving card's Forced on-advance reverse
-    /// (which may itself suspend — 01105's interactive `ChooseOne`), then bumps
-    /// the deck cursor *after* the reverse resolves (RR order). Driven by the
-    /// `drive` loop and resumed via `resolve_input` (mirrors the `SkillTest`
-    /// frame). Replaces the former synchronous `advance_agenda`/`advance_act`
-    /// emit-then-bump, whose post-forced bookkeeping stranded a suspending
-    /// reverse.
+    /// pushes the observable `…Advanced` event, for a forced advance in
+    /// interactive mode pauses for a one-option on-card flip pick (#558), fires
+    /// the leaving card's Forced on-advance reverse (which may itself suspend —
+    /// 01105's interactive `ChooseOne`), then bumps the deck cursor *after* the
+    /// reverse resolves (RR order). Driven by the `drive` loop and resumed via
+    /// `resolve_input` (mirrors the `SkillTest` frame). Replaces the former
+    /// synchronous `advance_agenda`/`advance_act` emit-then-bump, whose
+    /// post-forced bookkeeping stranded a suspending reverse.
     AdvanceReverse {
         /// Which deck is advancing.
         deck: AdvanceDeck,
@@ -465,6 +483,9 @@ pub enum Continuation {
         leaving_code: CardCode,
         /// Where in the sub-process we are.
         step: AdvanceStep,
+        /// Whether this advance was forced (prompts the flip pick) or
+        /// deliberate (the ack is skipped) (#558).
+        trigger: AdvanceTrigger,
     },
     /// A no-choice forced ability is about to resolve and the game is in
     /// interactive mode (`interactive_acknowledge`): surface it as a one-option
