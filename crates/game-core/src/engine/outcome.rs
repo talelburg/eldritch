@@ -86,6 +86,8 @@ pub enum OptionTarget {
     CardInstance(CardInstanceId),
     /// The current act.
     Act,
+    /// The current agenda.
+    Agenda,
 }
 
 /// One selectable option in a structured choice prompt.

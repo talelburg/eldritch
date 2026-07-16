@@ -88,6 +88,12 @@ async fn mount_with_prompt(
         clue_threshold: 2,
         resolution: None,
     }];
+    state.agenda_deck = vec![Agenda {
+        code: CardCode::new("01107"),
+        doom_threshold: 3,
+        resolution: None,
+    }];
+    state.agenda_doom = 1;
     let store = RwSignal::new(ClientState::default());
     store.update(|s| s.outcome = Some(outcome));
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
@@ -152,4 +158,71 @@ async fn act_card_inert_without_an_act_anchored_option() {
     );
     let _rx = mount_with_prompt(outcome).await;
     assert!(!act_card().class_name().contains("actionable"));
+}
+
+/// The last-mounted `.card--agenda` — `mount_to_body` accumulates DOM across tests
+/// in this binary, so scope to the newest card (the `act_card` precedent).
+fn agenda_card() -> web_sys::Element {
+    let cards = document()
+        .query_selector_all(".card--agenda")
+        .expect("query");
+    cards
+        .item(cards.length() - 1)
+        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .expect("a .card--agenda")
+}
+
+#[wasm_bindgen_test]
+async fn agenda_card_glows_and_resolves_via_menu() {
+    // An agenda-sourced forced effect anchors its "Resolve" to the agenda card (#556).
+    let outcome = awaiting_pick_single_with(
+        "Forced — They're Getting Out!",
+        vec![ChoiceOption::new(
+            OptionId(0),
+            "Resolve",
+            OptionTarget::Agenda,
+        )],
+    );
+    let mut rx = mount_with_prompt(outcome).await;
+    let card = agenda_card();
+    assert!(
+        card.class_name().contains("actionable"),
+        "agenda card glows"
+    );
+    card.query_selector(".menu-hit")
+        .expect("query")
+        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .expect("a .menu-hit")
+        .click();
+    leptos::task::tick().await;
+    let item = card
+        .query_selector(".context-menu .menu-item")
+        .expect("query")
+        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .expect("a menu item");
+    assert_eq!(item.text_content().unwrap_or_default(), "Resolve");
+    item.click();
+    leptos::task::tick().await;
+    let msg = rx.try_recv().expect("a frame after tick");
+    match msg {
+        ClientMessage::Submit {
+            action: PlayerAction::ResolveInput { response },
+        } => assert_eq!(response, InputResponse::PickSingle(OptionId(0))),
+        other @ ClientMessage::Submit { .. } => panic!("expected ResolveInput, got {other:?}"),
+    }
+}
+
+#[wasm_bindgen_test]
+async fn agenda_card_inert_without_an_agenda_anchored_option() {
+    // Option anchors Global (not Agenda) → the agenda card stays inert.
+    let outcome = awaiting_pick_single_with(
+        "Choose an action",
+        vec![ChoiceOption::new(
+            OptionId(0),
+            "End turn",
+            OptionTarget::Global,
+        )],
+    );
+    let _rx = mount_with_prompt(outcome).await;
+    assert!(!agenda_card().class_name().contains("actionable"));
 }
