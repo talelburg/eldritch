@@ -493,9 +493,9 @@ Run the 7-job gauntlet; push `web/advance-flip-render`; open the PR — this one
 
 ---
 
-# Slice 4 (deferred) — 01110 `#466` suppression
+# Slice 4 (deferred, #562) — 01110 `#466` suppression
 
-Not planned in detail here. When picked up: a forced ability whose sole effect is an act/agenda advance suppresses its `#466 AcknowledgeForced` (the advance's on-card `AwaitAck` pick is the single flip). Its own issue/plan; terminal, once-per-scenario.
+Not planned in detail here. When picked up: a forced ability whose sole effect is an act/agenda advance suppresses its `#466 AcknowledgeForced` (the advance's on-card `AwaitAck` pick is the single flip). Tracked in #562; terminal, once-per-scenario.
 
 ---
 
