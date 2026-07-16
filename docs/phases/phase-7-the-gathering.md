@@ -333,10 +333,18 @@ the now-stable set of input shapes:
       an act/agenda advance into an on-card flip → resolve. This slice is pure data: `CardMetadata` gains
       `back_name`/`back_text` (verbatim ArkhamDB reverse side, generic across double-sided cards), the
       pipeline maps them, and the corpus regenerates (agenda 01105 → "A Lapse in Time"). Not user-visible
-      alone. Slice 2 (`AdvanceReverse.trigger` + on-card `AwaitAck` pick for forced advances, skip for
-      deliberate) and slice 3 (web front/reverse render, closes #558) follow; slice 4 (01110 `#466`
+      alone. Slice 3 (web front/reverse render, closes #558) follows; slice 4 (01110 `#466`
       suppression) deferred. Design/plan: `docs/superpowers/specs/2026-07-16-advance-flip-design.md`,
       `docs/superpowers/plans/2026-07-16-advance-flip.md`.
+    - **Advance-flip slice 2 — the on-card flip pick (#558, PR #560).** `Continuation::AdvanceReverse`
+      gains an `AdvanceTrigger { Forced, Deliberate }`: a **forced** advance (agenda doom; act 01110 on
+      Ghoul-Priest defeat) in interactive mode suspends its `AwaitAck` step with a one-option on-card
+      `PickSingle` anchored to `OptionTarget::Act`/`Agenda` (the flip pick, replacing the anchorless
+      `Confirm`); a **deliberate** advance (the `AdvanceAct` action / round-end objective) skips the ack —
+      the action *was* the flip. `resume` accepts `PickSingle(0)`. The split key is forced-vs-chosen, not
+      act-vs-agenda. Display-only anchor (resolve validates only the echoed `OptionId`). Engine-only —
+      the client renders whatever it does for an anchored `PickSingle` until slice 3 draws the actual
+      face flip.
     - **S6 — globals + bar retirement (#541), the closer, queued.** Homes for the genuinely-global
       End turn / Gain resource / Draw + an encounter-deck element for the draw `Confirm`, then
       **delete `.action-bar`** (folding picker + skill-test-result into their own surfaces). The
