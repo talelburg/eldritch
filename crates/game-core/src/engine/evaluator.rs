@@ -1513,7 +1513,10 @@ fn apply_advance_current_act(cx: &mut Cx) -> EngineOutcome {
     }
     match cx.state.act_deck[cx.state.act_index].resolution.clone() {
         Some(resolution) => request_resolution(cx.state, resolution),
-        None => advance_act(cx),
+        // AdvanceCurrentAct is only reached from a Forced ability (01110's
+        // Ghoul-Priest-defeat advance) — a game-forced advance, so it prompts
+        // the on-card flip (#558).
+        None => advance_act(cx, crate::state::AdvanceTrigger::Forced),
     }
     EngineOutcome::Done
 }

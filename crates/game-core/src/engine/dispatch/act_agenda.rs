@@ -108,6 +108,8 @@ pub(super) fn advance_agenda(cx: &mut Cx) {
             from,
             leaving_code,
             step: crate::state::AdvanceStep::AwaitAck,
+            // Agenda advances are always game-forced (a doom threshold).
+            trigger: crate::state::AdvanceTrigger::Forced,
         });
 }
 
@@ -197,7 +199,8 @@ pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> E
     spend_clues(cx.state, investigator, threshold);
     match cx.state.act_deck[cx.state.act_index].resolution.clone() {
         Some(resolution) => request_resolution(cx.state, resolution),
-        None => advance_act(cx),
+        // The `AdvanceAct` action *is* the player's flip — a deliberate advance.
+        None => advance_act(cx, crate::state::AdvanceTrigger::Deliberate),
     }
     EngineOutcome::Done
 }
@@ -312,7 +315,8 @@ pub fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> Engine
         .expect("affordable ⇒ contributor location in play");
     let contributors = investigators_at(cx.state, loc);
     spend_clues_from(cx.state, &contributors, threshold);
-    advance_act(cx);
+    // The round-end objective (01109) is a deliberate, player-chosen advance.
+    advance_act(cx, crate::state::AdvanceTrigger::Deliberate);
     EngineOutcome::Done
 }
 
@@ -327,7 +331,12 @@ pub fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> Engine
 /// Invariant: the leaving act's on-advance Forced effect must not itself
 /// re-advance the act (no in-scope card does; a re-advance from that
 /// effect would recurse here). Revisit if such an ability lands.
-pub(crate) fn advance_act(cx: &mut Cx) {
+///
+/// `trigger` records why the act is advancing so the sub-process can decide
+/// whether to prompt the on-card flip: `Deliberate` for the player-driven
+/// `AdvanceAct` action and the round-end objective, `Forced` for 01110's
+/// Ghoul-Priest-defeat forced advance (#558).
+pub(crate) fn advance_act(cx: &mut Cx, trigger: crate::state::AdvanceTrigger) {
     let from = cx.state.act_index;
     let leaving_code = cx.state.act_deck[from].code.clone();
     // Mirror of advance_agenda (#482): defer to the resumable AdvanceReverse
@@ -342,6 +351,7 @@ pub(crate) fn advance_act(cx: &mut Cx) {
             from,
             leaving_code,
             step: crate::state::AdvanceStep::AwaitAck,
+            trigger,
         });
 }
 
