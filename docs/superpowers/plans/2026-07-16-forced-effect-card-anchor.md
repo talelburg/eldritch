@@ -377,6 +377,198 @@ Confirm #553 auto-closed and `git pull` on `main`.
 
 ---
 
+### Task 4: Anchor location-sourced forced effects to the map node (#553 follow-up, same PR)
+
+**Design:** the "Follow-up: location-sourced forced anchor" section of the spec.
+
+**Why:** a location's own forced ability (the Attic 01113 — "Forced – After you enter: take 1 horror") reaches the wire as `OptionTarget::Global` (resolvable only from the flat bar). A location has a `LocationId`, not a `CardInstanceId`; the `EnteredLocation` scan passes `push_matching(… None …)` → `CandidateSource::Board` → (code ≠ act) → `Global`. `CandidateSource` carries no `LocationId`, so there is no path to `OptionTarget::Location(id)` (which the map node already renders, S1).
+
+**Files:**
+- Modify: `crates/game-core/src/state/game_state.rs` (`CandidateSource::Location` variant + `instance()` arm)
+- Modify: `crates/game-core/src/engine/dispatch/forced_triggers.rs` (widen `push_matching`'s `source` param; the `EnteredLocation` site passes `Location`; the other 13 sites pass `Board`/`InPlay`; add a game-core unit test)
+- Modify: `crates/game-core/src/engine/dispatch/reaction_windows.rs` (`candidate_anchor` + `build_resolution_options` label + `bump_usage_counter` arms; add a unit test)
+- Modify: `crates/cards/tests/forced_acknowledge.rs` (extend the Attic test with the anchor assertion — the end-to-end red)
+
+**Interfaces:**
+- Changes: `CandidateSource` gains `Location(LocationId)`.
+- Changes: `push_matching(… source: Option<CardInstanceId> …)` → `push_matching(… source: CandidateSource …)`.
+
+**Approach note (widen vs. wrapper):** `push_matching`'s `source: Option<CardInstanceId>` is a two-case encoding (`Some`=InPlay, `None`=Board) the feature outgrows — a location is a third origin it cannot represent. Widen the parameter to `CandidateSource` (the internal `match` disappears; each call site states its origin) rather than add a single-use `push_matching`-with-location wrapper (Karpathy: no abstractions for single-use code). The 13 mechanical `None→Board`/`Some(x)→InPlay(x)` edits are trivially reviewable and make every call site self-document its origin.
+
+- [ ] **Step 1: Write the failing end-to-end test (real Attic registry)**
+
+In `crates/cards/tests/forced_acknowledge.rs`, add `OptionTarget` to the `game_core::engine` import and, inside `attic_forced_acknowledges_before_horror_when_interactive`'s `AwaitingInput` arm (right after the `options.len()` assert), add:
+
+```rust
+            assert_eq!(
+                request.options[0].target,
+                OptionTarget::Location(LOC),
+                "the forced-on-enter option anchors to the location on the map (#553), not the flat bar"
+            );
+```
+
+Import line becomes:
+
+```rust
+use game_core::engine::{EngineOutcome, OptionTarget};
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `cargo test -p cards --test forced_acknowledge attic_forced_acknowledges_before_horror_when_interactive`
+Expected: FAIL — `left: Global, right: Location(LocationId(1))` (the Attic currently anchors `Global`).
+
+- [ ] **Step 3: Add the `Location` variant + fix every match site**
+
+**3a.** In `state/game_state.rs`, add the variant (after `InPlay`):
+
+```rust
+    /// A location's own ability (the Attic's forced horror). Anchors to the
+    /// location on the map. Locations have a [`LocationId`], not a
+    /// [`CardInstanceId`], so this can't fold into `InPlay` (#553).
+    Location(LocationId),
+```
+
+(`LocationId` is already in scope in `game_state.rs`; it is `Copy`, so `CandidateSource` keeps its `Copy` derive.)
+
+**3b.** In `state/game_state.rs`, `CandidateSource::instance()` — a location has no instance id, so it groups with the `None` arm:
+
+```rust
+            CandidateSource::Board | CandidateSource::Hand | CandidateSource::Location(_) => None,
+```
+
+**3c.** In `reaction_windows.rs`, `candidate_anchor` — add before the `Board` arm:
+
+```rust
+        CandidateSource::Location(location_id) => OptionTarget::Location(location_id),
+```
+
+**3d.** In `reaction_windows.rs`, `build_resolution_options`'s label match — a location forced reads like any board reaction:
+
+```rust
+                CandidateSource::InPlay(_) | CandidateSource::Board | CandidateSource::Location(_) => {
+                    format!("Resolve reaction: {}", cand.code)
+                }
+```
+
+**3e.** In `reaction_windows.rs`, `bump_usage_counter` — a location has no per-instance usage counter (and location forced abilities carry no usage limit), so it joins the unreachable arm; update the message:
+
+```rust
+        CandidateSource::Board | CandidateSource::Hand | CandidateSource::Location(_) => unreachable!(
+            "bump_usage_counter: a usage-limited candidate must be an in-play instance \
+             (board / hand / location candidates carry no per-instance usage limits); candidate {trigger:?}"
+        ),
+```
+
+**3f.** In `forced_triggers.rs`, widen `push_matching`'s signature and drop the internal `match`:
+
+```rust
+fn push_matching(
+    reg: &card_registry::CardRegistry,
+    code: &CardCode,
+    controller: InvestigatorId,
+    source: CandidateSource,
+    out: &mut Vec<ResolutionCandidate>,
+    bucket: EventTiming,
+    want: impl Fn(&EventPattern) -> bool,
+) {
+```
+
+and the `out.push` becomes (drop the `match source { … }`, keep the comment trimmed):
+
+```rust
+                out.push(ResolutionCandidate {
+                    code: code.clone(),
+                    controller,
+                    ability_index: u8::try_from(idx)
+                        .expect("ability_index fits u8 — abilities vecs are tiny"),
+                    // Origin set by the caller: an in-play/threat instance, a
+                    // scenario board card, or a location's own forced ability.
+                    source,
+                });
+```
+
+**3g.** In `forced_triggers.rs`, update all 14 `push_matching` call sites' `source` arg:
+- The `EnteredLocation` site (`&loc.code`) — **the fix**: `CandidateSource::Location(*location)`.
+- The 7 sites currently passing `None` (act/agenda by code: PhaseEnded ×2, ActAdvanced, AgendaAdvanced, EnemyDefeated act/agenda ×3): `CandidateSource::Board`.
+- The 6 sites currently passing `Some(card.instance_id)` / `Some(att.instance_id)` (RoundEnded, EndOfTurn, SkillTestResolved, tested_location attachment, GameEnd, LeftLocation attachment): `CandidateSource::InPlay(<the id>)`.
+
+- [ ] **Step 4: Run to verify the end-to-end test passes**
+
+Run: `cargo build -p game-core` — expected: clean (every match site handled).
+Run: `cargo test -p cards --test forced_acknowledge` — expected: PASS (all four; the Attic now anchors `Location`).
+
+- [ ] **Step 5: Add game-core unit tests (regression guards)**
+
+In `reaction_windows.rs` `resolution_option_anchor_tests`, extend `candidate_anchor_maps_each_source` with a location case (or add a focused test):
+
+```rust
+        use crate::state::LocationId;
+        let loc = ResolutionCandidate::new(
+            CardCode::new("01113"),
+            InvestigatorId(1),
+            0,
+            CandidateSource::Location(LocationId(7)),
+        );
+        assert_eq!(
+            candidate_anchor(&loc, Some(&act)),
+            OptionTarget::Location(LocationId(7))
+        );
+```
+
+In `forced_triggers.rs` `mod tests`, mirror the shipped in-play anchor test with a location source:
+
+```rust
+    #[test]
+    fn acknowledge_forced_anchors_a_location_source_to_its_map_node() {
+        use crate::engine::OptionTarget;
+        use crate::state::{Continuation, LocationId};
+        use crate::test_support::GameStateBuilder;
+
+        let mut state = GameStateBuilder::default().build();
+        state.continuations.push(Continuation::AcknowledgeForced {
+            candidate: ResolutionCandidate::new(
+                CardCode::new("01113"),
+                InvestigatorId(1),
+                0,
+                CandidateSource::Location(LocationId(3)),
+            ),
+        });
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        match super::drive_acknowledge_forced(&mut cx) {
+            EngineOutcome::AwaitingInput { request, .. } => {
+                assert_eq!(request.options.len(), 1);
+                assert_eq!(
+                    request.options[0].target,
+                    OptionTarget::Location(LocationId(3)),
+                );
+            }
+            other => panic!("expected one-option suspend, got {other:?}"),
+        }
+    }
+```
+
+Run: `cargo test -p game-core --lib -- candidate_anchor_maps_each_source acknowledge_forced_anchors_a_location`
+Expected: PASS.
+
+- [ ] **Step 6: Clippy + commit**
+
+Run: `cargo clippy -p game-core --all-targets --all-features -- -D warnings` — expected: clean.
+
+```bash
+git add crates/game-core/src/state/game_state.rs \
+        crates/game-core/src/engine/dispatch/forced_triggers.rs \
+        crates/game-core/src/engine/dispatch/reaction_windows.rs \
+        crates/cards/tests/forced_acknowledge.rs
+git commit -m "engine: anchor location-sourced forced effects to the map node (#553)"
+```
+
+---
+
 ## Self-review
 
 **Spec coverage:**

@@ -165,3 +165,79 @@ acks simply gain a glow they lacked.
 - The 2+ ordered forced run — already anchored via `build_resolution_options`.
 - Any change to forced-trigger *timing / eligibility* — this only re-labels the
   already-surfaced option's anchor.
+
+---
+
+## Follow-up: location-sourced forced anchor
+
+**Added:** 2026-07-16 (same PR #554, before merge) · continues #553
+
+### The remaining gap
+
+The initial cut anchored **in-play instances** and the **act**. A forced ability on
+a **location** (the Attic 01113 — "Forced – After you enter the Attic: take 1
+horror") still reaches the wire as `OptionTarget::Global`: resolvable only from the
+flat bar, never by clicking the location on the map.
+
+Cause: a location has a `LocationId`, **not** a `CardInstanceId`. The only scan that
+reads a location's *own* code — `collect_forced_hits`'s `EnteredLocation` arm
+(`forced_triggers.rs`, `push_matching(reg, &loc.code, …, None, …)`) — passes
+`source: None`, which `push_matching` collapses to `CandidateSource::Board`. The
+Attic's code is not the current act's code, so `candidate_anchor`'s `Board` arm
+falls to `Global`. `CandidateSource` carries no `LocationId`, so there is no path
+from a location-sourced forced hit to `OptionTarget::Location(id)` — which the map
+node already renders (from S1).
+
+The two *other* location-touching scans are **not** in scope: the skill-test
+`tested_location` scan (Obscuring Fog 01168) and the `LeftLocation` scan (Barricade
+01038) both walk `loc.attachments` and pass `Some(att.instance_id)` — they already
+anchor to the **attachment** instance (`InPlay`), which is correct. Only the
+location's *own* forced ability (`EnteredLocation`, `&loc.code`, `None`) is
+unanchored.
+
+### Change: `CandidateSource` gains a `Location` variant
+
+```rust
+// state/game_state.rs
+pub enum CandidateSource {
+    InPlay(CardInstanceId),
+    /// A location's own ability (the Attic's forced horror) — anchors to the
+    /// location on the map. Locations have a `LocationId`, not a `CardInstanceId`.
+    Location(LocationId),
+    Board,
+    Hand,
+}
+```
+
+`push_matching`'s `source` parameter is `Option<CardInstanceId>` today, which can
+express only `InPlay` / `Board` — a location is a third origin it cannot encode.
+Widen the parameter to take a `CandidateSource` **directly**; the internal
+`match source { Some => InPlay, None => Board }` disappears and each call site
+states its origin (`CandidateSource::Board` where it passed `None`,
+`CandidateSource::InPlay(id)` where it passed `Some(id)`). The `EnteredLocation` arm
+passes `CandidateSource::Location(*location)`.
+
+`candidate_anchor` gains one arm:
+
+```rust
+CandidateSource::Location(id) => OptionTarget::Location(id),
+```
+
+This flows through the shared helper, so **both** the single-hit
+`drive_acknowledge_forced` path (the Attic case) and the 2+ ordered
+`build_resolution_options` path anchor a location forced to its map node — for free,
+and consistently.
+
+### Web
+
+**None.** `OptionTarget::Location(id)` already glows the map node and opens its
+menu (S1). The Attic simply gains the glow it lacked.
+
+### Testing (additions)
+
+- `candidate_anchor`: `Location(id) → OptionTarget::Location(id)`.
+- `drive_acknowledge_forced`: a frame whose candidate is a `Location` source yields
+  a `PickSingle` whose single option is `Location`-anchored (not `Global`) — the
+  Attic-enter case.
+- Regression: the widened `push_matching` leaves every existing anchor test
+  (`InPlay` / `Board` / act) unchanged.
