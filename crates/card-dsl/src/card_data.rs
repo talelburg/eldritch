@@ -20,9 +20,9 @@ use serde::{Deserialize, Serialize};
 /// to the rulebook's preferred term.
 ///
 /// `Mythos` is used for encounter-set cards (treacheries, enemies,
-/// scenario-specific things). `Weakness` covers basic weaknesses; per-
-/// investigator weaknesses are encoded as story assets / treacheries
-/// with a regular class plus a `weakness` subtype, not via this enum.
+/// scenario-specific things). Weaknesses are NOT a variant here: both
+/// basic and per-investigator weaknesses carry a regular class (usually
+/// `Neutral`) plus the [`CardMetadata::weakness`] subtype flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Class {
     Guardian,
@@ -226,8 +226,10 @@ pub enum PreyMeasure {
 /// regenerating the corpus, which is the pipeline's job.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CardMetadata {
-    /// Five-character `ArkhamDB` code (e.g. `"01059"`). Identity and the
-    /// registry's binary-search / sort key.
+    /// `ArkhamDB` code (e.g. `"01059"`). Usually five characters, but
+    /// double-sided scenario cards use a letter-suffixed form for the
+    /// second side (e.g. `"01121a"` / `"01121b"`) — don't assume fixed
+    /// width. Identity and the registry's binary-search / sort key.
     pub code: String,
     /// Display name.
     pub name: String,

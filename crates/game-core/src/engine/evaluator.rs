@@ -52,9 +52,11 @@
 //!
 //! `apply_effect` follows the same validate-first / mutate-second
 //! pattern the existing dispatch handlers use: if the effect can't
-//! resolve cleanly, return [`EngineOutcome::Rejected`] with no state
-//! change and no events pushed. The outer apply loop's belt-and-
-//! suspenders `events.clear()` on rejection backs this up.
+//! resolve cleanly, return [`EngineOutcome::Rejected`]. Partial
+//! mutation before a mid-tree rejection is fully rolled back at the
+//! apply boundary — `apply_via` (`engine/mod.rs`) snapshot-restores
+//! state, events, and RNG position on `Rejected` — so validate-first
+//! here is about cheap, precise rejections, not state safety.
 
 use serde::{Deserialize, Serialize};
 
@@ -1037,10 +1039,9 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
 /// today (e.g. comparing against a stat snapshot not stored on
 /// state) returns [`EngineOutcome::Rejected`] with a TODO message.
 ///
-/// Inherits [`apply_seq`]'s partial-events-on-rejection caveat: a
-/// `Rejected` returned by the branch passes through with whatever
-/// events the branch already pushed. The structural fix lives at
-/// the outer `apply` loop (TODO in `engine/mod.rs::apply`).
+/// A `Rejected` returned by the branch passes through; any events
+/// the branch already pushed (and any state it mutated) are rolled
+/// back by `apply_via`'s snapshot-restore at the apply boundary.
 /// Resolve a [`Condition`] against the current state.
 ///
 /// Returns `Err` for conditions that aren't expressible yet (the
@@ -1180,7 +1181,7 @@ fn modify(
             }
         }
         ModifierScope::ThisTurn => EngineOutcome::Rejected {
-            reason: "TODO(#102-followup): ThisTurn scope not yet wired; needs a turn-scoped \
+            reason: "TODO(#572): ThisTurn scope not yet wired; needs a turn-scoped \
                      accumulator that drains on TurnEnded."
                 .into(),
         },
@@ -1290,7 +1291,8 @@ fn discover_clue(
     // point: `emit_event` queues the window iff an eligible `WouldDiscoverClues`
     // reaction is controlled at the discovery location — the "at your location"
     // scoping and the `card.clues > 0` potential-gate stand-in (RR p.2;
-    // TODO(#368)) live in the window scan. If the window opened, suspend; the
+    // capped-count semantics now tracked in #471) live in the window scan. If
+    // the window opened, suspend; the
     // `BeforeDiscoverClues` continuation performs the deferred discovery on
     // close (unless a reaction cancelled it). No registry / no eligible card →
     // `open_windows` stays empty and the discovery happens now.

@@ -50,7 +50,7 @@ pub(super) fn place_doom_on_agenda(cx: &mut Cx) {
 /// doom only on the agenda (no corpus card carries doom yet — summing
 /// "doom on each other card in play" would add zero).
 ///
-/// TODO(#73 follow-up): sum doom on other cards in play once a
+/// TODO(#572): sum doom on other cards in play once a
 /// doom-bearing card exists.
 ///
 /// If the current agenda is terminal (carries a `resolution`), advancing

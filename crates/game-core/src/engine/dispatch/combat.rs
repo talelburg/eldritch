@@ -165,11 +165,13 @@ pub(super) struct Soaker {
 /// only health soaks damage, an asset with only sanity soaks horror.
 ///
 /// Soak-first deterministic assignment, used by [`soak_and_place`] when no
-/// point is contested (no soaker with capacity) and by the **non-attack/effect**
-/// path until K5b-2. The attack path's interactive per-point distribution
-/// (#44/K5b-1) lives in [`deal_head_and_maybe_park`] /
-/// [`resume_damage_assignment`]; `TODO(#44)`: route the effect path
-/// (`take_damage`/`take_horror`) through it too (K5b-2).
+/// point is contested (no soaker with capacity) and by the remaining
+/// synchronous callers of `take_damage`/`take_horror`. The interactive
+/// per-point distribution (#44/K5) lives in [`deal_head_and_maybe_park`] /
+/// [`resume_damage_assignment`] and `soak_and_distribute`; the two sites
+/// still routed through the synchronous auto-soak wrapper are tracked in
+/// `TODO(#427)` (Dynamite Blast's native loop) and `TODO(#429)` (the
+/// deck-out horror penalty).
 pub(super) fn assign_attack(soakers: &[Soaker], mut damage: u8, mut horror: u8) -> Assignment {
     let mut assignment = Assignment::default();
     for soaker in soakers {

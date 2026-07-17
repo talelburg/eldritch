@@ -12,10 +12,10 @@ Early development. Not yet playable. Tracking work via issues and milestones; se
 
 Requires Rust stable (pinned via `rust-toolchain.toml`) and the `wasm32-unknown-unknown` target. The `rust-toolchain.toml` will set both up automatically on `cargo` invocation.
 
-Install the dev-loop tool:
+Install the dev-loop tool (CI pins `trunk@0.21.14`; match it to avoid behavior drift):
 
 ```sh
-cargo install --locked trunk
+cargo install --locked trunk --version 0.21.14
 ```
 
 Run the server:
@@ -29,8 +29,9 @@ Run the web dev server (in another terminal):
 
 ```sh
 cd crates/web
-trunk serve --proxy-backend=http://localhost:8000
-# → http://localhost:3000
+trunk serve
+# → http://localhost:3000 (REST + WS proxy config lives in crates/web/Trunk.toml —
+#   don't pass --proxy-backend: a root proxy panics on trunk 0.21.x)
 ```
 
 Run the test suite:
@@ -43,16 +44,16 @@ cargo test --all
 
 ```
 crates/
+├── card-dsl/            # effect DSL + static card metadata types (pure data)
 ├── game-core/           # rules engine, no I/O
 ├── cards/               # card definitions (DSL + Rust)
 ├── scenarios/           # scenario modules + campaign orchestrators
+├── protocol/            # client↔server wire messages
 ├── server/              # Axum binary, websocket hub, persistence
 ├── web/                 # Leptos WASM client
 └── card-data-pipeline/  # CLI for ingesting ArkhamDB metadata
 data/
 └── arkhamdb-snapshot/   # pinned card data, manually updated
-tests/
-└── replays/             # saved action logs for regression tests
 ```
 
 ## License

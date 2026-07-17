@@ -490,10 +490,13 @@ Captured but **unfiled** (no issues yet) — filed when the gate closes.
 - **Solo-with-2 UX.** One client driving two investigators (picker, whose-turn, two
   boards vs. tabbed). Open design question; the Tier-2 correctness issues (#65, #381,
   #359, #153, #371) land here.
-- **Optional Gathering content (#258).** Lita Chantler's parley/take-control + the
-  Parlor (01115) Resign action. #258 is also the home for the **Parley/Resign
-  action-type mechanisms** (not basic actions — RR p.5; both AoO-exempt), landing
-  with their first granting card.
+- **Deferred Gathering content (#258).** Lita Chantler's parley/take-control + the
+  Parlor (01115) Resign action — those parts are optional content. **The Parlor
+  movement barrier (01115 unrevealed: "You cannot move into the Parlor.") is also
+  in #258's scope and is mandatory printed behavior, currently unenforced** — don't
+  drop it when picking up the parley/resign half. #258 is also the home for the
+  **Parley/Resign action-type mechanisms** (not basic actions — RR p.5; both
+  AoO-exempt), landing with their first granting card.
 
 Campaign sequencing (The Midnight Masks, The Devourer Below, campaign log + `Fact`
 enum) is **Phase 9** — including the first real Peril/Surge cards (Hunting Shadow

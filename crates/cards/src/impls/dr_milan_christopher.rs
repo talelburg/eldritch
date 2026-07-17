@@ -12,13 +12,13 @@
 //! investigate" is enforced by the window being controller-scoped, so the
 //! pattern is bare and the effect's `You` resolves to the controller.
 //!
-//! # Ally-soak gap
+//! # Ally soak
 //!
 //! Card metadata gives Dr. Milan `health: 1, sanity: 2` — ally
-//! damage/horror soak, not a max-stat boost on the controller. The DSL
-//! doesn't model soak yet (#44, shared with Holy Rosary / Beat Cop), so
-//! this impl ships only the +1 intellect and the reaction; the card is
-//! mechanically weaker than printed until the soak primitive lands.
+//! damage/horror soak, not a max-stat boost on the controller. Soak is
+//! engine-modeled from that metadata (#44/K5, shared with Holy Rosary /
+//! Beat Cop); `abilities()` declares only the +1 intellect and the
+//! reaction — the soak half rides on metadata.
 
 use card_dsl::dsl::{
     constant, gain_resources, modify, reaction_on_event, Ability, EventPattern, EventTiming,

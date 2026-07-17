@@ -16,7 +16,7 @@ RUSTFLAGS="-D warnings"     cargo test --all --all-features
                             cargo clippy --all-targets --all-features -- -D warnings
                             cargo fmt --check
 RUSTDOCFLAGS="-D warnings"  cargo doc --workspace --no-deps --all-features
-                            cargo build -p web --target wasm32-unknown-unknown
+                            cargo build -p web --target wasm32-unknown-unknown   # quick check; CI's wasm-build job actually runs `trunk build --release` (release profile + asset pipeline — can fail where the debug cargo build passes)
                             wasm-pack test --headless --firefox crates/web   # headless browser tests (6th CI job)
                             cargo clippy -p web --all-targets --target wasm32-unknown-unknown --all-features -- -D warnings   # lints wasm-only code (7th CI job)
 
@@ -74,7 +74,7 @@ Engine handlers that need card data (`PlayCard`, future skill-test modifier quer
 1. Checks every precondition; on any failure returns `EngineOutcome::Rejected { reason }` with state and events **unchanged**.
 2. Mutates state and pushes events only after all validations pass.
 
-Enforced by convention, not yet structurally (`apply()` has a TODO to refactor to a two-phase shape; the apply loop has a belt-and-suspenders `events.clear()` on `Rejected`). Canonical shape: `move_action`, `investigate`, `play_card`. Caveat: `play_card` emits `CardPlayed` and runs on-play effects *before* removing the card from hand, so a future on-play effect that rejects mid-resolution leaves partial state — safe for in-scope effects (`DiscoverClue`, `GainResources`), broader hardening deferred.
+Backstopped structurally since #161: `apply_via` (`crates/game-core/src/engine/mod.rs`) snapshots the pristine state before dispatch and restores it (state, events, and RNG position) whenever the outcome is `Rejected` — no handler, including the mutating DSL evaluator, can leak partial state past a rejection. Handlers still follow validate-first as a convention (it keeps rejection cheap and reasons precise; canonical shape: `move_action`, `investigate`, `play_card`), but mid-resolution mutations before a reject are rolled back at the apply boundary, not merely event-cleared.
 
 `EngineOutcome` = `Done | AwaitingInput { … } | Rejected { reason }`; `AwaitingInput` round-trips via `PlayerAction::ResolveInput`.
 
@@ -118,7 +118,7 @@ Work is tracked against GitHub milestones (`phase-0-foundations` → `phase-10-d
 
 Follow this order for every non-trivial PR — skipping steps has cost real iterations:
 
-1. **Run the full CI gauntlet locally before pushing** (all five jobs with the strict flags from Commands). Plain `cargo test` passes even when `doc`/`clippy` fail in CI; the `doc` job has caught broken intra-doc links local runs miss.
+1. **Run the full CI gauntlet locally before pushing** (all seven jobs with the strict flags from Commands). Plain `cargo test` passes even when `doc`/`clippy` fail in CI; the `doc` job has caught broken intra-doc links local runs miss.
 2. **Commit and push** to a feature branch `<scope>/<short-slug>` (`<scope>` matches the commit scope; slug is a 2–4-word hyphenated descriptor, e.g. `engine/play-card`). One branch per issue. Commit body explains the *why* and ends with `Closes #NN.`
 3. **Open the PR** with `gh pr create` using the repo template; include a brief design-decisions paragraph for any non-obvious choice.
 4. **Watch CI** via `gh pr checks <PR#> --watch` (background). Code review for routine PRs happens **before push** (via the execution flow's pre-push review pass), so skip the post-push `review-agent` then. Reserve a post-push review for: PRs prepared without a pre-push review, an explicit request for a second look, or escalation skills (`/security-review` for sensitive areas, `/ultrareview` at milestone exits) — all user-triggered.

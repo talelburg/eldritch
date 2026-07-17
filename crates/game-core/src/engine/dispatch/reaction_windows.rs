@@ -874,8 +874,9 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         }
         // For `WouldDiscoverClues`, bind the would-be discovery count so the
         // replacement effect (Cover Up's "discard that many") discards the
-        // right number. Mirrors `attacking_enemy`. TODO(#368): `count` is the
-        // requested, not the capped, count.
+        // right number. Mirrors `attacking_enemy`. TODO(#471): `count` is the
+        // requested, not the capped, count (capped-count semantics moved from
+        // #368 to #471 with the Deduction fix).
         Some(crate::engine::TimingEvent::WouldDiscoverClues { count, .. }) => {
             eval_ctx.set_clue_discovery_count(*count);
         }
@@ -1705,8 +1706,9 @@ fn check_effect_target_available(
 
 /// Reject an ability mixing [`Cost::DiscardSelf`](crate::dsl::Cost::DiscardSelf)
 /// with another source-referencing cost: `DiscardSelf` removes the source, so it
-/// must be the sole such cost (Beat Cop / Knife list only it). `TODO(#301)` lift
-/// if a card ever needs the combo.
+/// must be the sole such cost (Beat Cop / Knife list only it). Deliberately
+/// unlifted until a card needs the combo — no tracking issue on purpose (YAGNI);
+/// whoever hits this rejection files one.
 fn reject_incompatible_costs(costs: &[crate::dsl::Cost]) -> Result<(), Cow<'static, str>> {
     use crate::dsl::Cost;
     if costs.iter().any(|c| matches!(c, Cost::DiscardSelf))
@@ -1716,7 +1718,7 @@ fn reject_incompatible_costs(costs: &[crate::dsl::Cost]) -> Result<(), Cow<'stat
     {
         return Err(
             "ActivateAbility: Cost::DiscardSelf cannot combine with Exhaust/SpendUses on the \
-             same ability (it removes the source); TODO(#301) lift if a card needs the combo"
+             same ability (it removes the source); lift if a card ever needs the combo"
                 .into(),
         );
     }

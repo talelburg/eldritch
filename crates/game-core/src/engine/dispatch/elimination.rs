@@ -133,9 +133,11 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     }
 
     // Step 4: place other (non-enemy) threat-area cards in the
-    // appropriate discard pile. No-op: treachery/asset-in-threat-area
-    // state is not modeled yet (enemies are the only threat-area
-    // occupants). TODO: wire when threat-area cards land (Phase 7+).
+    // appropriate discard pile. KNOWN GAP (#567): threat-area cards ARE
+    // modeled now (`place_in_threat_area` — Cover Up 01007, Frozen in
+    // Fear 01164, Dissonant Voices 01165) but are NOT drained here, so an
+    // eliminated investigator's threat area keeps firing forced scans.
+    // Fix tracked in #567.
 
     // Step 5: lead-investigator transfer. No-op by construction: there
     // is no stored lead; `first_active_investigator` recomputes the lead

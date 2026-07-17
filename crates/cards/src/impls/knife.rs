@@ -16,9 +16,10 @@
 //!   a `+2` combat modifier and `+1` damage, dealing `1 + 1` on success.
 //!
 //! Both fight through the inspectable [`Effect::Fight`](card_dsl::dsl::Effect::Fight),
-//! which auto-targets the single engaged enemy and rejects a fight with ≠1
-//! engaged enemy **before** any cost is paid — so ability 1's discard is
-//! never spent for nothing. The two abilities are at vec indices 0 and 1;
+//! which targets a co-located enemy (choice-resolved when several are present
+//! — #449/#451 widened the scope beyond engaged-only) and rejects when no
+//! eligible target exists **before** any cost is paid — so ability 1's
+//! discard is never spent for nothing. The two abilities are at vec indices 0 and 1;
 //! `ActivateAbility.ability_index` selects between them
 //! (`resolve_activated_ability` indexes the raw abilities vec and rejects
 //! any non-`Activated` trigger).

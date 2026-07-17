@@ -13,8 +13,9 @@
 //! pre-cost check rejects when no enemy is there, so the discard is never
 //! paid for nothing; 2+ enemies suspend for the controller's pick.
 //!
-//! The `sanity: 2` horror-soak the printed ally also carries is corpus
-//! metadata, not modeled as an ability (tracked in #44).
+//! The `health: 2, sanity: 2` soak the printed ally also carries is corpus
+//! metadata; soak is engine-modeled from it (#44/K5 — nothing to declare in
+//! `abilities()`; see `crates/cards/tests/non_attack_soak.rs`).
 
 use card_dsl::dsl::{
     activated, constant, deal_damage_to_enemy, modify, Ability, Cost, EnemyTarget, ModifierScope,

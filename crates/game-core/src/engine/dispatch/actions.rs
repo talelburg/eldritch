@@ -486,8 +486,10 @@ pub(super) fn move_primary_effect(
     // The leaving investigator left `from`: fire any "when an investigator
     // leaves attached location" forced abilities (Barricade 01038 discards
     // itself). In scope this is a single deterministic self-discard, so it
-    // resolves synchronously; a 2+-forced suspend here is out of Slice-1 scope
-    // (emit_event's loud guard, like the other non-terminal forced sites).
+    // resolves synchronously. KNOWN HAZARD (#569): a 2+/suspending hit is not
+    // guarded — `emit_event` opens a suspending ordering run, and returning it
+    // below permanently skips `engage_ready_enemies_on_enter` + the
+    // `EnteredLocation` emit (nothing resumes this handler). Tracked in #569.
     let left = super::emit::emit_event(
         cx,
         &super::emit::TimingEvent::LeftLocation {
