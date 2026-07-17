@@ -115,21 +115,23 @@ pub(crate) enum ForcedTriggerPoint {
 ///
 /// The order is the collection order of [`collect_forced_hits`]: board
 /// cards (act before agenda) before threat-area / attachment instances,
-/// investigators by id (`BTreeMap`), instances in zone order. #213 will
-/// replace this with player-chosen ordering (Rules Reference p.17: the
-/// player orders simultaneous triggers, even in solo); a fixed order is a
-/// rules-acceptable stand-in until then.
+/// investigators by id (`BTreeMap`), instances in zone order. The
+/// frame-driven emit path (#434) opens player-ordered resolution runs for
+/// 2+ hits (Rules Reference p.17: the player orders simultaneous
+/// triggers, even in solo); this legacy path keeps a fixed order — a
+/// rules-acceptable stand-in — until its remaining call sites migrate.
 ///
-/// **Suspension caveat (#212 reentrancy).** A hit that suspends
-/// (`AwaitingInput`) or rejects is surfaced immediately, abandoning any
-/// later hits — re-entry mid-sequence isn't modeled yet. This is correct
-/// as long as no point produces 2+ simultaneous *suspending* hits;
-/// synchronous multi-hit points (`RoundEnded`: agenda 01107 doom +
-/// Dissonant Voices 01165 discard) all resolve fully. The only suspending
-/// forced effect today is Frozen in Fear 01164's `EndOfTurn` skill test;
-/// since it carries no "Limit 1", two copies on one investigator would
-/// drop the second copy's test at end of turn — a known #212/#213
-/// limitation, not a single-hit guarantee.
+/// **Suspension caveat.** A hit that suspends (`AwaitingInput`) or
+/// rejects is surfaced immediately, abandoning any later hits — re-entry
+/// mid-sequence isn't modeled on this path. This is correct as long as no
+/// point produces 2+ simultaneous *suspending* hits; synchronous
+/// multi-hit points (`RoundEnded`: agenda 01107 doom + Dissonant Voices
+/// 01165 discard) all resolve fully. The only suspending forced effect
+/// today is Frozen in Fear 01164's `EndOfTurn` skill test; since it
+/// carries no "Limit 1", two copies on one investigator would drop the
+/// second copy's test at end of turn — a known limitation of this legacy
+/// path, not a single-hit guarantee. (The `GameEnd` call site additionally
+/// discards a surfaced suspension outright — that defect is #566.)
 pub(crate) fn fire_forced_triggers(
     cx: &mut Cx,
     point: &ForcedTriggerPoint,

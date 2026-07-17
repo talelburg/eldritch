@@ -18,8 +18,8 @@ When starting work on a new issue, read the relevant phase doc first. It's faste
 | 3 | Skill-test end-to-end | ✅ closed | [phase-3-skill-test-end-to-end.md](phase-3-skill-test-end-to-end.md) |
 | 4 | Scenario plumbing | ✅ closed | [phase-4-scenario-plumbing.md](phase-4-scenario-plumbing.md) |
 | 5 | Server + persistence | ✅ closed | [phase-5-server-and-persistence.md](phase-5-server-and-persistence.md) |
-| 6 | Web client v0 | 🟡 in progress | [phase-6-web-client-v0.md](phase-6-web-client-v0.md) |
-| 7 | The Gathering | 📐 architecture only | [phase-7-the-gathering.md](phase-7-the-gathering.md) |
+| 6 | Web client v0 | ✅ closed | [phase-6-web-client-v0.md](phase-6-web-client-v0.md) |
+| 7 | The Gathering | 🟡 in progress | [phase-7-the-gathering.md](phase-7-the-gathering.md) |
 | 8 | Multiplayer + auth | 📐 architecture only | [phase-8-multiplayer-and-auth.md](phase-8-multiplayer-and-auth.md) |
 | 9 | Campaign + Night of the Zealot | 📐 architecture only | [phase-9-campaign-and-night-of-the-zealot.md](phase-9-campaign-and-night-of-the-zealot.md) |
 | 10 | Dunwich + iteration | 📐 architecture only | [phase-10-dunwich-and-iteration.md](phase-10-dunwich-and-iteration.md) |
@@ -32,15 +32,7 @@ When starting work on a new issue, read the relevant phase doc first. It's faste
 
 ## Cross-cutting / unmilestoned work
 
-Some issues don't belong to a single phase. They live unmilestoned with `p2-later` labels and get picked up when convenient:
-
-- `#26`, `#27`, `#28` — test-harness ergonomics (rename adders, total-event-count macro, with-investigator-at convenience).
-- `#31` — turn-order management cleanup (empty `turn_order` / `EndTurn` gracefully).
-- `#42` — card-data-pipeline test coverage expansion.
-- `#44` — DSL horror-soak / damage-redirect primitive (needed when soak-bearing cards land; tracked from PR-I).
-- `#174` — periodic state snapshots for replay perf (deferred from Phase 5; build only when profiling demands it).
-- `#83` — `enemy_attack` cleanup (apply both damage and horror when one defeats).
-- `#93` — split DSL types into a shared `card-dsl` crate (architectural improvement; not phase-gated).
+Some issues don't belong to a single phase. They live unmilestoned (mostly `p2-later`) and get picked up when convenient — the authoritative list is the [open unmilestoned issues query](https://github.com/talelburg/eldritch/issues?q=is%3Aissue+is%3Aopen+no%3Amilestone). Examples of the standing kind: `#31` (empty-`turn_order` guard), `#117` (event-keyed trigger index), `#119` (damage/horror dispatcher consolidation), `#174` (replay snapshots — build only when profiling demands it). The 2026-07-17 audit filed a batch more (#564–#593, spanning engine/pipeline/server/web/infra).
 
 ## Template
 
@@ -57,7 +49,13 @@ Each phase doc follows this shape:
 
 ## Maintaining these docs
 
-- **When a phase issue closes:** update its line in the phase doc's Issues section (✅ closed) and add any design decision it cemented to the Decisions section.
-- **When a phase milestone closes:** flip the phase's Status to ✅, trim Open Questions to closed-out items only, and the doc becomes a retrospective.
-- **When the next phase starts:** flip its Status from ⏳ to 🟡, add Shape B if not already there.
-- **PR convention:** doc updates happen in the same PR that touches the underlying issue when natural; standalone "update phase docs" PRs are fine too.
+This section is the authoritative spec for the phase-doc update step of the PR procedure (CLAUDE.md step 6).
+
+- **When a PR closing a phase issue is ready to merge — and ONLY then** (as the branch's final commit, after CI is green, so the entry reflects the actually-shipping state with the PR # known and review fixes folded in):
+  - Move the closing issue's row to the phase doc's **Closed** table and bump any open/closed counts.
+  - Flip the corresponding **Ordering / Arc** row to `✅ PR #N`.
+  - Remove any **Open question** the PR settled.
+  - Add a **Decisions made** entry *only* for choices load-bearing for future PRs. The test: *would a future PR-author choose differently without this entry?* If they'd discover the same fact by grepping the code or reading a doc-comment / `TODO(#NNN)`, leave it out. Lean toward skipping — 3–4 well-chosen entries beat a comprehensive list.
+- **Never put phase-doc edits in earlier commits** of the same branch (churn + drift), and don't batch them into unrelated PRs.
+- **When a phase milestone closes:** flip the phase's Status to ✅ (here and in the doc), trim Open Questions to closed-out items only, and the doc becomes a retrospective.
+- **When the next phase starts:** flip its Status from ⏳/📐 to 🟡, add the ordered plan if not already there.

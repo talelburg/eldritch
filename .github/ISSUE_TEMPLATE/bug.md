@@ -7,15 +7,11 @@ labels: bug
 
 ## Reproduction
 
-<!-- Step-by-step. If you have a saved replay log, link/attach it. -->
+<!-- Step-by-step. If you can, paste the action sequence that reproduces it. -->
 
 ## Expected behaviour
 
 ## Actual behaviour
-
-## Replay log (if applicable)
-
-<!-- Path under tests/replays/, or paste the action sequence. -->
 
 ## Environment
 

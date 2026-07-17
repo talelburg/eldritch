@@ -20,7 +20,11 @@
 //! are the disambiguator at the registry level; filenames just stay
 //! greppable.
 //!
-//! # Implemented so far
+//! # Trigger-shape examples
+//!
+//! The authoritative list of implemented cards is the `pub mod`
+//! declarations below (47 at the 2026-07-17 audit) — this list is NOT
+//! exhaustive; it survives as a worked example per trigger shape:
 //!
 //! - Holy Rosary (01059) — `Trigger::Constant` + unqualified
 //!   `WhileInPlay`.
@@ -36,8 +40,9 @@
 //!   abilities (`Cost::Resources(1)`, `ThisSkillTest` `Modify`), willpower
 //!   / combat (the Hyperawareness shape).
 //! - Machete (01020) — bare `Trigger::Activated { action_cost: 1 }` +
-//!   `Effect::Fight` (flat +1 combat, +1 damage; conditional-damage caveat
-//!   in the impl, TODO(#300)).
+//!   `Effect::Fight` (+1 combat; conditional +1 damage via `IntExpr::cond` —
+//!   the condition mis-fires against unengaged co-located targets since
+//!   #451 widened the fight scope, TODO(#592)).
 //! - Attic (01113) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
 //!   `deal_horror(You, 1)`.
 //! - Cellar (01114) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
@@ -53,9 +58,6 @@
 //! - What Have You Done? (01110) — Act 3; `Trigger::OnEvent` (`EnemyDefeated` 01116, `After`) -> `AdvanceCurrentAct`.
 //! - What's Going On?! (01105) — Agenda 1; `Trigger::OnEvent` (`AgendaAdvanced`, `After`) reverse: lead's interactive `ChooseOne` (each investigator discards 1 random card, or lead takes 2 horror) — Axis A #334.
 //! - Rise of the Ghouls (01106) — Agenda 2; `Trigger::OnEvent` (`AgendaAdvanced`, `After`) reverse: dig the encounter deck until a Ghoul, lead draws it.
-//!
-//! The remaining Phase-3 card (Study #56) blocks on the
-//! location-state shape.
 
 use card_dsl::dsl::Ability;
 

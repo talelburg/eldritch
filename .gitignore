@@ -28,3 +28,8 @@ Thumbs.db
 
 # Subagent worktrees (never commit)
 .claude/worktrees/
+
+# Local agent/tool state (never commit)
+.claude/settings.local.json
+.superpowers/
+.serena/

@@ -1,15 +1,17 @@
 //! Working a Hunch (Seeker event, 01037).
 //!
 //! ```text
-//! Insight. Fast.
+//! Fast. Play only during your turn.
 //! Discover 1 clue at your location.
 //! ```
 //!
-//! The "Fast." keyword (no-action-cost-to-play) is a card-level play
-//! cost concern, not a DSL concern. It'll be encoded on the card
-//! declaration alongside `abilities()` once the play-cost layer
-//! exists; for now `abilities()` only describes what the `OnPlay`
-//! trigger does.
+//! (Trait line: Insight.) The "Fast." keyword (no-action-cost-to-play)
+//! is a card-level play-cost concern, not a DSL concern: it lives in
+//! corpus metadata (`is_fast` / `play_only_during_turn`, pipeline-parsed)
+//! and the play path consumes it (`metadata.is_fast()` in
+//! `game-core`'s `play_card`; fast plays skip the action cost and are
+//! offered in fast-play windows). `abilities()` only describes what the
+//! `OnPlay` trigger does.
 
 use card_dsl::dsl::{discover_clue, on_play, Ability, LocationTarget};
 

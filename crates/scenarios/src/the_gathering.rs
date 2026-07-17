@@ -44,8 +44,10 @@ fn act_clue_threshold(code: &str) -> u8 {
 /// encounter sets the campaign guide gathers (Night of the Zealot guide
 /// p.2: "The Gathering, Rats, Ghouls, Striking Fear, Ancient Evils, and
 /// Chilling Cold"). Listed by distinct code; each is pushed at its printed
-/// corpus quantity. The set membership comes from the guide because the
-/// corpus does not carry `encounter_code`.
+/// corpus quantity. The set membership is hand-transcribed from the guide
+/// because the *generated* corpus does not carry `encounter_code` — the
+/// snapshot JSON does, one hop upstream; the pipeline drops it (ingesting
+/// it so scenarios can derive per-set lists is tracked in #579).
 ///
 /// **Set-aside cards are absent by construction:** the Ghoul Priest
 /// (`01116`) and Lita Chantler (`01117`) are set aside, and the scenario's
@@ -126,10 +128,15 @@ fn ghoul_count_at_investigator_location(cx: &SymbolCtx) -> u8 {
     u8::try_from(n).unwrap_or(u8::MAX)
 }
 
-/// 01104 The Gathering chaos-symbol effects (verified card text):
-/// `[skull]` −X (X = Ghouls at your location); `[cultist]` −1, 1 horror
-/// on failure; `[tablet]` −2, 1 damage if a Ghoul is at your location.
-/// The Gathering's Standard bag has no Elder Thing token.
+/// 01104 The Gathering chaos-symbol effects — **Easy/Standard face only**
+/// (verified card text): `[skull]` −X (X = Ghouls at your location);
+/// `[cultist]` −1, 1 horror on failure; `[tablet]` −2, 1 damage if a Ghoul
+/// is at your location. The Gathering's Standard bag has no Elder Thing
+/// token. The Hard/Expert back (skull −2; cultist "reveal another token";
+/// tablet −4, 1 damage AND 1 horror) is unimplemented — when difficulty
+/// selection lands (phase-7 Future slices) this fn needs a difficulty
+/// parameter, and the Hard/Expert cultist needs a token-re-draw shape
+/// `SymbolOutcome` can't express yet.
 fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> SymbolOutcome {
     let ghouls = ghoul_count_at_investigator_location(cx);
     match token {
@@ -206,7 +213,8 @@ pub fn setup() -> GameState {
     // Agenda reverses (01105 discard/horror, 01106 dig-until-Ghoul) ship as
     // the agendas' own `AgendaAdvanced` forced abilities (cards::whats_going_on,
     // cards::rise_of_the_ghouls); #281.
-    // TODO(#phase-9): act-3 (01110) reverse is the lead's R1/R2 resolution choice.
+    // TODO(#593): act-3 (01110) reverse is the lead's R1/R2 resolution choice
+    // (Phase 9 campaign-log work; R2 is unreachable until then).
     state.act_deck = vec![
         Act {
             code: CardCode("01108".into()),

@@ -50,9 +50,29 @@ pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
 /// Put the set-aside Hallway/Cellar/Attic/Parlor into play, relocate
 /// every investigator to the Hallway (01112), and remove the Study
 /// (01111). Ports the three former `Effect` arms verbatim, now
-/// card-local. Rejects (leaving the board partially built — matching the
-/// former `Seq` short-circuit) if 01112 or 01111 are not in play.
+/// card-local. Validates both required locations up front (the Hallway
+/// may still be set-aside at that point, so the check spans both zones)
+/// and rejects before any mutation; a rejection is additionally rolled
+/// back wholesale by `apply_via`'s snapshot-restore, so validate-first
+/// here is about precise reasons, not state safety.
 fn board_build(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
+    // Validate-first: 01112 must exist in play or set-aside, 01111 in play.
+    let hallway_available = location_id_by_code(cx.state, "01112").is_some()
+        || cx
+            .state
+            .set_aside_locations
+            .iter()
+            .any(|l| l.code.as_str() == "01112");
+    if !hallway_available {
+        return EngineOutcome::Rejected {
+            reason: "01108 board-build: no in-play or set-aside Hallway (01112)".into(),
+        };
+    }
+    if location_id_by_code(cx.state, "01111").is_none() {
+        return EngineOutcome::Rejected {
+            reason: "01108 board-build: no in-play Study (01111)".into(),
+        };
+    }
     // Put set-aside locations into play.
     let drained = std::mem::take(&mut cx.state.set_aside_locations);
     for loc in drained {
@@ -60,9 +80,7 @@ fn board_build(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     }
     // Relocate all investigators to the Hallway (01112).
     let Some(dest) = location_id_by_code(cx.state, "01112") else {
-        return EngineOutcome::Rejected {
-            reason: "01108 board-build: no in-play Hallway (01112)".into(),
-        };
+        unreachable!("01108 board-build: Hallway validated above (in play or set-aside)");
     };
     let ids: Vec<_> = cx.state.investigators.keys().copied().collect();
     for id in ids {

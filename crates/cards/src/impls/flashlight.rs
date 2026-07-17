@@ -13,16 +13,15 @@
 //! (#313) — the Investigate mirror of `Effect::Fight`: it lowers the
 //! location *difficulty* (clamped at 0), not the investigator's total, and
 //! reuses the base Investigate follow-up so a success discovers a clue. The
-//! `Uses (3 supplies)` pool and the depletion-discard are corpus metadata
-//! (`CardKind::Asset.uses` + `Uses.discard_when_empty`, pipeline-parsed) —
-//! `abilities()` declares only the action; the engine discards the asset when
-//! the last supply is spent.
+//! `Uses (3 supplies)` pool is corpus metadata (`CardKind::Asset.uses`,
+//! pipeline-parsed with `discard_when_empty: false` — Flashlight's printed
+//! text has no depletion-discard clause, so it stays in play at 0 supplies,
+//! unlike First Aid). `abilities()` declares only the action.
 //!
-//! TODO(#361): activating this `[action]` while engaged with a ready enemy
-//! should provoke an attack of opportunity (RR p.5 — it is not a
-//! fight/evade/parley/resign ability). The engine fires no attack of
-//! opportunity on any activated ability today (a systemic gap, also
-//! affecting First Aid / Medical Texts); fixed engine-wide in #361.
+//! Activating this `[action]` while engaged with a ready enemy provokes an
+//! attack of opportunity (RR p.5 — not a fight/evade/parley/resign ability);
+//! shipped engine-wide in #361, exercised in
+//! `crates/cards/tests/activate_ability_aoo.rs`.
 
 use card_dsl::card_data::UseKind;
 use card_dsl::dsl::{activated, investigate, Ability, Cost};

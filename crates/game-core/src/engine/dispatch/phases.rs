@@ -641,8 +641,12 @@ pub(super) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
         phase: Phase::Enemy,
     });
     // Fire forced act/agenda abilities keyed to `PhaseEnded { Enemy }`.
-    // Single-trigger path: 0 → Done (no-op); 1 → resolves immediately;
-    // 2+ → rejects loudly (#213 adds the ordering loop).
+    // Single-trigger path: 0 → Done (no-op); 1 → resolves immediately.
+    // KNOWN HAZARD (#569): 2+ hits no longer reject — `emit_event` opens an
+    // ordering run that SUSPENDS, and propagating that here leaves the Enemy
+    // anchor popped with the Upkeep anchor not yet pushed → empty stack when
+    // the run closes (hard stall). Unreachable with the current corpus; a
+    // resumable frame is tracked in #569.
     let forced = super::emit::emit_event(
         cx,
         &super::emit::TimingEvent::PhaseEnded {
@@ -650,7 +654,7 @@ pub(super) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
         },
     );
     if !matches!(forced, EngineOutcome::Done) {
-        return forced; // 2+-trigger loud reject (unreachable in-slice); propagate
+        return forced; // see #569 — suspension here strands the phase stack
     }
     // Enemy → Upkeep (slice 1b, #393): advance `state.phase` + push the Upkeep
     // anchor at `Entry`. The main loop's `drive` advances it (runs upkeep_phase,
@@ -1008,8 +1012,11 @@ pub(crate) fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
         phase: Phase::Upkeep,
     });
     // `PhaseEnded { Upkeep }` ("at end of phase") is single-bucket and fires
-    // inline. No slice-1 card keys here, so it resolves synchronously; a
-    // 2+/suspending hit is caught structurally by `emit_event`'s loud guard.
+    // inline. No in-corpus card keys here, so it resolves synchronously.
+    // KNOWN HAZARD (#569): a 2+/suspending hit is NOT caught structurally —
+    // `emit_event` opens a suspending ordering run and the debug_assert below
+    // is inert in release, silently stacking the round-end coordinator above
+    // the suspended run. Resumable-frame fix tracked in #569.
     let forced = super::emit::emit_event(
         cx,
         &super::emit::TimingEvent::PhaseEnded {

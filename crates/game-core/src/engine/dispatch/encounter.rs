@@ -50,22 +50,19 @@ pub(super) fn encounter_deck_shuffled(cx: &mut Cx) -> EngineOutcome {
 ///    resolution prefix (emit [`Event::CardRevealed`] + type-dispatch
 ///    to Revelation / spawn / reject).
 ///
-/// # Validate-first contract caveat
+/// # Validate-first ordering note
 ///
 /// `draw_encounter_top` mutates `state.encounter_deck` /
 /// `state.encounter_discard` BEFORE the unknown-code reject can
 /// fire; `Event::CardRevealed` then emits BEFORE Revelation /
-/// spawn resolve. The draw is a documented exception to the
-/// validate-first convention — the card must be removed from the
-/// deck before the reaction window opens (Before-timing listeners
-/// in #52 need to see the revealed-but-not-yet-resolved state).
-/// `Event::CardRevealed` emits before Revelation for the same
-/// reason: Before-timing reaction listeners (#52, not wired) need
-/// the event to fire before Revelation resolves (rules-correct
-/// interposition point).
-///
-/// Compare to `play_card`'s documented mid-resolution caveat in
-/// CLAUDE.md: same shape, same rationale.
+/// spawn resolve. The ordering is deliberate — the card must be
+/// removed from the deck before the reaction window opens
+/// (Before-timing listeners need to see the revealed-but-not-yet-
+/// resolved state), and `CardRevealed` emits before Revelation for
+/// the same rules-correct interposition point. A mid-handler
+/// `Rejected` is NOT a hazard here: `apply_via` snapshot-restores
+/// the whole state (deck, discard, and RNG included) on rejection,
+/// so the ordering only matters on non-rejecting paths.
 pub(super) fn encounter_card_revealed(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     let Some(registry) = card_registry::current() else {
         return EngineOutcome::Rejected {
@@ -697,13 +694,12 @@ pub(super) fn drive_player_draw(cx: &mut Cx) -> EngineOutcome {
 /// resolves and the `PlayerDraw` frame is re-exposed). The `PlayerDraw` frame is
 /// on top, with drawer `investigator`.
 ///
-/// # Mid-chain rejection caveat
+/// # Mid-chain rejection note
 ///
-/// As before (CLAUDE.md documents `play_card`'s analogue): a reject after the
-/// draw leaves the card removed from `encounter_deck`; the apply loop's
-/// `events.clear()` on `Rejected` wipes events but does not roll back that
-/// mutation. Out of Phase-4 scope (the synthetic fixture gives every
-/// investigator a location at setup).
+/// A reject after the draw is fully rolled back: `apply_via` restores the
+/// pre-apply snapshot (deck, discard, RNG) on `Rejected`, so the drawn card
+/// returns to `encounter_deck` — the draw-before-validate ordering only
+/// matters on non-rejecting paths.
 fn draw_encounter_card_into_frame(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     let Some(reg) = crate::card_registry::current() else {
         return EngineOutcome::Rejected {

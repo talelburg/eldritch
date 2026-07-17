@@ -11,11 +11,11 @@
 //! [`Effect::SearchDeck`](card_dsl::dsl::Effect::SearchDeck) over the entire
 //! deck, filtered to `Tome` assets, into the controller's hand, then shuffle.
 //!
-//! # Ally-soak gap
+//! # Ally soak
 //!
 //! Metadata gives Research Librarian `health: 1, sanity: 1` (ally soak, not a
-//! stat boost). The DSL doesn't model soak yet (#44), so this impl ships only
-//! the reaction; the card is mechanically weaker than printed until soak lands.
+//! stat boost). Soak is engine-modeled from that metadata (#44/K5); this impl
+//! declares only the reaction — the soak half rides on metadata.
 
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{

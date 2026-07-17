@@ -282,12 +282,16 @@ fn fire_scenario_resolution(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
     }
 
     // Fire game-end Forced abilities (Cover Up 01007's mental trauma, C5a
-    // #236). Non-interactive in scope; a suspending GameEnd hit is #212
-    // reentrancy work. Runs even when no scenario module is registered, so
-    // it precedes the module lookup below. This is the terminal resolution
-    // hook — it runs *after* the main `drive` loop and holds the scenario
-    // registry for `apply_resolution` below — so it drives the forced effects
-    // the frame-driven `emit_event` pushes (Slice D, #423).
+    // #236). KNOWN DEFECT (#566): the drive outcome is discarded, but a
+    // GameEnd hit CAN suspend — `interactive_acknowledge` (the server
+    // default) makes a single hit push an `AcknowledgeForced` frame, and 2+
+    // simultaneous hits open an ordering run — so the forced effect is
+    // silently dropped and its frames stranded. Fix tracked in #566. Runs
+    // even when no scenario module is registered, so it precedes the module
+    // lookup below. This is the terminal resolution hook — it runs *after*
+    // the main `drive` loop and holds the scenario registry for
+    // `apply_resolution` below — so it drives the forced effects the
+    // frame-driven `emit_event` pushes (Slice D, #423).
     let out = emit_event(cx, &TimingEvent::GameEnd);
     let _ = drive(cx, out);
 

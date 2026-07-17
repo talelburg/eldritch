@@ -14,13 +14,24 @@ metadata.
 
 ## What's included
 
-- `pack/core/` — Core Set printings (original `core.json`, the 2026 reprint
-  `core_2026.json`, the revised `rcore.json`, plus the matching encounter
-  files).
+- `pack/core/` — Core Set printings: the original `core.json` +
+  `core_encounter.json`, the 2026 reprint (`core_2026.json` +
+  `core_2026_encounter.json`), and the revised `rcore.json` (which has no
+  separate encounter file upstream).
 - `pack/dwl/` — The Dunwich Legacy cycle: scenario packs (`dwl`, `tmm`,
   `bota`, `uau`, `wda`, `litas`, `tece`) and their encounter files.
-- `schema/` — JSON schemas the upstream uses for validation; useful for
-  the pipeline to assert the shapes it depends on.
+- `schema/` — JSON schemas the upstream uses for validation. Kept for
+  reference when diagnosing a malformed entry; the pipeline does **not**
+  read or enforce them.
+
+### What the pipeline actually ingests
+
+`PACK_FILES` in `crates/card-data-pipeline/src/main.rs` reads the
+**old-format** files only: `core.json` + `core_encounter.json` and the
+seven `dwl` packs + their encounter files. `core_2026*.json` and
+`rcore.json` are pinned here for reference but are **not** ingested —
+adding them to the build requires extending `PACK_FILES` (and reconciling
+duplicate codes across printings), not just bumping the snapshot.
 - Top-level metadata: `cycles.json`, `encounters.json`, `factions.json`,
   `packs.json`, `subtypes.json`, `types.json`.
 - `taboos.json` — official taboo list. Carries errata (text changes that

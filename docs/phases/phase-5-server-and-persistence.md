@@ -16,7 +16,7 @@ client is Phase 6; auth + per-seat enforcement are Phase 8.
 
 | Order | Issue | State |
 |---|---|---|
-| — | [#167](https://github.com/talelburg/eldritch/issues/167) — kickoff: design spec + issue breakdown | 🟡 open (this docs PR) |
+| — | [#167](https://github.com/talelburg/eldritch/issues/167) — kickoff: design spec + issue breakdown | 🟢 [PR #175](https://github.com/talelburg/eldritch/pull/175) |
 | P5.1 | [#168](https://github.com/talelburg/eldritch/issues/168) — sqlx + SQLite wiring: pool, migrations, action-log schema | 🟢 [PR #176](https://github.com/talelburg/eldritch/pull/176) |
 | P5.2 | [#169](https://github.com/talelburg/eldritch/issues/169) — GameSession host: create / apply-and-persist / load-by-replay | 🟢 [PR #177](https://github.com/talelburg/eldritch/pull/177) |
 | P5.3 | [#170](https://github.com/talelburg/eldritch/issues/170) — Axum WS endpoint + per-game broadcast hub | 🟢 [PR #178](https://github.com/talelburg/eldritch/pull/178) |

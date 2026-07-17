@@ -5,22 +5,17 @@
 //! You get +1 [willpower].
 //! ```
 //!
-//! # Horror-soak gap
+//! # Horror soak
 //!
 //! Card metadata gives the asset `sanity: 2`. This is **not** a max-
 //! sanity boost on the controller — it's the asset's horror-soak
-//! capacity. While in play, horror that would hit the controller is
-//! redirected to the asset; once it has absorbed 2 horror it's
-//! discarded. That's a redirect-and-discard mechanic with state on
-//! the asset itself, not a passive stat modifier.
-//!
-//! The DSL v0 doesn't model horror soak. This impl ships only the
-//! "+1 willpower while in play" half. The soak half lands when the
-//! DSL grows a soak / damage-redirect primitive (also unblocks Beat
-//! Cop and other allies, which work the same way). The deck-import
-//! gate will still treat Holy Rosary as playable on the strength of
-//! the willpower ability; soak missing means the card is mechanically
-//! weaker than printed in the simulator until the gap closes.
+//! capacity. Soak is engine-modeled from that corpus metadata
+//! (#44/K5): while in play the asset can absorb horror assigned to
+//! the controller (interactively distributed when contested), and is
+//! discarded when its capacity is spent. Nothing about soak needs
+//! declaring in `abilities()` — this impl ships the "+1 willpower
+//! while in play" modifier; the soak half rides on metadata. See
+//! `crates/cards/tests/non_attack_soak.rs` / `soak_distribution.rs`.
 
 use card_dsl::dsl::{constant, modify, Ability, ModifierScope, Stat};
 
