@@ -20,9 +20,9 @@ When starting work on a new issue, read the relevant phase doc first. It's faste
 | 5 | Server + persistence | ✅ closed | [phase-5-server-and-persistence.md](phase-5-server-and-persistence.md) |
 | 6 | Web client v0 | ✅ closed | [phase-6-web-client-v0.md](phase-6-web-client-v0.md) |
 | 7 | The Gathering | 🟡 in progress | [phase-7-the-gathering.md](phase-7-the-gathering.md) |
-| 8 | Multiplayer + auth | 📐 architecture only | [phase-8-multiplayer-and-auth.md](phase-8-multiplayer-and-auth.md) |
-| 9 | Campaign + Night of the Zealot | 📐 architecture only | [phase-9-campaign-and-night-of-the-zealot.md](phase-9-campaign-and-night-of-the-zealot.md) |
-| 10 | Dunwich + iteration | 📐 architecture only | [phase-10-dunwich-and-iteration.md](phase-10-dunwich-and-iteration.md) |
+| 8 | Multiplayer + auth | ⏳ planned | [phase-8-multiplayer-and-auth.md](phase-8-multiplayer-and-auth.md) |
+| 9 | Campaign + Night of the Zealot | ⏳ planned | [phase-9-campaign-and-night-of-the-zealot.md](phase-9-campaign-and-night-of-the-zealot.md) |
+| 10 | Dunwich + iteration | ⏳ planned | [phase-10-dunwich-and-iteration.md](phase-10-dunwich-and-iteration.md) |
 
 **Status legend:**
 - ✅ **closed** — milestone closed; docs are retrospective.
@@ -32,7 +32,13 @@ When starting work on a new issue, read the relevant phase doc first. It's faste
 
 ## Cross-cutting / unmilestoned work
 
-Some issues don't belong to a single phase. They live unmilestoned (mostly `p2-later`) and get picked up when convenient — the authoritative list is the [open unmilestoned issues query](https://github.com/talelburg/eldritch/issues?q=is%3Aissue+is%3Aopen+no%3Amilestone). Examples of the standing kind: `#31` (empty-`turn_order` guard), `#117` (event-keyed trigger index), `#119` (damage/horror dispatcher consolidation), `#174` (replay snapshots — build only when profiling demands it). The 2026-07-17 audit filed a batch more (#564–#593, spanning engine/pipeline/server/web/infra).
+Some issues don't belong to a single phase. They live unmilestoned (mostly `p2-later`) and get picked up when convenient — the authoritative list is the [open unmilestoned issues query](https://github.com/talelburg/eldritch/issues?q=is%3Aissue+is%3Aopen+no%3Amilestone). Examples of the standing kind: `#31` (empty-`turn_order` guard), `#117` (event-keyed trigger index), `#119` (damage/horror dispatcher consolidation), `#174` (replay snapshots — build only when profiling demands it). The 2026-07-17 audit ([record](../audits/2026-07-17-audit.md)) filed a batch more (#564–#593, spanning engine/pipeline/server/web/infra).
+
+### Tracker conventions (established 2026-07-17)
+
+- **Milestone = phase deferral.** An issue milestoned to a later phase is deferred to it; an issue milestoned to the *current* phase is part of finishing that phase.
+- **Priority labels order the current queue.** `p0-blocker` / `p1-next` / `p2-later` are load-bearing only on unmilestoned and current-phase issues — that's the knock-out order. On later-phase-milestoned issues, priority is merely intra-milestone ordering.
+- **Cross-issue dependencies get a "Relationships" comment** on the issue (types: *Sibling* / *Blocked-by* / *Coordinate-with* / *Enables* / *Amplified-by*), so implementers see coupling without spelunking. GitHub's mention backlinks make one-sided comments discoverable from both ends, but prefer noting the edge on whichever issue an implementer is likely to pick up first.
 
 ## Template
 
