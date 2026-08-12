@@ -48,8 +48,8 @@ Each phase doc follows this shape:
 2. **Goal** — the milestone's one-liner.
 3. **Issues** — every issue in the milestone, linked, with current state.
 4. **Ordering** — Shape-B-style ordered plan, or "TBD" with rationale.
-5. **Decisions made** — settled architecture or design choices that shape later work.
-6. **Open questions** — what's not yet scoped.
+5. **Decisions made** — *closed phases only.* New design decisions go to `docs/adr/` instead; see "Maintaining these docs" below.
+6. **Open questions** — what's not yet scoped. Also the **fog gauge**: a phase whose open questions are architectural and unresolved is a `/wayfinder` phase; one whose questions are only ordering and scope is a `/grill-with-docs` phase.
 7. **Dependencies** — which prior phases this needs.
 8. **What "done" looks like** — the concrete demonstration that closes the phase.
 
@@ -61,7 +61,8 @@ This section is the authoritative spec for the phase-doc update step of the PR p
   - Move the closing issue's row to the phase doc's **Closed** table and bump any open/closed counts.
   - Flip the corresponding **Ordering / Arc** row to `✅ PR #N`.
   - Remove any **Open question** the PR settled.
-  - Add a **Decisions made** entry *only* for choices load-bearing for future PRs. The test: *would a future PR-author choose differently without this entry?* If they'd discover the same fact by grepping the code or reading a doc-comment / `TODO(#NNN)`, leave it out. Lean toward skipping — 3–4 well-chosen entries beat a comprehensive list.
+  - **Do not add a "Decisions made" entry.** Design decisions live in `docs/adr/` now. If the PR made a choice that is (a) hard to reverse, (b) surprising without context, and (c) the result of a real trade-off, write it up as an ADR in the same commit. All three must hold — if a future PR-author would discover the same fact by grepping the code or reading a doc-comment / `TODO(#NNN)`, there's no ADR to write. Most PRs need none.
+  - Existing **Decisions made** sections in closed phase docs stay where they are; they are not retro-migrated.
 - **Never put phase-doc edits in earlier commits** of the same branch (churn + drift), and don't batch them into unrelated PRs.
 - **When a phase milestone closes:** flip the phase's Status to ✅ (here and in the doc), trim Open Questions to closed-out items only, and the doc becomes a retrospective.
 - **When the next phase starts:** flip its Status from ⏳/📐 to 🟡, add the ordered plan if not already there.
