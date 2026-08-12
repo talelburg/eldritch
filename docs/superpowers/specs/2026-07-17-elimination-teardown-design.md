@@ -289,13 +289,19 @@ enumeration order (#570's contract).
 - Eliminated investigator with Dissonant Voices 01165 in the threat area → no further
   round-end forceds; the card is in `encounter_discard`.
 
-**Engine unit** (`elimination.rs` `#[cfg(test)]`, `test_support` + test registry):
+All integration tests reach elimination through the **real** path — a lethal
+Grasping Hands 01162 revelation driven via `apply` — because
+`apply_investigator_defeat` is `pub(super)` within `dispatch` and stays that way.
 
-- Step-1 drain: a `weakness: true` threat-area card → `removed_from_game`.
-- Step-4 drain: a `weakness: false` threat-area card → `encounter_discard`, with
-  `CardDiscarded { from: Zone::ThreatArea }`.
-- `threat_area` empty after elimination in both cases.
-- No registry installed → treated as non-weakness (encounter discard), no panic.
+**Engine unit** (`elimination.rs` `#[cfg(test)]`):
+
+- Registry-absent default: a threat-area card with no metadata is treated as
+  scenario-owned → `encounter_discard`, no panic. (The `weakness: true` →
+  `removed_from_game` routing needs real metadata and lives in
+  `crates/cards/tests/elimination_teardown.rs` — `install_test_registry`'s
+  `metadata_for` resolves `TEST_INV` only, and its `abilities_for` always
+  returns `None`.)
+- `threat_area` empty after elimination.
 
 Event assertions use the `assert_event!` / `assert_no_event!` macros.
 

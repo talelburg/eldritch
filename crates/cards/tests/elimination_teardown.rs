@@ -76,7 +76,9 @@ fn board_at_lethal_range(damage: u8, hand: &[&str], threat: &[(&str, u8)]) -> ga
         .with_turn_order([InvestigatorId(1)])
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];
-    state.encounter_deck.push_back(CardCode::new(GRASPING_HANDS));
+    state
+        .encounter_deck
+        .push_back(CardCode::new(GRASPING_HANDS));
     state
 }
 
@@ -104,7 +106,11 @@ fn tester_eliminated_mid_test_abandons_the_test_without_panicking() {
     assert_eq!(r.outcome, EngineOutcome::Done, "test abandoned cleanly");
 
     let inv = &r.state.investigators[&InvestigatorId(1)];
-    assert_eq!(inv.status, Status::Killed, "lethal damage eliminated Roland");
+    assert_eq!(
+        inv.status,
+        Status::Killed,
+        "lethal damage eliminated Roland"
+    );
 
     // RR p.10 step 1: the committed card was in hand, so it is removed from the
     // game — NOT discarded by the skill-test teardown.
@@ -286,4 +292,30 @@ fn elimination_does_not_drain_the_investigator_card() {
         "the investigator card survives elimination — the premise of the \
          Status filter on the RoundEnded/GameEnd scans",
     );
+}
+
+#[test]
+fn the_elimination_interleaving_replays_bit_for_bit() {
+    // Deterministic re-drive: driving the same action sequence twice from an
+    // identical initial state must land on an identical final state — the
+    // property the persisted action log depends on. Before #564 this
+    // interleaving panicked deterministically on every drive. (This mirrors the
+    // repo's `deck_shuffle_is_deterministic_across_replay` idiom — two seeded
+    // runs compared — rather than re-applying a recorded `Vec<Action>`; with the
+    // single rigged chaos token no RNG divergence is possible either way.)
+    let first = reveal_committing(
+        board_at_lethal_range(8, &[OVERPOWER], &[(COVER_UP, 3)]),
+        &[OVERPOWER],
+    );
+    let second = reveal_committing(
+        board_at_lethal_range(8, &[OVERPOWER], &[(COVER_UP, 3)]),
+        &[OVERPOWER],
+    );
+
+    assert_eq!(first.outcome, EngineOutcome::Done);
+    assert_eq!(
+        first.state, second.state,
+        "the elimination interleaving must replay bit-for-bit"
+    );
+    assert_eq!(first.events, second.events, "events replay identically too");
 }
