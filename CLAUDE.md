@@ -4,7 +4,22 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 
 ## Workflow
 
-For any non-trivial change, **actually invoke** the relevant `superpowers` skills via the Skill tool (don't just emulate them from memory): brainstorm the design, turn it into a TDD plan, then execute task-by-task with review between tasks. Likewise invoke `andrej-karpathy-skills:karpathy-guidelines` whenever writing, reviewing, or refactoring code. Pure questions and trivial one-liners can skip this — use judgment.
+Work runs on the `mattpocock-skills` suite. `/ask-matt` maps the flows when it's unclear which applies. Pure questions and trivial one-liners skip all of this — use judgment.
+
+**The flow entry points are the user's to start.** A suite skill missing from your available-skills listing is user-invocation-only — ask the user to run it and wait. The skills that *are* listed should be **actually invoked** via the Skill tool, since a skill you follow from memory is a skill you follow approximately.
+
+**Planning a phase.** Pick the entry point by how much fog the phase has, gauged by its own **Open questions** section: `/wayfinder` when the route to the destination isn't visible yet (architectural questions unresolved), `/grill-with-docs` when it is and only ordering and scope are open. Wayfinder is slow and dense — never reach for it for a well-scoped feature.
+
+**Gates.** Stop and put the decision to the user when:
+
+1. **A seam is unconfirmed.** No test is written at a seam the user hasn't agreed to (the `tdd` skill's rule).
+2. **A card's text or a rules question is ambiguous** — the sources disagree, or a ruling doesn't settle the case.
+3. **Code contradicts a phase doc or an ADR.** Surface it rather than silently overriding (`docs/agents/domain.md`).
+4. **A ticket turns out to be a different size or shape than specified** — that invalidates a breakdown the user already approved.
+
+Every gate arrives as **options with a recommendation**, never an open question. Stopping to ask something you could have looked up in the snapshot or the rules reference is a bug in the gate, not diligence.
+
+Not every judgement call is a gate. Where this file already **pre-decides** — the DSL-primitive threshold under Architecture, the missing-card-source rule under the citation mandates — apply the rule rather than asking.
 
 ## Commands
 
@@ -100,13 +115,13 @@ A card is **playable** iff it has an `abilities()` impl (`cards::is_playable(cod
 
 ### Domain knowledge that's load-bearing but not visible in the code
 
-Several Arkham mechanics have non-obvious shapes that have already caused mistakes in PR review:
+Arkham terminology is defined in [`CONTEXT.md`](CONTEXT.md) — **read it before naming a domain concept**, in code, tests, issue titles, or chat. Every term in it has already caused a mistake in PR review; the glossary is the single home for them, so don't restate definitions here.
 
-- **Horror soak ≠ max-sanity boost.** Asset cards with `sanity: N` (Holy Rosary, Beat Cop) are horror-soak containers, not stat modifiers. Not modeled by the DSL yet — tracked in #44.
-- **Only Asset and Event are playable from hand.** Skills are *committed* to skill tests via a separate flow. Investigator cards represent the player character, never enter hand. Everything else (Treachery, Enemy, Location, Agenda, Act, Scenario, Story) is scenario-bag content. `PlayCard`'s dispatch only needs two playable arms.
+Three mechanics that aren't glossary entries but shape engine behavior:
+
 - **Skill-test totals clamp at 0; AutoFail forces total to 0.** Same numeric outcome, different `FailureReason` — some card effects key off which fired.
-- **"Fast" is a play-cost concern, not a DSL concern.** `Trigger::Activated { action_cost: 0 }` is a *different* "fast." Both exist; don't conflate.
-- **ArkhamDB calls factions "factions"; the rulebook calls them "classes."** The pipeline translates at ingestion; internally we use `Class`.
+- **Horror soak isn't modeled by the DSL yet** — tracked in #44.
+- **The pipeline translates ArkhamDB's `faction` to `Class` at ingestion.**
 
 **Whenever you reference or quote a card's text or effect — in code, comments, commit messages, PR descriptions, or chat — you MUST look it up first, never paraphrase from memory** (memory is unreliable; PR review has caught real divergences — renamed traits, off-by-one stats, dropped sub-clauses). **Default to the card's ArkhamDB page (`https://arkhamdb.com/card/<code>`) via WebFetch: it carries the official printed text and the card's FAQ/rulings together. ALWAYS read the FAQ there too, not just the text** — rulings are load-bearing and routinely *not* derivable from the text alone (e.g. Mind over Matter 01036: substituting makes it an Intellect *test*, so intellect icons/bonuses apply, and the choice is made before the test begins). Copy text verbatim where it appears in a quote. **Fall back to the pinned snapshot (`data/arkhamdb-snapshot/pack/*/`) only with good reason** — ArkhamDB is unreachable, *or* the question is "what's actually in the corpus" (the snapshot is what the build compiles from, so it's authoritative for corpus membership and pipeline-ingested metadata; cross-check ArkhamDB text against it if they might diverge). If a card is available in neither, say so explicitly rather than reconstructing it.
 
@@ -114,14 +129,32 @@ When implementing or citing **rules behavior** — ability timing, trigger windo
 
 ## Phase plan, milestones, and PR procedure
 
-Work is tracked against GitHub milestones (`phase-0-foundations` → `phase-10-dunwich-and-iteration`). Each phase has a plan doc at **`docs/phases/phase-N-<slug>.md`** (ordered work, design decisions, open questions) — read the relevant one when picking up an issue; `docs/phases/README.md` indexes the arc and unmilestoned work. Issues carry priority (`p0-blocker` / `p1-next` / `p2-later`) and category (`engine` / `card` / `scenario` / `infra` / `test`) labels. PRs squash-merge; commit subjects follow `scope: description` (e.g. `engine: cards-registry binding via static OnceLock`); the PR template's `Closes #` line auto-closes the issue.
+Work is tracked against GitHub milestones (`phase-0-foundations` → `phase-10-dunwich-and-iteration`). Each phase has a plan doc at **`docs/phases/phase-N-<slug>.md`** (ordered work, status, open questions) — read the relevant one when picking up an issue; `docs/phases/README.md` indexes the arc and unmilestoned work. Design decisions live in `docs/adr/`, not in the phase docs. Issues carry priority (`p0-blocker` / `p1-next` / `p2-later`) and category (`engine` / `card` / `scenario` / `infra` / `test`) labels. PRs squash-merge; commit subjects follow `scope: description` (e.g. `engine: cards-registry binding via static OnceLock`); the PR template's `Closes #` line auto-closes the issue. **Every PR closes at least one issue** — file it first, including for infrastructure and bootstrap work, so the tracker stays a trustworthy record of what's been done.
 
-Follow this order for every non-trivial PR — skipping steps has cost real iterations:
+Follow this order for every non-trivial PR — skipping steps has cost real iterations. The **gates** under Workflow interrupt this order wherever they fire: resolve the gate, then resume.
 
 1. **Run the full CI gauntlet locally before pushing** (all seven jobs with the strict flags from Commands). Plain `cargo test` passes even when `doc`/`clippy` fail in CI; the `doc` job has caught broken intra-doc links local runs miss.
 2. **Commit and push** to a feature branch `<scope>/<short-slug>` (`<scope>` matches the commit scope; slug is a 2–4-word hyphenated descriptor, e.g. `engine/play-card`). One branch per issue. Commit body explains the *why* and ends with `Closes #NN.`
 3. **Open the PR** with `gh pr create` using the repo template; include a brief design-decisions paragraph for any non-obvious choice.
-4. **Watch CI** via `gh pr checks <PR#> --watch` (background). Code review for routine PRs happens **before push** (via the execution flow's pre-push review pass), so skip the post-push `review-agent` then. Reserve a post-push review for: PRs prepared without a pre-push review, an explicit request for a second look, or escalation skills (`/security-review` for sensitive areas, `/ultrareview` at milestone exits) — all user-triggered.
+4. **Watch CI** via `gh pr checks <PR#> --watch` (background). Code review for routine PRs happens **before push** — `/implement` closes out by running `code-review` — so skip the post-push `review-agent` then. Reserve a post-push review for: PRs prepared without a pre-push review, an explicit request for a second look, or escalation skills (`/security-review` for sensitive areas, `/ultrareview` at milestone exits) — all user-triggered.
 5. **Fix CI failures with follow-up commits to the same branch** — don't amend/force-push unless asked.
-6. **Update the relevant `docs/phases/phase-N-<slug>.md` once the PR is ready to merge, and ONLY then** — as the final commit, so it reflects the actually-shipping state (PR # known, review fixes folded in). Never put phase-doc edits in earlier commits (churn + drift). Move the closing issue to the **Closed** table (bump counts), flip the Ordering/Arc row to `✅ PR #N`, remove any **Open question** the PR settled, and add a **Decisions made** entry *only* for choices load-bearing for future PRs — apply the test: *would a future PR-author choose differently without this entry?* If they'd discover the same fact by grepping the code or reading a doc-comment / `TODO(#NNN)`, leave it out. Lean toward skipping; 3–4 well-chosen entries beat a comprehensive list. **`docs/phases/README.md` ("Maintaining these docs") is the authoritative spec for this step.**
+6. **Update the relevant `docs/phases/phase-N-<slug>.md` once the PR is ready to merge, and ONLY then** — as the final commit, so it reflects the actually-shipping state (PR # known, review fixes folded in). Never put phase-doc edits in earlier commits (churn + drift). Move the closing issue to the **Closed** table (bump counts), flip the Ordering/Arc row to `✅ PR #N`, and remove any **Open question** the PR settled. **Design decisions no longer live in the phase doc** — a load-bearing choice becomes an ADR under `docs/adr/` in the same commit. Most PRs need none. **`docs/phases/README.md` ("Maintaining these docs") is the authoritative spec for this step, including the three-part test an ADR must pass.**
 7. **Merge only after explicit user approval**, via `gh pr merge <PR#> --squash --delete-branch`. Confirm the issue auto-closed and `git pull` on `main`.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `talelburg/eldritch`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles, each label string equal to its name. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — [`CONTEXT.md`](CONTEXT.md) (the domain glossary) and `docs/adr/` at the repo root. **Read `CONTEXT.md` before naming a domain concept**, and check `docs/adr/` before working in an area it touches. See `docs/agents/domain.md`.
+
+### Coding standards
+
+`docs/agents/standards.md` — the index of how code is written here. It points at the standards documented in this file and defines the ones with no other home. It is what `code-review`'s Standards axis reads.
