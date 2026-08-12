@@ -1095,10 +1095,24 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, indices_u8
             });
         sorted
             .iter()
-            .map(|&idx| {
+            .filter_map(|&idx| {
+                // Unreachable: `advance`'s Status gate (#564) abandons the test
+                // before teardown if the tester was eliminated, and elimination
+                // is the only path that drains a live tester's hand. Total
+                // rather than indexing so a future path can't panic a
+                // production apply (a panic escapes apply_via's rollback).
+                if usize::from(idx) >= inv.hand.len() {
+                    debug_assert!(
+                        false,
+                        "discard_committed_cards: committed index {idx} out of bounds \
+                         (hand size {})",
+                        inv.hand.len(),
+                    );
+                    return None;
+                }
                 let code = inv.hand.remove(usize::from(idx));
                 inv.discard.push(code.clone());
-                code
+                Some(code)
             })
             .collect()
     };
@@ -1279,7 +1293,16 @@ fn collect_on_skill_test_resolution(
             });
         indices_u8
             .iter()
-            .map(|&i| inv.hand[usize::from(i)].clone())
+            .filter_map(|&i| {
+                let code = inv.hand.get(usize::from(i));
+                debug_assert!(
+                    code.is_some(),
+                    "collect_on_skill_test_resolution: committed index {i} out of bounds \
+                     (hand size {})",
+                    inv.hand.len(),
+                );
+                code.cloned()
+            })
             .collect()
     };
 
@@ -1339,7 +1362,15 @@ fn collect_on_commit(
             });
         indices_u8
             .iter()
-            .map(|&i| inv.hand[usize::from(i)].clone())
+            .filter_map(|&i| {
+                let code = inv.hand.get(usize::from(i));
+                debug_assert!(
+                    code.is_some(),
+                    "collect_on_commit: committed index {i} out of bounds (hand size {})",
+                    inv.hand.len(),
+                );
+                code.cloned()
+            })
             .collect()
     };
 
