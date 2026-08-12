@@ -28,17 +28,19 @@
 use game_core::action::EngineRecord;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosToken, InvestigatorId, LocationId, Status,
+    CardCode, CardInPlay, CardInstanceId, ChaosToken, InvestigatorId, LocationId, Status, Zone,
 };
 use game_core::test_support::{
     drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
 };
-use game_core::{assert_event_count, Action, EngineOutcome};
+use game_core::{assert_event, assert_event_count, Action, EngineOutcome};
 
 /// Roland Banks — health 9, sanity 5.
 const ROLAND: &str = "01001";
 const GRASPING_HANDS: &str = "01162";
 const OVERPOWER: &str = "01091";
+const COVER_UP: &str = "01007";
+const DISSONANT_VOICES: &str = "01165";
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
@@ -142,4 +144,73 @@ fn surviving_tester_still_discards_committed_cards() {
         inv.discard
     );
     assert_event_count!(r.events, 1, Event::SkillTestEnded { .. });
+}
+
+#[test]
+fn elimination_removes_a_player_owned_weakness_from_the_game() {
+    // RR p.10 step 1 + the design's reading: Cover Up is owned by Roland, whose
+    // discard pile step 1 just removed from the game — so "the appropriate
+    // discard pile" no longer exists and the card is removed.
+    let r = reveal_committing(board_at_lethal_range(8, &[], &[(COVER_UP, 3)]), &[]);
+
+    let inv = &r.state.investigators[&InvestigatorId(1)];
+    assert_eq!(inv.status, Status::Killed);
+    assert!(inv.threat_area.is_empty(), "threat area drained");
+    assert!(
+        inv.removed_from_game.iter().any(|c| c.as_str() == COVER_UP),
+        "player-owned weakness removed from game; removed = {:?}",
+        inv.removed_from_game
+    );
+    assert!(
+        !r.state
+            .encounter_discard
+            .iter()
+            .any(|c| c.as_str() == COVER_UP),
+        "a player-owned weakness must NOT go to the encounter discard"
+    );
+}
+
+#[test]
+fn elimination_discards_an_encounter_treachery_to_the_encounter_discard() {
+    // RR p.10 step 4: Dissonant Voices is owned by the scenario, so Roland's
+    // elimination must not remove it from the game.
+    let r = reveal_committing(board_at_lethal_range(8, &[], &[(DISSONANT_VOICES, 0)]), &[]);
+
+    let inv = &r.state.investigators[&InvestigatorId(1)];
+    assert_eq!(inv.status, Status::Killed);
+    assert!(inv.threat_area.is_empty(), "threat area drained");
+    assert!(
+        r.state
+            .encounter_discard
+            .iter()
+            .any(|c| c.as_str() == DISSONANT_VOICES),
+        "encounter treachery goes to the encounter discard; discard = {:?}",
+        r.state.encounter_discard
+    );
+    assert!(
+        !inv.removed_from_game
+            .iter()
+            .any(|c| c.as_str() == DISSONANT_VOICES),
+        "a scenario-owned card must NOT be removed from the game by an \
+         investigator's elimination"
+    );
+    assert_event!(r.events, Event::CardDiscarded { code, from: Zone::ThreatArea, .. }
+        if code.as_str() == DISSONANT_VOICES);
+}
+
+#[test]
+fn elimination_routes_a_mixed_threat_area_both_ways() {
+    let r = reveal_committing(
+        board_at_lethal_range(8, &[], &[(COVER_UP, 3), (DISSONANT_VOICES, 0)]),
+        &[],
+    );
+
+    let inv = &r.state.investigators[&InvestigatorId(1)];
+    assert!(inv.threat_area.is_empty(), "threat area fully drained");
+    assert!(inv.removed_from_game.iter().any(|c| c.as_str() == COVER_UP));
+    assert!(r
+        .state
+        .encounter_discard
+        .iter()
+        .any(|c| c.as_str() == DISSONANT_VOICES));
 }

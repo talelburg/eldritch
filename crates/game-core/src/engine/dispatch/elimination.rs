@@ -3,10 +3,10 @@
 
 use super::Cx;
 use crate::event::Event;
-use crate::state::{DefeatCause, EnemyId, InvestigatorId, Status};
+use crate::state::{CardInPlay, CardInstanceId, DefeatCause, EnemyId, InvestigatorId, Status};
 
 #[cfg(test)]
-use crate::state::{CardCode, CardInPlay, CardInstanceId, LocationId, Phase};
+use crate::state::{CardCode, LocationId, Phase};
 
 /// Flip an Active investigator's status to the appropriate defeated
 /// variant for `cause`, emit [`Event::InvestigatorDefeated`], and run
@@ -65,6 +65,19 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
 
     // Step 1: remove every card this investigator controls in play and
     // owns in out-of-play areas (hand/deck/discard) from the game.
+    //
+    // Threat-area cards split by ownership (Rules Reference p.7 names the axis:
+    // a defeated card is "placed in the encounter discard pile (or in its
+    // owner's discard pile if it is a weakness)"). A **weakness** is owned by
+    // this player: step 4 would place it in "the appropriate discard pile", but
+    // step 1 removes that very pile from the game one step earlier — so the
+    // pile no longer exists and the card is removed. Everything else in the
+    // threat area is scenario-owned and is step 4's business (#567).
+    let weakness_in_threat_area = |card: &CardInPlay| {
+        crate::card_registry::current()
+            .and_then(|reg| (reg.metadata_for)(&card.code))
+            .is_some_and(|m| m.weakness)
+    };
     let inv = cx
         .state
         .investigators
@@ -80,6 +93,15 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // by the borrow checker).
     let mut removed = std::mem::take(&mut inv.removed_from_game);
     removed.extend(inv.cards_in_play.drain(..).map(|c| c.code));
+    // Partition the threat area: owned weaknesses leave with their owner here;
+    // the rest stay for step 4. No registry installed (engine-only tests with
+    // synthetic threat-area cards) ⇒ not a weakness ⇒ step 4.
+    let (owned, scenario_owned): (Vec<CardInPlay>, Vec<CardInPlay>) =
+        std::mem::take(&mut inv.threat_area)
+            .into_iter()
+            .partition(weakness_in_threat_area);
+    inv.threat_area = scenario_owned;
+    removed.extend(owned.into_iter().map(|c| c.code));
     removed.append(&mut inv.hand);
     removed.append(&mut inv.deck);
     removed.append(&mut inv.discard);
@@ -132,12 +154,26 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
         super::hunters::reengage_at_location(cx, eid);
     }
 
-    // Step 4: place other (non-enemy) threat-area cards in the
-    // appropriate discard pile. KNOWN GAP (#567): threat-area cards ARE
-    // modeled now (`place_in_threat_area` — Cover Up 01007, Frozen in
-    // Fear 01164, Dissonant Voices 01165) but are NOT drained here, so an
-    // eliminated investigator's threat area keeps firing forced scans.
-    // Fix tracked in #567.
+    // Step 4: "All other cards in the eliminated investigator's threat area are
+    // placed in the appropriate discard pile" (Rules Reference p.10). What
+    // survives step 1's partition is scenario-owned (Frozen in Fear 01164,
+    // Dissonant Voices 01165), so the appropriate pile is the encounter discard
+    // — an investigator's elimination must not remove the *scenario's* cards
+    // from the game. Engaged enemies are step 3's business, not this drain:
+    // they live in `enemies` keyed by `engaged_with`, not in `threat_area`.
+    let remaining: Vec<CardInstanceId> = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .map(|inv| inv.threat_area.iter().map(|c| c.instance_id).collect())
+        .unwrap_or_default();
+    for instance_id in remaining {
+        let removed = super::threat_area::discard_from_threat_area(cx, investigator, instance_id);
+        debug_assert!(
+            removed,
+            "elimination step 4: threat-area instance {instance_id:?} vanished mid-drain",
+        );
+    }
 
     // Step 5: lead-investigator transfer. No-op by construction: there
     // is no stored lead; `first_active_investigator` recomputes the lead
@@ -604,5 +640,42 @@ mod elimination_tests {
         );
         assert_eq!(state.investigators[&id].resources, 0, "resources returned");
         assert_no_event!(events, Event::LocationCluesChanged { .. });
+    }
+
+    #[test]
+    fn elimination_without_registry_treats_threat_area_as_scenario_owned() {
+        // No registry ⇒ metadata_for is None ⇒ not a weakness ⇒ step 4. The
+        // weakness→removed_from_game routing needs real metadata and is covered
+        // by `crates/cards/tests/elimination_teardown.rs` (install_test_registry
+        // resolves TEST_INV only).
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.threat_area = vec![CardInPlay::enter_play(
+            CardCode::new("01165"),
+            CardInstanceId(1),
+        )];
+
+        let mut state = GameStateBuilder::default().with_investigator(inv).build();
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            id,
+            DefeatCause::Damage,
+        );
+
+        assert!(
+            state.investigators[&id].threat_area.is_empty(),
+            "threat area drained"
+        );
+        assert_eq!(
+            state.encounter_discard.len(),
+            1,
+            "no registry ⇒ routed to the encounter discard"
+        );
+        assert!(state.investigators[&id].removed_from_game.is_empty());
     }
 }
