@@ -114,7 +114,13 @@ pub fn attach_to_location(
 /// push its code onto the encounter discard pile, and emit
 /// [`Event::CardDiscarded`] with `from: Zone::ThreatArea`. Returns
 /// `true` if an instance was removed, `false` if none matched.
-#[cfg_attr(not(test), allow(dead_code))] // C4c (#235) is the first production caller
+///
+/// The encounter discard is unconditionally correct here: the only cards that
+/// reach this helper are scenario-owned. A card's own Revelation-placed
+/// self-discard (Frozen in Fear 01164, Dissonant Voices 01165) routes through
+/// `Effect::DiscardSelf`, and Rules Reference p.10 Elimination step 4 sends an
+/// eliminated investigator's *scenario-owned* threat-area cards here — their
+/// **owned** weaknesses leave at step 1 instead, so they never arrive (#567).
 pub(super) fn discard_from_threat_area(
     cx: &mut Cx,
     investigator: InvestigatorId,

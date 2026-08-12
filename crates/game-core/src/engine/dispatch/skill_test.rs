@@ -732,6 +732,23 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             )
         };
 
+        // RR p.10 Elimination step 1 removed every card this investigator owns
+        // from the game — including the hand `indices_u8` points into. Abandon
+        // the test rather than resolve it on behalf of someone who has left the
+        // scenario. Mirrors `drive_attack_loop`'s early-break (`combat.rs`),
+        // which drops remaining attackers on the same signal (#564).
+        //
+        // This is the single choke point: both the `drive` loop's `SkillTest`
+        // arm and the `finish_skill_test` commit hop reach the driver here.
+        if cx
+            .state
+            .investigators
+            .get(&investigator)
+            .is_some_and(|inv| inv.status != Status::Active)
+        {
+            return abandon_test(cx, investigator);
+        }
+
         match continuation {
             SkillTestStep::PreCommitWindow => {
                 // RR p.26 player window after ST.1. (#374.)
@@ -885,6 +902,35 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             }
         }
     }
+}
+
+/// Tear down an in-flight skill test whose tester was eliminated mid-resolution
+/// (#564), and pop its frame.
+///
+/// Mirrors the [`PostOnResolution`](SkillTestStep::PostOnResolution) teardown
+/// **minus the committed-card discard**: Rules Reference p.10 Elimination step 1
+/// ("The cards he or she controls in play and all of the cards in his or her
+/// out-of-play areas (such as hand, deck, discard pile) are removed from the
+/// game") already removed the committed cards — they were still in hand, since
+/// the driver only discards at teardown. Discarding here would resurrect them
+/// into a pile.
+///
+/// [`Event::SkillTestEnded`] still fires: the test *is* over, and it is the
+/// documented "test is fully over" signal downstream listeners key on.
+fn abandon_test(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+    cx.events.push(Event::SkillTestEnded { investigator });
+    // ModifierScope::ThisSkillTest contributions expire with the test. Drain
+    // this investigator's pending entries only — entries queued for other
+    // investigators' future tests stay (as in the normal teardown).
+    cx.state
+        .pending_skill_modifiers
+        .retain(|m| m.investigator != investigator);
+    let taken = cx.state.take_skill_test();
+    debug_assert!(
+        taken.is_some(),
+        "abandon_test: no SkillTest frame on the continuation stack",
+    );
+    EngineOutcome::Done
 }
 
 /// Validate that every entry in `indices` is a unique in-bounds hand
@@ -1049,10 +1095,24 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, indices_u8
             });
         sorted
             .iter()
-            .map(|&idx| {
+            .filter_map(|&idx| {
+                // Unreachable: `advance`'s Status gate (#564) abandons the test
+                // before teardown if the tester was eliminated, and elimination
+                // is the only path that drains a live tester's hand. Total
+                // rather than indexing so a future path can't panic a
+                // production apply (a panic escapes apply_via's rollback).
+                if usize::from(idx) >= inv.hand.len() {
+                    debug_assert!(
+                        false,
+                        "discard_committed_cards: committed index {idx} out of bounds \
+                         (hand size {})",
+                        inv.hand.len(),
+                    );
+                    return None;
+                }
                 let code = inv.hand.remove(usize::from(idx));
                 inv.discard.push(code.clone());
-                code
+                Some(code)
             })
             .collect()
     };
@@ -1233,7 +1293,16 @@ fn collect_on_skill_test_resolution(
             });
         indices_u8
             .iter()
-            .map(|&i| inv.hand[usize::from(i)].clone())
+            .filter_map(|&i| {
+                let code = inv.hand.get(usize::from(i));
+                debug_assert!(
+                    code.is_some(),
+                    "collect_on_skill_test_resolution: committed index {i} out of bounds \
+                     (hand size {})",
+                    inv.hand.len(),
+                );
+                code.cloned()
+            })
             .collect()
     };
 
@@ -1293,7 +1362,15 @@ fn collect_on_commit(
             });
         indices_u8
             .iter()
-            .map(|&i| inv.hand[usize::from(i)].clone())
+            .filter_map(|&i| {
+                let code = inv.hand.get(usize::from(i));
+                debug_assert!(
+                    code.is_some(),
+                    "collect_on_commit: committed index {i} out of bounds (hand size {})",
+                    inv.hand.len(),
+                );
+                code.cloned()
+            })
             .collect()
     };
 
