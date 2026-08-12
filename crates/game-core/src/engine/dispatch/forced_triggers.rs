@@ -8,7 +8,7 @@
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
 use crate::state::{
-    CandidateSource, CardCode, InvestigatorId, LocationId, Phase, ResolutionCandidate,
+    CandidateSource, CardCode, InvestigatorId, LocationId, Phase, ResolutionCandidate, Status,
 };
 
 use super::super::evaluator::{push_effect, EvalContext};
@@ -319,7 +319,19 @@ pub(super) fn collect_forced_hits(
             // (Dissonant Voices 01165). Scan every investigator's
             // controlled instances; bind source = the instance so
             // `Effect::DiscardSelf` finds itself.
-            for (inv_id, inv) in &state.investigators {
+            //
+            // Skip eliminated investigators: Rules Reference p.10 Elimination
+            // removes their cards from the game (step 1) / to the encounter
+            // discard (step 4), so their in-play instances are already gone —
+            // except `investigator_card`, which is a non-Option identity/harm
+            // field (#448) that cannot be drained. This filter is that card's
+            // only guard (#567). `investigators` is a BTreeMap, so filtering
+            // preserves the frozen enumeration order (#570).
+            for (inv_id, inv) in state
+                .investigators
+                .iter()
+                .filter(|(_, inv)| inv.status == Status::Active)
+            {
                 for card in inv.controlled_card_instances() {
                     push_matching(
                         reg,
@@ -412,7 +424,19 @@ pub(super) fn collect_forced_hits(
             // controller = each card's controller, source = the instance.
             // `state.investigators` is a BTreeMap, so iteration order is
             // deterministic — consistent with the fixed-order contract.
-            for (inv_id, inv) in &state.investigators {
+            //
+            // Skip eliminated investigators: Rules Reference p.10 Elimination
+            // removes their cards from the game (step 1) / to the encounter
+            // discard (step 4), so their in-play instances are already gone —
+            // except `investigator_card`, which is a non-Option identity/harm
+            // field (#448) that cannot be drained. This filter is that card's
+            // only guard (#567). Filtering the BTreeMap preserves the frozen
+            // enumeration order (#570).
+            for (inv_id, inv) in state
+                .investigators
+                .iter()
+                .filter(|(_, inv)| inv.status == Status::Active)
+            {
                 for card in inv.controlled_card_instances() {
                     push_matching(
                         reg,

@@ -33,7 +33,7 @@ use game_core::state::{
 use game_core::test_support::{
     drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
 };
-use game_core::{assert_event, assert_event_count, Action, EngineOutcome};
+use game_core::{assert_event, assert_event_count, assert_no_event, Action, EngineOutcome};
 
 /// Roland Banks — health 9, sanity 5.
 const ROLAND: &str = "01001";
@@ -213,4 +213,77 @@ fn elimination_routes_a_mixed_threat_area_both_ways() {
         .encounter_discard
         .iter()
         .any(|c| c.as_str() == DISSONANT_VOICES));
+}
+
+#[test]
+fn eliminated_investigator_fires_no_game_end_trauma() {
+    // #567's acceptance: Cover Up's Forced ("When the game ends, if there are
+    // any clues on Cover Up: You suffer 1 mental trauma") must not fire for a
+    // dead Roland — RR p.10 step 1 took the card with him. Solo, so his death
+    // latches Resolution::Lost and the game-end forced scan runs for real.
+    let r = reveal_committing(board_at_lethal_range(8, &[], &[(COVER_UP, 3)]), &[]);
+
+    // Both asserted so the no-trauma claim below can't pass vacuously: the
+    // scenario must actually have ended for the GameEnd scan to have run at all.
+    assert!(
+        r.events
+            .iter()
+            .any(|e| matches!(e, Event::AllInvestigatorsDefeated)),
+        "solo death latches Resolution::Lost; events = {:?}",
+        r.events
+    );
+    assert!(
+        r.events
+            .iter()
+            .any(|e| matches!(e, Event::ScenarioResolved { .. })),
+        "the Lost latch must reach ScenarioResolved, which is what fires the \
+         GameEnd forced scan (cf. crates/cards/tests/cover_up.rs, which pins the \
+         positive case via AdvanceAct); events = {:?}",
+        r.events
+    );
+    assert_no_event!(r.events, Event::TraumaSuffered { .. });
+}
+
+#[test]
+fn eliminated_investigator_fires_no_further_round_end_forced() {
+    // #567's acceptance: Dissonant Voices' Forced ("At the end of the round:
+    // Discard Dissonant Voices") must not fire again for a dead investigator —
+    // step 4 already discarded it.
+    let mut r = reveal_committing(board_at_lethal_range(8, &[], &[(DISSONANT_VOICES, 0)]), &[]);
+    assert_eq!(
+        r.state.investigators[&InvestigatorId(1)].status,
+        Status::Killed
+    );
+    let before = r.state.encounter_discard.len();
+
+    let mut events = Vec::new();
+    let _ = game_core::test_support::fire_forced_on_round_end(&mut r.state, &mut events);
+
+    assert_eq!(
+        r.state.encounter_discard.len(),
+        before,
+        "no further round-end forced for a dead investigator"
+    );
+    assert_no_event!(events, Event::CardDiscarded { .. });
+}
+
+#[test]
+fn elimination_does_not_drain_the_investigator_card() {
+    // The premise of the Status filter (#567): `investigator_card` is a
+    // non-Option field carrying identity + harm (#448) and is read by
+    // max_health(), so elimination cannot drain it. Without the filter it would
+    // keep contributing GameEnd/RoundEnded forced candidates for a dead
+    // investigator. No in-scope investigator card carries such a forced
+    // (Roland's is a reaction), so the filter has no observable test today —
+    // this pins the premise that makes it necessary.
+    let r = reveal_committing(board_at_lethal_range(8, &[], &[]), &[]);
+
+    let inv = &r.state.investigators[&InvestigatorId(1)];
+    assert_eq!(inv.status, Status::Killed);
+    assert_eq!(
+        inv.investigator_card.code.as_str(),
+        ROLAND,
+        "the investigator card survives elimination — the premise of the \
+         Status filter on the RoundEnded/GameEnd scans",
+    );
 }
