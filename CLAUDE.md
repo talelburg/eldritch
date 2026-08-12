@@ -6,7 +6,7 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 
 Work runs on the `mattpocock-skills` suite. `/ask-matt` maps the flows when it's unclear which applies. Pure questions and trivial one-liners skip all of this — use judgment.
 
-**The flow entry points are the user's to start.** `/grill-with-docs`, `/to-spec`, `/to-tickets`, `/implement`, `/wayfinder` and `/triage` are user-invocation-only and cannot be launched from a session. Ask for the one you need; never improvise a skill's workflow by hand in its place. The skills used *during* the work — `tdd`, `code-review`, `domain-modeling`, `codebase-design`, `diagnosing-bugs`, `prototype`, `research` — are invocable directly, and should be **actually invoked** rather than emulated from memory.
+**The flow entry points are the user's to start.** A suite skill missing from your available-skills listing is user-invocation-only — ask the user to run it and wait. The skills that *are* listed should be **actually invoked** via the Skill tool, since a skill you follow from memory is a skill you follow approximately.
 
 **Planning a phase.** Pick the entry point by how much fog the phase has, gauged by its own **Open questions** section: `/wayfinder` when the route to the destination isn't visible yet (architectural questions unresolved), `/grill-with-docs` when it is and only ordering and scope are open. Wayfinder is slow and dense — never reach for it for a well-scoped feature.
 
@@ -19,7 +19,7 @@ Work runs on the `mattpocock-skills` suite. `/ask-matt` maps the flows when it's
 
 Every gate arrives as **options with a recommendation**, never an open question. Stopping to ask something you could have looked up in the snapshot or the rules reference is a bug in the gate, not diligence.
 
-Two standing rules **pre-decide** instead of gating: don't add DSL primitives speculatively (wait until two hand-written cards want the same pattern), and if a card is in neither source, say so rather than reconstructing it.
+Not every judgement call is a gate. Where this file already **pre-decides** — the DSL-primitive threshold under Architecture, the missing-card-source rule under the citation mandates — apply the rule rather than asking.
 
 ## Commands
 
@@ -129,7 +129,7 @@ When implementing or citing **rules behavior** — ability timing, trigger windo
 
 ## Phase plan, milestones, and PR procedure
 
-Work is tracked against GitHub milestones (`phase-0-foundations` → `phase-10-dunwich-and-iteration`). Each phase has a plan doc at **`docs/phases/phase-N-<slug>.md`** (ordered work, status, open questions) — read the relevant one when picking up an issue; `docs/phases/README.md` indexes the arc and unmilestoned work. Design decisions live in `docs/adr/`, not in the phase docs. Issues carry priority (`p0-blocker` / `p1-next` / `p2-later`) and category (`engine` / `card` / `scenario` / `infra` / `test`) labels. PRs squash-merge; commit subjects follow `scope: description` (e.g. `engine: cards-registry binding via static OnceLock`); the PR template's `Closes #` line auto-closes the issue.
+Work is tracked against GitHub milestones (`phase-0-foundations` → `phase-10-dunwich-and-iteration`). Each phase has a plan doc at **`docs/phases/phase-N-<slug>.md`** (ordered work, status, open questions) — read the relevant one when picking up an issue; `docs/phases/README.md` indexes the arc and unmilestoned work. Design decisions live in `docs/adr/`, not in the phase docs. Issues carry priority (`p0-blocker` / `p1-next` / `p2-later`) and category (`engine` / `card` / `scenario` / `infra` / `test`) labels. PRs squash-merge; commit subjects follow `scope: description` (e.g. `engine: cards-registry binding via static OnceLock`); the PR template's `Closes #` line auto-closes the issue. **Every PR closes at least one issue** — file it first, including for infrastructure and bootstrap work, so the tracker stays a trustworthy record of what's been done.
 
 Follow this order for every non-trivial PR — skipping steps has cost real iterations. The **gates** under Workflow interrupt this order wherever they fire: resolve the gate, then resume.
 
@@ -138,7 +138,7 @@ Follow this order for every non-trivial PR — skipping steps has cost real iter
 3. **Open the PR** with `gh pr create` using the repo template; include a brief design-decisions paragraph for any non-obvious choice.
 4. **Watch CI** via `gh pr checks <PR#> --watch` (background). Code review for routine PRs happens **before push** — `/implement` closes out by running `code-review` — so skip the post-push `review-agent` then. Reserve a post-push review for: PRs prepared without a pre-push review, an explicit request for a second look, or escalation skills (`/security-review` for sensitive areas, `/ultrareview` at milestone exits) — all user-triggered.
 5. **Fix CI failures with follow-up commits to the same branch** — don't amend/force-push unless asked.
-6. **Update the relevant `docs/phases/phase-N-<slug>.md` once the PR is ready to merge, and ONLY then** — as the final commit, so it reflects the actually-shipping state (PR # known, review fixes folded in). Never put phase-doc edits in earlier commits (churn + drift). Move the closing issue to the **Closed** table (bump counts), flip the Ordering/Arc row to `✅ PR #N`, and remove any **Open question** the PR settled. **Design decisions no longer live in the phase doc** — if the PR made a choice that is (a) hard to reverse, (b) surprising without context, and (c) the result of a real trade-off, write it up as an ADR under `docs/adr/` in the same commit. All three must hold; most PRs need no ADR. **`docs/phases/README.md` ("Maintaining these docs") is the authoritative spec for this step.**
+6. **Update the relevant `docs/phases/phase-N-<slug>.md` once the PR is ready to merge, and ONLY then** — as the final commit, so it reflects the actually-shipping state (PR # known, review fixes folded in). Never put phase-doc edits in earlier commits (churn + drift). Move the closing issue to the **Closed** table (bump counts), flip the Ordering/Arc row to `✅ PR #N`, and remove any **Open question** the PR settled. **Design decisions no longer live in the phase doc** — a load-bearing choice becomes an ADR under `docs/adr/` in the same commit. Most PRs need none. **`docs/phases/README.md` ("Maintaining these docs") is the authoritative spec for this step, including the three-part test an ADR must pass.**
 7. **Merge only after explicit user approval**, via `gh pr merge <PR#> --squash --delete-branch`. Confirm the issue auto-closed and `git pull` on `main`.
 
 ## Agent skills
@@ -154,3 +154,7 @@ The five canonical triage roles, each label string equal to its name. See `docs/
 ### Domain docs
 
 Single-context — [`CONTEXT.md`](CONTEXT.md) (the domain glossary) and `docs/adr/` at the repo root. **Read `CONTEXT.md` before naming a domain concept**, and check `docs/adr/` before working in an area it touches. See `docs/agents/domain.md`.
+
+### Coding standards
+
+`docs/agents/standards.md` — the index of how code is written here. It points at the standards documented in this file and defines the ones with no other home. It is what `code-review`'s Standards axis reads.
