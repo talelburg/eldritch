@@ -54,7 +54,7 @@ A shared `Quantity` vocabulary (`CluesAtControllerLocation`, `EngagedEnemies`,
 `Effect::Fight.extra_damage` widened to `IntExpr` with `From`/`Into` builders
 (literals untouched). **#426** — Grasping Hands 01162 / Rotting Remains 01163 deal
 one `Count(SkillTestFailedBy)` instance (`ForEachPointFailed` deleted). **#300** —
-Machete is `+1` only vs the sole engaged enemy (`Compare(EngagedEnemies, Eq, 1)`).
+Machete gets `+1` damage only against the sole engaged enemy.
 **#449 ✅ shipped** — `Effect::Fight` now picks among the engaged enemies
 (auto-binds 1, suspends for a `PickSingle` on 2+; `single_engaged_enemy` retired),
 so an investigator swarmed by 2+ enemies can activate a weapon and Machete's `+0`
@@ -63,6 +63,21 @@ engaged → any co-located enemy (`combat::fight_target_scope()` = `At(Here)`, s
 by the pre-cost gate and the target grounding so they can't drift), matching #401's
 basic-action fix and Machete's FAQ (you *can* attack an Aloof / other-player-engaged
 enemy; you just forfeit the sole-engaged damage bonus).
+**#592 ✅ shipped (PR #610)** — that forfeit was aspirational until now: Machete's
+condition was `Compare(EngagedEnemies, Eq, 1)`, which counts *your* engaged enemies
+and never reads the target, so once #451 widened the scope the two questions came
+apart and an unengaged co-located target still got `+1`. The clause is a conjunction
+over the *chosen* enemy, and neither half is expressible declaratively (no `Condition`
+combinator, no target-referencing `Condition`/`Quantity`, `IntExpr::Cond`'s branches
+are `i8` so conditions can't nest) — so it rides a new `Condition::Native { tag }`,
+the read-only mirror of `Effect::Native` dispatched via
+`CardRegistry::native_condition_for`, exactly the single-consumer-native call item 2
+below made for eligibility predicates. **#609** carries the promotion trigger (the
+second card wanting a compound or target-referencing condition adds `Condition::All`
+plus a target-referencing variant and re-expresses Machete through them), with
+`TODO(#609)` markers at all four sites. The card predicate and the kernel's
+`Quantity::EngagedEnemies` now share one `GameState::enemies_engaged_with` reading of
+"engaged with you", since two copies drifting apart is what this bug was.
 - **#118 — Roland's elder-sign ✅ shipped (PR #454).** `Trigger::ElderSign { modifier:
   IntExpr }` + an ST.4 firing path: the bonus rides the chaos-token `Modifier` total
   (sourced from the investigator card via `elder_sign_modifier` — **not** `Effect::Modify`).
