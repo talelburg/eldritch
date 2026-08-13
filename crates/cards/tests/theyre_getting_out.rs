@@ -13,7 +13,7 @@ use game_core::state::{
 };
 use game_core::test_support::{
     fire_forced_on_phase_end, fire_forced_on_round_end, resume_round_end_window,
-    run_upkeep_round_end, test_enemy, test_investigator, GameStateBuilder,
+    run_enemy_phase_end, run_upkeep_round_end, test_enemy, test_investigator, GameStateBuilder,
 };
 use game_core::{EngineOutcome, Event};
 
@@ -63,6 +63,64 @@ fn enemy_phase_end_moves_ghoul_toward_parlor() {
     assert!(events
         .iter()
         .any(|e| matches!(e, Event::EnemyMoved { to, .. } if *to == LocationId(5))));
+}
+
+/// Regression (#569): the move must fire through the *real* step-3.4 site, not
+/// only through the `fire_forced_on_phase_end` helper. `enemy_phase_end` queues
+/// the agenda's forced ability as a frame and returns `Done`; before the fix it
+/// read that `Done` as "nothing happened" and pushed the Upkeep anchor on top of
+/// the queued frame, orphaning it at the bottom of the stack for the rest of the
+/// scenario — agenda 3's Ghoul movement never happened in real play.
+#[test]
+fn enemy_phase_end_moves_ghoul_before_the_upkeep_transition() {
+    let mut state = board_with_agenda();
+    {
+        // The cascade runs on into Upkeep, which reads the investigator card's
+        // printed stats: give it a real code (Roland Banks) and a card to draw.
+        let inv = state.investigators.get_mut(&InvestigatorId(1)).unwrap();
+        inv.investigator_card.code = CardCode::new("01001");
+        inv.current_location = Some(LocationId(2));
+        inv.deck = vec![CardCode::new("01006")];
+    }
+    // One Ghoul in the Hallway, one step from the Parlor.
+    state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2)));
+    // The step-3.4 site runs with the Enemy anchor on top (its
+    // `AfterAllInvestigatorsAttacked` window has just closed).
+    state.continuations.push(Continuation::EnemyPhase {
+        resume: game_core::state::EnemyResume::AfterAllAttacked,
+        attacking: None,
+    });
+
+    let mut events = Vec::new();
+    let _ = run_enemy_phase_end(&mut state, &mut events);
+
+    assert_eq!(
+        state.enemies[&EnemyId(1)].current_location,
+        Some(LocationId(5)),
+        "Ghoul stepped Hallway -> Parlor at the end of the enemy phase"
+    );
+    // Ordering is the defect: the queued ability resolves BEFORE the phase
+    // transition's tail work, not after it (and not never).
+    let moved = events
+        .iter()
+        .position(|e| matches!(e, Event::EnemyMoved { to, .. } if *to == LocationId(5)))
+        .expect("the Ghoul move must fire at the enemy phase end");
+    let upkeep_started = events
+        .iter()
+        .position(|e| {
+            matches!(
+                e,
+                Event::PhaseStarted {
+                    phase: Phase::Upkeep
+                }
+            )
+        })
+        .expect("the Enemy -> Upkeep transition must still run");
+    assert!(
+        moved < upkeep_started,
+        "the queued forced ability must resolve before the Upkeep phase begins; \
+         events = {events:?}"
+    );
 }
 
 #[test]

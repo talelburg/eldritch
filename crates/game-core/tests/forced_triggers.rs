@@ -1,4 +1,4 @@
-//! End-to-end `fire_forced_triggers` flow with a mock `CardRegistry`
+//! End-to-end `queue_forced_triggers` flow with a mock `CardRegistry`
 //! covering a single `EventPattern::EnteredLocation` forced ability.
 //!
 //! Lives at `crates/game-core/tests/` (a separate integration-test
@@ -53,6 +53,21 @@ const DOUBLE_FORCED: &str = "test-double-forced";
 /// minus the skill test (kept non-suspending for the C4a firing path).
 const END_OF_TURN_CARD: &str = "test-end-of-turn";
 
+/// Mock act code: one `EventPattern::PhaseEnded { phase: Upkeep }` forced
+/// ability dealing **1** horror — step 4.6's timing point.
+const UPKEEP_END_ACT: &str = "test-upkeep-end-act";
+
+/// Mock agenda code: one `EventPattern::RoundEnded` forced ability dealing **2**
+/// horror in the `at` cell — the round end that follows step 4.6. The differing
+/// amounts make the two distinguishable in the event log, which is what pins
+/// their order.
+const ROUND_END_AGENDA: &str = "test-round-end-agenda";
+
+/// Mock location attachment: TWO `EventPattern::LeftLocation` forced abilities,
+/// each dealing 1 horror to the leaving investigator. The Barricade-01038 shape
+/// doubled, so leaving opens a lead-ordered run that *suspends* mid-move (#569).
+const DOUBLE_LEFT_LOCATION: &str = "test-double-left-location";
+
 /// Mock threat-area card: one `EventPattern::SkillTestResolved { Success,
 /// Some(Investigate) }` forced ability dealing 1 horror to the controller. The
 /// Obscuring-Fog-shape (C4c), minus the location attachment.
@@ -91,6 +106,33 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             ),
             forced_on_event(
                 EventPattern::EnteredLocation,
+                EventTiming::After,
+                deal_horror(InvestigatorTarget::You, 1u8),
+            ),
+        ])
+    } else if code.as_str() == UPKEEP_END_ACT {
+        Some(vec![forced_on_event(
+            EventPattern::PhaseEnded {
+                phase: DslPhase::Upkeep,
+            },
+            EventTiming::After,
+            deal_horror(InvestigatorTarget::You, 1u8),
+        )])
+    } else if code.as_str() == ROUND_END_AGENDA {
+        Some(vec![forced_on_event(
+            EventPattern::RoundEnded,
+            EventTiming::At,
+            deal_horror(InvestigatorTarget::You, 2u8),
+        )])
+    } else if code.as_str() == DOUBLE_LEFT_LOCATION {
+        Some(vec![
+            forced_on_event(
+                EventPattern::LeftLocation,
+                EventTiming::After,
+                deal_horror(InvestigatorTarget::You, 1u8),
+            ),
+            forced_on_event(
+                EventPattern::LeftLocation,
                 EventTiming::After,
                 deal_horror(InvestigatorTarget::You, 1u8),
             ),
@@ -749,9 +791,283 @@ fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
     assert_eq!(done.state.investigators[&InvestigatorId(1)].horror(), 2);
 }
 
+// ── #569: an emit queues, so every site with post-emit work rides a frame ─────
+
+/// Both mock board cards carry a `PhaseEnded { Enemy }` forced ability, so step
+/// 3.4 has two simultaneous hits and the lead orders them (#213) — a suspension
+/// that outlives the `apply()`.
+///
+/// Regression (#569): `enemy_phase_end` used to pop the Enemy anchor *before*
+/// emitting and push the Upkeep anchor only after, so the ordering run closed
+/// onto an empty continuation stack: `phase` stuck at `Enemy` forever, every
+/// later input rejected. Now the anchor is re-parked beneath the run and the
+/// transition runs on its re-exposure.
+#[test]
+fn two_forced_at_enemy_phase_end_resolve_and_the_phase_still_transitions() {
+    let state = board_with_two_phase_end_forced();
+
+    // EndTurn cascades Investigation → Enemy → step 3.4 (no enemies, so the
+    // attack loop drains and the final window auto-skips into `enemy_phase_end`).
+    let paused = end_turn(state);
+
+    assert!(
+        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
+        "2+ forced at the enemy phase end must present the lead a choice; got {:?}",
+        paused.outcome,
+    );
+    assert_eq!(
+        paused.state.investigators[&InvestigatorId(1)].horror(),
+        0,
+        "no forced effect resolves until the lead orders them",
+    );
+    // The load-bearing bit: the phase's own frame is still there to resume onto.
+    assert!(
+        paused
+            .state
+            .continuations
+            .iter()
+            .any(|c| matches!(c, game_core::state::Continuation::EnemyPhase { .. })),
+        "the Enemy anchor must survive beneath the ordering run; stack = {:?}",
+        paused.state.continuations,
+    );
+
+    // Order them: each pick resolves one, and the second closes the run.
+    let first = resolve_pick(paused.state, 0);
+    assert_eq!(first.state.investigators[&InvestigatorId(1)].horror(), 1);
+    let second = resolve_pick(first.state, 0);
+
+    assert_eq!(
+        second.state.investigators[&InvestigatorId(1)].horror(),
+        2,
+        "both forced abilities resolve once ordered",
+    );
+    assert_ne!(
+        second.state.phase,
+        Phase::Enemy,
+        "the Enemy → Upkeep transition must run once the forced run closes, \
+         not stall the phase; stack = {:?}",
+        second.state.continuations,
+    );
+    assert!(
+        !second.state.continuations.is_empty(),
+        "the game must never be left with an empty continuation stack",
+    );
+}
+
+/// A `LeftLocation` forced that suspends (two attachment abilities → an ordering
+/// run) must not cost the move its entered-location half.
+///
+/// Regression (#569): `move_primary_effect` returned the suspension, and nothing
+/// resumed it — `engage_ready_enemies_on_enter` and the `EnteredLocation` emit
+/// were skipped permanently. Both now ride the `MoveEnter` frame parked beneath
+/// the emit, which also fixes their order: leaving resolves before entering.
+#[test]
+fn suspending_left_location_forced_still_engages_and_fires_entered_location() {
+    use game_core::state::{CardInPlay, CardInstanceId, EnemyId};
+
+    let mut from = test_location(10, "Hallway");
+    from.connections = vec![LocationId(11)];
+    // Two `LeftLocation` forced abilities on the left location's attachment.
+    from.attachments.push(CardInPlay::enter_play(
+        CardCode(DOUBLE_LEFT_LOCATION.into()),
+        CardInstanceId(7),
+    ));
+    // The destination has its own on-enter forced (1 horror) and a ready enemy.
+    let mut attic = test_location(11, "Attic");
+    attic.code = CardCode(HORROR_ATTIC.into());
+
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    inv.actions_remaining = 3;
+
+    let mut enemy = game_core::test_support::test_enemy(1, "Lurker");
+    enemy.current_location = Some(LocationId(11));
+
+    let mut state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(from)
+        .with_location(attic)
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1)])
+        .with_investigator_turn(InvestigatorId(1))
+        .build();
+    state.enemies.insert(EnemyId(1), enemy);
+
+    let paused = move_action(state, InvestigatorId(1), LocationId(11));
+    assert!(
+        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
+        "the two LeftLocation forced abilities must open an ordering run",
+    );
+    assert_eq!(
+        paused.state.investigators[&InvestigatorId(1)].horror(),
+        0,
+        "leaving resolves nothing until the lead orders the two abilities",
+    );
+
+    let first = resolve_pick(paused.state, 0);
+    let done = resolve_pick(first.state, 0);
+
+    assert_eq!(
+        done.state.investigators[&InvestigatorId(1)].horror(),
+        3,
+        "2 horror from leaving, then 1 from the entered location's forced — the \
+         enter half is not skipped by the suspension",
+    );
+    assert_eq!(
+        done.state.enemies[&EnemyId(1)].engaged_with,
+        Some(InvestigatorId(1)),
+        "the destination's ready enemy engages on entry, after the move resumes",
+    );
+    // Ordering: leaving fully resolves before entering fires. This last `apply`
+    // holds the tail of the sequence — the second LeftLocation ability, then the
+    // engage, then the entered location's forced.
+    let horror_positions: Vec<usize> = done
+        .events
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| matches!(e, Event::HorrorTaken { .. }))
+        .map(|(i, _)| i)
+        .collect();
+    let engaged = done
+        .events
+        .iter()
+        .position(|e| matches!(e, Event::EnemyEngaged { .. }))
+        .expect("the auto-engage must emit EnemyEngaged");
+    assert_eq!(
+        horror_positions.len(),
+        2,
+        "this apply resolves the second LeftLocation ability and the entered \
+         location's forced; events = {:?}",
+        done.events,
+    );
+    assert!(
+        horror_positions[0] < engaged && engaged < horror_positions[1],
+        "the last LeftLocation ability resolves, then the engage, then the \
+         EnteredLocation forced; events = {:?}",
+        done.events,
+    );
+}
+
+/// Step 4.6's `PhaseEnded { Upkeep }` forced ability resolves before the round
+/// end that follows it.
+///
+/// Regression (#569): `upkeep_phase_end` emitted the phase end, read the `Done`
+/// as "resolved", and emitted `RoundEnded` — pushing the round-end coordinator
+/// *above* the phase-end ability it had just queued, so the round end resolved
+/// first. The round-end emit now lives in the anchor's `AfterPhaseEndForced`
+/// resume arm, which the loop reaches only once that ability has resolved.
+#[test]
+fn upkeep_phase_end_forced_resolves_before_the_round_end() {
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    let mut state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(test_location(10, "Study"))
+        .with_phase(Phase::Upkeep)
+        .with_turn_order([InvestigatorId(1)])
+        .with_phase_anchor(game_core::state::Continuation::UpkeepPhase {
+            resume: game_core::state::UpkeepResume::Begins,
+        })
+        .build();
+    state.act_deck = vec![Act {
+        code: CardCode(UPKEEP_END_ACT.into()),
+        clue_threshold: 3,
+        resolution: None,
+    }];
+    state.act_index = 0;
+    state.agenda_deck = vec![Agenda {
+        code: CardCode(ROUND_END_AGENDA.into()),
+        doom_threshold: 3,
+        resolution: None,
+    }];
+    state.agenda_index = 0;
+
+    let mut events = Vec::new();
+    let _ = game_core::test_support::run_upkeep_round_end(&mut state, &mut events);
+
+    let phase_end = events
+        .iter()
+        .position(|e| matches!(e, Event::HorrorTaken { amount: 1, .. }))
+        .expect("the PhaseEnded(Upkeep) forced ability must resolve");
+    let round_end = events
+        .iter()
+        .position(|e| matches!(e, Event::HorrorTaken { amount: 2, .. }))
+        .expect("the RoundEnded forced ability must resolve");
+    assert!(
+        phase_end < round_end,
+        "step 4.6's phase-end ability resolves before the round end it precedes; \
+         events = {events:?}",
+    );
+}
+
+/// Investigation-phase board with one investigator out of actions and both mock
+/// board cards keyed to `PhaseEnded { Enemy }` — the two-hit step-3.4 fixture.
+fn board_with_two_phase_end_forced() -> game_core::state::GameState {
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    inv.actions_remaining = 0;
+    // A card to draw at Upkeep 4.4, so the empty-deck horror penalty doesn't
+    // muddy the horror assertions downstream of the transition.
+    inv.deck = vec![CardCode("filler-card".into())];
+
+    let mut state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(test_location(10, "Study"))
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1)])
+        .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
+            resume: game_core::state::InvestigationResume::TurnBegins,
+        })
+        .with_investigator_turn(InvestigatorId(1))
+        .build();
+    state.act_deck = vec![Act {
+        code: CardCode(DOOM_ACT.into()),
+        clue_threshold: 3,
+        resolution: None,
+    }];
+    state.act_index = 0;
+    state.agenda_deck = vec![Agenda {
+        code: CardCode(DOOM_AGENDA.into()),
+        doom_threshold: 3,
+        resolution: None,
+    }];
+    state.agenda_index = 0;
+    state
+}
+
+/// Submit the open-turn `EndTurn` action through the enumeration round-trip.
+fn end_turn(state: game_core::state::GameState) -> game_core::ApplyResult {
+    use game_core::engine::enumerate::legal_actions;
+    use game_core::engine::OptionId;
+    use game_core::TurnAction;
+
+    let idx = legal_actions(&state)
+        .iter()
+        .position(|a| a == &TurnAction::EndTurn)
+        .expect("EndTurn must be a legal open-turn action");
+    apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+        }),
+    )
+}
+
+/// Resolve an open prompt by picking `option`.
+fn resolve_pick(state: game_core::state::GameState, option: u32) -> game_core::ApplyResult {
+    apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(game_core::engine::OptionId(option)),
+        }),
+    )
+}
+
 // (Removed `two_simultaneous_forced_triggers_resolve_in_order`, Slice D #423: it
 // was a pre-#213 stand-in that fired 2+ forced directly through
-// `fire_forced_triggers` in a fixed order. The production route for 2+
+// `queue_forced_triggers` in a fixed order. The production route for 2+
 // simultaneous forced is the lead-ordered run, covered by
 // `two_simultaneous_forced_triggers_present_a_choice` +
 // `two_simultaneous_forced_triggers_resolved_in_lead_chosen_order` through `apply`.)

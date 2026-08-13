@@ -74,7 +74,7 @@ fn ack_prompt(deck: AdvanceDeck, from: usize) -> String {
 /// mode, suspends with a one-option on-card `PickSingle` anchored to the
 /// act/agenda (the flip pick — cursor stays at `AwaitAck` until `resume`); a
 /// **deliberate** advance skips the ack and falls through (#558). `FireReverse`
-/// fires the leaving card's Forced reverse via `emit_event` (queued; may
+/// fires the leaving card's Forced reverse via `queue_event` (queued; may
 /// suspend). `Finalize` bumps the deck cursor and pops the frame.
 pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
     let (deck, from, leaving_code, step, trigger) = top(cx);
@@ -105,7 +105,7 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
             // Pre-advance BEFORE emitting so a suspending reverse resumes at
             // Finalize once its frames pop.
             set_step(cx, AdvanceStep::Finalize);
-            super::emit::emit_event(cx, &reverse_timing(deck, leaving_code))
+            super::emit::queue_event(cx, &reverse_timing(deck, leaving_code))
         }
         AdvanceStep::Finalize => {
             finalize(cx, deck, from);

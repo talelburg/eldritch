@@ -27,7 +27,7 @@ use game_core::test_support::{
 
 /// Mock threat-area card: a **forced** ability keyed to *any* successful skill
 /// test (`kind: None`), dealing 1 horror to the controller. Forced (not a
-/// reaction) so it fires automatically in `emit_event`'s forced phase — no
+/// reaction) so it fires automatically in `queue_event`'s forced phase — no
 /// reaction-window resolution needed to observe the timing point.
 const ANY_SUCCESS_FORCED: &str = "MOCK-STR-ANY-SUCCESS";
 

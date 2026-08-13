@@ -104,23 +104,30 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
             });
         }
         // Enemy defeated: dispatch the timing point through the unified
-        // chokepoint (Axis-B T5a). `emit_event` queues the after-defeat
-        // reaction window (Roland 01001 — the window opens now;
-        // the skill-test driver suspends at its next step boundary so the
-        // player can react) and then fires the forced act objectives (Act 3's
-        // advance-on-Ghoul-Priest-defeat). `()`/debug_assert guards the
-        // 2+-trigger forced case (#213).
-        let forced = super::emit::emit_event(
+        // chokepoint (Axis-B T5a). `queue_event` queues the after-defeat
+        // reaction window (Roland 01001) and the forced act objectives (act 3's
+        // advance-on-Ghoul-Priest-defeat) as frames for the `drive` loop.
+        //
+        // This is a **tail-position emit** even though it doesn't look like one
+        // (ADR 0003): the caller is a skill-test follow-up step, and
+        // `apply_follow_up_step` pre-advances the `SkillTest` cursor *before* the
+        // follow-up pushes anything, while `advance` yields whenever the
+        // `SkillTest` is no longer the top frame. So the queued frames resolve
+        // first and the test resumes at the already-advanced cursor afterwards —
+        // no post-emit work runs here. The outcome is deliberately discarded
+        // rather than returned: this helper's callers (`Effect::Deal`,
+        // `deal_damage_to_enemy`) have their own frames, and the loop drives what
+        // was queued. (The former `debug_assert!(Done)` asserted the wrong
+        // invariant — a legitimate 2+ ordering run returns `AwaitingInput` — and
+        // would have panicked in debug on the day a second act objective keyed
+        // here; #569.)
+        let _ = super::emit::queue_event(
             cx,
             &super::emit::TimingEvent::EnemyDefeated {
                 enemy: enemy_id,
                 by,
                 code: defeated_code,
             },
-        );
-        debug_assert!(
-            matches!(forced, crate::engine::EngineOutcome::Done),
-            "EnemyDefeated forced did not resolve to Done: {forced:?} (2+ needs #213)"
         );
     }
 }
@@ -654,12 +661,14 @@ fn place_queue_exhaust(
     // soaker assets (C5b #237).
     let damaged_survivors = place_assignment(cx, investigator, assignment);
 
-    // Queue a soak reaction window per surviving damaged asset, BEFORE the
-    // exhaust step — preserving the historical order in which the window
-    // opens before `EnemyExhausted`. Inert unless a soaker has an
-    // `EnemyAttackDamagedSelf` reaction (Guard Dog 01021).
+    // Queue a soak reaction window per surviving damaged asset (Guard Dog
+    // 01021's retaliate; inert unless a soaker has an `EnemyAttackDamagedSelf`
+    // reaction). The window is *queued* here, not opened (ADR 0003): the exhaust
+    // below runs first and `EnemyExhausted` fires before the player sees the
+    // window, which the `drive` loop reaches once this returns. The reverse order
+    // this call site once claimed has not held since the frame migration (#423).
     for asset in damaged_survivors {
-        let _ = super::emit::emit_event(
+        let _ = super::emit::queue_event(
             cx,
             &super::emit::TimingEvent::EnemyAttackDamagedSelf {
                 asset,
@@ -1088,11 +1097,11 @@ fn process_head_attacker(
 
     // Before-attack cancel window (Axis D #336): reaction-only Before timing
     // point. Opens iff a co-located cancel reaction is available (Dodge in hand,
-    // or an in-play reaction); `emit_event` only queues a window when the scan
+    // or an in-play reaction); `queue_event` only queues a window when the scan
     // finds a candidate. Suspend BEFORE dealing damage, keeping the head
     // attacker at the front of `attackers` so the `BeforeAttack` resume
     // processes it (deal-or-cancel).
-    let _ = super::emit::emit_event(
+    let _ = super::emit::queue_event(
         cx,
         &super::emit::TimingEvent::EnemyAttacks {
             enemy: enemy_id,

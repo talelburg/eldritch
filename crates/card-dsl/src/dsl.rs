@@ -187,7 +187,7 @@ pub enum Trigger {
         timing: EventTiming,
         /// Whether this is a mandatory **forced** ability or an optional
         /// player **reaction**. Determines which phase of the two-phase
-        /// `emit_event` dispatch it participates in — Rules Reference p.2:
+        /// `queue_event` dispatch it participates in — Rules Reference p.2:
         /// "all forced abilities … must resolve before any `[reaction]`
         /// abilities … may be initiated." Replaces the earlier
         /// route-by-`EventPattern` heuristic (which forced twin patterns
@@ -226,16 +226,16 @@ pub enum Trigger {
 /// or is an optional player reaction.
 ///
 /// Forced abilities all resolve before any reaction abilities at the same
-/// timing point (Rules Reference p.2), and the engine's `emit_event`
+/// timing point (Rules Reference p.2), and the engine's `queue_event`
 /// dispatch keys its two phases off this distinction rather than guessing
 /// from the [`EventPattern`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TriggerKind {
     /// Mandatory; resolves automatically (the player only orders
-    /// simultaneous ones). Phase 1 of `emit_event`.
+    /// simultaneous ones). Phase 1 of `queue_event`.
     Forced,
     /// Optional; the controller may use it in the reaction window.
-    /// Phase 2 of `emit_event`.
+    /// Phase 2 of `queue_event`.
     Reaction,
 }
 

@@ -42,6 +42,15 @@ in **Architecture to build on**. In dependency order, the arcs that landed:
    emission, windows, and the `when/at/after × forced/reaction` matrix are all
    `drive`-loop-dispatched frames. Final slice PR #446 deleted `apply_effect` /
    `drive_effect_to_base`; every effect site is now top-frame dispatched.
+   *(The arc left its central consequence unstated, at the cost of a live bug:
+   an emit **queues** its abilities and returns `Done`, so four call sites ran
+   their tails above the frames they had just queued. `enemy_phase_end` pushed
+   the Upkeep anchor over agenda 01107's forced Ghoul movement, which therefore
+   never fired in a real game. **#569 ✅ shipped (PR #613)** — each site emits in
+   tail position and resumes on a frame, `emit_event` is renamed `queue_event`,
+   and a `drive`-loop assert backstops the class; ADR 0003 records the contract.
+   The `GameEnd` instance is #566, the deferred `ActionResolution`
+   generalisation #612.)*
 
 ## Remaining gate work
 
@@ -425,9 +434,11 @@ differs by source: enemy-phase always (even cancelled, RR p.6/p.25); AoO never
 fast plays/abilities provoke nothing (gate on `!is_fast`). Soak-first by
 `CardInstanceId` order is the interactive-distribution entry point.
 
-**Trigger spine.** `emit_event` is the one dispatch chokepoint (two-phase
+**Trigger spine.** `queue_event` is the one dispatch chokepoint (two-phase
 forced-then-reaction, RR p.2; simultaneous triggers lead-ordered via a
-`TimingPointWindow { Forced }` run, RR p.17). Reentrancy resolves by **top-frame
+`TimingPointWindow { Forced }` run, RR p.17). It **queues** — a caller with work
+after the emit resumes on a frame and emits in tail position (ADR 0003, #569).
+Reentrancy resolves by **top-frame
 dispatch** (C-plumbing, PR #443): the loop dispatches whatever is on top — a mid-test
 window above the `SkillTest`, then the `SkillTest`, then a forced run beneath — so no
 driver distinguishes "above" from "below". Reaction/forced windows resume via

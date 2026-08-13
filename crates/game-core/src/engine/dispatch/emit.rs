@@ -1,14 +1,24 @@
 //! The unified trigger-dispatch chokepoint (umbrella §2 / Axis-B T5a).
 //!
-//! [`emit_event`] is the single entry point for forced + reaction trigger
+//! [`queue_event`] is the single entry point for forced + reaction trigger
 //! dispatch at a framework/game timing point. A [`TimingEvent`] names the
-//! timing point and carries its binding context; `emit_event` runs the
+//! timing point and carries its binding context; `queue_event` runs the
 //! two phases — Rules Reference p.2 forced-then-reaction:
 //!
-//! 1. **forced** — mandatory abilities resolve (today via the existing
-//!    `fire_forced_triggers`; T5b replaces this with the iterative
-//!    lead-investigator ordering loop).
+//! 1. **forced** — mandatory abilities are queued (via
+//!    [`queue_forced_triggers`] for a lone hit, or the lead-ordered run for
+//!    2+ simultaneous ones).
 //! 2. **reaction** — the optional player reaction window opens.
+//!
+//! **Queues; does not resolve.** Since the effect-frame migration (#423),
+//! firing an ability means *pushing a frame*: nothing here is evaluated
+//! synchronously, so a returned [`EngineOutcome::Done`] means **queued**, not
+//! **resolved**. A caller with work to do after the emit must put that work on
+//! a resumption frame and emit in tail position; checking the returned outcome
+//! is not a substitute. See
+//! `docs/adr/0003-emitting-a-timing-point-queues-abilities.md` — four call
+//! sites read `Done` as "nothing happened" and ran their tails *above* the
+//! abilities they had just queued (#569).
 //!
 //! `TimingEvent` is the merge of the engine's two pre-existing
 //! binding-carrying dispatch keys: [`ForcedTriggerPoint`] (forced) and the
@@ -22,7 +32,7 @@ use crate::state::{CardCode, CardInstanceId, EnemyId, InvestigatorId, LocationId
 use serde::{Deserialize, Serialize};
 
 use super::super::outcome::EngineOutcome;
-use super::forced_triggers::{collect_forced_hits, fire_forced_triggers, ForcedTriggerPoint};
+use super::forced_triggers::{collect_forced_hits, queue_forced_triggers, ForcedTriggerPoint};
 use super::Cx;
 
 /// A game/framework timing point at which forced and/or reaction triggers
@@ -38,7 +48,7 @@ use super::Cx;
 /// `SkillTestResolved` is the general skill-test-outcome timing point (RR
 /// ST.6), of which "after you successfully investigate" (Obscuring Fog forced +
 /// Dr. Milan reaction) is the `{ Investigate, Success }` narrowing. Routing the
-/// forced and reaction phases through one `emit_event` keeps RR p.2
+/// forced and reaction phases through one `queue_event` keeps RR p.2
 /// forced-before-reaction. Framework `PlayerWindow(PhaseStep)` windows are *not*
 /// timing events — they have no `EventPattern` and stay on explicit
 /// `open_fast_window` calls.
@@ -206,27 +216,43 @@ impl TimingEvent {
     }
 }
 
-/// Dispatch a timing event: queue its reaction window (phase 2), then fire
+/// Dispatch a timing event: queue its reaction window (phase 2), then queue
 /// its forced abilities (phase 1).
+///
+/// # This queues; it does not resolve
+///
+/// Every path here pushes frames for the `drive` loop to own: a lone forced hit
+/// becomes an effect frame (plus an `AcknowledgeForced` above it in interactive
+/// mode), 2+ simultaneous hits become a lead-ordered `TimingPointWindow`, and a
+/// reaction-capable point pushes its window. So **`Done` means queued, not
+/// resolved** — a caller that does synchronous work after this call pushes that
+/// work *above* the abilities it just queued, and it runs *first*.
+///
+/// A caller with post-emit work therefore **emits in tail position and resumes
+/// on its own frame**: arm the resume cursor (`enemy_phase_end` /
+/// `upkeep_phase_end` re-park their phase anchor; `end_turn` arms
+/// `InvestigatorTurn { ending: true }`), or push a dedicated frame beneath the
+/// emit (`move_primary_effect`'s [`MoveEnter`](crate::state::Continuation::MoveEnter)),
+/// then return this outcome unexamined. See
+/// `docs/adr/0003-emitting-a-timing-point-queues-abilities.md` (#569).
 ///
 /// # Phase ordering
 ///
-/// The reaction window is *queued* before forced abilities *resolve*, so
-/// the window opens before the forced effects' events fire — preserving
-/// the pre-T5a per-site order (each dual site called `queue_reaction_window`
-/// before `fire_forced_triggers`). The forced abilities still **resolve**
-/// synchronously here, before the player can act on the queued window (the
-/// window only suspends the surrounding driver at its next step boundary),
-/// so resolution is RR-correct forced-then-reaction.
+/// The reaction window is queued before the forced abilities are, so it sits
+/// *beneath* them on the stack and the forced frames resolve first — RR p.2
+/// forced-before-reaction, structurally rather than by hand-ordering.
 ///
-/// Returns the forced phase's [`EngineOutcome`] (the queue itself never
-/// suspends or rejects). T5b replaces the forced phase's internals with the
-/// iterative ordering loop.
-pub(crate) fn emit_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
+/// Returns the forced phase's [`EngineOutcome`]: `Done` when the queueing is
+/// complete, `AwaitingInput` when 2+ simultaneous forced abilities need the
+/// lead's ordering pick before any of them can be queued for resolution.
+#[must_use = "queue_event only queues frames: post-emit work belongs on a resume \
+              frame, not after this call (ADR 0003). Return the outcome, or bind \
+              it to `_` at a site whose caller owns the suspension channel"]
+pub(crate) fn queue_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     // The only multi-bucket event (#434): cede to the `when → at → after`
-    // coordinator + the global loop. `emit_event` returns `Done`; the caller
-    // must do no synchronous post-emit work (`upkeep_phase_end` set its anchor
-    // resume cursor first). Every other event is single-bucket and resolves
+    // coordinator + the global loop. `queue_event` returns `Done`; the caller
+    // must do no synchronous post-emit work (`upkeep_phase_end` sets its anchor
+    // resume cursor first). Every other event is single-bucket and queues
     // inline below (Checkpoint-C: no coordinator frame for a single cell).
     if matches!(event, TimingEvent::RoundEnded) {
         cx.state
@@ -243,17 +269,17 @@ pub(crate) fn emit_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     let Some(point) = event.forced_point() else {
         return EngineOutcome::Done;
     };
-    // Forced phase. When 2+ forced abilities resolve at this timing point,
-    // the lead investigator orders them (#213): open the forced-resolution
-    // run and suspend for the choice. 0 or 1 resolve synchronously, as before.
+    // Forced phase. When 2+ forced abilities fire at this timing point, the lead
+    // investigator orders them (#213): open the forced-resolution run and
+    // suspend for the choice. 0 or 1 queue without suspending.
     let candidates = collect_forced_hits(cx.state, &point, crate::dsl::EventTiming::After);
     if candidates.len() >= 2 {
         // 2+ simultaneous forced: the lead orders them (#213). The run carries
         // no continuation (#434) — on close the `drive` loop re-dispatches the
-        // exposed parent frame. Any single-bucket emit site capable of a 2+ run
-        // must therefore resume via its own frame (none does in scope — the
-        // callers that *can* 2+, EndOfTurn / round-end, are frame-resumed; the
-        // rest `debug_assert!(Done)`, which fires loudly if a future card 2+s).
+        // exposed parent frame, which is the emit site's own resume frame (ADR
+        // 0003). That is the same frame the 0/1 cases are re-exposed through, so
+        // a site is correct here iff it emits in tail position — there is no
+        // separate "may 2+" obligation to reason about.
         super::reaction_windows::open_forced_resolution(
             cx,
             event,
@@ -261,6 +287,6 @@ pub(crate) fn emit_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
             candidates,
         )
     } else {
-        fire_forced_triggers(cx, &point, crate::dsl::EventTiming::After)
+        queue_forced_triggers(cx, &point, crate::dsl::EventTiming::After)
     }
 }

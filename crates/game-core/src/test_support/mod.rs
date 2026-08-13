@@ -103,7 +103,7 @@ pub use resolver::{
 /// location, returning the `EngineOutcome`. Constructs the internal
 /// `ForcedTriggerPoint` so integration tests don't need it public.
 ///
-/// Lives in `test_support` because `fire_forced_triggers` needs a custom
+/// Lives in `test_support` because `queue_forced_triggers` needs a custom
 /// `CardRegistry` and `OnceLock<CardRegistry>` is process-global — an
 /// in-crate install would collide with `card_registry::tests`. Integration
 /// tests in `crates/game-core/tests/` run in separate processes.
@@ -116,7 +116,7 @@ pub fn fire_forced_on_enter(
     location: crate::state::LocationId,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::fire_forced_triggers(
+    let out = crate::engine::queue_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::EnteredLocation {
             investigator,
@@ -136,7 +136,7 @@ pub fn fire_forced_on_phase_end(
     phase: crate::state::Phase,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::fire_forced_triggers(
+    let out = crate::engine::queue_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::PhaseEnded { phase },
         crate::dsl::EventTiming::After,
@@ -152,7 +152,7 @@ pub fn fire_forced_on_round_end(
     events: &mut Vec<crate::event::Event>,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::fire_forced_triggers(
+    let out = crate::engine::queue_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::RoundEnded,
         crate::dsl::EventTiming::At,
@@ -172,6 +172,20 @@ pub fn run_upkeep_round_end(
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
     let out = crate::engine::upkeep_phase_end(&mut cx);
+    crate::engine::drive(&mut cx, out)
+}
+
+/// Test helper: run the Enemy step-3.4 phase end — `enemy_phase_end` then the
+/// `drive` loop — returning the `EngineOutcome`. The forced abilities keyed to
+/// `PhaseEnded { Enemy }` (agenda 01107's Ghoul move) are *queued* by the emit
+/// and resolved by the loop, ahead of the Enemy→Upkeep transition (#569).
+/// Requires the `EnemyPhase` anchor on the stack (the transition pops it).
+pub fn run_enemy_phase_end(
+    state: &mut crate::state::GameState,
+    events: &mut Vec<crate::event::Event>,
+) -> crate::engine::EngineOutcome {
+    let mut cx = crate::engine::Cx { state, events };
+    let out = crate::engine::enemy_phase_end(&mut cx);
     crate::engine::drive(&mut cx, out)
 }
 
@@ -200,7 +214,7 @@ pub fn fire_forced_on_act_advance(
     code: crate::state::CardCode,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::fire_forced_triggers(
+    let out = crate::engine::queue_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::ActAdvanced { code },
         crate::dsl::EventTiming::After,
@@ -217,7 +231,7 @@ pub fn fire_forced_on_agenda_advance(
     code: crate::state::CardCode,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::fire_forced_triggers(
+    let out = crate::engine::queue_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::AgendaAdvanced { code },
         crate::dsl::EventTiming::After,
@@ -233,7 +247,7 @@ pub fn fire_forced_on_enemy_defeat(
     code: crate::state::CardCode,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::fire_forced_triggers(
+    let out = crate::engine::queue_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::EnemyDefeated { code },
         crate::dsl::EventTiming::After,
@@ -250,7 +264,7 @@ pub fn fire_forced_at_end_of_turn(
     investigator: crate::state::InvestigatorId,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::fire_forced_triggers(
+    let out = crate::engine::queue_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::EndOfTurn { investigator },
         crate::dsl::EventTiming::After,
@@ -271,7 +285,7 @@ pub fn fire_forced_after_location_investigated(
     investigator: crate::state::InvestigatorId,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::fire_forced_triggers(
+    let out = crate::engine::queue_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::SkillTestResolved {
             investigator,

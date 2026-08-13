@@ -48,6 +48,16 @@ Treat card citations in existing comments and docs as unverified until checked, 
 
 **Why:** a confabulated "Magnifying Glass's *Action: Investigate*" reached both a memory file and a code comment before being caught. Wrong examples are worse than absent ones — they propagate into reviewers' mental models and become facts the project has to unlearn.
 
+### Emit a timing point in tail position; put post-emit work on a frame
+
+`queue_event` (and `queue_forced_triggers` beneath it) **queues** an ability — it pushes a continuation frame — and returns. It does not resolve anything, so a returned `EngineOutcome::Done` means *queued*, not *happened*. Any work a handler does after the emit is pushed **above** the abilities it just queued and therefore runs **first**.
+
+So a call site with post-emit work arms its own resume point *before* emitting, and emits as the last thing it does: re-park a phase anchor at a new resume (`enemy_phase_end`, `upkeep_phase_end`), flag the frame it is already riding (`end_turn`'s `InvestigatorTurn { ending: true }`), or push a dedicated frame for the tail (`move_primary_effect`'s `MoveEnter`). Inspecting the returned outcome is not a substitute for any of that — `if !matches!(out, Done) { … }` and `debug_assert!(matches!(out, Done))` both pass in the ordinary single-ability case, while the ability sits unresolved on the stack.
+
+A `debug_assert` in the `drive` loop backstops the class: no queued ability frame may sit beneath a phase anchor. See `docs/adr/0003-emitting-a-timing-point-queues-abilities.md`, and **Queued ability** in `CONTEXT.md`.
+
+**Why:** four call sites believed the emit resolved, and each carried a comment asserting a loud guard that had not existed since the effect-frame migration. The worst pushed the Upkeep phase anchor over agenda 01107's forced Ghoul movement, stranding it at the bottom of the stack — that ability never fired in a real game of The Gathering (#569).
+
 ### Let an absent derive speak for itself
 
 When a type deliberately omits a derive — `PartialEq` on `GameState`, say, because comparing large trees is expensive — don't add a comment explaining the omission. If the reason matters, it belongs in the commit message or PR description, where archaeology will find it.

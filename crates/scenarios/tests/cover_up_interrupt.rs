@@ -171,7 +171,7 @@ fn paused_before_discover_window(count: u8, loc_clues: u8, cover_up_clues: u8) -
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .build();
-    // Mirror what `emit_event(WouldDiscoverClues)` builds (#433): a
+    // Mirror what `queue_event(WouldDiscoverClues)` builds (#433): a
     // `TimingPointWindow` reaction window keyed by the `WouldDiscoverClues`
     // timing event, offering Cover Up's first (reaction) ability. The candidate
     // is built via `ResolutionCandidate::new` (the struct is `#[non_exhaustive]`).

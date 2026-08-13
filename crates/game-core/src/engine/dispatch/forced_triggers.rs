@@ -2,8 +2,8 @@
 //! on scenario-structure cards (locations, acts, agendas) at framework
 //! timing points, via an immediate path separate from the player
 //! reaction-window machinery. Multiple simultaneous triggers resolve in
-//! a fixed deterministic order (see [`fire_forced_triggers`]); #213 adds
-//! player-chosen ordering, #212 the universal `emit_event` chokepoint.
+//! a fixed deterministic order (see [`queue_forced_triggers`]); #213 adds
+//! player-chosen ordering, #212 the universal `queue_event` chokepoint.
 
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
@@ -110,29 +110,25 @@ pub(crate) enum ForcedTriggerPoint {
     },
 }
 
-/// Fire Forced abilities matching `point`, resolving each hit in a fixed
-/// deterministic order.
+/// Queue the lone Forced ability matching `point`: push its effect frame (plus
+/// an [`AcknowledgeForced`](crate::state::Continuation::AcknowledgeForced) above
+/// it in interactive mode) for the `drive` loop to resolve.
 ///
-/// The order is the collection order of [`collect_forced_hits`]: board
-/// cards (act before agenda) before threat-area / attachment instances,
-/// investigators by id (`BTreeMap`), instances in zone order. The
-/// frame-driven emit path (#434) opens player-ordered resolution runs for
-/// 2+ hits (Rules Reference p.17: the player orders simultaneous
-/// triggers, even in solo); this legacy path keeps a fixed order — a
-/// rules-acceptable stand-in — until its remaining call sites migrate.
+/// **Queues; does not resolve.** `Done` here means *the frame is on the stack*,
+/// not *the effect has happened* — nothing is evaluated synchronously under the
+/// frame model (#423). Callers with post-forced work resume via their own frame
+/// and call this in tail position; see [`super::emit::queue_event`], the
+/// chokepoint this backs, and
+/// `docs/adr/0003-emitting-a-timing-point-queues-abilities.md` (#569).
 ///
-/// **Suspension caveat.** A hit that suspends (`AwaitingInput`) or
-/// rejects is surfaced immediately, abandoning any later hits — re-entry
-/// mid-sequence isn't modeled on this path. This is correct as long as no
-/// point produces 2+ simultaneous *suspending* hits; synchronous
-/// multi-hit points (`RoundEnded`: agenda 01107 doom + Dissonant Voices
-/// 01165 discard) all resolve fully. The only suspending forced effect
-/// today is Frozen in Fear 01164's `EndOfTurn` skill test; since it
-/// carries no "Limit 1", two copies on one investigator would drop the
-/// second copy's test at end of turn — a known limitation of this legacy
-/// path, not a single-hit guarantee. (The `GameEnd` call site additionally
-/// discards a surfaced suspension outright — that defect is #566.)
-pub(crate) fn fire_forced_triggers(
+/// At most one hit reaches here: 2+ simultaneous forced abilities route to the
+/// lead-ordered run (`open_forced_resolution`, #213, Rules Reference p.17 — the
+/// player orders simultaneous triggers, even in solo), so this path has no
+/// ordering to choose. Never returns `AwaitingInput`; a missing registry entry
+/// at resolve time returns `Rejected`.
+#[must_use = "queue_forced_triggers only pushes the forced effect's frame; the \
+              effect has not run when this returns (ADR 0003)"]
+pub(crate) fn queue_forced_triggers(
     cx: &mut Cx,
     point: &ForcedTriggerPoint,
     bucket: EventTiming,
@@ -151,7 +147,7 @@ pub(crate) fn fire_forced_triggers(
     let hits = collect_forced_hits(cx.state, point, bucket);
     debug_assert!(
         hits.len() <= 1,
-        "fire_forced_triggers: expected 0/1 forced hit (2+ routes through \
+        "queue_forced_triggers: expected 0/1 forced hit (2+ routes through \
          open_forced_resolution); got {}",
         hits.len(),
     );
@@ -162,7 +158,7 @@ pub(crate) fn fire_forced_triggers(
             // one-option pick *before* it resolves. resolve_one already pushed the
             // effect root frame and returned Done; push the ack *above* it so the
             // `drive` loop hits the ack first (suspend), and on resume pops it —
-            // then resolves the effect. fire_forced_triggers still returns Done
+            // then resolves the effect. queue_forced_triggers still returns Done
             // (push-frame contract), so emit callers stay correct. Scoped to this
             // single-hit path: the 2+ ordered run resolves via the forced-window's
             // own path (never `resolve_one`), so its ordering pick is the only
@@ -473,7 +469,7 @@ pub(super) fn collect_forced_hits(
     }
     // RR p.2: a forced ability that lacks the potential to change the game state
     // does not initiate. Drop such hits here — the single chokepoint feeding both
-    // the lone-hit path (`fire_forced_triggers`) and the 2+ ordered run
+    // the lone-hit path (`queue_forced_triggers`) and the 2+ ordered run
     // (`open_forced_resolution`) — so a no-op forced neither resolves nor (post-
     // #466) prompts. Conservative: only provable no-ops are dropped (#495).
     hits.retain(|hit| {
@@ -543,13 +539,13 @@ fn push_matching(
 fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> EngineOutcome {
     let Some(reg) = card_registry::current() else {
         return EngineOutcome::Rejected {
-            reason: "fire_forced_triggers: registry vanished between collect and resolve".into(),
+            reason: "queue_forced_triggers: registry vanished between collect and resolve".into(),
         };
     };
     let Some(abilities) = (reg.abilities_for)(&hit.code) else {
         return EngineOutcome::Rejected {
             reason: format!(
-                "fire_forced_triggers: {} has no abilities at resolve time",
+                "queue_forced_triggers: {} has no abilities at resolve time",
                 hit.code
             )
             .into(),

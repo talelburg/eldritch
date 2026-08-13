@@ -421,8 +421,12 @@ pub(super) fn move_action(
 /// completes (#293). Re-derives `from` from the live `current_location` (the `AoO`
 /// never moves the actor) and re-checks the destination is still connected —
 /// the §D primary-precondition re-check — suppressing the move (returns `Done`)
-/// if it no longer holds. Engaged enemies move with the investigator; the
-/// entered location's Forced on-enter abilities become the move's outcome.
+/// if it no longer holds. Engaged enemies move with the investigator.
+///
+/// Ends by queueing the *left* location's Forced abilities; the entered half —
+/// auto-engagement and the entered location's Forced abilities — rides the
+/// [`MoveEnter`](crate::state::Continuation::MoveEnter) frame this pushes and
+/// runs in [`resume_move_enter`] once they have resolved (#569).
 pub(super) fn move_primary_effect(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -483,36 +487,51 @@ pub(super) fn move_primary_effect(
     // Reveal the destination if this is the first investigator entry
     // (Rules Reference p.14). No-op if already revealed.
     super::reveal::reveal_location(cx, destination);
-    // The leaving investigator left `from`: fire any "when an investigator
-    // leaves attached location" forced abilities (Barricade 01038 discards
-    // itself). In scope this is a single deterministic self-discard, so it
-    // resolves synchronously. KNOWN HAZARD (#569): a 2+/suspending hit is not
-    // guarded — `emit_event` opens a suspending ordering run, and returning it
-    // below permanently skips `engage_ready_enemies_on_enter` + the
-    // `EnteredLocation` emit (nothing resumes this handler). Tracked in #569.
-    let left = super::emit::emit_event(
+    // Park the entered-location half on its own frame, then emit in tail
+    // position (ADR 0003). The emit *queues* the left location's "when an
+    // investigator leaves attached location" forced abilities (Barricade 01038's
+    // self-discard); running the engage + entered-location emit inline after it
+    // — the pre-#569 shape — pushed them above those frames, so entering
+    // resolved before leaving.
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::MoveEnter {
+            investigator,
+            destination,
+        });
+    super::emit::queue_event(
         cx,
         &super::emit::TimingEvent::LeftLocation {
             investigator,
             location: from,
         },
-    );
-    if !matches!(left, EngineOutcome::Done) {
-        return left;
-    }
+    )
+}
+
+/// The entered-location half of a Move, run when the `drive` loop re-exposes the
+/// [`MoveEnter`](crate::state::Continuation::MoveEnter) frame — i.e. once the
+/// left location's queued `LeftLocation` forced abilities have resolved (#569).
+/// Pops the frame, auto-engages, and emits `EnteredLocation` in tail position.
+pub(super) fn resume_move_enter(cx: &mut Cx) -> EngineOutcome {
+    let Some(crate::state::Continuation::MoveEnter {
+        investigator,
+        destination,
+    }) = cx.state.continuations.pop()
+    else {
+        unreachable!("resume_move_enter: top frame is not a MoveEnter");
+    };
     // Framework engagement on entering (RR engagement rules): "Each time an
     // investigator enters a location, each ready enemy at that location
     // automatically engages that investigator." Runs after the move is applied
     // and before the entered-location forced window, so an "after you enter"
     // forced ability sees the engagement already established (#496).
     engage_ready_enemies_on_enter(cx, investigator, destination);
-    // Terminal step: the entered location's Forced on-enter abilities fire,
-    // and their outcome becomes the move's outcome. This runs *after* the
-    // move is applied, so if it returns Rejected (e.g. 2+ simultaneous
-    // forced triggers, #213), `apply`'s structural rollback restores the
-    // pre-move state — the partial mutation above is safe (same reliance on
+    // Terminal step: the entered location's Forced on-enter abilities are queued,
+    // and that outcome becomes the move's outcome. This runs *after* the move is
+    // applied, so if it returns Rejected, `apply`'s structural rollback restores
+    // the pre-move state — the partial mutation above is safe (same reliance on
     // the apply-loop snapshot that `play_card` documents).
-    super::emit::emit_event(
+    super::emit::queue_event(
         cx,
         &super::emit::TimingEvent::EnteredLocation {
             investigator,

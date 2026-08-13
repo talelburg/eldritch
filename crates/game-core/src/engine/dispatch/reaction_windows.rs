@@ -916,11 +916,11 @@ fn candidate_still_offerable(state: &GameState, candidate: &ResolutionCandidate)
 /// The window is pushed onto the stack by [`queue_reaction_window`]
 /// (not here), at queue time, symmetric with the [`open_fast_window`] path.
 pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
-    // The queue and this prompt are not the same instant: `emit_event` queues the
-    // window, then resolves the point's *forced* abilities before the driver
-    // reaches a step boundary, and the combat callers park the attack loop
-    // beneath the window first. Anything those steps changed can have withdrawn
-    // an option already in the list (#568).
+    // The queue and this prompt are not the same instant: `queue_event` queues the
+    // window and then the point's *forced* abilities above it, and the `drive`
+    // loop resolves those before this window is reached (ADR 0003) — the combat
+    // callers additionally park the attack loop beneath it. Anything those steps
+    // changed can have withdrawn an option already in the list (#568).
     withdraw_lapsed_candidates(cx);
     if cx
         .state

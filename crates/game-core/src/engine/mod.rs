@@ -41,18 +41,20 @@ pub use pathfinding::{shortest_first_steps, shortest_first_steps_with};
 // Crate-internal re-exports for `test_support::fire_forced_on_enter`.
 // Neither is public API: `ForcedTriggerPoint` stays internal; the
 // integration test constructs it through the primitive-arg helper so
-// it never needs to name the enum. `fire_forced_triggers` is wired into
+// it never needs to name the enum. `queue_forced_triggers` is wired into
 // `move_action` (EnteredLocation) and `enemy_phase_end`/`upkeep_phase_end`
 // (PhaseEnded).
-pub(crate) use dispatch::forced_triggers::{fire_forced_triggers, ForcedTriggerPoint};
+pub(crate) use dispatch::forced_triggers::{queue_forced_triggers, ForcedTriggerPoint};
 // The unified trigger-dispatch chokepoint (Axis-B T5a): the GameEnd site below
 // and `fire_scenario_resolution` route through it.
-pub(crate) use dispatch::emit::emit_event;
+pub(crate) use dispatch::emit::queue_event;
 pub use dispatch::emit::TimingEvent;
 // Round-end driver + act-window resume, exposed for `test_support`'s
 // `run_upkeep_round_end` / `resume_round_end_window` (the `when→at` ordering
 // regression in `crates/cards/tests/theyre_getting_out.rs` drives them end-to-end).
-pub(crate) use dispatch::phases::upkeep_phase_end;
+// `enemy_phase_end` likewise backs `run_enemy_phase_end`, which drives step 3.4's
+// queued forced abilities through the real Enemy→Upkeep transition (#569).
+pub(crate) use dispatch::phases::{enemy_phase_end, upkeep_phase_end};
 // `pub(crate)` for `test_support` round-end helpers: drive the coordinator the
 // real loop drives (#434), and resume a window via the player-action entry.
 pub(crate) use dispatch::{apply_player_action, dispatch_turn_action, drive};
@@ -291,8 +293,8 @@ fn fire_scenario_resolution(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
     // lookup below. This is the terminal resolution hook — it runs *after*
     // the main `drive` loop and holds the scenario registry for
     // `apply_resolution` below — so it drives the forced effects the
-    // frame-driven `emit_event` pushes (Slice D, #423).
-    let out = emit_event(cx, &TimingEvent::GameEnd);
+    // frame-driven `queue_event` pushes (Slice D, #423).
+    let out = queue_event(cx, &TimingEvent::GameEnd);
     let _ = drive(cx, out);
 
     let Some(id) = cx.state.scenario_id.as_ref() else {
