@@ -99,6 +99,15 @@ pub(super) fn scan_reactions_at(
 /// re-scan the same cell (#568). Returns the `AwaitingInput` from
 /// [`open_queued_reaction_window`]. Caller guarantees `candidates` is non-empty
 /// (it checked, to decide open-vs-finish).
+///
+/// This is also the one path where re-validation is provably a no-op — the caller
+/// scanned this cell moments ago and nothing between then and here mutates what
+/// the scan reads — so it carries the debug-only tripwire for #568's re-scan. A
+/// withdrawal *here* means [`scan_reactions_at`] disagrees with itself over
+/// unchanged state, which is a bug in the scan, not in the re-check. The other
+/// prompt site can't assert this: its window was queued an emit ago, and the
+/// forced abilities that resolved in between are entitled to have withdrawn
+/// something.
 pub(super) fn open_reaction_run(
     cx: &mut Cx,
     event: &crate::engine::TimingEvent,
@@ -117,6 +126,16 @@ pub(super) fn open_reaction_run(
             mode: crate::state::TimingMode::Reaction,
             candidates,
         });
+    #[cfg(debug_assertions)]
+    {
+        let withdrawn = withdraw_lapsed_candidates(cx);
+        assert_eq!(
+            withdrawn, 0,
+            "open_reaction_run: re-validating the cell the caller just scanned withdrew \
+             {withdrawn} candidate(s) — the reaction scan is not idempotent over unchanged \
+             state (#568)",
+        );
+    }
     open_queued_reaction_window(cx)
 }
 
@@ -127,10 +146,9 @@ pub(super) fn open_reaction_run(
 /// resume continuation (#434): on close it returns `Done` and the `drive` loop
 /// re-dispatches the exposed parent frame. The caller returns the `AwaitingInput`.
 ///
-/// `bucket` is the cell the caller collected at. It is recorded for symmetry with
-/// the reaction window and is not read: a forced run is never re-validated (#568
-/// withdraws *optional* options; a mandatory ability the player has been told to
-/// resolve cannot be taken back mid-run).
+/// `bucket` is the cell the caller collected at. The frame is the same variant a
+/// reaction window uses, so every one records its cell; only the reaction path
+/// reads it back, to re-validate (#568 — and TODO(#607) for this path).
 pub(super) fn open_forced_resolution(
     cx: &mut Cx,
     event: &crate::engine::TimingEvent,
@@ -161,21 +179,6 @@ fn same_location(state: &GameState, a: InvestigatorId, b: InvestigatorId) -> boo
     loc(a).is_some_and(|la| loc(b) == Some(la))
 }
 
-/// Scan every investigator's `cards_in_play` **and the current act/agenda** for
-/// `Trigger::OnEvent` reaction abilities matching `event` whose `EventTiming`
-/// equals `bucket`, building a pending-trigger list in active-investigator-first
-/// / turn-order resolution order (act/agenda board candidates, controlled by the
-/// lead, appended last).
-///
-/// The `bucket` filter is what lets the round-end coordinator scan one timing
-/// cell at a time (#434): `When` surfaces act 01109's group advance; `At`/`After`
-/// surface nothing for `RoundEnded` (its doom is *forced*, not a reaction). For
-/// single-bucket events the caller passes the event's [`reaction_bucket`] — the
-/// abilities that pass `bucket` are exactly those that matched before, so it is
-/// behaviour-preserving.
-///
-/// Returns an empty vec when the registry isn't installed (tests that
-/// don't touch card data) or no cards match.
 /// Whether a reaction `ability` may be offered, per its
 /// [`Ability::eligibility`] tag (RR p.2: an ability can't initiate if its
 /// effect won't change game state). Pure over `&GameState`, which is what lets
@@ -210,6 +213,21 @@ fn ability_eligible(
     pred(state, &ctx)
 }
 
+/// Scan every investigator's `cards_in_play` **and the current act/agenda** for
+/// `Trigger::OnEvent` reaction abilities matching `event` whose `EventTiming`
+/// equals `bucket`, building a pending-trigger list in active-investigator-first
+/// / turn-order resolution order (act/agenda board candidates, controlled by the
+/// lead, appended last).
+///
+/// The `bucket` filter is what lets the round-end coordinator scan one timing
+/// cell at a time (#434): `When` surfaces act 01109's group advance; `At`/`After`
+/// surface nothing for `RoundEnded` (its doom is *forced*, not a reaction). For
+/// single-bucket events the caller passes the event's `reaction_bucket` — the
+/// abilities that pass `bucket` are exactly those that matched before, so it is
+/// behaviour-preserving.
+///
+/// Returns an empty vec when the registry isn't installed (tests that
+/// don't touch card data) or no cards match.
 fn scan_pending_triggers(
     state: &GameState,
     event: &TimingEvent,
@@ -710,13 +728,13 @@ fn build_resolution_options(
 /// > paid in full, taking active cost modifiers into account.
 ///
 /// Two Core-Set cases, both live today. Roland Banks 01001 (*"After you defeat
-/// an enemy: Discover 1 clue at your location."*) and Evidence! 01022 (*"Fast.
-/// Play after you defeat an enemy. Discover 1 clue at your location."*) are
-/// offered together after a defeat; both are FAQ'd *"You can only 'discover' a
-/// clue if there is a clue on your location."*, so Roland taking the location's
-/// last clue leaves Evidence! nothing to do. And two copies of Evidence! (cost 1)
-/// on a 1-resource wallet are both offered — playing either empties the wallet
-/// the other would have to pay from.
+/// an enemy: Discover 1 clue at your location. (Limit once per round.)"*) and
+/// Evidence! 01022 (*"Fast. Play after you defeat an enemy. Discover 1 clue at
+/// your location."*) are offered together after a defeat; both are FAQ'd *"You
+/// can only 'discover' a clue if there is a clue on your location."*, so Roland
+/// taking the location's last clue leaves Evidence! nothing to do. And two copies
+/// of Evidence! (cost 1) on a 1-resource wallet are both offered — playing either
+/// empties the wallet the other would have to pay from.
 ///
 /// # Why a re-scan rather than a re-check
 ///
@@ -730,27 +748,42 @@ fn build_resolution_options(
 ///   play when the triggering condition occurred, so a fresh scan naming it is
 ///   not an invitation to offer it.
 ///
-/// Two frames are deliberately skipped. A **forced run** is not re-validated: it
-/// withdraws nothing, because a mandatory ability the lead has been told to order
-/// cannot be taken back mid-run. A [`FastWindow`](Continuation::FastWindow) has
-/// no reaction candidates by construction ([`open_fast_window`] pushes an empty
-/// list) and no timing cell to re-scan.
-fn withdraw_lapsed_candidates(cx: &mut Cx) {
-    let Some(Continuation::TimingPointWindow {
-        event,
-        bucket,
-        mode: TimingMode::Reaction,
-        candidates,
-    }) = cx.state.continuations.last()
-    else {
-        return;
+/// Two frames are deliberately skipped.
+///
+/// A [`FastWindow`](Continuation::FastWindow) has no reaction candidates by
+/// construction ([`open_fast_window`] pushes an empty list) and no timing cell to
+/// re-scan.
+///
+/// A **forced run** is skipped as *scope*, not because the rule spares it — it
+/// does not: *"If a forced ability does not have the potential to change the game
+/// state, the ability does not initiate"*, and *"The initiation of a forced
+/// ability **that has the potential to change the game state** is mandatory each
+/// time its specified timing point is met."* `collect_forced_hits` applies that
+/// gate at collect time, so a 2+ lead-ordered run (#213) carries the same stale
+/// verdict this function fixes for reactions. It is left alone here because
+/// withdrawing from a *mandatory* run is a different shape — the run rejects
+/// `Skip`, so an emptied one has to close itself rather than re-prompt — and
+/// because no in-corpus forced effect charges a cost, which is what makes the
+/// reaction case reachable harm. **TODO(#607):** re-validate the forced run once
+/// that shape is decided.
+///
+/// Returns how many candidates were withdrawn, which only [`open_reaction_run`]
+/// reads (as a debug-only tripwire).
+fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
+    let Some((event, bucket)) = open_reaction_cell(cx.state) else {
+        return 0;
     };
-    if candidates.is_empty() {
-        return;
+    let (event, bucket) = (event.clone(), bucket);
+    let stored = cx
+        .state
+        .continuations
+        .last()
+        .and_then(Continuation::pending_candidates)
+        .cloned()
+        .unwrap_or_default();
+    if stored.is_empty() {
+        return 0;
     }
-    let event = event.clone();
-    let bucket = *bucket;
-    let stored = candidates.clone();
 
     let mut fresh = scan_reactions_at(cx.state, &event, bucket);
     let mut kept: Vec<ResolutionCandidate> = Vec::with_capacity(stored.len());
@@ -766,7 +799,7 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) {
         }
     }
     if lapsed.is_empty() {
-        return;
+        return 0;
     }
     for candidate in &lapsed {
         cx.events.push(Event::ReactionOptionLapsed {
@@ -780,6 +813,25 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) {
         .last_mut()
         .and_then(Continuation::pending_candidates_mut)
         .expect("withdraw_lapsed_candidates: the frame matched above is still on top") = kept;
+    lapsed.len()
+}
+
+/// The `(event, cell)` an open **reaction** window on top of the stack was
+/// scanned at — the question a re-scan has to re-ask, and the single place the
+/// "which frames are re-validated" test lives (#568).
+///
+/// `None` for a forced run, for a [`FastWindow`](Continuation::FastWindow), and
+/// for every non-window frame; the two callers turn that into their own no-op.
+fn open_reaction_cell(state: &GameState) -> Option<(&TimingEvent, EventTiming)> {
+    match state.continuations.last() {
+        Some(Continuation::TimingPointWindow {
+            event,
+            bucket,
+            mode: TimingMode::Reaction,
+            ..
+        }) => Some((event, *bucket)),
+        _ => None,
+    }
 }
 
 /// Best-effort attribution for a withdrawn candidate, for the client log
@@ -850,16 +902,10 @@ fn candidate_source_present(state: &GameState, candidate: &ResolutionCandidate) 
 ///
 /// [`FastWindow`]: Continuation::FastWindow
 fn candidate_still_offerable(state: &GameState, candidate: &ResolutionCandidate) -> bool {
-    let Some(Continuation::TimingPointWindow {
-        event,
-        bucket,
-        mode: TimingMode::Reaction,
-        ..
-    }) = state.continuations.last()
-    else {
+    let Some((event, bucket)) = open_reaction_cell(state) else {
         return true;
     };
-    scan_reactions_at(state, event, *bucket).contains(candidate)
+    scan_reactions_at(state, event, bucket).contains(candidate)
 }
 
 /// Return [`AwaitingInput`] for the already-open reaction window at
@@ -2616,5 +2662,84 @@ mod open_fast_window_tests {
             .with_investigator(test_investigator(1))
             .build();
         assert!(enumerate_fast_plays(&state).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod candidate_source_present_tests {
+    use super::*;
+    use crate::state::{CardInPlay, LocationId};
+    use crate::test_support::{test_investigator, test_location, GameStateBuilder};
+
+    const INV: InvestigatorId = InvestigatorId(1);
+    const SOME_CODE: &str = "_synth_card";
+
+    fn candidate(source: CandidateSource) -> ResolutionCandidate {
+        ResolutionCandidate::new(CardCode::new(SOME_CODE), INV, 0, source)
+    }
+
+    #[test]
+    fn a_hand_candidate_is_present_only_while_the_code_is_in_hand() {
+        let mut inv = test_investigator(1);
+        inv.hand.push(CardCode::new(SOME_CODE));
+        let state = GameStateBuilder::default().with_investigator(inv).build();
+        assert!(candidate_source_present(
+            &state,
+            &candidate(CandidateSource::Hand)
+        ));
+
+        let mut drained = state.clone();
+        drained.investigators.get_mut(&INV).unwrap().hand.clear();
+        assert!(!candidate_source_present(
+            &drained,
+            &candidate(CandidateSource::Hand)
+        ));
+    }
+
+    #[test]
+    fn an_in_play_candidate_is_present_only_while_its_instance_is() {
+        let instance = CardInstanceId(7);
+        let mut inv = test_investigator(1);
+        inv.cards_in_play
+            .push(CardInPlay::enter_play(CardCode::new(SOME_CODE), instance));
+        let state = GameStateBuilder::default().with_investigator(inv).build();
+        assert!(candidate_source_present(
+            &state,
+            &candidate(CandidateSource::InPlay(instance))
+        ));
+        // A different instance of the same code is a different candidate.
+        assert!(!candidate_source_present(
+            &state,
+            &candidate(CandidateSource::InPlay(CardInstanceId(8)))
+        ));
+    }
+
+    #[test]
+    fn a_board_candidate_is_present_only_while_it_is_the_current_act_or_agenda() {
+        // No act/agenda deck seeded, so no board code can match.
+        let state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .build();
+        assert!(!candidate_source_present(
+            &state,
+            &candidate(CandidateSource::Board)
+        ));
+    }
+
+    #[test]
+    fn a_location_candidate_tracks_its_location() {
+        let loc = LocationId(10);
+        let state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .with_location(test_location(10, "Study"))
+            .build();
+        assert!(candidate_source_present(
+            &state,
+            &candidate(CandidateSource::Location(loc))
+        ));
+        assert!(!candidate_source_present(
+            &state,
+            &candidate(CandidateSource::Location(LocationId(11)))
+        ));
     }
 }

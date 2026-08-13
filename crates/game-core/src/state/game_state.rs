@@ -1036,21 +1036,6 @@ impl Continuation {
         }
     }
 
-    /// The timing cell this frame's candidates were scanned at, if it is a
-    /// [`TimingPointWindow`](Self::TimingPointWindow). `None` for
-    /// [`FastWindow`](Self::FastWindow) (framework windows carry no timing event,
-    /// and no cell) and non-window frames. Paired with
-    /// [`window_timing_event`](Self::window_timing_event) it is the full question
-    /// the reaction scan was asked, which is what the fire-time re-validation
-    /// re-asks (#568).
-    #[must_use]
-    pub fn window_bucket(&self) -> Option<crate::dsl::EventTiming> {
-        match self {
-            Continuation::TimingPointWindow { bucket, .. } => Some(*bucket),
-            _ => None,
-        }
-    }
-
     /// Whether `investigator` may submit a Fast action into this open window. A
     /// [`FastWindow`](Self::FastWindow) delegates to its [`FastActorScope`]; a
     /// [`TimingPointWindow`](Self::TimingPointWindow) reaction window admits any
