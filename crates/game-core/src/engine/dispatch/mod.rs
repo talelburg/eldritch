@@ -283,10 +283,10 @@ pub(crate) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
                 }
             }
             // A hand-play disposal frame re-exposed after its OnPlay effect
-            // resolved: dispose of the card (event → flush pending_played_event;
-            // asset → remove from hand, enter play, emit EnteredPlay) and pop
-            // (Slice D #423). Never suspends itself — any reaction window queued by
-            // emit_event lands on top and the loop drives it next.
+            // resolved: place the card it holds (event → discard; asset → enter
+            // play, emit EnteredPlay) and pop (Slice D #423). Never suspends
+            // itself — any reaction window queued by emit_event lands on top and
+            // the loop drives it next.
             Some(Continuation::PlayFromHand { .. }) => match cards::dispose_play_from_hand(cx) {
                 EngineOutcome::Done => {}
                 other => return other,
@@ -373,13 +373,17 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
         .get(&investigator)
         .is_some_and(|inv| inv.status == crate::state::Status::Active);
     if !active {
-        // A defeated actor suppresses the primary effect, but a mid-play event
-        // that already left hand (stashed in `pending_played_event` by
-        // `begin_event_play`) must still be placed in discard (RR Appendix I
-        // step 4: the card was "played" the moment it left hand; the suppression
-        // only skips the `OnPlay` effect, not the discard). The
-        // `PlayFromHand` frame won't run, so flush it here.
-        cards::flush_pending_played_event(cx);
+        // A defeated actor suppresses the primary effect. A card riding this
+        // frame mid-play needs no disposal here: the only thing that flips an
+        // investigator off `Active` is `apply_investigator_defeat`, whose
+        // elimination steps sweep the in-progress play off this very frame and
+        // into `removed_from_game` (RR p.10 step 1) — so by now `resume` holds
+        // no card. See `docs/adr/0002-in-progress-play-lives-on-its-frame.md`.
+        debug_assert!(
+            !matches!(&resume, ActionResume::PlayCard { card: Some(_) }),
+            "suppressed play kept its card: elimination's sweep missed the \
+             ActionResolution frame for {investigator:?}"
+        );
         return EngineOutcome::Done;
     }
     match resume {
@@ -394,8 +398,15 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
             instance_id,
             effect,
         } => abilities::resume_activate_ability(cx, investigator, instance_id, &effect),
-        ActionResume::PlayCard { hand_index, code } => {
-            cards::resume_play_card(cx, investigator, hand_index, &code)
+        ActionResume::PlayCard { card } => {
+            let Some(card) = card else {
+                unreachable!(
+                    "resume_action_resolution: the play frame for {investigator:?} lost its \
+                     card while they are still Active — only elimination takes a card off a \
+                     play frame, and it flips status first"
+                );
+            };
+            cards::resume_play_card(cx, investigator, card)
         }
     }
 }
@@ -442,17 +453,20 @@ pub(super) enum PlayDestination {
 /// Carries the data `play_card`'s mutation step needs without
 /// re-running the validation.
 ///
-/// `is_fast` is consumed by [`any_fast_play_eligible`]; `card_type`
-/// is currently destructured with `_` in `play_card` but kept for
+/// `is_fast` is consumed by [`any_fast_play_eligible`]; `abilities` is kept for
 /// future consumers (e.g. reaction-window dispatch).
 ///
-/// `#[allow(dead_code)]` covers `card_type` (not yet read outside
-/// validation) and suppresses the rustc `dead_code` lint on struct fields
-/// that are only read by a `pub(super)` function not yet wired up.
+/// The card's destination is deliberately **not** here: commencing a play is
+/// destination-agnostic (asset and event alike leave hand at RR Appendix I step
+/// 3), and the disposal that needs it re-derives it from the code at step 4
+/// (#604).
+///
+/// `#[allow(dead_code)]` covers `abilities` (not yet read outside validation)
+/// and suppresses the rustc `dead_code` lint on struct fields that are only read
+/// by a `pub(super)` function not yet wired up.
 #[derive(Debug)]
 #[allow(dead_code)]
 pub(crate) struct PlayCheckResult {
-    pub destination: PlayDestination,
     pub abilities: Vec<crate::dsl::Ability>,
     pub is_fast: bool,
     pub card_type: CardType,

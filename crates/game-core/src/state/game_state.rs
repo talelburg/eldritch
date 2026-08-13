@@ -169,22 +169,15 @@ pub struct GameState {
     // `Continuation::EncounterCard` frame whose framework teardown discards it
     // once the Revelation's whole sub-resolution completes — covering a
     // Revelation that suspends into a choice, not just a skill test.
-    /// An event card mid-play: it has left hand ("commences being played",
-    /// RR Appendix I step 3) but is not yet in discard. The apply loop
-    /// flushes it to the owner's discard pile on `Done` (step 4: the event is
-    /// placed in discard "simultaneously with the completion" of its effect),
-    /// so an `OnPlay` effect that suspends — Dynamite Blast 01024's location
-    /// choice — discards the event when it resumes rather than stranding it in
-    /// hand. The player-event analogue of the treachery disposal that #380
-    /// moved onto the [`EncounterCard`](Continuation::EncounterCard) frame
-    /// (a sibling side-channel, folded similarly in a future cycle). `None`
-    /// outside an in-flight event play.
-    ///
-    /// Stays implicitly optional (#453 per-field reassessment): serde treats a
-    /// missing `Option` field as `None`, and forcing presence would need a
-    /// custom `deserialize_with` not worth it for a field the live wire always
-    /// serializes. `None`-when-absent is the genuine absent-by-design case.
-    pub pending_played_event: Option<(InvestigatorId, CardCode)>,
+    // The former `pending_played_event: Option<(InvestigatorId, CardCode)>`
+    // side-channel is removed (#604/#565): a card that has commenced being played
+    // (RR Appendix I step 3) but is not yet placed (step 4) now rides the frame
+    // driving its play — `Continuation::PlayFromHand`, and the
+    // `ActionResume::PlayCard` / `Continuation::SlotDiscard` frames that hand it
+    // on across a suspension. A single global slot could not model nesting, and
+    // plays nest: a Fast event played to cancel the attack of opportunity
+    // provoked by a non-fast event overwrote the slot and erased the first card
+    // from the game. See `docs/adr/0002-in-progress-play-lives-on-its-frame.md`.
     /// Active round-scoped skill substitutions (Mind over Matter 01036).
     /// While present, the owning investigator may make a `for_skills` test as
     /// a `use_skill` test instead (offered at test initiation). Cleared at the
@@ -617,37 +610,30 @@ pub enum Continuation {
     /// A card being played from hand, mid-resolution (Slice D #423). Pushed
     /// **below** the card's pushed `OnPlay`/`OnEvent` effect; when that effect
     /// pops, the drive loop's `PlayFromHand` arm runs `dispose_play_from_hand`
-    /// (event → discard the stashed `pending_played_event`; asset → remove from
-    /// hand at `hand_index`, enter play, emit `EnteredPlay`). Single-shot:
-    /// `dispose_play_from_hand` pops the frame before emitting `EnteredPlay`, so
-    /// the loop opens any after-enters-play window itself. Framework-internal;
-    /// never awaits input (the catch-all `awaits_input`/`is_phase_anchor` arms
-    /// cover it, as for `EncounterCard`).
+    /// (event → discard the held card; asset → enter play, emit `EnteredPlay`).
+    /// Single-shot: `dispose_play_from_hand` pops the frame before emitting
+    /// `EnteredPlay`, so the loop opens any after-enters-play window itself.
+    /// Framework-internal; never awaits input (the catch-all
+    /// `awaits_input`/`is_phase_anchor` arms cover it, as for `EncounterCard`).
     PlayFromHand {
         /// The playing investigator.
         investigator: InvestigatorId,
-        /// The played card's code (re-derives destination + asset metadata).
-        code: CardCode,
-        /// Hand slot of an **asset** still in hand (enters play at disposal).
-        /// Ignored for an event — `begin_event_play` already removed it and
-        /// stashed it in `pending_played_event`.
-        hand_index: u8,
+        /// The card mid-play — see [`Continuation::play_in_progress`].
+        card: Option<CardCode>,
     },
     /// A slot-conflicting asset play paused for the player to choose which
     /// occupying asset to discard to make room (RR p.19, #498). Pushed by
     /// `slots::enter_asset_making_room` when 2+ co-controlled assets occupy a
-    /// slot type the new asset needs; the pending asset stays in
-    /// `investigator`'s hand at `hand_index` until the deficit is cleared, then
-    /// enters play. Resumed by `slots::resume_slot_discard` via a
-    /// `PickSingle(OptionId)` indexing the candidate list. Awaits input (covered
-    /// by the `awaits_input` catch-all; not a phase anchor).
+    /// slot type the new asset needs; the pending asset rides this frame until
+    /// the deficit is cleared, then enters play. Resumed by
+    /// `slots::resume_slot_discard` via a `PickSingle(OptionId)` indexing the
+    /// candidate list. Awaits input (covered by the `awaits_input` catch-all;
+    /// not a phase anchor).
     SlotDiscard {
         /// The investigator playing the asset.
         investigator: InvestigatorId,
-        /// The pending asset's code (still in hand at `hand_index`).
-        code: CardCode,
-        /// Hand slot of the pending asset (enters play once room is made).
-        hand_index: u8,
+        /// The pending asset — see [`Continuation::play_in_progress`].
+        card: Option<CardCode>,
     },
     /// The Mythos phase anchor (slice 1a, #393). Pushed at Mythos entry; sits
     /// beneath the phase's framework windows. On a child window's close the
@@ -854,15 +840,12 @@ pub enum ActionResume {
     },
     /// Complete a non-fast card play after its `AoO` loop (#378): run the card's
     /// `OnPlay` effects and, for an asset, move it into play. The card has
-    /// already been announced (`CardPlayed`; an event has also left hand and is
-    /// stashed for discard-on-completion). `hand_index` locates an asset still
-    /// in hand (unused for an already-stashed event); `code` re-derives the
+    /// already been announced (`CardPlayed`) and has left hand — it rides this
+    /// frame across the whole `AoO` suspension, and its code re-derives the
     /// destination + `OnPlay` abilities from the registry on resume.
     PlayCard {
-        /// The asset's hand slot (still in hand until its `OnPlay` resolves).
-        hand_index: u8,
-        /// The played card's code — re-derives destination + abilities on resume.
-        code: CardCode,
+        /// The card mid-play — see [`Continuation::play_in_progress`].
+        card: Option<CardCode>,
     },
 }
 
@@ -944,6 +927,65 @@ impl Continuation {
         match self {
             Continuation::TimingPointWindow { candidates, .. }
             | Continuation::FastWindow { candidates, .. } => Some(candidates),
+            _ => None,
+        }
+    }
+
+    /// The card this frame holds mid-play, with its controller, if any.
+    ///
+    /// Between Rules Reference Appendix I steps 3 and 4 a played card is in **no
+    /// zone**: it has left hand ("the card commences being played") and is not
+    /// yet "placed in play, or in its owner's discard pile if it's an event".
+    /// The frame driving the play holds it for that stretch and hands it on —
+    /// [`ActionResolution`](Self::ActionResolution) with an
+    /// [`ActionResume::PlayCard`] across the attack-of-opportunity loop, then
+    /// [`PlayFromHand`](Self::PlayFromHand) across the `OnPlay` effect, then
+    /// [`SlotDiscard`](Self::SlotDiscard) across a make-room prompt. Exactly one
+    /// frame holds a given card at a time, and the hand-off always pops the
+    /// frame it came from.
+    ///
+    /// `None` for every other frame, and for a play frame whose card has already
+    /// been taken — [`take_play_in_progress`](Self::take_play_in_progress) is the
+    /// only taker that does not pop the frame. See
+    /// `docs/adr/0002-in-progress-play-lives-on-its-frame.md`.
+    #[must_use]
+    pub fn play_in_progress(&self) -> Option<(InvestigatorId, &CardCode)> {
+        match self {
+            Continuation::ActionResolution {
+                investigator,
+                resume: ActionResume::PlayCard { card },
+            }
+            | Continuation::PlayFromHand { investigator, card }
+            | Continuation::SlotDiscard { investigator, card } => {
+                card.as_ref().map(|c| (*investigator, c))
+            }
+            _ => None,
+        }
+    }
+
+    /// Take `investigator`'s in-progress play off this frame, leaving the frame
+    /// in place holding nothing. Returns `None` when the frame is not a play
+    /// frame, belongs to someone else, or has already been emptied.
+    ///
+    /// The one caller is elimination's sweep (Rules Reference p.10, step 1: an
+    /// eliminated investigator's owned cards are removed from the game) — a card
+    /// mid-play is in no zone, so the hand/deck/discard drain cannot reach it.
+    /// Taking rather than copying is what keeps the frame's own disposal from
+    /// placing a card that has already left the game.
+    pub fn take_play_in_progress(&mut self, investigator: InvestigatorId) -> Option<CardCode> {
+        match self {
+            Continuation::ActionResolution {
+                investigator: owner,
+                resume: ActionResume::PlayCard { card },
+            }
+            | Continuation::PlayFromHand {
+                investigator: owner,
+                card,
+            }
+            | Continuation::SlotDiscard {
+                investigator: owner,
+                card,
+            } if *owner == investigator => card.take(),
             _ => None,
         }
     }
@@ -1819,6 +1861,25 @@ impl GameState {
         })
     }
 
+    /// The **innermost** card currently mid-play, with its controller: one that
+    /// has commenced being played (Rules Reference Appendix I step 3) and is not
+    /// yet placed in play or in a discard pile (step 4). `None` when no play is
+    /// in progress.
+    ///
+    /// Innermost because plays nest — a Fast event played to cancel the attack
+    /// of opportunity a non-fast play provoked runs while the first card is
+    /// still mid-play — and the topmost frame is the one whose play the engine
+    /// is resolving right now. Replaces the former `pending_played_event` field
+    /// as the read view of that state (#604); see
+    /// [`Continuation::play_in_progress`].
+    #[must_use]
+    pub fn play_in_progress(&self) -> Option<(InvestigatorId, &CardCode)> {
+        self.continuations
+            .iter()
+            .rev()
+            .find_map(Continuation::play_in_progress)
+    }
+
     /// Whether a skill test is currently in flight.
     #[must_use]
     pub fn has_skill_test_in_flight(&self) -> bool {
@@ -2164,7 +2225,7 @@ mod continuation_stack_tests {
         // The non-`Option` formerly-`#[serde(default)]` fields are now required
         // on the wire (#453): a payload missing one fails loudly rather than
         // silently defaulting (e.g. an absent `continuations` would drop every
-        // open window). The `Option` field is handled separately below.
+        // open window).
         let s = GameStateBuilder::new().build();
         let full = serde_json::to_value(&s).expect("serialize");
         serde_json::from_value::<GameState>(full.clone()).expect("full object deserializes");
@@ -2183,16 +2244,6 @@ mod continuation_stack_tests {
                 "omitting `{field}` must be rejected, not defaulted"
             );
         }
-        // `pending_played_event` stays implicitly optional (it is an `Option`;
-        // serde defaults a missing one to `None`) — by design, see its doc.
-        let mut v = full;
-        v.as_object_mut()
-            .unwrap()
-            .remove("pending_played_event")
-            .expect("present in serialized form");
-        let back =
-            serde_json::from_value::<GameState>(v).expect("absent Option deserializes to None");
-        assert!(back.pending_played_event.is_none());
     }
 
     #[test]

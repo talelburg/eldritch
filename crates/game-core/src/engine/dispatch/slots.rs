@@ -149,12 +149,13 @@ pub(super) fn make_room_candidates(
         .collect()
 }
 
-/// Bring the asset `code` (in `investigator`'s hand at `hand_index`) into play,
-/// discarding occupying assets to make room per RR p.19 (#498). Recursive:
+/// Bring the mid-play asset `card` (held by the caller since it left hand at RR
+/// Appendix I step 3) into play, discarding occupying assets to make room per RR
+/// p.19 (#498). Recursive:
 ///
 /// - no deficit → enter directly;
 /// - a deficit with exactly one candidate → auto-discard it (forced) and recurse;
-/// - a deficit with 2+ candidates → (Task 6) suspend for a player `PickSingle`.
+/// - a deficit with 2+ candidates → suspend for a player `PickSingle`.
 ///
 /// `check_play_card`'s `need <= cap` gate guarantees a candidate exists whenever
 /// a deficit does (occupied[T] >= deficit[T] > 0), so the recursion makes
@@ -162,33 +163,31 @@ pub(super) fn make_room_candidates(
 pub(super) fn enter_asset_making_room(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    hand_index: u8,
-    code: &CardCode,
+    card: CardCode,
 ) -> EngineOutcome {
-    let deficit = slot_deficit(cx.state, investigator, code);
+    let deficit = slot_deficit(cx.state, investigator, &card);
     if deficit.is_empty() {
-        super::cards::enter_asset_into_play(cx, investigator, hand_index);
+        super::cards::enter_asset_into_play(cx, investigator, card);
         return EngineOutcome::Done;
     }
     let candidates = make_room_candidates(cx.state, investigator, &deficit);
     debug_assert!(
         !candidates.is_empty(),
         "slot deficit with no candidate to discard — check_play_card's need<=cap \
-         gate should make this unreachable (code {code}, deficit {deficit:?})"
+         gate should make this unreachable (code {card}, deficit {deficit:?})"
     );
     if candidates.len() >= 2 {
         // Genuine choice: the player picks which occupier to discard. Park the
-        // pending play (asset stays in hand at hand_index) and prompt.
+        // pending play — the asset rides the frame across the prompt — and ask.
         cx.state.continuations.push(Continuation::SlotDiscard {
             investigator,
-            code: code.clone(),
-            hand_index,
+            card: Some(card),
         });
         return prompt_slot_discard(cx, investigator, &deficit);
     }
     let (inst, _) = candidates[0];
     super::cards::discard_card_from_play(cx, investigator, inst);
-    enter_asset_making_room(cx, investigator, hand_index, code)
+    enter_asset_making_room(cx, investigator, card)
 }
 
 /// Build the `PickSingle` over the co-controlled assets occupying a still-deficit
@@ -216,13 +215,19 @@ fn prompt_slot_discard(
 /// pick rejects and keeps the frame (the `DamageAssignment` / `HunterMove`
 /// contract).
 pub(super) fn resume_slot_discard(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let Some(Continuation::SlotDiscard {
-        investigator,
-        code,
-        hand_index,
-    }) = cx.state.continuations.last().cloned()
+    let Some(Continuation::SlotDiscard { investigator, card }) =
+        cx.state.continuations.last().cloned()
     else {
         unreachable!("resume_slot_discard: top frame is not SlotDiscard");
+    };
+    let Some(card) = card else {
+        // Only elimination takes a card off a play frame, and it cannot run
+        // while this prompt is outstanding: the frame awaits input, so every
+        // action but its own `ResolveInput` is refused.
+        unreachable!(
+            "resume_slot_discard: the pending asset left the frame while its \
+             make-room prompt was open"
+        );
     };
     let InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
@@ -230,7 +235,7 @@ pub(super) fn resume_slot_discard(cx: &mut Cx, response: &InputResponse) -> Engi
                 .into(),
         };
     };
-    let deficit = slot_deficit(cx.state, investigator, &code);
+    let deficit = slot_deficit(cx.state, investigator, &card);
     let candidates = make_room_candidates(cx.state, investigator, &deficit);
     let Some(&(inst, _)) = candidates.get(*i as usize) else {
         return EngineOutcome::Rejected {
@@ -244,7 +249,7 @@ pub(super) fn resume_slot_discard(cx: &mut Cx, response: &InputResponse) -> Engi
     // Valid: pop the frame we validated against, discard the choice, continue.
     cx.state.continuations.pop();
     super::cards::discard_card_from_play(cx, investigator, inst);
-    enter_asset_making_room(cx, investigator, hand_index, &code)
+    enter_asset_making_room(cx, investigator, card)
 }
 
 #[cfg(test)]

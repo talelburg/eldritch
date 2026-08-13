@@ -343,8 +343,9 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
 
 /// Per the Dynamite Blast FAQ ("…the effects of the card resolve — but only if
 /// you're still alive"): if the play's `AoO` defeats the investigator, the event's
-/// effect does not resolve — though the card was still played (it goes to
-/// discard).
+/// effect does not resolve. The card was still played, but it never reaches a
+/// discard pile: elimination removes an eliminated investigator's owned cards
+/// from the game (RR p.10, step 1), and the mid-play event is one of them (#604).
 #[test]
 fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
     let inv_id = InvestigatorId(1);
@@ -394,12 +395,24 @@ fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
         "the event's effect did not resolve (no ResourcesGained) — defeated mid-play: {:?}",
         result.events
     );
-    // The card was still played: it left hand and went to discard.
+    // The card was still played — it left hand — but a dead investigator has no
+    // discard pile to receive it: elimination removed it from the game.
     assert!(
-        state.investigators[&inv_id]
+        !state.investigators[&inv_id]
             .discard
             .contains(&CardCode::new(EMERGENCY_CACHE)),
-        "the played event still went to discard even though its effect was suppressed"
+        "the mid-play event must not land in the drained discard pile of an \
+         eliminated investigator"
+    );
+    assert!(
+        state.investigators[&inv_id]
+            .removed_from_game
+            .contains(&CardCode::new(EMERGENCY_CACHE)),
+        "the mid-play event was removed from the game with its owner (RR p.10 step 1)"
+    );
+    assert!(
+        state.play_in_progress().is_none(),
+        "elimination swept the in-progress play off its frame"
     );
 }
 
@@ -436,7 +449,8 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
         .build();
 
     // Step 1: play Machete → AoO soaks onto Guard Dog → soak window; Machete is
-    // still in hand (it enters play only after the play completes).
+    // mid-play — it left hand when the play commenced and enters play only once
+    // the play completes.
     let result = take_turn_action(
         state,
         &TurnAction::PlayCard {
@@ -452,10 +466,16 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
         "playing the asset spent one action before the AoO"
     );
     assert!(
-        state.investigators[&inv_id]
+        !state.investigators[&inv_id]
             .hand
             .contains(&CardCode::new(MACHETE)),
-        "the asset is still in hand while the AoO window is open"
+        "the asset left hand when the play commenced (RR Appendix I step 3)"
+    );
+    assert_eq!(
+        state.play_in_progress().map(|(_, c)| c.clone()),
+        Some(CardCode::new(MACHETE)),
+        "the asset rides its frame while the AoO window is open — no hand index \
+         to go stale (#565)",
     );
 
     // Step 2: fire Guard Dog's reaction (closes the soak window) → the play
@@ -483,9 +503,9 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
 }
 
 /// If the asset play's `AoO` defeats the player, the asset never enters play (the
-/// §D gate suppresses the resume before the enter-play step). Elimination
-/// cleanup then sweeps the un-entered card out of hand — it is neither in play
-/// nor stranded in a live hand.
+/// §D gate suppresses the resume before the enter-play step). Elimination sweeps
+/// the un-entered card off the frame carrying it and out of the game (RR p.10
+/// step 1) — it is neither in play nor stranded mid-play.
 #[test]
 fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
     let inv_id = InvestigatorId(1);
@@ -536,6 +556,16 @@ fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
         !state.investigators[&inv_id]
             .hand
             .contains(&CardCode::new(MACHETE)),
-        "the un-entered asset was swept out of hand by elimination cleanup, not stranded"
+        "the asset had already left hand when the play commenced"
+    );
+    assert!(
+        state.investigators[&inv_id]
+            .removed_from_game
+            .contains(&CardCode::new(MACHETE)),
+        "elimination swept the un-entered asset off its frame and out of the game"
+    );
+    assert!(
+        state.play_in_progress().is_none(),
+        "no play is left in progress after the sweep"
     );
 }

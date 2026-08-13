@@ -63,7 +63,21 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
         .get(&investigator)
         .and_then(|inv| inv.current_location);
 
-    // Step 1: remove every card this investigator controls in play and
+    // Step 1, part one: a card **mid-play** is in none of the zones the drains
+    // below cover — it left hand when it commenced being played and has not been
+    // placed yet (RR Appendix I step 3 → 4). It rides the frame driving its play,
+    // so this walk takes it off there. Taking rather than copying is what makes
+    // the step order-independent: the play's own disposal, whenever it runs,
+    // finds nothing left to place instead of pushing the card into a discard
+    // pile that step 1 has already removed from the game (#604).
+    let mut in_progress_plays: Vec<crate::state::CardCode> = Vec::new();
+    for frame in &mut cx.state.continuations {
+        if let Some(card) = frame.take_play_in_progress(investigator) {
+            in_progress_plays.push(card);
+        }
+    }
+
+    // Step 1, part two: remove every card this investigator controls in play and
     // owns in out-of-play areas (hand/deck/discard) from the game.
     //
     // Threat-area cards split by ownership (Rules Reference p.7 names the axis:
@@ -92,6 +106,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // while borrowing `inv.hand` etc. would double-borrow `inv` — rejected
     // by the borrow checker).
     let mut removed = std::mem::take(&mut inv.removed_from_game);
+    removed.extend(in_progress_plays);
     removed.extend(inv.cards_in_play.drain(..).map(|c| c.code));
     // Partition the threat area: owned weaknesses leave with their owner here;
     // the rest stay for step 4. No registry installed (engine-only tests with

@@ -757,15 +757,26 @@ fn filter_matches(f: &crate::dsl::CardFilter, code: &crate::state::CardCode) -> 
 }
 
 /// Resolve [`Effect::AttachSelfToLocation`]: the currently-playing event
-/// (held in `pending_played_event`) attaches itself to its controller's
-/// current location, and is **consumed** from the pending slot so the apply
-/// loop's `flush_pending_played_event` does not also discard it — one card, no
-/// duplicate. Rejects if no event is mid-play or the controller is between
+/// attaches itself to its controller's current location.
+///
+/// "*This* card" is the one on the **nearest enclosing**
+/// [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame — the play
+/// this effect is running inside. Reading the innermost frame rather than a
+/// global slot is what makes the answer right when plays nest (#604). The card is
+/// **taken** off that frame, so its disposal does not also discard it — one card,
+/// no duplicate. Rejects if no play is in progress or the controller is between
 /// locations.
 fn apply_attach_self_to_location(cx: &mut Cx) -> EngineOutcome {
-    let Some((investigator, code)) = cx.state.pending_played_event.clone() else {
+    let Some((frame_idx, investigator)) = cx
+        .state
+        .continuations
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(i, frame)| frame.play_in_progress().map(|(inv, _)| (i, inv)))
+    else {
         return EngineOutcome::Rejected {
-            reason: "AttachSelfToLocation: no event is mid-play".into(),
+            reason: "AttachSelfToLocation: no card is mid-play".into(),
         };
     };
     let Some(location) = cx
@@ -778,9 +789,11 @@ fn apply_attach_self_to_location(cx: &mut Cx) -> EngineOutcome {
             reason: "AttachSelfToLocation: controller has no current location".into(),
         };
     };
+    // Validated: take the card off its frame so it is re-homed, not discarded.
+    let code = cx.state.continuations[frame_idx]
+        .take_play_in_progress(investigator)
+        .expect("AttachSelfToLocation: the located frame still holds its card");
     crate::engine::dispatch::threat_area::attach_to_location(cx, location, code);
-    // Consume the pending event so it is re-homed, not discarded.
-    cx.state.pending_played_event = None;
     EngineOutcome::Done
 }
 

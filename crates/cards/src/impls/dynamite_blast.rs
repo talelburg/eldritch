@@ -23,9 +23,12 @@
 //! design is captured in #363.
 //!
 //! Suspending from an `OnPlay` event relies on the played event being discarded
-//! on *completion* (`GameState.pending_played_event`, RR Appendix I step 4: the
-//! card is placed in discard "simultaneously with the completion" of its
-//! effect) — so it's discarded when the choice resolves, not stranded in hand.
+//! on *completion* (RR Appendix I step 4: the card is placed in discard
+//! "simultaneously with the completion" of its effect) — so it's discarded when
+//! the choice resolves, not stranded in hand. The card rides its
+//! `Continuation::PlayFromHand` frame across the suspension; when the attack of
+//! opportunity this play provokes lets a Fast event be played on top, the two
+//! plays get their own frames rather than sharing one slot (#604).
 
 use card_dsl::dsl::{native, on_play, Ability};
 use game_core::card_registry::NativeEffectFn;

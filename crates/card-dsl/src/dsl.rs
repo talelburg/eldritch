@@ -805,8 +805,8 @@ pub enum Effect {
         filter: Option<CardFilter>,
     },
     /// The currently-playing event attaches itself to its controller's current
-    /// location (Barricade 01038): consume the `pending_played_event` and
-    /// re-home that same card into the location's attachment zone, instead of
+    /// location (Barricade 01038): take the card off the frame driving its play
+    /// and re-home that same card into the location's attachment zone, instead of
     /// letting it discard. One card — hand → location attachment → (on a later
     /// effect) discard; no duplicate spawned by code (cf.
     /// [`PutIntoThreatArea`](Self::PutIntoThreatArea), which spawns by code only
