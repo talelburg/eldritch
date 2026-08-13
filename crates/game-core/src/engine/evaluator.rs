@@ -1103,6 +1103,13 @@ fn eval_condition(
                 CmpOp::Ge => lhs >= rhs,
             })
         }
+        Condition::Native { tag } => {
+            let reg = crate::card_registry::current()
+                .ok_or_else(|| format!("Native condition {tag:?}: no card registry installed"))?;
+            let predicate = (reg.native_condition_for)(tag)
+                .ok_or_else(|| format!("Native condition {tag:?}: no predicate registered"))?;
+            Ok(predicate(state, eval_ctx))
+        }
         Condition::SkillTest { outcome } => {
             // Inside an [`Trigger::OnSkillTestResolution`] effect, the
             // outcome is already gated by the trigger; using this
@@ -1132,11 +1139,7 @@ fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
             .and_then(|inv| inv.current_location)
             .and_then(|loc| state.locations.get(&loc))
             .map_or(0, |l| usize::from(l.clues)),
-        Quantity::EngagedEnemies => state
-            .enemies
-            .values()
-            .filter(|e| e.engaged_with == Some(controller))
-            .count(),
+        Quantity::EngagedEnemies => state.enemies_engaged_with(controller).count(),
         Quantity::SkillTestFailedBy => usize::from(eval_ctx.failed_by().unwrap_or(0)),
     };
     i8::try_from(n).unwrap_or(i8::MAX)
@@ -4319,6 +4322,7 @@ mod tests {
             abilities_for: fake_abilities_for,
             native_effect_for: |_| None,
             native_eligibility_for: |_| None,
+            native_condition_for: |_| None,
         }
     }
 
@@ -5068,6 +5072,7 @@ mod tests {
             abilities_for,
             native_effect_for: |_| None,
             native_eligibility_for: |_| None,
+            native_condition_for: |_| None,
         };
 
         let inv_id = InvestigatorId(1);

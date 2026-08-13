@@ -1907,6 +1907,29 @@ impl GameState {
             .any(|c| matches!(c, Continuation::SkillTest(_)))
     }
 
+    /// Enemies engaged with `investigator`, in ascending [`EnemyId`] order
+    /// (`BTreeMap` iteration), so callers that compare or index replay
+    /// deterministically.
+    ///
+    /// The single reading of "engaged with you", shared by the kernel's
+    /// [`Quantity::EngagedEnemies`](crate::dsl::Quantity::EngagedEnemies) count
+    /// and by card predicates in the `cards` crate (Machete 01020). Two
+    /// hand-rolled copies of this filter drifting apart is what #592 was.
+    ///
+    /// `TODO(#579)`: **Massive** enemies are "considered" engaged with every
+    /// investigator at their location, so they belong in this iterator — the
+    /// keyword is unparsed corpus-wide today, so they are absent here and any
+    /// caller inherits that gap.
+    pub fn enemies_engaged_with(
+        &self,
+        investigator: InvestigatorId,
+    ) -> impl Iterator<Item = (EnemyId, &Enemy)> {
+        self.enemies
+            .iter()
+            .filter(move |(_, e)| e.engaged_with == Some(investigator))
+            .map(|(id, e)| (*id, e))
+    }
+
     /// Iterator over the open windows on the continuation stack, in stack
     /// order (bottom to top). The windows are `TimingPointWindow` / `FastWindow`
     /// frames; non-window frames are skipped.

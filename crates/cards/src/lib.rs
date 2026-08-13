@@ -94,6 +94,12 @@ fn registry_native_eligibility_for(tag: &str) -> Option<game_core::card_registry
     impls::native_eligibility_for(tag)
 }
 
+/// Adapter from a [`Condition::Native`](card_dsl::dsl::Condition::Native) tag to
+/// its card-local predicate.
+fn registry_native_condition_for(tag: &str) -> Option<game_core::card_registry::NativeConditionFn> {
+    impls::native_condition_for(tag)
+}
+
 /// Ready-made [`CardRegistry`] backed by this crate's corpus and
 /// implementations. The host installs it once at startup with
 /// [`game_core::card_registry::install`]; engine code then calls
@@ -103,6 +109,7 @@ pub const REGISTRY: CardRegistry = CardRegistry {
     abilities_for: registry_abilities_for,
     native_effect_for: registry_native_effect_for,
     native_eligibility_for: registry_native_eligibility_for,
+    native_condition_for: registry_native_condition_for,
 };
 
 #[cfg(test)]

@@ -40,9 +40,9 @@
 //!   abilities (`Cost::Resources(1)`, `ThisSkillTest` `Modify`), willpower
 //!   / combat (the Hyperawareness shape).
 //! - Machete (01020) — bare `Trigger::Activated { action_cost: 1 }` +
-//!   `Effect::Fight` (+1 combat; conditional +1 damage via `IntExpr::cond` —
-//!   the condition mis-fires against unengaged co-located targets since
-//!   #451 widened the fight scope, TODO(#592)).
+//!   `Effect::Fight` (+1 combat; conditional +1 damage via `IntExpr::cond` over
+//!   a `Condition::Native` predicate that reads the *attacked* enemy, since the
+//!   fight scope is every co-located enemy — #451/#592).
 //! - Attic (01113) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
 //!   `deal_horror(You, 1)`.
 //! - Cellar (01114) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
@@ -189,4 +189,15 @@ pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEf
 #[must_use]
 pub fn native_eligibility_for(tag: &str) -> Option<game_core::card_registry::EligibilityFn> {
     cover_up::native_eligibility_for(tag).or_else(|| the_barrier::native_eligibility_for(tag))
+}
+
+/// Dispatch a [`Condition::Native`](card_dsl::dsl::Condition::Native) tag to its
+/// card-local predicate; returns `None` for unregistered tags.
+///
+/// `TODO(#609)`: Machete is the only entry, and a *second* one should not be
+/// added — the next card wanting a compound or target-referencing condition is
+/// the trigger to promote both to declarative DSL vocab instead.
+#[must_use]
+pub fn native_condition_for(tag: &str) -> Option<game_core::card_registry::NativeConditionFn> {
+    machete::native_condition_for(tag)
 }

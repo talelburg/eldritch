@@ -55,6 +55,17 @@ pub type NativeEffectFn = fn(&mut Cx, &EvalContext) -> EngineOutcome;
 /// [`CardRegistry::native_eligibility_for`].
 pub type EligibilityFn = fn(&GameState, &EvalContext) -> bool;
 
+/// A card-local read-only predicate backing a [`Condition::Native`] gate:
+/// returns whether the condition holds against the current board and evaluation
+/// context. Shares [`EligibilityFn`]'s signature but not its role — eligibility
+/// answers "may this ability be offered?", a condition answers "does this gate
+/// hold right now?" — so the two keep separate registry slots and tag
+/// namespaces. Dispatched from `eval_condition` via
+/// [`CardRegistry::native_condition_for`].
+///
+/// [`Condition::Native`]: crate::dsl::Condition::Native
+pub type NativeConditionFn = fn(&GameState, &EvalContext) -> bool;
+
 /// Bundle of card-lookup function pointers.
 ///
 /// The `cards` crate provides a static instance wrapping its own
@@ -77,6 +88,16 @@ pub struct CardRegistry {
     /// [`Ability::eligibility`](crate::dsl::Ability::eligibility) tag. Returns
     /// `None` for unregistered tags.
     pub native_eligibility_for: fn(&str) -> Option<EligibilityFn>,
+    /// Look up a card-local condition predicate by its [`Condition::Native`]
+    /// tag. Returns `None` for unregistered tags.
+    ///
+    /// `TODO(#609)`: Machete 01020 is the only consumer. This slot is expected
+    /// to be **deleted** along with [`Condition::Native`] once the compound and
+    /// target-referencing conditions it stands in for exist declaratively —
+    /// don't grow it by registering a second card's tag.
+    ///
+    /// [`Condition::Native`]: crate::dsl::Condition::Native
+    pub native_condition_for: fn(&str) -> Option<NativeConditionFn>,
 }
 
 static REGISTRY: OnceLock<CardRegistry> = OnceLock::new();
@@ -175,6 +196,7 @@ mod tests {
             abilities_for: fake_abilities_for,
             native_effect_for: |_| None,
             native_eligibility_for: |_| None,
+            native_condition_for: |_| None,
         }
     }
 
