@@ -180,11 +180,29 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
 // splitting it would only scatter the one place that says what each frame does.
 #[allow(clippy::too_many_lines)]
 pub(crate) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
-    use crate::state::Continuation;
-    if !matches!(outcome, EngineOutcome::Done) {
+    use crate::state::{Continuation, ScenarioEndStep};
+    if matches!(outcome, EngineOutcome::Rejected { .. }) {
+        return outcome;
+    }
+    // A suspension raised by the action itself normally passes straight through.
+    // The exception is a prompt the scenario's ending has just cancelled (#566):
+    // a resolution can latch mid-apply and *then* suspend on a frame the ending
+    // discards — Mythos step 1.3's doom crossing the terminal agenda's threshold
+    // before step 1.4 parks on the encounter-draw prompt. Surfacing that prompt
+    // would ask the player to draw an encounter card for a scenario that has
+    // already ended, so the loop takes over and discards it instead.
+    if !matches!(outcome, EngineOutcome::Done) && !scenario_end_cancels_top(cx.state) {
         return outcome;
     }
     loop {
+        // A latched resolution cancels opportunities, not resolutions (ADR
+        // 0004). Applied at the loop head rather than by sweeping the stack
+        // once, so a frame queued *during* the wind-down — a reaction window
+        // opened by the skill-test teardown that is still completing — is
+        // classified when it reaches the top, like every other frame.
+        while scenario_end_cancels_top(cx.state) {
+            cx.state.continuations.pop();
+        }
         #[cfg(debug_assertions)]
         assert_no_queued_ability_beneath_anchor(cx.state);
         let top = cx.state.continuations.last().cloned();
@@ -355,12 +373,46 @@ pub(crate) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
                     resume_token: crate::engine::ResumeToken(0),
                 };
             }
-            // Idle: an empty `FastWindow` permissive gate, terminal (empty), or
-            // a suspension on top (which a handler already surfaced as
-            // AwaitingInput).
+            // The scenario's ending, exposed once everything above it has
+            // completed or been cancelled (#566). `EmitGameEnd` advances the
+            // cursor *before* emitting — a tail-position emit, since the emit
+            // only queues (ADR 0003) and Cover Up 01007's trauma (plus its
+            // interactive acknowledge) must resolve above this frame, possibly
+            // across an `apply` boundary. At `Finalize` the loop stops and hands
+            // the frame to the apply boundary, which holds the `ScenarioRegistry`.
+            Some(Continuation::ScenarioEnd {
+                step: ScenarioEndStep::EmitGameEnd,
+            }) => {
+                let Some(Continuation::ScenarioEnd { step }) = cx.state.continuations.last_mut()
+                else {
+                    unreachable!("drive: the ScenarioEnd arm ran without one on top");
+                };
+                *step = ScenarioEndStep::Finalize;
+                match emit::queue_event(cx, &emit::TimingEvent::GameEnd) {
+                    EngineOutcome::Done => {} // queued; loop on to drain it
+                    other => return other,    // 2+ simultaneous: the lead orders them
+                }
+            }
+            // Idle: an empty `FastWindow` permissive gate, terminal (empty), a
+            // suspension on top (which a handler already surfaced as
+            // AwaitingInput), or a `ScenarioEnd` frame at `Finalize` — the loop
+            // has nothing left to drive there, and `apply` finalizes it.
             _ => return EngineOutcome::Done,
         }
     }
+}
+
+/// Whether a non-`Done` outcome belongs to a frame the scenario's ending has
+/// just cancelled (#566) — in which case [`drive`] discards it rather than
+/// surfacing the prompt. Only ever true once a resolution has latched; the
+/// [`ScenarioEnd`](crate::state::Continuation::ScenarioEnd) frame sits at the
+/// bottom of the stack from that moment, so the stack is never empty here.
+fn scenario_end_cancels_top(state: &crate::state::GameState) -> bool {
+    state.resolution.is_some()
+        && state
+            .continuations
+            .last()
+            .is_some_and(crate::state::Continuation::cancelled_by_scenario_end)
 }
 
 /// Backstop for the ADR-0003 defect class (#569): a queued ability frame must
@@ -636,6 +688,9 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 /// on top is a play *opportunity*: `InputResponse::Skip` closes it via
 /// [`close_reaction_window`]. This covers the `MythosAfterDraws` window after all
 /// Fast plays have been made and the player is done.
+// One exhaustive arm per `Continuation` variant, as in `drive`: splitting it
+// would scatter the single place that says which frame a response routes to.
+#[allow(clippy::too_many_lines)]
 pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     // Top-frame dispatch (umbrella §1 / #348): every suspension is a
     // `Continuation` frame, and the frame awaiting input is always the top of
@@ -727,6 +782,13 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         // The interactive slot make-room choice (#498): the `SlotDiscard` frame
         // is the top prompt, resumed by its `PickSingle`.
         Some(Continuation::SlotDiscard { .. }) => slots::resume_slot_discard(cx, response),
+        // The scenario's ending never awaits input (#566): the acknowledge /
+        // ordering run its `GameEnd` emit queues sits above it and is the prompt,
+        // and the apply boundary finalizes without asking. Defensive, as for
+        // `EncounterCard`.
+        Some(Continuation::ScenarioEnd { .. }) => EngineOutcome::Rejected {
+            reason: "ResolveInput: no input prompt is outstanding (the scenario has ended)".into(),
+        },
         // A mid-action ActionResolution frame never awaits input — it is only
         // momentarily top inside `drive`. A ResolveInput here is spurious.
         Some(Continuation::ActionResolution { .. }) => EngineOutcome::Rejected {

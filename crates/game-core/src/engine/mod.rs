@@ -45,9 +45,7 @@ pub use pathfinding::{shortest_first_steps, shortest_first_steps_with};
 // `move_action` (EnteredLocation) and `enemy_phase_end`/`upkeep_phase_end`
 // (PhaseEnded).
 pub(crate) use dispatch::forced_triggers::{queue_forced_triggers, ForcedTriggerPoint};
-// The unified trigger-dispatch chokepoint (Axis-B T5a): the GameEnd site below
-// and `fire_scenario_resolution` route through it.
-pub(crate) use dispatch::emit::queue_event;
+// The unified trigger-dispatch chokepoint's key (Axis-B T5a).
 pub use dispatch::emit::TimingEvent;
 // Round-end driver + act-window resume, exposed for `test_support`'s
 // `run_upkeep_round_end` / `resume_round_end_window` (the `when→at` ordering
@@ -136,8 +134,10 @@ pub fn apply(state: GameState, action: Action) -> ApplyResult {
 /// The same firing rule applies regardless of how the registry is
 /// supplied: a `Rejected` outcome clears events and skips the hook;
 /// any non-`Rejected` outcome (`Done` or `AwaitingInput`) fires the
-/// hook iff the resolution latch newly transitioned `None`->`Some`
-/// this apply.
+/// hook iff this apply left the scenario's
+/// [`ScenarioEnd`](crate::state::Continuation::ScenarioEnd) frame on top at its
+/// finalize step — i.e. the resolution latched *and* the game-end Forced
+/// abilities it queued have finished (#566).
 pub fn apply_with_scenario_registry(
     state: GameState,
     action: Action,
@@ -194,7 +194,6 @@ pub(crate) fn apply_via(
     // replay: a rejected action contributes nothing to the action log, so
     // it must contribute no RNG consumption either.
     let pristine = state.clone();
-    let resolution_already_fired = state.resolution.is_some();
     let outcome = {
         let mut cx = Cx {
             state: &mut state,
@@ -207,14 +206,12 @@ pub(crate) fn apply_via(
             // State half is restored after this block (the `cx` borrow on
             // `state` releases at the block close).
             cx.events.clear();
-        } else if !resolution_already_fired {
-            // A dispatch site may have latched a resolution this apply (act/
-            // agenda resolution point, or no-remaining-players elimination).
-            // Fire the module hook exactly once, on the None->Some transition.
-            // Runs on Done AND AwaitingInput — a resolution can latch during
-            // an apply that pauses (e.g. doom crosses the threshold in Mythos
-            // 1.3 before the 1.4 draw pause).
-            fire_scenario_resolution(&mut cx, registry);
+        } else {
+            // The scenario's ending may have finished during this apply. Runs on
+            // Done AND AwaitingInput: the ending itself never awaits input, but
+            // an unrelated suspension can be surfaced by the same apply that
+            // finalized nothing, and the check is cheap and self-guarding.
+            finalize_scenario_end(&mut cx, registry);
         }
         outcome
         // `cx` drops here, releasing borrows on `state` and `events`.
@@ -232,18 +229,42 @@ pub(crate) fn apply_via(
     }
 }
 
-/// Post-dispatch hook: if a dispatch site latched a resolution this apply
-/// (`state.resolution` went `None`->`Some`), emit [`Event::ScenarioResolved`]
-/// and run the active scenario module's `apply_resolution`. The caller
-/// guards the `None`->`Some` transition (it reads `state.resolution.is_some()`
-/// *before* dispatch), so this fires exactly once per scenario.
+/// Post-dispatch hook: finish the scenario's ending if the `drive` loop left it
+/// ready (#566).
 ///
-/// Short-circuits when no resolution latched. The `ScenarioResolved` event
-/// is a property of engine state, so it fires even when no module is
-/// registered (or `scenario_id` is `None`); only `apply_resolution` needs
-/// the registry/module.
-fn fire_scenario_resolution(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
+/// The ending is a [`ScenarioEnd`](crate::state::Continuation::ScenarioEnd)
+/// frame, pushed at the bottom of the continuation stack when the resolution
+/// latched. The loop exposes it once every frame above has completed or been
+/// cancelled, emits [`GameEnd`](TimingEvent::GameEnd) from it, and lets the
+/// game-end Forced abilities — Cover Up 01007's mental trauma, with its
+/// interactive acknowledge — drain above it, across as many `apply` calls as
+/// that takes. Only when the frame is exposed again at
+/// [`ScenarioEndStep::Finalize`](crate::state::ScenarioEndStep::Finalize) does
+/// the ending finish, and it finishes **here** because this is the only place
+/// holding the [`ScenarioRegistry`].
+///
+/// Short-circuits on every other apply. Popping the frame is what makes this
+/// fire-once: it is pushed exactly once (`request_resolution` is
+/// first-writer-wins) and popped exactly once, so no "already finalized" flag
+/// is needed. The `ScenarioResolved` event is a property of engine state, so it
+/// fires even when no module is registered (or `scenario_id` is `None`); only
+/// `apply_resolution` needs the registry/module.
+fn finalize_scenario_end(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
+    if !matches!(
+        cx.state.continuations.last(),
+        Some(crate::state::Continuation::ScenarioEnd {
+            step: crate::state::ScenarioEndStep::Finalize,
+        })
+    ) {
+        return;
+    }
+    cx.state.continuations.pop();
     let Some(resolution) = cx.state.resolution.clone() else {
+        debug_assert!(
+            false,
+            "a ScenarioEnd frame exists without a latched resolution; \
+             `request_resolution` pushes the two together"
+        );
         return;
     };
     cx.events.push(Event::ScenarioResolved {
@@ -282,20 +303,6 @@ fn fire_scenario_resolution(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
                 .push(Event::EnteredVictoryDisplay { code, victory });
         }
     }
-
-    // Fire game-end Forced abilities (Cover Up 01007's mental trauma, C5a
-    // #236). KNOWN DEFECT (#566): the drive outcome is discarded, but a
-    // GameEnd hit CAN suspend — `interactive_acknowledge` (the server
-    // default) makes a single hit push an `AcknowledgeForced` frame, and 2+
-    // simultaneous hits open an ordering run — so the forced effect is
-    // silently dropped and its frames stranded. Fix tracked in #566. Runs
-    // even when no scenario module is registered, so it precedes the module
-    // lookup below. This is the terminal resolution hook — it runs *after*
-    // the main `drive` loop and holds the scenario registry for
-    // `apply_resolution` below — so it drives the forced effects the
-    // frame-driven `queue_event` pushes (Slice D, #423).
-    let out = queue_event(cx, &TimingEvent::GameEnd);
-    let _ = drive(cx, out);
 
     let Some(id) = cx.state.scenario_id.as_ref() else {
         return;
@@ -3346,7 +3353,19 @@ mod tests {
                 response: InputResponse::PickSingle(pick),
             }),
         );
-        assert!(matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }));
+        // The sole investigator was defeated, so Rules Reference p.10 step 6
+        // applies — "If there are no remaining players, the scenario ends" —
+        // and the engine's latch for it is `Lost`. The attack loop and the open
+        // turn are therefore cancelled and the ending finalizes in this same
+        // apply, rather than the engine re-offering a turn menu to a table with
+        // no remaining players (#566).
+        assert_eq!(r2.outcome, EngineOutcome::Done, "the scenario has ended");
+        assert_event!(r2.events, Event::ScenarioResolved { .. });
+        assert!(
+            r2.state.continuations.is_empty(),
+            "no stranded frames after the ending: {:?}",
+            r2.state.continuations,
+        );
         // Exactly one DamageTaken event (from the chosen first AoO) and one
         // InvestigatorDefeated; the second enemy never attacks (early-break).
         assert_event_count!(r2.events, 1, Event::DamageTaken { .. });
@@ -4855,11 +4874,10 @@ mod tests {
     }
 
     #[test]
-    fn resolution_does_not_refire_on_a_later_apply() {
+    fn resolution_cancels_the_open_turn_and_does_not_refire() {
         // `terminal_act_state` seats the InvestigationPhase anchor + the
         // InvestigatorTurn frame (slice 1a / 2a-i, #393): AdvanceAct routes via
-        // OptionId, and the subsequent EndTurn pops the InvestigatorTurn frame
-        // and cascades through investigation_phase_end.
+        // OptionId and latches the terminal act's `Won`.
         let state = terminal_act_state(Some("stamp"));
         let reg = ScenarioRegistry {
             module_for: stamp_module_for,
@@ -4872,14 +4890,27 @@ mod tests {
             Some(&reg),
         );
         assert_event!(first.events, Event::ScenarioResolved { .. });
-        let second = take_turn_action_with_registry(first.state, &TurnAction::EndTurn, Some(&reg));
-        // The round-ending EndTurn cascades into Mythos and pauses at the
-        // encounter-draw prompt (AwaitingInput); the point of this test is that
-        // the already-latched resolution does NOT re-fire on this later apply.
-        assert!(matches!(
-            second.outcome,
-            EngineOutcome::AwaitingInput { .. }
-        ));
+        // The scenario ended, so the framework sequence it was suspended in is
+        // cancelled (#566): the open turn and its phase anchor are gone, and
+        // with them every legal action. Before #566 the engine kept offering the
+        // turn menu and cascading into the next round's Mythos phase.
+        assert!(
+            first.state.continuations.is_empty(),
+            "the open turn and phase anchor are cancelled: {:?}",
+            first.state.continuations,
+        );
+        assert!(crate::engine::enumerate::legal_actions(&first.state).is_empty());
+
+        // A later action finds no prompt outstanding and rejects; the
+        // already-finished resolution does not re-fire.
+        let second = super::apply_with_scenario_registry(
+            first.state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(OptionId(0)),
+            }),
+            Some(&reg),
+        );
+        assert!(matches!(second.outcome, EngineOutcome::Rejected { .. }));
         assert_no_event!(second.events, Event::ScenarioResolved { .. });
     }
 

@@ -22,7 +22,7 @@ use game_core::scenario::Resolution;
 use game_core::seat_and_open;
 use game_core::state::{CardCode, GameState, InvestigatorId, Phase};
 use game_core::test_support::{take_turn_action, TEST_INV};
-use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
+use game_core::{assert_event, Action, EngineOutcome, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 use scenarios::REGISTRY;
 
@@ -106,8 +106,10 @@ fn synthetic_scenario_resolves_lost_via_doom() {
     // advance the agenda) before pausing at step 1.4 for the encounter
     // draw; DrawEncounterCard then resolves the draw and completes Mythos
     // back to Investigation. The EndTurn that enters the round whose Mythos
-    // crosses the terminal agenda's threshold latches Lost at step 1.3
-    // (before the 1.4 draw pause), firing ScenarioResolved on that apply.
+    // crosses the terminal agenda's threshold latches Lost at step 1.3 —
+    // *before* the 1.4 draw pause, which is exactly the case #566 names: the
+    // scenario has ended, so step 1.4 never happens and the draw prompt is
+    // cancelled rather than surfaced.
     //
     // Break-on-resolution rather than a fixed count: tolerates cadence
     // drift and only draws when a Mythos draw is actually pending.
@@ -115,8 +117,25 @@ fn synthetic_scenario_resolves_lost_via_doom() {
     for _ in 0..12 {
         let r1 = take_turn_action(state, &TurnAction::EndTurn);
         doom_events.extend(r1.events);
+        let latched = r1.state.resolution.is_some();
+        if latched {
+            assert_eq!(
+                r1.outcome,
+                EngineOutcome::Done,
+                "the Mythos 1.4 draw prompt must not be surfaced for an ended scenario",
+            );
+        }
         state = r1.state;
-        if state.resolution.is_some() {
+        if latched {
+            assert!(
+                state.current_encounter_drawer().is_none(),
+                "no encounter draw is pending once the scenario has ended",
+            );
+            assert!(
+                state.continuations.is_empty(),
+                "no stranded frames after the ending: {:?}",
+                state.continuations,
+            );
             break;
         }
         if state.current_encounter_drawer().is_some() {

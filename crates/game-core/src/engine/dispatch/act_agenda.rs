@@ -355,11 +355,29 @@ pub(crate) fn advance_act(cx: &mut Cx, trigger: crate::state::AdvanceTrigger) {
         });
 }
 
-/// Set the scenario-resolution latch. First-writer-wins: a resolution
-/// already latched this scenario is authoritative and a later request is
-/// ignored. The `apply` hook (in `engine::mod`) observes the `None`→`Some`
-/// transition to emit [`Event::ScenarioResolved`] and run the scenario
-/// module's `apply_resolution` exactly once.
+/// Set the scenario-resolution latch and arm the scenario's ending.
+/// First-writer-wins: a resolution already latched this scenario is
+/// authoritative and a later request is ignored.
+///
+/// Rules Reference: *"If a resolution point is reached, the scenario ends."* The
+/// latch itself cancels nothing — clearing the continuation stack here would
+/// destroy the very resolution that reached the point (the in-flight skill test
+/// that defeated the Ghoul Priest, the terminal act's own reverse). Instead this
+/// pushes a [`ScenarioEnd`](crate::state::Continuation::ScenarioEnd) frame at the
+/// **bottom** of the stack and leaves the cancelling to the `drive` loop, which
+/// gates frame by frame on
+/// [`cancelled_by_scenario_end`](crate::state::Continuation::cancelled_by_scenario_end).
+/// Bottom, not top: everything already under way sits above it and resolves
+/// first, so the frame is exposed exactly when the ending should run — no
+/// insertion index has to guess where "in-flight" stops and "framework" starts.
+/// See `docs/adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md`
+/// (#566).
+///
+/// Because the frame is pushed under the same first-writer-wins guard, it exists
+/// exactly once per scenario, and the apply boundary pops it exactly once — which
+/// is what makes it the fire-once marker for
+/// [`Event::ScenarioResolved`] + `apply_resolution`, with no second flag on
+/// [`GameState`].
 ///
 /// Call this only after a handler's validations pass: on a `Rejected`
 /// outcome `apply` clears events but does not roll back `state`, so a
@@ -368,6 +386,12 @@ pub(crate) fn advance_act(cx: &mut Cx, trigger: crate::state::AdvanceTrigger) {
 pub(crate) fn request_resolution(state: &mut GameState, resolution: crate::scenario::Resolution) {
     if state.resolution.is_none() {
         state.resolution = Some(resolution);
+        state.continuations.insert(
+            0,
+            crate::state::Continuation::ScenarioEnd {
+                step: crate::state::ScenarioEndStep::EmitGameEnd,
+            },
+        );
     }
 }
 
