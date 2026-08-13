@@ -1139,11 +1139,7 @@ fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
             .and_then(|inv| inv.current_location)
             .and_then(|loc| state.locations.get(&loc))
             .map_or(0, |l| usize::from(l.clues)),
-        Quantity::EngagedEnemies => state
-            .enemies
-            .values()
-            .filter(|e| e.engaged_with == Some(controller))
-            .count(),
+        Quantity::EngagedEnemies => state.enemies_engaged_with(controller).count(),
         Quantity::SkillTestFailedBy => usize::from(eval_ctx.failed_by().unwrap_or(0)),
     };
     i8::try_from(n).unwrap_or(i8::MAX)

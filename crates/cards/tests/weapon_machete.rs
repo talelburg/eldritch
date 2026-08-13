@@ -225,8 +225,12 @@ fn unengaged_co_located_target_gets_no_bonus() {
 
 /// #592: with *no* enemy engaged with you at all, attacking a co-located enemy
 /// gets no bonus either — "the only enemy engaged with you" is vacuously false
-/// when you are engaged with nothing. (The case a count-only encoding of
-/// "engaged enemies other than the target" would get backwards.)
+/// when you are engaged with nothing.
+///
+/// Unlike its two siblings this board does *not* discriminate against the #592
+/// bug (the old `EngagedEnemies == 1` encoding read 0 here and also withheld the
+/// bonus). It guards a different wrong answer: an encoding phrased as "no
+/// engaged enemy *other than* the target" would count 0 and grant the bonus.
 #[test]
 fn no_engaged_enemies_at_all_gets_no_bonus() {
     // Single co-located unengaged enemy → target auto-binds, no pick needed.
@@ -250,19 +254,25 @@ fn no_engaged_enemies_at_all_gets_no_bonus() {
 /// #592: an enemy engaged with *another investigator* is not "engaged with
 /// you", so it gets no bonus — the second exclusion in the 01020 FAQ ("or an
 /// enemy engaged to another player").
+///
+/// The actor is deliberately engaged with exactly one enemy of their own
+/// (enemy 100), so the old count-only encoding would read `EngagedEnemies == 1`
+/// and grant the bonus: this board discriminates against the #592 bug rather
+/// than merely agreeing with it.
 #[test]
 fn enemy_engaged_with_another_investigator_gets_no_bonus() {
     const OTHER: InvestigatorId = InvestigatorId(2);
 
-    let mut state = board_with(0, 1);
-    // Seat a second investigator at the same location and engage the enemy
-    // with them; the actor stays engaged with nobody.
+    let mut state = board_with(1, 1);
+    // Seat a second investigator at the same location and engage enemy 200
+    // with them. The actor remains engaged with enemy 100 only.
     let mut other = test_investigator(2);
     other.current_location = Some(LOC);
     state.investigators.insert(OTHER, other);
     state.enemies.get_mut(&EnemyId(200)).unwrap().engaged_with = Some(OTHER);
 
-    let r = activate_machete(state);
+    // Attack enemy 200 (OptionId(1) — co-located candidates in EnemyId order).
+    let r = activate_and_pick(state, 1);
 
     assert_event!(
         r.events,
@@ -276,6 +286,11 @@ fn enemy_engaged_with_another_investigator_gets_no_bonus() {
         r.state.enemies[&EnemyId(200)].damage,
         1,
         "enemy engaged to another player → base damage only"
+    );
+    assert_eq!(
+        r.state.enemies[&EnemyId(100)].damage,
+        0,
+        "the actor's own engaged enemy was not the target"
     );
 }
 

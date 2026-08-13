@@ -60,15 +60,24 @@ pub fn abilities() -> Vec<Ability> {
 /// bonus. Both FAQ exclusions fall out of the set equality — an enemy engaged
 /// with nobody or with another investigator is not in the controller's engaged
 /// set, so the set can never equal `{target}` while it holds that target.
+///
+/// Engagement is read through [`GameState::enemies_engaged_with`] rather than
+/// re-filtered here, so this predicate and the kernel's
+/// [`Quantity::EngagedEnemies`](card_dsl::dsl::Quantity::EngagedEnemies) can't
+/// drift to two readings of "engaged with you" — which is the shape of the bug
+/// this card had (#592).
+///
+/// `TODO(#579)`: the card's second FAQ ruling is **not** honoured — "Machete
+/// will provide a damage bonus for attacking a Massive enemy, as long as it is
+/// ready and the only enemy engaged with you. A Massive enemy is 'considered'
+/// engaged with you". `Massive` is unparsed corpus-wide, so such an enemy is
+/// absent from the engaged set and the bonus is withheld. Under-granting, not
+/// over-granting; #579 tracks the keyword, and this is its first live consumer.
 fn sole_engaged_target(state: &GameState, ctx: &EvalContext) -> bool {
     let Some(target) = ctx.chosen_enemy() else {
         return false;
     };
-    let mut engaged = state
-        .enemies
-        .iter()
-        .filter(|(_, e)| e.engaged_with == Some(ctx.controller))
-        .map(|(id, _)| *id);
+    let mut engaged = state.enemies_engaged_with(ctx.controller).map(|(id, _)| id);
     engaged.next() == Some(target) && engaged.next().is_none()
 }
 
@@ -172,6 +181,15 @@ mod tests {
         assert!(
             !sole_engaged_target(&board(&[(1, Some(OTHER))]), &ctx),
             "enemy engaged to another player → no bonus (FAQ)",
+        );
+        // The two shapes above agree with the old count-only encoding (the
+        // actor is engaged with nothing, so it read 0 too). This one does not:
+        // the actor is engaged with exactly one enemy, so `EngagedEnemies == 1`
+        // held and the bonus was wrongly granted before #592.
+        assert!(
+            !sole_engaged_target(&board(&[(1, Some(OTHER)), (2, Some(ACTOR))]), &ctx),
+            "target engaged to another player while you are engaged with exactly \
+             one *other* enemy → no bonus",
         );
 
         let unbound = EvalContext::for_controller(ACTOR);

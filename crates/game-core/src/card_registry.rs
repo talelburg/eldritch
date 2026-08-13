@@ -91,6 +91,11 @@ pub struct CardRegistry {
     /// Look up a card-local condition predicate by its [`Condition::Native`]
     /// tag. Returns `None` for unregistered tags.
     ///
+    /// `TODO(#609)`: Machete 01020 is the only consumer. This slot is expected
+    /// to be **deleted** along with [`Condition::Native`] once the compound and
+    /// target-referencing conditions it stands in for exist declaratively —
+    /// don't grow it by registering a second card's tag.
+    ///
     /// [`Condition::Native`]: crate::dsl::Condition::Native
     pub native_condition_for: fn(&str) -> Option<NativeConditionFn>,
 }
