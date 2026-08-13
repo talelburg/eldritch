@@ -101,7 +101,12 @@ Wolf 02188, Burned Ruins 02205). The Barrier's offer + resolve share one
 `round_end_advance_affordable` helper so they can't drift. **Item 2 (capped
 discovery count) moved to #471** — it becomes live only once Deduction 01039 is
 fixed to modify a single discovery's count (FAQ-confirmed) rather than spawn a
-second discovery.
+second discovery. *(The predicate is no longer evaluated at reaction-scan time
+**only** — PR #608 re-runs the whole reaction scan at both prompt sites and once
+more at initiation, so a sibling option that resolves first can withdraw a
+candidate the scan had cleared. Scan-time filtering is now the optimisation;
+initiation is the binding check. The equivalent gap on the **forced** side, where
+`collect_forced_hits` applies the same gate at collect time, is #607.)*
 
 **3. Browser capstone — the gate-closer.** Positioned last so it designs against
 the now-stable set of input shapes:
