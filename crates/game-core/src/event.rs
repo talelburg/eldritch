@@ -533,6 +533,25 @@ pub enum Event {
         /// moved).
         from: usize,
     },
+    /// An option the engine had already offered in an open reaction window was
+    /// withdrawn: a sibling candidate resolved first and left it unable to
+    /// initiate (Rules Reference, Triggered Abilities — *"A triggered ability
+    /// can only be initiated if its effect has the potential to change the game
+    /// state, and its cost (if any) has the potential to be paid in full, taking
+    /// active cost modifiers into account."*). Emitted once per withdrawn
+    /// option, immediately before the window re-prompts without it (#568).
+    ///
+    /// Purely explanatory: the withdrawal itself is visible as a shorter option
+    /// list, and this event is what lets a client say *why* the option went away
+    /// rather than having it silently vanish.
+    ReactionOptionLapsed {
+        /// The withdrawn option's controller — who was being offered it.
+        investigator: InvestigatorId,
+        /// The withdrawn option's card code.
+        code: CardCode,
+        /// Best-effort attribution of what stopped it from initiating.
+        reason: LapseReason,
+    },
     /// A location was revealed (turned face-up) on first investigator
     /// entry; `clues` were placed on it.
     LocationRevealed {
@@ -557,6 +576,41 @@ pub enum FailureReason {
     /// An `AutoFail` chaos token forced the total to 0, regardless of
     /// skill value or other modifiers.
     AutoFail,
+}
+
+/// Why an already-offered reaction option could no longer be initiated
+/// ([`Event::ReactionOptionLapsed`], #568).
+///
+/// **Attribution, not adjudication.** The decision to withdraw the option is
+/// made by re-running the reaction scan and seeing that it no longer produces
+/// the candidate; these variants are a second, cheaper pass over the withdrawn
+/// candidate alone, run only to label the event. A mislabel is a cosmetic bug in
+/// the client log, never a rules error — which is why the residual case
+/// ([`NoLongerEligible`](Self::NoLongerEligible)) can be reported without
+/// naming a specific gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum LapseReason {
+    /// The card is no longer where the scan found it — played out of hand by a
+    /// sibling option, discarded, left play, or (for an act/agenda reaction) no
+    /// longer the current act/agenda.
+    SourceGone,
+    /// The play cost can no longer be paid in full (Rules Reference p.22): a
+    /// sibling option spent the resources. The wallet is shared, so two copies
+    /// of a 1-cost Fast event are both offered on 1 resource and only the first
+    /// can be played.
+    CostUnpayable,
+    /// The effect no longer has the potential to change the game state (Rules
+    /// Reference, Triggered Abilities) — a sibling option consumed what it would
+    /// have acted on, e.g. took the location's last clue before a second
+    /// "discover 1 clue at your location" could resolve.
+    NoStateChange,
+    /// The residual: the candidate no longer survives the scan, but none of the
+    /// three named probes explains it. Reachable through the window's own
+    /// scoping (a before-attack window admits only reactors co-located with the
+    /// attacked investigator, so a reaction that moved someone can withdraw a
+    /// sibling) or a per-round usage limit reached in the meantime.
+    NoLongerEligible,
 }
 
 #[cfg(test)]

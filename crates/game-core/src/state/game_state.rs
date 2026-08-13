@@ -436,6 +436,14 @@ pub enum Continuation {
     TimingPointWindow {
         /// The timing event that opened this window/run.
         event: crate::engine::TimingEvent,
+        /// The timing cell whose scan produced `candidates` — the event's own
+        /// `reaction_bucket` for a single-bucket event, or the cell the
+        /// `when → at → after` coordinator
+        /// was resolving (#434). Carried so the fire-time re-validation of a
+        /// reaction window (#568) can re-ask the scan the *same* question it was
+        /// first asked; re-deriving it from `event` would answer for the `when`
+        /// cell of a multi-bucket event no matter which cell opened the window.
+        bucket: crate::dsl::EventTiming,
         /// Reaction window vs. forced run.
         mode: TimingMode,
         /// Candidates in resolution order (lead-ordered for the forced run;
@@ -1024,6 +1032,21 @@ impl Continuation {
     pub fn window_timing_event(&self) -> Option<&crate::engine::TimingEvent> {
         match self {
             Continuation::TimingPointWindow { event, .. } => Some(event),
+            _ => None,
+        }
+    }
+
+    /// The timing cell this frame's candidates were scanned at, if it is a
+    /// [`TimingPointWindow`](Self::TimingPointWindow). `None` for
+    /// [`FastWindow`](Self::FastWindow) (framework windows carry no timing event,
+    /// and no cell) and non-window frames. Paired with
+    /// [`window_timing_event`](Self::window_timing_event) it is the full question
+    /// the reaction scan was asked, which is what the fire-time re-validation
+    /// re-asks (#568).
+    #[must_use]
+    pub fn window_bucket(&self) -> Option<crate::dsl::EventTiming> {
+        match self {
+            Continuation::TimingPointWindow { bucket, .. } => Some(*bucket),
             _ => None,
         }
     }
