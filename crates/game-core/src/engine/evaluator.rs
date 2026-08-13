@@ -1103,6 +1103,13 @@ fn eval_condition(
                 CmpOp::Ge => lhs >= rhs,
             })
         }
+        Condition::Native { tag } => {
+            let reg = crate::card_registry::current()
+                .ok_or_else(|| format!("Native condition {tag:?}: no card registry installed"))?;
+            let predicate = (reg.native_condition_for)(tag)
+                .ok_or_else(|| format!("Native condition {tag:?}: no predicate registered"))?;
+            Ok(predicate(state, eval_ctx))
+        }
         Condition::SkillTest { outcome } => {
             // Inside an [`Trigger::OnSkillTestResolution`] effect, the
             // outcome is already gated by the trigger; using this
@@ -4319,6 +4326,7 @@ mod tests {
             abilities_for: fake_abilities_for,
             native_effect_for: |_| None,
             native_eligibility_for: |_| None,
+            native_condition_for: |_| None,
         }
     }
 
@@ -5068,6 +5076,7 @@ mod tests {
             abilities_for,
             native_effect_for: |_| None,
             native_eligibility_for: |_| None,
+            native_condition_for: |_| None,
         };
 
         let inv_id = InvestigatorId(1);

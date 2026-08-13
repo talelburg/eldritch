@@ -32,6 +32,12 @@
 //!   expressible today. What remains unexpressible are conditions keyed on
 //!   location state, success margin, or other quantities not yet in
 //!   [`Quantity`].
+//! - **Compound conditions** (`All` / `Any`) and **target-referencing
+//!   conditions or quantities** (predicates about the *chosen* enemy rather
+//!   than the controller). Machete 01020 wants both at once and holds them in a
+//!   [`Condition::Native`] predicate; `TODO(#609)` — the second card to want
+//!   either is the trigger to promote them to declarative vocab instead of
+//!   registering another native tag.
 //!
 //! # Has DSL surface but not yet engine support
 //!
@@ -731,13 +737,20 @@ pub enum Effect {
         /// Cover Up 01007). `0` for cards that enter clue-less.
         clues: u8,
     },
-    /// Initiate a Fight against the single enemy engaged with the
-    /// controller, applying `combat_modifier` (resolved at eval, e.g.
-    /// .38 Special's +1/+3) for this attack and dealing `1 + extra_damage`
-    /// on success. Auto-targets when exactly one enemy is engaged; the
-    /// activation check rejects ≠1 engaged *before* any cost is paid, so
-    /// the evaluator can assume a single target. Inspectable (not
-    /// `Native`) precisely so that pre-charge target check can see it.
+    /// Initiate a Fight against an enemy *at the controller's location*,
+    /// applying `combat_modifier` (resolved at eval, e.g. .38 Special's +1/+3)
+    /// for this attack and dealing `1 + extra_damage` on success. Per RR you
+    /// choose an enemy at your location to attack and need not already be
+    /// engaged with it, so the candidate scope is co-located, not engaged-only
+    /// (#451). Auto-targets on exactly one candidate and suspends for a pick on
+    /// two or more; the activation check rejects *zero* candidates before any
+    /// cost is paid. Inspectable (not `Native`) precisely so that pre-charge
+    /// target check can see it.
+    ///
+    /// Because the target need not be an engaged one, an `extra_damage`
+    /// expression whose card text qualifies on the *attacked* enemy must read
+    /// the chosen target, not the controller's engaged count — see Machete
+    /// 01020's [`Condition::Native`] predicate (#592).
     Fight {
         /// Combat modifier for this attack, resolved against state at eval.
         combat_modifier: IntExpr,
@@ -1129,6 +1142,27 @@ pub enum Condition {
         op: CmpOp,
         value: i8,
     },
+    /// A card-local Rust predicate, resolved by tag through the host's
+    /// `CardRegistry.native_condition_for`. The read-only mirror of
+    /// [`Effect::Native`]: the escape hatch for a gate that the declarative
+    /// vocabulary above cannot express and that only one card wants. The
+    /// `cards` crate maps the tag to a `fn(&GameState, &EvalContext) -> bool`;
+    /// the evaluator rejects loudly on an unknown tag or absent registry.
+    ///
+    /// Machete 01020's "if the attacked enemy is the only enemy engaged with
+    /// you" is the sole consumer: it is a *conjunction* over the *chosen
+    /// target*, and neither half has a declarative form (no [`Condition`]
+    /// combinator, no target-referencing [`Condition`] or [`Quantity`], and
+    /// [`IntExpr::Cond`]'s branches are `i8` so conditions cannot nest).
+    ///
+    /// `TODO(#609)`: this is an escape hatch, not a pattern. The **second**
+    /// card that wants a compound or target-referencing condition should
+    /// promote both halves to declarative vocab (`Condition::All` plus a
+    /// target-referencing variant) and re-express Machete through it, rather
+    /// than register a second native tag. Issue #609 names the in-corpus
+    /// candidates that will fire it (Oops! 02113, Esoteric Formula 02254,
+    /// Springfield M1903 02226 — all Dunwich).
+    Native { tag: String },
 }
 
 /// A non-negative count read off game state, usable as a value
@@ -1539,6 +1573,13 @@ pub fn native(tag: impl Into<String>) -> Effect {
     Effect::Native { tag: tag.into() }
 }
 
+/// Build a [`Condition::Native`] referencing a host-registered Rust predicate
+/// by `tag` (same `"<cardcode>:<name>"` convention as [`native`]).
+#[must_use]
+pub fn native_condition(tag: impl Into<String>) -> Condition {
+    Condition::Native { tag: tag.into() }
+}
+
 /// Build an [`Effect::DiscardSelf`].
 #[must_use]
 pub fn discard_self() -> Effect {
@@ -1838,6 +1879,24 @@ mod tests {
         let json = serde_json::to_string(&effect).expect("serialize");
         let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(effect, recovered);
+    }
+
+    /// `Condition::Native` (#592) round-trips, and composes inside an
+    /// [`IntExpr::Cond`] — the position Machete 01020 uses it from.
+    #[test]
+    fn native_condition_round_trips_through_serde_json() {
+        let expr = IntExpr::cond(native_condition("01020:sole_engaged_target"), 1, 0);
+        assert!(matches!(
+            &expr,
+            IntExpr::Cond {
+                when: Condition::Native { tag },
+                then: 1,
+                otherwise: 0,
+            } if tag == "01020:sole_engaged_target"
+        ));
+        let json = serde_json::to_string(&expr).expect("serialize");
+        let recovered: IntExpr = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(expr, recovered);
     }
 
     /// `Effect::BoostAttackDamage` (Vicious Blow 01025's "+1 damage")
