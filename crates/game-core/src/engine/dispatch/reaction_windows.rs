@@ -912,14 +912,18 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
 
 /// Play the hand Fast-event `candidate` from the open resolution run (Axis C,
 /// #335) — the [`CandidateSource::Hand`] resolution of [`fire_pending_trigger`].
-/// Commences the play via the shared
-/// [`super::cards::begin_event_play`] (emit [`crate::Event::CardPlayed`], leave hand,
-/// stash in [`GameState::pending_played_event`] — RR Appendix I step 3), then
-/// pushes a [`Continuation::PlayFromHand`] frame (above the live reaction window)
-/// and the `OnEvent` effect for the drive loop. On the effect's completion,
-/// [`super::cards::dispose_play_from_hand`] flushes the event to discard (RR
-/// Appendix I step 4) and the window beneath resumes its candidate scan (Slice D
-/// #423).
+/// Commences the play via the shared [`super::cards::commence_play`] (emit
+/// [`crate::Event::CardPlayed`], leave hand — RR Appendix I step 3), then pushes a
+/// [`Continuation::PlayFromHand`] frame **holding that card** (above the live
+/// reaction window) and the `OnEvent` effect for the drive loop. On the effect's
+/// completion, [`super::cards::dispose_play_from_hand`] places the event in
+/// discard (RR Appendix I step 4) and the window beneath resumes its candidate
+/// scan (Slice D #423).
+///
+/// This is the nesting site: the window may itself belong to an attack of
+/// opportunity provoked by a *non-fast* play that is still mid-resolution
+/// underneath. The frame stack keeps the two plays apart — this frame sits above
+/// the outer play's and pops first (#604).
 ///
 /// Pays the event's resource cost (RR p.22) via [`super::cards::pay_play_cost`]
 /// before announcing the play, matching [`super::cards::play_card`] — a Fast
@@ -947,7 +951,7 @@ fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcom
     // skip the action cost, not the resource cost. Affordability was filtered at
     // scan time (#501).
     super::cards::pay_play_cost(cx, controller, &candidate.code);
-    super::cards::begin_event_play(cx, controller, hand_idx);
+    let card = super::cards::commence_play(cx, controller, hand_idx);
 
     // Look up the matched OnEvent ability's effect from the registry.
     let reg = card_registry::current().unwrap_or_else(|| {
@@ -974,17 +978,15 @@ fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcom
         .clone();
     let eval_ctx = EvalContext::for_controller(controller);
 
-    // Push the event's disposal frame (above the window), then push its effect
-    // for the drive loop. On the effect's completion, PlayFromHand disposal
-    // flushes the event (RR Appendix I step 4) and the window beneath resumes
-    // its candidate scan. `hand_idx` is moot for an event (begin_event_play
-    // already removed + stashed it); pass it for the frame's shape. (Slice D #423.)
+    // Push the event's disposal frame (above the window) holding the card, then
+    // push its effect for the drive loop. On the effect's completion,
+    // PlayFromHand disposal places the event in discard (RR Appendix I step 4)
+    // and the window beneath resumes its candidate scan. (Slice D #423.)
     cx.state
         .continuations
         .push(crate::state::Continuation::PlayFromHand {
             investigator: controller,
-            code: candidate.code.clone(),
-            hand_index: u8::try_from(hand_idx).unwrap_or(0),
+            card: Some(card),
         });
     push_effect(cx, &effect, eval_ctx);
     EngineOutcome::Done
@@ -1430,7 +1432,10 @@ pub(crate) fn check_play_card(
     // `Result` shape. Pinning the invariant loudly here is intentional —
     // silent `AwaitingInput` propagation through a `Result<_, Cow>` would
     // produce wrong gameplay.
-    let (destination, abilities, is_fast, card_type) =
+    // The destination is re-derived from the code at disposal time
+    // (`dispose_play_from_hand`), not carried through validation — commencing a
+    // play is destination-agnostic (#604).
+    let (_destination, abilities, is_fast, card_type) =
         match super::cards::resolve_play_target(&code) {
             Ok(v) => v,
             Err(EngineOutcome::Rejected { reason }) => return Err(reason),
@@ -1548,7 +1553,6 @@ pub(crate) fn check_play_card(
     // and non-Fast plays pay it — Fast only skips the *action* cost (#501).
     check_play_resource_cost_payable(state, investigator, &code)?;
     Ok(super::PlayCheckResult {
-        destination,
         abilities,
         is_fast,
         card_type,

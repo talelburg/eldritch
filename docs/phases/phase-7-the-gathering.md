@@ -82,7 +82,10 @@ enemy; you just forfeit the sole-engaged damage bonus).
   fields (`pending_played_event`, `usage_limit`) stay implicitly optional because serde
   defaults a missing `Option` to `None` regardless, so #453's concern #2 for
   `pending_played_event` is only partially met (forcing it needs a custom deserializer,
-  deferred). His signature is in the "done" criteria.
+  deferred). His signature is in the "done" criteria. *(`pending_played_event` has since
+  been retired entirely — PR #606 moved the in-progress play onto its continuation frame;
+  see [ADR-0002](../adr/0002-in-progress-play-lives-on-its-frame.md). #453's concern #2 now
+  applies to `usage_limit` alone.)*
 
 **2. #368 — trigger-level eligibility ✅ shipped (PR #472, also closes #470).**
 The hardcoded scan-suppression stand-ins (Cover Up 01007 `card.clues == 0`; act

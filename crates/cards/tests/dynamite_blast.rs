@@ -8,7 +8,8 @@
 //! damage over both enemies and investigators at the chosen location (and *not* the other
 //! location); (c) self-damage when blasting your own location; (d) the
 //! played-event being discarded on *completion* of a suspending `OnPlay`
-//! (`pending_played_event`, RR Appendix I step 4) rather than stranded in hand.
+//! (RR Appendix I step 4) rather than stranded in hand — it rides its
+//! `Continuation::PlayFromHand` frame in the meantime.
 //!
 //! Own process → installs `cards::REGISTRY`.
 
@@ -111,7 +112,11 @@ fn blasts_only_the_chosen_location_then_discards_the_event() {
         r.state.investigators[&INV].discard.is_empty(),
         "not discarded until the effect completes",
     );
-    assert!(r.state.pending_played_event.is_some(), "event mid-play");
+    assert_eq!(
+        r.state.play_in_progress().map(|(_, c)| c.clone()),
+        Some(CardCode::new(DYNAMITE)),
+        "the event is mid-play, held by its frame",
+    );
 
     // candidate_locations = [LOC_A, LOC_B] → OptionId(0) blasts LOC_A.
     let r = pick(r.state, 0);
@@ -145,8 +150,8 @@ fn blasts_only_the_chosen_location_then_discards_the_event() {
         "event discarded when its effect completed",
     );
     assert!(
-        r.state.pending_played_event.is_none(),
-        "pending played-event flushed",
+        r.state.play_in_progress().is_none(),
+        "no play left in progress once the card is placed",
     );
 }
 

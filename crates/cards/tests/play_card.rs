@@ -356,8 +356,8 @@ const MACHETE: &str = "01020";
 fn normal_event_play_discards_exactly_once() {
     // Play Emergency Cache 01088 (event, OnPlay GainResources 3) with no
     // engaged enemy (no AoO). Invariant guard for the PlayFromHand frame
-    // migration: the card must be discarded exactly once (single flush site)
-    // and pending_played_event must be cleared on Done.
+    // migration: the card must be discarded exactly once (single disposal site)
+    // and no play may be left in progress on Done.
     let (state, id, _loc) = play_state(vec![EMERGENCY_CACHE]);
 
     let result = dispatch_turn_action_unchecked(
@@ -397,8 +397,8 @@ fn normal_event_play_discards_exactly_once() {
         "exactly one CardDiscarded from Hand"
     );
     assert!(
-        result.state.pending_played_event.is_none(),
-        "pending_played_event must be cleared on Done"
+        result.state.play_in_progress().is_none(),
+        "no play may be left in progress on Done"
     );
 }
 

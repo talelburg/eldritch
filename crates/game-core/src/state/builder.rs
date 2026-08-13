@@ -376,7 +376,6 @@ impl GameStateBuilder {
             continuations,
             scenario_id: self.scenario_id,
             pending_cancellation: false,
-            pending_played_event: None,
             skill_substitutions: Vec::new(),
             encounter_deck: VecDeque::new(),
             encounter_discard: Vec::new(),

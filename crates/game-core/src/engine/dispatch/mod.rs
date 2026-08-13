@@ -283,10 +283,10 @@ pub(crate) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
                 }
             }
             // A hand-play disposal frame re-exposed after its OnPlay effect
-            // resolved: dispose of the card (event → flush pending_played_event;
-            // asset → remove from hand, enter play, emit EnteredPlay) and pop
-            // (Slice D #423). Never suspends itself — any reaction window queued by
-            // emit_event lands on top and the loop drives it next.
+            // resolved: place the card it holds (event → discard; asset → enter
+            // play, emit EnteredPlay) and pop (Slice D #423). Never suspends
+            // itself — any reaction window queued by emit_event lands on top and
+            // the loop drives it next.
             Some(Continuation::PlayFromHand { .. }) => match cards::dispose_play_from_hand(cx) {
                 EngineOutcome::Done => {}
                 other => return other,
@@ -373,13 +373,22 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
         .get(&investigator)
         .is_some_and(|inv| inv.status == crate::state::Status::Active);
     if !active {
-        // A defeated actor suppresses the primary effect, but a mid-play event
-        // that already left hand (stashed in `pending_played_event` by
-        // `begin_event_play`) must still be placed in discard (RR Appendix I
-        // step 4: the card was "played" the moment it left hand; the suppression
-        // only skips the `OnPlay` effect, not the discard). The
-        // `PlayFromHand` frame won't run, so flush it here.
-        cards::flush_pending_played_event(cx);
+        // A defeated actor suppresses the primary effect — but a card riding
+        // this frame mid-play must still be placed, or popping the frame would
+        // drop it out of the game silently, which is precisely the #604 failure.
+        // In practice the frame is already empty: the only thing that flips an
+        // investigator off `Active` is `apply_investigator_defeat`, whose
+        // elimination steps sweep the in-progress play off this very frame. This
+        // arm is the same rule applied at the same moment for any future
+        // suppression cause that isn't elimination — RR p.10 step 1, an
+        // eliminated investigator's owned cards are removed from the game — so
+        // the card lands in the one pile elimination does not drain, exactly
+        // once. See `docs/adr/0002-in-progress-play-lives-on-its-frame.md`.
+        if let ActionResume::PlayCard { card: Some(card) } = resume {
+            if let Some(inv) = cx.state.investigators.get_mut(&investigator) {
+                inv.removed_from_game.push(card);
+            }
+        }
         return EngineOutcome::Done;
     }
     match resume {
@@ -394,8 +403,16 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
             instance_id,
             effect,
         } => abilities::resume_activate_ability(cx, investigator, instance_id, &effect),
-        ActionResume::PlayCard { hand_index, code } => {
-            cards::resume_play_card(cx, investigator, hand_index, &code)
+        ActionResume::PlayCard { card } => {
+            let Some(card) = card else {
+                unreachable!(
+                    "resume_action_resolution: the play frame for {investigator:?} lost its \
+                     card while they are still Active — elimination is the only thing that \
+                     empties an ActionResolution frame (see \
+                     Continuation::take_play_in_progress), and it flips status first"
+                );
+            };
+            cards::resume_play_card(cx, investigator, card)
         }
     }
 }
@@ -442,17 +459,20 @@ pub(super) enum PlayDestination {
 /// Carries the data `play_card`'s mutation step needs without
 /// re-running the validation.
 ///
-/// `is_fast` is consumed by [`any_fast_play_eligible`]; `card_type`
-/// is currently destructured with `_` in `play_card` but kept for
+/// `is_fast` is consumed by [`any_fast_play_eligible`]; `abilities` is kept for
 /// future consumers (e.g. reaction-window dispatch).
 ///
-/// `#[allow(dead_code)]` covers `card_type` (not yet read outside
-/// validation) and suppresses the rustc `dead_code` lint on struct fields
-/// that are only read by a `pub(super)` function not yet wired up.
+/// The card's destination is deliberately **not** here: commencing a play is
+/// destination-agnostic (asset and event alike leave hand at RR Appendix I step
+/// 3), and the disposal that needs it re-derives it from the code at step 4
+/// (#604).
+///
+/// `#[allow(dead_code)]` covers `abilities` (not yet read outside validation)
+/// and suppresses the rustc `dead_code` lint on struct fields that are only read
+/// by a `pub(super)` function not yet wired up.
 #[derive(Debug)]
 #[allow(dead_code)]
 pub(crate) struct PlayCheckResult {
-    pub destination: PlayDestination,
     pub abilities: Vec<crate::dsl::Ability>,
     pub is_fast: bool,
     pub card_type: CardType,
