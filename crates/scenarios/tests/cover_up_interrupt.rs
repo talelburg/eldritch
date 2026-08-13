@@ -181,6 +181,7 @@ fn paused_before_discover_window(count: u8, loc_clues: u8, cover_up_clues: u8) -
             location: LOC,
             count,
         },
+        bucket: game_core::dsl::EventTiming::When,
         mode: game_core::state::TimingMode::Reaction,
         candidates: vec![ResolutionCandidate::new(
             CardCode(SYNTH_COVER_UP_CODE.into()),

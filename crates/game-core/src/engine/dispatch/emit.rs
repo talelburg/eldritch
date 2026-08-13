@@ -254,7 +254,12 @@ pub(crate) fn emit_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
         // must therefore resume via its own frame (none does in scope — the
         // callers that *can* 2+, EndOfTurn / round-end, are frame-resumed; the
         // rest `debug_assert!(Done)`, which fires loudly if a future card 2+s).
-        super::reaction_windows::open_forced_resolution(cx, event, candidates)
+        super::reaction_windows::open_forced_resolution(
+            cx,
+            event,
+            crate::dsl::EventTiming::After,
+            candidates,
+        )
     } else {
         fire_forced_triggers(cx, &point, crate::dsl::EventTiming::After)
     }

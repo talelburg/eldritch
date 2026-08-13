@@ -81,7 +81,7 @@ pub(super) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
                 // 2+ forced: the lead orders them (#213). The run carries no
                 // continuation (#434) — when it closes the loop re-dispatches the
                 // parent `TimingPoint` (now at `Reaction`).
-                super::reaction_windows::open_forced_resolution(cx, &event, candidates)
+                super::reaction_windows::open_forced_resolution(cx, &event, bucket, candidates)
             } else {
                 super::forced_triggers::fire_forced_triggers(cx, &point, bucket)
             }
@@ -93,7 +93,7 @@ pub(super) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
                 EngineOutcome::Done
             } else {
                 set_timing_sub(cx, TimingSub::Done);
-                super::reaction_windows::open_reaction_run(cx, &event, candidates)
+                super::reaction_windows::open_reaction_run(cx, &event, bucket, candidates)
             }
         }
         TimingSub::Done => {
