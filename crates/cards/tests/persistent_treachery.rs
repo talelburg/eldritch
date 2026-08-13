@@ -193,7 +193,7 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
     // path opens the ordered forced-run: the agenda places doom per ghoul in the
     // Hallway/Parlor and Dissonant Voices discards itself, both resolving in the
     // lead's chosen order rather than rejecting. Driven through the upkeep
-    // round-end coordinator (not the bare `fire_forced_triggers`), which is the
+    // round-end coordinator (not the bare `queue_forced_triggers`), which is the
     // production route for 2+ simultaneous forced.
     let loc = |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
     let mut inv = test_investigator(1);

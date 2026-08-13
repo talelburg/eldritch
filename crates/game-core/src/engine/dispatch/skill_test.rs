@@ -469,10 +469,10 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) {
 /// symbol effects `Resolving` pushed — then fire the general `SkillTestResolved`
 /// timing point for **every** test and both outcomes (the `{ Investigate,
 /// Success }` narrowing is Obscuring Fog 01168 forced with Dr. Milan 01033
-/// reaction; one `emit_event` so forced precedes reaction — RR p.2, #213). The
+/// reaction; one `queue_event` so forced precedes reaction — RR p.2, #213). The
 /// forced/reaction scans (and an empty candidate set) decide whether any window
 /// actually opens, so a test no card listens to costs nothing. Returns the
-/// `emit_event` outcome so the caller yields if a 2+ forced run suspends.
+/// `queue_event` outcome so the caller yields if a 2+ forced run suspends.
 /// Pre-advances the cursor to [`AcknowledgeOutcome`](SkillTestStep::AcknowledgeOutcome)
 /// **before** the emit, so a suspending reaction window resumes past this step.
 fn determine_outcome_step(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
@@ -517,7 +517,7 @@ fn determine_outcome_step(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
     } else {
         crate::dsl::TestOutcome::Failure
     };
-    super::emit::emit_event(
+    super::emit::queue_event(
         cx,
         &super::emit::TimingEvent::SkillTestResolved {
             investigator,
@@ -864,7 +864,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // RR ST.8 teardown. The skill-test-outcome timing point
                 // (`SkillTestResolved`; "after you successfully investigate" =
                 // Obscuring Fog forced + Dr. Milan reaction) already fired at
-                // the DetermineOutcome step via `emit_event` (#213) —
+                // the DetermineOutcome step via `queue_event` (#213) —
                 // forced-before-reaction.
                 discard_committed_cards(cx, investigator, &indices_u8);
                 cx.events.push(Event::SkillTestEnded { investigator });

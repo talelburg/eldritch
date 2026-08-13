@@ -28,7 +28,7 @@ pub(super) mod choice;
 // crate::engine::dispatch::cards::grant_resources (a sibling of dispatch).
 pub(super) mod cards;
 // pub(super): the unified trigger-dispatch chokepoint (Axis-B T5a); engine/mod.rs
-// re-exports emit_event + TimingEvent via pub(crate) for the GameEnd site.
+// re-exports queue_event + TimingEvent via pub(crate) for the GameEnd site.
 pub(super) mod emit;
 // pub(crate): engine/mod.rs re-exports `deal_damage_to_enemy` for the
 // `cards` crate (Guard Dog 01021's retaliate native, C5b #237).
@@ -41,7 +41,7 @@ pub(super) mod elimination;
 // pub(crate): engine/mod.rs re-exports `spawn_set_aside_enemy` for the
 // `cards` crate (The Gathering's Act-2 reverse).
 pub(crate) mod encounter;
-// pub(super): engine/mod.rs re-exports ForcedTriggerPoint + fire_forced_triggers
+// pub(super): engine/mod.rs re-exports ForcedTriggerPoint + queue_forced_triggers
 // via pub(crate) for test_support::fire_forced_at (Task 2 of #215).
 pub(super) mod forced_triggers;
 pub(crate) mod hunters;
@@ -176,12 +176,17 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
 ///   frame is on top (the open turn — slice 2a-i, #393), at terminal (empty
 ///   stack), or when an advance makes no progress (a parked phase, e.g.
 ///   Investigation with no active investigator).
+// A single exhaustive dispatch over every steppable `Continuation` variant;
+// splitting it would only scatter the one place that says what each frame does.
+#[allow(clippy::too_many_lines)]
 pub(crate) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
     use crate::state::Continuation;
     if !matches!(outcome, EngineOutcome::Done) {
         return outcome;
     }
     loop {
+        #[cfg(debug_assertions)]
+        assert_no_queued_ability_beneath_anchor(cx.state);
         let top = cx.state.continuations.last().cloned();
         match top {
             Some(ref c) if c.is_phase_anchor() => {
@@ -285,9 +290,16 @@ pub(crate) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
             // A hand-play disposal frame re-exposed after its OnPlay effect
             // resolved: place the card it holds (event → discard; asset → enter
             // play, emit EnteredPlay) and pop (Slice D #423). Never suspends
-            // itself — any reaction window queued by emit_event lands on top and
+            // itself — any reaction window queued by queue_event lands on top and
             // the loop drives it next.
             Some(Continuation::PlayFromHand { .. }) => match cards::dispose_play_from_hand(cx) {
+                EngineOutcome::Done => {}
+                other => return other,
+            },
+            // The entered-location half of a Move, re-exposed once the left
+            // location's queued `LeftLocation` forced abilities resolved (#569):
+            // auto-engage at the destination and emit `EnteredLocation`.
+            Some(Continuation::MoveEnter { .. }) => match actions::resume_move_enter(cx) {
                 EngineOutcome::Done => {}
                 other => return other,
             },
@@ -349,6 +361,44 @@ pub(crate) fn drive(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
             _ => return EngineOutcome::Done,
         }
     }
+}
+
+/// Backstop for the ADR-0003 defect class (#569): a queued ability frame must
+/// never be buried beneath a phase anchor.
+///
+/// Phase anchors **pop-and-push** rather than drain — a transition pops the
+/// outgoing anchor and pushes the incoming one on whatever is left — so an
+/// ability frame that ends up below one is not merely mis-ordered, it is
+/// stranded at the bottom of the stack for the rest of the scenario. That is
+/// exactly how agenda 01107's Ghoul movement was lost: `enemy_phase_end` read
+/// the emit's `Done` as "nothing happened" and pushed the Upkeep anchor over the
+/// frame it had just queued.
+///
+/// Checked at every `drive` step with an anchor on top (debug builds only), so
+/// it fires at the transition that made the mistake rather than several phases
+/// later when the ability visibly fails to have happened. What counts as queued
+/// is [`Continuation::is_queued_ability`], beside the anchor predicate it pairs
+/// with.
+#[cfg(debug_assertions)]
+fn assert_no_queued_ability_beneath_anchor(state: &crate::state::GameState) {
+    let Some((top, beneath)) = state.continuations.split_last() else {
+        return;
+    };
+    if !top.is_phase_anchor() {
+        return;
+    }
+    let buried = beneath
+        .iter()
+        .position(crate::state::Continuation::is_queued_ability);
+    assert!(
+        buried.is_none(),
+        "a queued ability frame is buried beneath the {top:?} anchor at depth {depth} \
+         ({frame:?}) — a phase anchor was pushed over an ability a timing-point emit had \
+         queued, which strands it (#569). Emit in tail position and resume via a frame; \
+         see docs/adr/0003-emitting-a-timing-point-queues-abilities.md.",
+        depth = buried.unwrap_or_default(),
+        frame = buried.map(|i| &beneath[i]),
+    );
 }
 
 /// Resume a parked [`ActionResolution`](crate::state::Continuation::ActionResolution)
@@ -627,6 +677,14 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         Some(Continuation::PlayFromHand { .. }) => EngineOutcome::Rejected {
             reason: "ResolveInput: no input prompt is outstanding (hand-play disposal is \
                      framework-internal)"
+                .into(),
+        },
+        // A `MoveEnter` frame never awaits input (#569) — the loop drives it the
+        // moment the left-location abilities above it resolve. Defensive, as for
+        // `PlayFromHand`.
+        Some(Continuation::MoveEnter { .. }) => EngineOutcome::Rejected {
+            reason: "ResolveInput: no input prompt is outstanding (the entered-location step of \
+                     a move is framework-internal)"
                 .into(),
         },
         // A `PlayerDraw` surge-chain frame never awaits input — the `drive` loop

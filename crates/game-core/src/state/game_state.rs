@@ -391,7 +391,9 @@ pub enum AdvanceStep {
     /// anchored to the act/agenda — cursor stays until resumed). A **deliberate**
     /// advance skips the pause and falls through (#558).
     AwaitAck,
-    /// Fire the leaving card's Forced on-advance reverse via `emit_event`.
+    /// Queue the leaving card's Forced on-advance reverse via `queue_event` —
+    /// the frame lands above this one and the `drive` loop resolves it, which is
+    /// what re-exposes this frame at [`Finalize`](Self::Finalize) (ADR 0003).
     FireReverse,
     /// The reverse has resolved: bump the deck cursor and pop the frame.
     Finalize,
@@ -491,7 +493,7 @@ pub enum Continuation {
     /// A no-choice forced ability is about to resolve and the game is in
     /// interactive mode (`interactive_acknowledge`): surface it as a one-option
     /// pick so the player "performs" it before it lands (#466). Pushed by
-    /// `fire_forced_triggers` (the single-hit path) *above* the forced effect's
+    /// `queue_forced_triggers` (the single-hit path) *above* the forced effect's
     /// root frame; the `drive` loop suspends here, and on resume pops, letting the
     /// effect frame beneath resolve. `candidate` is the forced ability's
     /// [`ResolutionCandidate`] — its `code` names the prompt and its `source`
@@ -515,7 +517,7 @@ pub enum Continuation {
     HandSizeDiscard(HandSizeDiscard),
     /// Coordinator: walk the RR timing buckets `When → At → After` for one game
     /// event (EmitEvent-frame C-coordinators, #434). `bucket` is the cursor.
-    /// Pushed by `emit_event` for the only multi-bucket event (`RoundEnded`);
+    /// Pushed by `queue_event` for the only multi-bucket event (`RoundEnded`);
     /// the `drive` loop dispatches it, pushing a [`TimingPoint`](Self::TimingPoint)
     /// per populated bucket and re-scanning each cell fresh. Suspends at the
     /// round-end `when` act-advance window.
@@ -527,7 +529,7 @@ pub enum Continuation {
     },
     /// Coordinator: one timing bucket of an [`EmitEvent`](Self::EmitEvent) walk,
     /// running forced then reaction (`sub` cursor). What single-bucket
-    /// `emit_event` does today, parameterized by bucket and made frame-resumable
+    /// `queue_event` does today, parameterized by bucket and made frame-resumable
     /// (#434). Child of an `EmitEvent` frame.
     TimingPoint {
         /// The game event (carried for the forced/reaction scans).
@@ -628,6 +630,28 @@ pub enum Continuation {
         investigator: InvestigatorId,
         /// The card mid-play — see [`Continuation::play_in_progress`].
         card: Option<CardCode>,
+    },
+    /// The entered-location half of a Move, parked beneath the left location's
+    /// queued `LeftLocation` forced abilities (#569). Pushed by
+    /// `move_primary_effect` after the relocation lands and *before* it emits
+    /// `LeftLocation`, so Barricade 01038's self-discard resolves first; when the
+    /// loop re-exposes this frame it pops, auto-engages the destination's ready
+    /// enemies, and emits `EnteredLocation` in tail position.
+    ///
+    /// Exists because the emit queues rather than resolves (ADR 0003): running
+    /// the engage + entered-location emit inline after it pushed them *above*
+    /// the left-location abilities, inverting the two. Framework-internal: it is
+    /// only ever momentarily on top inside `drive`, which is why it never awaits
+    /// input — not because [`awaits_input`](Self::awaits_input) reports `false`
+    /// for it (the catch-all there answers `true`, as it does for
+    /// [`PlayFromHand`](Self::PlayFromHand)); `resolve_input` rejects it
+    /// defensively for the same reason. Deliberately narrow rather than a
+    /// resumable `ActionResolution`: no other primary needs one today (#612).
+    MoveEnter {
+        /// The investigator who moved.
+        investigator: InvestigatorId,
+        /// The location they entered.
+        destination: LocationId,
     },
     /// A slot-conflicting asset play paused for the player to choose which
     /// occupying asset to discard to make room (RR p.19, #498). Pushed by
@@ -872,6 +896,28 @@ impl Continuation {
         )
     }
 
+    /// True if this frame is something a timing-point emit queued and the
+    /// `drive` loop still owes resolution: the ability's effect frame, its
+    /// interactive acknowledge, an open window / forced ordering run, or the
+    /// `when → at → after` coordinator pair.
+    ///
+    /// Emitting a timing point queues rather than resolves (ADR 0003), so such a
+    /// frame appearing *beneath* a [phase anchor](Self::is_phase_anchor) means a
+    /// transition was pushed over work that had not happened yet — and since
+    /// anchors pop-and-push rather than drain, that frame is stranded for the
+    /// rest of the scenario (#569). The `drive` loop debug-asserts against it.
+    #[must_use]
+    pub fn is_queued_ability(&self) -> bool {
+        matches!(
+            self,
+            Continuation::Effect(_)
+                | Continuation::AcknowledgeForced { .. }
+                | Continuation::TimingPointWindow { .. }
+                | Continuation::EmitEvent { .. }
+                | Continuation::TimingPoint { .. }
+        )
+    }
+
     /// True if this top frame is a mandatory prompt that only `ResolveInput` may
     /// advance (slice 1b, #393): a reaction/forced window, skill-test commit,
     /// choice, hunter/spawn pick, hand-size discard, act round-end, substitution
@@ -1093,6 +1139,12 @@ pub enum EnemyResume {
     BeforeInvestigatorAttacked,
     /// After-all-investigators-attacked window closed; run `enemy_phase_end`.
     AfterAllAttacked,
+    /// Step 3.4's `PhaseEnded { Enemy }` forced abilities (agenda 01107's Ghoul
+    /// move) are *queued* above this anchor. On re-exposure — once those frames
+    /// have resolved — run the Enemy → Upkeep transition. Set by
+    /// `enemy_phase_end` before it emits, so the transition can never be pushed
+    /// on top of an ability the emit just queued (#569, ADR 0003).
+    AfterPhaseEndForced,
 }
 
 /// The Upkeep-phase child-pop boundary (slice 1a, #393).
@@ -1106,10 +1158,16 @@ pub enum UpkeepResume {
     /// (#509) that ceded to the drive loop. On re-exposure of the anchor, run
     /// 4.5 (hand size) + 4.6 (phase end).
     AfterDraw,
+    /// Step 4.6's `PhaseEnded { Upkeep }` forced abilities are *queued* above
+    /// this anchor. On re-exposure — once those frames have resolved — emit
+    /// `RoundEnded` (the mirror of [`EnemyResume::AfterPhaseEndForced`], #569).
+    /// The round-end emit lives in this arm rather than inline after the
+    /// phase-end emit precisely because the latter queues rather than resolves.
+    AfterPhaseEndForced,
     /// The round-end `EmitEvent` coordinator (the `when` act advance + the `at`
     /// doom) popped; run `upkeep_round_end_teardown` (expire until-end-of-round
-    /// effects, Upkeep → Mythos). Set by `upkeep_phase_end` before it cedes to
-    /// the coordinator (#434 — subsumes `ForcedContinuation::UpkeepAfterRoundEnded`).
+    /// effects, Upkeep → Mythos). Set before the coordinator is queued
+    /// (#434 — subsumes `ForcedContinuation::UpkeepAfterRoundEnded`).
     AfterRoundEnd,
 }
 

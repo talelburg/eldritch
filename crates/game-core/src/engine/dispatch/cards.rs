@@ -897,7 +897,7 @@ pub(in crate::engine) fn enter_asset_into_play(
         .expect("enter_asset_into_play: investigator present")
         .cards_in_play
         .push(in_play);
-    let _ = super::emit::emit_event(
+    let _ = super::emit::queue_event(
         cx,
         &super::emit::TimingEvent::EnteredPlay {
             instance,
@@ -912,7 +912,7 @@ pub(in crate::engine) fn enter_asset_into_play(
 /// or in its owner's discard pile if it's an event)". Pops the frame first (which
 /// takes the card off it), then places the card by destination: an **event** goes
 /// to its owner's discard pile, an **asset** is minted into play and announced via
-/// `EnteredPlay`. Because the frame is popped *before* `emit_event`, a reaction
+/// `EnteredPlay`. Because the frame is popped *before* `queue_event`, a reaction
 /// window the latter queues (Research Librarian 01032) lands on top and the drive
 /// loop opens it — no manual window open, no second stage. Returns `Done`
 /// (disposal never awaits input); a missing-registry re-derive surfaces as

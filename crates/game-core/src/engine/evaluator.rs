@@ -1319,7 +1319,7 @@ fn discover_clue(
 
     // Before-timing clue-discovery window (Cover Up 01007; Axis D #336,
     // migrated from the C5a `clue_interrupt` seam). Reaction-only Before timing
-    // point: `emit_event` queues the window iff an eligible `WouldDiscoverClues`
+    // point: `queue_event` queues the window iff an eligible `WouldDiscoverClues`
     // reaction is controlled at the discovery location — the "at your location"
     // scoping and the `card.clues > 0` potential-gate stand-in (RR p.2;
     // capped-count semantics now tracked in #471) live in the window scan. If
@@ -1327,7 +1327,7 @@ fn discover_clue(
     // `BeforeDiscoverClues` continuation performs the deferred discovery on
     // close (unless a reaction cancelled it). No registry / no eligible card →
     // `open_windows` stays empty and the discovery happens now.
-    let _ = crate::engine::dispatch::emit::emit_event(
+    let _ = crate::engine::dispatch::emit::queue_event(
         cx,
         &crate::engine::dispatch::emit::TimingEvent::WouldDiscoverClues {
             investigator: eval_ctx.controller,
@@ -1335,7 +1335,7 @@ fn discover_clue(
             count,
         },
     );
-    // `emit_event` pushes the before-discover window (if any eligible reaction
+    // `queue_event` pushes the before-discover window (if any eligible reaction
     // matched) on *top* of the stack. Check the top window's kind rather than
     // "any window open" — `discover_clue` can run while an *outer* reaction
     // window is already open (e.g. Evidence! 01022 played in an after-defeat

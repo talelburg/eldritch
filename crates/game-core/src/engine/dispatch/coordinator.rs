@@ -1,7 +1,7 @@
 //! The `when → at → after` timing-bucket coordinator frames (EmitEvent-frame
 //! C-coordinators, #434).
 //!
-//! [`super::emit::emit_event`] pushes a [`Continuation::EmitEvent`] for the only
+//! [`super::emit::queue_event`] pushes a [`Continuation::EmitEvent`] for the only
 //! multi-bucket event (`RoundEnded`); the `drive` loop dispatches it here.
 //!
 //! - [`dispatch_emit_event`] walks `When → At → After`, pushing a
@@ -10,7 +10,7 @@
 //!   change whether an `at` forced fires; the grid is not pre-computed).
 //! - [`dispatch_timing_point`] resolves one bucket's forced-then-reaction
 //!   (`sub` cursor `Forced → Reaction → Done`) — what single-bucket
-//!   `emit_event` does today, made frame-resumable.
+//!   `queue_event` does today, made frame-resumable.
 //!
 //! Neither driver suspends *itself*: each does one step and returns `Done`, and
 //! the loop re-dispatches the (mutated) top frame — or `AwaitingInput` when the
@@ -83,7 +83,7 @@ pub(super) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
                 // parent `TimingPoint` (now at `Reaction`).
                 super::reaction_windows::open_forced_resolution(cx, &event, bucket, candidates)
             } else {
-                super::forced_triggers::fire_forced_triggers(cx, &point, bucket)
+                super::forced_triggers::queue_forced_triggers(cx, &point, bucket)
             }
         }
         TimingSub::Reaction => {

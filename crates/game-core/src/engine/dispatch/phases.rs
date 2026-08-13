@@ -215,13 +215,13 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     //
     // A `Rejected` propagates as-is.
     // Frame-driven rotation (Slice D, #423): arm the `InvestigatorTurn` frame's
-    // `ending` flag BEFORE emitting `EndOfTurn`, then emit. `emit_event` pushes
+    // `ending` flag BEFORE emitting `EndOfTurn`, then emit. `queue_event` pushes
     // the forced/reaction abilities (Frozen in Fear 01164's willpower test, a 2+
     // forced run) as frames; the `drive` loop drives them and, once they pop,
     // re-dispatches the `InvestigatorTurn { ending: true }` frame → `resume_end_turn`
     // for the rotation (RR p.24 step 2.2.2). Uniform whether the forced run is
     // empty, completes immediately, or suspends — there is no inline-resume branch.
-    // A `Rejected` from `emit_event` rolls back the armed flag with the rest of
+    // A `Rejected` from `queue_event` rolls back the armed flag with the rest of
     // the apply (transactional snapshot).
     let ending = cx
         .state
@@ -239,7 +239,7 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
             unreachable!("end_turn: no InvestigatorTurn({active_id:?}) on the stack")
         });
     *ending = true;
-    super::emit::emit_event(
+    super::emit::queue_event(
         cx,
         &super::emit::TimingEvent::EndOfTurn {
             investigator: active_id,
@@ -388,7 +388,7 @@ fn investigation_phase_end(cx: &mut Cx) -> EngineOutcome {
     cx.state.continuations.pop();
     // No forced-trigger dispatch here: only Enemy and Upkeep phase-ends have
     // slice consumers (agenda 01107). A `PhaseEnded { Investigation }` forced
-    // ability would NOT fire until #212's emit_event restructure centralises
+    // ability would NOT fire until #212's queue_event restructure centralises
     // forced dispatch across all framework windows.
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Investigation,
@@ -621,12 +621,23 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Called from [`anchor_on_child_pop`]'s
-/// [`PhaseStep::AfterAllInvestigatorsAttacked`] arm. Emits step
-/// 3.4's `PhaseEnded(Enemy)` marker, then transitions to Upkeep.
-/// Exact analog of [`mythos_phase_end`] / [`upkeep_phase_end`].
-pub(super) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
-    // Pop the Enemy anchor (slice 1a, #393): the AfterAllInvestigatorsAttacked
-    // window has closed, so the anchor is the top frame, and the phase ends.
+/// [`PhaseStep::AfterAllInvestigatorsAttacked`] arm. Emits step 3.4's
+/// `PhaseEnded(Enemy)` marker and queues its forced abilities; the Enemy →
+/// Upkeep transition runs from [`enemy_phase_end_transition`] once they have
+/// resolved. Exact analog of [`upkeep_phase_end`].
+///
+/// **Emits in tail position** (ADR 0003). The emit *queues* frames — agenda
+/// 01107's *"Forced – At the end of the enemy phase: Each unengaged [[Ghoul]]
+/// enemy moves 1 location towards the Parlor"* — so the anchor is re-parked at
+/// [`AfterPhaseEndForced`](crate::state::EnemyResume::AfterPhaseEndForced)
+/// *beneath* them rather than popped. Popping it and pushing the Upkeep anchor
+/// here (the pre-#569 shape) buried the queued frame at the bottom of the stack
+/// for the rest of the scenario, because phase anchors pop-and-push rather than
+/// drain: the Ghoul movement never happened in real play.
+pub(crate) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
+    // The AfterAllInvestigatorsAttacked window has closed, so the anchor is the
+    // top frame (slice 1a, #393). It stays: the transition needs it as its
+    // resume point.
     debug_assert!(
         matches!(
             cx.state.continuations.last(),
@@ -635,31 +646,45 @@ pub(super) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
         "enemy_phase_end: expected EnemyPhase anchor on top, got {:?}",
         cx.state.continuations.last(),
     );
-    cx.state.continuations.pop();
     // 3.4 Enemy phase ends.
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Enemy,
     });
-    // Fire forced act/agenda abilities keyed to `PhaseEnded { Enemy }`.
-    // Single-trigger path: 0 → Done (no-op); 1 → resolves immediately.
-    // KNOWN HAZARD (#569): 2+ hits no longer reject — `emit_event` opens an
-    // ordering run that SUSPENDS, and propagating that here leaves the Enemy
-    // anchor popped with the Upkeep anchor not yet pushed → empty stack when
-    // the run closes (hard stall). Unreachable with the current corpus; a
-    // resumable frame is tracked in #569.
-    let forced = super::emit::emit_event(
+    // Arm the resume BEFORE emitting: the emit may push an ordering run that
+    // suspends across an `apply()` boundary, and the anchor beneath it must
+    // already know where to continue. Uniform across 0 / 1 / 2+ hits — the loop
+    // re-dispatches this anchor in every case.
+    set_enemy_anchor(
+        cx,
+        crate::state::EnemyResume::AfterPhaseEndForced,
+        // The per-investigator attack cursor is spent by step 3.4; carrying it
+        // into the transition would misreport the phase's state.
+        None,
+    );
+    super::emit::queue_event(
         cx,
         &super::emit::TimingEvent::PhaseEnded {
             phase: Phase::Enemy,
         },
+    )
+}
+
+/// Enemy → Upkeep (slice 1b, #393), reached via the Enemy anchor's
+/// [`AfterPhaseEndForced`](crate::state::EnemyResume::AfterPhaseEndForced)
+/// resume once step 3.4's queued forced abilities have resolved: pop the anchor,
+/// advance `state.phase`, and push the Upkeep anchor at `Entry`. The main loop's
+/// `drive` advances that (running `upkeep_phase`, which may suspend at step 4.5's
+/// hand-size discard — surfaced through `drive`).
+fn enemy_phase_end_transition(cx: &mut Cx) -> EngineOutcome {
+    debug_assert!(
+        matches!(
+            cx.state.continuations.last(),
+            Some(crate::state::Continuation::EnemyPhase { .. })
+        ),
+        "enemy_phase_end_transition: expected EnemyPhase anchor on top, got {:?}",
+        cx.state.continuations.last(),
     );
-    if !matches!(forced, EngineOutcome::Done) {
-        return forced; // see #569 — suspension here strands the phase stack
-    }
-    // Enemy → Upkeep (slice 1b, #393): advance `state.phase` + push the Upkeep
-    // anchor at `Entry`. The main loop's `drive` advances it (runs upkeep_phase,
-    // which may suspend at step 4.5 hand-size discard — surfaced through
-    // `drive`). Replaces the former synchronous `step_phase(cx)`.
+    cx.state.continuations.pop();
     cx.state.phase = Phase::Upkeep;
     cx.state
         .continuations
@@ -696,7 +721,7 @@ pub(super) fn mythos_phase_end(cx: &mut Cx) {
     //     the end of the mythos phase."
     // No forced-trigger dispatch here: only Enemy and Upkeep phase-ends have
     // slice consumers (agenda 01107). A `PhaseEnded { Mythos }` forced ability
-    // would NOT fire until #212's emit_event restructure centralises forced
+    // would NOT fire until #212's queue_event restructure centralises forced
     // dispatch across all framework windows.
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Mythos,
@@ -799,6 +824,9 @@ fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
 /// body. Suspension-agnostic: a body that itself suspends returns
 /// `AwaitingInput` unchanged. The `resume` is copied out before the body takes
 /// `&mut cx`.
+// A single exhaustive dispatch over every anchor × resume boundary; splitting it
+// would only obscure the phase-boundary map it draws.
+#[allow(clippy::too_many_lines)]
 pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
     use crate::state::{
         Continuation, EnemyResume, InvestigationResume, MythosResume, UpkeepResume,
@@ -828,6 +856,11 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         Some(Continuation::UpkeepPhase {
             resume: UpkeepResume::AfterDraw,
         }) => upkeep_after_draw(cx),
+        // Step 4.6's queued `PhaseEnded { Upkeep }` forced abilities have
+        // resolved, re-exposing this anchor (#569): run the round end.
+        Some(Continuation::UpkeepPhase {
+            resume: UpkeepResume::AfterPhaseEndForced,
+        }) => upkeep_round_end(cx),
         Some(Continuation::UpkeepPhase {
             resume: UpkeepResume::AfterRoundEnd,
         }) => {
@@ -882,6 +915,12 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             );
             enemy_phase_end(cx)
         }
+        // Step 3.4's queued `PhaseEnded { Enemy }` forced abilities have
+        // resolved, re-exposing this anchor (#569): transition to Upkeep.
+        Some(Continuation::EnemyPhase {
+            resume: EnemyResume::AfterPhaseEndForced,
+            ..
+        }) => enemy_phase_end_transition(cx),
         Some(Continuation::InvestigationPhase {
             resume: InvestigationResume::Begins,
         }) => {
@@ -1003,40 +1042,48 @@ fn upkeep_after_draw(cx: &mut Cx) -> EngineOutcome {
     upkeep_phase_end(cx) // 4.6 + transition (may open the act round-end window)
 }
 
-/// Owns step 4.6's `PhaseEnded(Upkeep)` emit, then transitions to
-/// Mythos. Exact analog of [`mythos_phase_end`]. `step_phase` emits no
+/// Owns step 4.6's `PhaseEnded(Upkeep)` emit and queues its forced abilities;
+/// the round-end sequence follows from [`upkeep_round_end`] once they have
+/// resolved. Exact analog of [`enemy_phase_end`]. `step_phase` emits no
 /// `PhaseEnded` itself — every phase's `*_end` helper owns its own.
+///
+/// **Emits in tail position** (ADR 0003). The emit queues rather than resolves,
+/// so the round-end emit that follows it cannot run here: it would push the
+/// `RoundEnded` coordinator *above* the phase-end forced abilities and resolve
+/// the round end first. The anchor is re-parked at
+/// [`AfterPhaseEndForced`](crate::state::UpkeepResume::AfterPhaseEndForced) and
+/// the loop re-exposes it when they are done.
 pub(crate) fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
-    // 4.6 Upkeep phase ends. Round ends.
+    // 4.6 Upkeep phase ends.
     cx.events.push(Event::PhaseEnded {
         phase: Phase::Upkeep,
     });
-    // `PhaseEnded { Upkeep }` ("at end of phase") is single-bucket and fires
-    // inline. No in-corpus card keys here, so it resolves synchronously.
-    // KNOWN HAZARD (#569): a 2+/suspending hit is NOT caught structurally —
-    // `emit_event` opens a suspending ordering run and the debug_assert below
-    // is inert in release, silently stacking the round-end coordinator above
-    // the suspended run. Resumable-frame fix tracked in #569.
-    let forced = super::emit::emit_event(
+    // Arm the resume BEFORE emitting (the emit may suspend on an ordering run
+    // that outlives this `apply()`), then emit in tail position.
+    set_upkeep_resume(cx, crate::state::UpkeepResume::AfterPhaseEndForced);
+    super::emit::queue_event(
         cx,
         &super::emit::TimingEvent::PhaseEnded {
             phase: Phase::Upkeep,
         },
-    );
-    debug_assert!(
-        matches!(forced, EngineOutcome::Done),
-        "upkeep_phase_end PhaseEnded(Upkeep) forced did not resolve to Done: {forced:?}"
-    );
-    // "Round ends" (RR p.24). The `when the round ends` act advance (act 01109)
-    // and the `at the end of the round` doom (agenda 01107, Dissonant Voices
-    // 01165) resolve as the `RoundEnded` `EmitEvent` coordinator's `When`/`At`
-    // cells (#434) — structural ordering, no hand-threading. Set this anchor's
-    // resume so `upkeep_round_end_teardown` runs when the coordinator pops, then
-    // cede: `emit_event(RoundEnded)` pushes the coordinator and returns `Done`;
-    // the global loop drives the bucket walk (suspending at the `when` window)
-    // and re-exposes this anchor at `AfterRoundEnd` on completion.
+    )
+}
+
+/// "Round ends" (RR p.24), reached via the Upkeep anchor's
+/// [`AfterPhaseEndForced`](crate::state::UpkeepResume::AfterPhaseEndForced)
+/// resume once step 4.6's queued `PhaseEnded { Upkeep }` forced abilities have
+/// resolved.
+///
+/// The `when the round ends` act advance (act 01109) and the `at the end of the
+/// round` doom (agenda 01107, Dissonant Voices 01165) resolve as the `RoundEnded`
+/// `EmitEvent` coordinator's `When`/`At` cells (#434) — structural ordering, no
+/// hand-threading. Sets this anchor's resume so [`upkeep_round_end_teardown`]
+/// runs when the coordinator pops, then cedes: the emit pushes the coordinator
+/// and returns `Done`; the global loop drives the bucket walk (suspending at the
+/// `when` window) and re-exposes this anchor at `AfterRoundEnd` on completion.
+fn upkeep_round_end(cx: &mut Cx) -> EngineOutcome {
     set_upkeep_resume(cx, crate::state::UpkeepResume::AfterRoundEnd);
-    super::emit::emit_event(cx, &super::emit::TimingEvent::RoundEnded)
+    super::emit::queue_event(cx, &super::emit::TimingEvent::RoundEnded)
 }
 
 /// Set the [`UpkeepPhase`](crate::state::Continuation::UpkeepPhase) anchor's
