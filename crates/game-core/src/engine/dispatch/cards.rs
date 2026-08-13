@@ -880,9 +880,10 @@ pub(super) fn play_card(
 /// announce it via the `EnteredPlay` timing event. The emit outcome is
 /// intentionally discarded — the frame driving this call is already popped, so
 /// the `drive` loop opens any after-enters-play reaction window (Research
-/// Librarian 01032) itself. Shared by `dispose_play_from_hand` (no slot conflict)
-/// and the slot make-room path (#498). The caller owns the card (it left hand at
-/// step 3), so there is no hand lookup here to go stale (#565).
+/// Librarian 01032) itself. Called by `slots::enter_asset_making_room` once the
+/// asset's slots are clear, whether that took a discard or not (#498). The caller
+/// owns the card (it left hand at step 3), so there is no hand lookup here to go
+/// stale (#565).
 pub(in crate::engine) fn enter_asset_into_play(
     cx: &mut Cx,
     investigator: InvestigatorId,

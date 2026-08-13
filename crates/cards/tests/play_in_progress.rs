@@ -75,8 +75,8 @@ fn board(hand: &[&str], resources: u8) -> game_core::GameState {
     inv.current_location = Some(LOC_A);
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
     inv.resources = resources;
-    // Skids O'Toole (01003, 8 health / 6 sanity): a real code for max_health(),
-    // and no abilities of his own to interfere.
+    // "Skids" O'Toole (01003, 8 health / 6 sanity): a real code so `max_health()`
+    // reads from the installed registry.
     inv.investigator_card.code = CardCode::new("01003");
 
     let mut loc_a = test_location(10, "Cellar");
@@ -210,6 +210,15 @@ fn defeated_by_its_own_aoo_the_mid_play_event_is_removed_not_discarded() {
          removed={:?} discard={:?}",
         inv.removed_from_game,
         inv.discard,
+    );
+    assert_eq!(
+        inv.removed_from_game
+            .iter()
+            .filter(|c| **c == CardCode::new(DYNAMITE))
+            .count(),
+        1,
+        "removed exactly once — elimination's sweep and the suppressed resume's \
+         own placement must not both fire",
     );
     assert!(
         !inv.discard.contains(&CardCode::new(DYNAMITE)),

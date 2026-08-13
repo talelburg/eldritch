@@ -189,15 +189,15 @@ fn out_of_range_make_room_pick_is_rejected_and_keeps_the_prompt() {
         "out-of-range pick rejects: {:?}",
         r4.outcome
     );
-    // Still mid-investigation with both Hand assets in play and the pending
-    // Flashlight held by its frame — nothing was discarded.
+    // Still mid-investigation with both Hand assets in play and Flashlight still
+    // mid-play, held by its frame — nothing was discarded.
     let inv = &r4.state.investigators[&id];
     assert_eq!(inv.cards_in_play.len(), 2);
     assert!(inv.discard.is_empty());
     assert_eq!(
         r4.state.play_in_progress().map(|(_, c)| c.clone()),
         Some(CardCode::new(FLASHLIGHT)),
-        "the pending asset rides the parked SlotDiscard frame across the prompt",
+        "the mid-play asset rides the parked SlotDiscard frame across the prompt",
     );
     assert!(
         r4.state

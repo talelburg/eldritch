@@ -624,15 +624,15 @@ pub enum Continuation {
     /// A slot-conflicting asset play paused for the player to choose which
     /// occupying asset to discard to make room (RR p.19, #498). Pushed by
     /// `slots::enter_asset_making_room` when 2+ co-controlled assets occupy a
-    /// slot type the new asset needs; the pending asset rides this frame until
-    /// the deficit is cleared, then enters play. Resumed by
+    /// slot type the new asset needs; the asset stays mid-play, riding this
+    /// frame until the deficit is cleared, then enters play. Resumed by
     /// `slots::resume_slot_discard` via a `PickSingle(OptionId)` indexing the
     /// candidate list. Awaits input (covered by the `awaits_input` catch-all;
     /// not a phase anchor).
     SlotDiscard {
         /// The investigator playing the asset.
         investigator: InvestigatorId,
-        /// The pending asset — see [`Continuation::play_in_progress`].
+        /// The asset mid-play — see [`Continuation::play_in_progress`].
         card: Option<CardCode>,
     },
     /// The Mythos phase anchor (slice 1a, #393). Pushed at Mythos entry; sits
@@ -967,11 +967,22 @@ impl Continuation {
     /// in place holding nothing. Returns `None` when the frame is not a play
     /// frame, belongs to someone else, or has already been emptied.
     ///
-    /// The one caller is elimination's sweep (Rules Reference p.10, step 1: an
-    /// eliminated investigator's owned cards are removed from the game) — a card
-    /// mid-play is in no zone, so the hand/deck/discard drain cannot reach it.
     /// Taking rather than copying is what keeps the frame's own disposal from
-    /// placing a card that has already left the game.
+    /// placing a card that something else already placed. Two callers do so, and
+    /// they reach different frames:
+    ///
+    /// - **elimination's sweep** walks *every* frame of the eliminated
+    ///   investigator (Rules Reference p.10, step 1: their owned cards are
+    ///   removed from the game — and a card mid-play is in no zone, so the
+    ///   hand/deck/discard drain cannot reach it);
+    /// - **`Effect::AttachSelfToLocation`** takes from one
+    ///   [`PlayFromHand`](Self::PlayFromHand) frame only — its own (Barricade
+    ///   01038 re-homing itself rather than discarding).
+    ///
+    /// So an [`ActionResolution`](Self::ActionResolution) or
+    /// [`SlotDiscard`](Self::SlotDiscard) frame is emptied by elimination alone,
+    /// which is what lets their resume paths treat "emptied" and "controller is
+    /// no longer `Active`" as the same condition.
     pub fn take_play_in_progress(&mut self, investigator: InvestigatorId) -> Option<CardCode> {
         match self {
             Continuation::ActionResolution {

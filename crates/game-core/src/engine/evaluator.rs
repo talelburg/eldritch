@@ -766,14 +766,29 @@ fn filter_matches(f: &crate::dsl::CardFilter, code: &crate::state::CardCode) -> 
 /// **taken** off that frame, so its disposal does not also discard it — one card,
 /// no duplicate. Rejects if no play is in progress or the controller is between
 /// locations.
+///
+/// Only `PlayFromHand` frames are considered, and that is exact rather than
+/// conservative: an `OnPlay`/`OnEvent` effect always runs above the
+/// `PlayFromHand` frame `complete_play` pushed for it, so the nearest such frame
+/// is always this effect's own play. The other frames that carry a card mid-play
+/// ([`ActionResolution`](crate::state::Continuation::ActionResolution),
+/// [`SlotDiscard`](crate::state::Continuation::SlotDiscard)) only ever sit
+/// *below* it, and taking from one of those would strand a play that is still
+/// going to run.
 fn apply_attach_self_to_location(cx: &mut Cx) -> EngineOutcome {
-    let Some((frame_idx, investigator)) = cx
-        .state
-        .continuations
-        .iter()
-        .enumerate()
-        .rev()
-        .find_map(|(i, frame)| frame.play_in_progress().map(|(inv, _)| (i, inv)))
+    let Some((frame_idx, investigator)) =
+        cx.state
+            .continuations
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(i, frame)| match frame {
+                crate::state::Continuation::PlayFromHand {
+                    investigator,
+                    card: Some(_),
+                } => Some((i, *investigator)),
+                _ => None,
+            })
     else {
         return EngineOutcome::Rejected {
             reason: "AttachSelfToLocation: no card is mid-play".into(),

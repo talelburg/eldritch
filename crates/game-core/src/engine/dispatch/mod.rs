@@ -373,17 +373,22 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
         .get(&investigator)
         .is_some_and(|inv| inv.status == crate::state::Status::Active);
     if !active {
-        // A defeated actor suppresses the primary effect. A card riding this
-        // frame mid-play needs no disposal here: the only thing that flips an
+        // A defeated actor suppresses the primary effect — but a card riding
+        // this frame mid-play must still be placed, or popping the frame would
+        // drop it out of the game silently, which is precisely the #604 failure.
+        // In practice the frame is already empty: the only thing that flips an
         // investigator off `Active` is `apply_investigator_defeat`, whose
-        // elimination steps sweep the in-progress play off this very frame and
-        // into `removed_from_game` (RR p.10 step 1) — so by now `resume` holds
-        // no card. See `docs/adr/0002-in-progress-play-lives-on-its-frame.md`.
-        debug_assert!(
-            !matches!(&resume, ActionResume::PlayCard { card: Some(_) }),
-            "suppressed play kept its card: elimination's sweep missed the \
-             ActionResolution frame for {investigator:?}"
-        );
+        // elimination steps sweep the in-progress play off this very frame. This
+        // arm is the same rule applied at the same moment for any future
+        // suppression cause that isn't elimination — RR p.10 step 1, an
+        // eliminated investigator's owned cards are removed from the game — so
+        // the card lands in the one pile elimination does not drain, exactly
+        // once. See `docs/adr/0002-in-progress-play-lives-on-its-frame.md`.
+        if let ActionResume::PlayCard { card: Some(card) } = resume {
+            if let Some(inv) = cx.state.investigators.get_mut(&investigator) {
+                inv.removed_from_game.push(card);
+            }
+        }
         return EngineOutcome::Done;
     }
     match resume {
@@ -402,8 +407,9 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
             let Some(card) = card else {
                 unreachable!(
                     "resume_action_resolution: the play frame for {investigator:?} lost its \
-                     card while they are still Active — only elimination takes a card off a \
-                     play frame, and it flips status first"
+                     card while they are still Active — elimination is the only thing that \
+                     empties an ActionResolution frame (see \
+                     Continuation::take_play_in_progress), and it flips status first"
                 );
             };
             cards::resume_play_card(cx, investigator, card)

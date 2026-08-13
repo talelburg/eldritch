@@ -177,8 +177,8 @@ pub(super) fn enter_asset_making_room(
          gate should make this unreachable (code {card}, deficit {deficit:?})"
     );
     if candidates.len() >= 2 {
-        // Genuine choice: the player picks which occupier to discard. Park the
-        // pending play — the asset rides the frame across the prompt — and ask.
+        // Genuine choice: the player picks which occupier to discard. The asset
+        // stays mid-play, riding this frame across the prompt.
         cx.state.continuations.push(Continuation::SlotDiscard {
             investigator,
             card: Some(card),
@@ -221,11 +221,12 @@ pub(super) fn resume_slot_discard(cx: &mut Cx, response: &InputResponse) -> Engi
         unreachable!("resume_slot_discard: top frame is not SlotDiscard");
     };
     let Some(card) = card else {
-        // Only elimination takes a card off a play frame, and it cannot run
-        // while this prompt is outstanding: the frame awaits input, so every
-        // action but its own `ResolveInput` is refused.
+        // Elimination is the only thing that empties a `SlotDiscard` frame (see
+        // `Continuation::take_play_in_progress`), and it cannot run while this
+        // prompt is outstanding: the frame awaits input, so every action but its
+        // own `ResolveInput` is refused.
         unreachable!(
-            "resume_slot_discard: the pending asset left the frame while its \
+            "resume_slot_discard: the mid-play asset left the frame while its \
              make-room prompt was open"
         );
     };
