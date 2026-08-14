@@ -111,7 +111,13 @@ A card is **playable** iff it has an `abilities()` impl (`cards::is_playable(cod
 
 ### Card-data pipeline
 
-`data/arkhamdb-snapshot/` is a manually-pinned subset of upstream `Kamalisk/arkhamdb-json-data`. **Never auto-sync** — a malformed upstream entry can't surprise the build. Scope is original Core + Dunwich Legacy only (old-format files); see `data/arkhamdb-snapshot/SOURCE.md`. Adding a pack: (1) bump the snapshot, (2) `cargo run -p card-data-pipeline` regenerates `crates/cards/src/generated/cards.rs` (emitting unplayable stubs for cards without impls), (3) replace stubs with DSL/Rust impls, (4) write tests. **Never hand-edit `cards.rs`** (generated; carries a header comment).
+`data/arkhamdb-snapshot/` is a manually-pinned subset of upstream `Kamalisk/arkhamdb-json-data`. **Never auto-sync** — a malformed upstream entry can't surprise the build.
+
+**Snapshot ≠ corpus** — both are glossary entries in `CONTEXT.md`, and the difference is load-bearing. The **snapshot** is all of Chapter 1 (everything upstream except the Chapter 2 cycles `core_ch2` / `investigator_decks_ch2`), vendored as *planning input* so DSL and engine decisions can be made against the full set of cards we'll eventually support. The **corpus** is the subset `PACK_FILES` ingests and the build compiles — Core + Dunwich only. A card being in the snapshot means nothing at runtime; `cards::metadata_for` answers only for the corpus.
+
+Every vendored pack file is sorted into `PACK_FILES` / `REFERENCE_FILES` / `OUT_OF_SCOPE_FILES`, and `classify` (`crates/card-data-pipeline/src/main.rs`) fails on any file in none of them *and* on any in-scope pack from `packs.json` with no vendored file. It runs both in the pipeline and as a test, so CI catches a mis-vendored bump. See `data/arkhamdb-snapshot/SOURCE.md`.
+
+Making a pack playable: (1) move its files from `REFERENCE_FILES` to `PACK_FILES` (bumping the snapshot first only if you need fresher data), (2) `cargo run -p card-data-pipeline` regenerates `crates/cards/src/generated/cards.rs` (emitting unplayable stubs for cards without impls), (3) replace stubs with DSL/Rust impls, (4) write tests. **Never hand-edit `cards.rs`** (generated; carries a header comment).
 
 ### Domain knowledge that's load-bearing but not visible in the code
 
