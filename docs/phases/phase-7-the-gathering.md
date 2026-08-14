@@ -132,9 +132,20 @@ live consumers are single-consumer + heterogeneous, so declarative DSL vocab
 would be speculative — promote to a `Condition` when a predicate recurs (Lone
 Wolf 02188, Burned Ruins 02205). The Barrier's offer + resolve share one
 `round_end_advance_affordable` helper so they can't drift. **Item 2 (capped
-discovery count) moved to #471** — it becomes live only once Deduction 01039 is
-fixed to modify a single discovery's count (FAQ-confirmed) rather than spawn a
-second discovery. *(The predicate is no longer evaluated at reaction-scan time
+discovery count) moved to #471 ✅ shipped (PR #617)** — it became live once
+Deduction 01039 was fixed to modify a single discovery's count (FAQ-confirmed)
+rather than spawn a second discovery. Deduction now rides an `OnCommit`
+accumulator (`Effect::DiscoverAdditionalClues` → `InFlightSkillTest.
+bonus_clues_discovered`, the clue-side sibling of Vicious Blow 01025's
+`bonus_attack_damage`), and the Investigate follow-up makes **one** discovery of
+`1 + bonus` at `LocationTarget::TestedLocation` — a base-Investigate change, since
+the PR deletes Deduction's own `TestedLocation` anchoring. `discover_clue` caps at
+`min(count, location.clues)` **before** emitting `WouldDiscoverClues`, so Cover Up
+01007's "discard that many" reads the real quantity; `perform_discovery` keeps its
+own `min` as the shrinkage backstop, fixing the count at the moment of the would-be
+discovery. The shape distinction is now glossary vocabulary (**Discovery** in
+`CONTEXT.md`) — it is invisible in clue totals and cost a shipped bug. *(The
+predicate is no longer evaluated at reaction-scan time
 **only** — PR #608 re-runs the whole reaction scan at both prompt sites and once
 more at initiation, so a sibling option that resolves first can withdraw a
 candidate the scan had cleared. Scan-time filtering is now the optimisation;
