@@ -10,7 +10,7 @@ Work runs on the `mattpocock-skills` suite. `/ask-matt` maps the flows when it's
 
 **Planning a phase.** Pick the entry point by how much fog the phase has, gauged by its own **Open questions** section: `/wayfinder` when the route to the destination isn't visible yet (architectural questions unresolved), `/grill-with-docs` when it is and only ordering and scope are open. Wayfinder is slow and dense — never reach for it for a well-scoped feature.
 
-**Gates.** Stop and put the decision to the user when:
+**Gates.** Two kinds of interruption, treated differently. **Permission questions** — "want me to push?", "shall I open the PR?" — are already answered: branching, the local gauntlet, pushing, and `gh pr create` proceed uninterrupted, and merging (step 7) is the single exception. **Decision questions** are the gates, and they belong *during* the work rather than after it. Stop and put the decision to the user when:
 
 1. **A seam is unconfirmed.** No test is written at a seam the user hasn't agreed to (the `tdd` skill's rule).
 2. **A card's text or a rules question is ambiguous** — the sources disagree, or a ruling doesn't settle the case.
@@ -137,11 +137,15 @@ Follow this order for every non-trivial PR — skipping steps has cost real iter
 2. **Commit and push** to a feature branch `<scope>/<short-slug>` (`<scope>` matches the commit scope; slug is a 2–4-word hyphenated descriptor, e.g. `engine/play-card`). One branch per issue. Commit body explains the *why* and ends with `Closes #NN.`
 3. **Open the PR** with `gh pr create` using the repo template; include a brief design-decisions paragraph for any non-obvious choice.
 4. **Watch CI** via `gh pr checks <PR#> --watch` (background). Code review for routine PRs happens **before push** — `/implement` closes out by running `code-review` — so skip the post-push `review-agent` then. Reserve a post-push review for: PRs prepared without a pre-push review, an explicit request for a second look, or escalation skills (`/security-review` for sensitive areas, `/ultrareview` at milestone exits) — all user-triggered.
+
+   Whenever a review reports back — pre-push, post-push, or an escalation — **surface its findings to the user in full, in the reviewer's own severity buckets**, and only then say which you're actioning and which you're skipping, with your reasoning where it differs. A finding you disagree with is still signal for the merge decision, and the file:line citations and rationale are what the user reads a review for; a condensed verdict throws away both. Even a clean approval gets its reasoning surfaced.
 5. **Fix CI failures with follow-up commits to the same branch** — don't amend/force-push unless asked.
-6. **Update the relevant `docs/phases/phase-N-<slug>.md` once the PR is ready to merge, and ONLY then** — as the final commit, so it reflects the actually-shipping state (PR # known, review fixes folded in). Never put phase-doc edits in earlier commits (churn + drift). Move the closing issue to the **Closed** table (bump counts), flip the Ordering/Arc row to `✅ PR #N`, and remove any **Open question** the PR settled. **Design decisions no longer live in the phase doc** — a load-bearing choice becomes an ADR under `docs/adr/` in the same commit. Most PRs need none. **`docs/phases/README.md` ("Maintaining these docs") is the authoritative spec for this step, including the three-part test an ADR must pass.**
+6. **Update the relevant `docs/phases/phase-N-<slug>.md` once the PR is ready to merge, and ONLY then** — as the final commit, so it reflects the actually-shipping state (PR # known, review fixes folded in). Open the PR with code only and **push the doc commit only once CI is green on the PR** — if CI fails, the fixes land first and the doc then describes what actually ships rather than what CI just rejected; the doc commit triggers its own quick re-run. Never put phase-doc edits in earlier commits (churn + drift). Move the closing issue to the **Closed** table (bump counts), flip the Ordering/Arc row to `✅ PR #N`, and remove any **Open question** the PR settled. **Design decisions no longer live in the phase doc** — a load-bearing choice becomes an ADR under `docs/adr/` in the same commit. Most PRs need none. **`docs/phases/README.md` ("Maintaining these docs") is the authoritative spec for this step, including the three-part test an ADR must pass.**
 7. **Merge only after explicit user approval**, via `gh pr merge <PR#> --squash --delete-branch`. Confirm the issue auto-closed and `git pull` on `main`.
 
 ## Agent skills
+
+**Every dispatch prompt for a write-capable subagent says the subagent does all the work itself and delegates to no subagent of its own.** The prompt is the only lever: the default `general-purpose` type carries the Agent tool, and the built-in types that exclude it (`Explore`, `Plan`) are read-only, so none can implement. Without the line, an implementer dispatch recursed roughly six levels deep in PR #460.
 
 ### Issue tracker
 
@@ -154,6 +158,10 @@ The five canonical triage roles, each label string equal to its name. See `docs/
 ### Domain docs
 
 Single-context — [`CONTEXT.md`](CONTEXT.md) (the domain glossary) and `docs/adr/` at the repo root. **Read `CONTEXT.md` before naming a domain concept**, and check `docs/adr/` before working in an area it touches. See `docs/agents/domain.md`.
+
+### Product decisions
+
+[`docs/product-decisions.md`](docs/product-decisions.md) — the standing product, legal, and hosting posture: audience and scale, licensing and card art, the "Eldritch" naming constraint, hosting and invite-only auth, deck import instead of a deckbuilder, and the frontend's exit ramp. Read it before proposing anything that changes what the project *is* to its players — its scope, how they get in, how decks arrive, or what it depends on from third parties.
 
 ### Coding standards
 

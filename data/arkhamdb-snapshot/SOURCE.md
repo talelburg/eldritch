@@ -23,15 +23,6 @@ metadata.
 - `schema/` — JSON schemas the upstream uses for validation. Kept for
   reference when diagnosing a malformed entry; the pipeline does **not**
   read or enforce them.
-
-### What the pipeline actually ingests
-
-`PACK_FILES` in `crates/card-data-pipeline/src/main.rs` reads the
-**old-format** files only: `core.json` + `core_encounter.json` and the
-seven `dwl` packs + their encounter files. `core_2026*.json` and
-`rcore.json` are pinned here for reference but are **not** ingested —
-adding them to the build requires extending `PACK_FILES` (and reconciling
-duplicate codes across printings), not just bumping the snapshot.
 - Top-level metadata: `cycles.json`, `encounters.json`, `factions.json`,
   `packs.json`, `subtypes.json`, `types.json`.
 - `taboos.json` — official taboo list. Carries errata (text changes that
@@ -41,6 +32,50 @@ duplicate codes across printings), not just bumping the snapshot.
   doesn't land until Phase 9. Players opt into a specific taboo version;
   the engine applies whichever version a campaign was started under.
 - This `SOURCE.md`.
+
+### What the pipeline actually ingests
+
+`PACK_FILES` in `crates/card-data-pipeline/src/main.rs` reads the
+**old-format** files only: `core.json` + `core_encounter.json` and the
+seven `dwl` packs + their encounter files. `core_2026*.json` and
+`rcore.json` are pinned here for reference but are **not** ingested —
+adding them to the build requires extending `PACK_FILES` (and reconciling
+duplicate codes across printings), not just bumping the snapshot.
+
+### Why the other printings aren't ingested
+
+The two Core printings Eldritch skips are skipped for different reasons,
+and neither is a backlog item:
+
+- **`rcore.json` — Revised Core Set** (FFG, 2020; codes `015xx`). All 116
+  entries are **skeletons**: `code`, `position`, `quantity`,
+  `illustrator`, and an `alternate_of` / `duplicate_of` pointer at the
+  matching `010xx` card — no name, type, or class. Upstream never
+  populated them, because the revised product was a repackage (one copy
+  of each card rather than needing two Cores, and the Limited
+  deckbuilding restriction dropped) whose gameplay content *is*
+  `core.json`. There is nothing here to ingest.
+- **`core_2026.json` — Core Set (2026)**, the Asmodee "Chapter 2" set
+  (codes `120xx`, `cycle_code: core_ch2`). **New content, not a
+  reprint** — new investigators (Daniela Reyes, Joe Diamond, Trish
+  Scarborough, Dexter Drake, Isabelle Barnes), 74 of 104 entries
+  populated at the pinned commit. Excluded by scope, not by data quality.
+
+The same old/new split runs through the cycle expansions. The old format
+(FFG, ~2016–2021) is a deluxe expansion plus six mythos packs — the seven
+`pack/dwl/*.json` files, which is what the pipeline reads. The new format
+(Asmodee, ~2022+) repackages a cycle into an Investigator Expansion and a
+Campaign Expansion: `packs.json` lists `dwlp` and `dwlc`, each with a
+`reprint_packs` array naming all seven old-format packs, but **no
+`dwlp.json` or `dwlc.json` exists upstream** — ArkhamDB hasn't catalogued
+files whose content is already covered by what it has.
+
+**A physical Revised Core + new-format Dunwich collection plays
+identically to the ingested data.** The codes printed on those cards
+differ from the ones the simulator uses, which is cosmetic. So don't
+reach for `rcore` / `dwlp` / `dwlc` to "match" a physical collection —
+there is no gameplay difference to capture, and no usable data upstream
+to capture it with.
 
 ## What's deliberately excluded
 

@@ -15,8 +15,11 @@ One of the four segments of a game round: Mythos, Investigation, Enemy, Upkeep.
 _Avoid_: Round, step, stage. See **Project phase** below — the word is overloaded across the repo.
 
 **Fast**:
-A keyword ability. Per the Rules Reference: *"A fast card does not cost an action to be played and is not played using the 'Play' action."* A property of how a card is played.
-_Avoid_: Using "fast" for a zero-action **activated** ability. That is a different concept that happens to share the word — say "zero-action ability" instead.
+A keyword ability. Per the Rules Reference: *"A fast card does not cost an action to be played and is not played using the 'Play' action."* A property of how a card is played, and the entry says nothing about abilities.
+
+A second mechanic shares the word. ArkhamDB's card text writes the **free triggered ability** icon as the markup token `[fast]`, and the Rules Reference defines that icon separately — it *"indicates a free triggered ability that does not cost an action and may be used during any player window."* Ours is `Trigger::Activated { action_cost: 0 }`. Magnifying Glass (01040) prints both at once — the keyword line `Fast.`, and then `[fast] If there are no clues on your location: Return Magnifying Glass to your hand.`
+
+_Avoid_: Reading a `[fast]` token in ArkhamDB card text as the keyword — it is the ability icon, and only a bare `Fast.` line is the keyword. Say "zero-action ability" (or the Rules Reference's "free triggered ability") for the second sense, never "fast ability".
 
 **Horror soak**:
 Our informal term for assigning horror to an asset that has sanity, rather than to the investigator. The word does not appear in the Rules Reference, which says only that an asset "must have sanity in order to be assigned horror."
