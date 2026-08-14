@@ -1417,11 +1417,9 @@ pub struct InFlightSkillTest {
     /// [`bonus_attack_damage`](Self::bonus_attack_damage); `0` for every test
     /// no commit-time clue buff touches.
     ///
-    /// It raises a discovery's count rather than adding a discovery, because
-    /// Deduction's FAQ says "additional" *"modifies the number of clues that
-    /// you would find, it does not add an extra effect on top of any other
-    /// effects"* — and because the two shapes are distinguishable: Cover Up
-    /// 01007 replaces one discovery of 2, not two of 1 (#471).
+    /// Raising one discovery's count is not interchangeable with adding a
+    /// second discovery: Cover Up 01007 replaces one discovery of 2, not two
+    /// of 1 (#471). See the **Discovery** entry in `CONTEXT.md`.
     pub bonus_clues_discovered: u8,
     /// The chaos-token determination, set once at the
     /// [`Resolving`](SkillTestStep::Resolving) step (RR ST.6) and read by every

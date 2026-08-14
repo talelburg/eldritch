@@ -1136,8 +1136,6 @@ fn eval_condition(
             // field, and outside an in-flight test (an OnEvent reaction
             // keying off `SkillTestSucceeded`) there is no such frame to
             // read. Reject with a TODO pointing at the preferred trigger.
-            // The one card in Core+Dunwich that genuinely needs it is
-            // Rex's Curse 02009 (#572).
             Err(format!(
                 "TODO: Condition::SkillTest {{ outcome: {outcome:?} }} not yet evaluated; \
                  prefer Trigger::OnSkillTestResolution for resolution-time effects, \
@@ -1326,6 +1324,16 @@ fn discover_clue(
         // discovered"). Don't reject; just do nothing.
         return EngineOutcome::Done;
     }
+    if !cx.state.investigators.contains_key(&eval_ctx.controller) {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "DiscoverClue: controller {:?} is not in the state",
+                eval_ctx.controller
+            )
+            .into(),
+        };
+    }
+
     // A discovery is what you actually take, never what you requested: per the
     // Cover Up 01007 / Deduction 01039 FAQ, *"Deduction doesn't allow you to
     // discover clues that aren't at that location. If your location has 1 clue
@@ -1340,16 +1348,6 @@ fn discover_clue(
     // `clues == 0` early return above precedes this, so `capped >= 1` and Cover
     // Up is never prompted for a 0-clue discard.
     let capped = count.min(location.clues);
-
-    if !cx.state.investigators.contains_key(&eval_ctx.controller) {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "DiscoverClue: controller {:?} is not in the state",
-                eval_ctx.controller
-            )
-            .into(),
-        };
-    }
 
     // Before-timing clue-discovery window (Cover Up 01007; Axis D #336,
     // migrated from the C5a `clue_interrupt` seam). Reaction-only Before timing

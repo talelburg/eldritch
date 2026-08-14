@@ -34,7 +34,8 @@
 //! test's frame. It is **not** that the outcome is unknown at commit —
 //! post-#423 the `FireOnCommit` step runs after `DetermineOutcome`, so the
 //! outcome is on the frame; the reason it can't be card-expressed is that
-//! `Condition::SkillTest { outcome }` is unimplemented (#471). `OnCommit`
+//! `Condition::SkillTest { outcome }` is unimplemented — it rejects with a
+//! TODO. `OnCommit`
 //! (not `OnSkillTestResolution`) is required regardless, because the
 //! follow-up deals the attack's damage *during* resolution, before the
 //! resolution trigger fires.

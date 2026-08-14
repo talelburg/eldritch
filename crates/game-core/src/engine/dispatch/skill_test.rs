@@ -1171,13 +1171,14 @@ fn apply_skill_test_follow_up(
             // the end of resolution), so the accumulator is readable.
             //
             // `TestedLocation` — the test's start-of-test location snapshot —
-            // is the **default** target, not an invariant: several Dunwich
-            // cards replace or redirect this discovery (Seeking Answers 02023
-            // discovers at a *connecting* location; Burglary 01045 and Alchemy
-            // Labs 02057 discover nothing at all). It differs from
-            // `YourLocation` only if the investigator moves mid-test — no
-            // in-corpus path does today, but the snapshot is what "at that
-            // location" means for every card that reads it.
+            // is the **default** target, not an invariant: several cards
+            // replace or redirect this discovery. Burglary 01045 (Core):
+            // "If you succeed, instead of discovering clues, gain 3
+            // resources." Seeking Answers 02023 (Dunwich) discovers at a
+            // *connecting* location instead. It differs from `YourLocation`
+            // only if the investigator moves mid-test — no in-corpus path does
+            // today, but the snapshot is what "at that location" means for
+            // every card that reads it.
             let bonus = cx
                 .state
                 .current_skill_test()

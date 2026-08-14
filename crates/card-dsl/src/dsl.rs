@@ -780,22 +780,14 @@ pub enum Effect {
     /// 01039's "discover 1 **additional** clue at that location."
     /// Accumulated at commit time (under [`Trigger::OnCommit`]) onto the
     /// in-flight record; **only an Investigate skill test's follow-up reads
-    /// it**, and it raises that one discovery's count rather than making a
-    /// second discovery. Per the card's FAQ, *"'Additional' means 'in
-    /// addition to other clues you discover', i.e. it modifies the number of
-    /// clues that you would find, it does not add an extra effect on top of
-    /// any other effects"* — so the distinction is the card text, not an
-    /// implementation detail (see the **Discovery** entry in `CONTEXT.md`).
+    /// it**, so the "while investigating" qualifier is intrinsic, as is "if
+    /// successful" (that follow-up discovers only on success). A no-op when
+    /// there is no in-flight test.
     ///
-    /// The "if successful" qualifier is intrinsic: the Investigate follow-up
-    /// is the accumulator's only reader and runs on success only, so a failed
-    /// test throws the accumulated bonus away with the test's frame. A no-op
-    /// when there is no in-flight test.
-    ///
-    /// Deliberately **not** unified with [`BoostAttackDamage`](Self::BoostAttackDamage)
-    /// into one `Boost { kind, amount }`: the two share an implementation
-    /// pattern, not a card-facing one, and the evaluator would still match on
-    /// the discriminant.
+    /// It raises that one discovery's count rather than making a second
+    /// discovery — a card-text distinction, not an implementation detail; see
+    /// the **Discovery** entry in `CONTEXT.md` and Deduction's module doc for
+    /// the FAQ that settles it.
     DiscoverAdditionalClues(u8),
     /// A constant restriction the source card imposes while in play
     /// (under [`Trigger::Constant`]). **Inspected, not executed** — the

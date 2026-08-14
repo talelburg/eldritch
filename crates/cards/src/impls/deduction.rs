@@ -46,7 +46,8 @@
 //! never read, and thrown away with the test's frame. (Not "because the outcome
 //! isn't known yet": post-#423 the `FireOnCommit` step runs *after*
 //! `DetermineOutcome`, so it is on the frame. The reason it can't be
-//! card-expressed is that `Condition::SkillTest { outcome }` is unimplemented.)
+//! card-expressed is that `Condition::SkillTest { outcome }` is unimplemented —
+//! it rejects with a TODO.)
 //!
 //! "At that location" is likewise intrinsic: the follow-up discovers at the
 //! test's [`LocationTarget::TestedLocation`] snapshot, and the accumulator lives

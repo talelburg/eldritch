@@ -38,6 +38,16 @@ fn cover_up(clues: u8) -> CardInPlay {
     c
 }
 
+/// Clues remaining on the Cover Up in `INV`'s threat area.
+fn cover_up_clues(state: &GameState) -> u8 {
+    state.investigators[&INV]
+        .threat_area
+        .iter()
+        .find(|c| c.code.as_str() == COVER_UP)
+        .expect("Cover Up is in the threat area")
+        .clues
+}
+
 // ---- Revelation: places into the threat area with 3 clues -------------
 
 #[test]
@@ -125,12 +135,11 @@ fn playing_cover_up_discards_instead_of_discovering() {
     assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(r.state.locations[&LOC].clues, 2, "location clues unchanged");
     assert_eq!(r.state.investigators[&INV].clues, 0, "discovered nothing");
-    let cu = r.state.investigators[&INV]
-        .threat_area
-        .iter()
-        .find(|c| c.code.as_str() == COVER_UP)
-        .unwrap();
-    assert_eq!(cu.clues, 2, "1 clue discarded from Cover Up");
+    assert_eq!(
+        cover_up_clues(&r.state),
+        2,
+        "1 clue discarded from Cover Up"
+    );
 }
 
 #[test]
@@ -146,12 +155,7 @@ fn skip_discovers_normally() {
     assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(r.state.locations[&LOC].clues, 1, "location -1");
     assert_eq!(r.state.investigators[&INV].clues, 1, "investigator +1");
-    let cu = r.state.investigators[&INV]
-        .threat_area
-        .iter()
-        .find(|c| c.code.as_str() == COVER_UP)
-        .unwrap();
-    assert_eq!(cu.clues, 3, "Cover Up untouched on Skip");
+    assert_eq!(cover_up_clues(&r.state), 3, "Cover Up untouched on Skip");
 }
 
 // ---- Cover Up + Deduction: one discovery, capped ----------------------
@@ -207,13 +211,9 @@ fn deduction_at_a_one_clue_location_discards_one_from_cover_up() {
     );
     assert_eq!(r.state.investigators[&INV].clues, 0, "discovered nothing");
     assert_no_event!(r.events, Event::CluePlaced { .. });
-    let cu = r.state.investigators[&INV]
-        .threat_area
-        .iter()
-        .find(|c| c.code.as_str() == COVER_UP)
-        .unwrap();
     assert_eq!(
-        cu.clues, 2,
+        cover_up_clues(&r.state),
+        2,
         "exactly 1 of 3 discarded — the capped count, not the requested 2",
     );
     assert!(
@@ -234,12 +234,11 @@ fn deduction_at_a_two_clue_location_discards_two_in_one_window() {
     assert_eq!(r.state.locations[&LOC].clues, 2, "location untouched");
     assert_eq!(r.state.investigators[&INV].clues, 0, "discovered nothing");
     assert_no_event!(r.events, Event::CluePlaced { .. });
-    let cu = r.state.investigators[&INV]
-        .threat_area
-        .iter()
-        .find(|c| c.code.as_str() == COVER_UP)
-        .unwrap();
-    assert_eq!(cu.clues, 1, "2 of 3 discarded in a single replacement");
+    assert_eq!(
+        cover_up_clues(&r.state),
+        1,
+        "2 of 3 discarded in a single replacement",
+    );
     assert!(
         r.state.open_windows().is_empty(),
         "no second before-discover window: {:?}",
