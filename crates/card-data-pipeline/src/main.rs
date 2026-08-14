@@ -30,9 +30,10 @@
 //! pipeline ingests and the build compiles — is only [`PACK_FILES`].
 //! Everything else is pinned as planning input, so that decisions about
 //! the DSL and the engine can be made against the full set of cards
-//! Eldritch will eventually support. [`classify`] holds the two apart and
-//! fails on any vendored file that has not been sorted into one of the
-//! three lists.
+//! Eldritch will eventually support. [`PACK_FILES`] is what decides
+//! which of it gets compiled; [`classify`] only checks that every
+//! vendored file has been deliberately sorted into one of the three
+//! lists, and fails on any that has not.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -254,7 +255,7 @@ const PACKS_WITHOUT_FILES: &[&str] = &[
 /// can exercise [`classify_against`] with small fixtures instead of the
 /// real snapshot.
 struct Manifest<'a> {
-    ingested: &'a [&'a str],
+    corpus: &'a [&'a str],
     reference: &'a [&'a str],
     out_of_scope: &'a [&'a str],
     out_of_scope_cycles: &'a [&'a str],
@@ -262,7 +263,7 @@ struct Manifest<'a> {
 }
 
 const MANIFEST: Manifest<'static> = Manifest {
-    ingested: PACK_FILES,
+    corpus: PACK_FILES,
     reference: REFERENCE_FILES,
     out_of_scope: OUT_OF_SCOPE_FILES,
     out_of_scope_cycles: OUT_OF_SCOPE_CYCLES,
@@ -314,6 +315,9 @@ fn classify(vendored: &[PathBuf], packs: &[RawPack]) -> Result<(), Vec<Discrepan
     classify_against(vendored, packs, &MANIFEST)
 }
 
+/// [`classify`] against an arbitrary manifest. The lists are a parameter
+/// so tests can exercise the real logic with four-file fixtures instead
+/// of the whole snapshot.
 fn classify_against(
     vendored: &[PathBuf],
     packs: &[RawPack],
@@ -321,7 +325,7 @@ fn classify_against(
 ) -> Result<(), Vec<Discrepancy>> {
     let present: BTreeSet<String> = vendored.iter().map(|p| slash_path(p)).collect();
     let listed: BTreeSet<String> = manifest
-        .ingested
+        .corpus
         .iter()
         .chain(manifest.reference)
         .chain(manifest.out_of_scope)
@@ -366,12 +370,8 @@ fn classify_against(
 /// The pack a file belongs to: its stem, minus the `_encounter` suffix
 /// that marks a pack's encounter-side companion file.
 fn pack_code(rel: &str) -> &str {
-    let stem = rel
-        .rsplit('/')
-        .next()
-        .unwrap_or(rel)
-        .strip_suffix(".json")
-        .unwrap_or(rel);
+    let file_name = rel.rsplit('/').next().unwrap_or(rel);
+    let stem = file_name.strip_suffix(".json").unwrap_or(file_name);
     stem.strip_suffix("_encounter").unwrap_or(stem)
 }
 
@@ -384,38 +384,40 @@ fn slash_path(p: &Path) -> String {
         .join("/")
 }
 
-/// Every `*.json` under the snapshot's `pack/`, as snapshot-relative
-/// paths.
+/// Every `*.json` anywhere under the snapshot's `pack/`, as
+/// snapshot-relative paths.
+///
+/// Deliberately recursive rather than assuming upstream's
+/// one-directory-per-cycle layout: the point of the classification check
+/// is to notice a bump that arrives in an unexpected shape, so a file
+/// dropped straight into `pack/` — or nested a level deeper — has to
+/// reach [`classify`] and be reported unclassified, not be quietly
+/// skipped by the scan.
 fn vendored_pack_files(snapshot: &Path) -> Result<Vec<PathBuf>, String> {
-    let pack_dir = snapshot.join("pack");
     let mut out = Vec::new();
-    let dirs =
-        std::fs::read_dir(&pack_dir).map_err(|e| format!("reading {}: {e}", pack_dir.display()))?;
-    for dir in dirs {
-        let dir = dir.map_err(|e| format!("reading {}: {e}", pack_dir.display()))?;
-        if !dir.file_type().map_err(|e| e.to_string())?.is_dir() {
-            continue;
-        }
-        let entries = std::fs::read_dir(dir.path())
-            .map_err(|e| format!("reading {}: {e}", dir.path().display()))?;
-        for entry in entries {
-            let path = entry
-                .map_err(|e| format!("reading {}: {e}", dir.path().display()))?
-                .path();
-            if path.extension().is_some_and(|e| e == "json") {
-                out.push(
-                    Path::new("pack").join(dir.file_name()).join(
-                        path.file_name()
-                            .ok_or_else(|| format!("no file name: {}", path.display()))?,
-                    ),
-                );
-            }
-        }
-    }
+    collect_json(&snapshot.join("pack"), Path::new("pack"), &mut out)?;
     out.sort();
     Ok(out)
 }
 
+/// Walk `dir`, appending every `*.json` it contains to `out` as `rel`
+/// joined with the file's path relative to `dir`.
+fn collect_json(dir: &Path, rel: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("reading {}: {e}", dir.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("reading {}: {e}", dir.display()))?;
+        let name = entry.file_name();
+        let path = entry.path();
+        if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+            collect_json(&path, &rel.join(name), out)?;
+        } else if path.extension().is_some_and(|e| e == "json") {
+            out.push(rel.join(name));
+        }
+    }
+    Ok(())
+}
+
+/// The `packs.json` entries the completeness check runs against.
 fn read_packs(snapshot: &Path) -> Result<Vec<RawPack>, String> {
     let path = snapshot.join("packs.json");
     let raw =
@@ -1227,7 +1229,7 @@ mod tests {
     /// reference pack, one out-of-scope pack in an out-of-scope cycle.
     fn fixture_manifest() -> Manifest<'static> {
         Manifest {
-            ingested: &["pack/core/core.json"],
+            corpus: &["pack/core/core.json"],
             reference: &["pack/ptc/ptc.json", "pack/ptc/ptc_encounter.json"],
             out_of_scope: &["pack/core/core_2026.json"],
             out_of_scope_cycles: &["core_ch2"],
@@ -1302,12 +1304,9 @@ mod tests {
     /// upstream ships no `ptcp.json`. The exception list absorbs it.
     #[test]
     fn classify_accepts_a_pack_on_the_no_file_exception_list() {
-        assert_eq!(
-            classify_against(&fixture_files(), &fixture_packs(), &fixture_manifest()),
-            Ok(())
-        );
-        // …and the exception is what makes it pass: drop `ptcp` from the
-        // list and the same fixtures report it missing.
+        // The clean case is `classify_accepts_a_tree_the_manifest_describes`
+        // above; what this asserts is that the exception is load-bearing —
+        // drop `ptcp` from the list and the same fixtures report it missing.
         let mut manifest = fixture_manifest();
         manifest.packs_without_files = &[];
         assert_eq!(

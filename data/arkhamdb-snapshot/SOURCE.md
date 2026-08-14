@@ -102,7 +102,7 @@ Chapter 1 card" cannot silently draw from Chapter 2.
 
 ### What's in `OUT_OF_SCOPE_FILES`, and why
 
-Three files' worth of Chapter 2, plus one Chapter 1 oddity:
+Chapter 2 content in two groups, plus one Chapter 1 oddity:
 
 - **`core_2026.json` / `core_2026_encounter.json` — Core Set (2026)**, the
   Asmodee "Chapter 2" set (codes `120xx`, `cycle_code: core_ch2`). **New
