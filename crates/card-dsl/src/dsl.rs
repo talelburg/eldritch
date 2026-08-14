@@ -776,6 +776,27 @@ pub enum Effect {
     /// "if successful" (the Fight follow-up deals damage only on success).
     /// A no-op when there is no in-flight test.
     BoostAttackDamage(u8),
+    /// Add `N` to the in-flight skill test's bonus clue count — Deduction
+    /// 01039's "discover 1 **additional** clue at that location."
+    /// Accumulated at commit time (under [`Trigger::OnCommit`]) onto the
+    /// in-flight record; **only an Investigate skill test's follow-up reads
+    /// it**, and it raises that one discovery's count rather than making a
+    /// second discovery. Per the card's FAQ, *"'Additional' means 'in
+    /// addition to other clues you discover', i.e. it modifies the number of
+    /// clues that you would find, it does not add an extra effect on top of
+    /// any other effects"* — so the distinction is the card text, not an
+    /// implementation detail (see the **Discovery** entry in `CONTEXT.md`).
+    ///
+    /// The "if successful" qualifier is intrinsic: the Investigate follow-up
+    /// is the accumulator's only reader and runs on success only, so a failed
+    /// test throws the accumulated bonus away with the test's frame. A no-op
+    /// when there is no in-flight test.
+    ///
+    /// Deliberately **not** unified with [`BoostAttackDamage`](Self::BoostAttackDamage)
+    /// into one `Boost { kind, amount }`: the two share an implementation
+    /// pattern, not a card-facing one, and the evaluator would still match on
+    /// the discriminant.
+    DiscoverAdditionalClues(u8),
     /// A constant restriction the source card imposes while in play
     /// (under [`Trigger::Constant`]). **Inspected, not executed** — the
     /// engine reads it at the relevant decision point (`play_is_prohibited`
@@ -1475,6 +1496,13 @@ pub fn boost_attack_damage(amount: u8) -> Effect {
     Effect::BoostAttackDamage(amount)
 }
 
+/// Build an [`Effect::DiscoverAdditionalClues`] adding `amount` to the
+/// in-flight Investigate test's discovery count (Deduction 01039).
+#[must_use]
+pub fn discover_additional_clues(amount: u8) -> Effect {
+    Effect::DiscoverAdditionalClues(amount)
+}
+
 /// Build an [`Effect::DrawCards`] drawing `count` cards for `target`.
 #[must_use]
 pub fn draw_cards(target: InvestigatorTarget, count: u8) -> Effect {
@@ -1905,6 +1933,18 @@ mod tests {
     fn boost_attack_damage_round_trips_through_serde_json() {
         let effect = boost_attack_damage(1);
         assert_eq!(effect, Effect::BoostAttackDamage(1));
+        let json = serde_json::to_string(&effect).expect("serialize");
+        let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(effect, recovered);
+    }
+
+    /// `Effect::DiscoverAdditionalClues` (Deduction 01039's "1 additional
+    /// clue") round-trips through serde, and the builder constructs the
+    /// variant.
+    #[test]
+    fn discover_additional_clues_round_trips_through_serde_json() {
+        let effect = discover_additional_clues(1);
+        assert_eq!(effect, Effect::DiscoverAdditionalClues(1));
         let json = serde_json::to_string(&effect).expect("serialize");
         let recovered: Effect = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(effect, recovered);

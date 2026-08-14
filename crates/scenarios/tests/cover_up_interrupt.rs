@@ -154,11 +154,19 @@ fn no_interrupt_when_cover_up_has_no_clues() {
 
 /// State paused at a `BeforeDiscoverClues` window for a `count`-clue discovery
 /// with a Cover Up holding `cover_up_clues` in the threat area. Built by
-/// pushing the resolution frame directly — no `count > 1` discovery source
-/// exists through Investigate in Slice 1 (#368) — to exercise the
-/// `BeforeDiscoverClues.count` → `clue_discovery_count` → discard-from-self
-/// threading and the `min(count, clues)` cap, on the post-migration window
-/// path. (The `count == 1` real-Investigate flow is covered above.)
+/// pushing the resolution frame directly, so `count` can be set independently
+/// of any discovery source, exercising the `BeforeDiscoverClues.count` →
+/// `clue_discovery_count` → discard-from-self threading and the **Cover Up
+/// discard cap** — `min(count, card.clues)`, how many of the replaced clues
+/// Cover Up can actually absorb.
+///
+/// Distinct from the **location cap** (`min(count, location.clues)`, #471),
+/// which `discover_clue` applies *before* emitting the timing point: by the
+/// time a window carries a `count`, that count is already what the location
+/// could pay. `loc_clues = 5` in both cases below keeps these synthetic frames
+/// reachable states under that cap. (The real-Investigate flows — `count == 1`
+/// plain, and `count == 2` with Deduction 01039 committed — are covered above
+/// and in `cards/tests/cover_up.rs`.)
 fn paused_before_discover_window(count: u8, loc_clues: u8, cover_up_clues: u8) -> GameState {
     let mut investigator = test_investigator(1);
     investigator.threat_area.push(cover_up(cover_up_clues));

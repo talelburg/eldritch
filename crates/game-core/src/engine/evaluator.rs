@@ -30,9 +30,11 @@
 //! [`GameState::pending_skill_modifiers`]: crate::state::GameState::pending_skill_modifiers
 //! - [`Effect::If`] evaluates [`Condition::SkillTestKind`] against
 //!   the in-flight test's `kind`. [`SkillTest`](crate::dsl::Condition::SkillTest)
-//!   isn't yet wired — the outcome isn't snapshotted onto state, and
-//!   inside an [`Trigger::OnSkillTestResolution`] effect the trigger
-//!   itself gates outcome, so the condition is redundant there.
+//!   isn't yet wired — inside an [`Trigger::OnSkillTestResolution`] effect
+//!   the trigger itself gates outcome, so the condition is redundant there,
+//!   and no other trigger has yet needed it (the outcome *is* on
+//!   [`InFlightSkillTest::resolved`](crate::state::InFlightSkillTest::resolved)
+//!   from ST.6 on, so this is unwired, not unknowable).
 //! - [`Effect::ForEach`] dispatches but the
 //!   [`InvestigatorTargetSet`](crate::dsl::InvestigatorTargetSet)
 //!   resolver ("at controller location", "all investigators")
@@ -505,6 +507,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             extra_damage,
         } => apply_fight(cx, &eval_ctx, combat_modifier, extra_damage),
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
+        Effect::DiscoverAdditionalClues(amount) => discover_additional_clues_effect(cx, *amount),
         Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, *count),
         Effect::Investigate { shroud_modifier } => {
             apply_investigate(cx, &eval_ctx, shroud_modifier)
@@ -823,6 +826,19 @@ fn boost_attack_damage_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
     EngineOutcome::Done
 }
 
+/// Add `amount` to the in-flight skill test's `bonus_clues_discovered`
+/// accumulator (Deduction 01039) — the clue-side twin of
+/// [`boost_attack_damage_effect`]. A no-op when there is no in-flight test.
+/// The Investigate follow-up is the only reader, and it *raises its single
+/// discovery's count* rather than making a second discovery, so this is inert
+/// for non-Investigate tests.
+fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
+    if let Some(test) = cx.state.current_skill_test_mut() {
+        test.bonus_clues_discovered = test.bonus_clues_discovered.saturating_add(amount);
+    }
+    EngineOutcome::Done
+}
+
 /// Resolve [`Effect::Fight`]: snapshot the combat modifier, read the target
 /// enemy from the evaluation context (grounded by `ground_chosen_targets`
 /// before this handler runs), and start a Combat skill test whose Fight
@@ -1113,11 +1129,15 @@ fn eval_condition(
         Condition::SkillTest { outcome } => {
             // Inside an [`Trigger::OnSkillTestResolution`] effect, the
             // outcome is already gated by the trigger; using this
-            // condition there is redundant. Outside that context
-            // (e.g. an OnEvent reaction keying off `SkillTestSucceeded`),
-            // the engine would need to snapshot the outcome onto
-            // state, which it doesn't today. Reject with a TODO
-            // pointing at the preferred trigger.
+            // condition there is redundant. It is *not* unknowable
+            // elsewhere in ST.7 — post-#423 the determination lives on
+            // [`InFlightSkillTest::resolved`], so an `OnCommit` effect
+            // could read it — but nothing wires this condition to that
+            // field, and outside an in-flight test (an OnEvent reaction
+            // keying off `SkillTestSucceeded`) there is no such frame to
+            // read. Reject with a TODO pointing at the preferred trigger.
+            // The one card in Core+Dunwich that genuinely needs it is
+            // Rex's Curse 02009 (#572).
             Err(format!(
                 "TODO: Condition::SkillTest {{ outcome: {outcome:?} }} not yet evaluated; \
                  prefer Trigger::OnSkillTestResolution for resolution-time effects, \
@@ -1306,6 +1326,20 @@ fn discover_clue(
         // discovered"). Don't reject; just do nothing.
         return EngineOutcome::Done;
     }
+    // A discovery is what you actually take, never what you requested: per the
+    // Cover Up 01007 / Deduction 01039 FAQ, *"Deduction doesn't allow you to
+    // discover clues that aren't at that location. If your location has 1 clue
+    // at it, you can only discover 1 clue at most when you investigate it."*
+    // Cap **here**, before the timing point, so the would-be-discovery count
+    // every replacement effect reads is the real one — Cover Up's "discard that
+    // many" derives from `WouldDiscoverClues.count` (#471, ex-#368 item 2).
+    //
+    // Locked at emission: `perform_discovery`'s own `min` stays as the
+    // shrinkage backstop, so a mid-window reaction that *removes* clues shrinks
+    // the discovery while one that *adds* clues does not grow it. The
+    // `clues == 0` early return above precedes this, so `capped >= 1` and Cover
+    // Up is never prompted for a 0-clue discard.
+    let capped = count.min(location.clues);
 
     if !cx.state.investigators.contains_key(&eval_ctx.controller) {
         return EngineOutcome::Rejected {
@@ -1321,9 +1355,8 @@ fn discover_clue(
     // migrated from the C5a `clue_interrupt` seam). Reaction-only Before timing
     // point: `queue_event` queues the window iff an eligible `WouldDiscoverClues`
     // reaction is controlled at the discovery location — the "at your location"
-    // scoping and the `card.clues > 0` potential-gate stand-in (RR p.2;
-    // capped-count semantics now tracked in #471) live in the window scan. If
-    // the window opened, suspend; the
+    // scoping and the `card.clues > 0` potential-gate stand-in (RR p.2) live in
+    // the window scan. If the window opened, suspend; the
     // `BeforeDiscoverClues` continuation performs the deferred discovery on
     // close (unless a reaction cancelled it). No registry / no eligible card →
     // `open_windows` stays empty and the discovery happens now.
@@ -1332,7 +1365,7 @@ fn discover_clue(
         &crate::engine::dispatch::emit::TimingEvent::WouldDiscoverClues {
             investigator: eval_ctx.controller,
             location: location_id,
-            count,
+            count: capped,
         },
     );
     // `queue_event` pushes the before-discover window (if any eligible reaction
@@ -1351,7 +1384,7 @@ fn discover_clue(
         return crate::engine::dispatch::reaction_windows::open_queued_reaction_window(cx);
     }
 
-    perform_discovery(cx, location_id, count, eval_ctx.controller);
+    perform_discovery(cx, location_id, capped, eval_ctx.controller);
     EngineOutcome::Done
 }
 
@@ -1383,6 +1416,14 @@ fn cancel_current_impact(cx: &mut Cx) -> EngineOutcome {
 /// clue-discovery interrupt's `Skip` resume can perform the deferred
 /// discovery (C5a #236). Caller guarantees both ids exist and the
 /// location has clues.
+///
+/// `count` arrives already capped at the location's clues as of the
+/// would-be-discovery timing point ([`discover_clue`] caps before emitting, so
+/// the count a replacement effect reads is the real one). The `min` here is the
+/// **shrinkage backstop** for the gap between emission and this call: a reaction
+/// that removed clues mid-window shrinks the discovery, while one that added
+/// clues does not grow it — the quantity is fixed at the moment of the would-be
+/// discovery (#471).
 pub(crate) fn perform_discovery(
     cx: &mut Cx,
     location_id: crate::state::LocationId,
@@ -2949,6 +2990,7 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     test_modifier: 0,
                     bonus_attack_damage: 0,
+                    bonus_clues_discovered: 0,
                     resolved: None,
                     symbol_on_fail: None,
                 },
@@ -3008,6 +3050,7 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     test_modifier: 0,
                     bonus_attack_damage: 0,
+                    bonus_clues_discovered: 0,
                     resolved: None,
                     symbol_on_fail: None,
                 },
@@ -3027,6 +3070,68 @@ mod tests {
             state.current_skill_test().unwrap().bonus_attack_damage,
             2,
             "two BoostAttackDamage(1) applications should stack to 2"
+        );
+    }
+
+    /// `Effect::DiscoverAdditionalClues` accumulates onto the in-flight test's
+    /// `bonus_clues_discovered`; repeated applications stack (two copies of
+    /// Deduction 01039 committed to one investigation). A no-op with no
+    /// in-flight test.
+    #[test]
+    fn discover_additional_clues_accumulates_on_in_flight_test() {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+
+        // No in-flight test: a clean no-op (no panic, nothing to mutate).
+        let outcome = run(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &crate::dsl::discover_additional_clues(1),
+            ctx(1),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+
+        state
+            .continuations
+            .push(crate::state::Continuation::SkillTest(
+                crate::state::InFlightSkillTest {
+                    investigator: InvestigatorId(1),
+                    skill: SkillKind::Intellect,
+                    kind: SkillTestKind::Investigate,
+                    difficulty: 3,
+                    committed_by_active: Vec::new(),
+                    tested_location: None,
+                    follow_up: crate::state::SkillTestFollowUp::Investigate,
+                    on_fail: None,
+                    on_success: None,
+                    source: None,
+                    continuation: crate::state::SkillTestStep::AwaitingCommit,
+                    test_modifier: 0,
+                    bonus_attack_damage: 0,
+                    bonus_clues_discovered: 0,
+                    resolved: None,
+                    symbol_on_fail: None,
+                },
+            ));
+
+        for _ in 0..2 {
+            run(
+                &mut Cx {
+                    state: &mut state,
+                    events: &mut events,
+                },
+                &crate::dsl::discover_additional_clues(1),
+                ctx(1),
+            );
+        }
+        assert_eq!(
+            state.current_skill_test().unwrap().bonus_clues_discovered,
+            2,
+            "two DiscoverAdditionalClues(1) applications should stack to 2"
         );
     }
 
@@ -3133,6 +3238,7 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     test_modifier: 0,
                     bonus_attack_damage: 0,
+                    bonus_clues_discovered: 0,
                     resolved: None,
                     symbol_on_fail: None,
                 },
@@ -3305,6 +3411,7 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     test_modifier: 0,
                     bonus_attack_damage: 0,
+                    bonus_clues_discovered: 0,
                     resolved: None,
                     symbol_on_fail: None,
                 },

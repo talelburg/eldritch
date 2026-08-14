@@ -1,12 +1,14 @@
 //! End-to-end test that Deduction (01039):
 //! 1. Contributes 1 intellect icon when committed to a skill test.
-//! 2. Discovers 1 additional clue at the tested location on a
-//!    successful Investigate.
-//! 3. Does not fire its bonus on a failed Investigate.
-//! 4. Does not fire its bonus on a non-Investigate skill test.
+//! 2. Raises the Investigate follow-up's **single** discovery to 2 clues
+//!    at the tested location on a successful Investigate — one discovery
+//!    of 2, not two of 1 (#471; see the **Discovery** entry in
+//!    `CONTEXT.md`).
+//! 3. Discovers no clues on a failed Investigate.
+//! 4. Does not raise the count on a non-Investigate skill test.
 //!
 //! Closes the Phase-3 acceptance criterion for #39: the commit-time
-//! icon + the resolution-time bonus both work end-to-end with the
+//! icon + the discovery-count bonus both work end-to-end with the
 //! real card and real registry.
 
 use game_core::engine::EngineOutcome;
@@ -68,12 +70,15 @@ fn drive_committing_deduction(state: game_core::GameState) -> game_core::ApplyRe
 #[test]
 fn investigate_with_committed_deduction_succeeds_at_shroud_4_via_intellect_icon() {
     // 3 intellect + 0 (token) + 1 (Deduction's intellect icon) = 4 vs
-    // shroud 4 → succeed by 0. Two CluePlaced events fire: one from
-    // the Investigate action's standard `SkillTestFollowUp` (1 clue
-    // at the controller's location), and one from Deduction's
-    // OnSkillTestResolution bonus (1 clue at the tested location,
-    // same location here). Location ends with 0 of 2 clues;
+    // shroud 4 → succeed by 0. **One** discovery of 2 clues: the
+    // Investigate follow-up's own discovery, its count raised from 1
+    // to 2 by the `bonus_clues_discovered` accumulator Deduction
+    // populates at commit. Location ends with 0 of 2 clues;
     // controller carries 2.
+    //
+    // The event *count* is the whole point of this assertion — final
+    // clue totals cannot tell one discovery of 2 from two of 1, and
+    // that difference is what Cover Up 01007 keys off (#471).
     let (state, id, loc) = state_with_deduction(2, 4);
     let result = drive_committing_deduction(state);
 
@@ -90,17 +95,44 @@ fn investigate_with_committed_deduction_succeeds_at_shroud_4_via_intellect_icon(
     let inv = &result.state.investigators[&id];
     assert_eq!(inv.discard, vec![CardCode::new(DEDUCTION)]);
     assert!(inv.hand.is_empty());
-    // Two clues moved: one from the action's standard follow-up, one
-    // from Deduction's bonus. Both at the tested location.
     assert_eq!(result.state.locations[&loc].clues, 0);
     assert_eq!(inv.clues, 2);
-    assert_event_count!(result.events, 2, Event::CluePlaced { .. });
+    assert_event_count!(result.events, 1, Event::CluePlaced { .. });
+    assert_event!(
+        result.events,
+        Event::CluePlaced { investigator, count: 2 } if *investigator == id
+    );
 }
 
 #[test]
-fn failed_investigate_does_not_fire_deductions_bonus() {
+fn deduction_at_a_one_clue_location_discovers_exactly_one() {
+    // Deduction "doesn't allow you to discover clues that aren't at that
+    // location. If your location has 1 clue at it, you can only discover 1
+    // clue at most when you investigate it" (ArkhamDB 01007/01039 FAQ). The
+    // combined count of 2 is capped to the location's 1 clue **at emission**,
+    // so the single discovery reports the number actually taken.
+    let (state, id, loc) = state_with_deduction(1, 4);
+    let result = drive_committing_deduction(state);
+
+    assert!(matches!(
+        result.outcome,
+        EngineOutcome::AwaitingInput { .. }
+    ));
+    assert_eq!(result.state.locations[&loc].clues, 0);
+    assert_eq!(result.state.investigators[&id].clues, 1);
+    assert_event_count!(result.events, 1, Event::CluePlaced { .. });
+    assert_event!(
+        result.events,
+        Event::CluePlaced { investigator, count: 1 } if *investigator == id
+    );
+}
+
+#[test]
+fn failed_investigate_discovers_no_clues() {
     // Shroud 99 — even with Deduction's 1 intellect icon, 3 + 0 + 1 = 4
-    // << 99 → fail by 95. No bonus clue should fire.
+    // << 99 → fail by 95. Deduction's `OnCommit` accumulate is ungated on
+    // outcome and does run, but the Investigate follow-up is success-only,
+    // so nothing ever reads it and no clue moves.
     let (state, id, loc) = state_with_deduction(2, 99);
     let result = drive_committing_deduction(state);
 

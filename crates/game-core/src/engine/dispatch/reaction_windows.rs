@@ -1142,9 +1142,10 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         }
         // For `WouldDiscoverClues`, bind the would-be discovery count so the
         // replacement effect (Cover Up's "discard that many") discards the
-        // right number. Mirrors `attacking_enemy`. TODO(#471): `count` is the
-        // requested, not the capped, count (capped-count semantics moved from
-        // #368 to #471 with the Deduction fix).
+        // right number. Mirrors `attacking_enemy`. `count` is the **capped**
+        // count — `discover_clue` caps at the location's clues before emitting
+        // (#471) — so "that many" is what would actually have been discovered,
+        // not what was requested.
         Some(crate::engine::TimingEvent::WouldDiscoverClues { count, .. }) => {
             eval_ctx.set_clue_discovery_count(*count);
         }

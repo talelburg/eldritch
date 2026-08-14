@@ -1408,6 +1408,21 @@ pub struct InFlightSkillTest {
     /// is inert for non-Fight tests. `0` for every test that no
     /// commit-time attack buff touches (regression-safe).
     pub bonus_attack_damage: u8,
+    /// Bonus clues added to this investigation's discovery, accumulated at
+    /// commit time by
+    /// [`Effect::DiscoverAdditionalClues`](crate::dsl::Effect::DiscoverAdditionalClues)
+    /// (Deduction 01039). Read **only** by the `Investigate` follow-up, which
+    /// makes **one** discovery of `1 + bonus_clues_discovered` on success — so
+    /// it is inert for non-Investigate tests. The sibling of
+    /// [`bonus_attack_damage`](Self::bonus_attack_damage); `0` for every test
+    /// no commit-time clue buff touches.
+    ///
+    /// It raises a discovery's count rather than adding a discovery, because
+    /// Deduction's FAQ says "additional" *"modifies the number of clues that
+    /// you would find, it does not add an extra effect on top of any other
+    /// effects"* — and because the two shapes are distinguishable: Cover Up
+    /// 01007 replaces one discovery of 2, not two of 1 (#471).
+    pub bonus_clues_discovered: u8,
     /// The chaos-token determination, set once at the
     /// [`Resolving`](SkillTestStep::Resolving) step (RR ST.6) and read by every
     /// post-ST.6 step instead of threading `succeeded`/`failed_by` through each
@@ -1640,10 +1655,14 @@ pub enum SkillTestFollowUp {
     /// [`test_support::perform_skill_test`](crate::test_support::perform_skill_test)
     /// synthetic entry point).
     None,
-    /// On success, discover 1 clue at the investigator's current
-    /// location (via the
-    /// [`DiscoverClue`](crate::dsl::Effect::DiscoverClue) evaluator
-    /// path). Used by `Investigate`.
+    /// On success, make **one** discovery of
+    /// `1 + `[`bonus_clues_discovered`](InFlightSkillTest::bonus_clues_discovered)
+    /// clues at the test's
+    /// [`tested_location`](InFlightSkillTest::tested_location) (via the
+    /// [`DiscoverClue`](crate::dsl::Effect::DiscoverClue) evaluator path).
+    /// Used by `Investigate`. A commit-time "discover 1 additional clue"
+    /// (Deduction 01039) raises this discovery's count rather than adding a
+    /// second discovery — see the **Discovery** entry in `CONTEXT.md`.
     Investigate,
     /// On success, deal 1 damage to the named enemy (and defeat it if
     /// damage reaches `max_health`). Used by
