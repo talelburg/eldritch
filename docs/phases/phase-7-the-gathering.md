@@ -49,8 +49,17 @@ in **Architecture to build on**. In dependency order, the arcs that landed:
    never fired in a real game. **#569 ✅ shipped (PR #613)** — each site emits in
    tail position and resumes on a frame, `emit_event` is renamed `queue_event`,
    and a `drive`-loop assert backstops the class; ADR 0003 records the contract.
-   The `GameEnd` instance is #566, the deferred `ActionResolution`
-   generalisation #612.)*
+   The deferred `ActionResolution` generalisation is #612.)*
+   *(**#566 ✅ shipped (PR #614)** — the `GameEnd` instance, which turned out to
+   be the smaller half of its own bug. The swallowed suspension lost Cover Up
+   01007's mental trauma and wedged the 2-hit case outright, but the reason it
+   could was that a latched resolution ended nothing: `apply_resolution` ran
+   while the continuation stack still held live work, and play carried on over a
+   finished scenario. The latch now arms a `ScenarioEnd` frame at the bottom of
+   the stack and the `drive` loop winds down against it, cancelling
+   opportunities and framework steps while mandatory resolution completes; the
+   apply boundary pops the frame and finalises once. ADR 0004 records the rule
+   and the Ghoul Priest trace that shapes it.)*
 
 ## Remaining gate work
 

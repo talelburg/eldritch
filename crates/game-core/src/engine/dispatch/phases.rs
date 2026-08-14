@@ -1015,13 +1015,21 @@ fn upkeep_phase(cx: &mut Cx) -> EngineOutcome {
 pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
     reset_actions(cx); // 4.2
     ready_exhausted_cards(cx); // 4.3
-                               // Sentinel for "4.4 pushed a continuation". Captured after 4.2/4.3 because
-                               // those are pure state mutations that never push — so a growth here is
-                               // attributable to the 4.4 draw (a drawn-weakness Revelation; or any future
-                               // pusher, which the cede below handles uniformly).
-    let depth = cx.state.continuations.len();
+                               // Sentinel for "4.4 pushed a continuation *above us*". Captured after
+                               // 4.2/4.3 because those are pure state mutations that never push — so a
+                               // change here is attributable to the 4.4 draw (a drawn-weakness
+                               // Revelation; or any future pusher, which the cede below handles
+                               // uniformly).
+                               //
+                               // Compares the top frame rather than the stack depth: 4.4's draw can
+                               // deal lethal harm, and eliminating the last investigator latches a
+                               // resolution, which inserts a `ScenarioEnd` frame at the *bottom* of the
+                               // stack (#566). That grows the depth without pushing anything above this
+                               // anchor, so a length sentinel would cede to a Revelation that does not
+                               // exist.
+    let top_before = cx.state.continuations.last().cloned();
     upkeep_draw_and_resource(cx); // 4.4 — may push a drawn-weakness Revelation (#509)
-    if cx.state.continuations.len() > depth {
+    if cx.state.continuations.last() != top_before.as_ref() {
         // 4.4 pushed a drawn-weakness Revelation above the (now-buried) UpkeepPhase
         // anchor. Cede: the drive loop resolves the Revelation, then re-exposes the
         // anchor at AfterDraw (anchor_on_child_pop → upkeep_after_draw) for 4.5/4.6.

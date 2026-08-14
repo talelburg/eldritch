@@ -142,9 +142,9 @@ pub struct GameState {
     ///
     /// `None` for tests and fixtures that don't care about scenario
     /// resolution; in that case the engine's post-apply resolution
-    /// hook short-circuits. `Some(id)` is the normal case: on a
-    /// `None`→`Some` [`resolution`](Self::resolution) latch transition the
-    /// engine looks up the module via
+    /// hook short-circuits. `Some(id)` is the normal case: when the
+    /// [`ScenarioEnd`](Continuation::ScenarioEnd) frame reaches its finalize
+    /// step the engine looks up the module via
     /// [`scenario_registry::current`](crate::scenario_registry::current)
     /// and runs its `apply_resolution`.
     ///
@@ -216,12 +216,20 @@ pub struct GameState {
     pub act_deck: Vec<Act>,
     /// Cursor into [`act_deck`](Self::act_deck): the current act.
     pub act_index: usize,
-    /// Fire-once scenario-resolution latch. `None` until a resolution
-    /// fires; set by `request_resolution` at the act/agenda resolution
-    /// point or the no-remaining-players elimination step. The
-    /// `apply` hook detects the `None`→`Some` transition to emit
-    /// `Event::ScenarioResolved` and run `apply_resolution` exactly once
-    /// (the idempotency guard formerly tracked as #131).
+    /// Fire-once scenario-resolution latch: **did the scenario end?** `None`
+    /// until a resolution fires; set by `request_resolution` at the act/agenda
+    /// resolution point or the no-remaining-players elimination step, which
+    /// pushes a [`ScenarioEnd`](Continuation::ScenarioEnd) frame with it.
+    ///
+    /// While `Some`, the `drive` loop cancels every frame that is only an
+    /// opportunity or a framework step
+    /// ([`cancelled_by_scenario_end`](Continuation::cancelled_by_scenario_end))
+    /// and lets mandatory resolution finish. *Has the ending finished?* is the
+    /// `ScenarioEnd` frame's question, not this field's: the apply boundary pops
+    /// that frame as it emits `Event::ScenarioResolved` and runs
+    /// `apply_resolution`, exactly once (the idempotency guard formerly tracked
+    /// as #131). See
+    /// `docs/adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md`.
     pub resolution: Option<crate::scenario::Resolution>,
     /// The victory display (Rules Reference p.21): an out-of-play zone of
     /// cards worth experience, scored at scenario end. Victory-point
@@ -783,6 +791,41 @@ pub enum Continuation {
     /// own [`EvalContext`](crate::engine::EvalContext) snapshot (#345's grouped
     /// bindings) so resume re-binds without replay.
     Effect(EffectFrame),
+    /// The scenario's ending, in progress (#566). Pushed at the **bottom** of the
+    /// stack by the engine's `request_resolution` the moment the resolution
+    /// latches, so it is reached only once every frame above it has either
+    /// completed or been cancelled
+    /// ([`cancelled_by_scenario_end`](Self::cancelled_by_scenario_end)). It then
+    /// emits the [`GameEnd`](crate::engine::TimingEvent::GameEnd) timing point —
+    /// Cover Up 01007's *"Forced – When the game ends, if there are any clues on
+    /// Cover Up: You suffer 1 mental trauma"* — whose forced abilities drain
+    /// *above* it, possibly across an `apply` boundary (the interactive
+    /// acknowledge). When it is exposed again at
+    /// [`Finalize`](ScenarioEndStep::Finalize) the apply boundary — the only place
+    /// holding the [`ScenarioRegistry`](crate::scenario::ScenarioRegistry) — pops
+    /// it and runs the victory-display scan + the module's `apply_resolution`.
+    ///
+    /// Never awaits input (the acknowledge above it is the prompt); pushed once
+    /// per scenario and popped once, so its presence *is* the once-only finalize
+    /// marker: [`GameState::resolution`] answers "did the scenario end", this
+    /// frame answers "has the ending finished". See
+    /// `docs/adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md`.
+    ScenarioEnd {
+        /// Where in the ending we are.
+        step: ScenarioEndStep,
+    },
+}
+
+/// Step cursor for the [`ScenarioEnd`](Continuation::ScenarioEnd) frame (#566).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ScenarioEndStep {
+    /// Emit the `GameEnd` timing point. The `drive` loop advances the cursor
+    /// *before* emitting — a tail-position emit, since the emit only queues
+    /// (ADR 0003) and its frames must resolve above this one.
+    EmitGameEnd,
+    /// The game-end forced abilities have drained. The apply boundary finalizes
+    /// (victory display + `apply_resolution`) and pops the frame.
+    Finalize,
 }
 
 /// How the framework disposes of a drawn encounter card after its Revelation's
@@ -918,6 +961,86 @@ impl Continuation {
         )
     }
 
+    /// True if a latched scenario resolution cancels this frame (#566).
+    ///
+    /// Rules Reference: *"Some instructions in the act and agenda decks (as well
+    /// as on other encounter cardtypes) contain resolution points, in the format
+    /// of: '(→R#).' If a resolution point is reached, the scenario ends."* The
+    /// `drive` loop acts on that frame by frame: a frame that is an **opportunity
+    /// to act** (a reaction window, a Fast window) or part of the **framework
+    /// sequence** (a phase anchor, the open turn, the encounter-draw loop, a surge
+    /// chain, the enemy attack loop, hunter movement, the hand-size discard, the
+    /// mulligan) is discarded when it reaches the top; a frame that is **mandatory
+    /// resolution already under way** (an effect frame, a skill test, an
+    /// advance-reverse, a forced ordering run, an acknowledge, a mid-resolution
+    /// prompt, a frame holding a card in no zone) completes.
+    ///
+    /// Exhaustive rather than a `matches!`, so a new [`Continuation`] variant
+    /// cannot default into either bucket without a decision — the discipline
+    /// [`is_phase_anchor`](Self::is_phase_anchor) and [`awaits_input`](Self::awaits_input)
+    /// already use. See
+    /// `docs/adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md`.
+    #[must_use]
+    pub fn cancelled_by_scenario_end(&self) -> bool {
+        match self {
+            // Opportunities to act. A reaction window must not open once the
+            // scenario has ended — act 01110's ruling that its Forced objective
+            // "will trigger as soon as you defeat the Ghoul Priest, before any
+            // 'After you defeat an enemy' reactions can be used" is only
+            // honoured if Roland Banks' window never opens at all.
+            Continuation::TimingPointWindow {
+                mode: TimingMode::Reaction,
+                ..
+            }
+            | Continuation::FastWindow { .. }
+            // The framework sequence: nothing further in the round happens.
+            | Continuation::MythosPhase { .. }
+            | Continuation::InvestigationPhase { .. }
+            | Continuation::EnemyPhase { .. }
+            | Continuation::UpkeepPhase { .. }
+            | Continuation::InvestigatorTurn { .. }
+            | Continuation::Mulligan { .. }
+            | Continuation::EncounterDraw { .. }
+            | Continuation::PlayerDraw { .. }
+            | Continuation::AttackLoop { .. }
+            | Continuation::HandSizeDiscard(_)
+            // Framework board maintenance whose prompt would otherwise be put to
+            // a player after the game is over, and whose outcome no longer
+            // reaches state anyone reads: which location an unengaged Hunter
+            // moves to, and which investigator a just-spawned enemy engages.
+            | Continuation::HunterMove(_)
+            | Continuation::SpawnEngage(_) => true,
+            // Mandatory resolution already under way. The forced ordering run is
+            // the 2+-simultaneous half of the same dispatch that queues a lone
+            // forced ability's `AcknowledgeForced`, so the two travel together.
+            Continuation::TimingPointWindow {
+                mode: TimingMode::Forced,
+                ..
+            }
+            | Continuation::AcknowledgeForced { .. }
+            | Continuation::Effect(_)
+            | Continuation::EmitEvent { .. }
+            | Continuation::TimingPoint { .. }
+            | Continuation::SkillTest(_)
+            | Continuation::SubstitutionPrompt { .. }
+            | Continuation::AdvanceReverse { .. }
+            | Continuation::DamageAssignment { .. }
+            // An action already taken finishes (ADR 0004): half-resolving it is
+            // harder to reason about than completing it, and the victory-display
+            // scan reads final board state.
+            | Continuation::ActionResolution { .. }
+            | Continuation::MoveEnter { .. }
+            // Frames holding a card that is in **no zone** (ADR 0002) or awaiting
+            // the framework's disposal of one. Discarding these would leak the
+            // card out of every zone rather than merely skipping a step.
+            | Continuation::PlayFromHand { .. }
+            | Continuation::SlotDiscard { .. }
+            | Continuation::EncounterCard { .. }
+            // The ending itself.
+            | Continuation::ScenarioEnd { .. } => false,
+        }
+    }
+
     /// True if this top frame is a mandatory prompt that only `ResolveInput` may
     /// advance (slice 1b, #393): a reaction/forced window, skill-test commit,
     /// choice, hunter/spawn pick, hand-size discard, act round-end, substitution
@@ -955,9 +1078,14 @@ impl Continuation {
             // ever momentarily on top inside `resume_enemy_attack`, never at a
             // suspension boundary (#411). The `ending: true` rotation transient
             // and `ActionResolution` likewise never await input here.
+            // The ending frame is inert like a phase anchor: the acknowledge /
+            // ordering run its `GameEnd` emit queues sits *above* it and is the
+            // prompt, and once those have drained the apply boundary finalizes
+            // without any player input (#566).
             Continuation::InvestigatorTurn { .. }
             | Continuation::AttackLoop { .. }
-            | Continuation::ActionResolution { .. } => false,
+            | Continuation::ActionResolution { .. }
+            | Continuation::ScenarioEnd { .. } => false,
             other => !other.is_phase_anchor(),
         }
     }
@@ -2851,6 +2979,55 @@ mod action_resolution_frame_tests {
                 remaining: vec![InvestigatorId(2), InvestigatorId(3)],
             }));
         assert_eq!(state.current_hand_size_discard(), Some(InvestigatorId(2)));
+    }
+}
+
+#[cfg(test)]
+mod scenario_end_cancellation_tests {
+    use super::*;
+
+    /// The one variant whose bucket splits on a field rather than on the
+    /// variant: a reaction window is an *opportunity* the ended scenario
+    /// cancels, while the forced run at the same timing point is *mandatory
+    /// resolution* that completes (ADR 0004). They are the two halves of one
+    /// `queue_event`, so a `matches!` on the variant alone would get one wrong.
+    #[test]
+    fn a_reaction_window_is_cancelled_but_its_forced_run_twin_completes() {
+        let window = |mode| Continuation::TimingPointWindow {
+            event: crate::engine::TimingEvent::GameEnd,
+            bucket: crate::dsl::EventTiming::After,
+            mode,
+            candidates: Vec::new(),
+        };
+        assert!(
+            window(TimingMode::Reaction).cancelled_by_scenario_end(),
+            "a reaction window must not open once the scenario has ended"
+        );
+        assert!(
+            !window(TimingMode::Forced).cancelled_by_scenario_end(),
+            "the forced ordering run carries mandatory abilities and completes"
+        );
+    }
+
+    #[test]
+    fn the_ending_frame_is_inert_and_survives_its_own_cancellation_pass() {
+        let f = Continuation::ScenarioEnd {
+            step: ScenarioEndStep::EmitGameEnd,
+        };
+        assert!(
+            !f.cancelled_by_scenario_end(),
+            "the ending frame must not cancel itself"
+        );
+        assert!(
+            !f.awaits_input(),
+            "the acknowledge above the ending is the prompt, not the ending"
+        );
+        assert!(!f.is_phase_anchor());
+        assert!(
+            !f.is_queued_ability(),
+            "the ending frame legitimately sits beneath a phase anchor until the \
+             anchor is cancelled, so the #569 backstop must not flag it"
+        );
     }
 }
 

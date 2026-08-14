@@ -243,4 +243,25 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
         "expected a Won resolution, got {:?}",
         result.state.resolution,
     );
+
+    // #566: advancing act 3 reaches a resolution point, so the scenario ends
+    // *during* the defeat that triggered it — and Roland Banks' "After you
+    // defeat an enemy: Discover 1 clue at your location" window must never
+    // open. Act 01110's ruling is explicit that its Forced objective "will
+    // trigger as soon as you defeat the Ghoul Priest, before any 'After you
+    // defeat an enemy' reactions can be used"; the queued reaction window sits
+    // *beneath* that objective's effect frame, so only cancelling it on the way
+    // back down honours the ruling. Before #566 the window opened anyway —
+    // after `apply_resolution` had already run.
+    assert_eq!(
+        result.outcome,
+        EngineOutcome::Done,
+        "the ended scenario must not surface Roland's after-defeat window",
+    );
+    assert!(
+        result.state.continuations.is_empty(),
+        "no stranded frames after the ending — in particular no open \
+         after-defeat reaction window: {:?}",
+        result.state.continuations,
+    );
 }

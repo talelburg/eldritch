@@ -488,17 +488,24 @@ pub enum Event {
         ability_index: u8,
     },
     /// A scenario resolved (won or lost). Emitted by
-    /// [`apply`](crate::engine::apply) when `GameState.resolution`
-    /// transitions from `None` to `Some` during an apply (a dispatch
-    /// site latched a resolution at a discrete trigger — act/agenda
-    /// resolution point, or last-investigator elimination). Followed
-    /// immediately by any events the scenario's `apply_resolution`
+    /// [`apply`](crate::engine::apply) when the scenario's *ending* finishes —
+    /// not when the resolution latches. A dispatch site latches at a discrete
+    /// trigger (act/agenda resolution point, or last-investigator elimination),
+    /// which arms a
+    /// [`ScenarioEnd`](crate::state::Continuation::ScenarioEnd) frame; the
+    /// engine then cancels the opportunities and framework steps still on the
+    /// continuation stack, runs the game-end Forced abilities (Cover Up 01007's
+    /// mental trauma), and only then pushes this event. So it can land on a
+    /// *later* apply than the latch — the interactive acknowledge of a game-end
+    /// forced ability spans an apply boundary (#566).
+    ///
+    /// Followed immediately by any events the scenario's `apply_resolution`
     /// pushes — XP / trauma changes will appear after this event once
     /// Phase 9 lands real bodies.
     ///
-    /// The latch is fire-once: the engine guards the `None`->`Some`
-    /// transition, so this event fires exactly once per scenario even
-    /// across later applies.
+    /// Fire-once: the latch is first-writer-wins and pushes the `ScenarioEnd`
+    /// frame with it, and the apply boundary pops that frame as it finalizes —
+    /// so this event fires exactly once per scenario.
     ScenarioResolved {
         /// The resolution returned by the scenario module.
         resolution: Resolution,

@@ -216,3 +216,178 @@ fn game_end_emits_no_trauma_when_cover_up_empty() {
         r.events
     );
 }
+
+// ---- Interactive mode: the game-end forced spans the apply boundary ----
+
+/// #566: with `interactive_acknowledge` on (the server default), the lone
+/// game-end forced hit pushes an `AcknowledgeForced` frame, so the ending
+/// *suspends*. The scenario must not finish resolving until the player has
+/// acknowledged and the trauma has landed.
+#[test]
+fn interactive_game_end_trauma_surfaces_an_acknowledge_before_resolving() {
+    let mut state = resolving_state(3);
+    state.interactive_acknowledge = true;
+
+    let paused = take_turn_action(state, &TurnAction::AdvanceAct { investigator: INV });
+
+    assert!(
+        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
+        "the game-end forced acknowledge must surface, got {:?}",
+        paused.outcome,
+    );
+    assert!(
+        !paused
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::ScenarioResolved { .. })),
+        "the scenario must not resolve before the game-end forced has run; events = {:?}",
+        paused.events,
+    );
+    assert!(
+        !paused
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::TraumaSuffered { .. })),
+        "the trauma lands on the acknowledge, not before it",
+    );
+
+    let done = apply(
+        paused.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+        }),
+    );
+
+    assert!(
+        done.events.iter().any(|e| matches!(
+            e,
+            Event::TraumaSuffered {
+                kind: TraumaKind::Mental,
+                amount: 1,
+                ..
+            }
+        )),
+        "expected mental trauma once acknowledged; events = {:?}",
+        done.events,
+    );
+    assert!(
+        done.events
+            .iter()
+            .any(|e| matches!(e, Event::ScenarioResolved { .. })),
+        "the resolution completes after the forced effect; events = {:?}",
+        done.events,
+    );
+    assert!(
+        done.state.continuations.is_empty(),
+        "no stranded frames after the ending finishes: {:?}",
+        done.state.continuations,
+    );
+}
+
+/// #566: two investigators each holding a clue-bearing Cover Up produce two
+/// simultaneous `GameEnd` forced hits, which route to the lead-ordered run
+/// (#213) instead of the single-hit acknowledge. Both traumas must land, and
+/// the run must not strand frames.
+#[test]
+fn two_simultaneous_game_end_forceds_both_resolve() {
+    const INV2: InvestigatorId = InvestigatorId(2);
+
+    let mut first = test_investigator(1);
+    first.clues = 1; // meets the act's clue threshold
+    first.threat_area.push(cover_up(3));
+    let mut second = test_investigator(2);
+    let mut second_cover_up = cover_up(2);
+    second_cover_up.instance_id = CardInstanceId(2);
+    second.threat_area.push(second_cover_up);
+
+    let mut state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator(first)
+        .with_investigator(second)
+        .with_active_investigator(INV)
+        .with_turn_order([INV, INV2])
+        .with_investigator_turn(INV)
+        .with_scenario_id(ScenarioId::new("unknown"))
+        .build();
+    state.interactive_acknowledge = true;
+    state.act_deck = vec![Act {
+        code: CardCode("_test_act".into()),
+        clue_threshold: 1,
+        resolution: Some(Resolution::Won { id: "test".into() }),
+    }];
+
+    let mut result = take_turn_action(state, &TurnAction::AdvanceAct { investigator: INV });
+    let mut events = std::mem::take(&mut result.events);
+    let mut state = result.state;
+
+    // Two hits, so the emit routes to the lead-ordered forced run rather than
+    // the single-hit acknowledge (Rules Reference p.17: the player orders
+    // simultaneous triggers, even in solo). Asserted explicitly — the shapes
+    // differ, and only this one exercises `open_forced_resolution`.
+    assert!(
+        matches!(
+            state.continuations.last(),
+            Some(game_core::state::Continuation::TimingPointWindow {
+                mode: game_core::state::TimingMode::Forced,
+                ..
+            })
+        ),
+        "expected the lead-ordered forced run on top, got {:?}",
+        state.continuations,
+    );
+
+    // Drain the ordering run: each pick resolves one Cover Up's forced effect.
+    for step in 0..8 {
+        if !state
+            .continuations
+            .iter()
+            .any(|c| !matches!(c, game_core::state::Continuation::ScenarioEnd { .. }))
+        {
+            break;
+        }
+        let r = apply(
+            state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            }),
+        );
+        assert!(
+            !matches!(r.outcome, EngineOutcome::Rejected { .. }),
+            "ordering-run step {step} rejected: {:?}",
+            r.outcome,
+        );
+        events.extend(r.events);
+        state = r.state;
+    }
+
+    let traumas = events
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                Event::TraumaSuffered {
+                    kind: TraumaKind::Mental,
+                    amount: 1,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert_eq!(
+        traumas, 2,
+        "both Cover Ups suffer trauma; events = {events:?}"
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, Event::ScenarioResolved { .. }))
+            .count(),
+        1,
+        "the resolution fires exactly once",
+    );
+    assert!(
+        state.continuations.is_empty(),
+        "no stranded frames after the ordering run: {:?}",
+        state.continuations,
+    );
+}
