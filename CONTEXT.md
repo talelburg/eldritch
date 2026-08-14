@@ -50,3 +50,11 @@ _Avoid_: saying an emit "fires" or "resolves" abilities, and reading `EngineOutc
 **Project phase**:
 One of the 11 milestones the build is broken into, tracked in `docs/phases/` and on GitHub.
 _Avoid_: Bare "phase" anywhere a game phase could be meant — which is most of the engine. Say "project phase" or "phase 7" and reserve the bare word for the game concept.
+
+**Snapshot**:
+Everything vendored under `data/arkhamdb-snapshot/` — all of Chapter 1's card data, pinned at one upstream commit. Most of it is **planning input**: it exists so decisions about the DSL and the engine can be made against the full set of cards we will eventually support, not just the ones we build against today. It is much larger than the corpus.
+_Avoid_: Calling it the corpus. Since #618 those are different sets, and conflating them makes "how many cards do we have?" unanswerable.
+
+**Corpus**:
+The subset of the snapshot that `PACK_FILES` ingests and the build actually compiles — Core + Dunwich, emitted as `crates/cards/src/generated/cards.rs`. A pack becomes part of the corpus by being moved into `PACK_FILES`; that promotion is deliberate, never automatic.
+_Avoid_: Assuming a card in the snapshot has metadata at runtime. `cards::metadata_for` only answers for the corpus.

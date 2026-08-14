@@ -12,14 +12,46 @@ metadata.
 - **Date:** 2026-05-05
 - **Snapshot pulled:** 2026-05-08
 
+## Scope: a rule, not a list
+
+In scope is **everything upstream except the Asmodee Chapter 2 line** —
+cycles `core_ch2` and `investigator_decks_ch2`. Stated as a rule so that a
+future snapshot bump adding a Chapter 1 side story is picked up without
+anyone re-deciding scope.
+
+Note that **the chapter split does not fall on directory boundaries**:
+`pack/investigator/` holds the five Chapter 1 starter decks (`nat`, `har`,
+`win`, `jac`, `ste`) alongside the five `investigator_decks_ch2` files
+(`tom`, `car`, `and`, `mar`, `mig`). We vendor whole upstream directories
+anyway and classify inside them, so re-pinning stays a straight directory
+copy. Upstream directory names are mirrored **verbatim**, which means a
+couple of them do not match their cycle codes: `pack/side/` is the
+`side_stories` cycle and `pack/promo/` is `promotional`.
+
+## Snapshot vs. corpus
+
+These are different sets, and the distinction is load-bearing (see
+`CONTEXT.md`):
+
+- The **snapshot** is everything in this directory — all of Chapter 1.
+  Most of it is **planning input**: pinned so decisions about the DSL and
+  the engine can be made against the full set of cards Eldritch will
+  eventually support.
+- The **corpus** is what the pipeline ingests and the build compiles —
+  Core + Dunwich, emitted as `crates/cards/src/generated/cards.rs`.
+
+Vendoring a pack does **not** make it playable, or even visible to the
+engine. Promotion is a deliberate edit to `PACK_FILES`.
+
 ## What's included
 
-- `pack/core/` — Core Set printings: the original `core.json` +
-  `core_encounter.json`, the 2026 reprint (`core_2026.json` +
-  `core_2026_encounter.json`), and the revised `rcore.json` (which has no
-  separate encounter file upstream).
-- `pack/dwl/` — The Dunwich Legacy cycle: scenario packs (`dwl`, `tmm`,
-  `bota`, `uau`, `wda`, `litas`, `tece`) and their encounter files.
+- `pack/` — every Chapter 1 pack directory: `core`, `dwl`, `ptc`, `tfa`,
+  `tcu`, `tde`, `tic`, `eoe`, `tsk`, `fhv`, `tdc`, plus the non-cycle
+  groupings `return`, `side`, `promo`, `parallel` and `investigator`.
+  Both player files and their `*_encounter.json` companions — encounter
+  cards are where forward-compatibility risk concentrates (treachery
+  effects, enemy keywords, act/agenda structure), and the four new-format
+  cycles ship a single `<code>c.json` that cannot be split anyway.
 - `schema/` — JSON schemas the upstream uses for validation. Kept for
   reference when diagnosing a malformed entry; the pipeline does **not**
   read or enforce them.
@@ -33,42 +65,60 @@ metadata.
   the engine applies whichever version a campaign was started under.
 - This `SOURCE.md`.
 
-### What the pipeline actually ingests
+### Two file formats
 
-`PACK_FILES` in `crates/card-data-pipeline/src/main.rs` reads the
-**old-format** files only: `core.json` + `core_encounter.json` and the
-seven `dwl` packs + their encounter files. `core_2026*.json` and
-`rcore.json` are pinned here for reference but are **not** ingested —
-adding them to the build requires extending `PACK_FILES` (and reconciling
-duplicate codes across printings), not just bumping the snapshot.
+The old format (FFG, ~2016–2021) is a deluxe expansion plus six mythos
+packs — 7 player files and 7 encounter files per cycle, which is what
+`core`, `dwl`, `ptc`, `tfa`, `tcu`, `tde` and `tic` look like. The new
+format (Asmodee, ~2022+) repackages a cycle into an Investigator
+Expansion and a Campaign Expansion, so `eoe`, `tsk`, `fhv` and `tdc` are
+two files each: `<code>p.json` (player) and `<code>c.json` (campaign).
 
-### Why the other printings aren't ingested
+For the old-format cycles, `packs.json` *also* lists new-format reprint
+packs (`dwlp`/`dwlc`, `ptcp`/`ptcc`, and so on) whose `reprint_packs`
+arrays name the seven old-format packs — but **no such file exists
+upstream**, because ArkhamDB never catalogued content it already has.
+They are on the pipeline's `PACKS_WITHOUT_FILES` exception list.
 
-The two Core printings Eldritch skips are skipped for different reasons,
-and neither is a backlog item:
+### How files are classified
 
-- **`rcore.json` — Revised Core Set** (FFG, 2020; codes `015xx`). All 116
-  entries are **skeletons**: `code`, `position`, `quantity`,
-  `illustrator`, and an `alternate_of` / `duplicate_of` pointer at the
-  matching `010xx` card — no name, type, or class. Upstream never
-  populated them, because the revised product was a repackage (one copy
-  of each card rather than needing two Cores, and the Limited
-  deckbuilding restriction dropped) whose gameplay content *is*
-  `core.json`. There is nothing here to ingest.
-- **`core_2026.json` — Core Set (2026)**, the Asmodee "Chapter 2" set
-  (codes `120xx`, `cycle_code: core_ch2`). **New content, not a
-  reprint** — new investigators (Daniela Reyes, Joe Diamond, Trish
-  Scarborough, Dexter Drake, Isabelle Barnes), 74 of 104 entries
-  populated at the pinned commit. Excluded by scope, not by data quality.
+Every vendored pack file falls into exactly one of three lists in
+`crates/card-data-pipeline/src/main.rs`, and the pipeline **fails** on
+any file in none of them:
 
-The same old/new split runs through the cycle expansions. The old format
-(FFG, ~2016–2021) is a deluxe expansion plus six mythos packs — the seven
-`pack/dwl/*.json` files, which is what the pipeline reads. The new format
-(Asmodee, ~2022+) repackages a cycle into an Investigator Expansion and a
-Campaign Expansion: `packs.json` lists `dwlp` and `dwlc`, each with a
-`reprint_packs` array naming all seven old-format packs, but **no
-`dwlp.json` or `dwlc.json` exists upstream** — ArkhamDB hasn't catalogued
-files whose content is already covered by what it has.
+1. `PACK_FILES` — the corpus. Core + Dunwich, player and encounter.
+2. `REFERENCE_FILES` — in scope, vendored as planning input, not
+   compiled.
+3. `OUT_OF_SCOPE_FILES` — present but deliberately not ours (below).
+
+A fourth check runs the other way: every pack in `packs.json` whose cycle
+is in scope must have a vendored file, unless it is on
+`PACKS_WITHOUT_FILES`. That is what catches a *forgotten* directory, as
+opposed to an unclassified one.
+
+`REFERENCE_FILES` is kept distinct from `OUT_OF_SCOPE_FILES` rather than
+lumping both under "not compiled", so that anything sampling "every
+Chapter 1 card" cannot silently draw from Chapter 2.
+
+### What's in `OUT_OF_SCOPE_FILES`, and why
+
+Three files' worth of Chapter 2, plus one Chapter 1 oddity:
+
+- **`core_2026.json` / `core_2026_encounter.json` — Core Set (2026)**, the
+  Asmodee "Chapter 2" set (codes `120xx`, `cycle_code: core_ch2`). **New
+  content, not a reprint** — new investigators (Daniela Reyes, Joe
+  Diamond, Trish Scarborough, Dexter Drake, Isabelle Barnes), 74 of 104
+  entries populated at the pinned commit. Excluded by scope.
+- **The five `investigator_decks_ch2` decks** — `tom`, `car`, `and`,
+  `mar`, `mig`. Excluded by scope; present only because they share
+  `pack/investigator/` with the Chapter 1 starter decks.
+- **`rcore.json` — Revised Core Set** (FFG, 2020; codes `015xx`). In a
+  Chapter 1 cycle, but excluded for a different reason: all 116 entries
+  are **skeletons** — `code`, `position`, `quantity`, `illustrator`, and
+  an `alternate_of` / `duplicate_of` pointer at the matching `010xx`
+  card, with no name, type or class. Upstream never populated them,
+  because the revised product was a repackage whose gameplay content *is*
+  `core.json`. There is nothing to plan against.
 
 **A physical Revised Core + new-format Dunwich collection plays
 identically to the ingested data.** The codes printed on those cards
@@ -79,9 +129,7 @@ to capture it with.
 
 ## What's deliberately excluded
 
-- All packs outside Core + Dunwich (`pack/ptc/`, `pack/tfa/`, etc.) —
-  Eldritch's Phase 2/3 scope is Core + Dunwich only. Add the relevant
-  pack directory here when widening coverage.
+- The Chapter 2 line — see the scope rule above.
 - `translations/` — Eldritch is English-only for now.
 - Upstream tooling (`replace.php`, `update_locales.coffee`,
   `validate.py`, `package.json`, etc.) and CI / editor config files
@@ -93,10 +141,16 @@ to capture it with.
 Bumping the snapshot is intentionally manual. To refresh:
 
 1. Clone the upstream repo at the desired commit.
-2. Replace `pack/core/`, `pack/dwl/`, `schema/`, and the top-level
-   metadata JSONs from the new clone.
+2. Replace `pack/`, `schema/`, and the top-level metadata JSONs from the
+   new clone — whole directories, per the scope rule above, skipping any
+   directory belonging solely to an out-of-scope cycle.
 3. Update the **Pinned commit** section above with the new SHA and date.
-4. Run the card-data-pipeline (`cargo run -p card-data-pipeline`) and
-   review the diff in `crates/cards/src/generated/`.
-5. Open a PR; the CI doc/lint/test gates plus reviewer eyes catch any
+4. Classify anything new. `cargo test -p card-data-pipeline` will name
+   every file that landed in no list and every in-scope pack that arrived
+   without one; put each into `PACK_FILES`, `REFERENCE_FILES` or
+   `OUT_OF_SCOPE_FILES`.
+5. Run the card-data-pipeline (`cargo run -p card-data-pipeline`) and
+   review the diff in `crates/cards/src/generated/`. If `PACK_FILES` did
+   not change, expect no diff at all.
+6. Open a PR; the CI doc/lint/test gates plus reviewer eyes catch any
    schema drift.

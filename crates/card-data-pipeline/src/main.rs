@@ -23,8 +23,18 @@
 //!
 //! Output:
 //! - `crates/cards/src/generated/cards.rs`
+//!
+//! # Snapshot vs. corpus
+//!
+//! The snapshot holds all of Chapter 1; the **corpus** — what this
+//! pipeline ingests and the build compiles — is only [`PACK_FILES`].
+//! Everything else is pinned as planning input, so that decisions about
+//! the DSL and the engine can be made against the full set of cards
+//! Eldritch will eventually support. [`classify`] holds the two apart and
+//! fails on any vendored file that has not been sorted into one of the
+//! three lists.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -58,6 +68,361 @@ const PACK_FILES: &[&str] = &[
     "pack/dwl/litas_encounter.json",
 ];
 
+/// Chapter 1 pack files vendored as **planning input**: pinned so we can
+/// see what the engine will eventually have to support, but deliberately
+/// not ingested. Widening [`PACK_FILES`] is what makes a pack playable;
+/// moving an entry from here to there is the whole promotion.
+const REFERENCE_FILES: &[&str] = &[
+    "pack/eoe/eoec.json",
+    "pack/eoe/eoep.json",
+    "pack/fhv/fhvc.json",
+    "pack/fhv/fhvp.json",
+    "pack/investigator/har.json",
+    "pack/investigator/jac.json",
+    "pack/investigator/nat.json",
+    "pack/investigator/ste.json",
+    "pack/investigator/win.json",
+    "pack/parallel/aof.json",
+    "pack/parallel/aon.json",
+    "pack/parallel/aon_encounter.json",
+    "pack/parallel/bad.json",
+    "pack/parallel/bad_encounter.json",
+    "pack/parallel/btb.json",
+    "pack/parallel/btb_encounter.json",
+    "pack/parallel/enc.json",
+    "pack/parallel/enc_encounter.json",
+    "pack/parallel/hfa.json",
+    "pack/parallel/ltr.json",
+    "pack/parallel/ltr_encounter.json",
+    "pack/parallel/otr.json",
+    "pack/parallel/pap.json",
+    "pack/parallel/ptr.json",
+    "pack/parallel/rod.json",
+    "pack/parallel/rod_encounter.json",
+    "pack/parallel/rop.json",
+    "pack/parallel/rop_encounter.json",
+    "pack/parallel/rtr.json",
+    "pack/parallel/rtr_encounter.json",
+    "pack/promo/bob.json",
+    "pack/promo/dre.json",
+    "pack/promo/hoth.json",
+    "pack/promo/iotv.json",
+    "pack/promo/promo.json",
+    "pack/promo/tdg.json",
+    "pack/promo/tdor.json",
+    "pack/promo/tftbw.json",
+    "pack/ptc/apot.json",
+    "pack/ptc/apot_encounter.json",
+    "pack/ptc/bsr.json",
+    "pack/ptc/bsr_encounter.json",
+    "pack/ptc/dca.json",
+    "pack/ptc/dca_encounter.json",
+    "pack/ptc/eotp.json",
+    "pack/ptc/eotp_encounter.json",
+    "pack/ptc/ptc.json",
+    "pack/ptc/ptc_encounter.json",
+    "pack/ptc/tpm.json",
+    "pack/ptc/tpm_encounter.json",
+    "pack/ptc/tuo.json",
+    "pack/ptc/tuo_encounter.json",
+    "pack/return/rtdwl.json",
+    "pack/return/rtdwl_encounter.json",
+    "pack/return/rtnotz.json",
+    "pack/return/rtnotz_encounter.json",
+    "pack/return/rtptc.json",
+    "pack/return/rtptc_encounter.json",
+    "pack/return/rttcu.json",
+    "pack/return/rttcu_encounter.json",
+    "pack/return/rttfa.json",
+    "pack/return/rttfa_encounter.json",
+    "pack/side/blbe.json",
+    "pack/side/blbe_encounter.json",
+    "pack/side/blob_encounter.json",
+    "pack/side/coh_encounter.json",
+    "pack/side/cotr_encounter.json",
+    "pack/side/film_fatale_encounter.json",
+    "pack/side/fof_encounter.json",
+    "pack/side/guardians_encounter.json",
+    "pack/side/hotel_encounter.json",
+    "pack/side/lol_encounter.json",
+    "pack/side/mtt_encounter.json",
+    "pack/side/tmg_encounter.json",
+    "pack/side/wog_encounter.json",
+    "pack/tcu/bbt.json",
+    "pack/tcu/bbt_encounter.json",
+    "pack/tcu/fgg.json",
+    "pack/tcu/fgg_encounter.json",
+    "pack/tcu/icc.json",
+    "pack/tcu/icc_encounter.json",
+    "pack/tcu/tcu.json",
+    "pack/tcu/tcu_encounter.json",
+    "pack/tcu/tsn.json",
+    "pack/tcu/tsn_encounter.json",
+    "pack/tcu/uad.json",
+    "pack/tcu/uad_encounter.json",
+    "pack/tcu/wos.json",
+    "pack/tcu/wos_encounter.json",
+    "pack/tdc/tdcc.json",
+    "pack/tdc/tdcp.json",
+    "pack/tde/dsm.json",
+    "pack/tde/dsm_encounter.json",
+    "pack/tde/pnr.json",
+    "pack/tde/pnr_encounter.json",
+    "pack/tde/sfk.json",
+    "pack/tde/sfk_encounter.json",
+    "pack/tde/tde.json",
+    "pack/tde/tde_encounter.json",
+    "pack/tde/tsh.json",
+    "pack/tde/tsh_encounter.json",
+    "pack/tde/wgd.json",
+    "pack/tde/wgd_encounter.json",
+    "pack/tde/woc.json",
+    "pack/tde/woc_encounter.json",
+    "pack/tfa/hote.json",
+    "pack/tfa/hote_encounter.json",
+    "pack/tfa/sha.json",
+    "pack/tfa/sha_encounter.json",
+    "pack/tfa/tbb.json",
+    "pack/tfa/tbb_encounter.json",
+    "pack/tfa/tcoa.json",
+    "pack/tfa/tcoa_encounter.json",
+    "pack/tfa/tdoy.json",
+    "pack/tfa/tdoy_encounter.json",
+    "pack/tfa/tfa.json",
+    "pack/tfa/tfa_encounter.json",
+    "pack/tfa/tof.json",
+    "pack/tfa/tof_encounter.json",
+    "pack/tic/def.json",
+    "pack/tic/def_encounter.json",
+    "pack/tic/hhg.json",
+    "pack/tic/hhg_encounter.json",
+    "pack/tic/itd.json",
+    "pack/tic/itd_encounter.json",
+    "pack/tic/itm.json",
+    "pack/tic/itm_encounter.json",
+    "pack/tic/lif.json",
+    "pack/tic/lif_encounter.json",
+    "pack/tic/lod.json",
+    "pack/tic/lod_encounter.json",
+    "pack/tic/tic.json",
+    "pack/tic/tic_encounter.json",
+    "pack/tsk/tskc.json",
+    "pack/tsk/tskp.json",
+];
+
+/// Pack files present in the snapshot but belonging to neither the
+/// corpus nor the Chapter 1 reference set. Two reasons, both documented
+/// at length in `data/arkhamdb-snapshot/SOURCE.md`:
+///
+/// - `core_2026*.json` and the five `investigator_decks_ch2` decks are
+///   Chapter 2 content. They ride along because we vendor whole upstream
+///   directories, and `pack/investigator/` mixes both chapters.
+/// - `rcore.json` is in a Chapter 1 cycle, but all 116 entries are
+///   skeletons — code, position, quantity and a pointer at the matching
+///   `010xx` card, with no name, type or class. There is nothing to plan
+///   against.
+///
+/// Kept distinct from [`REFERENCE_FILES`] so that anything sampling "every
+/// Chapter 1 card" cannot silently draw from Chapter 2.
+const OUT_OF_SCOPE_FILES: &[&str] = &[
+    "pack/core/core_2026.json",
+    "pack/core/core_2026_encounter.json",
+    "pack/core/rcore.json",
+    "pack/investigator/and.json",
+    "pack/investigator/car.json",
+    "pack/investigator/mar.json",
+    "pack/investigator/mig.json",
+    "pack/investigator/tom.json",
+];
+
+/// Cycles outside Eldritch's scope: the Asmodee Chapter 2 line. A pack in
+/// one of these is not expected to be vendored, so its absence is not a
+/// discrepancy.
+const OUT_OF_SCOPE_CYCLES: &[&str] = &["core_ch2", "investigator_decks_ch2"];
+
+/// In-scope packs that `packs.json` lists but upstream ships no file for.
+/// Each is a new-format Investigator/Campaign Expansion whose
+/// `reprint_packs` array names the old-format packs we already vendor —
+/// `ArkhamDB` never catalogued content it already has. Without this list
+/// the completeness check would demand files that do not exist.
+const PACKS_WITHOUT_FILES: &[&str] = &[
+    "dwlp", "dwlc", "ptcp", "ptcc", "tfap", "tfac", "tcup", "tcuc", "tdep", "tdec", "ticp", "ticc",
+];
+
+/// The three lists that classify every vendored pack file, plus the two
+/// exception lists the completeness check needs. Parameterized so tests
+/// can exercise [`classify_against`] with small fixtures instead of the
+/// real snapshot.
+struct Manifest<'a> {
+    ingested: &'a [&'a str],
+    reference: &'a [&'a str],
+    out_of_scope: &'a [&'a str],
+    out_of_scope_cycles: &'a [&'a str],
+    packs_without_files: &'a [&'a str],
+}
+
+const MANIFEST: Manifest<'static> = Manifest {
+    ingested: PACK_FILES,
+    reference: REFERENCE_FILES,
+    out_of_scope: OUT_OF_SCOPE_FILES,
+    out_of_scope_cycles: OUT_OF_SCOPE_CYCLES,
+    packs_without_files: PACKS_WITHOUT_FILES,
+};
+
+/// A disagreement between the vendored snapshot tree and the manifest
+/// that classifies it.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Discrepancy {
+    /// A pack file is vendored but appears in none of the three lists —
+    /// someone added a directory without saying what it is for.
+    Unclassified(String),
+    /// The manifest lists a file the snapshot does not contain.
+    Missing(String),
+    /// An in-scope pack from `packs.json` has no vendored file at all.
+    MissingPack { code: String, cycle: String },
+}
+
+impl std::fmt::Display for Discrepancy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unclassified(path) => write!(
+                f,
+                "{path} is vendored but classified nowhere — add it to PACK_FILES, \
+                 REFERENCE_FILES or OUT_OF_SCOPE_FILES"
+            ),
+            Self::Missing(path) => write!(
+                f,
+                "{path} is listed in the manifest but not vendored — drop the entry \
+                 or restore the file"
+            ),
+            Self::MissingPack { code, cycle } => write!(
+                f,
+                "pack {code} (cycle {cycle}) is in scope but has no vendored file — \
+                 vendor it, or add it to PACKS_WITHOUT_FILES if upstream ships none"
+            ),
+        }
+    }
+}
+
+/// Check the vendored snapshot tree against [`MANIFEST`].
+///
+/// Called from [`run`], so regenerating the corpus fails fast, and
+/// asserted by a test, so a PR that vendors an unclassified directory
+/// fails in CI. The latter is the one that matters day to day: the
+/// pipeline binary only runs when someone bumps the snapshot.
+fn classify(vendored: &[PathBuf], packs: &[RawPack]) -> Result<(), Vec<Discrepancy>> {
+    classify_against(vendored, packs, &MANIFEST)
+}
+
+fn classify_against(
+    vendored: &[PathBuf],
+    packs: &[RawPack],
+    manifest: &Manifest<'_>,
+) -> Result<(), Vec<Discrepancy>> {
+    let present: BTreeSet<String> = vendored.iter().map(|p| slash_path(p)).collect();
+    let listed: BTreeSet<String> = manifest
+        .ingested
+        .iter()
+        .chain(manifest.reference)
+        .chain(manifest.out_of_scope)
+        .map(|s| (*s).to_owned())
+        .collect();
+
+    let mut out: Vec<Discrepancy> = Vec::new();
+    out.extend(
+        present
+            .difference(&listed)
+            .map(|p| Discrepancy::Unclassified(p.clone())),
+    );
+    out.extend(
+        listed
+            .difference(&present)
+            .map(|p| Discrepancy::Missing(p.clone())),
+    );
+
+    let have: BTreeSet<&str> = present.iter().map(|p| pack_code(p)).collect();
+    for p in packs {
+        if manifest
+            .out_of_scope_cycles
+            .contains(&p.cycle_code.as_str())
+            || manifest.packs_without_files.contains(&p.code.as_str())
+            || have.contains(p.code.as_str())
+        {
+            continue;
+        }
+        out.push(Discrepancy::MissingPack {
+            code: p.code.clone(),
+            cycle: p.cycle_code.clone(),
+        });
+    }
+
+    if out.is_empty() {
+        Ok(())
+    } else {
+        Err(out)
+    }
+}
+
+/// The pack a file belongs to: its stem, minus the `_encounter` suffix
+/// that marks a pack's encounter-side companion file.
+fn pack_code(rel: &str) -> &str {
+    let stem = rel
+        .rsplit('/')
+        .next()
+        .unwrap_or(rel)
+        .strip_suffix(".json")
+        .unwrap_or(rel);
+    stem.strip_suffix("_encounter").unwrap_or(stem)
+}
+
+/// Snapshot-relative path with forward slashes, so it compares against
+/// the manifest's string literals on any platform.
+fn slash_path(p: &Path) -> String {
+    p.components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// Every `*.json` under the snapshot's `pack/`, as snapshot-relative
+/// paths.
+fn vendored_pack_files(snapshot: &Path) -> Result<Vec<PathBuf>, String> {
+    let pack_dir = snapshot.join("pack");
+    let mut out = Vec::new();
+    let dirs =
+        std::fs::read_dir(&pack_dir).map_err(|e| format!("reading {}: {e}", pack_dir.display()))?;
+    for dir in dirs {
+        let dir = dir.map_err(|e| format!("reading {}: {e}", pack_dir.display()))?;
+        if !dir.file_type().map_err(|e| e.to_string())?.is_dir() {
+            continue;
+        }
+        let entries = std::fs::read_dir(dir.path())
+            .map_err(|e| format!("reading {}: {e}", dir.path().display()))?;
+        for entry in entries {
+            let path = entry
+                .map_err(|e| format!("reading {}: {e}", dir.path().display()))?
+                .path();
+            if path.extension().is_some_and(|e| e == "json") {
+                out.push(
+                    Path::new("pack").join(dir.file_name()).join(
+                        path.file_name()
+                            .ok_or_else(|| format!("no file name: {}", path.display()))?,
+                    ),
+                );
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+fn read_packs(snapshot: &Path) -> Result<Vec<RawPack>, String> {
+    let path = snapshot.join("packs.json");
+    let raw =
+        std::fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+    serde_json::from_str(&raw).map_err(|e| format!("parsing {}: {e}", path.display()))
+}
+
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -71,6 +436,18 @@ fn main() -> ExitCode {
 fn run() -> Result<(), String> {
     let repo_root = repo_root()?;
     let snapshot = repo_root.join(SNAPSHOT_DIR);
+
+    let vendored = vendored_pack_files(&snapshot)?;
+    let packs = read_packs(&snapshot)?;
+    classify(&vendored, &packs).map_err(|ds| {
+        let lines: Vec<String> = ds.iter().map(|d| format!("  - {d}")).collect();
+        format!(
+            "snapshot and manifest disagree ({} discrepancies):\n{}",
+            ds.len(),
+            lines.join("\n")
+        )
+    })?;
+
     let mut all: BTreeMap<String, NormalizedCard> = BTreeMap::new();
 
     for rel in PACK_FILES {
@@ -179,6 +556,14 @@ fn repo_root() -> Result<PathBuf, String> {
 }
 
 // ---- upstream JSON schema (only the fields we consume) ------------
+
+/// An entry in `packs.json`. Only the two fields the completeness check
+/// needs: which pack, and which cycle it belongs to.
+#[derive(Debug, Deserialize)]
+struct RawPack {
+    code: String,
+    cycle_code: String,
+}
 
 #[derive(Debug, Deserialize)]
 struct RawCard {
@@ -816,12 +1201,150 @@ const GENERATED_HEADER: &str = "\
 #[cfg(test)]
 mod tests {
     use super::{
-        clue_value_lit, emit_card, has_keyword, health_value_opt_lit, map_card_type, map_class,
-        normalize, parse_commit_limit, parse_prey, parse_slots, parse_spawn_name, parse_traits,
-        parse_uses, prey_lit, process_raw, strip_html_bold, NormalizedCard, PreyParse, RawCard,
+        classify, classify_against, clue_value_lit, emit_card, has_keyword, health_value_opt_lit,
+        map_card_type, map_class, normalize, parse_commit_limit, parse_prey, parse_slots,
+        parse_spawn_name, parse_traits, parse_uses, prey_lit, process_raw, read_packs, repo_root,
+        strip_html_bold, vendored_pack_files, Discrepancy, Manifest, NormalizedCard, PreyParse,
+        RawCard, RawPack, SNAPSHOT_DIR,
     };
     use std::collections::BTreeMap;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
+
+    // ---- classify ------------------------------------------------
+
+    fn pack(code: &str, cycle: &str) -> RawPack {
+        RawPack {
+            code: code.into(),
+            cycle_code: cycle.into(),
+        }
+    }
+
+    fn files(paths: &[&str]) -> Vec<PathBuf> {
+        paths.iter().map(PathBuf::from).collect()
+    }
+
+    /// A manifest matching the fixtures below: one ingested pack, one
+    /// reference pack, one out-of-scope pack in an out-of-scope cycle.
+    fn fixture_manifest() -> Manifest<'static> {
+        Manifest {
+            ingested: &["pack/core/core.json"],
+            reference: &["pack/ptc/ptc.json", "pack/ptc/ptc_encounter.json"],
+            out_of_scope: &["pack/core/core_2026.json"],
+            out_of_scope_cycles: &["core_ch2"],
+            packs_without_files: &["ptcp"],
+        }
+    }
+
+    fn fixture_packs() -> Vec<RawPack> {
+        vec![
+            pack("core", "core"),
+            pack("ptc", "ptc"),
+            pack("ptcp", "ptc"),
+            pack("core_2026", "core_ch2"),
+        ]
+    }
+
+    fn fixture_files() -> Vec<PathBuf> {
+        files(&[
+            "pack/core/core.json",
+            "pack/core/core_2026.json",
+            "pack/ptc/ptc.json",
+            "pack/ptc/ptc_encounter.json",
+        ])
+    }
+
+    #[test]
+    fn classify_accepts_a_tree_the_manifest_describes() {
+        assert_eq!(
+            classify_against(&fixture_files(), &fixture_packs(), &fixture_manifest()),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn classify_flags_a_vendored_file_in_no_list() {
+        let mut vendored = fixture_files();
+        vendored.push(PathBuf::from("pack/tfa/tfa.json"));
+        assert_eq!(
+            classify_against(&vendored, &fixture_packs(), &fixture_manifest()),
+            Err(vec![Discrepancy::Unclassified("pack/tfa/tfa.json".into())])
+        );
+    }
+
+    #[test]
+    fn classify_flags_a_manifest_entry_with_no_vendored_file() {
+        let vendored: Vec<PathBuf> = fixture_files()
+            .into_iter()
+            .filter(|p| !p.ends_with("ptc_encounter.json"))
+            .collect();
+        assert_eq!(
+            classify_against(&vendored, &fixture_packs(), &fixture_manifest()),
+            Err(vec![Discrepancy::Missing(
+                "pack/ptc/ptc_encounter.json".into()
+            )])
+        );
+    }
+
+    #[test]
+    fn classify_flags_an_in_scope_pack_with_no_vendored_file() {
+        let mut packs = fixture_packs();
+        packs.push(pack("tfa", "tfa"));
+        assert_eq!(
+            classify_against(&fixture_files(), &packs, &fixture_manifest()),
+            Err(vec![Discrepancy::MissingPack {
+                code: "tfa".into(),
+                cycle: "tfa".into(),
+            }])
+        );
+    }
+
+    /// `ptcp` is a new-format reprint pack: `packs.json` lists it, but
+    /// upstream ships no `ptcp.json`. The exception list absorbs it.
+    #[test]
+    fn classify_accepts_a_pack_on_the_no_file_exception_list() {
+        assert_eq!(
+            classify_against(&fixture_files(), &fixture_packs(), &fixture_manifest()),
+            Ok(())
+        );
+        // …and the exception is what makes it pass: drop `ptcp` from the
+        // list and the same fixtures report it missing.
+        let mut manifest = fixture_manifest();
+        manifest.packs_without_files = &[];
+        assert_eq!(
+            classify_against(&fixture_files(), &fixture_packs(), &manifest),
+            Err(vec![Discrepancy::MissingPack {
+                code: "ptcp".into(),
+                cycle: "ptc".into(),
+            }])
+        );
+    }
+
+    /// Chapter 2 packs are out of scope, so their absence is not a
+    /// discrepancy — only their *presence* unclassified would be.
+    #[test]
+    fn classify_ignores_packs_from_out_of_scope_cycles() {
+        let mut packs = fixture_packs();
+        packs.push(pack("tom", "investigator_decks_ch2"));
+        let mut manifest = fixture_manifest();
+        manifest.out_of_scope_cycles = &["core_ch2", "investigator_decks_ch2"];
+        assert_eq!(
+            classify_against(&fixture_files(), &packs, &manifest),
+            Ok(())
+        );
+    }
+
+    /// The guard that actually protects the tree: the real snapshot,
+    /// checked on every CI run rather than only when someone happens to
+    /// regenerate the corpus.
+    #[test]
+    fn the_real_snapshot_matches_the_manifest() {
+        let snapshot = repo_root().expect("repo root").join(SNAPSHOT_DIR);
+        let vendored = vendored_pack_files(&snapshot).expect("listing vendored pack files");
+        let packs = read_packs(&snapshot).expect("reading packs.json");
+        assert_eq!(classify(&vendored, &packs), Ok(()));
+    }
+
+    // ---- normalization -------------------------------------------
 
     #[test]
     fn strip_html_bold_removes_bold_tags() {
