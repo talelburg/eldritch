@@ -15,10 +15,14 @@ use game_core::state::{
 };
 use game_core::test_support::{
     drive, take_turn_action, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
+    TestSession,
 };
-use game_core::{apply, Action, EngineOutcome, InputResponse, PlayerAction, TurnAction};
+use game_core::{
+    apply, assert_no_event, Action, EngineOutcome, InputResponse, PlayerAction, TurnAction,
+};
 
 const COVER_UP: &str = "01007";
+const DEDUCTION: &str = "01039";
 const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 
@@ -32,6 +36,16 @@ fn cover_up(clues: u8) -> CardInPlay {
     let mut c = CardInPlay::enter_play(CardCode::new(COVER_UP), CardInstanceId(1));
     c.clues = clues;
     c
+}
+
+/// Clues remaining on the Cover Up in `INV`'s threat area.
+fn cover_up_clues(state: &GameState) -> u8 {
+    state.investigators[&INV]
+        .threat_area
+        .iter()
+        .find(|c| c.code.as_str() == COVER_UP)
+        .expect("Cover Up is in the threat area")
+        .clues
 }
 
 // ---- Revelation: places into the threat area with 3 clues -------------
@@ -121,12 +135,11 @@ fn playing_cover_up_discards_instead_of_discovering() {
     assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(r.state.locations[&LOC].clues, 2, "location clues unchanged");
     assert_eq!(r.state.investigators[&INV].clues, 0, "discovered nothing");
-    let cu = r.state.investigators[&INV]
-        .threat_area
-        .iter()
-        .find(|c| c.code.as_str() == COVER_UP)
-        .unwrap();
-    assert_eq!(cu.clues, 2, "1 clue discarded from Cover Up");
+    assert_eq!(
+        cover_up_clues(&r.state),
+        2,
+        "1 clue discarded from Cover Up"
+    );
 }
 
 #[test]
@@ -142,12 +155,95 @@ fn skip_discovers_normally() {
     assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(r.state.locations[&LOC].clues, 1, "location -1");
     assert_eq!(r.state.investigators[&INV].clues, 1, "investigator +1");
-    let cu = r.state.investigators[&INV]
-        .threat_area
-        .iter()
-        .find(|c| c.code.as_str() == COVER_UP)
-        .unwrap();
-    assert_eq!(cu.clues, 3, "Cover Up untouched on Skip");
+    assert_eq!(cover_up_clues(&r.state), 3, "Cover Up untouched on Skip");
+}
+
+// ---- Cover Up + Deduction: one discovery, capped ----------------------
+
+/// Investigation-phase state with **Deduction 01039 in hand**: active
+/// investigator at a `location_clues`-clue location, Cover Up holding 3 in the
+/// threat area. Intellect 3 + Deduction's 1 intellect icon + a +0 token vs the
+/// default shroud 2 → the Investigate always succeeds.
+fn investigate_state_with_deduction(location_clues: u8) -> GameState {
+    let mut investigator = test_investigator(1);
+    investigator.threat_area.push(cover_up(3));
+    investigator.hand = vec![CardCode::new(DEDUCTION)];
+    let mut location = test_location(10, "Study");
+    location.clues = location_clues;
+    GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator_at(investigator, LOC)
+        .with_location(location)
+        .with_active_investigator(INV)
+        .with_turn_order([INV])
+        .with_investigator_turn(INV)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_rng_seed(1)
+        .build()
+}
+
+/// Investigate committing Deduction, then play Cover Up at the single
+/// before-discover window it should open.
+fn investigate_with_deduction_and_play_cover_up(state: GameState) -> game_core::ApplyResult {
+    TestSession::new(state)
+        .take(&TurnAction::Investigate { investigator: INV })
+        .resolve_choices(|c| {
+            c.commit_cards(&[CardCode::new(DEDUCTION)]);
+            c.pick_single(game_core::engine::OptionId(0));
+        })
+        .run()
+}
+
+/// The #471 bug, end-to-end through both real cards: Deduction used to spawn a
+/// *second* discovery, so Cover Up's replacement fired twice and discarded 2
+/// clues at a location that only ever had 1 to discover. Per the FAQ —
+/// *"Deduction doesn't allow you to discover clues that aren't at that
+/// location. If your location has 1 clue at it, you can only discover 1 clue
+/// at most when you investigate it."* — the correct reading is one discovery
+/// of 2, capped to 1, so Cover Up discards exactly 1.
+#[test]
+fn deduction_at_a_one_clue_location_discards_one_from_cover_up() {
+    let r = investigate_with_deduction_and_play_cover_up(investigate_state_with_deduction(1));
+
+    assert_eq!(
+        r.state.locations[&LOC].clues, 1,
+        "the discovery was replaced, so the location keeps its clue",
+    );
+    assert_eq!(r.state.investigators[&INV].clues, 0, "discovered nothing");
+    assert_no_event!(r.events, Event::CluePlaced { .. });
+    assert_eq!(
+        cover_up_clues(&r.state),
+        2,
+        "exactly 1 of 3 discarded — the capped count, not the requested 2",
+    );
+    assert!(
+        r.state.open_windows().is_empty(),
+        "exactly one before-discover window opened: {:?}",
+        r.state.open_windows(),
+    );
+}
+
+/// The same shape where the location *can* pay the full count: one discovery
+/// of 2 → one window → 2 clues discarded. The single script step plus the
+/// no-open-windows assertion is what pins "one discovery, not two" — the
+/// discarded total alone cannot tell the shapes apart here.
+#[test]
+fn deduction_at_a_two_clue_location_discards_two_in_one_window() {
+    let r = investigate_with_deduction_and_play_cover_up(investigate_state_with_deduction(2));
+
+    assert_eq!(r.state.locations[&LOC].clues, 2, "location untouched");
+    assert_eq!(r.state.investigators[&INV].clues, 0, "discovered nothing");
+    assert_no_event!(r.events, Event::CluePlaced { .. });
+    assert_eq!(
+        cover_up_clues(&r.state),
+        1,
+        "2 of 3 discarded in a single replacement",
+    );
+    assert!(
+        r.state.open_windows().is_empty(),
+        "no second before-discover window: {:?}",
+        r.state.open_windows(),
+    );
 }
 
 // ---- Forced: game-end mental trauma if clues remain -------------------

@@ -111,6 +111,10 @@ pub enum TimingEvent {
     WouldDiscoverClues {
         investigator: InvestigatorId,
         location: LocationId,
+        /// Clues that would actually be discovered — already capped at the
+        /// location's clue count by the emitting `discover_clue`, so a
+        /// replacement effect's "discard that many" (Cover Up) reads the real
+        /// quantity, not the requested one (#471).
         count: u8,
     },
     /// A card entered play (reaction-only, After). Opens the `AfterEnteredPlay`

@@ -18,7 +18,7 @@
 //! [`if_`] over [`Condition::SkillTestKind`] of [`SkillTestKind::Fight`].
 //!
 //! The **"during an attack"** qualifier is expressed by that kind gate —
-//! symmetric to Deduction's "while investigating"
+//! symmetric to Deduction 01039's "while investigating"
 //! ([`Condition::SkillTestKind`] of [`SkillTestKind::Investigate`]). Every
 //! attack in the engine, whether the Fight *action* or an `Effect::Fight`
 //! weapon, runs a [`SkillTestKind::Fight`] test, so the gate captures
@@ -29,10 +29,15 @@
 //!
 //! The **"if successful"** qualifier stays intrinsic to
 //! [`Effect::BoostAttackDamage`] (see #307 / PR #308): the bonus is
-//! consumed by the Fight follow-up, which deals damage only on success.
-//! It cannot be card-expressed at commit because the outcome is not yet
-//! known — and `OnCommit` (not `OnSkillTestResolution`) is required because
-//! the follow-up deals the attack's damage *during* resolution, before the
+//! consumed by the Fight follow-up, which deals damage only on success, so
+//! on a failed test it is accumulated, never read, and thrown away with the
+//! test's frame. It is **not** that the outcome is unknown at commit —
+//! post-#423 the `FireOnCommit` step runs after `DetermineOutcome`, so the
+//! outcome is on the frame; the reason it can't be card-expressed is that
+//! `Condition::SkillTest { outcome }` is unimplemented — it rejects with a
+//! TODO. `OnCommit`
+//! (not `OnSkillTestResolution`) is required regardless, because the
+//! follow-up deals the attack's damage *during* resolution, before the
 //! resolution trigger fires.
 //!
 //! [`Trigger::OnCommit`]: card_dsl::dsl::Trigger::OnCommit

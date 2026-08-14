@@ -778,6 +778,7 @@ mod tests {
                 continuation: crate::state::SkillTestStep::AwaitingCommit,
                 test_modifier: 0,
                 bonus_attack_damage: 0,
+                bonus_clues_discovered: 0,
                 resolved: None,
                 symbol_on_fail: None,
             }));

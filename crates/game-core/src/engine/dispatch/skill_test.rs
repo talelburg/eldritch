@@ -104,6 +104,7 @@ pub(in crate::engine) fn start_skill_test(
             continuation: SkillTestStep::PreCommitWindow,
             test_modifier,
             bonus_attack_damage: 0,
+            bonus_clues_discovered: 0,
             resolved: None,
             symbol_on_fail: None,
         }));
@@ -387,20 +388,6 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) 
     }
 }
 
-/// RR ST.7 head — the [`FireOnCommit`](SkillTestStep::FireOnCommit) step.
-/// Collect the committed cards' [`Trigger::OnCommit`] ability effects (Vicious
-/// Blow 01025's `BoostAttackDamage`), combine them into one
-/// [`Effect::Seq`](crate::dsl::Effect::Seq), and `push_effect` it for the drive
-/// loop (push nothing if no committed card carries an `OnCommit` trigger).
-/// Pre-advances the cursor to [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp)
-/// **before** the push, so a suspending effect would resume past this step.
-///
-/// These effects are conditional on success ("If this skill test is successful
-/// during an attack…") so they sit after the token resolves, but **before**
-/// `ApplyFollowUp` reads the `bonus_attack_damage` accumulator they populate.
-/// The in-scope `BoostAttackDamage` is a non-suspending stat boost, so the loop
-/// drives it and re-dispatches this `SkillTest` at `ApplyFollowUp`, which reads
-/// the now-populated accumulator.
 /// Read the chaos-token determination stashed on the in-flight test at the
 /// `Resolving` step (RR ST.6). Every post-ST.6 driver step reads the outcome
 /// here instead of threading `succeeded`/`failed_by` through cursor payloads;
@@ -414,6 +401,27 @@ fn resolved(cx: &Cx) -> crate::state::ResolvedTest {
         .expect("resolved: set at the Resolving step (ST.6) for every post-ST.6 step")
 }
 
+/// RR ST.7 head — the [`FireOnCommit`](SkillTestStep::FireOnCommit) step.
+/// Collect the committed cards' [`Trigger::OnCommit`] ability effects (Vicious
+/// Blow 01025's `BoostAttackDamage`, Deduction 01039's
+/// `DiscoverAdditionalClues`), combine them into one
+/// [`Effect::Seq`](crate::dsl::Effect::Seq), and `push_effect` it for the drive
+/// loop (push nothing if no committed card carries an `OnCommit` trigger).
+/// Pre-advances the cursor to [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp)
+/// **before** the push, so a suspending effect would resume past this step.
+///
+/// **Ungated on outcome** — every committed `OnCommit` effect runs whether the
+/// test passed or failed. The cards carrying one all say "if this skill test is
+/// successful…", and that qualifier is honored downstream instead: each
+/// accumulator's only reader is a success-only follow-up
+/// ([`ApplyFollowUp`](SkillTestStep::ApplyFollowUp)), so on a failed test the
+/// accumulator is populated, never read, and discarded with the test's frame.
+/// This step sits after the token resolves (so the outcome is already on the
+/// frame) but **before** `ApplyFollowUp` reads the accumulators.
+///
+/// Both in-scope effects are non-suspending stat boosts, so the loop drives the
+/// `Seq` and re-dispatches this `SkillTest` at `ApplyFollowUp`, which reads the
+/// now-populated accumulators.
 fn fire_on_commit_step(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) {
     let effects = collect_on_commit(cx, investigator, indices_u8);
     cx.state
@@ -1128,8 +1136,9 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, indices_u8
 /// Dispatch the action-specific on-success follow-up for the resolving
 /// skill test (RR ST.7). Runs only on success (the caller gates on it).
 ///
-/// The Investigate follow-up *pushes* its `discover_clue` effect for the global
-/// drive loop (Slice D #423) — `advance` then yields, the loop drives the
+/// The Investigate follow-up *pushes* its `discover_clue` effect — one
+/// discovery of `1 + bonus_clues_discovered` at the tested location — for the
+/// global drive loop (Slice D #423). `advance` then yields, the loop drives the
 /// discovery (suspending on Cover Up 01007's before-interrupt if needed), and on
 /// completion re-dispatches the `SkillTest` at
 /// [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect). The "after you
@@ -1152,7 +1161,29 @@ fn apply_skill_test_follow_up(
             // timing point already fired at the preceding DetermineOutcome
             // step, before this discovery. The Investigate follow-up has no
             // source card, so `for_controller` is correct.
-            let effect = discover_clue(LocationTarget::YourLocation, 1);
+            //
+            // **One** discovery, whose count carries any commit-time bonus
+            // (Deduction 01039's `bonus_clues_discovered`, the clue-side twin
+            // of the Fight arm's `bonus_attack_damage` below). "Discover 1
+            // additional clue" raises this discovery's count; it does not make
+            // a second one — see the **Discovery** entry in `CONTEXT.md` and
+            // #471. The in-flight test is still present here (torn down only at
+            // the end of resolution), so the accumulator is readable.
+            //
+            // `TestedLocation` — the test's start-of-test location snapshot —
+            // is the **default** target, not an invariant: several cards
+            // replace or redirect this discovery. Burglary 01045 (Core):
+            // "If you succeed, instead of discovering clues, gain 3
+            // resources." Seeking Answers 02023 (Dunwich) discovers at a
+            // *connecting* location instead. It differs from `YourLocation`
+            // only if the investigator moves mid-test — no in-corpus path does
+            // today, but the snapshot is what "at that location" means for
+            // every card that reads it.
+            let bonus = cx
+                .state
+                .current_skill_test()
+                .map_or(0, |t| t.bonus_clues_discovered);
+            let effect = discover_clue(LocationTarget::TestedLocation, 1u8.saturating_add(bonus));
             push_effect(cx, &effect, EvalContext::for_controller(investigator));
         }
         SkillTestFollowUp::Fight {
@@ -1517,6 +1548,7 @@ mod tests {
                 continuation: SkillTestStep::AwaitingCommit,
                 test_modifier: 0,
                 bonus_attack_damage: 2,
+                bonus_clues_discovered: 0,
                 resolved: None,
                 symbol_on_fail: None,
             }));
@@ -1539,6 +1571,68 @@ mod tests {
             state.enemies[&EnemyId(7)].damage,
             4,
             "1 base + 1 extra_damage + 2 bonus_attack_damage"
+        );
+    }
+
+    /// The `Investigate` follow-up pushes **one** `DiscoverClue` of
+    /// `1 + bonus_clues_discovered` at the test's `tested_location`, reading the
+    /// commit-time accumulator off the in-flight record (Deduction 01039). With
+    /// `bonus_clues_discovered: 1` that is a single discovery of 2 — not two of
+    /// 1, which is what Cover Up 01007 would replace twice (#471).
+    #[test]
+    fn investigate_follow_up_pushes_one_discovery_carrying_the_clue_bonus() {
+        use crate::state::{EffectFrame, LocationId};
+        use crate::test_support::test_location;
+
+        let inv = InvestigatorId(1);
+        let loc = LocationId(10);
+        let mut state = GameStateBuilder::new()
+            .with_investigator_at(test_investigator(1), loc)
+            .with_location(test_location(10, "Study"))
+            .build();
+        state
+            .continuations
+            .push(crate::state::Continuation::SkillTest(InFlightSkillTest {
+                investigator: inv,
+                skill: SkillKind::Intellect,
+                kind: SkillTestKind::Investigate,
+                difficulty: 2,
+                committed_by_active: Vec::new(),
+                tested_location: Some(loc),
+                follow_up: SkillTestFollowUp::Investigate,
+                on_fail: None,
+                on_success: None,
+                source: None,
+                continuation: SkillTestStep::AwaitingCommit,
+                test_modifier: 0,
+                bonus_attack_damage: 0,
+                bonus_clues_discovered: 1,
+                resolved: None,
+                symbol_on_fail: None,
+            }));
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        apply_skill_test_follow_up(&mut cx, inv, SkillTestFollowUp::Investigate);
+
+        let Some(crate::state::Continuation::Effect(EffectFrame::Leaf { effect, .. })) =
+            state.continuations.last()
+        else {
+            panic!(
+                "expected one pushed DiscoverClue leaf, got {:?}",
+                state.continuations.last()
+            );
+        };
+        assert_eq!(
+            **effect,
+            crate::dsl::Effect::DiscoverClue {
+                from: crate::dsl::LocationTarget::TestedLocation,
+                count: 2,
+            },
+            "one discovery of 1 base + 1 bonus, at the tested location",
         );
     }
 
@@ -1725,6 +1819,7 @@ mod tests {
                 continuation: SkillTestStep::AwaitingCommit,
                 test_modifier: 0,
                 bonus_attack_damage: 0,
+                bonus_clues_discovered: 0,
                 resolved: None,
                 symbol_on_fail: None,
             }));
