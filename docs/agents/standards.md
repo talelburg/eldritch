@@ -58,6 +58,12 @@ A `debug_assert` in the `drive` loop backstops the class: no queued ability fram
 
 **Why:** four call sites believed the emit resolved, and each carried a comment asserting a loud guard that had not existed since the effect-frame migration. The worst pushed the Upkeep phase anchor over agenda 01107's forced Ghoul movement, stranding it at the bottom of the stack — that ability never fired in a real game of The Gathering (#569).
 
+### Insert a fn above another by matching its doc block, not its signature
+
+Rust `///` comments attach to the *next* item, so an `Edit` whose `old_string` matches only the existing function's signature line drops the new function **between** that function's doc block and its `fn` — silently re-attaching the existing doc to the new function and leaving the existing one undocumented. Either include the whole `///` block in `old_string` and place the new function cleanly before it, or insert after an unambiguous boundary (the prior function's closing `}` plus a blank line) and then check that every `fn` still carries its own doc.
+
+**Why:** nothing is broken, only misattributed, so `RUSTDOCFLAGS="-D warnings" cargo doc` says nothing — this is caught by eye or not at all. Review caught the same mistake twice: `drive_fast_window` inserted above `enumerate_fast_plays` (#476), and `run_mythos_draws` above `anchor_on_child_pop` (#482).
+
 ### Let an absent derive speak for itself
 
 When a type deliberately omits a derive — `PartialEq` on `GameState`, say, because comparing large trees is expensive — don't add a comment explaining the omission. If the reason matters, it belongs in the commit message or PR description, where archaeology will find it.
