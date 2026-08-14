@@ -34,6 +34,8 @@ When starting work on a new issue, read the relevant phase doc first. It's faste
 
 Some issues don't belong to a single phase. They live unmilestoned (mostly `p2-later`) and get picked up when convenient — the authoritative list is the [open unmilestoned issues query](https://github.com/talelburg/eldritch/issues?q=is%3Aissue+is%3Aopen+no%3Amilestone). Examples of the standing kind: `#31` (empty-`turn_order` guard), `#117` (event-keyed trigger index), `#119` (damage/horror dispatcher consolidation), `#174` (replay snapshots — build only when profiling demands it). The 2026-07-17 audit ([record](../audits/2026-07-17-audit.md)) filed a batch more (#564–#593, spanning engine/pipeline/server/web/infra).
 
+The [Chapter 1 forward-compatibility gap register](../audits/2026-08-14-chapter-1-forward-compatibility.md) (#620, PR #621) is the other standing cross-cutting record, and unlike the audit it filed **no** issues — deliberately. It measures the DSL and engine against the whole Chapter 1 snapshot and sorts what it finds into four buckets; only the five bucket-4 entries ask for a decision, and each is written to become a decision ticket later rather than to be actioned now. Read it before any work that would widen the `CardRegistry`, the `GameState` partition, or the scenario-scoped action log. Its loose ends are three doc-drift items and a Rules Reference that is too old to answer Chapter 1 rules questions; neither has an issue yet.
+
 ### Tracker conventions (established 2026-07-17)
 
 - **Milestone = phase deferral.** An issue milestoned to a later phase is deferred to it; an issue milestoned to the *current* phase is part of finishing that phase.
