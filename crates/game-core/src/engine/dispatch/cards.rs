@@ -477,8 +477,8 @@ pub(super) fn draw_one_with_deckout(cx: &mut Cx, investigator: InvestigatorId) {
 ///
 /// The deck-out reading inherited from the `Draw` action is unchanged:
 /// horror fires on any would-draw-from-empty, and a zero-card discard
-/// is not shuffled back (Rules Reference p.9 — "any ability that would
-/// shuffle a discard pile of zero cards back into a deck does not
+/// is not shuffled back (`glossary/Discard_Piles.md`: "any ability that
+/// would shuffle a discard pile of zero cards back into a deck does not
 /// shuffle the deck"), so deck and discard both empty means no card,
 /// no shuffle, but still the horror.
 ///
@@ -508,13 +508,11 @@ pub(in crate::engine) fn draw_with_deckout(cx: &mut Cx, investigator: Investigat
             reshuffle_discard_into_deck(cx, investigator);
         }
         let moved = move_deck_top_to_hand(cx, investigator, count - drawn);
-        debug_assert!(
-            moved > 0,
-            "draw_with_deckout: deck non-empty after reshuffle but moved 0 cards",
-        );
         if moved == 0 {
-            // Unreachable (the deck is non-empty here), but a zero-move
-            // would spin forever — bail rather than hang in release.
+            // The deck is non-empty by here, so this cannot happen. It is a
+            // `break` rather than a panic only because the alternative failure
+            // mode is an infinite loop: a wrong draw count is recoverable,
+            // a hung engine is not.
             break;
         }
         drawn += moved;
@@ -529,6 +527,12 @@ pub(in crate::engine) fn draw_with_deckout(cx: &mut Cx, investigator: Investigat
     // RR Weakness keyword: a weakness drawn during play reveals + resolves its
     // Revelation (#509). Setup's opening-hand draw uses `draw_cards` directly,
     // so it is unaffected (it sets aside instead, #508).
+    //
+    // Last, after the deck-out horror: the horror is part of "completion of
+    // the entire draw", and a Revelation that follows it therefore sees the
+    // post-horror state. This is the order the Draw action and Upkeep 4.4
+    // already used; it now also governs the `Effect::DrawCards` path, which
+    // previously ran the revelation with no horror in between.
     resolve_drawn_weaknesses(cx, investigator);
 }
 
@@ -1327,24 +1331,12 @@ mod draw_with_deckout_tests {
         assert_eq!(inv.deck.len(), 1, "1 + 3 cards, 3 of them drawn");
         assert!(inv.discard.is_empty(), "discard shuffled back in");
         assert_eq!(inv.horror(), 1, "exactly 1 horror for the whole draw");
-        assert_eq!(
-            events
-                .iter()
-                .filter(|e| matches!(e, Event::HorrorTaken { .. }))
-                .count(),
-            1,
-            "one horror event, not one per card",
-        );
+        // One horror event, not one per card.
+        crate::assert_event_count!(events, 1, Event::HorrorTaken { .. });
         // Drawn simultaneously ⇒ one event carrying the whole count, even
         // though the reshuffle split the move into two hops.
-        let drawn: Vec<u8> = events
-            .iter()
-            .filter_map(|e| match e {
-                Event::CardsDrawn { count, .. } => Some(*count),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(drawn, vec![3], "a single CardsDrawn for the whole draw");
+        crate::assert_event_count!(events, 1, Event::CardsDrawn { .. });
+        crate::assert_event!(events, Event::CardsDrawn { count: 3, .. });
     }
 
     /// The ordinary case is untouched: enough cards in the deck means no
