@@ -239,25 +239,31 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
 
     // Mutate-second. Move the named cards out of the hand and into limbo (RR
     // glossary "Limbo": a card committed to a skill test "is no longer
-    // considered to be in any investigator's hand"). Removing in descending
-    // index order keeps the still-pending positions stable; the committed list
-    // is then flipped back into the player's commit order, which is what the
-    // ST.7 `OnCommit` / `OnSkillTestResolution` collectors iterate.
+    // considered to be in any investigator's hand").
+    //
+    // Snapshot in the order the player submitted the indices — that is the
+    // order the ST.7 `OnCommit` / `OnSkillTestResolution` collectors fire in and
+    // the order ST.8 discards in, so it is the player's to choose. The drain
+    // then walks descending, which keeps the still-pending positions stable.
+    // Both steps are index-safe: `validate_commit_indices` proved every index
+    // unique and in bounds against this same, so-far-unmutated hand.
     //
     // From here on nothing re-indexes the hand for a committed card, so the
     // ST.2→ST.3 player window is free to mutate it (#631).
-    let mut descending = indices_u8;
-    descending.sort_unstable_by(|a, b| b.cmp(a));
     let inv = cx
         .state
         .investigators
         .get_mut(&investigator)
         .expect("validate_commit_indices proved the investigator exists");
-    let mut committed: Vec<CardCode> = descending
+    let committed: Vec<CardCode> = indices_u8
         .iter()
-        .map(|&i| inv.hand.remove(usize::from(i)))
+        .map(|&i| inv.hand[usize::from(i)].clone())
         .collect();
-    committed.reverse();
+    let mut descending = indices_u8;
+    descending.sort_unstable_by(|a, b| b.cmp(a));
+    for i in descending {
+        inv.hand.remove(usize::from(i));
+    }
 
     // Persist the committed cards and pre-advance the cursor to
     // `PreTokenWindow`, then park: return `Done` so the `drive` loop's

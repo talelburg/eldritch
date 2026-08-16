@@ -112,8 +112,10 @@ fn tester_eliminated_mid_test_abandons_the_test_without_panicking() {
         "lethal damage eliminated Roland"
     );
 
-    // RR p.10 step 1: the committed card was in hand, so it is removed from the
-    // game — NOT discarded by the skill-test teardown.
+    // RR p.10 step 1: the committed card is in limbo on the SkillTest frame
+    // (#631), which `run_elimination_steps`' frame walk sweeps alongside
+    // in-progress plays — so it is removed from the game, NOT discarded by the
+    // skill-test teardown. Deleting that sweep arm turns this assertion red.
     assert!(inv.hand.is_empty(), "hand drained by elimination");
     assert!(
         inv.discard.is_empty(),
