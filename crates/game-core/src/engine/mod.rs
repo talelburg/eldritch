@@ -28,7 +28,7 @@ pub use dispatch::elimination::take_damage;
 pub use dispatch::encounter::{
     reshuffle_encounter_discard, resolve_encounter_card, spawn_set_aside_enemy,
 };
-pub use dispatch::hunters::enemy_can_enter_location;
+pub use dispatch::hunters::{enemy_can_enter_location, relocate_enemy};
 pub use dispatch::reveal::reveal_location;
 pub use dispatch::threat_area::{attach_to_location, place_in_threat_area};
 pub use enumerate::{legal_actions, TurnAction};

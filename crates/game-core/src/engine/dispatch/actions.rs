@@ -462,6 +462,15 @@ pub(super) fn move_primary_effect(
     // engagement set before mutating any locations, then update each
     // engaged enemy's `current_location` to the destination
     // alongside the investigator's own move.
+    //
+    // Deliberately *not* through the relocation funnel
+    // [`relocate_enemy`](crate::relocate_enemy) (#633): these enemies are
+    // already engaged, and `glossary/Enemy_Engagement.md` says such an enemy
+    // "remains engaged and moves to the new location simultaneously with the
+    // investigator" — there is no engage-on-arrival check to run, and no
+    // `EnemyMoved` to emit either (the move is the investigator's,
+    // `InvestigatorMoved` below). The *unengaged* enemies already standing at
+    // the destination are the entered-location half's business, further down.
     let engaged: Vec<EnemyId> = cx
         .state
         .enemies

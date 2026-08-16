@@ -239,17 +239,69 @@ fn hunter_destinations(
     dests
 }
 
-/// Move `enemy` to `to`, emitting [`Event::EnemyMoved`]. Caller has
-/// already validated that `to` is a legal destination.
-fn move_hunter_to(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
+/// Write `enemy`'s position and emit [`Event::EnemyMoved`] — the board
+/// write alone, with no engagement check. Caller has already validated
+/// that `to` is a legal destination.
+///
+/// The only two callers are [`relocate_enemy`] (the funnel every mover
+/// should use) and the Hunter path, which runs its own *interactive*
+/// [`engage_on_arrival`] immediately afterwards: a prey tie there
+/// suspends for the lead's choice rather than auto-picking, so it must
+/// not go through `relocate_enemy`'s synchronous engagement.
+fn place_enemy_at(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
     let enemy = cx.state.enemies.get_mut(&enemy_id).unwrap_or_else(|| {
-        unreachable!("move_hunter_to: enemy {enemy_id:?} vanished mid-movement; state corruption")
+        unreachable!("place_enemy_at: enemy {enemy_id:?} vanished mid-movement; state corruption")
     });
     enemy.current_location = Some(to);
     cx.events.push(Event::EnemyMoved {
         enemy: enemy_id,
         to,
     });
+}
+
+/// Move an enemy to `to` and run the engage-on-arrival check there —
+/// the funnel for every card effect, scenario native, or engine path
+/// that relocates an enemy (#633).
+///
+/// `data/rules-reference/rules/glossary/Enemy_Engagement.md`: *"Any time
+/// a ready unengaged enemy is at the same location as an investigator,
+/// it engages that investigator, and is placed in that investigator's
+/// threat area"*, and among the listed examples: *"It moves into the
+/// same location as an investigator"*. The check is
+/// `reengage_at_location`, so its rules already hold here: an
+/// exhausted enemy does not engage (*"An exhausted unengaged enemy does
+/// not engage"* — agenda 01107 *can* move evaded enemies, and they
+/// arrive unengaged), and prey resolution picks among co-located
+/// investigators.
+///
+/// **Takes an unengaged enemy.** An enemy that is already engaged is
+/// left engaged — `reengage_at_location`'s precondition is
+/// `engaged_with == None`, so the check is skipped rather than
+/// re-targeting it. That is right for the only engaged-enemy relocation
+/// the engine has (`move_action` dragging an enemy along with the
+/// investigator it is engaged with, which is why that path does not
+/// call this one), but relocating an engaged enemy *away* from its
+/// investigator would strand the engagement across two locations,
+/// against the same glossary paragraph: *"Each enemy in an
+/// investigator's threat area is considered to be at the same location
+/// as that investigator"*. Disengage first (emitting
+/// [`Event::EnemyDisengaged`]) if a future effect needs that.
+///
+/// Enemy *spawning* is not relocation and does not come through here:
+/// `spawn_enemy_at` mints the enemy already at its location and runs
+/// its own prey resolution, so the `EnemySpawned` event precedes the
+/// `EnemyEngaged` one and a spawn-time tie can suspend interactively.
+///
+/// Synchronous by construction, unlike the Hunter path: a prey tie
+/// among co-located investigators auto-picks the turn-order-first lead
+/// rather than suspending for the lead's choice (see
+/// `reengage_at_location`'s `TODO(#151)`). Solo play — the only mode
+/// that ships today — never ties.
+pub fn relocate_enemy(cx: &mut Cx, enemy_id: EnemyId, to: LocationId) {
+    place_enemy_at(cx, enemy_id, to);
+    if cx.state.enemies[&enemy_id].engaged_with.is_none() {
+        reengage_at_location(cx, enemy_id);
+    }
 }
 
 /// Set engagement on `enemy_id` → `target` and emit
@@ -342,7 +394,7 @@ fn process_one_hunter(cx: &mut Cx, enemy_id: EnemyId) -> Option<HunterChoice> {
         let dests = hunter_destinations(cx.state, from, prey, &cx.state.enemies[&enemy_id]);
         match dests.as_slice() {
             [] => return None,
-            [one] => move_hunter_to(cx, enemy_id, *one),
+            [one] => place_enemy_at(cx, enemy_id, *one),
             _ => {
                 return Some(HunterChoice::Move {
                     enemy: enemy_id,
@@ -461,7 +513,7 @@ pub(super) fn resume_hunter_choice(
             };
             // Pop the HunterMove frame we validated against (it is the top frame).
             cx.state.continuations.pop();
-            move_hunter_to(cx, *enemy, loc);
+            place_enemy_at(cx, *enemy, loc);
             // After the move, attempt engage-on-arrival; that itself may
             // suspend on an engagement tie.
             if let Some(choice) = engage_on_arrival(cx, *enemy) {
@@ -1654,6 +1706,164 @@ mod reengage_tests {
             EnemyId(1),
         );
         assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
+        assert_no_event!(events, Event::EnemyEngaged { .. });
+    }
+}
+
+/// The relocation funnel (#633): move + engage-on-arrival in one call.
+#[cfg(test)]
+mod relocate_tests {
+    use super::*;
+    use crate::assert_event;
+    use crate::assert_no_event;
+    use crate::engine::Cx;
+    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+
+    /// Two adjacent locations: the investigator in the Hallway (2), a
+    /// ready unengaged enemy in the Attic (1).
+    fn two_room_board() -> GameState {
+        let inv = {
+            let mut i = test_investigator(1);
+            i.current_location = Some(LocationId(2));
+            i
+        };
+        let enemy = {
+            let mut e = test_enemy(1, "Ghoul");
+            e.current_location = Some(LocationId(1));
+            e.engaged_with = None;
+            e
+        };
+        let mut state = GameStateBuilder::default()
+            .with_investigator(inv)
+            .with_location(test_location(1, "Attic"))
+            .with_location(test_location(2, "Hallway"))
+            .with_enemy(enemy)
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        state.connect(LocationId(1), LocationId(2));
+        state
+    }
+
+    /// [`two_room_board`] with the enemy exhausted (evaded).
+    fn two_room_board_with_exhausted_enemy() -> GameState {
+        let mut state = two_room_board();
+        state
+            .enemies
+            .get_mut(&EnemyId(1))
+            .expect("enemy seeded by two_room_board")
+            .exhausted = true;
+        state
+    }
+
+    /// `glossary/Enemy_Engagement.md`: a ready unengaged enemy immediately
+    /// engages if *"It moves into the same location as an investigator"*.
+    #[test]
+    fn relocate_enemy_engages_on_arrival() {
+        let mut state = two_room_board();
+        let mut events = Vec::new();
+
+        relocate_enemy(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EnemyId(1),
+            LocationId(2),
+        );
+
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(2))
+        );
+        assert_eq!(
+            state.enemies[&EnemyId(1)].engaged_with,
+            Some(InvestigatorId(1))
+        );
+        assert_event!(events, Event::EnemyMoved { enemy, to }
+            if *enemy == EnemyId(1) && *to == LocationId(2));
+        assert_event!(events, Event::EnemyEngaged { enemy, investigator }
+            if *enemy == EnemyId(1) && *investigator == InvestigatorId(1));
+    }
+
+    /// *"An exhausted unengaged enemy does not engage"* — it still moves.
+    #[test]
+    fn relocate_enemy_exhausted_arrives_unengaged() {
+        let mut state = two_room_board_with_exhausted_enemy();
+        let mut events = Vec::new();
+
+        relocate_enemy(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EnemyId(1),
+            LocationId(2),
+        );
+
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(2))
+        );
+        assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
+        assert_event!(events, Event::EnemyMoved { enemy, to }
+            if *enemy == EnemyId(1) && *to == LocationId(2));
+        assert_no_event!(events, Event::EnemyEngaged { .. });
+    }
+
+    /// No investigator at the destination: the enemy just moves.
+    #[test]
+    fn relocate_enemy_to_empty_location_leaves_it_unengaged() {
+        let mut state = two_room_board();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .expect("investigator seeded by two_room_board")
+            .current_location = Some(LocationId(1));
+        let mut events = Vec::new();
+
+        relocate_enemy(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EnemyId(1),
+            LocationId(2),
+        );
+
+        assert_eq!(state.enemies[&EnemyId(1)].engaged_with, None);
+        assert_no_event!(events, Event::EnemyEngaged { .. });
+    }
+
+    /// An already-engaged enemy keeps its engagement — the funnel must not
+    /// re-target it (`reengage_at_location`'s precondition is
+    /// `engaged_with == None`).
+    #[test]
+    fn relocate_enemy_keeps_an_existing_engagement() {
+        let mut state = two_room_board();
+        let other = InvestigatorId(2);
+        state.investigators.insert(other, {
+            let mut i = test_investigator(2);
+            i.current_location = Some(LocationId(1));
+            i
+        });
+        state.turn_order.push(other);
+        state
+            .enemies
+            .get_mut(&EnemyId(1))
+            .expect("enemy seeded by two_room_board")
+            .engaged_with = Some(other);
+        let mut events = Vec::new();
+
+        relocate_enemy(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EnemyId(1),
+            LocationId(2),
+        );
+
+        assert_eq!(state.enemies[&EnemyId(1)].engaged_with, Some(other));
         assert_no_event!(events, Event::EnemyEngaged { .. });
     }
 }

@@ -17,15 +17,17 @@
 //! Parlor), every location has a unique shortest first step toward the
 //! Parlor, so the lowest-`LocationId` tie-break below is unreachable in
 //! this scenario (RR p.12: the controlling player chooses on a tie —
-//! deferred until a map with ties lands). Engagement-on-arrival is not
-//! modeled for the forced move (the card text is positional only).
+//! deferred until a map with ties lands). The move goes through
+//! [`relocate_enemy`], so a Ghoul arriving at an investigator's location
+//! engages on arrival per the general engagement rule (#633) — the card
+//! text is positional only, but the framework rule applies regardless.
 
 use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming, Phase};
 use game_core::card_registry::NativeEffectFn;
 use game_core::state::{EnemyId, LocationId};
 use game_core::{
-    enemy_can_enter_location, location_id_by_code, shortest_first_steps_with, Cx, EngineOutcome,
-    EvalContext, Event,
+    enemy_can_enter_location, location_id_by_code, relocate_enemy, shortest_first_steps_with, Cx,
+    EngineOutcome, EvalContext,
 };
 
 /// `ArkhamDB` code for Agenda 3, "They're Getting Out!".
@@ -99,10 +101,11 @@ fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
         }
     }
     for (id, to) in movers {
-        if let Some(e) = cx.state.enemies.get_mut(&id) {
-            e.current_location = Some(to);
-        }
-        cx.events.push(Event::EnemyMoved { enemy: id, to });
+        // The shared relocation funnel (#633): the board write, the
+        // `EnemyMoved` emit, and the engage-on-arrival check the general
+        // engagement rule requires of *any* enemy movement — an exhausted
+        // (evaded) Ghoul moved by this agenda still arrives unengaged.
+        relocate_enemy(cx, id, to);
     }
     EngineOutcome::Done
 }
@@ -132,7 +135,8 @@ mod tests {
     use super::*;
     use card_dsl::dsl::{Effect, Trigger};
     use game_core::state::{Agenda, CardCode, Enemy, InvestigatorId, Location};
-    use game_core::test_support::{test_enemy, GameStateBuilder};
+    use game_core::test_support::{test_enemy, test_investigator, GameStateBuilder};
+    use game_core::Event;
 
     fn ghoul(id: u32, at: LocationId) -> Enemy {
         let mut e = test_enemy(id, "Ghoul");
@@ -257,6 +261,69 @@ mod tests {
             Some(LocationId(2)),
             "Ghoul stayed in the Hallway — the only step toward the Parlor is blocked",
         );
+    }
+
+    /// A Ghoul that steps into a lone investigator's location engages on
+    /// arrival (#633). `Enemy_Engagement.md`: *"Any time a ready unengaged
+    /// enemy is at the same location as an investigator, it engages that
+    /// investigator"*, listed example *"It moves into the same location as
+    /// an investigator"*.
+    #[test]
+    fn ghoul_moving_into_the_investigators_location_engages_on_arrival() {
+        let mut state = star_board();
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(2)); // Hallway
+        state.investigators.insert(InvestigatorId(1), inv);
+        state.turn_order = vec![InvestigatorId(1)];
+        state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
+
+        let events = cx_apply(&mut state, move_ghouls_toward_parlor);
+
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(2)),
+            "Ghoul stepped Attic -> Hallway"
+        );
+        assert_eq!(
+            state.enemies[&EnemyId(1)].engaged_with,
+            Some(InvestigatorId(1)),
+            "and engaged the investigator standing there"
+        );
+        assert!(events.iter().any(|e| matches!(e,
+            Event::EnemyEngaged { enemy, investigator }
+                if *enemy == EnemyId(1) && *investigator == InvestigatorId(1))));
+    }
+
+    /// *"This agenda can move exhausted (evaded) enemies"*
+    /// (<https://arkhamdb.com/card/01107>), but `Enemy_Engagement.md`:
+    /// *"An exhausted unengaged enemy does not engage"* — so it arrives
+    /// unengaged and engages only when it readies (#633).
+    #[test]
+    fn exhausted_ghoul_moved_into_the_investigators_location_arrives_unengaged() {
+        let mut state = star_board();
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(LocationId(2)); // Hallway
+        state.investigators.insert(InvestigatorId(1), inv);
+        state.turn_order = vec![InvestigatorId(1)];
+        let mut evaded = ghoul(1, LocationId(3)); // Attic
+        evaded.exhausted = true;
+        state.enemies.insert(EnemyId(1), evaded);
+
+        let events = cx_apply(&mut state, move_ghouls_toward_parlor);
+
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(2)),
+            "the evaded Ghoul still moves"
+        );
+        assert_eq!(
+            state.enemies[&EnemyId(1)].engaged_with,
+            None,
+            "but an exhausted unengaged enemy does not engage"
+        );
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e, Event::EnemyEngaged { .. })));
     }
 
     #[test]
