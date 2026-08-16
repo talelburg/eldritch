@@ -13,9 +13,10 @@ use game_core::state::{
 };
 use game_core::test_support::{
     fire_forced_on_phase_end, fire_forced_on_round_end, resume_round_end_window,
-    run_enemy_phase_end, run_upkeep_round_end, test_enemy, test_investigator, GameStateBuilder,
+    run_enemy_phase_end, run_upkeep_round_end, take_turn_action, test_enemy, test_investigator,
+    GameStateBuilder,
 };
-use game_core::{EngineOutcome, Event};
+use game_core::{EngineOutcome, Event, TurnAction};
 
 #[ctor::ctor(unsafe)]
 fn install() {
@@ -120,6 +121,101 @@ fn enemy_phase_end_moves_ghoul_before_the_upkeep_transition() {
         moved < upkeep_started,
         "the queued forced ability must resolve before the Upkeep phase begins; \
          events = {events:?}"
+    );
+}
+
+/// #633: a Ghoul the agenda walks into the investigator's location engages on
+/// arrival, and — being engaged and ready — attacks in the *next* Enemy phase.
+///
+/// `glossary/Enemy_Engagement.md`: *"Any time a ready unengaged enemy is at the
+/// same location as an investigator, it engages that investigator, and is
+/// placed in that investigator's threat area"*, listing *"It moves into the
+/// same location as an investigator"*. The Ghoul here is not a Hunter, so
+/// nothing else in the framework would ever pick it up: before the fix it stood
+/// in the Hallway beside the investigator forever.
+#[test]
+fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
+    let mut state = board_with_agenda();
+    // Add the Attic (01113) as a third room so a Ghoul can step Attic ->
+    // Hallway on its way to the Parlor.
+    state.locations.insert(
+        LocationId(3),
+        Location::new(LocationId(3), CardCode::new("01113"), "Attic", 1, 0),
+    );
+    state.connect(LocationId(2), LocationId(3));
+    {
+        let inv = state.investigators.get_mut(&InvestigatorId(1)).unwrap();
+        // Hallway.
+        inv.current_location = Some(LocationId(2));
+        // A real investigator code so the Upkeep cascade can read printed
+        // health/sanity from the installed corpus (Skids O'Toole, 01003).
+        inv.investigator_card.code = CardCode::new("01003");
+        inv.deck = vec![CardCode::new("01088")];
+    }
+    let mut walker = ghoul(1, LocationId(3)); // Attic, one step from the Hallway
+    walker.attack_damage = 1;
+    walker.attack_horror = 0;
+    assert!(!walker.hunter, "the divergence needs a non-Hunter Ghoul");
+    state.enemies.insert(EnemyId(1), walker);
+    // Step 3.4 runs with the Enemy anchor on top (the
+    // `AfterAllInvestigatorsAttacked` window has just closed).
+    state.continuations.push(Continuation::EnemyPhase {
+        resume: game_core::state::EnemyResume::AfterAllAttacked,
+        attacking: None,
+    });
+
+    let mut events = Vec::new();
+    let _ = run_enemy_phase_end(&mut state, &mut events);
+
+    assert_eq!(
+        state.enemies[&EnemyId(1)].current_location,
+        Some(LocationId(2)),
+        "the Ghoul stepped Attic -> Hallway"
+    );
+    assert_eq!(
+        state.enemies[&EnemyId(1)].engaged_with,
+        Some(InvestigatorId(1)),
+        "and engaged the investigator it arrived on top of"
+    );
+    assert!(
+        events.iter().any(|e| matches!(e,
+            Event::EnemyEngaged { enemy, investigator }
+                if *enemy == EnemyId(1) && *investigator == InvestigatorId(1))),
+        "engage-on-arrival is announced: {events:?}"
+    );
+
+    // The follow-up Enemy phase: hand the (still engaged) Ghoul a round in
+    // which to attack. Re-seat the carried-over state mid-Investigation and end
+    // the turn — the cascade runs Investigation -> Enemy and resolves step 3.3.
+    let damage_before = state.investigators[&InvestigatorId(1)].damage();
+    state.phase = Phase::Investigation;
+    state.active_investigator = Some(InvestigatorId(1));
+    state.continuations = vec![
+        Continuation::InvestigationPhase {
+            resume: game_core::state::InvestigationResume::TurnBegins,
+        },
+        Continuation::InvestigatorTurn {
+            investigator: InvestigatorId(1),
+            ending: false,
+        },
+    ];
+    // A ready enemy attacks; the Upkeep readying in between would have done
+    // this anyway, but assert the precondition rather than assume it.
+    assert!(!state.enemies[&EnemyId(1)].exhausted);
+
+    let result = take_turn_action(state, &TurnAction::EndTurn);
+
+    assert!(
+        result.events.iter().any(|e| matches!(
+            e,
+            Event::DamageTaken { investigator, amount: 1 } if *investigator == InvestigatorId(1)
+        )),
+        "the now-engaged Ghoul attacks in the next Enemy phase: {:?}",
+        result.events
+    );
+    assert!(
+        result.state.investigators[&InvestigatorId(1)].damage() > damage_before,
+        "the attack landed"
     );
 }
 
