@@ -421,7 +421,9 @@ pub(super) fn move_action(
 /// completes (#293). Re-derives `from` from the live `current_location` (the `AoO`
 /// never moves the actor) and re-checks the destination is still connected —
 /// the §D primary-precondition re-check — suppressing the move (returns `Done`)
-/// if it no longer holds. Engaged enemies move with the investigator.
+/// if it no longer holds. Engaged enemies move with the investigator, except
+/// those that cannot enter the destination (a Barricade 01038 block), which
+/// disengage and stay behind.
 ///
 /// Ends by queueing the *left* location's Forced abilities; the entered half —
 /// auto-engagement and the entered location's Forced abilities — rides the
@@ -458,10 +460,20 @@ pub(super) fn move_primary_effect(
         return EngineOutcome::Done; // precondition lapsed: suppress
     }
 
-    // Engaged enemies move with the investigator. Capture the
-    // engagement set before mutating any locations, then update each
-    // engaged enemy's `current_location` to the destination
-    // alongside the investigator's own move.
+    // Engaged enemies move with the investigator (RR, "Enemy Engagement":
+    // "should the investigator move, the enemy remains engaged and moves to
+    // the new location simultaneously with the investigator") — unless the
+    // destination is one the enemy cannot enter. Barricade 01038's "Non-Elite
+    // enemies cannot move into attached location" is absolute (RR glossary,
+    // "Cannot": "The word 'cannot' is absolute, and cannot be countermanded by
+    // other abilities"), so a blocked enemy does not ride along; per the card's
+    // ruling (<https://arkhamdb.com/card/01038>), "the engaged enemy will
+    // disengage and remain in the investigator's previous location (after
+    // making an attack of opportunity)". The AoO has already resolved by the
+    // time this runs (#293's `drive_aoo` precedes `move_primary_effect`).
+    //
+    // Capture the engagement set before mutating any locations, then update
+    // each engaged enemy alongside the investigator's own move.
     let engaged: Vec<EnemyId> = cx
         .state
         .enemies
@@ -469,16 +481,33 @@ pub(super) fn move_primary_effect(
         .filter(|(_, e)| e.engaged_with == Some(investigator))
         .map(|(id, _)| *id)
         .collect();
+    for enemy_id in engaged {
+        let Some(enemy) = cx.state.enemies.get(&enemy_id) else {
+            continue;
+        };
+        if super::hunters::enemy_can_enter_location(cx.state, enemy, destination) {
+            cx.state
+                .enemies
+                .get_mut(&enemy_id)
+                .expect("presence checked above")
+                .current_location = Some(destination);
+        } else {
+            cx.state
+                .enemies
+                .get_mut(&enemy_id)
+                .expect("presence checked above")
+                .engaged_with = None;
+            cx.events.push(Event::EnemyDisengaged {
+                enemy: enemy_id,
+                investigator,
+            });
+        }
+    }
     cx.state
         .investigators
         .get_mut(&investigator)
         .expect("investigator existence checked above via current_location")
         .current_location = Some(destination);
-    for enemy_id in engaged {
-        if let Some(enemy) = cx.state.enemies.get_mut(&enemy_id) {
-            enemy.current_location = Some(destination);
-        }
-    }
     cx.events.push(Event::InvestigatorMoved {
         investigator,
         from,

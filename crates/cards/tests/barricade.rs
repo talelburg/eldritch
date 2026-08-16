@@ -151,6 +151,137 @@ fn elite_hunter_enters_the_barricaded_location() {
     );
 }
 
+/// Linear map A—B with a Barricade attached at B, the investigator at A, and a
+/// ready enemy (code `enemy_code`, 1 damage) engaged with them at A. The move
+/// A→B is the drag-along case: the engaged enemy would ride along, but B is
+/// barricaded.
+fn engaged_map_with_barricade_at_b(enemy_code: &str) -> game_core::GameState {
+    let mut inv = test_investigator(1);
+    // Real investigator code so max_health()/max_sanity() resolve against the
+    // installed registry — Skids O'Toole (01003, 8/6), no implemented abilities.
+    inv.investigator_card.code = CardCode::new("01003");
+    inv.current_location = Some(A);
+    let mut a = test_location(1, "A");
+    a.connections = vec![B];
+    let mut b = test_location(2, "B");
+    b.connections = vec![A];
+    let mut enemy = hunter(100, enemy_code, A);
+    enemy.hunter = false;
+    enemy.engaged_with = Some(INV);
+    enemy.attack_damage = 1;
+    enemy.attack_horror = 0;
+    let mut state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator(inv)
+        .with_location(a)
+        .with_location(b)
+        .with_enemy(enemy)
+        .with_active_investigator(INV)
+        .with_turn_order([INV])
+        .with_investigator_turn(INV)
+        .build();
+    state
+        .locations
+        .get_mut(&B)
+        .unwrap()
+        .attachments
+        .push(CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST));
+    state
+}
+
+/// Barricade 01038: "Non-[[Elite]] enemies cannot move into attached location."
+/// Its ruling (<https://arkhamdb.com/card/01038>): "If an investigator that is
+/// engaged with an enemy moves to a Barricaded location, the engaged enemy will
+/// disengage and remain in the investigator's previous location (after making an
+/// attack of opportunity)."
+#[test]
+fn engaged_non_elite_enemy_disengages_and_stays_behind_at_a_barricade() {
+    let r = take_turn_action(
+        engaged_map_with_barricade_at_b(GHOUL_MINION),
+        &TurnAction::Move {
+            investigator: INV,
+            destination: B,
+        },
+    );
+    assert!(!matches!(r.outcome, EngineOutcome::Rejected { .. }));
+    assert_eq!(
+        r.state.investigators[&INV].current_location,
+        Some(B),
+        "the investigator still moves",
+    );
+    let enemy = &r.state.enemies[&EnemyId(100)];
+    assert_eq!(enemy.current_location, Some(A), "enemy stayed behind");
+    assert_eq!(enemy.engaged_with, None, "engagement broke");
+    assert_event!(
+        r.events,
+        Event::EnemyDisengaged { enemy, investigator }
+            if *enemy == EnemyId(100) && *investigator == INV
+    );
+}
+
+/// The attack of opportunity resolves *before* the disengage (per the ruling's
+/// parenthetical), which in turn precedes the investigator's move.
+#[test]
+fn the_attack_of_opportunity_resolves_before_the_disengage() {
+    let r = take_turn_action(
+        engaged_map_with_barricade_at_b(GHOUL_MINION),
+        &TurnAction::Move {
+            investigator: INV,
+            destination: B,
+        },
+    );
+    let idx = |pred: fn(&Event) -> bool| r.events.iter().position(pred);
+    let damage = idx(|e| matches!(e, Event::DamageTaken { .. })).expect("AoO DamageTaken missing");
+    let disengaged =
+        idx(|e| matches!(e, Event::EnemyDisengaged { .. })).expect("EnemyDisengaged missing");
+    let moved =
+        idx(|e| matches!(e, Event::InvestigatorMoved { .. })).expect("InvestigatorMoved missing");
+    assert!(
+        damage < disengaged,
+        "AoO DamageTaken ({damage}) must precede EnemyDisengaged ({disengaged})",
+    );
+    assert!(
+        disengaged < moved,
+        "EnemyDisengaged ({disengaged}) must precede InvestigatorMoved ({moved})",
+    );
+    assert_eq!(r.state.investigators[&INV].damage(), 1, "AoO still landed");
+}
+
+/// Barricade names non-Elite only, so an Elite enemy is dragged along as before.
+#[test]
+fn engaged_elite_enemy_is_dragged_into_the_barricaded_location() {
+    let r = take_turn_action(
+        engaged_map_with_barricade_at_b(GHOUL_PRIEST),
+        &TurnAction::Move {
+            investigator: INV,
+            destination: B,
+        },
+    );
+    assert!(!matches!(r.outcome, EngineOutcome::Rejected { .. }));
+    let enemy = &r.state.enemies[&EnemyId(100)];
+    assert_eq!(enemy.current_location, Some(B), "Elite enemy followed");
+    assert_eq!(enemy.engaged_with, Some(INV), "still engaged");
+}
+
+/// Control: with no Barricade at the destination, the non-Elite enemy is dragged
+/// along and stays engaged.
+#[test]
+fn engaged_non_elite_enemy_follows_when_the_destination_is_unbarricaded() {
+    let mut state = engaged_map_with_barricade_at_b(GHOUL_MINION);
+    state.locations.get_mut(&B).unwrap().attachments.clear();
+    let r = take_turn_action(
+        state,
+        &TurnAction::Move {
+            investigator: INV,
+            destination: B,
+        },
+    );
+    assert!(!matches!(r.outcome, EngineOutcome::Rejected { .. }));
+    let enemy = &r.state.enemies[&EnemyId(100)];
+    assert_eq!(enemy.current_location, Some(B), "enemy followed");
+    assert_eq!(enemy.engaged_with, Some(INV), "still engaged");
+}
+
 #[test]
 fn leaving_the_barricaded_location_discards_barricade() {
     let mut inv = test_investigator(1);
