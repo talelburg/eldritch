@@ -464,8 +464,11 @@ fn run() -> Result<(), String> {
     }
 
     // Resolve enemy Spawn-location names to location codes now that every
-    // card is loaded. Unresolved names (out-of-scope forms like
-    // "Engaged with Prey") stay None and warn — a loud stub, not silent.
+    // card is loaded. Unresolved names (out-of-scope forms like "Any empty
+    // location" or "Engaged with Prey") stay None here and warn, and
+    // `spawn_lit` turns them into `SpawnLocation::Unrepresented` — a loud
+    // stub the engine refuses on, not a silent collapse into "no spawn
+    // instruction" (#635).
     let loc_index: BTreeMap<String, String> = all
         .values()
         .filter(|c| c.card_type == "Location")
@@ -479,7 +482,7 @@ fn run() -> Result<(), String> {
             } else {
                 eprintln!(
                     "card-data-pipeline: enemy {} ({}): unresolved Spawn location {name:?} \
-                     — emitting spawn: None",
+                     — emitting SpawnLocation::Unrepresented",
                     c.code, c.name
                 );
                 resolutions.push((c.code.clone(), None));
@@ -657,6 +660,9 @@ struct NormalizedCard {
     /// Location name parsed from a `Spawn - <name>.` line (pre-resolution).
     spawn_name: Option<String>,
     /// Spawn location code, resolved from `spawn_name` after all cards load.
+    /// `None` alongside a `Some(spawn_name)` means the clause did not name an
+    /// in-corpus location — `spawn_lit` emits `SpawnLocation::Unrepresented`
+    /// for that pair, never `spawn: None`.
     spawn_code: Option<String>,
     weakness: bool,
 }
@@ -954,7 +960,7 @@ fn render_kind(c: &NormalizedCard) -> String {
             c.enemy_horror.unwrap_or(0),
             health_value_opt_lit(c.health, c.health_per_investigator),
             opt_u8(c.victory),
-            spawn_lit(c.spawn_code.as_deref()),
+            spawn_lit(c.spawn_name.as_deref(), c.spawn_code.as_deref()),
             c.hunter,
             c.retaliate,
             prey_lit(&c.prey),
@@ -1143,14 +1149,25 @@ fn parse_spawn_name(text: &str) -> Option<String> {
     Some(rest.split('.').next().unwrap_or("").trim().to_owned())
 }
 
-/// Emit the `Option<Spawn>` literal for an enemy's resolved spawn code.
-fn spawn_lit(spawn_code: Option<&str>) -> String {
-    match spawn_code {
-        Some(code) => format!(
+/// Emit the `Option<Spawn>` literal for an enemy's spawn instruction.
+///
+/// Three cases, and the middle one is the point (#635): `spawn: None` is the
+/// *positive* rule "this card prints no Spawn line", so it is emitted only
+/// when `spawn_name` is absent. A printed clause we could not resolve to a
+/// location code becomes `SpawnLocation::Unrepresented`, which the engine
+/// refuses on, rather than collapsing into the no-instruction rule and
+/// spawning the enemy engaged with the drawer.
+fn spawn_lit(spawn_name: Option<&str>, spawn_code: Option<&str>) -> String {
+    match (spawn_name, spawn_code) {
+        (None, _) => "None".to_owned(),
+        (Some(_), Some(code)) => format!(
             "Some(Spawn {{ location: SpawnLocation::Specific({}.to_owned()) }})",
             str_lit(code)
         ),
-        None => "None".to_owned(),
+        (Some(name), None) => format!(
+            "Some(Spawn {{ location: SpawnLocation::Unrepresented({}.to_owned()) }})",
+            str_lit(name)
+        ),
     }
 }
 
@@ -1206,8 +1223,8 @@ mod tests {
         classify, classify_against, clue_value_lit, emit_card, has_keyword, health_value_opt_lit,
         map_card_type, map_class, normalize, parse_commit_limit, parse_prey, parse_slots,
         parse_spawn_name, parse_traits, parse_uses, prey_lit, process_raw, read_packs, repo_root,
-        strip_html_bold, vendored_pack_files, Discrepancy, Manifest, NormalizedCard, PreyParse,
-        RawCard, RawPack, SNAPSHOT_DIR,
+        spawn_lit, strip_html_bold, vendored_pack_files, Discrepancy, Manifest, NormalizedCard,
+        PreyParse, RawCard, RawPack, SNAPSHOT_DIR,
     };
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
@@ -1469,6 +1486,25 @@ mod tests {
             Some("Cellar".to_owned())
         );
         assert_eq!(parse_spawn_name("Hunter."), None);
+    }
+
+    #[test]
+    fn spawn_lit_separates_no_instruction_from_unrepresented_one() {
+        // #635: the two must not collapse. No Spawn line at all → `None`,
+        // which the engine reads as "spawns engaged with the drawer".
+        assert_eq!(spawn_lit(None, None), "None");
+        // A resolved clause → the location code.
+        assert_eq!(
+            spawn_lit(Some("Attic"), Some("01113")),
+            "Some(Spawn { location: SpawnLocation::Specific(\"01113\".to_owned()) })",
+        );
+        // A printed clause we could not resolve → an explicit marker the
+        // engine refuses on, carrying the clause for the rejection message.
+        assert_eq!(
+            spawn_lit(Some("Any empty location"), None),
+            "Some(Spawn { location: SpawnLocation::Unrepresented(\"Any empty location\"\
+             .to_owned()) })",
+        );
     }
 
     #[test]

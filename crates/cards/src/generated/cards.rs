@@ -1344,7 +1344,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: false,
-            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 1, health: Some(HealthValue::Fixed(4)), victory: Some(2), spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
+            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 2, horror: 1, health: Some(HealthValue::Fixed(4)), victory: Some(2), spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Engaged with Prey".to_owned()) }), surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01122".to_owned(),
@@ -1564,7 +1564,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: false,
-            kind: CardKind::Enemy { fight: 2, evade: 5, damage: 1, horror: 0, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
+            kind: CardKind::Enemy { fight: 2, evade: 5, damage: 1, horror: 0, health: Some(HealthValue::Fixed(4)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Unrepresented("St".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01143".to_owned(),
@@ -1861,7 +1861,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: false,
-            kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(1)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 3 },
+            kind: CardKind::Enemy { fight: 3, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(1)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Any empty location".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
             code: "01170".to_owned(),
@@ -1872,7 +1872,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "core".to_owned(),
             weakness: false,
-            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 1 },
+            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 1, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Any empty location".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "01171".to_owned(),
@@ -2928,7 +2928,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "dwl".to_owned(),
             weakness: false,
-            kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 1, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 3 },
+            kind: CardKind::Enemy { fight: 2, evade: 2, damage: 1, horror: 1, health: Some(HealthValue::Fixed(2)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Location with the most clues".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
             code: "02087".to_owned(),
@@ -3027,7 +3027,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "dwl".to_owned(),
             weakness: false,
-            kind: CardKind::Enemy { fight: 4, evade: 4, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Default, quantity: 2 },
+            kind: CardKind::Enemy { fight: 4, evade: 4, damage: 1, horror: 1, health: Some(HealthValue::Fixed(3)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Farthest location from you".to_owned()) }), surge: false, peril: false, hunter: true, retaliate: true, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
             code: "02096".to_owned(),
@@ -3973,7 +3973,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "tece".to_owned(),
             weakness: false,
-            kind: CardKind::Enemy { fight: 4, evade: 3, damage: 2, horror: 2, health: Some(HealthValue::Fixed(5)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 2 },
+            kind: CardKind::Enemy { fight: 4, evade: 3, damage: 2, horror: 2, health: Some(HealthValue::Fixed(5)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Unrepresented("The location to your right (or your location if there is no location to your right)".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 2 },
         },
         CardMetadata {
             code: "02184".to_owned(),
@@ -4413,7 +4413,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "bota".to_owned(),
             weakness: false,
-            kind: CardKind::Enemy { fight: 3, evade: 1, damage: 2, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: None, surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 3 },
+            kind: CardKind::Enemy { fight: 3, evade: 1, damage: 2, horror: 0, health: Some(HealthValue::Fixed(2)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Any empty location".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: true, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
             code: "02225".to_owned(),
@@ -5172,7 +5172,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "wda".to_owned(),
             weakness: false,
-            kind: CardKind::Enemy { fight: 3, evade: 4, damage: 2, horror: 2, health: Some(HealthValue::Fixed(6)), victory: Some(1), spawn: None, surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
+            kind: CardKind::Enemy { fight: 3, evade: 4, damage: 2, horror: 2, health: Some(HealthValue::Fixed(6)), victory: Some(1), spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Nearest [[Altered]] location".to_owned()) }), surge: false, peril: false, hunter: false, retaliate: false, prey: Prey::Default, quantity: 1 },
         },
         CardMetadata {
             code: "02296".to_owned(),
@@ -5535,7 +5535,7 @@ pub fn all_cards() -> Vec<CardMetadata> {
             back_text: None,
             pack_code: "litas".to_owned(),
             weakness: false,
-            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 1, horror: 2, health: Some(HealthValue::Fixed(3)), victory: None, spawn: None, surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 3 },
+            kind: CardKind::Enemy { fight: 4, evade: 2, damage: 1, horror: 2, health: Some(HealthValue::Fixed(3)), victory: None, spawn: Some(Spawn { location: SpawnLocation::Unrepresented("Any [[Extradimensional]] location".to_owned()) }), surge: false, peril: false, hunter: true, retaliate: false, prey: Prey::Default, quantity: 3 },
         },
         CardMetadata {
             code: "02330".to_owned(),

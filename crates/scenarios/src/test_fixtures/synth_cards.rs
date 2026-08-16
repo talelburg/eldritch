@@ -496,6 +496,9 @@ mod tests {
             game_core::card_data::SpawnLocation::Specific(code) => {
                 assert_eq!(code, SYNTH_LOC_CODE);
             }
+            game_core::card_data::SpawnLocation::Unrepresented(clause) => {
+                panic!("synth enemy must spawn at a specific location, got unmodelled {clause:?}")
+            }
         }
     }
 

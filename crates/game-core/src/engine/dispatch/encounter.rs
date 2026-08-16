@@ -274,11 +274,15 @@ pub fn resolve_encounter_card(
 ///
 /// # Validate-first contract
 ///
-/// Spawn-location resolution is checked before any mutation. It has three
+/// Spawn-location resolution is checked before any mutation. It has four
 /// outcomes: (1) a legal location → mint + engage (below); (2) a `Specific`
 /// location not in play → the enemy does **not** spawn and its card is placed
 /// in `encounter_discard`, returning `Done` (RR p.24 / Flesh-Eater 01118 FAQ,
-/// #517) — this is the only mutating non-spawn path; (3) the default spawn with
+/// #517) — this is the only mutating non-spawn path; (3) a
+/// [`SpawnLocation::Unrepresented`] clause → `Rejected` with `state`/`events`
+/// unchanged, because the enemy prints a spawn instruction we cannot model and
+/// silently falling back to the no-instruction rule would apply a *different*
+/// rule (#635); (4) the default spawn with
 /// no drawing-investigator location → `Rejected` with `state`/`events`
 /// unchanged (a state-corruption invariant, not the RR "no legal location"
 /// case). Engagement resolution never rejects: it either resolves inline or
@@ -324,6 +328,24 @@ fn spawn_enemy(
                 cx.state.encounter_discard.push(code);
                 return EngineOutcome::Done;
             }
+        }
+        Some(Spawn {
+            location: SpawnLocation::Unrepresented(clause),
+        }) => {
+            // The card prints a spawn instruction we cannot model. Refusing
+            // here is the point of the variant (#635): the alternative — the
+            // `None` arm below — is the *positive* rule for an enemy with no
+            // Spawn line at all, and applying it to, say, Acolyte 01169
+            // ("Spawn - Any empty location.") would place the enemy at the one
+            // location guaranteed not to be empty and engage the drawer. Loud
+            // refusal, matching how `PlayCard` treats an unimplemented card.
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "spawn_enemy: card {code} prints an unmodelled spawn instruction \
+                     {clause:?}; refusing rather than spawning at the drawer's location",
+                )
+                .into(),
+            };
         }
         None => match cx
             .state
@@ -1636,6 +1658,59 @@ mod spawn_enemy_tests {
             vec![CardCode("_synth_enemy".into())],
             "the enemy card is placed in the encounter discard pile",
         );
+    }
+
+    #[test]
+    fn spawn_with_unrepresented_instruction_rejects_without_mutating() {
+        // #635: a printed Spawn clause we cannot model must refuse loudly
+        // rather than fall through to the no-instruction rule. Acolyte 01169
+        // prints "Spawn - Any empty location."; the drawer's own location is
+        // the one location guaranteed *not* to be empty, so the fallback
+        // placement would be doubly wrong (wrong location, plus an engagement
+        // that should not happen).
+        let mut loc = test_location(10, "Demo");
+        loc.code = CardCode("_demo_loc".into());
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_location(loc)
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = Some(LocationId(10));
+        let metadata = synth_enemy_metadata(Some(Spawn {
+            location: SpawnLocation::Unrepresented("Any empty location".into()),
+        }));
+        let mut events = Vec::new();
+
+        let outcome = spawn_enemy(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            InvestigatorId(1),
+            CardCode("_synth_enemy".into()),
+            &metadata,
+        );
+
+        let EngineOutcome::Rejected { reason } = &outcome else {
+            panic!("an unmodelled spawn instruction must reject, got {outcome:?}");
+        };
+        assert!(
+            reason.contains("Any empty location"),
+            "the rejection must name the clause it could not model: {reason}",
+        );
+        assert!(
+            state.enemies.is_empty(),
+            "a rejection leaves state unchanged — no enemy is minted",
+        );
+        assert!(
+            state.encounter_discard.is_empty(),
+            "this is not the RR \"no legal location\" discard path",
+        );
+        assert!(events.is_empty(), "a rejection pushes no events");
     }
 
     #[test]

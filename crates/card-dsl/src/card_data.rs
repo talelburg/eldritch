@@ -125,9 +125,22 @@ pub enum SkillKind {
 
 /// Where on the location map an encounter enemy spawns.
 ///
-/// Phase-4 minimal set: just a printed location code. Future variants
-/// (`LeadInvestigator`, `LowestSanityInvestigator`, `NearestUnexplored`,
-/// etc.) land with the first Phase-7+ card that needs them.
+/// Phase-4 minimal set: a printed location code, plus an explicit
+/// [`Unrepresented`](Self::Unrepresented) marker for spawn clauses the
+/// pipeline could not model. Future *modelled* variants (`AnyEmptyLocation`,
+/// `FarthestFromYou`, `NearestWithTrait`, `MostClues`, `EngagedWithPrey`)
+/// land with the PR that implements the spawning investigator's choice
+/// among multiple valid locations.
+///
+/// **Why `Unrepresented` is a variant rather than `spawn: None`.**
+/// `spawn: None` is the *positive* rule "this enemy prints no Spawn line",
+/// which [`Spawn`] documents as "spawns engaged with the drawing
+/// investigator". Folding an unparsed clause into it makes the engine apply
+/// a different, valid rule to the wrong enemy — Acolyte 01169's "**Spawn** -
+/// Any empty location." would spawn it at the one location guaranteed *not*
+/// to be empty. Keeping the two apart lets the engine refuse loudly on
+/// unmodelled content, the way `PlayCard` refuses an unimplemented card
+/// (#635).
 ///
 /// **Why a [`String`] code rather than a `LocationCode` newtype.**
 /// Locations in Arkham are cards with `ArkhamDB` codes; the namespace
@@ -141,13 +154,24 @@ pub enum SkillKind {
 pub enum SpawnLocation {
     /// Fixed-location spawn — the named location's printed code.
     Specific(String),
+    /// The card prints a spawn instruction the pipeline could not model,
+    /// carrying the clause as the pipeline parsed it (e.g. `"Any empty
+    /// location"`) so the refusal names what is missing.
+    ///
+    /// Deliberately **not** exhaustive-match-escaping: every consumer must
+    /// handle it, and adding a modelled variant later is a compile error at
+    /// each site rather than a silent fallthrough.
+    Unrepresented(String),
 }
 
 /// Spawn rule for an encounter-deck enemy.
 ///
 /// `None` on [`CardKind::Enemy`]'s `spawn` means "no spawn instruction" — per
 /// Rules Reference p.24, the enemy spawns engaged with the drawing
-/// investigator, placed in that investigator's threat area.
+/// investigator, placed in that investigator's threat area. An enemy that
+/// *does* print a Spawn line the pipeline could not model carries
+/// `Some(Spawn { location: SpawnLocation::Unrepresented(clause) })`, never
+/// `None`; see [`SpawnLocation::Unrepresented`].
 ///
 /// **Why a nested struct, not flat fields on `CardMetadata`.** So
 /// spawn-related fields can grow (e.g. `engagement:

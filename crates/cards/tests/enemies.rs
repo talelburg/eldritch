@@ -175,3 +175,44 @@ fn swarm_of_rats_is_a_hunter() {
     assert!(hunter);
     assert_eq!(quantity, 3);
 }
+
+#[test]
+fn acolyte_carries_its_unmodelled_spawn_clause_not_a_missing_one() {
+    // #635. Acolyte 01169 prints "<b>Spawn</b> - Any empty location." — a
+    // clause the pipeline cannot resolve to a location code. The corpus must
+    // record that as `SpawnLocation::Unrepresented`, *not* as `spawn: None`,
+    // which is the positive rule for a card printing no Spawn line at all
+    // (`data/rules-reference/rules/glossary/Spawn.md`: "If an enemy has no
+    // spawn instruction, it spawns engaged with the investigator who drew
+    // it."). Wizard of the Order 01170 and Servant of Many Mouths 02224
+    // print the same clause.
+    for code in ["01169", "01170", "02224"] {
+        let CardKind::Enemy { spawn, .. } = enemy(code) else {
+            panic!("{code} is an enemy")
+        };
+        assert_eq!(
+            spawn,
+            Some(Spawn {
+                location: SpawnLocation::Unrepresented("Any empty location".to_owned()),
+            }),
+            "{code} must carry its unmodelled spawn clause",
+        );
+    }
+}
+
+#[test]
+fn ghoul_minion_prints_no_spawn_line_and_carries_none() {
+    // The other half of #635's distinction, as a regression guard: Ghoul
+    // Minion 01160's printed text bears no "Spawn" precursor, so `None` here
+    // genuinely means "spawns engaged with the drawing investigator".
+    let meta = cards::by_code("01160").expect("Ghoul Minion in corpus");
+    assert!(
+        !meta.text.as_deref().unwrap_or_default().contains("Spawn"),
+        "fixture assumption: 01160 prints no Spawn line, got {:?}",
+        meta.text,
+    );
+    let CardKind::Enemy { spawn, .. } = &meta.kind else {
+        panic!("01160 is an enemy")
+    };
+    assert_eq!(*spawn, None);
+}
