@@ -16,7 +16,7 @@
 //! `data/rules-reference/rules/glossary/Victory_Display_Victory_Points.md`:
 //!
 //! > As a victory point enemy is defeated, place the card in the victory
-//! > display **instead of** in the discard pile.
+//! > display instead of in the discard pile.
 //!
 //! The three enemies under test, verbatim from
 //! `data/arkhamdb-snapshot/pack/core/`:
@@ -30,9 +30,17 @@
 //!   "Discarding an enemy is not the same as defeating it" — so it does not
 //!   reach the path under test here.)
 //! - **Ghoul Priest 01116** (`core_encounter.json`) — "**Prey** - Highest
-//!   \\[combat\\].\nHunter. Retaliate."; health 5, fight 4, Victory 2.
+//!   \\[combat\\].\nHunter. Retaliate."; printed health 5 *per investigator*
+//!   (`"health_per_investigator": true`), fight 4, Victory 2. These tests are
+//!   solo, so the spawned health the engine would compute is 5 — the number the
+//!   fixture uses.
+//!
+//! The enemies are built as fixtures rather than spawned from the corpus: what
+//! the real registry is needed for here is the `weakness` flag the routing reads
+//! (`weakness: true` on 01101, per `crates/cards/src/generated/cards.rs`), which
+//! `game-core`'s own tests cannot see.
 
-use game_core::action::InputResponse;
+use game_core::action::{EngineRecord, InputResponse};
 use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
@@ -41,7 +49,7 @@ use game_core::state::{
 use game_core::test_support::{
     take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
 };
-use game_core::{apply, assert_event, reshuffle_encounter_discard, Action, Cx, PlayerAction};
+use game_core::{apply, assert_event, Action, PlayerAction};
 
 const GHOUL_MINION: &str = "01160";
 const MOB_ENFORCER: &str = "01101";
@@ -123,9 +131,9 @@ fn fight_to_defeat(
 }
 
 #[test]
-fn defeated_ghoul_minion_is_shuffled_back_in_when_the_encounter_deck_runs_out() {
+fn defeated_ghoul_minion_is_drawn_again_once_the_encounter_deck_runs_out() {
     let (inv_id, enemy_id, state) = solo_investigator_facing(GHOUL_MINION, 2, 2, None);
-    let mut after = fight_to_defeat(state, inv_id, enemy_id).state;
+    let after = fight_to_defeat(state, inv_id, enemy_id).state;
 
     assert_eq!(
         after.encounter_discard,
@@ -133,21 +141,37 @@ fn defeated_ghoul_minion_is_shuffled_back_in_when_the_encounter_deck_runs_out() 
         "a defeated non-weakness enemy is placed on the encounter discard pile"
     );
 
-    // The encounter deck is empty (the builder starts it so), which is exactly
-    // the state `draw_encounter_top` reshuffles out of — call the same helper it
-    // calls and confirm the Ghoul is a card the scenario can draw again.
-    assert!(after.encounter_deck.is_empty());
-    let mut events = Vec::new();
-    reshuffle_encounter_discard(&mut Cx {
-        state: &mut after,
-        events: &mut events,
-    });
-    assert!(
-        after.encounter_deck.contains(&CardCode::new(GHOUL_MINION)),
-        "the reshuffle returns the defeated Ghoul Minion to the encounter deck; deck = {:?}",
-        after.encounter_deck
+    // Now run the divergence scenario end to end: the encounter deck is empty
+    // and an encounter card is drawn. `draw_encounter_top` reshuffles the
+    // discard back in first ("If the encounter deck is empty, shuffle the
+    // encounter discard pile back into the encounter deck") — so the card drawn
+    // must be the Ghoul the investigator just killed, which then spawns again.
+    // Before this fix the discard was empty and the draw had nothing to find.
+    let mut state = after;
+    assert!(state.encounter_deck.is_empty());
+    state.continuations.clear(); // drop the open-turn prompt; draw straight
+    state.phase = Phase::Mythos;
+
+    let redraw = apply(
+        state,
+        Action::Engine(EngineRecord::EncounterCardRevealed {
+            investigator: inv_id,
+        }),
     );
-    assert!(after.encounter_discard.is_empty());
+    assert_event!(
+        redraw.events,
+        Event::CardRevealed { code, .. } if code.as_str() == GHOUL_MINION
+    );
+    assert!(
+        redraw
+            .state
+            .enemies
+            .values()
+            .any(|e| e.code.as_str() == GHOUL_MINION),
+        "the reshuffled Ghoul Minion spawns again; enemies = {:?}",
+        redraw.state.enemies
+    );
+    assert!(redraw.state.encounter_discard.is_empty());
 }
 
 #[test]

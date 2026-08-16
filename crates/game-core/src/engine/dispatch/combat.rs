@@ -4,8 +4,8 @@ use crate::engine::outcome::{InputRequest, OptionId, ResumeToken};
 use crate::engine::EngineOutcome;
 use crate::event::Event;
 use crate::state::{
-    Assignment, AttackLoopStage, CardInstanceId, Continuation, DefeatCause, EnemyAttackSource,
-    EnemyId, GameState, InvestigatorId, Status,
+    Assignment, AttackLoopStage, CardCode, CardInstanceId, Continuation, DefeatCause,
+    EnemyAttackSource, EnemyId, GameState, InvestigatorId, Status,
 };
 
 use super::Cx;
@@ -163,7 +163,7 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
 /// disposal path (the treachery `Discard` disposition, the unspawnable
 /// `Specific` discard): the pile is observable in state, and `EnemyDefeated`
 /// already marks the moment.
-fn place_defeated_enemy_card(cx: &mut Cx, code: crate::state::CardCode) {
+fn place_defeated_enemy_card(cx: &mut Cx, code: CardCode) {
     if !super::cards::is_weakness_code(&code) {
         cx.state.encounter_discard.push(code);
         return;
@@ -172,13 +172,20 @@ fn place_defeated_enemy_card(cx: &mut Cx, code: crate::state::CardCode) {
         // Multiplayer: the engine cannot say whose deck this weakness came
         // from, and putting a player card in the encounter discard would feed
         // it back into the encounter deck on the next reshuffle — a worse
-        // divergence than dropping it. So the card stays unplaced and the
-        // engine says so loudly in debug rather than guessing. The bearer model
-        // that makes this determinable is #654.
+        // divergence than dropping it. Guessing (the engaged investigator) is
+        // not available either: "Prey – Bearer only" ingests as `Prey::Default`
+        // (#654), so engagement may point at the wrong seat. The card therefore
+        // stays unplaced, loudly. `Rejected` is not an option here: the apply
+        // boundary rolls a rejection back, which would undo the whole Fight.
+        //
+        // Unreachable in shipped play today — multiplayer is architecture-only
+        // (`docs/phases/phase-8-multiplayer-and-auth.md`) — so the assert is a
+        // tripwire for whoever builds it rather than a live panic risk.
         debug_assert!(
             false,
-            "defeated weakness enemy {code}: no unambiguous owner (2+ active \
-             investigators and no bearer model, #654); card left unplaced"
+            "TODO(#654): defeated weakness enemy {code} has no determinable owner \
+             (2+ active investigators, no bearer model); card left unplaced \
+             (lands with #654)"
         );
         return;
     };
@@ -1454,9 +1461,9 @@ mod combat_tests {
             events,
             Event::EnteredVictoryDisplay { code, victory: 2 } if code.as_str() == "01116"
         );
-        // "place the card in the victory display **instead of** in the discard
+        // "place the card in the victory display instead of in the discard
         // pile" (`glossary/Victory_Display_Victory_Points.md`) — the victory
-        // display is the *only* pile it lands in (#632).
+        // display is the only pile it lands in (#632).
         assert!(
             state.encounter_discard.is_empty(),
             "a victory enemy goes to the victory display instead of the encounter discard"
