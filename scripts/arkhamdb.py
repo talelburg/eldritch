@@ -512,7 +512,8 @@ def split_document(root: Node) -> tuple[list[OutputFile], list, dict[str, Anchor
                 current = None
                 continue
             in_glossary = False
-            current = OutputFile(filename_for(node, heading_text(node)), 1, [node], heading_text(node))
+            title = heading_text(node)
+            current = OutputFile(filename_for(node, title), 1, [node], title)
             files.append(current)
             continue
         if node.tag == "h2" and (in_glossary or current is None):
@@ -612,6 +613,10 @@ def convert_rules(html: str) -> dict[str, str]:
     for required in REQUIRED_SECTION_IDS:
         if required not in anchors:
             raise ConversionError(f"top-level section {required!r} is missing from the page")
+    paths = [f.path for f in files]
+    if len(set(paths)) != len(paths):
+        clash = sorted({p for p in paths if paths.count(p) > 1})
+        raise ConversionError(f"two sections would write the same file: {clash}")
     entries = [f for f in files if f.path.startswith("glossary/")]
     low, high = GLOSSARY_ENTRY_TOLERANCE
     if not low <= len(entries) <= high:
@@ -760,19 +765,70 @@ def write_rules_tree(rendered: dict[str, str]) -> None:
 # fetch-faq
 # --------------------------------------------------------------------------
 
-ICON_SPAN = re.compile(r'<span class="icon-([a-z0-9_]+)"\s*>\s*</span>')
+ICON_SPAN = re.compile(r'<span class="icon-([a-z0-9_]+)"\s*/?>\s*(?:</span>)?')
+
+# ArkhamDB's `text` field is *mostly* markdown, but contributors wrote inline
+# HTML into a fifth of the rulings. The tag set is small and closed; each one
+# has a markdown equivalent, so converting is what keeps a quoted ruling
+# quotable. Anything outside this list survives into the file and `verify faq`
+# reports it.
+FAQ_TAGS = [
+    (re.compile(r"<br\s*/?>"), "\n"),
+    (re.compile(r"</?(?:i|em)>"), "*"),
+    (re.compile(r"</?(?:b|strong)>"), "**"),
+    (re.compile(r"</?(?:s|del|strike)>"), "~~"),
+    (re.compile(r"</?code>"), "`"),
+    # Markdown has no underline. The words are what carry the ruling.
+    (re.compile(r"</?u>"), ""),
+    (re.compile(r"</?(?:ul|ol)>"), "\n"),
+    (re.compile(r"<li>"), "\n- "),
+    (re.compile(r"</li>"), ""),
+    (re.compile(r"</?p>"), "\n\n"),
+]
+
+# Rulings link with site-relative hrefs, which resolve to nothing in a local
+# file. Card links become absolute; rules links become the vendored file, so
+# following a citation never needs the network.
+FAQ_CARD_LINK = re.compile(r"\((?:https?://arkhamdb\.com)?(/card/[^)\s]+)\)")
+FAQ_RULES_LINK = re.compile(r"\((?:https?://arkhamdb\.com)?/rules(?:#([^)\s]*))?\)")
 
 
-def faq_markdown(text: str) -> str:
-    """ArkhamDB's `text` field is already markdown. The only conversion is icon
-    spans, which arrive as empty HTML elements and become the same `[token]`
-    form the card corpus and the rules text already use."""
-    return ICON_SPAN.sub(r"[\1]", text.replace("\r\n", "\n")).strip()
+def faq_markdown(text: str, rules_anchors: dict[str, AnchorTarget] | None = None) -> str:
+    text = ICON_SPAN.sub(r"[\1]", text.replace("\r\n", "\n"))
+    for pattern, replacement in FAQ_TAGS:
+        text = pattern.sub(replacement, text)
+    text = FAQ_CARD_LINK.sub(r"(https://arkhamdb.com\1)", text)
+    text = FAQ_RULES_LINK.sub(lambda match: f"({rules_link(match.group(1), rules_anchors)})", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
-def faq_document(code: str, name: str, entries: list[dict], fetched: str) -> str:
+def rules_link(anchor: str | None, rules_anchors: dict[str, AnchorTarget] | None) -> str:
+    """A `/rules#Anchor` href, pointed at the vendored rules text. Falls back to
+    the absolute URL when the anchor is one the rules page no longer has."""
+    # From data/arkhamdb-faq/<pack>/ up to data/rules-reference/rules/.
+    base = "../../rules-reference/rules"
+    if not anchor:
+        return f"{base}/README.md"
+    target = (rules_anchors or {}).get(ANCHOR_FIXUPS.get(anchor, anchor))
+    if target is None:
+        return f"https://arkhamdb.com/rules#{anchor}"
+    destination = f"{base}/{target.path}" + ("" if target.is_top else f"#{target.slug}")
+    return f"<{destination}>" if " " in destination else destination
+
+
+def faq_document(
+    code: str,
+    name: str,
+    entries: list[dict],
+    fetched: str,
+    rules_anchors: dict[str, AnchorTarget] | None = None,
+) -> str:
     updated = sorted(entry.get("updated", {}).get("date", "")[:10] for entry in entries)[-1]
-    body = "\n\n".join(faq_markdown(entry.get("text", "")) for entry in entries if entry.get("text"))
+    body = "\n\n".join(
+        faq_markdown(entry.get("text", ""), rules_anchors)
+        for entry in entries
+        if entry.get("text")
+    )
     return (
         f"# {name} ({code})\n\n"
         f"Rulings last updated on ArkhamDB {updated or 'unknown'}; "
@@ -817,6 +873,9 @@ def file_fetch_date(path: Path) -> str:
 
 def cmd_fetch_faq(args: argparse.Namespace) -> int:
     codes = snapshot_codes()
+    # Rulings cite the rules by anchor; resolving those to the vendored files
+    # needs the same anchor map the rules conversion builds.
+    rules_anchors = rules_anchor_map(RAW_RULES.read_text(encoding="utf-8"))
     fetched_on = datetime.now(timezone.utc).date().isoformat()
     no_rulings = read_no_rulings()
 
@@ -855,7 +914,9 @@ def cmd_fetch_faq(args: argparse.Namespace) -> int:
 
         if entries:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(faq_document(code, name, entries, fetched_on), encoding="utf-8")
+            path.write_text(
+                faq_document(code, name, entries, fetched_on, rules_anchors), encoding="utf-8"
+            )
             no_rulings.discard(code)
             progress.tick("fetched")
         else:
@@ -967,7 +1028,9 @@ def verify_faq(problems: list[str]) -> None:
     no_rulings = read_no_rulings()
     seen: set[str] = set()
 
-    for path in sorted(FAQ_DIR.rglob("*.md")):
+    # `*/*.md` rather than a recursive glob: SOURCE.md sits at the root and is
+    # documentation, not data.
+    for path in sorted(FAQ_DIR.glob("*/*.md")):
         code = path.stem
         pack = path.parent.name
         seen.add(code)
@@ -979,6 +1042,9 @@ def verify_faq(problems: list[str]) -> None:
         text = path.read_text(encoding="utf-8")
         if not re.search(r"Rulings last updated on ArkhamDB .*fetched \d{4}-\d{2}-\d{2}", text):
             problems.append(f"faq: {code} has no metadata line")
+        leaked = HTML_TAG.search(text)
+        if leaked:
+            problems.append(f"faq: {code} contains an unconverted HTML tag {leaked.group(0)!r}")
 
     for code in sorted(no_rulings & seen):
         problems.append(f"faq: {code} appears both as a file and in no-rulings.txt")
