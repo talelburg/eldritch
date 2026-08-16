@@ -460,13 +460,11 @@ pub(super) fn move_primary_effect(
         return EngineOutcome::Done; // precondition lapsed: suppress
     }
 
-    // Engaged enemies move with the investigator (RR, "Enemy Engagement":
-    // "should the investigator move, the enemy remains engaged and moves to
-    // the new location simultaneously with the investigator") — unless the
-    // destination is one the enemy cannot enter. Barricade 01038's "Non-Elite
-    // enemies cannot move into attached location" is absolute (RR glossary,
-    // "Cannot": "The word 'cannot' is absolute, and cannot be countermanded by
-    // other abilities"), so a blocked enemy does not ride along; per the card's
+    // Engaged enemies move with the investigator — unless the destination is
+    // one the enemy cannot enter. Barricade 01038's "Non-Elite enemies cannot
+    // move into attached location" is absolute (RR glossary, "Cannot": "The
+    // word 'cannot' is absolute, and cannot be countermanded by other
+    // abilities"), so a blocked enemy does not ride along; per the card's
     // ruling (<https://arkhamdb.com/card/01038>), "the engaged enemy will
     // disengage and remain in the investigator's previous location (after
     // making an attack of opportunity)". The AoO has already resolved by the
@@ -474,6 +472,17 @@ pub(super) fn move_primary_effect(
     //
     // Capture the engagement set before mutating any locations, then update
     // each engaged enemy alongside the investigator's own move.
+    //
+    // Deliberately *not* through the relocation funnel
+    // [`relocate_enemy`](crate::relocate_enemy) (#633): an enemy that follows
+    // is already engaged, and `glossary/Enemy_Engagement.md` says such an
+    // enemy "remains engaged and moves to the new location simultaneously with
+    // the investigator" — there is no engage-on-arrival check to run, and no
+    // `EnemyMoved` to emit either (the move is the investigator's,
+    // `InvestigatorMoved` below). An enemy that *cannot* follow needs the
+    // funnel even less: it never arrives anywhere, staying put at `from` while
+    // the investigator leaves. The *unengaged* enemies already standing at the
+    // destination are the entered-location half's business, further down.
     let engaged: Vec<EnemyId> = cx
         .state
         .enemies
