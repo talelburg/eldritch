@@ -270,12 +270,19 @@ pub enum Event {
     /// effect explicitly defeated it). The enemy is removed from
     /// `GameState::enemies` after this event fires.
     ///
-    /// Per the Rules Reference, defeat takes the enemy out of play
-    /// entirely — it does NOT emit a paired [`EnemyDisengaged`] for
-    /// an enemy that was engaged at the time of defeat. Engagement
-    /// implicitly terminates because the enemy is gone. Consumers
-    /// tracking engagement via the event stream should treat
-    /// `EnemyDefeated` as terminating any engagement the enemy had.
+    /// Defeat takes the enemy out of *play*, but not out of the *game*:
+    /// its card is placed, eventlessly, in the pile the Rules Reference
+    /// glossary entry "Defeat" names — "the encounter discard pile (or on
+    /// its owner's discard pile if it is a weakness)", or the victory
+    /// display instead for a Victory enemy. Consumers wanting the
+    /// destination read state (`encounter_discard` / the owner's
+    /// `discard` / `victory_display`) rather than the event stream.
+    ///
+    /// Defeat does NOT emit a paired [`EnemyDisengaged`] for an enemy
+    /// that was engaged at the time of defeat. Engagement implicitly
+    /// terminates because the enemy has left play. Consumers tracking
+    /// engagement via the event stream should treat `EnemyDefeated` as
+    /// terminating any engagement the enemy had.
     ///
     /// [`EnemyDisengaged`]: Event::EnemyDisengaged
     EnemyDefeated {

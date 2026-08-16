@@ -4,8 +4,8 @@ use crate::engine::outcome::{InputRequest, OptionId, ResumeToken};
 use crate::engine::EngineOutcome;
 use crate::event::Event;
 use crate::state::{
-    Assignment, AttackLoopStage, CardInstanceId, Continuation, DefeatCause, EnemyAttackSource,
-    EnemyId, GameState, InvestigatorId, Status,
+    Assignment, AttackLoopStage, CardCode, CardInstanceId, Continuation, DefeatCause,
+    EnemyAttackSource, EnemyId, GameState, InvestigatorId, Status,
 };
 
 use super::Cx;
@@ -95,13 +95,18 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
         cx.state.enemies.remove(&enemy_id);
         // RR p.21: a defeated enemy with a Victory value enters the victory
         // display. Captured here (not scanned at scenario resolution like
-        // victory locations) because the enemy is removed above.
+        // victory locations) because the enemy is removed above. The victory
+        // display is *instead of* a discard pile, so the two arms are exclusive
+        // (`glossary/Victory_Display_Victory_Points.md`, see
+        // [`place_defeated_enemy_card`]).
         if let Some(victory) = defeated_victory.filter(|v| *v > 0) {
             cx.state.victory_display.push(defeated_code.clone());
             cx.events.push(Event::EnteredVictoryDisplay {
                 code: defeated_code.clone(),
                 victory,
             });
+        } else {
+            place_defeated_enemy_card(cx, defeated_code.clone());
         }
         // Enemy defeated: dispatch the timing point through the unified
         // chokepoint (Axis-B T5a). `queue_event` queues the after-defeat
@@ -130,6 +135,88 @@ pub(super) fn damage_enemy(cx: &mut Cx, enemy_id: EnemyId, amount: u8, by: Optio
             },
         );
     }
+}
+
+/// Place a defeated enemy's card in the pile the Rules Reference names for it.
+///
+/// `data/rules-reference/rules/glossary/Defeat.md`:
+///
+/// > If an enemy has as much or more damage on it as it has health, that enemy
+/// > is defeated and placed on the encounter discard pile (or on its owner's
+/// > discard pile if it is a weakness).
+///
+/// The distinction is load-bearing in both directions. The encounter discard is
+/// not out of the game — `glossary/Encounter_Deck.md`: "If the encounter deck is
+/// empty, shuffle the encounter discard pile back into the encounter deck." — so
+/// a defeated Ghoul Minion 01160 comes back around later in the scenario. And a
+/// weakness rejoins its owner's deck for the campaign — `glossary/Weakness.md`:
+/// "If a weakness is added to a player's deck, hand, or threat area during the
+/// play of a scenario, that weakness remains a part of that investigator's deck
+/// for the rest of the campaign." (#632.)
+///
+/// **Victory enemies never reach here**: the caller takes the victory-display
+/// arm instead, per `glossary/Victory_Display_Victory_Points.md` — "As a victory
+/// point enemy is defeated, place the card in the victory display instead of in
+/// the discard pile."
+///
+/// Both placements are **eventless**, matching every other encounter-card
+/// disposal path (the treachery `Discard` disposition, the unspawnable
+/// `Specific` discard): the pile is observable in state, and `EnemyDefeated`
+/// already marks the moment.
+fn place_defeated_enemy_card(cx: &mut Cx, code: CardCode) {
+    if !super::cards::is_weakness_code(&code) {
+        cx.state.encounter_discard.push(code);
+        return;
+    }
+    let Some(owner) = sole_active_investigator(cx.state) else {
+        // Multiplayer: the engine cannot say whose deck this weakness came
+        // from, and putting a player card in the encounter discard would feed
+        // it back into the encounter deck on the next reshuffle — a worse
+        // divergence than dropping it. Guessing (the engaged investigator) is
+        // not available either: "Prey – Bearer only" ingests as `Prey::Default`
+        // (#654), so engagement may point at the wrong seat. The card therefore
+        // stays unplaced, loudly. `Rejected` is not an option here: the apply
+        // boundary rolls a rejection back, which would undo the whole Fight.
+        //
+        // Unreachable in shipped play today — multiplayer is architecture-only
+        // (`docs/phases/phase-8-multiplayer-and-auth.md`) — so the assert is a
+        // tripwire for whoever builds it rather than a live panic risk.
+        debug_assert!(
+            false,
+            "TODO(#654): defeated weakness enemy {code} has no determinable owner \
+             (2+ active investigators, no bearer model); card left unplaced \
+             (lands with #654)"
+        );
+        return;
+    };
+    cx.state
+        .investigators
+        .get_mut(&owner)
+        .unwrap_or_else(|| {
+            unreachable!("sole_active_investigator returned {owner:?}, which is not in the map")
+        })
+        .discard
+        .push(code);
+}
+
+/// The investigator who owns any weakness in play, insofar as the engine can
+/// determine ownership today.
+///
+/// `glossary/Weakness.md`: "The bearer of a weakness is the investigator who
+/// started the game with the weakness in his or her deck or play area." Nothing
+/// in the engine records that yet (#654), so the only answer it can give without
+/// guessing is the solo one: with exactly one active investigator, every deck in
+/// the game is theirs. Returns `None` for anything else — including a solo game
+/// whose investigator has been eliminated, whose discard pile RR elimination
+/// step 1 has already removed from the game (see
+/// [`elimination`](super::elimination)).
+fn sole_active_investigator(state: &GameState) -> Option<InvestigatorId> {
+    let mut active = state
+        .investigators
+        .iter()
+        .filter(|(_, inv)| inv.status == Status::Active);
+    let (&id, _) = active.next()?;
+    active.next().is_none().then_some(id)
 }
 
 // `Assignment` (the computed damage/horror distribution) lives in
@@ -1374,12 +1461,23 @@ mod combat_tests {
             events,
             Event::EnteredVictoryDisplay { code, victory: 2 } if code.as_str() == "01116"
         );
+        // "place the card in the victory display instead of in the discard
+        // pile" (`glossary/Victory_Display_Victory_Points.md`) — the victory
+        // display is the only pile it lands in (#632).
+        assert!(
+            state.encounter_discard.is_empty(),
+            "a victory enemy goes to the victory display instead of the encounter discard"
+        );
     }
 
     #[test]
-    fn defeating_non_victory_enemy_places_nothing() {
+    fn defeating_non_victory_enemy_places_its_card_in_the_encounter_discard() {
+        // `glossary/Defeat.md`: "that enemy is defeated and placed on the
+        // encounter discard pile" — not removed from the game, so the
+        // `glossary/Encounter_Deck.md` reshuffle can bring it back (#632).
         let eid = EnemyId(1);
         let mut enemy = test_enemy(1, "Ghoul");
+        enemy.code = crate::CardCode::new("01160");
         enemy.max_health = 1;
         enemy.victory = None;
         let mut state = GameStateBuilder::new().build();
@@ -1393,6 +1491,11 @@ mod combat_tests {
 
         assert!(state.victory_display.is_empty());
         assert_no_event!(events, Event::EnteredVictoryDisplay { .. });
+        assert_eq!(
+            state.encounter_discard,
+            vec![crate::CardCode::new("01160")],
+            "defeated non-victory enemy lands in the encounter discard"
+        );
     }
 
     #[test]
