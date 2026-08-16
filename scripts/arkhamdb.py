@@ -198,6 +198,12 @@ def collapse(text: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
+def link_target(destination: str) -> str:
+    """A markdown link destination. Three ArkhamDB anchor ids contain a space,
+    so the files named after them need angle brackets to link to."""
+    return f"<{destination}>" if " " in destination else destination
+
+
 def slugify(heading: str) -> str:
     """GitHub's heading-anchor algorithm, applied to the rendered heading text."""
     slug = heading.strip().lower()
@@ -283,9 +289,7 @@ class Renderer:
             )
         rel = posixpath.relpath(target.path, posixpath.dirname(self.current_path)) or "."
         dest = rel if target.is_top else f"{rel}#{target.slug}"
-        if " " in dest:
-            dest = f"<{dest}>"
-        return f"[{text}]({dest})"
+        return f"[{text}]({link_target(dest)})"
 
     # -- blocks ----------------------------------------------------------
     def blocks(self, children) -> list[str]:
@@ -327,88 +331,56 @@ class Renderer:
             return self.blocks(node.children)
         raise ConversionError(f"<{tag}> in block position; upstream markup has changed")
 
-    def list_block(self, node: Node, depth: int = 0) -> str:
+    def list_block(self, node: Node) -> str:
         ordered = node.tag == "ol"
         counter = int(node.attrs.get("start", "1")) if ordered else 0
         lines: list[str] = []
         # Upstream writes sub-lists and notes as *siblings* of the item they
         # belong under, so continuations are indented to the last marker's width.
         indent = "  "
+
+        def hang(text: str, what: str, blank_line: bool) -> None:
+            """Attach a continuation to the item above, which is where upstream
+            means it to go even though it was written as a sibling."""
+            if not lines:
+                raise ConversionError(f"{what} inside a list with no item above it")
+            if blank_line:
+                lines.append("")
+            lines.extend(indent + line if line else "" for line in text.split("\n"))
+
         for item in node.children:
             if isinstance(item, str):
                 if item.strip():
                     raise ConversionError("bare text inside a list; upstream markup has changed")
                 continue
             if item.tag in ("ul", "ol"):
-                # A sub-list written as a sibling of the item it belongs under.
-                if not lines:
-                    raise ConversionError("nested list with no list item above it")
-                nested = self.list_block(item, depth + 1)
-                lines.extend(indent + line if line else "" for line in nested.split("\n"))
+                hang(self.list_block(item), "a sub-list", blank_line=False)
                 continue
             if item.tag == "dd":
-                # Upstream uses <dd> inside <ul> as an indented note hanging off
-                # the item above it. Rendered as a continuation paragraph.
-                if not lines:
-                    raise ConversionError("<dd> with no list item above it")
-                note = finish_inline(self.inline(item))
-                lines.append("")
-                lines.extend(indent + line if line else "" for line in note.split("\n"))
+                # Upstream uses <dd> inside <ul> as an indented note.
+                hang(finish_inline(self.inline(item)), "<dd>", blank_line=True)
                 continue
             if item.tag in INLINE_TAGS:
-                # Inline markup between list items. Upstream leaves a couple of
-                # these holding nothing but a newline; anything with real text
-                # hangs off the item above it, like <dd>.
+                # Upstream leaves a couple of these holding nothing but a
+                # newline; anything with real text hangs off the item above.
                 note = finish_inline(self.inline(item))
-                if not note:
-                    continue
-                if not lines:
-                    raise ConversionError("inline text inside a list with no item above it")
-                lines.append("")
-                lines.extend(indent + line if line else "" for line in note.split("\n"))
+                if note:
+                    hang(note, "inline text", blank_line=True)
                 continue
             if item.tag in ("p", "blockquote", "table"):
-                # A block written as a sibling of the item it belongs under.
-                if not lines:
-                    raise ConversionError(f"<{item.tag}> inside a list with no item above it")
-                block = "\n\n".join(self.block(item))
-                lines.append("")
-                lines.extend(indent + line if line else "" for line in block.split("\n"))
+                hang("\n\n".join(self.block(item)), f"<{item.tag}>", blank_line=True)
                 continue
             if item.tag != "li":
                 raise ConversionError(f"<{item.tag}> inside a list; upstream markup has changed")
             marker = f"{counter}. " if ordered else "- "
             if ordered:
                 counter += 1
-            body = self.list_item(item, depth)
+            body = "\n\n".join(self.blocks(item.children))
             indent = " " * len(marker)
             first, *rest = body.split("\n")
             lines.append(marker + first)
             lines.extend((indent + line) if line else "" for line in rest)
         return "\n".join(lines)
-
-    def list_item(self, node: Node, depth: int) -> str:
-        parts: list[str] = []
-        pending: list = []
-
-        def flush() -> None:
-            if pending:
-                text = finish_inline(self.inline(pending))
-                if text:
-                    parts.append(text)
-                pending.clear()
-
-        for child in node.children:
-            if isinstance(child, str) or (isinstance(child, Node) and child.tag in INLINE_TAGS):
-                pending.append(child)
-                continue
-            flush()
-            if child.tag in ("ul", "ol"):
-                parts.append(self.list_block(child, depth + 1))
-            else:
-                parts.extend(self.block(child))
-        flush()
-        return "\n\n".join(parts)
 
     def table(self, node: Node) -> str:
         rows: list[list[str]] = []
@@ -590,10 +562,6 @@ def render_index(
         lines.append(f"- [{out.top_heading}]({link_target(out.path)})")
     lines.append("")
     return "\n".join(lines)
-
-
-def link_target(path: str) -> str:
-    return f"<{path}>" if " " in path else path
 
 
 def rules_anchor_map(html: str) -> dict[str, AnchorTarget]:
@@ -813,7 +781,7 @@ def rules_link(anchor: str | None, rules_anchors: dict[str, AnchorTarget] | None
     if target is None:
         return f"https://arkhamdb.com/rules#{anchor}"
     destination = f"{base}/{target.path}" + ("" if target.is_top else f"#{target.slug}")
-    return f"<{destination}>" if " " in destination else destination
+    return link_target(destination)
 
 
 def faq_document(
