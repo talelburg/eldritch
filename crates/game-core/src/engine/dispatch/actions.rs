@@ -421,7 +421,9 @@ pub(super) fn move_action(
 /// completes (#293). Re-derives `from` from the live `current_location` (the `AoO`
 /// never moves the actor) and re-checks the destination is still connected —
 /// the §D primary-precondition re-check — suppressing the move (returns `Done`)
-/// if it no longer holds. Engaged enemies move with the investigator.
+/// if it no longer holds. Engaged enemies move with the investigator, except
+/// those that cannot enter the destination (a Barricade 01038 block), which
+/// disengage and stay behind.
 ///
 /// Ends by queueing the *left* location's Forced abilities; the entered half —
 /// auto-engagement and the entered location's Forced abilities — rides the
@@ -458,19 +460,29 @@ pub(super) fn move_primary_effect(
         return EngineOutcome::Done; // precondition lapsed: suppress
     }
 
-    // Engaged enemies move with the investigator. Capture the
-    // engagement set before mutating any locations, then update each
-    // engaged enemy's `current_location` to the destination
-    // alongside the investigator's own move.
+    // Engaged enemies move with the investigator — unless the destination is
+    // one the enemy cannot enter. Barricade 01038's "Non-Elite enemies cannot
+    // move into attached location" is absolute (RR glossary, "Cannot": "The
+    // word 'cannot' is absolute, and cannot be countermanded by other
+    // abilities"), so a blocked enemy does not ride along; per the card's
+    // ruling (<https://arkhamdb.com/card/01038>), "the engaged enemy will
+    // disengage and remain in the investigator's previous location (after
+    // making an attack of opportunity)". The AoO has already resolved by the
+    // time this runs (#293's `drive_aoo` precedes `move_primary_effect`).
+    //
+    // Capture the engagement set before mutating any locations, then update
+    // each engaged enemy alongside the investigator's own move.
     //
     // Deliberately *not* through the relocation funnel
-    // [`relocate_enemy`](crate::relocate_enemy) (#633): these enemies are
-    // already engaged, and `glossary/Enemy_Engagement.md` says such an enemy
-    // "remains engaged and moves to the new location simultaneously with the
-    // investigator" — there is no engage-on-arrival check to run, and no
+    // [`relocate_enemy`](crate::relocate_enemy) (#633): an enemy that follows
+    // is already engaged, and `glossary/Enemy_Engagement.md` says such an
+    // enemy "remains engaged and moves to the new location simultaneously with
+    // the investigator" — there is no engage-on-arrival check to run, and no
     // `EnemyMoved` to emit either (the move is the investigator's,
-    // `InvestigatorMoved` below). The *unengaged* enemies already standing at
-    // the destination are the entered-location half's business, further down.
+    // `InvestigatorMoved` below). An enemy that *cannot* follow needs the
+    // funnel even less: it never arrives anywhere, staying put at `from` while
+    // the investigator leaves. The *unengaged* enemies already standing at the
+    // destination are the entered-location half's business, further down.
     let engaged: Vec<EnemyId> = cx
         .state
         .enemies
@@ -478,16 +490,38 @@ pub(super) fn move_primary_effect(
         .filter(|(_, e)| e.engaged_with == Some(investigator))
         .map(|(id, _)| *id)
         .collect();
+    for enemy_id in engaged {
+        // Ids were collected from this same map with no intervening mutation,
+        // so an absent entry is state corruption — surface it the way the
+        // elimination path does. The lookup is split in two because the
+        // predicate borrows the whole state immutably.
+        let enemy = cx.state.enemies.get(&enemy_id).unwrap_or_else(|| {
+            unreachable!(
+                "move_primary_effect: enemy {enemy_id:?} vanished between the engagement scan \
+                 and the drag-along; this is a state-corruption invariant violation"
+            )
+        });
+        let follows = super::hunters::enemy_can_enter_location(cx.state, enemy, destination);
+        let enemy = cx
+            .state
+            .enemies
+            .get_mut(&enemy_id)
+            .expect("presence checked immediately above");
+        if follows {
+            enemy.current_location = Some(destination);
+        } else {
+            enemy.engaged_with = None;
+            cx.events.push(Event::EnemyDisengaged {
+                enemy: enemy_id,
+                investigator,
+            });
+        }
+    }
     cx.state
         .investigators
         .get_mut(&investigator)
         .expect("investigator existence checked above via current_location")
         .current_location = Some(destination);
-    for enemy_id in engaged {
-        if let Some(enemy) = cx.state.enemies.get_mut(&enemy_id) {
-            enemy.current_location = Some(destination);
-        }
-    }
     cx.events.push(Event::InvestigatorMoved {
         investigator,
         from,
