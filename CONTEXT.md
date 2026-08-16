@@ -52,8 +52,16 @@ One of the 11 milestones the build is broken into, tracked in `docs/phases/` and
 _Avoid_: Bare "phase" anywhere a game phase could be meant — which is most of the engine. Say "project phase" or "phase 7" and reserve the bare word for the game concept.
 
 **Snapshot**:
-Everything vendored under `data/arkhamdb-snapshot/` — all of Chapter 1's card data, pinned at one upstream commit. Most of it is **planning input**: it exists so decisions about the DSL and the engine can be made against the full set of cards we will eventually support, not just the ones we build against today. It is much larger than the corpus.
-_Avoid_: Calling it the corpus. Since #618 those are different sets, and conflating them makes "how many cards do we have?" unanswerable.
+Everything vendored under `data/arkhamdb-snapshot/` — all of Chapter 1's **card data**, pinned at one upstream commit. Most of it is **planning input**: it exists so decisions about the DSL and the engine can be made against the full set of cards we will eventually support, not just the ones we build against today. It is much larger than the corpus.
+_Avoid_: Calling it the corpus. Since #618 those are different sets, and conflating them makes "how many cards do we have?" unanswerable. Also avoid the bare word for the other two things we vendor from ArkhamDB — see **Rules text** and **Card FAQ** below. The snapshot is cards.
+
+**Rules text**:
+The Rules Reference ingested verbatim into `data/rules-reference/rules/`, one file per section and per glossary entry, filenames equal to ArkhamDB's anchor ids. It is the canonical source for how the game runs, and it covers all of Chapter 1 — the printed Rules Reference plus the rules deluxe expansions and the official FAQ added on top.
+_Avoid_: Reading the vendored PDF instead. That is the 2016 Core Set edition, retained only as the pinned publisher original; it predates `Bonded`, `Concealed X`, Bless/Curse and every FAQ amendment. Also avoid calling this "the snapshot" — it has no upstream commit to pin, so its provenance is a URL, a date and a hash.
+
+**Card FAQ**:
+The official per-card rulings ingested into `data/arkhamdb-faq/<pack>/<code>.md`, covering the whole snapshot. A card with no file has no rulings; `no-rulings.txt` says so explicitly, which is what makes absence an answer rather than a gap.
+_Avoid_: Treating a card's printed text as the whole story. Rulings routinely carry mechanics the text does not, which is why they are vendored alongside it.
 
 **Corpus**:
 The subset of the snapshot that `PACK_FILES` ingests and the build actually compiles — Core + Dunwich, emitted as `crates/cards/src/generated/cards.rs`. A pack becomes part of the corpus by being moved into `PACK_FILES`; that promotion is deliberate, never automatic.
