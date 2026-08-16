@@ -19,7 +19,11 @@ pub(super) const INITIAL_HAND_SIZE: u8 = 5;
 /// Whether `code` is a weakness per the installed registry. Returns `false`
 /// when no registry is installed or the card code has no metadata —
 /// the engine's registry-free unit tests behave as if no card is a weakness.
-fn is_weakness_code(code: &CardCode) -> bool {
+///
+/// Two consumers: the opening-hand set-aside below, and the defeated-enemy
+/// disposal in [`combat`](super::combat) (a defeated weakness enemy goes to its
+/// owner's discard pile rather than the encounter discard, #632).
+pub(super) fn is_weakness_code(code: &CardCode) -> bool {
     crate::card_registry::current()
         .and_then(|reg| (reg.metadata_for)(code))
         .is_some_and(card_dsl::CardMetadata::is_weakness)
