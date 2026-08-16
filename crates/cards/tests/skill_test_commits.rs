@@ -135,12 +135,12 @@ fn committing_two_cards_sums_both_contributions_and_discards_both() {
     );
     let inv = &result.state.investigators[&id];
     assert!(inv.hand.is_empty(), "both cards removed from hand");
-    // Both ended up in discard. (Order: descending-index removal, so
-    // index 1 (UC) goes first, then index 0 (Perception). discard is
-    // pushed back in that order.)
+    // Both ended up in discard, in commit order — ST.8 empties the in-flight
+    // record's limbo list, which holds the cards in the order they were
+    // committed (the same order the ST.7 `OnCommit` effects fire in).
     assert_eq!(
         inv.discard,
-        vec![CardCode::new(UNEXPECTED_COURAGE), CardCode::new(PERCEPTION),],
+        vec![CardCode::new(PERCEPTION), CardCode::new(UNEXPECTED_COURAGE),],
     );
     assert_event_count!(result.events, 2, Event::CardDiscarded { .. });
 }
@@ -164,7 +164,7 @@ fn mixing_matching_and_non_matching_commits_only_counts_the_matching_card() {
     assert!(inv.hand.is_empty(), "both cards removed from hand");
     assert_eq!(
         inv.discard,
-        vec![CardCode::new(OVERPOWER), CardCode::new(PERCEPTION)],
+        vec![CardCode::new(PERCEPTION), CardCode::new(OVERPOWER)],
     );
 }
 

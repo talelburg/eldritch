@@ -237,7 +237,29 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         Err(rejected) => return rejected,
     };
 
-    // Persist the committed indices and pre-advance the cursor to
+    // Mutate-second. Move the named cards out of the hand and into limbo (RR
+    // glossary "Limbo": a card committed to a skill test "is no longer
+    // considered to be in any investigator's hand"). Removing in descending
+    // index order keeps the still-pending positions stable; the committed list
+    // is then flipped back into the player's commit order, which is what the
+    // ST.7 `OnCommit` / `OnSkillTestResolution` collectors iterate.
+    //
+    // From here on nothing re-indexes the hand for a committed card, so the
+    // ST.2→ST.3 player window is free to mutate it (#631).
+    let mut descending = indices_u8;
+    descending.sort_unstable_by(|a, b| b.cmp(a));
+    let inv = cx
+        .state
+        .investigators
+        .get_mut(&investigator)
+        .expect("validate_commit_indices proved the investigator exists");
+    let mut committed: Vec<CardCode> = descending
+        .iter()
+        .map(|&i| inv.hand.remove(usize::from(i)))
+        .collect();
+    committed.reverse();
+
+    // Persist the committed cards and pre-advance the cursor to
     // `PreTokenWindow`, then park: return `Done` so the `drive` loop's
     // `SkillTest` arm (dispatch/mod.rs) runs the resolution body from there.
     // The frame stays on top and `resolve_input`'s caller drives it
@@ -247,7 +269,7 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         .state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above");
-    t.committed_by_active = indices_u8;
+    t.committed_by_active = committed;
     t.continuation = SkillTestStep::PreTokenWindow;
     EngineOutcome::Done
 }
@@ -296,7 +318,7 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 /// [`ApplySymbolOnFail`](SkillTestStep::ApplySymbolOnFail) step. Pre-advances to
 /// `DetermineOutcome` **before** pushing the immediate effects (the
 /// suspend/resume invariant).
-fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) {
+fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, committed: &[CardCode]) {
     let (skill, kind, difficulty) = {
         let t = cx
             .state
@@ -325,7 +347,7 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) 
     // logged events fire at DetermineOutcome — after the ST.4 immediate effects.
     // The in-scope `immediate` effects (damage/horror) don't change the skill
     // value, so computing the total before they resolve is correct.
-    let skill_value = sum_skill_value(cx.state, investigator, skill, kind, indices_u8);
+    let skill_value = sum_skill_value(cx.state, investigator, skill, kind, committed);
     let (total, fail_reason) = match resolution {
         TokenResolution::Modifier(n) => {
             (skill_value.saturating_add(n).max(0), FailureReason::Total)
@@ -422,8 +444,8 @@ fn resolved(cx: &Cx) -> crate::state::ResolvedTest {
 /// Both in-scope effects are non-suspending stat boosts, so the loop drives the
 /// `Seq` and re-dispatches this `SkillTest` at `ApplyFollowUp`, which reads the
 /// now-populated accumulators.
-fn fire_on_commit_step(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) {
-    let effects = collect_on_commit(cx, investigator, indices_u8);
+fn fire_on_commit_step(cx: &mut Cx, investigator: InvestigatorId, committed: &[CardCode]) {
+    let effects = collect_on_commit(committed);
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame must persist across driver steps")
@@ -585,11 +607,11 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
 fn fire_on_resolution_step(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    indices_u8: &[u8],
+    committed: &[CardCode],
     next: u32,
 ) {
     let succeeded = resolved(cx).succeeded;
-    let effects = collect_on_skill_test_resolution(cx, investigator, indices_u8, succeeded);
+    let effects = collect_on_skill_test_resolution(committed, succeeded);
     let idx = next as usize;
     if idx < effects.len() {
         cx.state
@@ -726,7 +748,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             return EngineOutcome::Done;
         }
 
-        let (continuation, investigator, indices_u8) = {
+        let (continuation, investigator, committed) = {
             let in_flight = cx.state.current_skill_test().unwrap_or_else(|| {
                 unreachable!(
                     "advance: the SkillTest frame must exist while driver is active; \
@@ -741,7 +763,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
         };
 
         // RR p.10 Elimination step 1 removed every card this investigator owns
-        // from the game — including the hand `indices_u8` points into. Abandon
+        // from the game — including the cards this test holds in limbo. Abandon
         // the test rather than resolve it on behalf of someone who has left the
         // scenario. Mirrors `drive_attack_loop`'s early-break (`combat.rs`),
         // which drops remaining attackers on the same signal (#564).
@@ -778,7 +800,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // pre-advances to DetermineOutcome; if an immediate effect was
                 // pushed it is the new top frame and the loop yields (may suspend
                 // on a soak window), resuming at DetermineOutcome.
-                run_resolution(cx, investigator, &indices_u8);
+                run_resolution(cx, investigator, &committed);
             }
             SkillTestStep::DetermineOutcome => {
                 // RR ST.6→ST.7 boundary. Emits the logged success/failure events
@@ -817,7 +839,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // BoostAttackDamage) as one Seq. The loop drives them (non-
                 // suspending stat boosts in scope) and re-dispatches at
                 // ApplyFollowUp, which reads the now-populated accumulator.
-                fire_on_commit_step(cx, investigator, &indices_u8);
+                fire_on_commit_step(cx, investigator, &committed);
             }
             SkillTestStep::ApplyFollowUp => {
                 // RR ST.7 part 1. Pre-advances the cursor to ApplyResultEffect,
@@ -852,7 +874,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 }
             }
             SkillTestStep::FireOnResolution { next } => {
-                fire_on_resolution_step(cx, investigator, &indices_u8, next);
+                fire_on_resolution_step(cx, investigator, &committed, next);
             }
             SkillTestStep::PostRetaliate => {
                 // Advance the cursor first: a retaliate that suspends on its
@@ -874,7 +896,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // Obscuring Fog forced + Dr. Milan reaction) already fired at
                 // the DetermineOutcome step via `queue_event` (#213) —
                 // forced-before-reaction.
-                discard_committed_cards(cx, investigator, &indices_u8);
+                discard_committed_cards(cx, investigator, &committed);
                 cx.events.push(Event::SkillTestEnded { investigator });
                 // ModifierScope::ThisSkillTest contributions expire when
                 // the test ends. Drain pending entries for *this*
@@ -919,9 +941,9 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
 /// **minus the committed-card discard**: Rules Reference p.10 Elimination step 1
 /// ("The cards he or she controls in play and all of the cards in his or her
 /// out-of-play areas (such as hand, deck, discard pile) are removed from the
-/// game") already removed the committed cards — they were still in hand, since
-/// the driver only discards at teardown. Discarding here would resurrect them
-/// into a pile.
+/// game") removes every card the eliminated investigator owns, and the cards
+/// this test holds in limbo (#631) are dropped along with the frame below.
+/// Discarding here would instead resurrect them into a pile.
 ///
 /// [`Event::SkillTestEnded`] still fires: the test *is* over, and it is the
 /// documented "test is fully over" signal downstream listeners key on.
@@ -1029,7 +1051,7 @@ fn sum_skill_value(
     investigator: InvestigatorId,
     skill: SkillKind,
     kind: SkillTestKind,
-    committed_indices: &[u8],
+    committed: &[CardCode],
 ) -> i8 {
     let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
         unreachable!(
@@ -1038,7 +1060,7 @@ fn sum_skill_value(
         )
     });
     let base = inv.skills.value(skill);
-    let icon_mod = sum_committed_icons(&inv.hand, committed_indices, skill);
+    let icon_mod = sum_committed_icons(committed, skill);
     let constant_mod = card_registry::current().map_or(0, |reg| {
         constant_skill_modifier(state, reg, investigator, skill, kind)
     });
@@ -1052,18 +1074,21 @@ fn sum_skill_value(
         .saturating_add(test_mod)
 }
 
-/// Sum the skill-icon contribution from the cards at `indices` in
-/// `hand`: each card adds its matching-skill icons plus its wild
-/// icons. Cards whose code isn't in the installed registry contribute
-/// 0; no registry installed = 0 contribution overall.
-fn sum_committed_icons(hand: &[CardCode], indices: &[u8], skill: SkillKind) -> i8 {
+/// Sum the skill-icon contribution of the `committed` cards (RR ST.5): each
+/// card adds its matching-skill icons plus its wild icons. Cards whose code
+/// isn't in the installed registry contribute 0; no registry installed = 0
+/// contribution overall.
+///
+/// Reads the codes the commit hop moved into limbo, **not** the hand — the
+/// ST.2→ST.3 player window sits between the commit and this sum and is free to
+/// mutate the hand (#631).
+fn sum_committed_icons(committed: &[CardCode], skill: SkillKind) -> i8 {
     let Some(reg) = card_registry::current() else {
         return 0;
     };
-    indices
+    committed
         .iter()
-        .map(|&idx| {
-            let code = &hand[usize::from(idx)];
+        .map(|code| {
             (reg.metadata_for)(code).map_or(0_i8, |meta| {
                 let icons = meta.skill_icons();
                 let matching = match skill {
@@ -1079,55 +1104,39 @@ fn sum_committed_icons(hand: &[CardCode], indices: &[u8], skill: SkillKind) -> i
         .fold(0_i8, i8::saturating_add)
 }
 
-/// Move every committed hand card to the controller's discard pile,
+/// RR ST.8: *"Discard all cards that were committed to this skill test."* Move
+/// the committed cards out of limbo and into the controller's discard pile,
 /// emitting [`Event::CardDiscarded`] for each. Per the
 /// [`Event::SkillTestEnded`] docs, these discards precede the
-/// `SkillTestEnded` cleanup marker. Walk indices in descending order
-/// so each `remove` keeps the still-pending indices stable.
-fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, indices_u8: &[u8]) {
-    let mut sorted: Vec<u8> = indices_u8.to_vec();
-    sorted.sort_by(|a, b| b.cmp(a));
-    // Collect discarded codes first (releasing the mutable borrow on
-    // cx.state) so we can push to cx.events afterwards without a
-    // simultaneous borrow through cx.
-    let discarded: Vec<CardCode> = {
-        let inv = cx
-            .state
-            .investigators
-            .get_mut(&investigator)
-            .unwrap_or_else(|| {
-                unreachable!(
-                    "discard_committed_cards: investigator {investigator:?} vanished after \
-                     follow-up; this is a state-corruption invariant violation"
-                )
-            });
-        sorted
-            .iter()
-            .filter_map(|&idx| {
-                // Unreachable: `advance`'s Status gate (#564) abandons the test
-                // before teardown if the tester was eliminated, and elimination
-                // is the only path that drains a live tester's hand. Total
-                // rather than indexing so a future path can't panic a
-                // production apply (a panic escapes apply_via's rollback).
-                if usize::from(idx) >= inv.hand.len() {
-                    debug_assert!(
-                        false,
-                        "discard_committed_cards: committed index {idx} out of bounds \
-                         (hand size {})",
-                        inv.hand.len(),
-                    );
-                    return None;
-                }
-                let code = inv.hand.remove(usize::from(idx));
-                inv.discard.push(code.clone());
-                Some(code)
-            })
-            .collect()
+/// `SkillTestEnded` cleanup marker.
+///
+/// The cards come off the in-flight record, not out of the hand — the commit
+/// hop already removed them (#631), so nothing here can index a hand position
+/// that a Fast play in the ST.2→ST.3 window has since shifted. The emitted
+/// `from` is still [`Zone::Hand`]: limbo is not a zone the event vocabulary
+/// models, and the hand is where the cards came from.
+fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed: &[CardCode]) {
+    if committed.is_empty() {
+        return;
+    }
+    // Unreachable: `advance`'s Status gate (#564) abandons the test before
+    // teardown if the tester was eliminated. Total rather than `expect` so a
+    // future path can't panic a production apply (a panic escapes `apply_via`'s
+    // rollback) — the committed cards then simply stay in limbo and die with
+    // the frame, which is what elimination wants anyway.
+    let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
+        debug_assert!(
+            false,
+            "discard_committed_cards: investigator {investigator:?} vanished after follow-up; \
+             this is a state-corruption invariant violation",
+        );
+        return;
     };
-    for code in discarded {
+    inv.discard.extend(committed.iter().cloned());
+    for code in committed {
         cx.events.push(Event::CardDiscarded {
             investigator,
-            code,
+            code: code.clone(),
             from: Zone::Hand,
         });
     }
@@ -1286,18 +1295,16 @@ fn fire_retaliate_if_any(
 ///
 /// The [`FireOnResolution`](SkillTestStep::FireOnResolution) driver step
 /// indexes into this flat list, pushing one effect per visit so they
-/// cursor-sequence (no LIFO). At collection time the committed cards are still
-/// in hand at their hand indices (discard happens at teardown) and the
-/// in-flight record still holds the tested location, so
-/// [`LocationTarget::TestedLocation`] resolves cleanly.
+/// cursor-sequence (no LIFO). At collection time the committed cards are in
+/// limbo on the in-flight record (discard happens at teardown), which also
+/// still holds the tested location, so [`LocationTarget::TestedLocation`]
+/// resolves cleanly.
 ///
 /// No registry installed → empty list: engine-only tests that don't touch card
 /// data never reach `OnSkillTestResolution`. Silent skip mirrors
 /// `constant_skill_modifier`'s behavior.
 fn collect_on_skill_test_resolution(
-    cx: &Cx,
-    investigator: InvestigatorId,
-    indices_u8: &[u8],
+    committed: &[CardCode],
     succeeded: bool,
 ) -> Vec<card_dsl::dsl::Effect> {
     let Some(reg) = card_registry::current() else {
@@ -1309,36 +1316,8 @@ fn collect_on_skill_test_resolution(
         crate::dsl::TestOutcome::Failure
     };
 
-    // Each committed index resolves to a hand-position CardCode; the cards are
-    // still in hand at this point (discard happens at teardown).
-    let codes: Vec<CardCode> = {
-        let inv = cx
-            .state
-            .investigators
-            .get(&investigator)
-            .unwrap_or_else(|| {
-                unreachable!(
-                    "collect_on_skill_test_resolution: investigator {investigator:?} vanished \
-                 while test was in flight; this is a state-corruption invariant violation"
-                )
-            });
-        indices_u8
-            .iter()
-            .filter_map(|&i| {
-                let code = inv.hand.get(usize::from(i));
-                debug_assert!(
-                    code.is_some(),
-                    "collect_on_skill_test_resolution: committed index {i} out of bounds \
-                     (hand size {})",
-                    inv.hand.len(),
-                );
-                code.cloned()
-            })
-            .collect()
-    };
-
     let mut effects = Vec::new();
-    for code in &codes {
+    for code in committed {
         let Some(abilities) = (reg.abilities_for)(code) else {
             continue;
         };
@@ -1366,47 +1345,18 @@ fn collect_on_skill_test_resolution(
 /// ([`Effect::BoostAttackDamage`](crate::dsl::Effect::BoostAttackDamage),
 /// Vicious Blow 01025) populates — and that consumer is conditional on success
 /// ("If this skill test is successful during an attack…"). The committed cards
-/// are still in hand at this point (discard happens at teardown).
+/// are in limbo on the in-flight record at this point (discard happens at
+/// teardown).
 ///
 /// No registry installed → empty list: engine-only tests that don't touch card
 /// data never commit real cards. Silent skip mirrors
 /// `constant_skill_modifier`'s behavior.
-fn collect_on_commit(
-    cx: &Cx,
-    investigator: InvestigatorId,
-    indices_u8: &[u8],
-) -> Vec<card_dsl::dsl::Effect> {
+fn collect_on_commit(committed: &[CardCode]) -> Vec<card_dsl::dsl::Effect> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
     };
-    // Snapshot the committed hand codes. The cards are still in hand at commit.
-    let codes: Vec<CardCode> = {
-        let inv = cx
-            .state
-            .investigators
-            .get(&investigator)
-            .unwrap_or_else(|| {
-                unreachable!(
-                    "collect_on_commit: investigator {investigator:?} vanished while test was in \
-                     flight; this is a state-corruption invariant violation"
-                )
-            });
-        indices_u8
-            .iter()
-            .filter_map(|&i| {
-                let code = inv.hand.get(usize::from(i));
-                debug_assert!(
-                    code.is_some(),
-                    "collect_on_commit: committed index {i} out of bounds (hand size {})",
-                    inv.hand.len(),
-                );
-                code.cloned()
-            })
-            .collect()
-    };
-
     let mut effects = Vec::new();
-    for code in &codes {
+    for code in committed {
         let Some(abilities) = (reg.abilities_for)(code) else {
             continue;
         };
