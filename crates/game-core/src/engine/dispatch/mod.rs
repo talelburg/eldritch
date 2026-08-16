@@ -393,6 +393,15 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
                     resume_token: crate::engine::ResumeToken(0),
                 };
             }
+            // An investigator's elimination, mid-sequence (#638). Step 0's
+            // weakness-scoped game-end emit is in tail position (it only queues
+            // — ADR 0003), so Cover Up 01007's trauma resolves above this frame;
+            // the loop re-exposes it and steps 1–6 run, removing those same
+            // weaknesses from the game.
+            Some(Continuation::Elimination { .. }) => match elimination::drive_elimination(cx) {
+                EngineOutcome::Done => {} // emitted / steps ran + popped; loop on
+                other => return other,    // 2+ simultaneous: the lead orders them
+            },
             // The scenario's ending, exposed once everything above it has
             // completed or been cancelled (#566). `EmitGameEnd` advances the
             // cursor *before* emitting — a tail-position emit, since the emit
@@ -809,6 +818,14 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         // `EncounterCard`.
         Some(Continuation::ScenarioEnd { .. }) => EngineOutcome::Rejected {
             reason: "ResolveInput: no input prompt is outstanding (the scenario has ended)".into(),
+        },
+        // An in-progress elimination never awaits input either (#638): the
+        // acknowledge / ordering run its step-0 emit queues sits above it and is
+        // the prompt, and steps 1–6 ask nothing. Defensive, as for `ScenarioEnd`.
+        Some(Continuation::Elimination { .. }) => EngineOutcome::Rejected {
+            reason: "ResolveInput: no input prompt is outstanding (an investigator's elimination \
+                     is in progress)"
+                .into(),
         },
         // A mid-action ActionResolution frame never awaits input — it is only
         // momentarily top inside `drive`. A ResolveInput here is spurious.

@@ -374,7 +374,13 @@ fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
 ///    pre-empts any co-overflowing asset's discard (see
 ///    [`defeat_overflowed_assets`]).
 /// 3. Defeat overflowed assets (`accumulated >= printed stat` →
-///    discard).
+///    discard) — **skipped entirely if step 2 eliminated the investigator**,
+///    whose controlled cards elimination removes from the game (RR p.10 step 1).
+///
+/// Step 3's skip is gated on [`Status`], not on `cards_in_play` having been
+/// drained: since #638 an elimination with a step-0 weakness game-end ability
+/// (Cover Up 01007) finishes on a continuation frame, so the zone is still
+/// populated when this returns.
 ///
 /// Returns the damaged assets that **survive** step 3 — i.e. instances
 /// still in `cards_in_play` after defeat resolution. This is the chosen
@@ -410,6 +416,23 @@ pub(super) fn place_assignment(
             DefeatCause::Horror
         };
         super::elimination::apply_investigator_defeat(cx, investigator, cause);
+    }
+
+    // An eliminated investigator's controlled assets are elimination's business,
+    // not the asset sweep's: RR p.10 step 1 removes them from the game, which
+    // pre-empts a co-overflowing asset's discard, and a card on its way out of
+    // play gets no soak reaction window. Since #638 elimination may still be
+    // *in progress* here (step 0's weakness game-end abilities drain on a
+    // continuation frame before the steps run), so `cards_in_play` can be
+    // populated even though the investigator is gone — gate on status rather
+    // than on the zone having been drained.
+    let eliminated = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .is_some_and(|inv| inv.status != Status::Active);
+    if eliminated {
+        return Vec::new();
     }
 
     // 3. Defeat overflowed assets, then return only the surviving damaged
