@@ -97,3 +97,39 @@ fn guts_draws_nothing_on_a_failed_test() {
     assert_eq!(r.outcome, EngineOutcome::Done);
     assert_no_event!(r.events, Event::CardsDrawn { .. });
 }
+
+/// A card-effect draw obeys the empty-deck rule like the Draw action does
+/// (#636). Rules Reference, glossary "Drawing Cards": "If an investigator
+/// with an empty investigator deck needs to draw a card, that investigator
+/// shuffles his or her discard pile back into his or her deck, then draws
+/// the card, and upon completion of the entire draw takes one horror."
+#[test]
+fn guts_on_an_empty_deck_reshuffles_the_discard_and_takes_one_horror() {
+    let mut state = guts_board(3, ChaosToken::Numeric(0));
+    {
+        let inv = state
+            .investigators
+            .get_mut(&INV)
+            .expect("test investigator");
+        // Horror lands on the investigator card, so it needs a real code.
+        inv.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
+        inv.deck.clear();
+        inv.discard = vec![CardCode::new("spare-1"), CardCode::new("spare-2")];
+    }
+
+    let r = perform_and_commit_guts(state);
+
+    assert_eq!(r.outcome, EngineOutcome::Done);
+    assert_event!(r.events, Event::DeckShuffled { .. });
+    assert_event!(r.events, Event::CardsDrawn { count: 1, .. });
+    assert_event!(r.events, Event::HorrorTaken { amount: 1, .. });
+    let inv = &r.state.investigators[&INV];
+    assert_eq!(
+        inv.discard,
+        vec![CardCode::new(GUTS)],
+        "the two discarded cards shuffled back into the deck; only the \
+         just-resolved Guts remains in the discard",
+    );
+    assert_eq!(inv.deck.len(), 1, "two cards returned, one of them drawn");
+    assert_eq!(inv.horror(), 1, "deck-out costs 1 horror, once");
+}

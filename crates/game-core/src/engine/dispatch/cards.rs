@@ -255,12 +255,30 @@ pub(in crate::engine) fn shuffle_player_deck(cx: &mut Cx, investigator: Investig
 /// Draw up to `count` cards from the named investigator's deck top
 /// into their hand. Stops early (without panic) if the deck runs out
 /// — this helper is just the structural move; reshuffle / horror
-/// penalty logic for an empty deck lives in [`draw`].
+/// penalty logic for an empty deck lives in [`draw_with_deckout`],
+/// which every in-play draw (the Draw action, Upkeep step 4.4, and
+/// [`Effect::DrawCards`](crate::dsl::Effect::DrawCards)) goes through.
+/// Direct callers are the setup / mulligan paths, where the deck
+/// cannot empty and the deck-out rule does not apply.
 ///
 /// Emits a single [`Event::CardsDrawn`] with the actually-drawn
 /// count, even if that's zero. A zero-count draw is informative for
 /// consumers tracking the attempt.
 pub(in crate::engine) fn draw_cards(cx: &mut Cx, investigator: InvestigatorId, count: u8) {
+    let drawn = move_deck_top_to_hand(cx, investigator, count);
+    cx.events.push(Event::CardsDrawn {
+        investigator,
+        count: drawn,
+    });
+}
+
+/// Move up to `count` cards from the deck top to the hand, returning how
+/// many actually moved. The structural half of [`draw_cards`], factored
+/// out so [`draw_with_deckout`] can span a mid-draw reshuffle with a
+/// single [`Event::CardsDrawn`] (RR: "when a player draws two or more
+/// cards as the result of a single ability or game step, those cards are
+/// drawn simultaneously").
+fn move_deck_top_to_hand(cx: &mut Cx, investigator: InvestigatorId, count: u8) -> u8 {
     let inv = cx
         .state
         .investigators
@@ -277,11 +295,7 @@ pub(in crate::engine) fn draw_cards(cx: &mut Cx, investigator: InvestigatorId, c
     let drawn_cards: Vec<_> = inv.deck.drain(..drawn).collect();
     inv.hand.extend(drawn_cards);
     // `drawn` ≤ `count: u8`, so the cast can't overflow.
-    let drawn_u8 = u8::try_from(drawn).expect("drawn <= count <= u8::MAX");
-    cx.events.push(Event::CardsDrawn {
-        investigator,
-        count: drawn_u8,
-    });
+    u8::try_from(drawn).expect("drawn <= count <= u8::MAX")
 }
 
 /// Discard one card chosen at random from `investigator`'s hand, emitting
@@ -437,42 +451,88 @@ fn reshuffle_discard_into_deck(cx: &mut Cx, investigator: InvestigatorId) {
     shuffle_player_deck(cx, investigator);
 }
 
-/// Draw one card for `investigator`, applying the empty-deck rule:
-/// reshuffle the discard into the deck if the deck is empty, draw,
-/// and take 1 horror on any would-draw-from-empty. Extracted verbatim
-/// from the `Draw` action body so the action and Upkeep step 4.4 share
-/// one code path. The deck-out reading (horror on would-draw-from-empty;
-/// no reshuffle of a zero-card discard per Rules Reference p.9) is
-/// inherited unchanged.
+/// Draw one card for `investigator`, applying the empty-deck rule.
+/// Thin wrapper over [`draw_with_deckout`] for the single-card callers
+/// (the `Draw` action and Upkeep step 4.4).
 ///
 /// Caller guarantees `investigator` exists in `state.investigators`.
 pub(super) fn draw_one_with_deckout(cx: &mut Cx, investigator: InvestigatorId) {
-    let inv = cx
-        .state
-        .investigators
-        .get(&investigator)
-        .expect("draw_one_with_deckout: caller guarantees investigator exists");
-    let deck_empty = inv.deck.is_empty();
-    let discard_empty = inv.discard.is_empty();
-    if deck_empty {
-        if !discard_empty {
+    draw_with_deckout(cx, investigator, 1);
+}
+
+/// Draw `count` cards for `investigator`, applying the empty-deck rule
+/// (`data/rules-reference/rules/glossary/Drawing_Cards.md`):
+///
+/// > If a deck empties middraw, reset the deck and complete the draw.
+///
+/// > If an investigator with an empty investigator deck needs to draw a
+/// > card, that investigator shuffles his or her discard pile back into
+/// > his or her deck, then draws the card, and upon completion of the
+/// > entire draw takes one horror.
+///
+/// So the horror is **once per draw**, on completion, however many
+/// times the deck emptied along the way — not once per card. The
+/// whole draw emits a single [`Event::CardsDrawn`] with the total,
+/// matching the rule that the cards are drawn simultaneously.
+///
+/// The deck-out reading inherited from the `Draw` action is unchanged:
+/// horror fires on any would-draw-from-empty, and a zero-card discard
+/// is not shuffled back (`glossary/Discard_Piles.md`: "any ability that
+/// would shuffle a discard pile of zero cards back into a deck does not
+/// shuffle the deck"), so deck and discard both empty means no card,
+/// no shuffle, but still the horror.
+///
+/// Every in-play draw routes here: the `Draw` action, Upkeep step 4.4,
+/// and [`Effect::DrawCards`](crate::dsl::Effect::DrawCards) (Guts 01089
+/// and the other three Core skills, #636). The setup / mulligan paths
+/// deliberately do not — they use [`draw_cards`].
+///
+/// Caller guarantees `investigator` exists in `state.investigators`.
+pub(in crate::engine) fn draw_with_deckout(cx: &mut Cx, investigator: InvestigatorId, count: u8) {
+    let mut drawn: u8 = 0;
+    let mut deck_ran_out = false;
+    while drawn < count {
+        let inv = cx
+            .state
+            .investigators
+            .get(&investigator)
+            .expect("draw_with_deckout: caller guarantees investigator exists");
+        if inv.deck.is_empty() {
+            // "Needs to draw a card" with an empty deck: the horror is
+            // owed regardless of whether the reshuffle can supply cards.
+            deck_ran_out = true;
+            if inv.discard.is_empty() {
+                // Nothing left anywhere — stop short of `count`.
+                break;
+            }
             reshuffle_discard_into_deck(cx, investigator);
         }
-        // After the (possibly no-op) reshuffle, attempt the draw.
-        // draw_cards handles a still-empty deck by emitting
-        // CardsDrawn { count: 0 } without moving cards.
-        draw_cards(cx, investigator, 1);
-        // Horror penalty fires on any "would-draw-from-empty-deck"
-        // (the reshuffle did happen if discard was non-empty; if it
-        // was also empty, the rules don't strictly require horror
-        // but we apply it as the safer reading).
+        let moved = move_deck_top_to_hand(cx, investigator, count - drawn);
+        if moved == 0 {
+            // The deck is non-empty by here, so this cannot happen. It is a
+            // `break` rather than a panic only because the alternative failure
+            // mode is an infinite loop: a wrong draw count is recoverable,
+            // a hung engine is not.
+            break;
+        }
+        drawn += moved;
+    }
+    cx.events.push(Event::CardsDrawn {
+        investigator,
+        count: drawn,
+    });
+    if deck_ran_out {
         super::elimination::take_horror(cx, investigator, 1);
-    } else {
-        draw_cards(cx, investigator, 1);
     }
     // RR Weakness keyword: a weakness drawn during play reveals + resolves its
     // Revelation (#509). Setup's opening-hand draw uses `draw_cards` directly,
     // so it is unaffected (it sets aside instead, #508).
+    //
+    // Last, after the deck-out horror: the horror is part of "completion of
+    // the entire draw", and a Revelation that follows it therefore sees the
+    // post-horror state. This is the order the Draw action and Upkeep 4.4
+    // already used; it now also governs the `Effect::DrawCards` path, which
+    // previously ran the revelation with no horror in between.
     resolve_drawn_weaknesses(cx, investigator);
 }
 
@@ -1198,7 +1258,7 @@ mod grant_resources_tests {
 }
 
 #[cfg(test)]
-mod draw_one_with_deckout_tests {
+mod draw_with_deckout_tests {
     use super::*;
     use crate::state::{CardCode, InvestigatorId};
     use crate::test_support::{test_investigator, GameStateBuilder};
@@ -1236,5 +1296,82 @@ mod draw_one_with_deckout_tests {
         assert!(events
             .iter()
             .any(|e| matches!(e, Event::HorrorTaken { amount: 1, .. })));
+    }
+
+    /// A multi-card draw that empties the deck partway through completes the
+    /// full count — "If a deck empties middraw, reset the deck and complete
+    /// the draw" — and takes the horror **once**, on completion of the
+    /// entire draw, not once per emptied deck (#636).
+    #[test]
+    fn draw_with_deckout_completes_the_count_across_a_midway_reshuffle() {
+        crate::test_support::install_test_registry();
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.deck = vec![CardCode::new("01000")];
+        inv.discard = vec![
+            CardCode::new("01001"),
+            CardCode::new("01002"),
+            CardCode::new("01003"),
+        ];
+        let hand_before = inv.hand.len();
+        let mut state = GameStateBuilder::default().with_investigator(inv).build();
+        let mut events = Vec::new();
+
+        draw_with_deckout(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            id,
+            3,
+        );
+
+        let inv = &state.investigators[&id];
+        assert_eq!(inv.hand.len(), hand_before + 3, "drew the full count");
+        assert_eq!(inv.deck.len(), 1, "1 + 3 cards, 3 of them drawn");
+        assert!(inv.discard.is_empty(), "discard shuffled back in");
+        assert_eq!(inv.horror(), 1, "exactly 1 horror for the whole draw");
+        // One horror event, not one per card.
+        crate::assert_event_count!(events, 1, Event::HorrorTaken { .. });
+        // Drawn simultaneously ⇒ one event carrying the whole count, even
+        // though the reshuffle split the move into two hops.
+        crate::assert_event_count!(events, 1, Event::CardsDrawn { .. });
+        crate::assert_event!(events, Event::CardsDrawn { count: 3, .. });
+    }
+
+    /// The ordinary case is untouched: enough cards in the deck means no
+    /// reshuffle and no horror.
+    #[test]
+    fn draw_with_deckout_on_a_stocked_deck_neither_reshuffles_nor_takes_horror() {
+        crate::test_support::install_test_registry();
+        let id = InvestigatorId(1);
+        let mut inv = test_investigator(1);
+        inv.deck = vec![
+            CardCode::new("01000"),
+            CardCode::new("01001"),
+            CardCode::new("01002"),
+        ];
+        inv.discard = vec![CardCode::new("01003")];
+        let hand_before = inv.hand.len();
+        let mut state = GameStateBuilder::default().with_investigator(inv).build();
+        let mut events = Vec::new();
+
+        draw_with_deckout(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            id,
+            2,
+        );
+
+        let inv = &state.investigators[&id];
+        assert_eq!(inv.hand.len(), hand_before + 2, "drew 2");
+        assert_eq!(inv.deck.len(), 1);
+        assert_eq!(inv.discard.len(), 1, "discard untouched");
+        assert_eq!(inv.horror(), 0, "no deck-out, no horror");
+        crate::assert_no_event!(events, Event::DeckShuffled { .. });
+        crate::assert_no_event!(events, Event::HorrorTaken { .. });
+        crate::assert_event!(events, Event::CardsDrawn { count: 2, .. });
     }
 }

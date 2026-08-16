@@ -42,6 +42,14 @@ fn state_with_hand(hand: &[&str]) -> (game_core::GameState, InvestigatorId) {
     let id = InvestigatorId(1);
     let mut inv = test_investigator(1);
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
+    // Cards for the draw-skills' success draws to land on. Without them the
+    // draw hits an empty deck, which now applies the deck-out horror (#636) —
+    // irrelevant noise for tests about icon contributions.
+    inv.deck = vec![
+        CardCode::new("spare-1"),
+        CardCode::new("spare-2"),
+        CardCode::new("spare-3"),
+    ];
     let state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -91,9 +99,13 @@ fn committing_perception_contributes_two_intellect_icons() {
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
             if *investigator == id
     );
-    // Perception lands in discard; Unexpected Courage stays in hand.
+    // Perception lands in discard; Unexpected Courage stays in hand, joined by
+    // the card Perception's "If this test is successful, draw 1 card" drew.
     let inv = &result.state.investigators[&id];
-    assert_eq!(inv.hand, vec![CardCode::new(UNEXPECTED_COURAGE)]);
+    assert_eq!(
+        inv.hand,
+        vec![CardCode::new(UNEXPECTED_COURAGE), CardCode::new("spare-1")],
+    );
     assert_eq!(inv.discard, vec![CardCode::new(PERCEPTION)]);
     assert_event!(
         result.events,
@@ -134,7 +146,11 @@ fn committing_two_cards_sums_both_contributions_and_discards_both() {
             if *investigator == id
     );
     let inv = &result.state.investigators[&id];
-    assert!(inv.hand.is_empty(), "both cards removed from hand");
+    assert_eq!(
+        inv.hand,
+        vec![CardCode::new("spare-1")],
+        "both cards removed from hand; Perception's success draw put one back",
+    );
     // Both ended up in discard, in commit order — ST.8 empties the in-flight
     // record's limbo list, which holds the cards in the order they were
     // committed (the same order the ST.7 `OnCommit` effects fire in).
@@ -161,7 +177,11 @@ fn mixing_matching_and_non_matching_commits_only_counts_the_matching_card() {
             if *investigator == id
     );
     let inv = &result.state.investigators[&id];
-    assert!(inv.hand.is_empty(), "both cards removed from hand");
+    assert_eq!(
+        inv.hand,
+        vec![CardCode::new("spare-1"), CardCode::new("spare-2")],
+        "both cards removed from hand; each drew 1 on the successful test",
+    );
     assert_eq!(
         inv.discard,
         vec![CardCode::new(PERCEPTION), CardCode::new(OVERPOWER)],
