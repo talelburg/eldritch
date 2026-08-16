@@ -78,6 +78,20 @@ pub enum TimingEvent {
     EndOfTurn { investigator: InvestigatorId },
     /// The game ended — a scenario resolution latched (forced only).
     GameEnd,
+    /// The game has ended **for one eliminated investigator**, for the purpose
+    /// of resolving weakness cards — Rules Reference p.10 Elimination step 0,
+    /// quoted in full on [`Continuation::Elimination`](crate::state::Continuation::Elimination)
+    /// (forced only, #638).
+    ///
+    /// Same card-facing pattern as [`GameEnd`](Self::GameEnd) (a weakness prints
+    /// *"when the game ends"*, not two different triggers) but a different scan:
+    /// one investigator, weaknesses only, and no `Status::Active` filter — the
+    /// investigator being eliminated has already been flipped off `Active` when
+    /// this fires.
+    EliminationGameEnd {
+        /// The investigator being eliminated.
+        investigator: InvestigatorId,
+    },
     /// An enemy attack soaked damage onto a controlled asset (reaction
     /// only — Guard Dog 01021's retaliate).
     EnemyAttackDamagedSelf {
@@ -166,6 +180,11 @@ impl TimingEvent {
                 investigator: *investigator,
             }),
             TimingEvent::GameEnd => Some(ForcedTriggerPoint::GameEnd),
+            TimingEvent::EliminationGameEnd { investigator } => {
+                Some(ForcedTriggerPoint::EliminationGameEnd {
+                    investigator: *investigator,
+                })
+            }
             TimingEvent::SkillTestResolved {
                 investigator,
                 kind,

@@ -82,6 +82,24 @@ fn board_at_lethal_range(damage: u8, hand: &[&str], threat: &[(&str, u8)]) -> ga
     state
 }
 
+/// [`board_at_lethal_range`] plus a second, healthy investigator at another
+/// location — so investigator 1's death eliminates *him* without ending the
+/// scenario. The survivor carries a real investigator code because
+/// `max_health()` reads capacity from the installed corpus registry (#448); he
+/// is a stand-in whose only job is to keep the game running.
+fn board_with_survivor(damage: u8, threat: &[(&str, u8)]) -> game_core::GameState {
+    let mut state = board_at_lethal_range(damage, &[], threat);
+    let mut survivor = test_investigator(2);
+    survivor.investigator_card.code = CardCode::new(ROLAND);
+    survivor.current_location = Some(LocationId(21));
+    state
+        .locations
+        .insert(LocationId(21), test_location(21, "Elsewhere"));
+    state.investigators.insert(InvestigatorId(2), survivor);
+    state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
+    state
+}
+
 /// Reveal the top encounter card for investigator 1, committing `commit` at the
 /// revelation skill-test window.
 fn reveal_committing(state: game_core::GameState, commit: &[&str]) -> game_core::ApplyResult {
@@ -224,30 +242,83 @@ fn elimination_routes_a_mixed_threat_area_both_ways() {
 }
 
 #[test]
-fn eliminated_investigator_fires_no_game_end_trauma() {
-    // #567's acceptance: Cover Up's Forced ("When the game ends, if there are
-    // any clues on Cover Up: You suffer 1 mental trauma") must not fire for a
-    // dead Roland — RR p.10 step 1 took the card with him. Solo, so his death
-    // latches Resolution::Lost and the game-end forced scan runs for real.
+fn eliminated_investigator_fires_cover_ups_game_end_trauma() {
+    // Rules Reference p.10 Elimination **step 0** (#638):
+    //
+    // > For the purpose of resolving weakness cards, the game has ended for the
+    // > eliminated investigator. Trigger any "when the game ends" abilities on
+    // > each weakness the eliminated investigator owns that is in play. Then,
+    // > remove those weaknesses from the game.
+    //
+    // and Cover Up's own ruling, <https://arkhamdb.com/card/01007>: "If Roland
+    // is eliminated (by being defeated or taking a resign action) while Cover Up
+    // is in play, Cover Up's Forced effect triggers, as per the FAQ [V1.0,
+    // section 'Rulebook errata', topic "Elimination"]."
+    //
+    // **Supersedes #567's acceptance criterion** ("Eliminated investigator's
+    // Cover Up does not fire GameEnd trauma"), which read step 1 without step 0
+    // — the step that exists precisely to carve weaknesses out of it.
     let r = reveal_committing(board_at_lethal_range(8, &[], &[(COVER_UP, 3)]), &[]);
 
-    // Both asserted so the no-trauma claim below can't pass vacuously: the
-    // scenario must actually have ended for the GameEnd scan to have run at all.
-    assert!(
-        r.events
-            .iter()
-            .any(|e| matches!(e, Event::AllInvestigatorsDefeated)),
-        "solo death latches Resolution::Lost; events = {:?}",
-        r.events
-    );
+    assert_event!(r.events, Event::TraumaSuffered {
+        investigator, kind: game_core::event::TraumaKind::Mental, amount: 1
+    } if *investigator == InvestigatorId(1));
+    // Exactly once. Solo, so the death also latches Resolution::Lost and the
+    // ordinary scenario-end `GameEnd` scan runs — it must not fire this a second
+    // time (Cover Up has left play by then, and that scan skips non-Active
+    // investigators anyway, #567).
+    assert_event_count!(r.events, 1, Event::TraumaSuffered { .. });
     assert!(
         r.events
             .iter()
             .any(|e| matches!(e, Event::ScenarioResolved { .. })),
-        "the Lost latch must reach ScenarioResolved, which is what fires the \
-         GameEnd forced scan (cf. crates/cards/tests/cover_up.rs, which pins the \
-         positive case via AdvanceAct); events = {:?}",
+        "the scenario-end GameEnd path must still have run, so the exactly-once \
+         assertion above is not vacuous; events = {:?}",
         r.events
+    );
+
+    // Step 0's tail — "Then, remove those weaknesses from the game" — still runs.
+    let inv = &r.state.investigators[&InvestigatorId(1)];
+    assert!(inv.threat_area.is_empty(), "threat area drained");
+    assert!(inv.removed_from_game.iter().any(|c| c.as_str() == COVER_UP));
+}
+
+#[test]
+fn cover_ups_trauma_fires_on_elimination_while_the_scenario_continues() {
+    // The multiplayer half of the hole (#638): the scenario does *not* end, so
+    // the ordinary `GameEnd` path never runs at all — the trauma can only come
+    // from Elimination step 0. RR p.10: "For the purpose of resolving weakness
+    // cards, the game has ended for the eliminated investigator."
+    let r = reveal_committing(board_with_survivor(8, &[(COVER_UP, 3)]), &[]);
+
+    assert_eq!(
+        r.state.investigators[&InvestigatorId(1)].status,
+        Status::Killed
+    );
+    assert_eq!(
+        r.state.investigators[&InvestigatorId(2)].status,
+        Status::Active,
+        "the survivor keeps the scenario running",
+    );
+    assert_no_event!(r.events, Event::AllInvestigatorsDefeated);
+    assert_no_event!(r.events, Event::ScenarioResolved { .. });
+
+    assert_event!(r.events, Event::TraumaSuffered {
+        investigator, kind: game_core::event::TraumaKind::Mental, amount: 1
+    } if *investigator == InvestigatorId(1));
+}
+
+#[test]
+fn eliminated_investigator_with_a_clueless_cover_up_suffers_no_trauma() {
+    // The Forced's own condition: "if there are any clues on Cover Up". Step 0
+    // fires the ability either way; with no clues it resolves to nothing. The
+    // control that keeps the test above honest about *why* the trauma landed.
+    let r = reveal_committing(board_at_lethal_range(8, &[], &[(COVER_UP, 0)]), &[]);
+
+    assert_eq!(
+        r.state.investigators[&InvestigatorId(1)].status,
+        Status::Killed,
+        "the elimination still happened",
     );
     assert_no_event!(r.events, Event::TraumaSuffered { .. });
 }

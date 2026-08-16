@@ -1,18 +1,36 @@
 //! Investigator elimination helpers: defeat application, elimination
 //! steps, horror application, and all-defeated detection.
 
+use super::super::outcome::EngineOutcome;
 use super::Cx;
 use crate::event::Event;
-use crate::state::{CardInPlay, CardInstanceId, DefeatCause, EnemyId, InvestigatorId, Status};
+use crate::state::{
+    CardInPlay, CardInstanceId, Continuation, DefeatCause, EliminationStep, EnemyId,
+    InvestigatorId, Status,
+};
 
 #[cfg(test)]
 use crate::state::{CardCode, LocationId, Phase};
 
-/// Flip an Active investigator's status to the appropriate defeated
-/// variant for `cause`, emit [`Event::InvestigatorDefeated`], and run
-/// [`check_all_defeated`]. No-op if the investigator is already
-/// non-Active (an investigator can only be defeated once per attack).
+/// Flip an Active investigator's status to the appropriate defeated variant for
+/// `cause` and emit [`Event::InvestigatorDefeated`]. No-op if the investigator
+/// is already non-Active (an investigator can only be defeated once per attack).
 ///
+/// # Then one of two paths (#638)
+///
+/// - **No step-0 weakness ability** (every elimination but a Roland holding
+///   clues on Cover Up): [`run_elimination_steps`] and [`check_all_defeated`]
+///   run inline before this returns, as they always have.
+/// - **A step-0 weakness ability**: a [`Continuation::Elimination`] frame is
+///   pushed and this returns immediately. Steps 1–6 *and*
+///   [`check_all_defeated`] run later, from [`drive_elimination`], once the
+///   queued abilities have drained — so on this path a caller that resumes
+///   after this function sees an elimination still **in progress**: status
+///   flipped, but cards not yet removed and no `AllInvestigatorsDefeated` /
+///   `Resolution::Lost` latch yet. [`super::combat::place_assignment`] is the
+///   only such caller today and gates on [`Status`] for exactly this reason.
+///
+/// [`Status`]: crate::state::Status
 /// [`Status::Killed`]: crate::state::Status::Killed
 /// [`Status::Insane`]: crate::state::Status::Insane
 pub(super) fn apply_investigator_defeat(
@@ -42,12 +60,76 @@ pub(super) fn apply_investigator_defeat(
         cause,
     });
 
+    // Rules Reference p.10 Elimination step 0 (#638). The rule, why the steps
+    // have to ride a frame to honour it, and what that costs are all documented
+    // once on `Continuation::Elimination`; this is the fork it describes.
+    if has_weakness_game_end_ability(cx.state, investigator) {
+        cx.state.continuations.push(Continuation::Elimination {
+            investigator,
+            step: EliminationStep::FireWeaknessGameEnd,
+        });
+        return;
+    }
+
     // Rules Reference p.10 Elimination steps 1–5 run here, between the
     // defeat event and the all-defeated check (step 6 signal). See the
     // design doc 2026-05-31-144 for the full breakdown.
     run_elimination_steps(cx, investigator);
 
     check_all_defeated(cx);
+}
+
+/// Whether `investigator` owns an in-play weakness carrying a *"when the game
+/// ends"* Forced ability — i.e. whether Elimination step 0 has anything to fire.
+///
+/// Asks the step-0 scan itself rather than re-deriving the predicate, so the
+/// fork in [`apply_investigator_defeat`] cannot drift from what the scan
+/// collects — including its RR p.2 "no potential to change the game state" drop,
+/// which is conservative for a native effect (a Cover Up holding no clues still
+/// routes elimination onto the frame; the ability then resolves to nothing,
+/// which is the same observable outcome as never firing).
+fn has_weakness_game_end_ability(
+    state: &crate::state::GameState,
+    investigator: InvestigatorId,
+) -> bool {
+    !super::forced_triggers::collect_forced_hits(
+        state,
+        &super::forced_triggers::ForcedTriggerPoint::EliminationGameEnd { investigator },
+        crate::dsl::EventTiming::After,
+    )
+    .is_empty()
+}
+
+/// Drive a [`Continuation::Elimination`] frame (#638): emit Elimination step 0's
+/// weakness-scoped game-end timing point, then — once its abilities have drained
+/// above this frame — run steps 1–6 and pop.
+///
+/// The cursor advances *before* the emit: the emit only queues (ADR 0003), so
+/// its frames must land above a frame that is already pointing at its own tail.
+pub(super) fn drive_elimination(cx: &mut Cx) -> EngineOutcome {
+    let Some(Continuation::Elimination { investigator, step }) = cx.state.continuations.last_mut()
+    else {
+        unreachable!("drive_elimination: top frame is not an Elimination");
+    };
+    let investigator = *investigator;
+    match *step {
+        EliminationStep::FireWeaknessGameEnd => {
+            *step = EliminationStep::RunSteps;
+            super::emit::queue_event(
+                cx,
+                &super::emit::TimingEvent::EliminationGameEnd { investigator },
+            )
+        }
+        EliminationStep::RunSteps => {
+            cx.state.continuations.pop();
+            // Step 0's tail — "Then, remove those weaknesses from the game" —
+            // is step 1's threat-area partition, which removes every owned
+            // weakness whether or not it fired.
+            run_elimination_steps(cx, investigator);
+            check_all_defeated(cx);
+            EngineOutcome::Done
+        }
+    }
 }
 
 /// Execute Rules Reference p.10 Elimination steps 1–5 for an

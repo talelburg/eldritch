@@ -296,3 +296,26 @@ pub fn fire_forced_after_location_investigated(
     );
     crate::engine::drive(&mut cx, out)
 }
+
+/// Test helper: eliminate `investigator` by dealing them `damage`, then run the
+/// `drive` loop to completion — so Rules Reference p.10 Elimination finishes,
+/// including step 0's weakness game-end abilities when they put the sequence on
+/// a continuation frame (#638).
+///
+/// Lives here — unlike its `fire_forced_*` neighbours, whose reason is the
+/// process-global `OnceLock<CardRegistry>` — because the three pieces it
+/// composes (`Cx`, `take_damage`, `drive`) are not all reachable from an
+/// integration test: `drive` is `pub(crate)`.
+///
+/// `damage` must be lethal for the investigator's capacity; the caller is
+/// responsible for that (the registry it installed answers `max_health()`).
+pub fn eliminate_by_damage(
+    state: &mut crate::state::GameState,
+    events: &mut Vec<crate::event::Event>,
+    investigator: crate::state::InvestigatorId,
+    damage: u8,
+) -> crate::engine::EngineOutcome {
+    let mut cx = crate::engine::Cx { state, events };
+    crate::engine::take_damage(&mut cx, investigator, damage);
+    crate::engine::drive(&mut cx, crate::engine::EngineOutcome::Done)
+}

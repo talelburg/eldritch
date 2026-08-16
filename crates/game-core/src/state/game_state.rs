@@ -814,6 +814,61 @@ pub enum Continuation {
         /// Where in the ending we are.
         step: ScenarioEndStep,
     },
+    /// An investigator's elimination, in progress (#638). Pushed by
+    /// `apply_investigator_defeat` **only** when the investigator owns an in-play
+    /// weakness carrying a *"when the game ends"* Forced ability — Rules
+    /// Reference p.10 Elimination **step 0**:
+    ///
+    /// > For the purpose of resolving weakness cards, the game has ended for the
+    /// > eliminated investigator. Trigger any "when the game ends" abilities on
+    /// > each weakness the eliminated investigator owns that is in play. Then,
+    /// > remove those weaknesses from the game.
+    ///
+    /// Step 0's abilities must resolve **before** step 1 removes their cards
+    /// (Cover Up 01007's *"Forced - When the game ends, if there are any clues
+    /// on Cover Up: You suffer 1 mental trauma"* reads the clues still sitting
+    /// on its own instance), and emitting a timing point only *queues* (ADR
+    /// 0003) — so the remaining steps ride this frame while the queued abilities
+    /// drain above it, and the loop re-exposes it to run steps 1–6.
+    ///
+    /// # The fork, and what it costs
+    ///
+    /// With no such weakness there is nothing to sequence, so
+    /// `apply_investigator_defeat` runs the steps inline instead of pushing this
+    /// frame. That is not merely an optimisation: it keeps the far commoner path
+    /// — every elimination bar a Roland holding clues on Cover Up — reading a
+    /// *finished* elimination, exactly as it did before #638.
+    ///
+    /// The two paths are **not** equivalent for a caller that resumes after
+    /// `apply_investigator_defeat` returns. On this frame's path the investigator
+    /// is already off `Status::Active`, but their cards are still in play and
+    /// `check_all_defeated` has not run — so no `AllInvestigatorsDefeated` and no
+    /// `Resolution::Lost` latch yet. Post-defeat bookkeeping must therefore key
+    /// off `Status`, never off a zone having been drained;
+    /// `combat::place_assignment`'s asset sweep is the one such caller today and
+    /// does exactly that.
+    ///
+    /// Never awaits input (the interactive acknowledge above it is the prompt),
+    /// and never cancelled by a latched resolution: elimination is mandatory
+    /// resolution already under way (ADR 0004).
+    Elimination {
+        /// The investigator being eliminated.
+        investigator: InvestigatorId,
+        /// Where in the elimination we are.
+        step: EliminationStep,
+    },
+}
+
+/// Step cursor for the [`Elimination`](Continuation::Elimination) frame (#638).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EliminationStep {
+    /// Step 0: emit the weakness-scoped game-end timing point. The `drive` loop
+    /// advances the cursor *before* emitting — a tail-position emit, since the
+    /// emit only queues (ADR 0003) and its frames must resolve above this one.
+    FireWeaknessGameEnd,
+    /// Step 0's abilities have drained. Run Elimination steps 1–6 (which remove
+    /// those same weaknesses from the game) and pop the frame.
+    RunSteps,
 }
 
 /// Step cursor for the [`ScenarioEnd`](Continuation::ScenarioEnd) frame (#566).
@@ -958,6 +1013,14 @@ impl Continuation {
                 | Continuation::TimingPointWindow { .. }
                 | Continuation::EmitEvent { .. }
                 | Continuation::TimingPoint { .. }
+                // Not queued *by* an emit — `apply_investigator_defeat` pushes
+                // it — but it owes the loop the emit itself plus steps 1–6, and
+                // burying it strands an elimination mid-sequence exactly as it
+                // would strand an ability. Nothing can bury it today (an anchor
+                // is only ever pushed with an anchor on top, i.e. beneath this
+                // frame); it is included so that stays true by assertion rather
+                // than by luck (#638).
+                | Continuation::Elimination { .. }
         )
     }
 
@@ -1036,6 +1099,12 @@ impl Continuation {
             | Continuation::PlayFromHand { .. }
             | Continuation::SlotDiscard { .. }
             | Continuation::EncounterCard { .. }
+            // An elimination already under way. Rules Reference p.10 runs its
+            // steps "any time a player is eliminated" — the weaknesses whose
+            // game-end abilities are draining above this frame are still in the
+            // threat area until it resumes, so discarding it would strand them
+            // in play for a scenario that has ended (#638).
+            | Continuation::Elimination { .. }
             // The ending itself.
             | Continuation::ScenarioEnd { .. } => false,
         }
@@ -1082,9 +1151,14 @@ impl Continuation {
             // ordering run its `GameEnd` emit queues sits *above* it and is the
             // prompt, and once those have drained the apply boundary finalizes
             // without any player input (#566).
+            // An in-progress elimination is inert for the same reason as the
+            // ending frame: the acknowledge / ordering run its step-0 emit
+            // queues sits *above* it and is the prompt, and steps 1–6 need no
+            // player input (#638).
             Continuation::InvestigatorTurn { .. }
             | Continuation::AttackLoop { .. }
             | Continuation::ActionResolution { .. }
+            | Continuation::Elimination { .. }
             | Continuation::ScenarioEnd { .. } => false,
             other => !other.is_phase_anchor(),
         }

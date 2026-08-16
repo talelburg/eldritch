@@ -97,6 +97,19 @@ pub(crate) enum ForcedTriggerPoint {
     /// each instance's controller. First consumer: Cover Up 01007's
     /// game-end mental-trauma forced (C5a #236).
     GameEnd,
+    /// The game has ended for one **eliminated** investigator, for the purpose
+    /// of resolving weakness cards — Rules Reference p.10 Elimination step 0
+    /// (#638). Scans only that investigator's controlled in-play instances that
+    /// are **weaknesses** (Cover Up 01007) for `EventPattern::GameEnd` forced
+    /// abilities; binds controller = that investigator, source = the instance.
+    ///
+    /// Deliberately *not* the [`GameEnd`](Self::GameEnd) scan with a narrower
+    /// input: that one skips non-`Active` investigators (#567) and fires every
+    /// controlled card, both of which are wrong here.
+    EliminationGameEnd {
+        /// The investigator being eliminated.
+        investigator: InvestigatorId,
+    },
     /// An investigator left a location. Scans that location's attachment zone
     /// for `EventPattern::LeftLocation` forced abilities (Barricade 01038's
     /// self-discard); binds controller = the leaving investigator, source =
@@ -444,6 +457,47 @@ pub(super) fn collect_forced_hits(
                         |p| matches!(p, EventPattern::GameEnd),
                     );
                 }
+            }
+        }
+        ForcedTriggerPoint::EliminationGameEnd { investigator } => {
+            let Some(inv) = state.investigators.get(investigator) else {
+                return hits;
+            };
+            // Rules Reference p.10 Elimination step 0: *"Trigger any 'when the
+            // game ends' abilities on each weakness the eliminated investigator
+            // owns that is in play."* Two narrowings the ordinary `GameEnd` scan
+            // does not make:
+            //
+            // - **weaknesses only.** A non-weakness card this investigator
+            //   controls has no game-end trigger point here — the game has not
+            //   ended for anyone else. `metadata_for` answers for the corpus, so
+            //   a card with no metadata is not a weakness and is skipped.
+            //
+            //   The rule says *owns*; this iterates what the investigator
+            //   **controls**. The two coincide for every weakness the engine can
+            //   represent today: a weakness enters its own owner's threat area,
+            //   and nothing models one player controlling another's card. RR p.10
+            //   step 1 already carries the sub-clause that would separate them
+            //   ("Any card that player owns but does not control…"), so if
+            //   cross-player control ever lands, this scan needs an ownership
+            //   field to filter on rather than a re-reading.
+            // - **no `Status` filter.** `apply_investigator_defeat` flips status
+            //   before running the steps, so the investigator this point names is
+            //   never `Active` — filtering on it (as `GameEnd`/`RoundEnded` do,
+            //   #567) would drop every hit.
+            for card in inv
+                .controlled_card_instances()
+                .filter(|c| (reg.metadata_for)(&c.code).is_some_and(|m| m.weakness))
+            {
+                push_matching(
+                    reg,
+                    &card.code,
+                    *investigator,
+                    CandidateSource::InPlay(card.instance_id),
+                    &mut hits,
+                    bucket,
+                    |p| matches!(p, EventPattern::GameEnd),
+                );
             }
         }
         ForcedTriggerPoint::LeftLocation {
