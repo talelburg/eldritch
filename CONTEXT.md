@@ -26,15 +26,19 @@ Our informal term for assigning horror to an asset that has sanity, rather than 
 _Avoid_: Max sanity, sanity boost, sanity modifier. An asset's sanity is a capacity to absorb horror, never a change to the investigator's own sanity.
 
 **Commit**:
-What a player does with a skill card to add it to an in-progress skill test. Skill cards are committed, never played.
-_Avoid_: Play, use (for skill cards specifically)
+What a player does with a skill card to add it to an in-progress skill test. Skill cards are committed, never played. Committing at ST.2 takes the card **out of hand** into **limbo** (below), where it stays until ST.8 discards it.
+_Avoid_: Play, use (for skill cards specifically). Also avoid describing a committed card as still in hand — that was #631.
 
 **Play**:
 What a player does with an Asset or Event from hand. Those are the only two card types that can be played; everything else is either the investigator card or scenario-bag content.
 _Avoid_: Using "play" for committing a skill, or for revealing encounter cards
 
+**Limbo**:
+The Rules Reference's name (glossary, added in FAQ 1.23) for a card that is in **no zone at all** — "neither in play, in the discard pile, nor … in an investigator's hand". Two states in the engine are limbo, and both ride the continuation frame driving them rather than any zone: an **in-progress play** (below) and a **committed card**, which "enters limbo as it is committed to a skill test" at ST.2 and leaves it when ST.8 discards it. Limbo is the umbrella; name the specific state when you mean one of them. A limbo card "is technically not in play, and does not count as being in play for the purposes of other card effects" — so it is invisible to in-play queries while its effects still alter the game state.
+_Avoid_: Calling it a zone, or a "pending" pile — it is "not a physical game area". Also avoid reaching for it where the specific term is clearer: a reader who sees "limbo" has to work out which of the two you meant.
+
 **In-progress play**:
-A card partway through being played. Per the Rules Reference (Appendix I, Initiation Sequence) it "commences being played" at step 3, leaving hand, and is "regarded as played (and placed in play, or in its owner's discard pile if it's an event)" only at the completion of step 4. Between those points it is in **no zone at all** — not in hand, not in play, not in a discard pile. Plays nest, so several cards can be in this state at once: a Fast event played to cancel the attack of opportunity a non-fast play provoked is a second play running inside the first. Each rides the continuation frame driving it; see `docs/adr/0002-in-progress-play-lives-on-its-frame.md`.
+A card partway through being played — the play-side flavour of **limbo** (above). Per the Rules Reference (Appendix I, Initiation Sequence) it "commences being played" at step 3, leaving hand, and is "regarded as played (and placed in play, or in its owner's discard pile if it's an event)" only at the completion of step 4. Between those points it is in **no zone at all** — not in hand, not in play, not in a discard pile. Plays nest, so several cards can be in this state at once: a Fast event played to cancel the attack of opportunity a non-fast play provoked is a second play running inside the first. Each rides the continuation frame driving it; see `docs/adr/0002-in-progress-play-lives-on-its-frame.md`.
 _Avoid_: Saying the card is "still in hand" or "already in the discard" while its effect resolves — it is in neither, and treating it as either is what erased a card from the game in #604. "Pending play" names the same thing less precisely; prefer in-progress play.
 
 **Discovery**:

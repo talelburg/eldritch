@@ -4560,8 +4560,8 @@ mod tests {
         );
         assert_eq!(
             inv_after.discard,
-            vec![CardCode::new("B"), CardCode::new("A")],
-            "committed cards land in discard (descending-index removal order)",
+            vec![CardCode::new("A"), CardCode::new("B")],
+            "committed cards land in discard in commit order",
         );
         assert_event_count!(result.events, 2, Event::CardDiscarded { .. });
         assert_event!(

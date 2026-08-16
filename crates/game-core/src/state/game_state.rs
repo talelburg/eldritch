@@ -1183,6 +1183,28 @@ impl Continuation {
         }
     }
 
+    /// Take `investigator`'s cards-committed-to-a-skill-test off this frame,
+    /// leaving the in-flight test holding none. Returns an empty `Vec` when the
+    /// frame is not a [`SkillTest`](Self::SkillTest), belongs to someone else,
+    /// or has already been emptied.
+    ///
+    /// The sibling of [`take_play_in_progress`](Self::take_play_in_progress),
+    /// for the other card state that is in **no zone**: a card committed to a
+    /// skill test is in limbo, "no longer considered to be in any
+    /// investigator's hand" but not yet in a discard pile (Rules Reference
+    /// glossary, "Limbo"), so elimination's hand/deck/discard drain cannot
+    /// reach it either. Taking rather than copying keeps the ST.8 teardown from
+    /// discarding a card that step 1 has already removed from the game — same
+    /// order-independence argument as the play sweep (#604, #631).
+    pub fn take_committed_cards(&mut self, investigator: InvestigatorId) -> Vec<CardCode> {
+        match self {
+            Continuation::SkillTest(t) if t.investigator == investigator => {
+                std::mem::take(&mut t.committed_by_active)
+            }
+            _ => Vec::new(),
+        }
+    }
+
     /// Whether the frame is the mandatory #213 forced run. `false` for reaction
     /// windows and non-window frames.
     #[must_use]
@@ -1337,19 +1359,30 @@ pub struct InFlightSkillTest {
     pub kind: SkillTestKind,
     /// Difficulty: total to meet or exceed for success.
     pub difficulty: i8,
-    /// Hand indices the active investigator has committed to the test.
+    /// The cards the active investigator has committed to the test, in
+    /// commit order — **held here, not in hand**. Rules Reference glossary
+    /// "Limbo": *"A skill card enters limbo as it is committed to a skill
+    /// test. … It is no longer considered to be in any investigator's hand,
+    /// but it has not yet been placed in any discard pile."*
+    ///
     /// Populated on the [`ResolveInput`](crate::action::PlayerAction::ResolveInput)
-    /// dispatch and snapshotted onto the in-flight record. **Load-bearing
-    /// for resolution**: the frame-driven steps read committed indices
-    /// off this field (e.g. `collect_on_skill_test_resolution` /
-    /// `discard_committed_cards` via `in_flight.committed_by_active`),
-    /// so it must stay accurate across suspensions — don't treat it as
+    /// dispatch, which removes the named cards from the hand and moves them
+    /// here; the ST.8 teardown moves them on to the discard pile. **Load-
+    /// bearing for resolution**: the frame-driven steps read the committed
+    /// codes off this field (e.g. `collect_on_skill_test_resolution` /
+    /// `discard_committed_cards` via `in_flight.committed_by_active`), so it
+    /// must stay accurate across suspensions — don't treat it as
     /// inspection-only metadata.
+    ///
+    /// Storing the codes rather than the hand positions they came from is
+    /// what makes the ST.2→ST.3 player window safe (#631): a Fast play
+    /// resolved inside that window mutates the hand, and any parked hand
+    /// index would then denote a different card (or none at all).
     ///
     /// Multi-investigator commits (the rule "any investigator at the
     /// same location may commit") are a separate downstream issue; for
     /// now only the active investigator's commits live here.
-    pub committed_by_active: Vec<u8>,
+    pub committed_by_active: Vec<CardCode>,
     /// The location the test is associated with, snapshotted at
     /// skill-test start (`engine::dispatch::start_skill_test`) from
     /// the investigator's current location. Used by

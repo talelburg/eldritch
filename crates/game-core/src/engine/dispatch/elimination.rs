@@ -63,18 +63,27 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
         .get(&investigator)
         .and_then(|inv| inv.current_location);
 
-    // Step 1, part one: a card **mid-play** is in none of the zones the drains
-    // below cover — it left hand when it commenced being played and has not been
-    // placed yet (RR Appendix I step 3 → 4). It rides the frame driving its play,
-    // so this walk takes it off there. Taking rather than copying is what makes
-    // the step order-independent: the play's own disposal, whenever it runs,
-    // finds nothing left to place instead of pushing the card into a discard
-    // pile that step 1 has already removed from the game (#604).
-    let mut in_progress_plays: Vec<crate::state::CardCode> = Vec::new();
+    // Step 1, part one: a card in **limbo** is in none of the zones the drains
+    // below cover. Two kinds ride a continuation frame rather than a zone, and
+    // this walk takes both off their frames:
+    //
+    // - a card **mid-play** — it left hand when it commenced being played and
+    //   has not been placed yet (RR Appendix I step 3 → 4) — #604;
+    // - a card **committed to an in-flight skill test** — RR glossary "Limbo":
+    //   "A skill card enters limbo as it is committed to a skill test. … It is
+    //   no longer considered to be in any investigator's hand, but it has not
+    //   yet been placed in any discard pile." (#631.)
+    //
+    // Taking rather than copying is what makes the step order-independent: the
+    // frame's own disposal, whenever it runs, finds nothing left to place
+    // instead of pushing the card into a discard pile that step 1 has already
+    // removed from the game.
+    let mut in_limbo: Vec<crate::state::CardCode> = Vec::new();
     for frame in &mut cx.state.continuations {
         if let Some(card) = frame.take_play_in_progress(investigator) {
-            in_progress_plays.push(card);
+            in_limbo.push(card);
         }
+        in_limbo.extend(frame.take_committed_cards(investigator));
     }
 
     // Step 1, part two: remove every card this investigator controls in play and
@@ -106,7 +115,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // while borrowing `inv.hand` etc. would double-borrow `inv` — rejected
     // by the borrow checker).
     let mut removed = std::mem::take(&mut inv.removed_from_game);
-    removed.extend(in_progress_plays);
+    removed.extend(in_limbo);
     removed.extend(inv.cards_in_play.drain(..).map(|c| c.code));
     // Partition the threat area: owned weaknesses leave with their owner here;
     // the rest stay for step 4. No registry installed (engine-only tests with
