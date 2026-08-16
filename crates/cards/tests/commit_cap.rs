@@ -26,6 +26,10 @@ fn board(copies: usize) -> GameState {
     let mut inv = test_investigator(1);
     inv.skills.willpower = 3;
     inv.hand = vec![CardCode::new(GUTS); copies];
+    // A card for Guts' success draw to land on. Without it the draw hits an
+    // empty deck, which now applies the deck-out horror (#636) — irrelevant
+    // noise for a test about the commit cap.
+    inv.deck = vec![CardCode::new("spare-1")];
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(INV)

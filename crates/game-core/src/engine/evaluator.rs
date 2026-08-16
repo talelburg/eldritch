@@ -606,7 +606,10 @@ fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> 
 }
 
 /// Resolve [`Effect::DrawCards`]: draw `count` cards for the resolved
-/// target investigator via the engine's `draw_cards` helper. `count == 0`
+/// target investigator via the engine's `draw_with_deckout` helper —
+/// the same empty-deck path the Draw action and Upkeep step 4.4 use, so
+/// a card-effect draw on an empty deck reshuffles the discard, completes
+/// the draw, and takes 1 horror on completion (#636). `count == 0`
 /// is a clean no-op (no target resolution, no event).
 fn draw_cards_effect(
     cx: &mut Cx,
@@ -630,8 +633,7 @@ fn draw_cards_effect(
             reason: format!("DrawCards: investigator {target_id:?} is not in the state").into(),
         };
     }
-    crate::engine::dispatch::cards::draw_cards(cx, target_id, count);
-    crate::engine::dispatch::cards::resolve_drawn_weaknesses(cx, target_id);
+    crate::engine::dispatch::cards::draw_with_deckout(cx, target_id, count);
     EngineOutcome::Done
 }
 
