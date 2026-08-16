@@ -29,6 +29,12 @@ Thumbs.db
 # Subagent worktrees (never commit)
 .claude/worktrees/
 
+# Python bytecode (scripts/arkhamdb.py)
+__pycache__/
+
+# In-progress ArkhamDB FAQ refresh sweep (resumption record, not data)
+data/arkhamdb-faq/.refresh-stamp
+
 # Local agent/tool state (never commit)
 .claude/settings.local.json
 .superpowers/

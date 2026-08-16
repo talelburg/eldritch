@@ -12,7 +12,7 @@ Standards live in exactly one place each. Most already have a home in `CLAUDE.md
 | Test layering, the `TestGame` builder, the event-assertion macros | `CLAUDE.md` → Architecture → Test layering |
 | Never hand-edit `crates/cards/src/generated/cards.rs` | `CLAUDE.md` → Architecture → Card-data pipeline |
 | Don't add DSL primitives speculatively — wait for two hand-written cards wanting the same pattern | `CLAUDE.md` → Architecture → Hybrid card-effect DSL |
-| Card text and rules citation policy (ArkhamDB first, always read the FAQ, snapshot as fallback) | `CLAUDE.md` → Architecture → Domain knowledge |
+| Card text and rules citation policy (read the vendored text locally, always read the FAQ, never fetch) | `CLAUDE.md` → Architecture → Domain knowledge |
 | Running local checks with CI's exact strict flags | `CLAUDE.md` → Commands |
 | Domain vocabulary — use the glossary's words in names and test titles | `CONTEXT.md` |
 
