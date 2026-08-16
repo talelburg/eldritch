@@ -32,7 +32,9 @@ scripts/ci-local.sh --all        # force the full seven-job gauntlet
 scripts/ci-local.sh --base <ref> # diff against <ref> instead of origin/main
 ```
 
-The posture: **local catches what the diff predicts; pushed CI is the guardrail.** Reach for `--all` when the diff is unusual enough that the mapping's assumptions may not hold — a build-script or toolchain change, a workspace-manifest edit, a merge with a long-lived branch.
+The posture: **local catches what the diff predicts; pushed CI is the guardrail.** Reach for `--all` when the diff is unusual enough that the mapping's assumptions may not hold — a merge with a long-lived branch, or anything whose blast radius you can't picture. A change to `.github/workflows/`, `.cargo/`, or `rust-toolchain.toml` forces the full gauntlet on its own, since those invalidate the mapping wholesale.
+
+Two ways a local pass is weaker than a CI pass, both reported at the end of a run rather than left implicit: CI pins `trunk@0.21.14` and `wasm-pack@0.15.0` while the script takes them from `$PATH`, and if `trunk` is missing entirely the `wasm-build` job falls back to a debug `cargo build` and is flagged as degraded.
 
 Don't skip the script and run `cargo test` by hand: it passes even when `doc`/`clippy` fail in CI, and the host `clippy` job never sees `#[cfg(target_arch = "wasm32")]` code (only `wasm-clippy` does). The scoping rule is written against the reverse-dependency closure rather than the touched paths, because `web` sits downstream of `game-core`, `protocol`, and `cards` — see the header comment in `scripts/ci-local.sh`, which is where that mapping is maintained.
 

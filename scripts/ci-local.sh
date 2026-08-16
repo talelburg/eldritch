@@ -4,9 +4,17 @@
 #
 # CI (.github/workflows/ci.yml) runs seven jobs in parallel on every push; that
 # is the guardrail. This script's job is narrower: catch, fast, the failures
-# that are *predictable from the diff*. It runs each job with CI's exact
-# invocation and strict flags, so a pass here means the same thing it means
-# there.
+# that are *predictable from the diff*.
+#
+# Each job below is invoked exactly as the workflow invokes it, with the same
+# strict flags, so a job that runs here means what it means there. Two caveats,
+# both reported at the end of a run rather than left implicit:
+#
+#   * `trunk` and `wasm-pack` are pinned in CI (trunk@0.21.14, wasm-pack@0.15.0)
+#     but taken from $PATH here, so a local pass is only as good as your
+#     installed versions.
+#   * `classify` is not a CI job. It is a subset of `test`, offered on its own
+#     for snapshot-only changes where the rest of `test` cannot be affected.
 #
 # The scoping rule is written against the reverse-dependency closure, not the
 # touched paths. `web` sits downstream of `game-core`, `protocol`, and `cards`:
@@ -33,11 +41,22 @@
 #
 set -uo pipefail
 
-cd "$(git rev-parse --show-toplevel)" || exit 1
+# `cd "$(git rev-parse ...)"` is not a guard: outside a repo the substitution is
+# empty and `cd ""` succeeds. Check the ref parse itself.
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
+  echo "not inside a git repository" >&2
+  exit 2
+}
+cd "$ROOT" || exit 2
 
-# CI sets this workflow-wide, so every job below sees it.
+# CI sets these workflow-wide, so every job below sees them.
 export CARGO_TERM_COLOR=always
 export RUSTFLAGS="-D warnings"
+
+# The seven CI jobs, in the order the workflow lists them. Single source of
+# truth: the --all plan and the end-of-run "not run locally" summary both read
+# this, so adding an eighth job means touching this list and `run_job` only.
+ALL_JOBS=(fmt clippy test doc wasm-build wasm-test wasm-clippy)
 
 BASE=""
 LIST_ONLY=0
@@ -86,57 +105,60 @@ if [ -z "$CHANGED" ] && [ "$FORCE_ALL" -eq 0 ]; then
   exit 0
 fi
 
-matches() { grep -qE "$1" <<<"$CHANGED"; }
+diff_touches() { grep -qE "$1" <<<"$CHANGED"; }
 
 # ----------------------------------------------------------------- job selection
 
 declare -a PLAN=()
 declare -A WHY=()
-want() { PLAN+=("$1"); WHY["$1"]="$2"; }
+select_job() { PLAN+=("$1"); WHY["$1"]="$2"; }
+planned() { [[ " ${PLAN[*]} " == *" $1 "* ]]; }
+
+# A change to the CI definition, the cargo config, or the toolchain invalidates
+# the mapping's assumptions wholesale — there is nothing to reason about, so
+# run everything.
+if [ "$FORCE_ALL" -eq 0 ] &&
+   diff_touches '^\.github/workflows/|^\.cargo/|(^|/)rust-toolchain\.toml$'; then
+  echo "CI config, cargo config, or toolchain changed — running the full gauntlet."
+  FORCE_ALL=1
+fi
 
 if [ "$FORCE_ALL" -eq 1 ]; then
-  want fmt         "--all"
-  want clippy      "--all"
-  want test        "--all"
-  want doc         "--all"
-  want wasm-build  "--all"
-  want wasm-test   "--all"
-  want wasm-clippy "--all"
+  for j in "${ALL_JOBS[@]}"; do select_job "$j" "--all"; done
 else
   # fmt is ~1s. Gating it would cost more thought than running it.
-  want fmt "always"
+  select_job fmt "always"
 
-  if matches '\.rs$|(^|/)Cargo\.(toml|lock)$|(^|/)rust-toolchain\.toml$'; then
-    want clippy "rust sources or manifests changed"
-    want test   "rust sources or manifests changed"
-  fi
-
-  # `doc` can only fail on a doc comment or an intra-doc link, so gate it on
-  # an *added* doc line rather than on .rs files generally.
-  # Not `git diff … | grep -q`: grep exits on the first match, git dies of
-  # SIGPIPE, and `pipefail` reports the whole pipeline as failed — so the
-  # check silently never fires. Count instead; grep reads to EOF.
-  DOC_LINES=$(git diff -U0 "$MERGE_BASE" -- '*.rs' | grep -cE '^\+\s*(///|//!|#!\[doc)')
-  if [ "${DOC_LINES:-0}" -gt 0 ]; then
-    want doc "doc comments added or changed"
+  if diff_touches '\.rs$|(^|/)Cargo\.(toml|lock)$'; then
+    select_job clippy "rust sources or manifests changed"
+    select_job test   "rust sources or manifests changed"
+    # `doc` is deliberately NOT gated on "were doc comments added?". Intra-doc
+    # links break most often when a public item is renamed, moved, or deleted —
+    # the link dangles in a file the diff never touched, so there is no added
+    # doc line anywhere to key off. A gate that cannot see its own failure class
+    # is worse than no gate: it turns a caught break into a silent skip.
+    select_job doc "rust sources or manifests changed"
   fi
 
   # web + protocol are what the wasm bundle is built from directly.
-  if matches '^crates/(web|protocol)/'; then
-    want wasm-build  "crates/web or crates/protocol changed"
-    want wasm-test   "crates/web or crates/protocol changed"
-    want wasm-clippy "crates/web or crates/protocol changed"
-  elif matches '^crates/(game-core|cards|card-dsl)/'; then
+  if diff_touches '^crates/(web|protocol)/'; then
+    select_job wasm-build  "crates/web or crates/protocol changed"
+    select_job wasm-test   "crates/web or crates/protocol changed"
+    select_job wasm-clippy "crates/web or crates/protocol changed"
+  elif diff_touches '^crates/(game-core|cards|card-dsl)/'; then
     # Upstream of web, so a wasm build can still break — but the cheap job is
     # also the discerning one: wasm-clippy is the only job that compiles the
     # #[cfg(target_arch = "wasm32")] code the host `clippy` job never sees.
-    want wasm-clippy "engine crates changed (upstream of web)"
+    select_job wasm-clippy "engine crates changed (upstream of web)"
   fi
 
   # The pipeline's `classify` tests are what catch a mis-vendored snapshot bump.
   # They already run under `test`; only add them when nothing else pulled it in.
-  if matches '^data/' && ! [[ " ${PLAN[*]} " == *" test "* ]]; then
-    want classify "data/ changed"
+  # Gated on `data/` alone, not on the docs-and-markdown case too: a change under
+  # `docs/` cannot move a vendored pack file, so there is nothing for classify
+  # to catch there.
+  if diff_touches '^data/' && ! planned test; then
+    select_job classify "data/ changed"
   fi
 fi
 
@@ -152,6 +174,10 @@ fi
 
 # ------------------------------------------------------------------------- jobs
 
+# Jobs that ran, but not the way CI runs them. Reported at the end so a
+# degraded run is never mistaken for a clean one.
+declare -a DEGRADED=()
+
 run_job() {
   case "$1" in
     fmt)         cargo fmt --all -- --check ;;
@@ -163,13 +189,15 @@ run_job() {
     wasm-test)   wasm-pack test --headless --firefox crates/web ;;
     wasm-build)
       # CI runs `trunk build --release` — the release profile and the asset
-      # pipeline both fail in ways a debug cargo build does not. Fall back only
-      # when trunk is missing, and say so, because the fallback is weaker.
+      # pipeline both fail in ways a debug cargo build does not. The fallback
+      # is a strictly weaker check, so it is recorded as degraded rather than
+      # allowed to report a clean pass.
       if command -v trunk >/dev/null; then
         (cd crates/web && trunk build --release)
       else
         echo "!! trunk not installed — falling back to a debug cargo build." >&2
         echo "!! This is weaker than CI's \`trunk build --release\`." >&2
+        DEGRADED+=("wasm-build (no trunk: debug cargo build, not trunk --release)")
         cargo build -p web --target wasm32-unknown-unknown
       fi ;;
     *) echo "no such job: $1" >&2; return 2 ;;
@@ -195,11 +223,15 @@ if [ ${#FAILED[@]} -gt 0 ]; then
 fi
 
 SKIPPED=""
-for j in fmt clippy test doc wasm-build wasm-test wasm-clippy; do
-  [[ " ${PLAN[*]} " == *" $j "* ]] || SKIPPED+=" $j"
+for j in "${ALL_JOBS[@]}"; do
+  planned "$j" || SKIPPED+=" $j"
 done
+
 if [ -n "$SKIPPED" ]; then
   echo "passed. not run locally (CI will):${SKIPPED}"
 else
   echo "passed. full gauntlet."
+fi
+if [ ${#DEGRADED[@]} -gt 0 ]; then
+  printf 'ran degraded: %s\n' "${DEGRADED[@]}"
 fi
