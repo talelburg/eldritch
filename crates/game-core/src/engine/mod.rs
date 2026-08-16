@@ -3879,8 +3879,8 @@ mod tests {
 
     #[test]
     fn mulligan_redraw_subset_swaps_named_cards() {
-        // Redraw indices [1, 3] → those two move to deck, deck
-        // shuffles, two new cards come back.
+        // Redraw indices [1, 3] → those two are set aside, two new cards
+        // come off the deck, and the set-aside pair shuffles back in.
         let (id, state) = mulligan_scenario();
         let result = apply(state, mulligan_resolve(&[1, 3]));
         assert!(matches!(
@@ -3944,12 +3944,11 @@ mod tests {
         let inv = &result.state.investigators[&id];
         assert_eq!(inv.hand.len(), 5);
         assert_eq!(inv.deck.len(), 5);
-        // None of the original hand cards are in the new hand —
-        // because all 5 went to deck and the shuffle + redraw could
-        // theoretically reproduce the same hand by chance, but
-        // verify that the hand-as-set is a subset of the union.
-        // Stronger check: hand + deck (multiset) equals the original
-        // hand + deck (multiset).
+        // Conservation check: hand + deck (multiset) equals the original
+        // hand + deck (multiset) — nothing is lost or duplicated by the
+        // set-aside/draw/shuffle-back round trip. That none of the original
+        // hand survives into the new hand is asserted separately, by
+        // `mulligan_cards_cannot_be_redrawn_as_their_own_replacements`.
         let mut all: Vec<_> = inv.hand.iter().chain(inv.deck.iter()).cloned().collect();
         all.sort();
         let mut expected: Vec<CardCode> = [
@@ -3960,6 +3959,148 @@ mod tests {
         .collect();
         expected.sort();
         assert_eq!(all, expected);
+    }
+
+    #[test]
+    fn mulligan_cards_cannot_be_redrawn_as_their_own_replacements() {
+        // Rules Reference, glossary `Mulligan`: "These cards are set aside, and
+        // an equivalent number of cards are drawn and added to the player's
+        // starting hand. The set-aside cards are then shuffled back into the
+        // player's deck." Set-aside precedes the draw, so a mulliganed card is
+        // out of the deck while its replacement is drawn and cannot come back
+        // as that replacement (#637).
+        //
+        // `mulligan_scenario` makes this decisive: the hand is exactly the five
+        // `h-*` cards and the deck exactly the five `d-*` ones, so redrawing the
+        // whole hand must yield a hand of only `d-*` cards no matter how the
+        // shuffle falls.
+        let (id, state) = mulligan_scenario();
+        let mulliganed = state.investigators[&id].hand.clone();
+        let result = apply(state, mulligan_resolve(&[0, 1, 2, 3, 4]));
+        let inv = &result.state.investigators[&id];
+
+        // Hand size is unchanged by the mulligan.
+        assert_eq!(inv.hand.len(), mulliganed.len());
+        // None of the mulliganed cards appears among the replacements.
+        for code in &mulliganed {
+            assert!(
+                !inv.hand.contains(code),
+                "mulliganed card {code:?} was redrawn as its own replacement; hand: {:?}",
+                inv.hand
+            );
+        }
+        // Every mulliganed card is back in the deck once the mulligan completes.
+        for code in &mulliganed {
+            assert!(
+                inv.deck.contains(code),
+                "mulliganed card {code:?} is not back in the deck; deck: {:?}",
+                inv.deck
+            );
+        }
+        // Nothing is left stranded outside a zone.
+        assert_eq!(inv.deck.len(), 5);
+        assert!(inv.setaside.is_empty());
+        assert!(inv.discard.is_empty());
+    }
+
+    #[test]
+    fn mulligan_partial_redraw_keeps_the_rejected_cards_out_of_the_replacements() {
+        // The same guarantee for a partial mulligan: only the named cards are
+        // set aside, and only they are barred from the replacement draw.
+        let (id, state) = mulligan_scenario();
+        let rejected = [CardCode::new("h-1"), CardCode::new("h-3")];
+        let result = apply(state, mulligan_resolve(&[1, 3]));
+        let inv = &result.state.investigators[&id];
+
+        assert_eq!(inv.hand.len(), 5);
+        for code in &rejected {
+            assert!(
+                !inv.hand.contains(code),
+                "mulliganed card {code:?} was redrawn as its own replacement"
+            );
+            assert!(
+                inv.deck.contains(code),
+                "mulliganed card {code:?} is not back in the deck"
+            );
+        }
+        assert_eq!(inv.deck.len(), 5);
+        assert!(inv.setaside.is_empty());
+    }
+
+    #[test]
+    fn mulligan_draws_replacements_before_shuffling_the_set_aside_cards_back() {
+        // The bug this fixes was purely one of order, so pin the order itself
+        // rather than only its consequence: the replacement draw must land
+        // before the shuffle that returns the set-aside cards. Inverting these
+        // two is exactly what let a rejected card be redrawn (#637).
+        let (_id, state) = mulligan_scenario();
+        let result = apply(state, mulligan_resolve(&[0, 1, 2, 3, 4]));
+
+        let draw_idx = result
+            .events
+            .iter()
+            .position(|e| matches!(e, Event::CardsDrawn { .. }))
+            .expect("CardsDrawn missing");
+        let shuffle_idx = result
+            .events
+            .iter()
+            .position(|e| matches!(e, Event::DeckShuffled { .. }))
+            .expect("DeckShuffled missing");
+        assert!(
+            draw_idx < shuffle_idx,
+            "expected the replacement draw ({draw_idx}) before the shuffle-back \
+             ({shuffle_idx}); events: {:?}",
+            result.events
+        );
+    }
+
+    #[test]
+    fn mulligan_replays_from_the_action_log_bit_for_bit() {
+        // The shuffle that returns the set-aside cards draws from the engine
+        // RNG, so it has to stay on the replay contract: re-driving the action
+        // log from a fresh copy of the same initial state must reproduce the
+        // post-mulligan state exactly — including the RNG cursor, so every
+        // subsequent draw agrees too. Same shape as `closing_demo`'s
+        // `replay_with_roundtrip`: the caller holds the log and replays it
+        // against `make_initial()`.
+        let id = InvestigatorId(1);
+        let make_initial = || mulligan_scenario().1;
+        // A draw after the mulligan is what makes the RNG-cursor check bite:
+        // if the shuffle consumed a different number of RNG values, this draw
+        // diverges even when the post-mulligan hand happens to agree.
+        let log = vec![
+            mulligan_resolve(&[0, 2, 4]),
+            Action::Engine(EngineRecord::DeckShuffled { investigator: id }),
+        ];
+        let drive = |log: &[Action]| {
+            let mut state = make_initial();
+            let mut events = Vec::new();
+            for a in log {
+                let result = apply(state, a.clone());
+                assert!(
+                    !matches!(result.outcome, EngineOutcome::Rejected { .. }),
+                    "replay log action was rejected: {:?}",
+                    result.outcome
+                );
+                state = result.state;
+                events.extend(result.events);
+            }
+            (state, events)
+        };
+
+        let (state_a, events_a) = drive(&log);
+        let (state_b, events_b) = drive(&log);
+
+        assert_eq!(state_a, state_b, "replay must reproduce state bit-for-bit");
+        assert_eq!(events_a, events_b, "replay must reproduce the same events");
+        // Spelled out separately: `GameState` equality already covers these,
+        // but a future field-level `PartialEq` change shouldn't silently drop
+        // the two that carry the mulligan's randomness.
+        assert_eq!(
+            state_a.investigators[&id].hand,
+            state_b.investigators[&id].hand
+        );
+        assert_eq!(state_a.rng, state_b.rng);
     }
 
     #[test]

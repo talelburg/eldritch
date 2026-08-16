@@ -137,17 +137,21 @@ fn opening_hand_weakness_set_aside_and_returned_to_deck() {
 
 // ---- Test 2: mulligan redraw also avoids weaknesses -----------------------
 
-/// With seed 42, Fisher-Yates on a 2-element deck [weakness, non1] is a
-/// no-op (j = `next_index(2)` = 1, which swaps an element with itself).
-/// After the mulligan returns non1 to the deck and shuffles, the deck
-/// remains [weakness, non1], so the redraw draws the weakness first.
+/// The deck holds only the weakness, so the mulligan redraw is guaranteed to
+/// draw it: non1 is set aside first (#637 — a mulliganed card is held out of
+/// the deck while its replacement is drawn), leaving the weakness as the only
+/// card available.
 ///
-/// `replace_opening_hand_weaknesses` then sets the weakness aside again
-/// and draws non1 as the replacement, leaving a weakness-free hand.
-/// At drain the weakness is shuffled back into the deck.
+/// The set-aside non1 then shuffles back, closing the mulligan, and only then
+/// does `replace_opening_hand_weaknesses` run: it sets the weakness aside again
+/// and draws its replacement off the restored deck — non1, which is legal here
+/// because this is a step-8 draw, not the mulligan draw. The hand ends
+/// weakness-free *and* at its original size; running the sweep before non1
+/// returned would leave the investigator holding nothing. At drain the weakness
+/// is shuffled back into the deck.
 ///
-/// Seed derivation: frozen contract `RngState::new(42)`, first `next_u64`
-/// = `0xae90_bfb5_395d_5ba1` (odd) → `% 2 = 1` → i=1, j=1, no swap.
+/// No seed derivation is needed: every draw here comes off a one-card deck, and
+/// `shuffle_player_deck` no-ops below two cards.
 #[test]
 fn mulligan_redraw_weakness_is_set_aside() {
     let mut inv = test_investigator(1);
@@ -165,11 +169,11 @@ fn mulligan_redraw_weakness_is_set_aside() {
         .build();
 
     // Player mulligans index 0 ("01001"):
-    //   → "01001" pushed to deck → deck = [weakness, "01001"]
-    //   → Fisher-Yates(seed=42): j=1, no-op → deck = [weakness, "01001"]
-    //   → draw 1 → weakness drawn → hand = [weakness]
+    //   → "01001" set aside (held out of the deck) → deck = [weakness]
+    //   → draw 1 → weakness drawn → hand = [weakness], deck = []
+    //   → set-aside "01001" shuffles back → deck = ["01001"] (1 card: no-op)
     //   → replace_opening_hand_weaknesses: weakness → setaside, draw 1
-    //   → deck = ["01001"], draw "01001" → hand = ["01001"]
+    //   → draws "01001" → hand = ["01001"], deck = []
     //   → deck empty, break.
     // MulliganPerformed{redrawn_count:1}.
     // Drain: setaside[weakness] → deck, shuffle.
@@ -204,6 +208,17 @@ fn mulligan_redraw_weakness_is_set_aside() {
     assert!(
         !inv.hand.iter().any(|c| c.as_str() == SYNTH_COVER_UP_CODE),
         "weakness must NOT be in hand after mulligan; hand = {:?}",
+        inv.hand,
+    );
+
+    // ...and the mulligan did not cost the investigator a card. This is what
+    // pins the step-8 sweep to *after* the set-aside cards return: run it
+    // before, and the sweep's replacement draw finds an empty deck and the
+    // hand ends empty.
+    assert_eq!(
+        inv.hand,
+        vec![CardCode::new("01001")],
+        "mulligan must leave the hand at its original size; hand = {:?}",
         inv.hand,
     );
 

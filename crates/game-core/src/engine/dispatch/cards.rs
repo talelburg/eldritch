@@ -548,16 +548,105 @@ pub(super) fn prompt_mulligan(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> En
     }
 }
 
+/// Swap the hand cards at `sorted` (ascending, in-bounds, unique hand indices)
+/// for fresh ones, per the three ordered steps of the Rules Reference `Mulligan`
+/// glossary entry:
+///
+/// > These cards are set aside, and an equivalent number of cards are drawn and
+/// > added to the player's starting hand. The set-aside cards are then shuffled
+/// > back into the player's deck.
+///
+/// The set-aside step is what makes the redraw honest: the named cards are held
+/// out of every zone while the replacements are drawn, so a card cannot be
+/// redrawn as its own replacement (#637). They return to the **deck**, never
+/// through the discard pile.
+///
+/// The replacements come off the deck unshuffled because setup already shuffled
+/// it (`start_scenario` shuffles before dealing the opening hand); the only
+/// shuffle the mulligan itself owes is the one returning the set-aside cards.
+/// [`draw_cards`] clamps to the deck size, so an investigator whose deck holds
+/// fewer cards than they mulliganed ends with a smaller hand rather than a
+/// panic — unreachable for a legal 30-card deck, and the rules have no card to
+/// offer in that case either.
+///
+/// The mulligan-redraw weakness sweep ([`replace_opening_hand_weaknesses`]) runs
+/// **after** the set-aside cards are back, matching the glossary's ordering: the
+/// mulligan ends once the replacements are in hand, and step 8's replacement
+/// draw is a later draw off the whole deck. Two consequences, both wanted — it
+/// may draw a card this investigator just mulliganed (legal: that card is back
+/// in the deck and this is no longer the mulligan draw), and it still has a deck
+/// to draw from, where a sweep run before the cards returned could strand the
+/// investigator a card short.
+///
+/// An empty `sorted` is a no-op: nothing is set aside, so there is nothing to
+/// draw and nothing to shuffle back (a "keep my hand" mulligan leaves the deck
+/// untouched, emitting no [`Event::DeckShuffled`]).
+///
+/// The cards are held in a local rather than in
+/// [`investigator.setaside`](crate::state::Investigator::setaside), which the
+/// opening-hand weakness path uses: that pile is flushed once the whole mulligan
+/// loop drains (RR setup step 8, "upon completion of this step"), whereas the
+/// glossary entry returns each player's cards within their own mulligan. Keeping
+/// them local also leaves every zone consistent at the handler boundary.
+///
+/// Caller guarantees `investigator` exists in `cx.state.investigators` and that
+/// every index in `sorted` is a valid hand position.
+fn perform_mulligan_redraw(cx: &mut Cx, investigator: InvestigatorId, sorted: &[u32]) {
+    if sorted.is_empty() {
+        return;
+    }
+    let count = u8::try_from(sorted.len()).expect("sorted.len() <= hand.len() <= u8::MAX");
+
+    // Set aside. Walk indices high-to-low so smaller positions stay valid as we
+    // remove. The collected order doesn't matter: these cards go back to the
+    // deck and are shuffled before anything can observe where they landed.
+    let inv = cx
+        .state
+        .investigators
+        .get_mut(&investigator)
+        .expect("perform_mulligan_redraw: caller guarantees investigator exists");
+    let mut set_aside: Vec<CardCode> = Vec::with_capacity(sorted.len());
+    for &i in sorted.iter().rev() {
+        set_aside.push(inv.hand.remove(i as usize));
+    }
+
+    // Draw the replacements off the deck, which setup already shuffled.
+    draw_cards(cx, investigator, count);
+
+    // Shuffle the set-aside cards back in. This closes the mulligan proper, so
+    // it happens before the step-8 sweep below rather than after: the glossary
+    // returns the cards as soon as the replacements are in hand, and any later
+    // draw comes off the whole deck again.
+    cx.state
+        .investigators
+        .get_mut(&investigator)
+        .expect("perform_mulligan_redraw: caller guarantees investigator exists")
+        .deck
+        .extend(set_aside);
+    shuffle_player_deck(cx, investigator);
+
+    // RR setup step 8 applies to the mulligan redraw too: any weakness drawn as
+    // a replacement is set aside and replaced again. A separate, later draw off
+    // the restored deck — so it may legally turn up a card this investigator
+    // just mulliganed, and (unlike a sweep run before the cards return) it still
+    // has a deck to draw from.
+    replace_opening_hand_weaknesses(cx, investigator);
+}
+
 /// Resume the setup mulligan loop (#348), driving the top
 /// [`Continuation::Mulligan`](crate::state::Continuation::Mulligan) frame.
 ///
 /// The acting investigator is the frame's `remaining[0]` (Rules Reference p.16
 /// player order) — the response carries no investigator. Validates the
 /// `PickMultiple` redraw indices (each [`OptionId`](crate::engine::OptionId) is
-/// a hand index) are in bounds and unique. On success: move named hand cards
-/// directly back into the deck (not via the discard pile, per the rules),
-/// shuffle, draw the same count back, emit [`Event::MulliganPerformed`], then
-/// pop the queue front. When the queue drains, setup ends — "the game begins"
+/// a hand index) are in bounds and unique. On success the three steps of the
+/// Rules Reference `Mulligan` glossary entry run in order — "These cards are
+/// **set aside**, and an equivalent number of cards are **drawn** and added to
+/// the player's starting hand. The set-aside cards are **then shuffled back**
+/// into the player's deck." — so a mulliganed card can never turn up among its
+/// own replacements (#637). The cards go back to the deck, never through the
+/// discard pile. Then emit [`Event::MulliganPerformed`] and pop the queue
+/// front. When the queue drains, setup ends — "the game begins"
 /// (Rules Reference p.27): round 1 skips Mythos (p.24), so
 /// [`investigation_phase`](super::phases::investigation_phase) begins here.
 /// Otherwise re-prompt the next investigator. Rejections leave state and events
@@ -612,29 +701,7 @@ pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOu
     // ---- mutate ----
     let redrawn_count =
         u8::try_from(indices.len()).expect("indices.len() <= hand.len() <= u8::MAX in practice");
-    let inv_mut = cx
-        .state
-        .investigators
-        .get_mut(&investigator)
-        .expect("checked");
-    // Walk indices high-to-low so smaller positions remain valid as
-    // we remove. Move named cards directly into the deck — they
-    // shuffle back in per the rules, not through the discard pile.
-    for &i in sorted.iter().rev() {
-        let card = inv_mut.hand.remove(i as usize);
-        inv_mut.deck.push(card);
-    }
-    // If anything actually moved, shuffle the deck (which now contains
-    // the redrawn cards mixed with the rest) and draw replacements.
-    // For an empty "keep my hand" mulligan, skip both — there's
-    // nothing to put back, so no shuffle and no draw.
-    if redrawn_count > 0 {
-        shuffle_player_deck(cx, investigator);
-        draw_cards(cx, investigator, redrawn_count);
-        // RR setup step 8 applies to the mulligan redraw too: any weakness
-        // drawn as a replacement is set aside and replaced again.
-        replace_opening_hand_weaknesses(cx, investigator);
-    }
+    perform_mulligan_redraw(cx, investigator, &sorted);
     cx.events.push(Event::MulliganPerformed {
         investigator,
         redrawn_count,
