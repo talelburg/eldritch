@@ -482,21 +482,26 @@ pub(super) fn move_primary_effect(
         .map(|(id, _)| *id)
         .collect();
     for enemy_id in engaged {
-        let Some(enemy) = cx.state.enemies.get(&enemy_id) else {
-            continue;
-        };
-        if super::hunters::enemy_can_enter_location(cx.state, enemy, destination) {
-            cx.state
-                .enemies
-                .get_mut(&enemy_id)
-                .expect("presence checked above")
-                .current_location = Some(destination);
+        // Ids were collected from this same map with no intervening mutation,
+        // so an absent entry is state corruption — surface it the way the
+        // elimination path does. The lookup is split in two because the
+        // predicate borrows the whole state immutably.
+        let enemy = cx.state.enemies.get(&enemy_id).unwrap_or_else(|| {
+            unreachable!(
+                "move_primary_effect: enemy {enemy_id:?} vanished between the engagement scan \
+                 and the drag-along; this is a state-corruption invariant violation"
+            )
+        });
+        let follows = super::hunters::enemy_can_enter_location(cx.state, enemy, destination);
+        let enemy = cx
+            .state
+            .enemies
+            .get_mut(&enemy_id)
+            .expect("presence checked immediately above");
+        if follows {
+            enemy.current_location = Some(destination);
         } else {
-            cx.state
-                .enemies
-                .get_mut(&enemy_id)
-                .expect("presence checked above")
-                .engaged_with = None;
+            enemy.engaged_with = None;
             cx.events.push(Event::EnemyDisengaged {
                 enemy: enemy_id,
                 investigator,

@@ -14,7 +14,7 @@ use game_core::state::{
 use game_core::test_support::{
     take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
 };
-use game_core::{assert_event, TurnAction};
+use game_core::{assert_event, assert_event_sequence, TurnAction};
 
 const BARRICADE: &str = "01038";
 const GHOUL_PRIEST: &str = "01116"; // Humanoid. Monster. Ghoul. Elite. + Hunter
@@ -29,11 +29,12 @@ fn install() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
-/// A ready, unengaged hunter (code `code`) at location `at`, with the printed
+/// A ready, unengaged ghoul (code `code`) at location `at`, with the printed
 /// traits of that card (Elite-ness drives the movement block, read off
-/// `Enemy.traits` as spawns populate it).
-fn hunter(id: u32, code: &str, at: LocationId) -> Enemy {
-    let mut e = test_enemy(id, "Hunter");
+/// `Enemy.traits` as spawns populate it). Hunter-ness and engagement are the
+/// caller's to set — the two scenarios here want opposite answers.
+fn ghoul(id: u32, code: &str, at: LocationId) -> Enemy {
+    let mut e = test_enemy(id, "Ghoul");
     e.code = CardCode::new(code);
     e.traits = if code == GHOUL_PRIEST {
         vec![
@@ -45,7 +46,6 @@ fn hunter(id: u32, code: &str, at: LocationId) -> Enemy {
     } else {
         vec!["Humanoid".into(), "Monster".into(), "Ghoul".into()]
     };
-    e.hunter = true;
     e.current_location = Some(at);
     e.engaged_with = None;
     e.exhausted = false;
@@ -92,15 +92,15 @@ fn playing_barricade_attaches_one_card_and_does_not_discard_the_event() {
     assert_event!(r.events, Event::CardAttachedToLocation { .. });
 }
 
-/// Linear map A—B with a Barricade attached at B; the investigator (prey) at B;
-/// a hunter at A. Driven via `EndTurn` into the Enemy phase.
-fn map_with_barricade_at_b(enemy_code: &str) -> game_core::GameState {
+/// Linear map A—B with a Barricade attached at B, the investigator at `inv_at`,
+/// and `enemy` on the board.
+fn map_with_barricade_at_b(inv_at: LocationId, enemy: Enemy) -> game_core::GameState {
     let mut inv = test_investigator(1);
     // Use a real investigator code so max_health()/max_sanity() can read from
     // the installed cards registry; TEST_INV is only in the game-core test
     // registry (#448 cp2a). Skids O'Toole (01003, 8/6) — no implemented abilities.
     inv.investigator_card.code = CardCode::new("01003");
-    inv.current_location = Some(B);
+    inv.current_location = Some(inv_at);
     let mut a = test_location(1, "A");
     a.connections = vec![B];
     let mut b = test_location(2, "B");
@@ -110,7 +110,7 @@ fn map_with_barricade_at_b(enemy_code: &str) -> game_core::GameState {
         .with_investigator(inv)
         .with_location(a)
         .with_location(b)
-        .with_enemy(hunter(100, enemy_code, A))
+        .with_enemy(enemy)
         .with_active_investigator(INV)
         .with_turn_order([INV])
         // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
@@ -131,9 +131,20 @@ fn map_with_barricade_at_b(enemy_code: &str) -> game_core::GameState {
     state
 }
 
+/// The hunter-movement scenario: the investigator (prey) at B, a hunter at A,
+/// driven via `EndTurn` into the Enemy phase.
+fn hunter_at_a_moving_toward_b(enemy_code: &str) -> game_core::GameState {
+    let mut enemy = ghoul(100, enemy_code, A);
+    enemy.hunter = true;
+    map_with_barricade_at_b(B, enemy)
+}
+
 #[test]
 fn non_elite_hunter_cannot_enter_the_barricaded_location() {
-    let r = take_turn_action(map_with_barricade_at_b(GHOUL_MINION), &TurnAction::EndTurn);
+    let r = take_turn_action(
+        hunter_at_a_moving_toward_b(GHOUL_MINION),
+        &TurnAction::EndTurn,
+    );
     assert_eq!(
         r.state.enemies[&EnemyId(100)].current_location,
         Some(A),
@@ -143,7 +154,10 @@ fn non_elite_hunter_cannot_enter_the_barricaded_location() {
 
 #[test]
 fn elite_hunter_enters_the_barricaded_location() {
-    let r = take_turn_action(map_with_barricade_at_b(GHOUL_PRIEST), &TurnAction::EndTurn);
+    let r = take_turn_action(
+        hunter_at_a_moving_toward_b(GHOUL_PRIEST),
+        &TurnAction::EndTurn,
+    );
     assert_eq!(
         r.state.enemies[&EnemyId(100)].current_location,
         Some(B),
@@ -156,37 +170,11 @@ fn elite_hunter_enters_the_barricaded_location() {
 /// A→B is the drag-along case: the engaged enemy would ride along, but B is
 /// barricaded.
 fn engaged_map_with_barricade_at_b(enemy_code: &str) -> game_core::GameState {
-    let mut inv = test_investigator(1);
-    // Real investigator code so max_health()/max_sanity() resolve against the
-    // installed registry — Skids O'Toole (01003, 8/6), no implemented abilities.
-    inv.investigator_card.code = CardCode::new("01003");
-    inv.current_location = Some(A);
-    let mut a = test_location(1, "A");
-    a.connections = vec![B];
-    let mut b = test_location(2, "B");
-    b.connections = vec![A];
-    let mut enemy = hunter(100, enemy_code, A);
-    enemy.hunter = false;
+    let mut enemy = ghoul(100, enemy_code, A);
     enemy.engaged_with = Some(INV);
     enemy.attack_damage = 1;
     enemy.attack_horror = 0;
-    let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(inv)
-        .with_location(a)
-        .with_location(b)
-        .with_enemy(enemy)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
-        .build();
-    state
-        .locations
-        .get_mut(&B)
-        .unwrap()
-        .attachments
-        .push(CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST));
-    state
+    map_with_barricade_at_b(A, enemy)
 }
 
 /// Barricade 01038: "Non-[[Elite]] enemies cannot move into attached location."
@@ -230,19 +218,11 @@ fn the_attack_of_opportunity_resolves_before_the_disengage() {
             destination: B,
         },
     );
-    let idx = |pred: fn(&Event) -> bool| r.events.iter().position(pred);
-    let damage = idx(|e| matches!(e, Event::DamageTaken { .. })).expect("AoO DamageTaken missing");
-    let disengaged =
-        idx(|e| matches!(e, Event::EnemyDisengaged { .. })).expect("EnemyDisengaged missing");
-    let moved =
-        idx(|e| matches!(e, Event::InvestigatorMoved { .. })).expect("InvestigatorMoved missing");
-    assert!(
-        damage < disengaged,
-        "AoO DamageTaken ({damage}) must precede EnemyDisengaged ({disengaged})",
-    );
-    assert!(
-        disengaged < moved,
-        "EnemyDisengaged ({disengaged}) must precede InvestigatorMoved ({moved})",
+    assert_event_sequence!(
+        r.events,
+        Event::DamageTaken { .. },
+        Event::EnemyDisengaged { .. },
+        Event::InvestigatorMoved { .. },
     );
     assert_eq!(r.state.investigators[&INV].damage(), 1, "AoO still landed");
 }
