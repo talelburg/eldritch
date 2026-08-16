@@ -15,9 +15,12 @@ use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{
-    take_turn_action, test_investigator, test_location, GameStateBuilder,
+    dispatch_turn_action_unchecked, take_turn_action, test_investigator, test_location,
+    GameStateBuilder,
 };
-use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction};
+use game_core::{
+    apply, assert_event, legal_actions, Action, InputResponse, OptionId, PlayerAction,
+};
 
 const OLD_BOOK: &str = "01031";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -104,4 +107,56 @@ fn action_searches_top_three_into_hand_then_shuffles() {
     assert_eq!(inv.deck.len(), 3, "one card left the deck");
     assert_event!(r.events, Event::CardSearchedToHand { .. });
     assert_event!(r.events, Event::DeckShuffled { .. });
+}
+
+/// #639 — RR "Ability": *"A triggered ability can only be initiated if its
+/// effect has the potential to change the game state…"* With an empty deck
+/// there is nothing to search, nothing to draw, and nothing to shuffle, so the
+/// activation is rejected: the book stays ready and the action is not spent.
+#[test]
+fn an_empty_deck_cannot_be_searched() {
+    let mut state = board();
+    state
+        .investigators
+        .get_mut(&INV)
+        .expect("seeded")
+        .deck
+        .clear();
+    let actions_before = state.investigators[&INV].actions_remaining;
+
+    // The turn menu already filters this out (`legal_actions` runs the same
+    // validator); dispatch straight to the handler to prove *it* rejects a
+    // directly-submitted activation.
+    assert!(
+        !legal_actions(&state).contains(&TurnAction::ActivateAbility {
+            investigator: INV,
+            instance_id: BOOK_INST,
+            ability_index: 0,
+        }),
+        "the turn menu does not offer an activation the validator would reject",
+    );
+    let r = dispatch_turn_action_unchecked(
+        state,
+        &TurnAction::ActivateAbility {
+            investigator: INV,
+            instance_id: BOOK_INST,
+            ability_index: 0,
+        },
+    );
+    assert!(
+        matches!(r.outcome, EngineOutcome::Rejected { .. }),
+        "an empty deck ⇒ the search cannot change the game state: {:?}",
+        r.outcome,
+    );
+    let inv = &r.state.investigators[&INV];
+    assert!(
+        inv.cards_in_play
+            .iter()
+            .any(|c| c.instance_id == BOOK_INST && !c.exhausted),
+        "no exhaust paid on a reject",
+    );
+    assert_eq!(
+        inv.actions_remaining, actions_before,
+        "no action spent on a reject",
+    );
 }

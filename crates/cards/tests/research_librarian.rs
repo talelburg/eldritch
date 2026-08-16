@@ -98,6 +98,53 @@ fn entering_play_tutors_the_only_tome_asset() {
     assert_event!(r.events, Event::DeckShuffled { .. });
 }
 
+/// #639: the initiation gate reaches the reaction path too. `Effect::SearchDeck`
+/// against an **empty** deck is provably inert — nothing to find, nothing to
+/// shuffle — so RR "Ability" (*"a triggered ability can only be initiated if its
+/// effect has the potential to change the game state…"*) bars the reaction and
+/// no window offers it. Research Librarian still enters play normally.
+#[test]
+fn an_empty_deck_does_not_open_the_tutor_reaction() {
+    let r = play(board(Vec::new()));
+    assert!(
+        r.state.investigators[&INV]
+            .cards_in_play
+            .iter()
+            .any(|c| c.code == CardCode::new(LIBRARIAN)),
+        "Research Librarian still enters play — only its reaction is barred",
+    );
+    assert!(
+        r.state
+            .continuations
+            .last()
+            .and_then(Continuation::pending_candidates)
+            .is_none_or(Vec::is_empty),
+        "no reaction offered for a search that cannot change the game state: {:?}",
+        r.state.continuations.last(),
+    );
+}
+
+/// A **non-empty** deck with no eligible Tome is deliberately *not* proven inert
+/// — the search's mandatory shuffle still reorders the deck — so the reaction is
+/// offered and simply finds nothing (#639's conservative posture).
+#[test]
+fn a_tomeless_but_non_empty_deck_still_offers_the_reaction() {
+    let r = play(board(vec![CardCode::new(GUTS), CardCode::new(GUTS)]));
+    assert!(
+        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
+        "EnteredPlay reaction window opens even with no eligible Tome",
+    );
+    // Fire it: 0 eligible cards ⇒ find nothing, shuffle anyway.
+    let r = pick(r.state, 0);
+    assert!(
+        !r.state.investigators[&INV]
+            .hand
+            .contains(&CardCode::new(GUTS)),
+        "no Tome to find, so nothing was tutored",
+    );
+    assert_event!(r.events, Event::DeckShuffled { .. });
+}
+
 #[test]
 fn two_tome_assets_prompt_a_choice_then_tutor_the_pick() {
     // Two eligible Tome assets (Old Book at eligible index 0, Medical Texts at

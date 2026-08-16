@@ -92,6 +92,28 @@ fn success_heals_one_damage_from_the_chosen_investigator() {
     assert_eq!(r.state.investigators[&INV].damage(), 1, "1 damage healed");
 }
 
+/// #639: the heal's target eligibility bites at *resolution*, not initiation —
+/// Medical Texts' effect is a skill test, which always has the potential to
+/// change the game state, so the ability initiates however healthy everyone is.
+/// Succeeding with nobody damaged leaves the `on_success` heal with no eligible
+/// target; it is **skipped**, not rejected, so the test result stands rather
+/// than the whole action unwinding.
+#[test]
+fn success_with_nothing_to_heal_still_resolves_the_test() {
+    let r = activate(board(3, 0));
+    assert!(
+        !matches!(r.outcome, EngineOutcome::Rejected { .. }),
+        "a heal with no eligible target must not unwind the action: {:?}",
+        r.outcome,
+    );
+    assert_event!(r.events, Event::SkillTestSucceeded { .. });
+    assert_eq!(
+        r.state.investigators[&INV].damage(),
+        0,
+        "nothing to heal, nothing healed — and no damage dealt either",
+    );
+}
+
 #[test]
 fn failure_deals_one_damage_to_the_chosen_investigator() {
     // intellect 1 + 0 = 1 < difficulty 2 → failure → deal 1 damage.

@@ -1630,7 +1630,7 @@ fn ground_chosen_targets(
     };
     if let Some(InvestigatorTarget::Chosen(choose)) = inv_target {
         if eval_ctx.chosen_investigator().is_none() {
-            return ground_investigator_choice(cx, eval_ctx, choose.scope);
+            return ground_investigator_choice(cx, eval_ctx, choose.scope, effect);
         }
     }
 
@@ -1717,12 +1717,39 @@ fn resolve_grounded_choice<Id: Copy>(
 /// candidates are the matching investigators in sorted `BTreeMap` order (so the
 /// `OptionId` index re-derives deterministically). Binds `chosen_investigator`,
 /// or suspends in place.
+///
+/// The scoped list is then filtered by [`investigator_target_eligible`] for the
+/// consuming `effect` (RR "Target", #639): an investigator with nothing to heal
+/// is not offered as a heal target. The predicate is pure over `&GameState` and
+/// the pick is taken before the effect mutates anything, so the filtered list
+/// re-derives identically on resume.
+///
+/// **Filtered-to-empty is a skip, not a reject.** RR "Target" makes an
+/// unsatisfiable target requirement a bar on *initiation* — which is
+/// `check_activate_ability`'s gate, upstream of here. Reaching resolution with
+/// every in-scope candidate ineligible means the ability was legitimately
+/// initiated and only this sub-effect has nowhere to land: Medical Texts 01035
+/// passes its intellect(2) test with nobody at the location damaged, and its
+/// `on_success` heal finds no target. Rejecting there would unwind the whole
+/// action — chaos draw included — via `apply_via`'s snapshot restore, so the
+/// effect is skipped (`Err(EngineOutcome::Done)`, which `step_leaf` returns
+/// after having already popped the leaf) instead. An *empty scope* still
+/// rejects, exactly as before this filter existed.
 fn ground_investigator_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
     scope: crate::dsl::EntityScope,
+    effect: &Effect,
 ) -> Result<EvalContext, EngineOutcome> {
-    let candidates = investigator_candidates(cx.state, eval_ctx.controller, scope);
+    let in_scope = investigator_candidates(cx.state, eval_ctx.controller, scope);
+    let candidates: Vec<_> = in_scope
+        .iter()
+        .copied()
+        .filter(|id| investigator_target_eligible(cx.state, effect, *id))
+        .collect();
+    if candidates.is_empty() && !in_scope.is_empty() {
+        return Err(EngineOutcome::Done);
+    }
     resolve_grounded_choice(
         eval_ctx,
         &candidates,
@@ -1948,6 +1975,19 @@ pub(crate) fn effect_can_change_state(
                         .is_some_and(|loc| loc.clues > 0),
                 }
         }
+        // Investigator-targeted effects whose no-op case is a property of the
+        // *target* (#639): inert iff no investigator the target could resolve to
+        // is an eligible one. The per-effect judgement lives in
+        // [`investigator_target_eligible`] — the single place that decides what
+        // "eligible" means — so adding an arm there is all a new such effect
+        // needs. Today: `Heal` (nobody carries that harm — First Aid 01019
+        // activated by an unharmed solo investigator) and `SearchDeck` (an empty
+        // deck finds nothing, draws nothing, and shuffles nothing, since
+        // `shuffle_player_deck` is a no-op below 2 cards — Old Book of Lore
+        // 01031 on a spent deck).
+        Effect::Heal { target, .. } | Effect::SearchDeck { target, .. } => {
+            any_eligible_investigator_target(state, ctx, effect, *target)
+        }
         // A sequence changes state iff any step can (an empty `Seq` is inert).
         Effect::Seq(steps) => steps
             .iter()
@@ -1958,6 +1998,69 @@ pub(crate) fn effect_can_change_state(
             .any(|branch| effect_can_change_state(state, ctx, branch)),
         // Conservative default: anything not provably inert is assumed to change
         // state, so meaningful abilities are never suppressed.
+        _ => true,
+    }
+}
+
+/// Whether *some* investigator `target` could resolve to is an eligible target
+/// of `effect` (per [`investigator_target_eligible`]).
+///
+/// A `Chosen` target is not yet grounded when the initiation gate asks, so this
+/// scans the same candidate list [`ground_investigator_choice`] will enumerate
+/// — the two must agree, or the gate would admit an ability whose grounding
+/// then rejects for want of a candidate. Once grounding *has* bound a pick
+/// (re-entry within an evaluation), the bound investigator is the only one that
+/// matters, which is what `resolve_investigator_target` returns.
+///
+/// A target that does not resolve at all is **unknown, not inert** — same
+/// reading the `DiscoverClue` arm gives an ungrounded `Chosen` location — so it
+/// stays permitted. Reading a resolution failure as "provably a no-op" would
+/// invert the conservative posture and silently suppress a meaningful ability.
+fn any_eligible_investigator_target(
+    state: &GameState,
+    ctx: EvalContext,
+    effect: &Effect,
+    target: InvestigatorTarget,
+) -> bool {
+    match target {
+        InvestigatorTarget::Chosen(choose) if ctx.chosen_investigator().is_none() => {
+            investigator_candidates(state, ctx.controller, choose.scope)
+                .into_iter()
+                .any(|id| investigator_target_eligible(state, effect, id))
+        }
+        _ => match resolve_investigator_target(state, ctx, target) {
+            Ok(id) => investigator_target_eligible(state, effect, id),
+            Err(_) => true,
+        },
+    }
+}
+
+/// Whether investigator `id` is an eligible target of `effect`, per RR
+/// "Target": *"A card is not an eligible target for an ability if the
+/// resolution of that ability's effect could not change the target's state."*
+///
+/// Conservative in the same direction as [`effect_can_change_state`]: an effect
+/// with no arm here keeps every investigator eligible. Used both by the
+/// initiation gate (is there *any* eligible target?) and by
+/// [`ground_investigator_choice`] (which ones do we offer?), so the answer is
+/// the same in both places.
+fn investigator_target_eligible(
+    state: &GameState,
+    effect: &Effect,
+    id: crate::state::InvestigatorId,
+) -> bool {
+    let Some(inv) = state.investigators.get(&id) else {
+        return false;
+    };
+    match effect {
+        Effect::Heal { kind, count, .. } => {
+            *count > 0
+                && match kind {
+                    HarmKind::Damage => inv.damage() > 0,
+                    HarmKind::Horror => inv.horror() > 0,
+                }
+        }
+        Effect::SearchDeck { .. } => !inv.deck.is_empty(),
         _ => true,
     }
 }
@@ -2358,9 +2461,9 @@ mod tests {
     use crate::card_registry::CardRegistry;
     use crate::dsl::{
         boost_attack_damage, constant, deal_damage, deal_damage_to_enemy, deal_horror,
-        discover_clue, draw_cards, gain_resources, heal, modify, on_play, seq, Ability, Choose,
-        Effect, EnemyTarget, HarmKind, InvestigatorTarget, LocationSet, LocationTarget,
-        ModifierScope, SkillTestKind, Stat,
+        discover_clue, draw_cards, gain_resources, heal, modify, on_play, search_deck, seq,
+        Ability, Choose, Effect, EnemyTarget, HarmKind, InvestigatorTarget, LocationSet,
+        LocationTarget, ModifierScope, SkillTestKind, Stat,
     };
     use crate::event::Event;
     use crate::state::{
@@ -2449,6 +2552,105 @@ mod tests {
             &no_clues,
             ctx(1),
             &gain_resources(InvestigatorTarget::You, 1)
+        ));
+    }
+
+    /// Investigator 1 (and, when `others` is non-empty, further investigators)
+    /// on location 10, each seeded `(damage, horror, deck_len)`. #639 fixtures.
+    fn state_with_harm(seeds: &[(u32, u8, u8, usize)]) -> crate::state::GameState {
+        let mut builder = GameStateBuilder::new().with_location(test_location(10, "Study"));
+        for &(id, damage, horror, deck_len) in seeds {
+            let mut inv = test_investigator(id);
+            inv.current_location = Some(LocationId(10));
+            inv.investigator_card.accumulated_damage = damage;
+            inv.investigator_card.accumulated_horror = horror;
+            inv.deck = (0..deck_len)
+                .map(|i| CardCode::new(format!("9000{i}")))
+                .collect();
+            builder = builder.with_investigator(inv);
+        }
+        builder.build()
+    }
+
+    #[test]
+    fn heal_can_change_state_only_when_the_target_carries_that_harm() {
+        // #639 / RR "Ability": First Aid's heal on an unharmed investigator has
+        // no potential to change the game state.
+        let heal_damage = heal(HarmKind::Damage, InvestigatorTarget::You, 1);
+        assert!(effect_can_change_state(
+            &state_with_harm(&[(1, 2, 0, 0)]),
+            ctx(1),
+            &heal_damage,
+        ));
+        assert!(!effect_can_change_state(
+            &state_with_harm(&[(1, 0, 0, 0)]),
+            ctx(1),
+            &heal_damage,
+        ));
+        // The kinds are independent: horror on the card doesn't make a damage
+        // heal meaningful.
+        assert!(!effect_can_change_state(
+            &state_with_harm(&[(1, 0, 3, 0)]),
+            ctx(1),
+            &heal_damage,
+        ));
+    }
+
+    #[test]
+    fn heal_of_zero_cannot_change_state() {
+        assert!(!effect_can_change_state(
+            &state_with_harm(&[(1, 2, 2, 0)]),
+            ctx(1),
+            &heal(HarmKind::Damage, InvestigatorTarget::You, 0),
+        ));
+    }
+
+    #[test]
+    fn a_chosen_heal_target_scans_every_candidate_in_scope() {
+        // Ungrounded `Chosen` at initiation time: the gate asks whether *any*
+        // co-located investigator is an eligible target (RR "Target").
+        let heal_damage = heal(
+            HarmKind::Damage,
+            InvestigatorTarget::chosen_at_your_location(),
+            1,
+        );
+        assert!(
+            effect_can_change_state(
+                &state_with_harm(&[(1, 0, 0, 0), (2, 2, 0, 0)]),
+                ctx(1),
+                &heal_damage
+            ),
+            "a co-located damaged investigator keeps the heal live",
+        );
+        assert!(
+            !effect_can_change_state(
+                &state_with_harm(&[(1, 0, 0, 0), (2, 0, 0, 0)]),
+                ctx(1),
+                &heal_damage
+            ),
+            "nobody at the location has damage ⇒ no eligible target ⇒ inert",
+        );
+    }
+
+    #[test]
+    fn search_deck_is_inert_only_against_an_empty_deck() {
+        // #639 / Old Book of Lore 01031: an empty deck has nothing to find and
+        // nothing to shuffle. A non-empty one is never proven inert (the
+        // mandatory shuffle reorders it even on a fruitless search).
+        let search = search_deck(
+            InvestigatorTarget::chosen_at_your_location(),
+            crate::dsl::SearchScope::Top(3),
+            None,
+        );
+        assert!(effect_can_change_state(
+            &state_with_harm(&[(1, 0, 0, 4)]),
+            ctx(1),
+            &search,
+        ));
+        assert!(!effect_can_change_state(
+            &state_with_harm(&[(1, 0, 0, 0)]),
+            ctx(1),
+            &search,
         ));
     }
 
@@ -4323,6 +4525,17 @@ mod tests {
             .get_mut(&InvestigatorId(2))
             .unwrap()
             .current_location = Some(LocationId(1));
+        // Both carry damage: RR "Target" (#639) makes an investigator with
+        // nothing to heal an ineligible target, so a suspend needs two
+        // *eligible* candidates, not merely two co-located ones.
+        for id in [InvestigatorId(1), InvestigatorId(2)] {
+            state
+                .investigators
+                .get_mut(&id)
+                .unwrap()
+                .investigator_card
+                .accumulated_damage = 2;
+        }
         let mut events = Vec::new();
         let outcome = run(
             &mut Cx {
