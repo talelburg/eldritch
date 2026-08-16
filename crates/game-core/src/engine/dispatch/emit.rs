@@ -79,12 +79,9 @@ pub enum TimingEvent {
     /// The game ended — a scenario resolution latched (forced only).
     GameEnd,
     /// The game has ended **for one eliminated investigator**, for the purpose
-    /// of resolving weakness cards — Rules Reference p.10 Elimination step 0
-    /// (forced only, #638):
-    ///
-    /// > For the purpose of resolving weakness cards, the game has ended for the
-    /// > eliminated investigator. Trigger any "when the game ends" abilities on
-    /// > each weakness the eliminated investigator owns that is in play.
+    /// of resolving weakness cards — Rules Reference p.10 Elimination step 0,
+    /// quoted in full on [`Continuation::Elimination`](crate::state::Continuation::Elimination)
+    /// (forced only, #638).
     ///
     /// Same card-facing pattern as [`GameEnd`](Self::GameEnd) (a weakness prints
     /// *"when the game ends"*, not two different triggers) but a different scan:

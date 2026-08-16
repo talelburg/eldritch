@@ -421,11 +421,9 @@ pub(super) fn place_assignment(
     // An eliminated investigator's controlled assets are elimination's business,
     // not the asset sweep's: RR p.10 step 1 removes them from the game, which
     // pre-empts a co-overflowing asset's discard, and a card on its way out of
-    // play gets no soak reaction window. Since #638 elimination may still be
-    // *in progress* here (step 0's weakness game-end abilities drain on a
-    // continuation frame before the steps run), so `cards_in_play` can be
-    // populated even though the investigator is gone — gate on status rather
-    // than on the zone having been drained.
+    // play gets no soak reaction window. Gated on status rather than on
+    // `cards_in_play` having been drained because elimination may still be in
+    // progress here — see `Continuation::Elimination` (#638).
     let eliminated = cx
         .state
         .investigators

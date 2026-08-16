@@ -472,6 +472,15 @@ pub(super) fn collect_forced_hits(
             //   controls has no game-end trigger point here — the game has not
             //   ended for anyone else. `metadata_for` answers for the corpus, so
             //   a card with no metadata is not a weakness and is skipped.
+            //
+            //   The rule says *owns*; this iterates what the investigator
+            //   **controls**. The two coincide for every weakness the engine can
+            //   represent today: a weakness enters its own owner's threat area,
+            //   and nothing models one player controlling another's card. RR p.10
+            //   step 1 already carries the sub-clause that would separate them
+            //   ("Any card that player owns but does not control…"), so if
+            //   cross-player control ever lands, this scan needs an ownership
+            //   field to filter on rather than a re-reading.
             // - **no `Status` filter.** `apply_investigator_defeat` flips status
             //   before running the steps, so the investigator this point names is
             //   never `Active` — filtering on it (as `GameEnd`/`RoundEnded` do,

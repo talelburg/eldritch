@@ -300,8 +300,12 @@ pub fn fire_forced_after_location_investigated(
 /// Test helper: eliminate `investigator` by dealing them `damage`, then run the
 /// `drive` loop to completion — so Rules Reference p.10 Elimination finishes,
 /// including step 0's weakness game-end abilities when they put the sequence on
-/// a continuation frame (#638). See `fire_forced_on_enter` for why these live
-/// here rather than in an integration test.
+/// a continuation frame (#638).
+///
+/// Lives here — unlike its `fire_forced_*` neighbours, whose reason is the
+/// process-global `OnceLock<CardRegistry>` — because the three pieces it
+/// composes (`Cx`, `take_damage`, `drive`) are not all reachable from an
+/// integration test: `drive` is `pub(crate)`.
 ///
 /// `damage` must be lethal for the investigator's capacity; the caller is
 /// responsible for that (the registry it installed answers `max_health()`).

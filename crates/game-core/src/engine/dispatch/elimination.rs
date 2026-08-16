@@ -12,11 +12,25 @@ use crate::state::{
 #[cfg(test)]
 use crate::state::{CardCode, LocationId, Phase};
 
-/// Flip an Active investigator's status to the appropriate defeated
-/// variant for `cause`, emit [`Event::InvestigatorDefeated`], and run
-/// [`check_all_defeated`]. No-op if the investigator is already
-/// non-Active (an investigator can only be defeated once per attack).
+/// Flip an Active investigator's status to the appropriate defeated variant for
+/// `cause` and emit [`Event::InvestigatorDefeated`]. No-op if the investigator
+/// is already non-Active (an investigator can only be defeated once per attack).
 ///
+/// # Then one of two paths (#638)
+///
+/// - **No step-0 weakness ability** (every elimination but a Roland holding
+///   clues on Cover Up): [`run_elimination_steps`] and [`check_all_defeated`]
+///   run inline before this returns, as they always have.
+/// - **A step-0 weakness ability**: a [`Continuation::Elimination`] frame is
+///   pushed and this returns immediately. Steps 1–6 *and*
+///   [`check_all_defeated`] run later, from [`drive_elimination`], once the
+///   queued abilities have drained — so on this path a caller that resumes
+///   after this function sees an elimination still **in progress**: status
+///   flipped, but cards not yet removed and no `AllInvestigatorsDefeated` /
+///   `Resolution::Lost` latch yet. [`super::combat::place_assignment`] is the
+///   only such caller today and gates on [`Status`] for exactly this reason.
+///
+/// [`Status`]: crate::state::Status
 /// [`Status::Killed`]: crate::state::Status::Killed
 /// [`Status::Insane`]: crate::state::Status::Insane
 pub(super) fn apply_investigator_defeat(
@@ -46,27 +60,9 @@ pub(super) fn apply_investigator_defeat(
         cause,
     });
 
-    // Rules Reference p.10 Elimination step 0 (#638):
-    //
-    // > For the purpose of resolving weakness cards, the game has ended for the
-    // > eliminated investigator. Trigger any "when the game ends" abilities on
-    // > each weakness the eliminated investigator owns that is in play. Then,
-    // > remove those weaknesses from the game.
-    //
-    // Those abilities must resolve *before* step 1 removes their cards — Cover
-    // Up 01007's *"Forced - When the game ends, if there are any clues on Cover
-    // Up: You suffer 1 mental trauma"* reads the clues still sitting on its own
-    // instance. Emitting a timing point only **queues** (ADR 0003), so when
-    // there is such a weakness the remaining steps move onto an `Elimination`
-    // frame and the emit goes in tail position: the queued abilities drain
-    // above the frame, then the loop re-exposes it and steps 1–6 run.
-    //
-    // With no such weakness — every elimination in the game bar a Roland
-    // holding clues on Cover Up — there is nothing to sequence, so the steps
-    // run inline exactly as before. That is not merely an optimisation: it
-    // keeps every caller's post-defeat bookkeeping (`place_assignment`'s asset
-    // sweep, the action-resolution re-validation gate) reading a *finished*
-    // elimination on the path it always has.
+    // Rules Reference p.10 Elimination step 0 (#638). The rule, why the steps
+    // have to ride a frame to honour it, and what that costs are all documented
+    // once on `Continuation::Elimination`; this is the fork it describes.
     if has_weakness_game_end_ability(cx.state, investigator) {
         cx.state.continuations.push(Continuation::Elimination {
             investigator,

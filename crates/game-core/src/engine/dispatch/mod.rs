@@ -397,7 +397,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // weakness-scoped game-end emit is in tail position (it only queues
             // — ADR 0003), so Cover Up 01007's trauma resolves above this frame;
             // the loop re-exposes it and steps 1–6 run, removing those same
-            // weaknesses from the game.
+            // weaknesses from the game. See `Continuation::Elimination`.
             Some(Continuation::Elimination { .. }) => match elimination::drive_elimination(cx) {
                 EngineOutcome::Done => {} // emitted / steps ran + popped; loop on
                 other => return other,    // 2+ simultaneous: the lead orders them
@@ -510,7 +510,11 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
         // drop it out of the game silently, which is precisely the #604 failure.
         // In practice the frame is already empty: the only thing that flips an
         // investigator off `Active` is `apply_investigator_defeat`, whose
-        // elimination steps sweep the in-progress play off this very frame. This
+        // elimination steps sweep the in-progress play off this very frame.
+        // Since #638 those steps may run from a `Continuation::Elimination`
+        // frame rather than inline, so what guarantees "already empty" here is
+        // frame *ordering* rather than synchrony: the elimination frame is
+        // pushed above this one and therefore drains first. This
         // arm is the same rule applied at the same moment for any future
         // suppression cause that isn't elimination — RR p.10 step 1, an
         // eliminated investigator's owned cards are removed from the game — so
