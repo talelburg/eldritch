@@ -88,7 +88,10 @@ fn pick_soaker(outcome: &EngineOutcome) -> OptionId {
         .id
 }
 
-/// First Aid in play (with `supplies`) + Guard Dog in play (the soaker).
+/// First Aid in play (with `supplies`) + Guard Dog in play (the soaker). The
+/// investigator carries damage so First Aid's heal has something to remove —
+/// without it the #639 initiation gate refuses the activation outright and the
+/// `AoO` under test never fires.
 fn first_aid_and_guard_dog(
     inv: &mut game_core::state::Investigator,
     dog: CardInstanceId,
@@ -98,6 +101,7 @@ fn first_aid_and_guard_dog(
     let mut first_aid = CardInPlay::enter_play(CardCode::new(FIRST_AID), kit);
     first_aid.uses.insert(UseKind::Supplies, 3);
     inv.cards_in_play = vec![guard_dog, first_aid];
+    inv.investigator_card.accumulated_damage = 1;
 }
 
 // -----------------------------------------------------------------------
@@ -174,8 +178,9 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
     );
     assert_eq!(
         state.investigators[&inv_id].damage(),
-        0,
-        "investigator took no AoO damage (soaked onto Guard Dog)"
+        1,
+        "investigator took no AoO damage (soaked onto Guard Dog) — the 1 damage \
+         is the seeded harm that makes First Aid activatable at all"
     );
     // First Aid spent its supply (the cost paid before the AoO).
     let kit_in_play = state.investigators[&inv_id]

@@ -548,11 +548,15 @@ pub fn take_turn_action(
 /// the action through the same `Cx` build, transactional restore, and
 /// resolution-latch firing as [`apply`] (via the shared
 /// `apply_via` scaffolding), but dispatches via the internal
-/// `dispatch_turn_action` + `drive` instead of the enumeration round-trip. The
-/// single legitimate use is the
-/// `#[should_panic(expected = "state-corruption invariant violation")]` handler
-/// tests that inject a dangling `current_location` / missing-from-map and expect
-/// the handler — not the enumerator — to panic.
+/// `dispatch_turn_action` + `drive` instead of the enumeration round-trip. Two
+/// legitimate uses:
+///
+/// 1. The `#[should_panic(expected = "state-corruption invariant violation")]`
+///    handler tests that inject a dangling `current_location` / missing-from-map
+///    and expect the handler — not the enumerator — to panic.
+/// 2. Proving a handler *itself* rejects an action the enumerator already
+///    filters out — a real client can submit one over the wire without
+///    consulting the menu (#639's activation initiation gate).
 pub fn dispatch_turn_action_unchecked(
     state: GameState,
     action: &crate::engine::enumerate::TurnAction,

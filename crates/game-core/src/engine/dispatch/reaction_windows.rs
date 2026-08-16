@@ -1993,6 +1993,44 @@ fn check_effect_target_available(
     Ok(())
 }
 
+/// The RR initiation gate on the activation path (#639).
+///
+/// `data/rules-reference/rules/glossary/Ability.md`, "Triggered Abilities":
+///
+/// > A triggered ability can only be initiated if its effect has the potential
+/// > to change the game state, and its cost (if any) has the potential to be
+/// > paid in full, taking active cost modifiers into account.
+///
+/// and `glossary/Costs.md`: *"An ability cannot initiate – and therefore its
+/// costs cannot be paid – if the resolution of its effect will not change the
+/// game state."* Rejecting here rather than during resolution is what keeps the
+/// action point and the ability's costs unspent.
+///
+/// Uses the same conservative
+/// [`effect_can_change_state`](crate::engine::evaluator::effect_can_change_state)
+/// evaluator as the play, reaction, and forced-trigger gates, so only provable
+/// no-ops are blocked. Being part of [`check_activate_ability`] rather than
+/// [`activate_ability`] is what keeps the turn menu and the fast-window
+/// enumerator — both of which filter on this validator — from offering an
+/// activation that would reject.
+fn check_activation_changes_state(
+    state: &GameState,
+    investigator: InvestigatorId,
+    instance_id: CardInstanceId,
+    code: &CardCode,
+    effect: &crate::dsl::Effect,
+) -> Result<(), Cow<'static, str>> {
+    let ctx = EvalContext::for_controller_with_source(investigator, instance_id);
+    if crate::engine::evaluator::effect_can_change_state(state, ctx, effect) {
+        return Ok(());
+    }
+    Err(format!(
+        "ActivateAbility: {code}'s effect cannot change the game state right now, so the \
+         ability cannot be initiated (RR \"Ability\"/\"Costs\")."
+    )
+    .into())
+}
+
 /// Reject an ability mixing [`Cost::DiscardSelf`](crate::dsl::Cost::DiscardSelf)
 /// with another source-referencing cost: `DiscardSelf` removes the source, so it
 /// must be the sole such cost (Beat Cop / Knife list only it). Deliberately
@@ -2123,6 +2161,7 @@ pub(crate) fn check_activate_ability(
 
     reject_incompatible_costs(&costs)?;
     check_effect_target_available(state, investigator, &effect)?;
+    check_activation_changes_state(state, investigator, instance_id, &source_code, &effect)?;
 
     Ok(super::ActivateCheckResult {
         in_play_pos,
