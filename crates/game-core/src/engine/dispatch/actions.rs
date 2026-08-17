@@ -109,32 +109,22 @@ pub(super) fn investigate_primary_effect(
     if !location.revealed {
         return EngineOutcome::Done; // precondition lapsed
     }
-    // Shroud is u8 in state but skill-test difficulty is i8. Saturate
-    // at i8::MAX for the absurd case; realistic shrouds are 0–6. The
-    // *modified* shroud folds in everything modifying this location
-    // (Obscuring Fog 01168's +2); with no registry installed (bare unit
-    // tests) it is the printed value.
+    // The difficulty of an investigation *is* this location's modified
+    // shroud, read live at ST.6 — everything modifying the location
+    // (Obscuring Fog 01168's +2) is folded in there rather than snapshotted
+    // here.
     let location_id = location.id;
-    let shroud = crate::engine::modified_value::modified_value(
-        cx.state,
-        crate::card_registry::current(),
-        crate::engine::modified_value::ModifierTarget::Location(location_id),
-        crate::engine::modified_value::ModifiedQuantity::Shroud,
-        crate::engine::modified_value::ReadContext::from_state(cx.state),
-    )
-    .total();
-    let difficulty = i8::try_from(shroud).unwrap_or(i8::MAX);
     super::skill_test::start_skill_test(
         cx,
         investigator,
         SkillKind::Intellect,
         SkillTestKind::Investigate,
-        difficulty,
+        crate::state::DifficultyBasis::Shroud(location_id),
         SkillTestFollowUp::Investigate,
         None,
         None,
         None,
-        0, // no weapon/effect modifier on a base Investigate
+        None, // no weapon/effect modifier on a base Investigate
     )
 }
 
@@ -720,6 +710,46 @@ fn validate_engaged_action<'a>(
     Ok(enemy)
 }
 
+/// Validate that `enemy_id` is a legal Fight target for an investigator
+/// standing at `inv_location`: the enemy exists, is co-located (RR p.12,
+/// *"To fight an enemy **at his or her location**…"* — engagement is not
+/// required, unlike Evade), and its printed fight value is not malformed.
+///
+/// Returns nothing on success: the fight value it range-checks is read
+/// again at ST.6 through the modified-value query, not carried out of
+/// here (#677).
+fn validate_fight_target(
+    state: &GameState,
+    investigator: InvestigatorId,
+    inv_location: LocationId,
+    enemy_id: EnemyId,
+) -> Result<(), EngineOutcome> {
+    let Some(enemy) = state.enemies.get(&enemy_id) else {
+        return Err(EngineOutcome::Rejected {
+            reason: format!("Fight: enemy {enemy_id:?} is not in state").into(),
+        });
+    };
+    if enemy.current_location != Some(inv_location) {
+        return Err(EngineOutcome::Rejected {
+            reason: format!(
+                "Fight: enemy {enemy_id:?} (at {:?}) is not at {investigator:?}'s location ({inv_location:?})",
+                enemy.current_location,
+            )
+            .into(),
+        });
+    }
+    if enemy.fight < 0 {
+        return Err(EngineOutcome::Rejected {
+            reason: format!(
+                "Fight: enemy {enemy_id:?} has negative fight value {} (malformed state)",
+                enemy.fight,
+            )
+            .into(),
+        });
+    }
+    Ok(())
+}
+
 /// Spend 1 action point from the active investigator and emit
 /// `ActionsRemainingChanged`. Caller has already validated that
 /// `actions_remaining >= 1`.
@@ -840,42 +870,22 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
             reason: format!("Fight: {investigator:?} has no current_location to fight from").into(),
         };
     };
-    let fight_difficulty = {
-        let Some(enemy) = cx.state.enemies.get(&enemy_id) else {
-            return EngineOutcome::Rejected {
-                reason: format!("Fight: enemy {enemy_id:?} is not in state").into(),
-            };
-        };
-        if enemy.current_location != Some(inv_location) {
-            return EngineOutcome::Rejected {
-                reason: format!(
-                    "Fight: enemy {enemy_id:?} (at {:?}) is not at {investigator:?}'s location ({inv_location:?})",
-                    enemy.current_location,
-                )
-                .into(),
-            };
-        }
-        if enemy.fight < 0 {
-            return EngineOutcome::Rejected {
-                reason: format!(
-                    "Fight: enemy {enemy_id:?} has negative fight value {} (malformed state)",
-                    enemy.fight,
-                )
-                .into(),
-            };
-        }
-        enemy.fight
-    };
+    if let Err(rejection) = validate_fight_target(cx.state, investigator, inv_location, enemy_id) {
+        return rejection;
+    }
     if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Fight, "Fight")
     {
         return rejected;
     }
+    // The difficulty *is* the enemy's modified fight value, read at ST.6 —
+    // so The Ritual Begins 01144's "Each enemy gets +1 fight" reaches this
+    // attack (#677).
     super::skill_test::start_skill_test(
         cx,
         investigator,
         SkillKind::Combat,
         SkillTestKind::Fight,
-        fight_difficulty,
+        crate::state::DifficultyBasis::Fight(enemy_id),
         SkillTestFollowUp::Fight {
             enemy: enemy_id,
             extra_damage: 0,
@@ -883,7 +893,7 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         None,
         None,
         None,
-        0, // base Fight: no weapon modifier
+        None, // base Fight: no weapon modifier
     )
 }
 
@@ -892,22 +902,21 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
 /// Spends 1 action, runs an Agility skill test against the enemy's
 /// evade value, and on success disengages and exhausts the enemy.
 pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId) -> EngineOutcome {
-    let evade_difficulty = match validate_engaged_action(cx.state, "Evade", investigator, enemy_id)
-    {
-        Ok(enemy) => {
-            if enemy.evade < 0 {
-                return EngineOutcome::Rejected {
-                    reason: format!(
-                        "Evade: enemy {enemy_id:?} has negative evade value {} (malformed state)",
-                        enemy.evade,
-                    )
-                    .into(),
-                };
+    // The evade value it range-checks is read again at ST.6 through the
+    // modified-value query, not carried out of here (#677).
+    match validate_engaged_action(cx.state, "Evade", investigator, enemy_id) {
+        Ok(enemy) if enemy.evade < 0 => {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "Evade: enemy {enemy_id:?} has negative evade value {} (malformed state)",
+                    enemy.evade,
+                )
+                .into(),
             }
-            enemy.evade
         }
+        Ok(_) => {}
         Err(rejected) => return rejected,
-    };
+    }
     if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Evade, "Evade")
     {
         return rejected;
@@ -917,12 +926,15 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         investigator,
         SkillKind::Agility,
         SkillTestKind::Evade,
-        evade_difficulty,
+        // The difficulty *is* the enemy's modified evade value, read at
+        // ST.6 — Cold Spring Glen 02244's "Each enemy in Cold Spring Glen
+        // gets -1 evade" reaches this test (#677).
+        crate::state::DifficultyBasis::Evade(enemy_id),
         SkillTestFollowUp::Evade { enemy: enemy_id },
         None,
         None,
         None,
-        0, // no weapon/effect modifier on a base Evade
+        None, // no weapon/effect modifier on a base Evade
     )
 }
 

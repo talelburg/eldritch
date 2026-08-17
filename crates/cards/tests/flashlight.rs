@@ -131,3 +131,77 @@ fn rejects_without_a_revealed_location_before_spending_a_supply() {
         "no supply spent on a rejected activation"
     );
 }
+
+// ---- composing with Obscuring Fog 01168 --------------------------
+
+/// Obscuring Fog 01168: *"Attached location gets +2 shroud."* Attaching
+/// it to the investigated location makes the shroud something two
+/// different cards contribute to.
+const FOG: &str = "01168";
+
+/// [`board`], with Obscuring Fog attached to the location.
+fn fogged_board(intellect: i8, shroud: u8) -> game_core::GameState {
+    let mut state = board(intellect, shroud, true);
+    state
+        .locations
+        .get_mut(&LOC)
+        .expect("the board's location")
+        .attachments
+        .push(CardInPlay::enter_play(
+            CardCode::new(FOG),
+            CardInstanceId(1),
+        ));
+    state
+}
+
+/// The shroud is **one** modified quantity that both cards contribute
+/// to, not two mechanisms applied at two different times (#677):
+/// printed 2, +2 from the fog, −2 from the flashlight, resolved against
+/// a single difficulty of 2.
+#[test]
+fn fog_and_flashlight_compose_into_one_shroud() {
+    let r = activate(fogged_board(2, 2));
+    assert_event!(
+        r.events,
+        Event::SkillTestStarted {
+            skill: SkillKind::Intellect,
+            difficulty: 2,
+            ..
+        }
+    );
+    // Intellect 2 + 0 = 2 against that difficulty → success by 0.
+    assert_event!(
+        r.events,
+        Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
+            if *investigator == INV
+    );
+    assert!(
+        r.state.recorded_modifiers.is_empty(),
+        "the -2 shroud is scoped to the investigation and expires with it",
+    );
+}
+
+/// The clamp is applied **once**, after every modifier — the ordering
+/// `Modifiers.md` pins: *"after all active modifiers have been applied,
+/// any resultant value below zero is treated as zero."*
+///
+/// Printed shroud 1, +2 fog, −2 flashlight = 1. Clamping the flashlight's
+/// reduction on its own first would give (1 − 2 → 0) + 2 = 2, and the
+/// investigation would fail by 1 instead of succeeding.
+#[test]
+fn the_clamp_applies_once_after_both_modifiers() {
+    let r = activate(fogged_board(1, 1));
+    assert_event!(
+        r.events,
+        Event::SkillTestStarted {
+            skill: SkillKind::Intellect,
+            difficulty: 1,
+            ..
+        }
+    );
+    assert_event!(
+        r.events,
+        Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
+            if *investigator == INV
+    );
+}

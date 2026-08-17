@@ -155,7 +155,10 @@ pub fn test_skill_test(
         investigator,
         skill,
         kind,
-        difficulty,
+        // A printed difficulty, the basis with no board quantity behind it
+        // — a fixture that wants a location's shroud or an enemy's fight
+        // sets `difficulty_basis` itself with functional update syntax.
+        difficulty_basis: crate::state::DifficultyBasis::Fixed(difficulty),
         committed_by_active: Vec::new(),
         tested_location: None,
         follow_up: SkillTestFollowUp::None,
@@ -163,7 +166,6 @@ pub fn test_skill_test(
         on_success: None,
         source: None,
         continuation: SkillTestStep::AwaitingCommit,
-        test_modifier: 0,
         bonus_attack_damage: 0,
         bonus_clues_discovered: 0,
         token_resolution: None,

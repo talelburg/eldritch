@@ -111,7 +111,10 @@ pub struct GameState {
     /// cannot be found by the modified-value sweep over the board.
     ///
     /// Written by the evaluator's `Modify` arm when a card declares a
-    /// non-constant [`ModifierScope`], read by
+    /// non-constant [`ModifierScope`], and by skill-test initiation for
+    /// the one-shot modifier an initiating effect grants the test it
+    /// starts (a weapon's *"+N \[combat\] for this attack"*, Flashlight
+    /// 01087's *"-2 shroud for this investigation"*). Read by
     /// [`modified_value`](crate::engine::modified_value::modified_value)
     /// alongside the swept population, and expired by whichever boundary
     /// its [`Lifetime`] names — for
@@ -1456,8 +1459,15 @@ pub struct InFlightSkillTest {
     /// [`ModifierScope::WhileInPlayDuring`](crate::dsl::ModifierScope::WhileInPlayDuring)
     /// matching during resolution.
     pub kind: SkillTestKind,
-    /// Difficulty: total to meet or exceed for success.
-    pub difficulty: i8,
+    /// What this test's difficulty is read *from* — never a number
+    /// computed when the test started.
+    ///
+    /// The difficulty is a query —
+    /// [`ModifiedQuantity::Difficulty`](crate::engine::modified_value::ModifiedQuantity::Difficulty)
+    /// over [`ModifierTarget::Test`], which resolves this basis and reads
+    /// the underlying location's shroud or enemy's fight/evade as the board
+    /// stands at ST.6 (#677). [`DifficultyBasis`] carries the rule.
+    pub difficulty_basis: DifficultyBasis,
     /// The cards the active investigator has committed to the test, in
     /// commit order — **held here, not in hand**. Rules Reference glossary
     /// "Limbo": *"A skill card enters limbo as it is committed to a skill
@@ -1526,13 +1536,6 @@ pub struct InFlightSkillTest {
     /// (set at ST.5–ST.6, one step later than the commit window closes — see
     /// that field), not in the cursor payloads.
     pub continuation: SkillTestStep,
-    /// A flat modifier applied to the test total, snapshotted by the
-    /// effect that initiated the test (`Effect::Fight`'s combat
-    /// modifier). `0` for player-action tests, which take their
-    /// modifiers from cards in play. Distinct from constant/pending
-    /// modifiers — this is the one-shot "+N for this attack" a weapon
-    /// grants.
-    pub test_modifier: i8,
     /// Bonus damage added to this attack, accumulated at commit time by
     /// [`Effect::BoostAttackDamage`](crate::dsl::Effect::BoostAttackDamage)
     /// (Vicious Blow 01025). Read **only** by the `Fight` follow-up, which
@@ -2140,6 +2143,76 @@ crate::state::define_id! {
     pub struct SkillTestId;
 }
 
+/// Which entity's quantity a modifier reaches, or a modified-value query
+/// asks about.
+///
+/// Lives here rather than in the query module because a
+/// [`RecordedModifier`] stores one: a row has to say *what* it modifies,
+/// and a row is state (and therefore on the wire, #453). The query module
+/// re-exports it as
+/// [`modified_value::ModifierTarget`](crate::engine::modified_value::ModifierTarget).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ModifierTarget {
+    /// An investigator's skills and capacities.
+    Investigator(InvestigatorId),
+    /// A location's shroud.
+    Location(LocationId),
+    /// An enemy's fight, evade or health.
+    Enemy(EnemyId),
+    /// The in-flight skill test's difficulty, which is not a quantity of
+    /// its own: reading it resolves the test's
+    /// [`DifficultyBasis`] and asks that target instead. No modifier
+    /// targets it — a card modifies a test's difficulty by modifying the
+    /// location or enemy the test is against.
+    Test,
+}
+
+/// What a skill test's difficulty **is**, rather than what it was when the
+/// test started.
+///
+/// ADR 0005: *"An enemy's modified fight value **is** the difficulty of a
+/// Fight action and its modified evade value **is** the difficulty of an
+/// Evade action"*, and a location's modified shroud is the difficulty of an
+/// investigation. `glossary/Skill_Tests.md`, "Variable Difficulty Skill
+/// Tests" — the canonical statement of the rule, quoted here and linked
+/// from everywhere else that depends on it:
+///
+/// > While performing a skill test whose difficulty is modified based on
+/// > another aspect of the game, that difficulty changes whenever the
+/// > corresponding aspect's status does.
+/// >
+/// > If an ability or game effect checks a variable difficulty, most
+/// > commonly during a skill test's ST.6 to determine whether that test
+/// > succeeded or failed, the value of that difficulty is set for the
+/// > effect in question and is not re-evaluated if the variable difficulty
+/// > continues to change.
+///
+/// So the in-flight test stores the *basis* — which quantity of which
+/// entity its difficulty is read from — and never a number computed at
+/// initiation. [`Fixed`](Self::Fixed) is the exception that proves it: a
+/// treachery's printed difficulty is a base value on the card, not a
+/// snapshot of anything on the board.
+///
+/// The second paragraph is what bounds the re-reading: the difficulty is
+/// live *until* something checks it, and the ST.6 check is where it is set.
+/// The engine matches that shape without a pinning step of its own — the
+/// ST.6 read stores its verdict on
+/// [`InFlightSkillTest::resolved`](InFlightSkillTest::resolved), and every
+/// later step reads the verdict rather than re-comparing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum DifficultyBasis {
+    /// A number printed on the initiating card — a Revelation test's
+    /// difficulty ([`Effect::SkillTest`](crate::dsl::Effect::SkillTest)).
+    Fixed(i8),
+    /// A location's modified shroud (an investigation).
+    Shroud(LocationId),
+    /// An enemy's modified fight value (a Fight action).
+    Fight(EnemyId),
+    /// An enemy's modified evade value (an Evade action).
+    Evade(EnemyId),
+}
+
 /// When a [`RecordedModifier`] stops applying, with the boundary already
 /// resolved to a concrete identity.
 ///
@@ -2204,11 +2277,19 @@ impl Lifetime {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct RecordedModifier {
-    /// The investigator whose quantity this modifies. Also the "you" the
-    /// [`delta`](Self::delta) expression is evaluated against: a recorded
-    /// row can only be written by a `Modify` whose audience is
-    /// [`Controller`](crate::dsl::ModifierAudience::Controller), so the
-    /// modified investigator and the controller are the same one.
+    /// What the row modifies. An
+    /// [`Investigator`](ModifierTarget::Investigator) for a `Modify` with
+    /// audience [`Controller`](crate::dsl::ModifierAudience::Controller);
+    /// a [`Location`](ModifierTarget::Location) for the shroud reduction an
+    /// [`Effect::Investigate`](crate::dsl::Effect::Investigate) grants the
+    /// investigation it starts (Flashlight 01087's *"Your location gets -2
+    /// shroud for this investigation."*).
+    pub target: ModifierTarget,
+    /// The "you" the [`delta`](Self::delta) expression is evaluated
+    /// against — the controller of the ability that wrote the row, which is
+    /// also the investigator taking the test the row is scoped to. Distinct
+    /// from [`target`](Self::target): Flashlight's row modifies a location
+    /// but counts clues for *its controller* if it ever needs to.
     pub investigator: InvestigatorId,
     /// Which stat the modifier targets (the modified-value query maps
     /// `SkillKind` → `Stat` for matching).
@@ -2234,9 +2315,11 @@ pub struct RecordedModifier {
 }
 
 impl RecordedModifier {
-    /// Construct a [`RecordedModifier`]. Provided so callers outside the
-    /// crate (integration tests, where `#[non_exhaustive]` blocks
-    /// struct-literal construction) can build a row directly.
+    /// Construct a [`RecordedModifier`] modifying `investigator`'s own
+    /// quantity — the shape every row a `Modify` writes has. Provided so
+    /// callers outside the crate (integration tests, where
+    /// `#[non_exhaustive]` blocks struct-literal construction) can build a
+    /// row directly.
     #[must_use]
     pub fn new(
         investigator: InvestigatorId,
@@ -2245,7 +2328,33 @@ impl RecordedModifier {
         lifetime: Lifetime,
         source: Option<CardInstanceId>,
     ) -> Self {
+        Self::targeting(
+            ModifierTarget::Investigator(investigator),
+            investigator,
+            stat,
+            delta,
+            lifetime,
+            source,
+        )
+    }
+
+    /// Construct a [`RecordedModifier`] over an arbitrary
+    /// [`target`](Self::target), with `investigator` as the "you" its
+    /// [`delta`](Self::delta) expression reads. The shroud reduction an
+    /// [`Effect::Investigate`](crate::dsl::Effect::Investigate) grants
+    /// (Flashlight 01087) is the one row today whose target is not its
+    /// controller.
+    #[must_use]
+    pub fn targeting(
+        target: ModifierTarget,
+        investigator: InvestigatorId,
+        stat: Stat,
+        delta: IntExpr,
+        lifetime: Lifetime,
+        source: Option<CardInstanceId>,
+    ) -> Self {
         Self {
+            target,
             investigator,
             stat,
             delta,

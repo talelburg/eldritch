@@ -88,13 +88,15 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             state.game = Some(*s);
             state.outcome = Some(outcome);
             // Capture difficulty from `SkillTestStarted` (an earlier batch than the
-            // resolution). Exact in current scope — `InFlightSkillTest.difficulty`
-            // is never mutated post-creation, so it equals the margin basis. The
-            // alternative is reading `game.current_skill_test().difficulty` off the
+            // resolution). Exact in current scope: since #677 the difficulty is a
+            // live query rather than a stored number, so the announced value is the
+            // difficulty *at ST.1* and the margin is computed against the ST.6
+            // re-read — but no in-corpus card changes an investigated location's
+            // shroud or an attacked enemy's fight or evade mid-test, so the two
+            // agree. The alternative is reading the modified difficulty off the
             // still-live in-flight frame; that would be immune to (a) a reconnect
-            // mid-pause (`Hello` clears this cache) and (b) a future difficulty-
-            // modifying card that mutates the in-flight difficulty mid-test.
-            // Revisit if either lands.
+            // mid-pause (`Hello` clears this cache) and (b) the first card that
+            // does move it mid-test. Revisit when either lands.
             if let Some(difficulty) = events.iter().find_map(|e| match e {
                 game_core::Event::SkillTestStarted { difficulty, .. } => Some(*difficulty),
                 _ => None,
