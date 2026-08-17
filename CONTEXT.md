@@ -49,6 +49,18 @@ _Avoid_: Treating "discover N clues" as N discoveries, or as a request the engin
 An ability whose continuation frame is on the stack but whose effect has not run. Emitting a timing point *queues* its forced and reaction abilities; it does not resolve them. A caller's own work after the emit therefore runs **before** those abilities unless it rides a resumption frame; see `docs/adr/0003-emitting-a-timing-point-queues-abilities.md`.
 _Avoid_: saying an emit "fires" or "resolves" abilities, and reading `EngineOutcome::Done` from one as "nothing happened" — that reading orphaned agenda 01107's forced Ghoul movement for an entire scenario.
 
+**Base value**:
+A quantity before any modifier applies. Per the Rules Reference: *"Base value is the value of an element before any modifiers are applied. Unless otherwise specified, the base value of an element derived from a card is the value printed on that card."* Usually the printed number, but a card can **replace** it — Duke 02014's *"You attack with a base [combat] skill of 4"* — and modifiers still stack on top of the replacement.
+_Avoid_: Using it for the number a test is actually resolved against (that is the **modified value**), and confusing a base replacement with an automatic success or failure. They look alike and sit at opposite ends of the calculation: a base replacement is the bottom, a substitution is the top. Collapsing them was a real error during #628's design.
+
+**Modified value**:
+A quantity after the whole calculation: base, then modifiers, then clamping and any substitution. Never stored — it is recalculated at every read, because the Rules Reference defines it that way: *"Any time a new modifier is applied (or removed), the entire quantity is recalculated from the start."* An investigator's skill value, a test's difficulty, an enemy's fight and evade, and a location's shroud are all modified values. See `docs/adr/0005-a-modified-quantity-is-recalculated-at-every-read.md`.
+_Avoid_: "Total", "effective value", or "final value" for the general concept — the Rules Reference reserves *total* for specific composites ("total skill value", "total difficulty"), and "effective" reads as a one-off computation rather than a live one. Also avoid speaking of a modified value being *set*: nothing sets it, things modify its inputs.
+
+**Automatic failure / success**:
+A **determination** that a skill test fails or succeeds regardless of the numbers, substituting the whole quantity at ST.6 — *"If a skill test automatically fails, the investigator's total skill value for that test is considered 0. If a skill test automatically succeeds, the total difficulty of that test is considered 0."* Distinct from the `[auto_fail]` **token symbol being revealed**, which is what almost every card that mentions `[auto_fail]` actually keys off (Shrivelling 01060, Baseball Bat 01074, Jewel of Aureolus 02269 …) — those fire on the reveal and are indifferent to how the test resolves.
+_Avoid_: Reading "if a `[skull]` or `[auto_fail]` symbol is revealed" as a clause about failing; it is a clause about the token. No Core + Dunwich card keys off the *determination* being an automatic failure rather than an ordinary one, so `FailureReason::AutoFail` is display attribution, not a rules distinction.
+
 ## Project vocabulary
 
 **Project phase**:
