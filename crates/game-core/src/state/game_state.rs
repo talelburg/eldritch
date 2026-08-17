@@ -14,7 +14,7 @@ use super::{
     phase::Phase,
 };
 use crate::card_data::{CardKind, CardMetadata};
-use crate::dsl::{SkillTestKind, Stat};
+use crate::dsl::{IntExpr, SkillTestKind, Stat};
 use crate::rng::RngState;
 use card_dsl::card_data::SkillKind;
 
@@ -101,15 +101,30 @@ pub struct GameState {
     pub enemy_ids: Counter<EnemyId>,
     /// Allocator for [`LocationId`]s, minted as scenarios build their board.
     pub location_ids: Counter<LocationId>,
-    /// In-flight skill modifiers contributed by activated / triggered
-    /// abilities with [`ModifierScope::ThisSkillTest`] scope.
-    /// Accumulates between activation and skill-test resolution; the
-    /// skill-test handler drains the entries for the resolving
-    /// investigator after [`Event::SkillTestEnded`] fires.
+    /// Allocator for [`SkillTestId`]s, minted at
+    /// `engine::dispatch::start_skill_test`. Monotonic and never reused, so
+    /// a [`RecordedModifier`] stamped with a test's id is inert once that
+    /// test ends even if a later test occupies the same frame slot.
+    pub skill_test_ids: Counter<SkillTestId>,
+    /// The **recorded** half of the modifier population: rows whose
+    /// lifetime is decoupled from any card's zone, and which therefore
+    /// cannot be found by the modified-value sweep over the board.
     ///
-    /// [`ModifierScope::ThisSkillTest`]: crate::dsl::ModifierScope::ThisSkillTest
-    /// [`Event::SkillTestEnded`]: crate::Event::SkillTestEnded
-    pub pending_skill_modifiers: Vec<PendingSkillModifier>,
+    /// Written by the evaluator's `Modify` arm when a card declares a
+    /// non-constant [`ModifierScope`], read by
+    /// [`modified_value`](crate::engine::modified_value::modified_value)
+    /// alongside the swept population, and expired by whichever boundary
+    /// its [`Lifetime`] names — for
+    /// [`Lifetime::SkillTest`], the teardown of the test whose id it
+    /// carries.
+    ///
+    /// A row stores its delta as an **expression**, evaluated at read
+    /// time like every swept modifier (ADR 0005): Esoteric Formula 02254's
+    /// *"You get +2 \[willpower\] for this attack for each clue on the
+    /// attacked enemy"* is why a resolved integer is not enough.
+    ///
+    /// [`ModifierScope`]: crate::dsl::ModifierScope
+    pub recorded_modifiers: Vec<RecordedModifier>,
     // The in-flight skill test now lives on its `Continuation::SkillTest(_)`
     // frame (#348); read it via [`Self::current_skill_test`]. The former
     // `in_flight_skill_test: Option<InFlightSkillTest>` field is removed —
@@ -1423,6 +1438,16 @@ pub enum TimingSub {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct InFlightSkillTest {
+    /// This test's identity, minted from
+    /// [`GameState::skill_test_ids`] at initiation.
+    ///
+    /// What a test-scoped [`RecordedModifier`] is stamped with, and what its
+    /// expiry sweep matches on at teardown — so a buff bought "for this
+    /// skill test" applies to *this* one and to no other. Monotonic and
+    /// never reused, so a row that outlived its test (it cannot today, but
+    /// the guarantee is what makes that structural rather than a matter of
+    /// draining diligently) is inert rather than misattributed.
+    pub id: SkillTestId,
     /// Investigator taking the test.
     pub investigator: InvestigatorId,
     /// Skill the test is against.
@@ -2098,31 +2123,136 @@ impl ResolutionCandidate {
     }
 }
 
-/// A queued [`ModifierScope::ThisSkillTest`] contribution waiting to
-/// apply to a skill test.
+crate::state::define_id! {
+    /// Identity of one skill test, minted at
+    /// `engine::dispatch::start_skill_test` and stamped onto the
+    /// [`InFlightSkillTest`] frame.
+    ///
+    /// A test-scoped modifier is bought "for **this** skill test", so it has
+    /// to be able to say which one: a [`RecordedModifier`] carries
+    /// [`Lifetime::SkillTest`] with this id, and contributes only while the
+    /// test in flight is the one it names. Hyperawareness 01034 (*"\[fast\]
+    /// Spend 1 resource: You get +1 \[intellect\] for this skill test."*) is
+    /// activatable at any player window and has no per-round limit
+    /// (<https://arkhamdb.com/card/01034>: *"You can use \[fast\] fast
+    /// actions as many times as you want, as long as you can pay the cost;
+    /// there is no limit."*), so nothing else bounds the leak. (ADR 0005.)
+    pub struct SkillTestId;
+}
+
+/// When a [`RecordedModifier`] stops applying, with the boundary already
+/// resolved to a concrete identity.
 ///
-/// Pushed by `apply_effect` when an
-/// activated or triggered ability resolves a `Modify { scope:
-/// ThisSkillTest, … }` effect. Consumed (and cleared) by the next
-/// skill-test resolution for the same investigator.
+/// The card author's vocabulary is [`ModifierScope`] over in `card-dsl` —
+/// "this skill test", "this turn". `Lifetime` is the engine's counterpart,
+/// and the two are separate types because a scope becomes a lifetime only
+/// by being *stamped*: `ThisSkillTest` has no meaning until it names the
+/// test in flight. The evaluator's `Modify` arm performs the translation,
+/// and it is the point where a scope with nothing to stamp is refused.
 ///
-/// [`ModifierScope::ThisSkillTest`]: crate::dsl::ModifierScope::ThisSkillTest
+/// [`ModifierScope`]: crate::dsl::ModifierScope
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum Lifetime {
+    /// Until the skill test with this id finishes tearing down. Inert
+    /// while any other test is in flight, and outside a test entirely.
+    ///
+    /// The remaining lifetimes ADR 0005 names — until end of turn
+    /// ([`ModifierScope::ThisTurn`], #572), until end of phase (Encyclopedia
+    /// 01042) — arrive with the effects that record them; the evaluator
+    /// still refuses those scopes, so there is no way to write one down.
+    ///
+    /// [`ModifierScope::ThisTurn`]: crate::dsl::ModifierScope::ThisTurn
+    SkillTest(SkillTestId),
+}
+
+impl Lifetime {
+    /// Whether a row with this lifetime is active while the test identified
+    /// by `in_flight` is running.
+    #[must_use]
+    pub fn applies_during_test(self, in_flight: SkillTestId) -> bool {
+        match self {
+            Self::SkillTest(id) => id == in_flight,
+        }
+    }
+
+    /// Whether this lifetime ends with the teardown of the test identified
+    /// by `ending`. Drives the expiry sweep at ST.8 and at the abandonment
+    /// of a test whose tester was eliminated.
+    #[must_use]
+    pub fn ends_with_test(self, ending: SkillTestId) -> bool {
+        match self {
+            Self::SkillTest(id) => id == ending,
+        }
+    }
+}
+
+/// One **recorded** modifier: a contribution whose lifetime is decoupled
+/// from any card's zone, so the modified-value sweep over the board cannot
+/// find it.
+///
+/// Pushed by the evaluator's `Modify` arm when an activated or triggered
+/// ability resolves a `Modify` with a non-constant
+/// [`ModifierScope`] — today only
+/// [`ThisSkillTest`](crate::dsl::ModifierScope::ThisSkillTest), which
+/// stamps [`Lifetime::SkillTest`] with the id of the test in flight (and is
+/// refused outright when there is none). Read at every modified-value query
+/// alongside the swept population, and dropped by the boundary its
+/// [`lifetime`](Self::lifetime) names.
+///
+/// [`ModifierScope`]: crate::dsl::ModifierScope
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
-pub struct PendingSkillModifier {
-    /// The investigator whose skill test this contributes to.
+pub struct RecordedModifier {
+    /// The investigator whose quantity this modifies. Also the "you" the
+    /// [`delta`](Self::delta) expression is evaluated against: a recorded
+    /// row can only be written by a `Modify` whose audience is
+    /// [`Controller`](crate::dsl::ModifierAudience::Controller), so the
+    /// modified investigator and the controller are the same one.
     pub investigator: InvestigatorId,
-    /// Which stat the modifier targets (the skill-test handler
-    /// maps `SkillKind` → `Stat` for matching).
+    /// Which stat the modifier targets (the modified-value query maps
+    /// `SkillKind` → `Stat` for matching).
     pub stat: Stat,
-    /// Signed magnitude.
-    pub delta: i8,
+    /// The signed magnitude, as an **expression evaluated at read time**
+    /// rather than a resolved integer — the same rule ADR 0005 applies to
+    /// the swept population. Esoteric Formula 02254 (*"You get +2
+    /// \[willpower\] for this attack for each clue on the attacked
+    /// enemy"*) is the corpus consumer: freezing that to a number when the
+    /// row is pushed reintroduces the stale-quantity bug one level down.
+    /// Every row written today is a `Modify`'s literal delta, since that is
+    /// all the DSL's `Modify` can carry.
+    pub delta: IntExpr,
+    /// When the row stops applying.
+    pub lifetime: Lifetime,
     /// The in-play instance that produced the modifier, if any.
     /// `None` for modifiers from non-activated paths (e.g. an
     /// `OnPlay` ability that pushes a per-test buff). Limit-once-
     /// per-test logic in later cycles (Roland Banks, Hard Knocks
-    /// upgrades) will key off this.
+    /// upgrades) will key off this, as will Fire Axe 02032's *"(Limit three
+    /// times per attack.)"*.
     pub source: Option<CardInstanceId>,
+}
+
+impl RecordedModifier {
+    /// Construct a [`RecordedModifier`]. Provided so callers outside the
+    /// crate (integration tests, where `#[non_exhaustive]` blocks
+    /// struct-literal construction) can build a row directly.
+    #[must_use]
+    pub fn new(
+        investigator: InvestigatorId,
+        stat: Stat,
+        delta: IntExpr,
+        lifetime: Lifetime,
+        source: Option<CardInstanceId>,
+    ) -> Self {
+        Self {
+            investigator,
+            stat,
+            delta,
+            lifetime,
+            source,
+        }
+    }
 }
 
 impl GameState {
@@ -2158,6 +2288,18 @@ impl GameState {
             Continuation::SkillTest(t) => Some(t),
             _ => unreachable!("rposition matched SkillTest"),
         }
+    }
+
+    /// Drop every [`RecordedModifier`] whose [`Lifetime`] ends with the
+    /// teardown of the test identified by `ending`.
+    ///
+    /// Keyed on the test's identity rather than on the tester, so it catches
+    /// every row bought for that test — including, once other investigators
+    /// can commit to it, rows a teammate bought — and leaves rows belonging
+    /// to any other test alone.
+    pub fn expire_modifiers_for_test(&mut self, ending: SkillTestId) {
+        self.recorded_modifiers
+            .retain(|m| !m.lifetime.ends_with_test(ending));
     }
 
     /// The investigator currently prompted to mulligan, if a setup mulligan is
@@ -2599,6 +2741,11 @@ mod continuation_stack_tests {
             "continuations",
             "pending_cancellation",
             "skill_substitutions",
+            // #676's two: a defaulted `skill_test_ids` would re-mint ids a
+            // live row already names, and a defaulted `recorded_modifiers`
+            // would silently drop every test-scoped buff in flight.
+            "skill_test_ids",
+            "recorded_modifiers",
         ] {
             let mut v = full.clone();
             v.as_object_mut()

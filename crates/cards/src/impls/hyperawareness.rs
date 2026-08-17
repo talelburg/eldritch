@@ -15,10 +15,10 @@
 //!   action cost.
 //! - `Cost::Resources(1)` (#53) — the per-ability payment.
 //! - `ModifierScope::ThisSkillTest` evaluator push path (#102) —
-//!   queues the modifier into [`GameState::pending_skill_modifiers`]
+//!   records the modifier into [`GameState::recorded_modifiers`]
 //!   for the next skill-test resolution to consume.
 //!
-//! [`GameState::pending_skill_modifiers`]: game_core::state::GameState::pending_skill_modifiers
+//! [`GameState::recorded_modifiers`]: game_core::state::GameState::recorded_modifiers
 //!
 //! # Two abilities, two indices
 //!

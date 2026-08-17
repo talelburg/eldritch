@@ -17,10 +17,11 @@
 //!   [`modified_value`](crate::engine::modified_value::modified_value) —
 //!   reaching `apply_effect` with one of those means the card
 //!   author put a constant-flavored modifier under a non-constant
-//!   trigger, which rejects. [`ThisSkillTest`] is **pushed** into
-//!   [`GameState::pending_skill_modifiers`], which the same query
-//!   reads as a recorded row; the skill-test handler drains it
-//!   after `SkillTestEnded`. [`ThisTurn`] is not yet wired; rejects
+//!   trigger, which rejects. [`ThisSkillTest`] is **recorded** into
+//!   [`GameState::recorded_modifiers`], which the same query reads as a
+//!   recorded row — stamped with the in-flight test's id, and refused
+//!   outright when no test is in flight; the skill-test handler expires
+//!   it after `SkillTestEnded`. [`ThisTurn`] is not yet wired; rejects
 //!   with TODO until a card or test demands the turn-scoped
 //!   accumulator.
 //!
@@ -28,7 +29,7 @@
 //! [`WhileInPlayDuring`]: crate::dsl::ModifierScope::WhileInPlayDuring
 //! [`ThisSkillTest`]: crate::dsl::ModifierScope::ThisSkillTest
 //! [`ThisTurn`]: crate::dsl::ModifierScope::ThisTurn
-//! [`GameState::pending_skill_modifiers`]: crate::state::GameState::pending_skill_modifiers
+//! [`GameState::recorded_modifiers`]: crate::state::GameState::recorded_modifiers
 //! - [`Effect::If`] evaluates [`Condition::SkillTestKind`] against
 //!   the in-flight test's `kind`. [`SkillTest`](crate::dsl::Condition::SkillTest)
 //!   isn't yet wired — inside an [`Trigger::OnSkillTestResolution`] effect
@@ -131,9 +132,9 @@ pub struct EvalContext {
     /// and [`LocationTarget::YourLocation`].
     pub controller: crate::state::InvestigatorId,
     /// The in-play card-instance that triggered this effect, if any.
-    /// Set by [`activate_ability`](crate::engine) so pushed
-    /// [`PendingSkillModifier`](crate::state::PendingSkillModifier)
-    /// entries can name their source (for replay clarity and future
+    /// Set by [`activate_ability`](crate::engine) so recorded
+    /// [`RecordedModifier`](crate::state::RecordedModifier)
+    /// rows can name their source (for replay clarity and future
     /// limit-once-per-test logic). `None` for evaluations not
     /// originating from a specific in-play instance (events played
     /// from hand, scenario forced effects, …).
@@ -174,8 +175,8 @@ impl EvalContext {
 
     /// Construct a context for an effect triggered from a specific
     /// in-play card instance. Used by
-    /// [`activate_ability`](crate::engine) so pushed
-    /// `PendingSkillModifier`s carry their source.
+    /// [`activate_ability`](crate::engine) so recorded
+    /// `RecordedModifier`s carry their source.
     #[must_use]
     pub fn for_controller_with_source(
         controller: crate::state::InvestigatorId,
@@ -1211,11 +1212,31 @@ pub(super) fn eval_int_expr(
 ///   non-constant trigger (an `OnPlay`/`Activated` ability whose
 ///   effect *is* a `Modify` with constant scope), which doesn't fit
 ///   either path cleanly. Reject loudly so the card author notices.
-/// - [`ModifierScope::ThisSkillTest`]: pushed onto
-///   [`GameState::pending_skill_modifiers`]; consumed and drained
-///   by the skill-test resolution flow.
+/// - [`ModifierScope::ThisSkillTest`]: recorded onto
+///   [`GameState::recorded_modifiers`] as a
+///   [`RecordedModifier`](crate::state::RecordedModifier) stamped with the
+///   in-flight test's [`SkillTestId`](crate::state::SkillTestId), and
+///   expired by that test's teardown. This arm is where the card author's
+///   [`ModifierScope`] becomes the engine's
+///   [`Lifetime`](crate::state::Lifetime) — and therefore where a scope with
+///   nothing to stamp is refused (see below).
 /// - [`ModifierScope::ThisTurn`]: not yet wired; rejects with TODO
 ///   until a card or test demands it.
+///
+/// # A test-scoped modifier with no test
+///
+/// A buff bought "for this skill test" outside any test has no test to
+/// attach to, so it is **rejected** rather than banked. Hyperawareness
+/// 01034's *"\[fast\] Spend 1 resource: You get +1 \[intellect\] for this
+/// skill test."* is usable at any player window and carries no per-round
+/// limit (<https://arkhamdb.com/card/01034>: *"You can use \[fast\] fast
+/// actions as many times as you want, as long as you can pay the cost; there
+/// is no limit."*), so a row with no identity would surface an unexplained
+/// bonus on whatever test came next, several actions or rounds later. The
+/// activation paths never reach this rejection — the initiation gate
+/// (`effect_can_change_state`) proves the effect inert outside a test and
+/// keeps the menu from offering it — but a card whose `OnPlay` or forced
+/// effect carries the scope still lands here.
 fn modify(
     cx: &mut Cx,
     eval_ctx: EvalContext,
@@ -1225,7 +1246,7 @@ fn modify(
     audience: crate::dsl::ModifierAudience,
 ) -> EngineOutcome {
     // A recorded row carries only the controller today (see
-    // `PendingSkillModifier`), so a wider audience under a non-constant
+    // `RecordedModifier`), so a wider audience under a non-constant
     // scope has nowhere to be written down. Reject loudly rather than
     // silently narrowing it to the controller — recorded rows that can
     // name an arbitrary target are #676's.
@@ -1242,14 +1263,30 @@ fn modify(
     }
     match scope {
         ModifierScope::ThisSkillTest => {
+            let Some(test) = cx.state.current_skill_test() else {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "Modify with scope ThisSkillTest resolved with no skill test in flight: \
+                         the modifier has no test to attach to, so it cannot be recorded. Stat = \
+                         {stat:?}, delta = {delta}."
+                    )
+                    .into(),
+                };
+            };
+            let lifetime = crate::state::Lifetime::SkillTest(test.id);
             cx.state
-                .pending_skill_modifiers
-                .push(crate::state::PendingSkillModifier {
-                    investigator: eval_ctx.controller,
+                .recorded_modifiers
+                .push(crate::state::RecordedModifier::new(
+                    eval_ctx.controller,
                     stat,
-                    delta,
-                    source: eval_ctx.source,
-                });
+                    // The DSL's `Modify` carries a literal delta, so every row
+                    // written today is a `Lit`. The row is expression-valued
+                    // regardless (ADR 0005): what is stored is evaluated at
+                    // read time, not at push time.
+                    crate::dsl::IntExpr::Lit(delta),
+                    lifetime,
+                    eval_ctx.source,
+                ));
             EngineOutcome::Done
         }
         ModifierScope::WhileInPlay | ModifierScope::WhileInPlayDuring(_) => {
@@ -2021,6 +2058,17 @@ pub(crate) fn effect_can_change_state(
         Effect::Heal { target, .. } | Effect::SearchDeck { target, .. } => {
             any_eligible_investigator_target(state, ctx, effect, *target)
         }
+        // A modifier bought "for this skill test" needs a test to attach to
+        // (#676): with none in flight there is no identity to stamp onto the
+        // recorded row, so `modify` refuses it and nothing changes. Proving it
+        // inert *here* is what keeps the turn menu and the fast-window
+        // enumerator from offering Hyperawareness 01034 at a window where
+        // clicking it would only cost a resource and reject — the same
+        // menu/validator agreement #639 established for the activation gate.
+        Effect::Modify {
+            scope: ModifierScope::ThisSkillTest,
+            ..
+        } => state.current_skill_test().is_some(),
         // A sequence changes state iff any step can (an empty `Seq` is inert).
         Effect::Seq(steps) => steps
             .iter()
@@ -2955,6 +3003,7 @@ mod tests {
             .continuations
             .push(crate::state::Continuation::SkillTest(
                 crate::state::InFlightSkillTest {
+                    id: crate::state::SkillTestId(0),
                     investigator: InvestigatorId(1),
                     skill: SkillKind::Intellect,
                     kind: SkillTestKind::Investigate,
@@ -3016,6 +3065,7 @@ mod tests {
             .continuations
             .push(crate::state::Continuation::SkillTest(
                 crate::state::InFlightSkillTest {
+                    id: crate::state::SkillTestId(0),
                     investigator: InvestigatorId(1),
                     skill: SkillKind::Combat,
                     kind: SkillTestKind::Fight,
@@ -3079,6 +3129,7 @@ mod tests {
             .continuations
             .push(crate::state::Continuation::SkillTest(
                 crate::state::InFlightSkillTest {
+                    id: crate::state::SkillTestId(0),
                     investigator: InvestigatorId(1),
                     skill: SkillKind::Intellect,
                     kind: SkillTestKind::Investigate,
@@ -3206,6 +3257,7 @@ mod tests {
             .continuations
             .push(crate::state::Continuation::SkillTest(
                 crate::state::InFlightSkillTest {
+                    id: crate::state::SkillTestId(0),
                     investigator: InvestigatorId(1),
                     skill: SkillKind::Intellect,
                     kind,
@@ -3380,6 +3432,7 @@ mod tests {
             .continuations
             .push(crate::state::Continuation::SkillTest(
                 crate::state::InFlightSkillTest {
+                    id: crate::state::SkillTestId(0),
                     investigator: InvestigatorId(1),
                     skill: SkillKind::Willpower,
                     kind: SkillTestKind::Plain,
@@ -3500,9 +3553,61 @@ mod tests {
         assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
     }
 
+    /// One investigator, with the test identified by `test_id` in flight —
+    /// what a `ThisSkillTest` modifier needs in order to have an identity to
+    /// be stamped with.
+    fn state_during_test(test_id: crate::state::SkillTestId) -> crate::state::GameState {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        state
+            .continuations
+            .push(crate::state::Continuation::SkillTest(
+                crate::test_support::test_skill_test(
+                    test_id,
+                    InvestigatorId(1),
+                    SkillKind::Intellect,
+                    SkillTestKind::Plain,
+                    2,
+                ),
+            ));
+        state
+    }
+
     #[test]
-    fn modify_with_this_skill_test_scope_pushes_pending_modifier() {
+    fn modify_with_this_skill_test_scope_records_a_row_stamped_with_the_test() {
         let id = InvestigatorId(1);
+        let test_id = crate::state::SkillTestId(4);
+        let mut state = state_during_test(test_id);
+        let mut events = Vec::new();
+        let outcome = run(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
+            ctx(1),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert!(events.is_empty(), "recording doesn't emit an event");
+        assert_eq!(state.recorded_modifiers.len(), 1);
+        let m = &state.recorded_modifiers[0];
+        assert_eq!(m.investigator, id);
+        assert_eq!(m.stat, Stat::Intellect);
+        assert_eq!(
+            m.delta,
+            crate::dsl::IntExpr::Lit(1),
+            "the row stores an expression, not a resolved integer",
+        );
+        assert_eq!(m.lifetime, crate::state::Lifetime::SkillTest(test_id));
+        assert_eq!(m.source, None, "no source on a bare for_controller ctx");
+    }
+
+    /// The scope says "for **this** skill test", so with no test in flight
+    /// there is no identity to stamp — the modifier is refused rather than
+    /// banked onto whatever test comes next (#676).
+    #[test]
+    fn modify_with_this_skill_test_scope_rejects_outside_a_test() {
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
@@ -3515,23 +3620,20 @@ mod tests {
             &modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
             ctx(1),
         );
-        assert_eq!(outcome, EngineOutcome::Done);
-        assert!(events.is_empty(), "push doesn't emit an event");
-        assert_eq!(state.pending_skill_modifiers.len(), 1);
-        let m = &state.pending_skill_modifiers[0];
-        assert_eq!(m.investigator, id);
-        assert_eq!(m.stat, Stat::Intellect);
-        assert_eq!(m.delta, 1);
-        assert_eq!(m.source, None, "no source on a bare for_controller ctx");
+        assert!(
+            matches!(&outcome, EngineOutcome::Rejected { reason }
+                if reason.contains("no skill test in flight")),
+            "expected a rejection naming the missing test, got {outcome:?}",
+        );
+        assert!(state.recorded_modifiers.is_empty(), "nothing recorded");
+        assert!(events.is_empty());
     }
 
     #[test]
-    fn modify_pushes_source_when_ctx_has_one() {
+    fn modify_records_source_when_ctx_has_one() {
         let id = InvestigatorId(1);
         let src = CardInstanceId(42);
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .build();
+        let mut state = state_during_test(crate::state::SkillTestId(0));
         let mut events = Vec::new();
         let ctx_with_src = EvalContext::for_controller_with_source(id, src);
         let outcome = run(
@@ -3543,7 +3645,7 @@ mod tests {
             ctx_with_src,
         );
         assert_eq!(outcome, EngineOutcome::Done);
-        assert_eq!(state.pending_skill_modifiers[0].source, Some(src));
+        assert_eq!(state.recorded_modifiers[0].source, Some(src));
     }
 
     #[test]

@@ -10,21 +10,23 @@
 //! Hyperawareness will be the first. Until then, mock cards are the
 //! only way to exercise the full activation flow.
 
+use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::CardRegistry;
 use game_core::dsl::{
-    activated, constant, gain_resources, modify, Ability, Cost, InvestigatorTarget, ModifierScope,
-    Stat,
+    activated, constant, gain_resources, modify, Ability, Cost, IntExpr, InvestigatorTarget,
+    ModifierScope, Stat,
 };
-use game_core::engine::EngineOutcome;
+use game_core::engine::{apply, legal_actions, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind,
-    Status, TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, Lifetime, Phase,
+    SkillKind, Status, TokenModifiers,
 };
 use game_core::test_support::{
-    dispatch_turn_action_unchecked, perform_skill_test_no_commits, take_turn_action,
-    test_investigator, GameStateBuilder,
+    dispatch_turn_action_unchecked, drive_skill_test, perform_skill_test,
+    perform_skill_test_no_commits, take_turn_action, test_investigator, GameStateBuilder,
+    TakeOneFastPlay,
 };
 use game_core::TurnAction;
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -333,100 +335,116 @@ fn activating_with_defeated_status_doesnt_need_registry() {
     assert_no_event!(result.events, Event::AbilityActivated { .. });
 }
 
-// ---- ThisSkillTest accumulator (#102) ------------------------------
+// ---- test-scoped recorded modifiers (#102, #676) -------------------
 
 #[test]
-fn this_skill_test_modifier_contributes_to_next_skill_test() {
-    // Activate the SKILL_BOOST mock card: pay 1 resource, push +1
-    // intellect for this skill test. Then run an intellect skill
-    // test at difficulty 4 — the base 3 intellect + 1 from the
-    // pushed modifier exactly clears it.
-    let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
+fn a_test_scoped_modifier_buffs_the_test_it_was_bought_during() {
+    // Activate SKILL_BOOST at the running test's player window: pay 1
+    // resource, record +1 intellect for *this* test. Base 3 intellect + 1
+    // exactly clears difficulty 4.
+    let (state, id, _) = state_with_in_play(SKILL_BOOST);
+    let resources_before = state.investigators[&id].resources;
 
-    let after_activate = take_turn_action(
+    let result = drive_skill_test(
         state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            instance_id,
-            ability_index: 0,
-        },
+        id,
+        SkillKind::Intellect,
+        4,
+        TakeOneFastPlay::at_index(0),
     );
-    assert_eq!(
-        after_activate.state.pending_skill_modifiers.len(),
-        1,
-        "ThisSkillTest push should leave one pending entry",
-    );
-
-    let after_test =
-        perform_skill_test_no_commits(after_activate.state, id, SkillKind::Intellect, 4);
-    assert!(matches!(
-        after_test.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
     assert_event!(
-        after_test.events,
+        result.events,
         Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
             if *investigator == id
     );
-    // Drain: pending list empty after the test ends.
+    assert_eq!(
+        result.state.investigators[&id].resources,
+        resources_before - 1,
+        "the ability's cost was paid",
+    );
     assert!(
-        after_test.state.pending_skill_modifiers.is_empty(),
-        "ThisSkillTest accumulator must drain after SkillTestEnded",
+        result.state.recorded_modifiers.is_empty(),
+        "a test-scoped row expires with the test that owns it",
     );
 }
 
 #[test]
-fn this_skill_test_modifier_does_not_leak_into_a_second_test() {
-    // Activate the boost, run an intellect test (consumes + drains
-    // the pending entry), then run a second intellect test at the
-    // same difficulty. Without the boost re-activating, the second
-    // test fails — proving the prior modifier didn't carry over.
-    let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
+fn a_test_scoped_modifier_does_not_leak_into_a_second_test() {
+    // Buy the boost inside one test, then run a second identical test
+    // without buying it: 3 intellect vs difficulty 4 fails by 1.
+    let (state, id, _) = state_with_in_play(SKILL_BOOST);
 
-    let after_activate = take_turn_action(
+    let first = drive_skill_test(
         state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            instance_id,
-            ability_index: 0,
-        },
+        id,
+        SkillKind::Intellect,
+        4,
+        TakeOneFastPlay::at_index(0),
     );
-
-    let after_first_test =
-        perform_skill_test_no_commits(after_activate.state, id, SkillKind::Intellect, 4);
-    assert!(matches!(
-        after_first_test.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
-
-    let after_second_test =
-        perform_skill_test_no_commits(after_first_test.state, id, SkillKind::Intellect, 4);
-    assert!(matches!(
-        after_second_test.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    let second = perform_skill_test_no_commits(first.state, id, SkillKind::Intellect, 4);
     assert_event!(
-        after_second_test.events,
+        second.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
             if *investigator == id
     );
 }
 
 #[test]
-fn this_skill_test_modifier_carries_source_instance_id() {
-    // Activated abilities push with ctx.source = Some(instance_id)
-    // so future limit-once-per-test logic can key off the source.
+fn a_test_scoped_row_is_stamped_with_the_running_test_and_carries_its_source() {
+    // Stop mid-test and read the row: it names the test in flight, and the
+    // in-play instance whose ability recorded it (what limit-per-test logic
+    // will key off).
     let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
-    let after_activate = take_turn_action(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: id,
-            instance_id,
-            ability_index: 0,
-        },
+
+    // Start the test, then take the offered fast play at its player window.
+    let started = perform_skill_test(state, id, SkillKind::Intellect, 4);
+    let EngineOutcome::AwaitingInput { request, .. } = &started.outcome else {
+        panic!("expected the ST.1 fast window, got {:?}", started.outcome);
+    };
+    let option = request.options[0].id;
+    let after_activate = apply(
+        started.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(option),
+        }),
     );
-    let pending = &after_activate.state.pending_skill_modifiers[0];
-    assert_eq!(pending.investigator, id);
-    assert_eq!(pending.delta, 1);
-    assert_eq!(pending.source, Some(instance_id));
+
+    let in_flight = after_activate
+        .state
+        .current_skill_test()
+        .expect("the test is still running")
+        .id;
+    assert_eq!(after_activate.state.recorded_modifiers.len(), 1);
+    let row = &after_activate.state.recorded_modifiers[0];
+    assert_eq!(row.investigator, id);
+    assert_eq!(row.delta, IntExpr::Lit(1));
+    assert_eq!(row.lifetime, Lifetime::SkillTest(in_flight));
+    assert_eq!(row.source, Some(instance_id));
+}
+
+/// A modifier bought "for this skill test" with no test running has no test
+/// to attach to, so the activation is refused rather than banked (#676) —
+/// and a client that submits it over the wire without consulting the menu
+/// gets the same answer the menu gave.
+#[test]
+fn activating_a_test_scoped_modifier_outside_a_test_is_rejected() {
+    let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
+    let resources_before = state.investigators[&id].resources;
+    let action = TurnAction::ActivateAbility {
+        investigator: id,
+        instance_id,
+        ability_index: 0,
+    };
+
+    assert!(
+        !legal_actions(&state).contains(&action),
+        "the open-turn menu must not offer an activation that would reject",
+    );
+
+    let result = dispatch_turn_action_unchecked(state, &action);
+    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    assert!(result.events.is_empty());
+    // State unchanged by the rejection: no resource spent, nothing recorded.
+    assert_eq!(result.state.investigators[&id].resources, resources_before);
+    assert!(result.state.recorded_modifiers.is_empty());
 }

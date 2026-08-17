@@ -252,6 +252,63 @@ fn resolve_commit_codes(codes: &[CardCode], state: &GameState, prompt: &str) -> 
     indices
 }
 
+/// A [`ChoiceResolver`] that takes one offered fast play at the **first**
+/// Fast window it meets, then declines every later window and commits
+/// nothing.
+///
+/// The counterpart to [`ScriptedResolver`] for the one prompt shape a script
+/// cannot easily pin down: a framework Fast window (#476) re-opens after each
+/// play it resolves, so the number of prompts depends on what stays eligible.
+/// This resolver answers "buy exactly one thing, then get out of the way".
+///
+/// `option_index` selects among the window's offered plays, which are
+/// enumerated in (investigator, hand-index / ability-index) order — so
+/// Hyperawareness 01034's intellect ability is 0 and its agility ability 1.
+///
+/// It exists because a [`ThisSkillTest`](crate::dsl::ModifierScope::ThisSkillTest)
+/// modifier can only be bought from *inside* a test (#676), and a test's ST.1
+/// player window is where a `[fast]` ability is offered.
+#[derive(Debug, Clone, Copy)]
+pub struct TakeOneFastPlay {
+    option_index: usize,
+    used: bool,
+}
+
+impl TakeOneFastPlay {
+    /// Take the play at `option_index` at the first Fast window.
+    #[must_use]
+    pub fn at_index(option_index: usize) -> Self {
+        Self {
+            option_index,
+            used: false,
+        }
+    }
+}
+
+impl ChoiceResolver for TakeOneFastPlay {
+    fn next(&mut self, request: &InputRequest, _state: &GameState) -> InputResponse {
+        if request.skippable {
+            if !self.used && request.kind == InputKind::PickSingle {
+                self.used = true;
+                assert!(
+                    request.options.len() > self.option_index,
+                    "TakeOneFastPlay: option {} not offered; the window has {:?}",
+                    self.option_index,
+                    request.options,
+                );
+                return InputResponse::PickSingle(request.options[self.option_index].id);
+            }
+            return InputResponse::Skip;
+        }
+        match request.kind {
+            InputKind::Confirm => InputResponse::Confirm,
+            _ => InputResponse::PickMultiple {
+                selected: Vec::new(),
+            },
+        }
+    }
+}
+
 /// Drive a single skill-test-initiating action through the engine
 /// with an empty commit submitted to the commit window.
 ///
@@ -761,32 +818,21 @@ mod tests {
     /// commit-card resolution tests below.
     fn state_with_in_flight_hand(hand: &[&str]) -> GameState {
         use crate::dsl::SkillTestKind;
-        use crate::state::{InFlightSkillTest, SkillTestFollowUp};
         let id = InvestigatorId(1);
         let mut inv = crate::test_support::test_investigator(1);
         inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
         state
             .continuations
-            .push(crate::state::Continuation::SkillTest(InFlightSkillTest {
-                investigator: id,
-                skill: crate::state::SkillKind::Intellect,
-                kind: SkillTestKind::Plain,
-                difficulty: 1,
-                committed_by_active: Vec::new(),
-                tested_location: None,
-                follow_up: SkillTestFollowUp::None,
-                on_fail: None,
-                on_success: None,
-                source: None,
-                continuation: crate::state::SkillTestStep::AwaitingCommit,
-                test_modifier: 0,
-                bonus_attack_damage: 0,
-                bonus_clues_discovered: 0,
-                token_resolution: None,
-                resolved: None,
-                symbol_on_fail: None,
-            }));
+            .push(crate::state::Continuation::SkillTest(
+                crate::test_support::test_skill_test(
+                    crate::state::SkillTestId(0),
+                    id,
+                    crate::state::SkillKind::Intellect,
+                    SkillTestKind::Plain,
+                    1,
+                ),
+            ));
         state
     }
 

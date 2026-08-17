@@ -15,7 +15,10 @@
 //!
 //! These tests cover the asset gate via Magnifying Glass (01030), the
 //! event gate via Working a Hunch (01037), and the activated-ability gate
-//! via Hyperawareness (01034).
+//! via Beat Cop's (01018) `[fast]` *"Discard Beat Cop: Deal 1 damage to an
+//! enemy at your location."*. Beat Cop rather than Hyperawareness (01034)
+//! because a `for this skill test` buff is refused outside a test (#676),
+//! which would mask the window gate this file is about.
 //!
 //! Note: we use `Phase::Mythos` (a non-Investigation phase) in the
 //! "owner during permissive window" test so the open-window branch is
@@ -31,13 +34,18 @@
 
 use game_core::engine::EngineOutcome;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Continuation, FastActorScope, FastWindowKind,
+    CardCode, CardInPlay, CardInstanceId, Continuation, EnemyId, FastActorScope, FastWindowKind,
     InvestigatorId, LocationId, MythosResume, Phase, PhaseStep,
 };
 use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
+    dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location, GameStateBuilder,
 };
+
 use game_core::TurnAction;
+
+/// Beat Cop 01018: *"You get +1 \[combat\]."* / *"\[fast\] Discard Beat Cop:
+/// Deal 1 damage to an enemy at your location."*
+const BEAT_COP: &str = "01018";
 
 #[ctor::ctor(unsafe)]
 fn install_cards_registry() {
@@ -201,74 +209,79 @@ fn fast_asset_still_playable_by_active_investigator_during_investigation() {
     );
 }
 
-#[test]
-fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits() {
+/// Board for the activated-ability gate: investigator B controls Beat Cop
+/// (instance 1) at a location with a co-located enemy, so the ability has a
+/// live target; A is the active investigator. `open_window` adds a permissive
+/// Mythos player window — the condition the two tests below differ on.
+fn board_with_beat_cop(open_window: bool) -> game_core::GameState {
+    let loc = LocationId(101);
     let a = test_investigator(1);
     let mut b = test_investigator(2);
-    b.resources = 5; // Hyperawareness's [fast] cost is 1 resource per use.
-                     // Place Hyperawareness (01034) into play for investigator B.
+    b.current_location = Some(loc);
     b.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new("01034"),
+        CardCode::new(BEAT_COP),
         CardInstanceId(1),
     ));
-    let state = GameStateBuilder::new()
+    let mut enemy = test_enemy(100, "Ghoul");
+    enemy.max_health = 3;
+    enemy.current_location = Some(loc);
+    let mut builder = GameStateBuilder::new()
         .with_investigator(a)
         .with_investigator(b)
+        .with_location(test_location(101, "Study"))
+        .with_enemy(enemy)
         .with_phase(Phase::Mythos)
-        .with_active_investigator(InvestigatorId(1))
-        .with_phase_anchor(Continuation::MythosPhase {
-            resume: MythosResume::AfterDraws,
-        })
-        .with_open_window(
-            FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
-            FastActorScope::Any,
-        )
-        .build();
-    let result = dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: InvestigatorId(2),
-            instance_id: CardInstanceId(1),
-            ability_index: 0,
-        },
-    );
-    // The ability activates (resource spent). After it, Hyperawareness is still
-    // 0-cost-eligible (B has resources left), so the #476 fast window re-prompts
-    // rather than reaching Done — assert the activation executed, not the exact
-    // post-activation outcome.
+        .with_active_investigator(InvestigatorId(1));
+    if open_window {
+        builder = builder
+            .with_phase_anchor(Continuation::MythosPhase {
+                resume: MythosResume::AfterDraws,
+            })
+            .with_open_window(
+                FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
+                FastActorScope::Any,
+            );
+    }
+    builder.build()
+}
+
+/// Beat Cop's `[fast]` ability is index 1 (index 0 is its constant
+/// `+1 [combat]`).
+const BEAT_COP_FAST: TurnAction = TurnAction::ActivateAbility {
+    investigator: InvestigatorId(2),
+    instance_id: CardInstanceId(1),
+    ability_index: 1,
+};
+
+#[test]
+fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits() {
+    let result = dispatch_turn_action_unchecked(board_with_beat_cop(true), &BEAT_COP_FAST);
+    // The ability activates (its DiscardSelf cost is paid and the damage
+    // lands). The #476 fast window may re-prompt afterwards, so assert the
+    // activation executed rather than the exact post-activation outcome.
     assert!(
         !matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "Hyperawareness [fast] ability should activate from non-active investigator: {:?}",
+        "Beat Cop's [fast] ability should activate from a non-active investigator: {:?}",
         result.outcome,
     );
-    let b_after = result.state.investigators.get(&InvestigatorId(2)).unwrap();
-    assert_eq!(b_after.resources, 4, "1 resource should have been spent");
+    assert_eq!(
+        result.state.enemies[&EnemyId(100)].damage,
+        1,
+        "the ability's damage landed",
+    );
+    assert!(
+        result.state.investigators[&InvestigatorId(2)]
+            .cards_in_play
+            .is_empty(),
+        "Beat Cop paid its own discard as the cost",
+    );
 }
 
 #[test]
 fn fast_activated_ability_rejected_when_no_permissive_window() {
-    let a = test_investigator(1);
-    let mut b = test_investigator(2);
-    b.resources = 5;
-    b.cards_in_play.push(CardInPlay::enter_play(
-        CardCode::new("01034"),
-        CardInstanceId(1),
-    ));
-    let state = GameStateBuilder::new()
-        .with_investigator(a)
-        .with_investigator(b)
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        // No open window.
-        .build();
-    let result = dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: InvestigatorId(2),
-            instance_id: CardInstanceId(1),
-            ability_index: 0,
-        },
-    );
+    // Same board, no open window: B is not the active investigator, so
+    // nothing permits the fast activation.
+    let result = dispatch_turn_action_unchecked(board_with_beat_cop(false), &BEAT_COP_FAST);
     let reason = match result.outcome {
         EngineOutcome::Rejected { reason } => reason,
         other => panic!("non-active investigator with no permissive window must reject: {other:?}"),
