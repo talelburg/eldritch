@@ -890,8 +890,11 @@ fn apply_fight(
             reason: "Effect::Fight: no co-located enemy chosen (target check skipped?)".into(),
         };
     };
-    // `enemy_id` came from `enemies_in_scope` over this same map, so
-    // it is present — a silent 0-difficulty default would mask corruption.
+    // `enemy_id` came from `enemies_in_scope` over this same map, so it is
+    // present; its absence is a state-corruption invariant violation, and
+    // panics here exactly as the `.expect()` this replaced did. (The
+    // *difficulty* no longer needs the lookup — it is the enemy's modified
+    // fight value, read at ST.6 — but the invariant is still worth holding.)
     assert!(
         cx.state.enemies.contains_key(&enemy_id),
         "Fight chosen_enemy returned an id absent from state.enemies",

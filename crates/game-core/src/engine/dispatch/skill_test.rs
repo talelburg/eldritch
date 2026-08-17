@@ -38,6 +38,13 @@ use crate::action::InputResponse;
 /// read time, not at push time (ADR 0005), which is what makes Esoteric
 /// Formula 02254's *"+2 \[willpower\] … for each clue on the attacked
 /// enemy"* expressible later.
+///
+/// One consequence of not evaluating at initiation: an expression the
+/// evaluator cannot resolve no longer rejects the initiating effect, it is
+/// skipped at read time under the recorded population's silent-skip policy
+/// (loudly in debug — `collect_recorded` `debug_assert`s on it). Nothing
+/// can write one today: both DSL modifiers carry literals, and the only
+/// other `IntExpr` in reach is a `Count`, which always resolves.
 #[derive(Debug, Clone)]
 pub(in crate::engine) struct InitiatorModifier {
     /// What it modifies — the controller for a combat bonus, the
@@ -1151,10 +1158,9 @@ fn validate_commit_indices(
 /// investigated, or the modified fight or evade value of the enemy being
 /// attacked or evaded, clamped once at zero after every modifier.
 ///
-/// `Skill_Tests.md`, "Variable Difficulty Skill Tests": *"While performing
-/// a skill test whose difficulty is modified based on another aspect of the
-/// game, that difficulty changes whenever the corresponding aspect's status
-/// does."*
+/// The `i8` face of the query, for the callers that announce or compare a
+/// difficulty; [`DifficultyBasis`](crate::state::DifficultyBasis) carries
+/// the rule that makes it a query at all, and the ST.6 check that sets it.
 ///
 /// `0` with no test in flight. Saturates into `i8` for the absurd case;
 /// realistic difficulties are 0–6.

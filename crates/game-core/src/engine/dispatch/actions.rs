@@ -710,6 +710,46 @@ fn validate_engaged_action<'a>(
     Ok(enemy)
 }
 
+/// Validate that `enemy_id` is a legal Fight target for an investigator
+/// standing at `inv_location`: the enemy exists, is co-located (RR p.12,
+/// *"To fight an enemy **at his or her location**…"* — engagement is not
+/// required, unlike Evade), and its printed fight value is not malformed.
+///
+/// Returns nothing on success: the fight value it range-checks is read
+/// again at ST.6 through the modified-value query, not carried out of
+/// here (#677).
+fn validate_fight_target(
+    state: &GameState,
+    investigator: InvestigatorId,
+    inv_location: LocationId,
+    enemy_id: EnemyId,
+) -> Result<(), EngineOutcome> {
+    let Some(enemy) = state.enemies.get(&enemy_id) else {
+        return Err(EngineOutcome::Rejected {
+            reason: format!("Fight: enemy {enemy_id:?} is not in state").into(),
+        });
+    };
+    if enemy.current_location != Some(inv_location) {
+        return Err(EngineOutcome::Rejected {
+            reason: format!(
+                "Fight: enemy {enemy_id:?} (at {:?}) is not at {investigator:?}'s location ({inv_location:?})",
+                enemy.current_location,
+            )
+            .into(),
+        });
+    }
+    if enemy.fight < 0 {
+        return Err(EngineOutcome::Rejected {
+            reason: format!(
+                "Fight: enemy {enemy_id:?} has negative fight value {} (malformed state)",
+                enemy.fight,
+            )
+            .into(),
+        });
+    }
+    Ok(())
+}
+
 /// Spend 1 action point from the active investigator and emit
 /// `ActionsRemainingChanged`. Caller has already validated that
 /// `actions_remaining >= 1`.
@@ -830,30 +870,8 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
             reason: format!("Fight: {investigator:?} has no current_location to fight from").into(),
         };
     };
-    {
-        let Some(enemy) = cx.state.enemies.get(&enemy_id) else {
-            return EngineOutcome::Rejected {
-                reason: format!("Fight: enemy {enemy_id:?} is not in state").into(),
-            };
-        };
-        if enemy.current_location != Some(inv_location) {
-            return EngineOutcome::Rejected {
-                reason: format!(
-                    "Fight: enemy {enemy_id:?} (at {:?}) is not at {investigator:?}'s location ({inv_location:?})",
-                    enemy.current_location,
-                )
-                .into(),
-            };
-        }
-        if enemy.fight < 0 {
-            return EngineOutcome::Rejected {
-                reason: format!(
-                    "Fight: enemy {enemy_id:?} has negative fight value {} (malformed state)",
-                    enemy.fight,
-                )
-                .into(),
-            };
-        }
+    if let Err(rejection) = validate_fight_target(cx.state, investigator, inv_location, enemy_id) {
+        return rejection;
     }
     if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Fight, "Fight")
     {
@@ -884,18 +902,19 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
 /// Spends 1 action, runs an Agility skill test against the enemy's
 /// evade value, and on success disengages and exhausts the enemy.
 pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId) -> EngineOutcome {
+    // The evade value it range-checks is read again at ST.6 through the
+    // modified-value query, not carried out of here (#677).
     match validate_engaged_action(cx.state, "Evade", investigator, enemy_id) {
-        Ok(enemy) => {
-            if enemy.evade < 0 {
-                return EngineOutcome::Rejected {
-                    reason: format!(
-                        "Evade: enemy {enemy_id:?} has negative evade value {} (malformed state)",
-                        enemy.evade,
-                    )
-                    .into(),
-                };
+        Ok(enemy) if enemy.evade < 0 => {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "Evade: enemy {enemy_id:?} has negative evade value {} (malformed state)",
+                    enemy.evade,
+                )
+                .into(),
             }
         }
+        Ok(_) => {}
         Err(rejected) => return rejected,
     }
     if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Evade, "Evade")

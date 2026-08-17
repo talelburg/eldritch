@@ -380,10 +380,8 @@ fn a_modifier_answers_differently_either_side_of_a_board_change() {
 // ---- an enemy's stats as a test's difficulty ---------------------
 
 /// A Fight action's difficulty **is** the attacked enemy's modified
-/// fight value (#677). `Skill_Tests.md`, "Variable Difficulty Skill
-/// Tests": *"While performing a skill test whose difficulty is modified
-/// based on another aspect of the game, that difficulty changes whenever
-/// the corresponding aspect's status does."*
+/// fight value (#677) — `glossary/Skill_Tests.md`, "Variable Difficulty
+/// Skill Tests", quoted on `DifficultyBasis`.
 ///
 /// Combat 2 against a Ghoul (printed fight 2) succeeds by 0; with The
 /// Ritual Begins' *"Each enemy gets +1 fight"* showing, the same attack

@@ -263,11 +263,9 @@ pub fn modified_value(
 /// The in-flight test's difficulty: whatever its
 /// [`DifficultyBasis`] names, read as the board stands **now**.
 ///
-/// `Skill_Tests.md`, "Variable Difficulty Skill Tests": *"While performing
-/// a skill test whose difficulty is modified based on another aspect of the
-/// game, that difficulty changes whenever the corresponding aspect's status
-/// does."* An enemy's modified fight value *is* the difficulty of a Fight
-/// action, so this delegates rather than folding a difficulty of its own:
+/// An enemy's modified fight value *is* the difficulty of a Fight
+/// action — [`DifficultyBasis`] carries the rule and its citation — so this
+/// delegates rather than folding a difficulty of its own:
 /// every card modifying that enemy's fight modifies the test, and the clamp
 /// happens once, in the delegate's [`ModifierBreakdown::total`].
 ///
@@ -278,6 +276,13 @@ pub fn modified_value(
 ///
 /// With no test in flight there is no difficulty to read: base 0, no
 /// contributions.
+///
+/// **TODO(#682):** the same is true if the basis names an entity that has
+/// left play — an enemy defeated between ST.1 and ST.6 — and there the
+/// answer is wrong rather than merely absent: difficulty 0 makes the attack
+/// automatically succeed. The vendored rules do not say what becomes of a
+/// test whose target leaves play, so #677 declined to invent an answer;
+/// #682 owns the ruling.
 fn difficulty(
     state: &GameState,
     registry: Option<&CardRegistry>,
@@ -333,8 +338,10 @@ fn base_value(state: &GameState, target: ModifierTarget, quantity: ModifiedQuant
             .enemies
             .get(&id)
             .map_or(0, |e| i32::from(e.max_health)),
-        // `ModifierTarget::Test` never reaches here — `modified_value`
-        // resolves the difficulty basis and asks the underlying target.
+        (ModifierTarget::Test, ModifiedQuantity::Difficulty) => unreachable!(
+            "modified_value resolves the difficulty basis and asks the underlying \
+             target; base_value never sees the pair"
+        ),
         _ => 0,
     }
 }

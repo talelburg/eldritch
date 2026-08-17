@@ -1462,14 +1462,11 @@ pub struct InFlightSkillTest {
     /// What this test's difficulty is read *from* — never a number
     /// computed when the test started.
     ///
-    /// `Skill_Tests.md`, "Variable Difficulty Skill Tests": *"While
-    /// performing a skill test whose difficulty is modified based on
-    /// another aspect of the game, that difficulty changes whenever the
-    /// corresponding aspect's status does."* So the difficulty is a query
-    /// — [`ModifiedQuantity::Difficulty`](crate::engine::modified_value::ModifiedQuantity::Difficulty)
+    /// The difficulty is a query —
+    /// [`ModifiedQuantity::Difficulty`](crate::engine::modified_value::ModifiedQuantity::Difficulty)
     /// over [`ModifierTarget::Test`], which resolves this basis and reads
     /// the underlying location's shroud or enemy's fight/evade as the board
-    /// stands at ST.6 (#677).
+    /// stands at ST.6 (#677). [`DifficultyBasis`] carries the rule.
     pub difficulty_basis: DifficultyBasis,
     /// The cards the active investigator has committed to the test, in
     /// commit order — **held here, not in hand**. Rules Reference glossary
@@ -2176,17 +2173,32 @@ pub enum ModifierTarget {
 /// ADR 0005: *"An enemy's modified fight value **is** the difficulty of a
 /// Fight action and its modified evade value **is** the difficulty of an
 /// Evade action"*, and a location's modified shroud is the difficulty of an
-/// investigation. `Skill_Tests.md`, "Variable Difficulty Skill Tests":
+/// investigation. `glossary/Skill_Tests.md`, "Variable Difficulty Skill
+/// Tests" — the canonical statement of the rule, quoted here and linked
+/// from everywhere else that depends on it:
 ///
 /// > While performing a skill test whose difficulty is modified based on
 /// > another aspect of the game, that difficulty changes whenever the
 /// > corresponding aspect's status does.
+/// >
+/// > If an ability or game effect checks a variable difficulty, most
+/// > commonly during a skill test's ST.6 to determine whether that test
+/// > succeeded or failed, the value of that difficulty is set for the
+/// > effect in question and is not re-evaluated if the variable difficulty
+/// > continues to change.
 ///
 /// So the in-flight test stores the *basis* — which quantity of which
 /// entity its difficulty is read from — and never a number computed at
 /// initiation. [`Fixed`](Self::Fixed) is the exception that proves it: a
 /// treachery's printed difficulty is a base value on the card, not a
 /// snapshot of anything on the board.
+///
+/// The second paragraph is what bounds the re-reading: the difficulty is
+/// live *until* something checks it, and the ST.6 check is where it is set.
+/// The engine matches that shape without a pinning step of its own — the
+/// ST.6 read stores its verdict on
+/// [`InFlightSkillTest::resolved`](InFlightSkillTest::resolved), and every
+/// later step reads the verdict rather than re-comparing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum DifficultyBasis {
