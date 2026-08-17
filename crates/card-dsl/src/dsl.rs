@@ -636,13 +636,18 @@ pub enum Effect {
         target: InvestigatorTarget,
         count: u8,
     },
-    /// Adjust a stat by `delta` for the duration described by `scope`.
-    /// Most scopes are passive contributions to engine queries
-    /// rather than mutations of the investigator's stored fields.
+    /// Adjust a stat by `delta`, for the audience described by
+    /// `audience` and the duration described by `scope`. Most scopes are
+    /// passive contributions to engine queries rather than mutations of
+    /// the target's stored fields.
     Modify {
         stat: Stat,
         delta: i8,
         scope: ModifierScope,
+        /// Who receives the adjustment. [`ModifierAudience::Controller`]
+        /// for the "You get …" majority; the other variants let a card
+        /// reach past its own controller.
+        audience: ModifierAudience,
     },
     /// Run effects in order. Stops at the first non-`Done` outcome
     /// (rejection, awaiting input).
@@ -880,9 +885,13 @@ pub enum HarmKind {
 
 /// A statistic that an [`Effect::Modify`] can adjust.
 ///
-/// Phase-2 minimal set: the four skills plus max-health and max-sanity
-/// (needed for ally assets like Beat Cop). Action points and other
-/// "current" counters get added when cards in later cycles touch them.
+/// Whose statistic it is falls out of the [`ModifierAudience`] the same
+/// `Modify` carries: `MaxHealth` on an investigator audience is that
+/// investigator's sanity-and-health capacity, while `MaxHealth` on an
+/// enemy audience is the enemy's printed health (Towering Beasts 02256:
+/// *"Attached enemy gets +1 fight and +1 health."*). Action points and
+/// other "current" counters get added when cards in later cycles touch
+/// them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Stat {
     Willpower,
@@ -894,6 +903,51 @@ pub enum Stat {
     /// A location's shroud (investigate difficulty), adjusted by
     /// location attachments such as Obscuring Fog 01168's `+2`.
     Shroud,
+    /// An enemy's fight value (The Ritual Begins 01144: *"Each enemy
+    /// gets +1 fight and +1 evade."*).
+    Fight,
+    /// An enemy's evade value (Cold Spring Glen 02244: *"Each enemy in
+    /// Cold Spring Glen gets -1 evade."*).
+    Evade,
+}
+
+/// Who an [`Effect::Modify`] applies to, read off the printed text's
+/// subject rather than off where the source card happens to sit.
+///
+/// A modifier is *found* by a sweep over every place a card can sit —
+/// investigators' in-play cards, locations, enemies, their attachments,
+/// and the current act and agenda — so the audience is what decides
+/// whether the modifier a sweep found reaches the entity being asked
+/// about. Without it a card on one investigator's board could not reach
+/// another's, which most of the corpus's non-asset modifiers require.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ModifierAudience {
+    /// "You get …" — the investigator who controls the source card.
+    /// The overwhelmingly common case (Beat Cop 01018: *"You get +1
+    /// \[combat\]."*) and the [`modify`] builder's default.
+    Controller,
+    /// "Each investigator at \<the source\>'s location gets …" — every
+    /// investigator at the source's own location. Lita Chantler 01117
+    /// (*"Each investigator at your location gets +1 \[combat\]."*),
+    /// Whippoorwill 02090 (*"Each investigator at Whippoorwill's
+    /// location gets -1 \[willpower\], -1 \[intellect\], -1 \[combat\], and
+    /// -1 \[agility\]."*) and Whateley Ruins 02250 (*"Each investigator
+    /// in Whateley Ruins gets -1 \[willpower\]."*) are all this one,
+    /// from a controlled asset, an enemy and a location respectively.
+    EachInvestigatorAtSourceLocation,
+    /// "Each enemy at \<the source\>'s location gets …" — Cold Spring
+    /// Glen 02244 (*"Each enemy in Cold Spring Glen gets -1 evade."*).
+    EachEnemyAtSourceLocation,
+    /// "Each enemy gets …" — every enemy in play, wherever the source
+    /// sits. The Ritual Begins 01144 (*"Each enemy gets +1 fight and +1
+    /// evade."*).
+    EachEnemy,
+    /// "Attached \<location/enemy\> gets …" — the entity the source card
+    /// is attached to. Obscuring Fog 01168 (*"Attached location gets +2
+    /// shroud."*) and Towering Beasts 02256 (*"Attached enemy gets +1
+    /// fight and +1 health."*). Contributes nothing from a source that
+    /// is not an attachment.
+    AttachedCard,
 }
 
 /// How long an [`Effect::Modify`] applies.
@@ -1521,10 +1575,27 @@ pub fn attach_self_to_location() -> Effect {
     Effect::AttachSelfToLocation
 }
 
-/// Build an [`Effect::Modify`].
+/// Build an [`Effect::Modify`] aimed at the source's controller — the
+/// "You get …" case. Use [`modify_for`] for every other audience.
 #[must_use]
 pub fn modify(stat: Stat, delta: i8, scope: ModifierScope) -> Effect {
-    Effect::Modify { stat, delta, scope }
+    modify_for(ModifierAudience::Controller, stat, delta, scope)
+}
+
+/// Build an [`Effect::Modify`] aimed at `audience`.
+#[must_use]
+pub fn modify_for(
+    audience: ModifierAudience,
+    stat: Stat,
+    delta: i8,
+    scope: ModifierScope,
+) -> Effect {
+    Effect::Modify {
+        stat,
+        delta,
+        scope,
+        audience,
+    }
 }
 
 /// Build an [`Effect::Seq`] from any iterable of effects.
@@ -1698,6 +1769,7 @@ mod tests {
                 stat: Stat::Willpower,
                 delta: 1,
                 scope: ModifierScope::WhileInPlay,
+                audience: ModifierAudience::Controller,
             }
         ));
     }
@@ -1721,6 +1793,7 @@ mod tests {
                 stat: Stat::Willpower,
                 delta: 1,
                 scope: ModifierScope::WhileInPlay,
+                audience: ModifierAudience::Controller,
             }
         ));
         assert!(matches!(
@@ -1729,6 +1802,7 @@ mod tests {
                 stat: Stat::MaxHealth,
                 delta: 1,
                 scope: ModifierScope::WhileInPlay,
+                audience: ModifierAudience::Controller,
             }
         ));
     }

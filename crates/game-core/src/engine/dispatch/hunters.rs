@@ -1,9 +1,11 @@
 //! Hunter-movement and prey-resolution helpers (Enemy phase step 3.2).
 
-use crate::card_data::{Prey, PreyDirection, PreyMeasure, SkillKind};
+use crate::card_data::{Prey, PreyDirection, PreyMeasure};
 use crate::card_registry::{self, CardRegistry};
-use crate::dsl::{Effect, Restriction, Stat, Trigger};
-use crate::engine::evaluator::unconditional_constant_stat_modifier;
+use crate::dsl::{Effect, Restriction, Trigger};
+use crate::engine::modified_value::{
+    modified_value, ModifiedQuantity, ModifierTarget, ReadContext,
+};
 use crate::engine::pathfinding::{bfs_distance_with, shortest_first_steps_with};
 use crate::event::Event;
 use crate::state::{
@@ -33,41 +35,39 @@ pub(super) enum PreyResolution {
 /// lower is selected by the [`PreyDirection`] in [`Prey::Ranked`].
 ///
 /// The *modified* value (Rules Reference p.18 Modifiers, p.12 remaining
-/// health): the base value plus the investigator's always-on constant
-/// modifiers to that stat, floored at zero (RR p.15 — a stat cannot
-/// function below zero). Prey resolves outside any skill test, so only
-/// unconditional (`WhileInPlay`) modifiers apply — see
-/// [`unconditional_constant_stat_modifier`]. `registry` is `None` in
-/// engine-only tests with no card data installed (base values only).
+/// health): the [modified value](modified_value) of the underlying
+/// quantity, less any damage taken for remaining health, floored at zero
+/// (RR p.15 — a stat cannot function below zero). The subtraction sits
+/// inside the floor, so an investigator whose modified max health is
+/// exceeded by their damage ranks at 0 rather than below it.
+///
+/// Prey resolves outside any skill test, so the read passes
+/// [`ReadContext::OutsideTest`] explicitly: only unconditional
+/// (`WhileInPlay`) modifiers apply, whatever happens to be in flight
+/// elsewhere. `registry` is `None` in engine-only tests with no card
+/// data installed (base values only).
 fn measure_value(
     state: &GameState,
     registry: Option<&CardRegistry>,
     inv: &Investigator,
     measure: PreyMeasure,
 ) -> i32 {
-    let (base, stat) = match measure {
-        PreyMeasure::Skill(kind) => (i32::from(inv.skills.value(kind)), skill_to_stat(kind)),
-        PreyMeasure::RemainingHealth => (
-            i32::from(inv.max_health()) - i32::from(inv.damage()),
-            Stat::MaxHealth,
-        ),
+    // One match, so the quantity asked for and the damage subtracted
+    // from it can't drift apart: a skill is measured whole, remaining
+    // health is max health less the damage taken.
+    let (quantity, damage) = match measure {
+        PreyMeasure::Skill(kind) => (ModifiedQuantity::Skill(kind), 0),
+        PreyMeasure::RemainingHealth => (ModifiedQuantity::MaxHealth, i32::from(inv.damage())),
     };
-    let modifier = registry.map_or(0, |reg| {
-        i32::from(unconditional_constant_stat_modifier(
-            state, reg, inv.id, stat,
-        ))
-    });
-    (base + modifier).max(0)
-}
-
-/// Map a prey skill measure to its [`Stat`] for the modifier lookup.
-fn skill_to_stat(kind: SkillKind) -> Stat {
-    match kind {
-        SkillKind::Willpower => Stat::Willpower,
-        SkillKind::Intellect => Stat::Intellect,
-        SkillKind::Combat => Stat::Combat,
-        SkillKind::Agility => Stat::Agility,
-    }
+    let value = modified_value(
+        state,
+        registry,
+        ModifierTarget::Investigator(inv.id),
+        quantity,
+        ReadContext::OutsideTest,
+    )
+    .raw_total();
+    (value - damage).max(0)
 }
 
 /// Narrow `candidates` by `prey`. `Default` treats all candidates as
@@ -738,8 +738,9 @@ mod resolve_prey_tests {
 #[cfg(test)]
 mod measure_value_tests {
     use super::*;
+    use crate::card_data::SkillKind;
     use crate::card_registry::CardRegistry;
-    use crate::dsl::{constant, modify, Ability, ModifierScope};
+    use crate::dsl::{constant, modify, Ability, ModifierScope, Stat};
     use crate::state::{CardCode, CardInPlay, CardInstanceId};
     use crate::test_support::{test_investigator, GameStateBuilder};
 

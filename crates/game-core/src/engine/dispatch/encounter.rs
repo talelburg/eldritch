@@ -466,6 +466,7 @@ pub(super) fn spawn_enemy_at(
         prey,
         retaliate: *retaliate,
         victory: *victory,
+        attachments: Vec::new(),
     };
     cx.state.enemies.insert(enemy_id, enemy);
 

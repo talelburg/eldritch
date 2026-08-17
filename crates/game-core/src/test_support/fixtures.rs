@@ -118,6 +118,7 @@ pub fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
         prey: Prey::Default,
         retaliate: false,
         victory: None,
+        attachments: Vec::new(),
     }
 }
 

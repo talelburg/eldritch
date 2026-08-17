@@ -47,7 +47,7 @@ pub fn abilities() -> Vec<Ability> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::{Effect, Trigger};
+    use card_dsl::dsl::{Effect, ModifierAudience, Trigger};
 
     #[test]
     fn abilities_are_two_fast_resource_costed_modifies() {
@@ -75,6 +75,7 @@ mod tests {
                 stat: Stat::Willpower,
                 delta: 1,
                 scope: ModifierScope::ThisSkillTest,
+                audience: ModifierAudience::Controller,
             }
         ));
     }
@@ -87,6 +88,7 @@ mod tests {
                 stat: Stat::Combat,
                 delta: 1,
                 scope: ModifierScope::ThisSkillTest,
+                audience: ModifierAudience::Controller,
             }
         ));
     }

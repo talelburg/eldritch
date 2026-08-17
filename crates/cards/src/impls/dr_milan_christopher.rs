@@ -48,8 +48,8 @@ pub fn abilities() -> Vec<Ability> {
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::{
-        Effect, EventPattern, EventTiming, InvestigatorTarget, ModifierScope, SkillTestKind, Stat,
-        TestOutcome, Trigger,
+        Effect, EventPattern, EventTiming, InvestigatorTarget, ModifierAudience, ModifierScope,
+        SkillTestKind, Stat, TestOutcome, Trigger,
     };
 
     #[test]
@@ -64,6 +64,7 @@ mod tests {
                 stat: Stat::Intellect,
                 delta: 1,
                 scope: ModifierScope::WhileInPlay,
+                audience: ModifierAudience::Controller,
             }
         ));
 
