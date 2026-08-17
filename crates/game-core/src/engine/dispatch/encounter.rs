@@ -289,6 +289,26 @@ pub fn resolve_encounter_card(
 /// suspends (`AwaitingInput`) with the enemy already minted into `state.enemies`
 /// and `Event::EnemySpawned` pushed (the pending choice carries the rest of the
 /// work to [`resume_spawn_engage`]).
+///
+/// # Unmodelled spawn instructions block the draw
+///
+/// Outcome (3) is a hard stop, not a skip, and that is worth stating plainly:
+/// `apply_via` restores the pristine state on `Rejected`, so the offending card
+/// stays on top of the encounter deck and the *same* draw re-rejects rather
+/// than failing once and moving on. Ten corpus enemies are consequently
+/// undrawable — Acolyte 01169, Wizard of the Order 01170 and Servant of Many
+/// Mouths 02224 ("Any empty location"), The Masked Hunter 01121b, Thrall 02086,
+/// Lupine Thrall 02095, Emergent Monstrosity 02183, Crazed Shoggoth 02295 and
+/// Interstellar Traveler 02329 (one distinct clause each), plus Ruth Turner
+/// 01141, whose clause is a plain fixed-location spawn the *parser* truncates
+/// (#575, coordinated with #578 — not a missing shape).
+///
+/// No shipped scenario seeds any of them today, and #670 removes the condition
+/// by modelling the shapes. The alternative — treating an unmodelled clause as
+/// the RR "no legal location" discard — was rejected deliberately: discarding
+/// is itself a rule with an observable effect on the encounter deck, and
+/// applying it because *we* cannot read the card would be the same
+/// wrong-rule-silently mistake in a new place (#635).
 fn spawn_enemy(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -297,8 +317,9 @@ fn spawn_enemy(
 ) -> EngineOutcome {
     // Resolve the spawn location (validate-first). Only the card's `spawn`
     // rule is read here; the full stat read + mint happens in
-    // [`spawn_enemy_at`]. A `Specific` spawn names an in-play location; the
-    // default rule (`None`) spawns at the drawing investigator's location.
+    // [`spawn_enemy_at`]. A `Specific` spawn names an in-play location; an
+    // `Unrepresented` one refuses; the default rule (`None`) spawns at the
+    // drawing investigator's location.
     let CardKind::Enemy { spawn, .. } = &metadata.kind else {
         return EngineOutcome::Rejected {
             reason: format!("spawn_enemy: card {code} is not an enemy").into(),
@@ -341,8 +362,9 @@ fn spawn_enemy(
             // refusal, matching how `PlayCard` treats an unimplemented card.
             return EngineOutcome::Rejected {
                 reason: format!(
-                    "spawn_enemy: card {code} prints an unmodelled spawn instruction \
-                     {clause:?}; refusing rather than spawning at the drawer's location",
+                    "TODO(#635): card {code} prints spawn instruction {clause:?}, which \
+                     needs a modelled SpawnLocation variant and the spawning \
+                     investigator's choice among valid locations (lands with #670)",
                 )
                 .into(),
             };

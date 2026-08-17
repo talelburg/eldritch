@@ -80,10 +80,11 @@ fn acolyte_refuses_rather_than_spawning_at_the_drawers_location() {
         "the Acolyte must not be placed anywhere — least of all at the \
          drawing investigator's (non-empty) location",
     );
-    assert!(
-        result.state.encounter_discard.is_empty(),
-        "this is a refusal, not the RR \"no legal location\" discard path",
-    );
+    // The remaining rejection invariants (no discard, no events, pristine
+    // state) belong to the engine seam and are asserted there, in
+    // `encounter.rs`'s `spawn_with_unrepresented_instruction_rejects_without_mutating`.
+    // What only this test can show is that the *shipped corpus entry* for
+    // 01169 carries a clause that reaches that refusal at all.
 }
 
 #[test]
