@@ -944,10 +944,11 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 // ModifierScope::ThisSkillTest contributions expire when the
                 // test they were bought for ends. Keyed on this test's
                 // identity (#676), so it takes every row bought for it and
-                // leaves any other test's alone.
-                if let Some(id) = cx.state.current_skill_test().map(|t| t.id) {
-                    cx.state.expire_modifiers_for_test(id);
-                }
+                // leaves any other test's alone. The frame is still on the
+                // stack here (`take_skill_test` below removes it); a missing
+                // one would leak rows into the next test, so say so loudly in
+                // debug rather than skipping in silence.
+                expire_this_tests_modifiers(cx);
                 // Encounter-treachery disposal is no longer the skill-test
                 // driver's concern (#380): a treachery whose Revelation
                 // suspended into this test parks an `EncounterCard` frame
@@ -977,6 +978,25 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
     }
 }
 
+/// Expire every [`RecordedModifier`](crate::state::RecordedModifier) bought for
+/// the test being torn down (#676).
+///
+/// Called from both teardowns — the ST.8 one and [`abandon_test`] — with the
+/// `SkillTest` frame still on the stack, since the id it keys on lives there.
+/// A missing frame is a teardown bug that would leak test-scoped rows into the
+/// next test, which is the failure #676 exists to prevent, so it trips a
+/// `debug_assert` rather than quietly doing nothing.
+fn expire_this_tests_modifiers(cx: &mut Cx) {
+    let ending = cx.state.current_skill_test().map(|t| t.id);
+    debug_assert!(
+        ending.is_some(),
+        "skill-test teardown: no SkillTest frame to expire test-scoped modifiers against",
+    );
+    if let Some(id) = ending {
+        cx.state.expire_modifiers_for_test(id);
+    }
+}
+
 /// Tear down an in-flight skill test whose tester was eliminated mid-resolution
 /// (#564), and pop its frame.
 ///
@@ -996,9 +1016,7 @@ fn abandon_test(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     // it ended — the abandoned case is exactly the one where a leak would be
     // invisible (#676). Keyed on this test's identity, as in the normal
     // teardown.
-    if let Some(id) = cx.state.current_skill_test().map(|t| t.id) {
-        cx.state.expire_modifiers_for_test(id);
-    }
+    expire_this_tests_modifiers(cx);
     let taken = cx.state.take_skill_test();
     debug_assert!(
         taken.is_some(),
@@ -1513,7 +1531,7 @@ mod tests {
     use super::*;
     use crate::event::Event;
     use crate::scenario::TokenEffect;
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{test_investigator, test_skill_test, GameStateBuilder};
 
     /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
     /// reading the commit-time accumulator off the in-flight record
@@ -1534,27 +1552,18 @@ mod tests {
         state
             .continuations
             .push(crate::state::Continuation::SkillTest(InFlightSkillTest {
-                id: crate::state::SkillTestId(0),
-                investigator: inv,
-                skill: SkillKind::Combat,
-                kind: SkillTestKind::Fight,
-                difficulty: 2,
-                committed_by_active: Vec::new(),
-                tested_location: None,
                 follow_up: SkillTestFollowUp::Fight {
                     enemy: EnemyId(7),
                     extra_damage: 1,
                 },
-                on_fail: None,
-                on_success: None,
-                source: None,
-                continuation: SkillTestStep::AwaitingCommit,
-                test_modifier: 0,
                 bonus_attack_damage: 2,
-                bonus_clues_discovered: 0,
-                token_resolution: None,
-                resolved: None,
-                symbol_on_fail: None,
+                ..test_skill_test(
+                    crate::state::SkillTestId(0),
+                    inv,
+                    SkillKind::Combat,
+                    SkillTestKind::Fight,
+                    2,
+                )
             }));
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -1597,24 +1606,16 @@ mod tests {
         state
             .continuations
             .push(crate::state::Continuation::SkillTest(InFlightSkillTest {
-                id: crate::state::SkillTestId(0),
-                investigator: inv,
-                skill: SkillKind::Intellect,
-                kind: SkillTestKind::Investigate,
-                difficulty: 2,
-                committed_by_active: Vec::new(),
                 tested_location: Some(loc),
                 follow_up: SkillTestFollowUp::Investigate,
-                on_fail: None,
-                on_success: None,
-                source: None,
-                continuation: SkillTestStep::AwaitingCommit,
-                test_modifier: 0,
-                bonus_attack_damage: 0,
                 bonus_clues_discovered: 1,
-                token_resolution: None,
-                resolved: None,
-                symbol_on_fail: None,
+                ..test_skill_test(
+                    crate::state::SkillTestId(0),
+                    inv,
+                    SkillKind::Intellect,
+                    SkillTestKind::Investigate,
+                    2,
+                )
             }));
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -1800,7 +1801,7 @@ mod tests {
     /// emit the commit prompt. (#374.)
     #[test]
     fn closing_a_skill_test_player_window_re_enters_advance() {
-        use crate::state::{ChaosToken, Continuation, FastWindowKind, InFlightSkillTest};
+        use crate::state::{ChaosToken, Continuation, FastWindowKind};
 
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
@@ -1811,26 +1812,13 @@ mod tests {
         // A SkillTest pre-advanced to AwaitingCommit, as if window 1 just opened.
         state
             .continuations
-            .push(Continuation::SkillTest(InFlightSkillTest {
-                id: crate::state::SkillTestId(0),
-                investigator: inv,
-                skill: SkillKind::Willpower,
-                kind: SkillTestKind::Plain,
-                difficulty: 2,
-                committed_by_active: Vec::new(),
-                tested_location: None,
-                follow_up: SkillTestFollowUp::None,
-                on_fail: None,
-                on_success: None,
-                source: None,
-                continuation: SkillTestStep::AwaitingCommit,
-                test_modifier: 0,
-                bonus_attack_damage: 0,
-                bonus_clues_discovered: 0,
-                token_resolution: None,
-                resolved: None,
-                symbol_on_fail: None,
-            }));
+            .push(Continuation::SkillTest(test_skill_test(
+                crate::state::SkillTestId(0),
+                inv,
+                SkillKind::Willpower,
+                SkillTestKind::Plain,
+                2,
+            )));
         let mut events = Vec::new();
         let out = super::super::reaction_windows::run_fast_continuation(
             &mut Cx {

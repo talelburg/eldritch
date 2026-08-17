@@ -58,7 +58,7 @@ pub use rng::RngState;
 pub use scenario::{Resolution, ScenarioId, ScenarioModule, ScenarioRegistry};
 pub use state::{
     resolve_token, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    DefeatCause, Enemy, EnemyId, GameState, Investigator, InvestigatorId, Location, LocationId,
-    Phase, RecordedModifier, SkillKind, Skills, Status, TokenModifiers, TokenResolution, UseKind,
-    Zone,
+    DefeatCause, Enemy, EnemyId, GameState, Investigator, InvestigatorId, Lifetime, Location,
+    LocationId, Phase, RecordedModifier, SkillKind, SkillTestId, Skills, Status, TokenModifiers,
+    TokenResolution, UseKind, Zone,
 };

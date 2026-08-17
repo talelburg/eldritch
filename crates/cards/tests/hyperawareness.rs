@@ -2,10 +2,10 @@
 //! activated abilities record a `ThisSkillTest`-scoped modifier for
 //! intellect (index 0) or agility (index 1).
 //!
-//! Printed text (`data/arkhamdb-snapshot/pack/core/core_encounter.json`
-//! sibling `core.json`): *"\[fast\] Spend 1 resource: You get +1
-//! \[intellect\] for this skill test."* and *"\[fast\] Spend 1 resource: You
-//! get +1 \[agility\] for this skill test."*
+//! Printed text (`data/arkhamdb-snapshot/pack/core/core.json`):
+//! *"\[fast\] Spend 1 resource: You get +1 \[intellect\] for this skill
+//! test."* / *"\[fast\] Spend 1 resource: You get +1 \[agility\] for this
+//! skill test."*
 //!
 //! Demonstrates the composition of three mechanisms with a real card:
 //! - `Trigger::Activated { action_cost: 0 }` + `Cost::Resources(1)` (#53)
@@ -21,8 +21,7 @@
 //! use \[fast\] fast actions as many times as you want, as long as you can
 //! pay the cost; there is no limit."*).
 
-use game_core::action::InputResponse;
-use game_core::engine::{ApplyResult, EngineOutcome, InputKind, InputRequest, TurnAction};
+use game_core::engine::{ApplyResult, EngineOutcome, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId, Phase,
@@ -30,7 +29,7 @@ use game_core::state::{
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, drive_skill_test, perform_skill_test,
-    perform_skill_test_no_commits, test_investigator, ChoiceResolver, GameStateBuilder,
+    perform_skill_test_no_commits, test_investigator, GameStateBuilder, TakeOneFastPlay,
 };
 use game_core::{assert_event, assert_no_event};
 
@@ -70,52 +69,6 @@ fn state_with_hyperawareness() -> (GameState, InvestigatorId, CardInstanceId) {
     (state, id, instance_id)
 }
 
-/// A [`ChoiceResolver`] that takes one offered fast play — the option at
-/// `option_index` — at the first Fast window it meets, then declines every
-/// later window and commits nothing.
-///
-/// The skill test's ST.1 player window is where a `[fast]` ability is
-/// offered, and (since #676) the only place Hyperawareness can be bought:
-/// the two abilities are offered in ability-index order, so option 0 is the
-/// intellect one and option 1 the agility one.
-struct BuyAtFirstFastWindow {
-    option_index: usize,
-    used: bool,
-}
-
-impl BuyAtFirstFastWindow {
-    fn new(option_index: usize) -> Self {
-        Self {
-            option_index,
-            used: false,
-        }
-    }
-}
-
-impl ChoiceResolver for BuyAtFirstFastWindow {
-    fn next(&mut self, request: &InputRequest, _state: &GameState) -> InputResponse {
-        if request.skippable {
-            if !self.used && request.kind == InputKind::PickSingle {
-                self.used = true;
-                assert!(
-                    request.options.len() > self.option_index,
-                    "fast window offered {} options: {:?}",
-                    request.options.len(),
-                    request.options,
-                );
-                return InputResponse::PickSingle(request.options[self.option_index].id);
-            }
-            return InputResponse::Skip;
-        }
-        match request.kind {
-            InputKind::Confirm => InputResponse::Confirm,
-            _ => InputResponse::PickMultiple {
-                selected: Vec::new(),
-            },
-        }
-    }
-}
-
 /// Run a `skill` test at `difficulty`, buying the ability at `option_index`
 /// at the test's player window.
 fn test_buying(
@@ -130,7 +83,7 @@ fn test_buying(
         id,
         skill,
         difficulty,
-        BuyAtFirstFastWindow::new(option_index),
+        TakeOneFastPlay::at_index(option_index),
     )
 }
 
@@ -230,8 +183,20 @@ fn activation_with_no_test_in_flight_is_rejected_and_buffs_nothing_later() {
         "the open-turn menu must not offer a buff that cannot be bought",
     );
 
+    // The refusal comes from the RR initiation gate, which proves the effect
+    // inert with no test to attach to — the same predicate that kept it off
+    // the menu above. (The evaluator's own "no skill test in flight" rejection
+    // sits behind it, for the non-activation paths; it is unit-tested in
+    // `engine::evaluator`.)
     let rejected = dispatch_turn_action_unchecked(state, &action);
-    assert!(matches!(rejected.outcome, EngineOutcome::Rejected { .. }));
+    let reason = match &rejected.outcome {
+        EngineOutcome::Rejected { reason } => reason.to_string(),
+        other => panic!("expected a rejection, got {other:?}"),
+    };
+    assert!(
+        reason.contains(HYPERAWARENESS) && reason.contains("cannot be initiated"),
+        "the reason must name the card and the problem; got: {reason}",
+    );
     assert_no_event!(rejected.events, Event::AbilityActivated { .. });
     assert_eq!(
         rejected.state.investigators[&id].resources, resources_before,

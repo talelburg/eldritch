@@ -17,7 +17,7 @@ use game_core::dsl::{
     activated, constant, gain_resources, modify, Ability, Cost, IntExpr, InvestigatorTarget,
     ModifierScope, Stat,
 };
-use game_core::engine::{apply, legal_actions, EngineOutcome, InputKind, InputRequest};
+use game_core::engine::{apply, legal_actions, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, Lifetime, Phase,
@@ -25,8 +25,8 @@ use game_core::state::{
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, drive_skill_test, perform_skill_test,
-    perform_skill_test_no_commits, take_turn_action, test_investigator, ChoiceResolver,
-    GameStateBuilder,
+    perform_skill_test_no_commits, take_turn_action, test_investigator, GameStateBuilder,
+    TakeOneFastPlay,
 };
 use game_core::TurnAction;
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -337,40 +337,6 @@ fn activating_with_defeated_status_doesnt_need_registry() {
 
 // ---- test-scoped recorded modifiers (#102, #676) -------------------
 
-/// A [`ChoiceResolver`] that takes the first offered fast play at the first
-/// Fast window it meets, then declines everything else and commits nothing.
-///
-/// The only way to buy a `ThisSkillTest` modifier is from inside a test
-/// (#676), and the skill test's ST.1 player window is where a `[fast]`
-/// ability is offered.
-struct ActivateAtFirstFastWindow {
-    used: bool,
-}
-
-impl ActivateAtFirstFastWindow {
-    fn new() -> Self {
-        Self { used: false }
-    }
-}
-
-impl ChoiceResolver for ActivateAtFirstFastWindow {
-    fn next(&mut self, request: &InputRequest, _state: &game_core::GameState) -> InputResponse {
-        if request.skippable {
-            if !self.used && request.kind == InputKind::PickSingle && !request.options.is_empty() {
-                self.used = true;
-                return InputResponse::PickSingle(request.options[0].id);
-            }
-            return InputResponse::Skip;
-        }
-        match request.kind {
-            InputKind::Confirm => InputResponse::Confirm,
-            _ => InputResponse::PickMultiple {
-                selected: Vec::new(),
-            },
-        }
-    }
-}
-
 #[test]
 fn a_test_scoped_modifier_buffs_the_test_it_was_bought_during() {
     // Activate SKILL_BOOST at the running test's player window: pay 1
@@ -384,7 +350,7 @@ fn a_test_scoped_modifier_buffs_the_test_it_was_bought_during() {
         id,
         SkillKind::Intellect,
         4,
-        ActivateAtFirstFastWindow::new(),
+        TakeOneFastPlay::at_index(0),
     );
     assert_event!(
         result.events,
@@ -413,7 +379,7 @@ fn a_test_scoped_modifier_does_not_leak_into_a_second_test() {
         id,
         SkillKind::Intellect,
         4,
-        ActivateAtFirstFastWindow::new(),
+        TakeOneFastPlay::at_index(0),
     );
     let second = perform_skill_test_no_commits(first.state, id, SkillKind::Intellect, 4);
     assert_event!(

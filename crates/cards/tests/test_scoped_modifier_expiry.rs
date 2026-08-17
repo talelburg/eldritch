@@ -17,9 +17,10 @@
 //!
 //! ## Verified card text (`data/arkhamdb-snapshot`, 2026-07-17)
 //!
-//! **Grasping Hands (01162):** "<b>Revelation</b> - Test [agility] (3). If you
-//! fail, take 1 damage for each point you failed by."
-//! **Guard Dog (01021):** an ally with health 3, used here only as a soaker.
+//! **Grasping Hands (01162):** "<b>Revelation</b> - Test [agility] (3). For
+//! each point you fail by, take 1 damage."
+//! **Guard Dog (01021):** an ally with printed health 3 — used here only as a
+//! soaker for that damage.
 
 use game_core::action::EngineRecord;
 use game_core::engine::OptionId;

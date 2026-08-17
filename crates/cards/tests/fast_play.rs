@@ -41,10 +41,11 @@ use game_core::test_support::{
     dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location, GameStateBuilder,
 };
 
+use game_core::TurnAction;
+
 /// Beat Cop 01018: *"You get +1 \[combat\]."* / *"\[fast\] Discard Beat Cop:
 /// Deal 1 damage to an enemy at your location."*
 const BEAT_COP: &str = "01018";
-use game_core::TurnAction;
 
 #[ctor::ctor(unsafe)]
 fn install_cards_registry() {
@@ -210,8 +211,8 @@ fn fast_asset_still_playable_by_active_investigator_during_investigation() {
 
 /// Board for the activated-ability gate: investigator B controls Beat Cop
 /// (instance 1) at a location with a co-located enemy, so the ability has a
-/// live target; A is the active investigator. `window` opens a permissive
-/// Mythos player window when set.
+/// live target; A is the active investigator. `open_window` adds a permissive
+/// Mythos player window — the condition the two tests below differ on.
 fn board_with_beat_cop(open_window: bool) -> game_core::GameState {
     let loc = LocationId(101);
     let a = test_investigator(1);

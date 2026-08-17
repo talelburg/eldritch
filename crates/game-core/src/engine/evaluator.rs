@@ -3563,26 +3563,13 @@ mod tests {
         state
             .continuations
             .push(crate::state::Continuation::SkillTest(
-                crate::state::InFlightSkillTest {
-                    id: test_id,
-                    investigator: InvestigatorId(1),
-                    skill: SkillKind::Intellect,
-                    kind: SkillTestKind::Plain,
-                    difficulty: 2,
-                    committed_by_active: Vec::new(),
-                    tested_location: None,
-                    follow_up: crate::state::SkillTestFollowUp::None,
-                    on_fail: None,
-                    on_success: None,
-                    source: None,
-                    continuation: crate::state::SkillTestStep::AwaitingCommit,
-                    test_modifier: 0,
-                    bonus_attack_damage: 0,
-                    bonus_clues_discovered: 0,
-                    token_resolution: None,
-                    resolved: None,
-                    symbol_on_fail: None,
-                },
+                crate::test_support::test_skill_test(
+                    test_id,
+                    InvestigatorId(1),
+                    SkillKind::Intellect,
+                    SkillTestKind::Plain,
+                    2,
+                ),
             ));
         state
     }

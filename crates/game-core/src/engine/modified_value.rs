@@ -593,7 +593,9 @@ mod tests {
     use super::*;
     use crate::dsl::{constant, elder_sign, modify, modify_for, on_play, Ability, IntExpr};
     use crate::state::{CardInstanceId, LocationId};
-    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+    use crate::test_support::{
+        test_enemy, test_investigator, test_location, test_skill_test, GameStateBuilder,
+    };
 
     /// Mock registry over a small hardcoded set of codes. Keeps these
     /// tests isolated from the global `OnceLock` and from the cards
@@ -994,28 +996,13 @@ mod tests {
         state.recorded_modifiers = rows;
         state
             .continuations
-            .push(crate::state::Continuation::SkillTest(
-                crate::state::InFlightSkillTest {
-                    id: in_flight,
-                    investigator: InvestigatorId(1),
-                    skill: SkillKind::Willpower,
-                    kind: SkillTestKind::Plain,
-                    difficulty: 2,
-                    committed_by_active: Vec::new(),
-                    tested_location: None,
-                    follow_up: crate::state::SkillTestFollowUp::None,
-                    on_fail: None,
-                    on_success: None,
-                    source: None,
-                    continuation: crate::state::SkillTestStep::AwaitingCommit,
-                    test_modifier: 0,
-                    bonus_attack_damage: 0,
-                    bonus_clues_discovered: 0,
-                    token_resolution: None,
-                    resolved: None,
-                    symbol_on_fail: None,
-                },
-            ));
+            .push(crate::state::Continuation::SkillTest(test_skill_test(
+                in_flight,
+                InvestigatorId(1),
+                SkillKind::Willpower,
+                SkillTestKind::Plain,
+                2,
+            )));
         state
     }
 

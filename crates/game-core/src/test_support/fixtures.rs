@@ -18,10 +18,12 @@
 //! when a field addition lands.
 
 use crate::card_data::{ClueValue, Prey};
+use crate::dsl::SkillTestKind;
 use crate::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, GameState, HandSizeDiscard,
-    Investigator, InvestigatorId, Location, LocationId, Skills, Status,
+    InFlightSkillTest, Investigator, InvestigatorId, Location, LocationId, SkillKind,
+    SkillTestFollowUp, SkillTestId, SkillTestStep, Skills, Status,
 };
 
 /// A stock investigator with reasonable defaults.
@@ -119,6 +121,54 @@ pub fn test_enemy(id: u32, name: impl Into<String>) -> Enemy {
         retaliate: false,
         victory: None,
         attachments: Vec::new(),
+    }
+}
+
+/// A stock [`InFlightSkillTest`] parked at its commit window.
+///
+/// Neutral in every direction the caller didn't name: nothing committed, no
+/// tested location, no follow-up, no success/failure effect, no accumulated
+/// bonuses, unresolved. Callers override what they care about with functional
+/// update syntax:
+///
+/// ```ignore
+/// InFlightSkillTest {
+///     follow_up: SkillTestFollowUp::Investigate,
+///     bonus_clues_discovered: 1,
+///     ..test_skill_test(SkillTestId(0), inv, SkillKind::Intellect, SkillTestKind::Investigate, 2)
+/// }
+/// ```
+///
+/// The `#[non_exhaustive]` note at the top of this module applies: a new
+/// field on `InFlightSkillTest` is defaulted here, so it must be reviewed
+/// here too.
+#[must_use]
+pub fn test_skill_test(
+    id: SkillTestId,
+    investigator: InvestigatorId,
+    skill: SkillKind,
+    kind: SkillTestKind,
+    difficulty: i8,
+) -> InFlightSkillTest {
+    InFlightSkillTest {
+        id,
+        investigator,
+        skill,
+        kind,
+        difficulty,
+        committed_by_active: Vec::new(),
+        tested_location: None,
+        follow_up: SkillTestFollowUp::None,
+        on_fail: None,
+        on_success: None,
+        source: None,
+        continuation: SkillTestStep::AwaitingCommit,
+        test_modifier: 0,
+        bonus_attack_damage: 0,
+        bonus_clues_discovered: 0,
+        token_resolution: None,
+        resolved: None,
+        symbol_on_fail: None,
     }
 }
 

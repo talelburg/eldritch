@@ -2741,6 +2741,11 @@ mod continuation_stack_tests {
             "continuations",
             "pending_cancellation",
             "skill_substitutions",
+            // #676's two: a defaulted `skill_test_ids` would re-mint ids a
+            // live row already names, and a defaulted `recorded_modifiers`
+            // would silently drop every test-scoped buff in flight.
+            "skill_test_ids",
+            "recorded_modifiers",
         ] {
             let mut v = full.clone();
             v.as_object_mut()
