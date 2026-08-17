@@ -27,10 +27,10 @@ pub use game_state::{
     Act, ActionResume, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, Assignment,
     AttackLoopStage, CandidateSource, Continuation, DamageSource, EffectFrame, EliminationStep,
     EncounterDisposition, EnemyAttackSource, EnemyResume, FastActorScope, FastWindowKind,
-    GameState, HandSizeDiscard, HunterChoice, InFlightSkillTest, InvestigationResume, MythosResume,
-    PendingSkillModifier, PhaseStep, ResolutionCandidate, ResolvedTest, ScenarioEndStep,
-    SkillSubstitution, SkillTestFollowUp, SkillTestStep, SpawnEngagePending, TimingMode, TimingSub,
-    UpkeepResume,
+    GameState, HandSizeDiscard, HunterChoice, InFlightSkillTest, InvestigationResume, Lifetime,
+    MythosResume, PhaseStep, RecordedModifier, ResolutionCandidate, ResolvedTest, ScenarioEndStep,
+    SkillSubstitution, SkillTestFollowUp, SkillTestId, SkillTestStep, SpawnEngagePending,
+    TimingMode, TimingSub, UpkeepResume,
 };
 pub use investigator::{DefeatCause, Investigator, InvestigatorId, Status};
 pub use location::{Location, LocationId};

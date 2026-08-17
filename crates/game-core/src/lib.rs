@@ -59,6 +59,6 @@ pub use scenario::{Resolution, ScenarioId, ScenarioModule, ScenarioRegistry};
 pub use state::{
     resolve_token, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     DefeatCause, Enemy, EnemyId, GameState, Investigator, InvestigatorId, Location, LocationId,
-    PendingSkillModifier, Phase, SkillKind, Skills, Status, TokenModifiers, TokenResolution,
-    UseKind, Zone,
+    Phase, RecordedModifier, SkillKind, Skills, Status, TokenModifiers, TokenResolution, UseKind,
+    Zone,
 };

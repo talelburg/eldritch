@@ -769,6 +769,7 @@ mod tests {
         state
             .continuations
             .push(crate::state::Continuation::SkillTest(InFlightSkillTest {
+                id: crate::state::SkillTestId(0),
                 investigator: id,
                 skill: crate::state::SkillKind::Intellect,
                 kind: SkillTestKind::Plain,

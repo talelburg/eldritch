@@ -873,40 +873,39 @@ mod tests {
     }
 
     #[test]
-    fn perform_skill_test_drains_only_resolving_investigators_pending_modifiers() {
-        // Two investigators each have a pending ThisSkillTest entry.
-        // Running a skill test for inv1 must drain inv1's entry but
-        // leave inv2's intact for their own future test.
-        let id1 = InvestigatorId(1);
-        let id2 = InvestigatorId(2);
+    fn a_skill_tests_teardown_expires_only_its_own_recorded_rows() {
+        // A recorded row belongs to the test it names (#676). The test run
+        // here mints its own id, so a row stamped with a different one is
+        // neither counted by it (skill 3 vs difficulty 4 fails by 1, despite
+        // the +1 row) nor swept away by its teardown.
+        let id = InvestigatorId(1);
+        let other_test = crate::state::SkillTestId(99);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
             .with_chaos_bag(bag_only_zero())
             .build();
-        state.pending_skill_modifiers = vec![
-            crate::state::PendingSkillModifier {
-                investigator: id1,
-                stat: crate::dsl::Stat::Willpower,
-                delta: 1,
-                source: None,
-            },
-            crate::state::PendingSkillModifier {
-                investigator: id2,
-                stat: crate::dsl::Stat::Willpower,
-                delta: 1,
-                source: None,
-            },
-        ];
+        state.recorded_modifiers = vec![crate::state::RecordedModifier::new(
+            id,
+            crate::dsl::Stat::Willpower,
+            crate::dsl::IntExpr::Lit(1),
+            crate::state::Lifetime::SkillTest(other_test),
+            None,
+        )];
 
-        let result = perform_skill_test_no_commits(state, id1, SkillKind::Willpower, 0);
+        let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 4);
         assert_eq!(result.outcome, EngineOutcome::Done);
+        // A row belonging to another test contributes nothing: skill 3
+        // against difficulty 4 fails by 1, +1 row or no.
+        assert_event!(result.events, Event::SkillTestFailed { by: 1, .. });
         assert_eq!(
-            result.state.pending_skill_modifiers.len(),
+            result.state.recorded_modifiers.len(),
             1,
-            "inv2's entry must survive inv1's test",
+            "and is not expired by this test's teardown either",
         );
-        assert_eq!(result.state.pending_skill_modifiers[0].investigator, id2);
+        assert_eq!(
+            result.state.recorded_modifiers[0].lifetime,
+            crate::state::Lifetime::SkillTest(other_test),
+        );
     }
 
     #[test]

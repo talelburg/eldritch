@@ -40,9 +40,13 @@
 //! source happens to sit.
 //!
 //! Modifiers whose lifetime is decoupled from any card's zone are
-//! *recorded* instead of derived; today that is
-//! [`PendingSkillModifier`], the
-//! [`ModifierScope::ThisSkillTest`] row an activated ability pushes.
+//! *recorded* instead of derived — [`GameState::recorded_modifiers`].
+//! Today that is the [`ModifierScope::ThisSkillTest`] row an activated
+//! ability pushes, which carries the
+//! [`SkillTestId`](crate::state::SkillTestId) of the test it was bought
+//! for and is inert under any other. A recorded row stores its delta as
+//! an **expression**, evaluated at read time exactly as a swept
+//! modifier's condition is.
 //!
 //! # The fold
 //!
@@ -50,8 +54,10 @@
 //! — base value, a transform over rows, addition and subtraction,
 //! doubling and halving with rounding, then the clamp and whole-quantity
 //! substitution. This module implements the base, the additive pass and
-//! the clamp; the row transform and the multiplicative pass are #676's,
-//! and substitution (automatic failure and success) is #677's. Because
+//! the clamp; the row transform and the multiplicative pass arrive with
+//! their first corpus consumers (Jim Culver 02004, Hunting Nightgaunt
+//! 01172, Double or Nothing 02026), and substitution (automatic failure
+//! and success) with the difficulty slice, #677. Because
 //! the clamp is last, [`ModifierBreakdown`] exposes the unclamped sum as
 //! well: a caller that still has modifiers of its own to add — the
 //! skill-test handler, which adds the revealed token's ±N after this
@@ -62,9 +68,7 @@
 use crate::card_data::SkillKind;
 use crate::card_registry::CardRegistry;
 use crate::dsl::{Effect, ModifierAudience, ModifierScope, SkillTestKind, Stat, Trigger};
-use crate::state::{
-    CardCode, CardInPlay, EnemyId, GameState, InvestigatorId, LocationId, PendingSkillModifier,
-};
+use crate::state::{CardCode, CardInPlay, EnemyId, GameState, InvestigatorId, LocationId};
 
 /// Which entity's quantity is being asked about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -173,7 +177,7 @@ pub struct Contribution {
 pub struct ModifierBreakdown {
     /// The base value — the printed number, until a card replaces it
     /// (Duke 02014's *"You attack with a base \[combat\] skill of 4."*,
-    /// which is #676's stage 1 and no card declares yet).
+    /// the fold's stage 1, which no card declares yet).
     pub base: i32,
     /// Every active modifier, in sweep order.
     pub contributions: Vec<Contribution>,
@@ -246,8 +250,8 @@ pub fn modified_value(
     breakdown
 }
 
-/// Stage 1: the printed value. Base replacement (Duke 02014) is #676's;
-/// until it lands the base is always what the card prints.
+/// Stage 1: the printed value. Base replacement (Duke 02014) lands with
+/// that card; until then the base is always what the card prints.
 fn base_value(state: &GameState, target: ModifierTarget, quantity: ModifiedQuantity) -> i32 {
     match (target, quantity) {
         (ModifierTarget::Investigator(id), ModifiedQuantity::Skill(skill)) => state
@@ -389,11 +393,19 @@ fn sweep(
 /// The recorded half of the population: rows whose lifetime is
 /// decoupled from any card's zone.
 ///
-/// Only [`PendingSkillModifier`] exists today, and only inside a test —
-/// its scope is [`ModifierScope::ThisSkillTest`], so a read outside a
-/// test (prey ranking) must not see it. Giving those rows a test
-/// identity, so a row from a *previous* test is inert rather than
-/// merely drained, is #676's.
+/// Every row today carries [`Lifetime::SkillTest`](crate::state::Lifetime::SkillTest), so it contributes
+/// only while the test it names is the test in flight — a row bought for
+/// an earlier test is **inert**, not merely drained, and a read that
+/// declares itself outside a test (prey ranking, which passes
+/// [`ReadContext::OutsideTest`] explicitly) sees none of them.
+///
+/// The delta is an expression evaluated **here**, at read time, against
+/// the row's investigator as "you". An expression that cannot be
+/// resolved is skipped rather than counted as zero: contributing a
+/// silently-wrong number is worse than contributing none, and nothing
+/// can write such a row today — the DSL's `Modify` carries a literal
+/// delta, so every row is an [`IntExpr::Lit`](crate::dsl::IntExpr::Lit),
+/// which cannot fail.
 fn collect_recorded(
     state: &GameState,
     target: ModifierTarget,
@@ -404,20 +416,34 @@ fn collect_recorded(
     let (ModifierTarget::Investigator(id), ReadContext::DuringTest(_)) = (target, context) else {
         return;
     };
-    for PendingSkillModifier {
-        investigator,
-        stat,
-        delta,
-        source,
-        ..
-    } in &state.pending_skill_modifiers
-    {
-        if *investigator == id && stat_matches(*stat, quantity) {
-            out.push(Contribution {
-                source: ContributionSource::Recorded { instance: *source },
-                delta: *delta,
-            });
+    let Some(in_flight) = state.current_skill_test().map(|t| t.id) else {
+        return;
+    };
+    for row in &state.recorded_modifiers {
+        if row.investigator != id
+            || !stat_matches(row.stat, quantity)
+            || !row.lifetime.applies_during_test(in_flight)
+        {
+            continue;
         }
+        let eval_ctx = crate::engine::evaluator::EvalContext::for_controller_with_optional_source(
+            row.investigator,
+            row.source,
+        );
+        let Ok(delta) = crate::engine::evaluator::eval_int_expr(state, &eval_ctx, &row.delta)
+        else {
+            debug_assert!(
+                false,
+                "recorded modifier {row:?} carries an unresolvable delta expression",
+            );
+            continue;
+        };
+        out.push(Contribution {
+            source: ContributionSource::Recorded {
+                instance: row.source,
+            },
+            delta,
+        });
     }
 }
 
@@ -524,9 +550,11 @@ fn source_location(state: &GameState, placement: Placement) -> Option<LocationId
 /// investigator's total right now — for the one contributor the sweep
 /// cannot see: the revealed chaos token. It is not folded into the
 /// breakdown yet because the token's own ±N is still resolved to an
-/// integer at ST.3 and added by the skill-test handler; both become
-/// recorded rows in #676, and this function disappears into the sweep
-/// with them.
+/// integer at ST.3 and added by the skill-test handler. The recorded
+/// population they belong in — and the skill-test lifetime that would
+/// scope them — exists since #676; what keeps them out of it is the
+/// clamp, which must stay last (see [`ModifierBreakdown::raw_total`]), so
+/// they become rows in the slice that moves the clamp inside the query.
 ///
 /// Returns `0` when the controller is not found, the card isn't in the
 /// registry, or it carries no elder-sign ability — so every investigator
@@ -944,55 +972,129 @@ mod tests {
 
     // ---- recorded rows -------------------------------------------
 
-    fn state_with_pending(pending: Vec<PendingSkillModifier>) -> GameState {
+    /// The id of the test the recorded-row tests put in flight.
+    const IN_FLIGHT: crate::state::SkillTestId = crate::state::SkillTestId(7);
+
+    /// One investigator, `rows` recorded, and the test identified by
+    /// [`IN_FLIGHT`] in flight — the shape a `ThisSkillTest` row is read
+    /// under.
+    fn state_with_recorded(rows: Vec<crate::state::RecordedModifier>) -> GameState {
+        state_with_recorded_during(rows, IN_FLIGHT)
+    }
+
+    /// As [`state_with_recorded`], with the in-flight test's id chosen by
+    /// the caller — so a row can be read against a *different* test.
+    fn state_with_recorded_during(
+        rows: Vec<crate::state::RecordedModifier>,
+        in_flight: crate::state::SkillTestId,
+    ) -> GameState {
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
-        state.pending_skill_modifiers = pending;
+        state.recorded_modifiers = rows;
+        state
+            .continuations
+            .push(crate::state::Continuation::SkillTest(
+                crate::state::InFlightSkillTest {
+                    id: in_flight,
+                    investigator: InvestigatorId(1),
+                    skill: SkillKind::Willpower,
+                    kind: SkillTestKind::Plain,
+                    difficulty: 2,
+                    committed_by_active: Vec::new(),
+                    tested_location: None,
+                    follow_up: crate::state::SkillTestFollowUp::None,
+                    on_fail: None,
+                    on_success: None,
+                    source: None,
+                    continuation: crate::state::SkillTestStep::AwaitingCommit,
+                    test_modifier: 0,
+                    bonus_attack_damage: 0,
+                    bonus_clues_discovered: 0,
+                    token_resolution: None,
+                    resolved: None,
+                    symbol_on_fail: None,
+                },
+            ));
         state
     }
 
-    fn pending(investigator: InvestigatorId, stat: Stat, delta: i8) -> PendingSkillModifier {
-        PendingSkillModifier {
+    /// A row scoped to [`IN_FLIGHT`].
+    fn recorded(
+        investigator: InvestigatorId,
+        stat: Stat,
+        delta: i8,
+    ) -> crate::state::RecordedModifier {
+        recorded_for(investigator, stat, delta, IN_FLIGHT)
+    }
+
+    /// A row scoped to the named test.
+    fn recorded_for(
+        investigator: InvestigatorId,
+        stat: Stat,
+        delta: i8,
+        test: crate::state::SkillTestId,
+    ) -> crate::state::RecordedModifier {
+        crate::state::RecordedModifier::new(
             investigator,
             stat,
-            delta,
-            source: None,
-        }
+            crate::dsl::IntExpr::Lit(delta),
+            crate::state::Lifetime::SkillTest(test),
+            None,
+        )
     }
 
     #[test]
     fn recorded_rows_for_the_target_are_summed() {
         let id = InvestigatorId(1);
-        let state = state_with_pending(vec![
-            pending(id, Stat::Intellect, 1),
-            pending(id, Stat::Intellect, 2),
+        let state = state_with_recorded(vec![
+            recorded(id, Stat::Intellect, 1),
+            recorded(id, Stat::Intellect, 2),
         ]);
         assert_eq!(skill(&state, id, SkillKind::Intellect), 6);
     }
 
     #[test]
     fn a_recorded_row_for_another_investigator_is_ignored() {
-        let state = state_with_pending(vec![pending(InvestigatorId(2), Stat::Willpower, 5)]);
+        let state = state_with_recorded(vec![recorded(InvestigatorId(2), Stat::Willpower, 5)]);
         assert_eq!(skill(&state, InvestigatorId(1), SkillKind::Willpower), 3);
     }
 
     #[test]
     fn a_recorded_row_for_another_stat_is_ignored() {
         let id = InvestigatorId(1);
-        let state = state_with_pending(vec![
-            pending(id, Stat::Intellect, 1),
-            pending(id, Stat::MaxHealth, 1),
+        let state = state_with_recorded(vec![
+            recorded(id, Stat::Intellect, 1),
+            recorded(id, Stat::MaxHealth, 1),
         ]);
         assert_eq!(skill(&state, id, SkillKind::Willpower), 3);
     }
 
-    /// A `ThisSkillTest` row is scoped to a test, so a read that isn't
-    /// inside one — prey ranking — must not see it.
+    /// The identity check, and the reason it exists: a row bought for one
+    /// test contributes nothing to another. Not merely "it was drained in
+    /// time" — a row that somehow survived its test is **inert**.
     #[test]
-    fn a_recorded_row_is_invisible_outside_a_test() {
+    fn a_recorded_row_from_another_test_contributes_nothing() {
         let id = InvestigatorId(1);
-        let state = state_with_pending(vec![pending(id, Stat::Willpower, 5)]);
+        let state = state_with_recorded_during(
+            vec![recorded_for(
+                id,
+                Stat::Willpower,
+                5,
+                crate::state::SkillTestId(1),
+            )],
+            crate::state::SkillTestId(2),
+        );
+        assert_eq!(skill(&state, id, SkillKind::Willpower), 3);
+    }
+
+    /// A `ThisSkillTest` row is scoped to a test, so a read that declares
+    /// itself outside one — prey ranking — must not see it, even with
+    /// that very test in flight.
+    #[test]
+    fn a_recorded_row_is_invisible_to_an_outside_test_read() {
+        let id = InvestigatorId(1);
+        let state = state_with_recorded(vec![recorded(id, Stat::Willpower, 5)]);
         assert_eq!(
             modified_value(
                 &state,
@@ -1004,6 +1106,43 @@ mod tests {
             .raw_total(),
             3,
         );
+    }
+
+    /// With no test in flight there is no id to match, so a stray row
+    /// cannot contribute however the read describes itself.
+    #[test]
+    fn a_recorded_row_contributes_nothing_with_no_test_in_flight() {
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        state.recorded_modifiers = vec![recorded(id, Stat::Willpower, 5)];
+        assert_eq!(skill(&state, id, SkillKind::Willpower), 3);
+    }
+
+    /// A row's delta is an expression resolved at read time, not a number
+    /// frozen when the row was pushed: a `Count` row answers from the
+    /// board as it stands at the read.
+    #[test]
+    fn a_recorded_rows_delta_is_evaluated_at_read_time() {
+        use crate::dsl::{IntExpr, Quantity};
+        let id = InvestigatorId(1);
+        let loc = LocationId(3);
+        let mut state = state_with_recorded(vec![crate::state::RecordedModifier::new(
+            id,
+            Stat::Willpower,
+            IntExpr::Count(Quantity::CluesAtControllerLocation),
+            crate::state::Lifetime::SkillTest(IN_FLIGHT),
+            None,
+        )]);
+        state.locations.insert(loc, test_location(3, "Study"));
+        state.investigators.get_mut(&id).unwrap().current_location = Some(loc);
+        state.locations.get_mut(&loc).unwrap().clues = 2;
+        assert_eq!(skill(&state, id, SkillKind::Willpower), 5);
+        // Same row, different board: the answer moves with it, with no
+        // invalidation step in between.
+        state.locations.get_mut(&loc).unwrap().clues = 4;
+        assert_eq!(skill(&state, id, SkillKind::Willpower), 7);
     }
 
     // ---- non-investigator targets --------------------------------
