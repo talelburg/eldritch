@@ -22,10 +22,12 @@ use game_core::state::{
     InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{
-    perform_skill_test_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
+    apply_no_commits, perform_skill_test_no_commits, take_turn_action, test_enemy,
+    test_investigator, test_location, GameStateBuilder, TestSession,
 };
 use game_core::{
-    assert_event, modified_value, ContributionSource, ModifiedQuantity, ModifierTarget, ReadContext,
+    assert_event, modified_value, Action, ContributionSource, InputResponse, ModifiedQuantity,
+    ModifierTarget, PlayerAction, ReadContext, TurnAction,
 };
 
 /// Shaped after Lita Chantler 01117: *"Each investigator at your
@@ -279,8 +281,9 @@ fn a_modifier_on_an_enemy_elsewhere_does_not_reach_me() {
 // ---- 5. an enemy's attachments ----------------------------------
 
 /// Towering Beasts' *"Attached enemy gets +1 fight"* reaches the enemy
-/// it is attached to. An enemy's fight is not yet the difficulty of a
-/// Fight action — that is #677 — so this asks the query directly.
+/// it is attached to. Asked of the query directly; that this value *is*
+/// the difficulty of a Fight action against that enemy is driven through
+/// a real action below.
 #[test]
 fn a_modifier_on_an_enemy_attachment_reaches_that_enemy() {
     let mut brood = test_enemy(7, "Brood of Yog-Sothoth");
@@ -372,6 +375,140 @@ fn a_modifier_answers_differently_either_side_of_a_board_change() {
     assert_eq!(intellect(&state), 3, "it left, and nothing had to be told");
     state.enemies.get_mut(&EnemyId(7)).unwrap().current_location = Some(HERE);
     assert_eq!(intellect(&state), 2, "it came back");
+}
+
+// ---- an enemy's stats as a test's difficulty ---------------------
+
+/// A Fight action's difficulty **is** the attacked enemy's modified
+/// fight value (#677). `Skill_Tests.md`, "Variable Difficulty Skill
+/// Tests": *"While performing a skill test whose difficulty is modified
+/// based on another aspect of the game, that difficulty changes whenever
+/// the corresponding aspect's status does."*
+///
+/// Combat 2 against a Ghoul (printed fight 2) succeeds by 0; with The
+/// Ritual Begins' *"Each enemy gets +1 fight"* showing, the same attack
+/// fails by 1.
+#[test]
+fn a_modifier_on_an_enemys_fight_raises_a_fight_actions_difficulty() {
+    let attack = |ritual: bool| {
+        let mut ghoul = test_enemy(7, "Ghoul");
+        ghoul.current_location = Some(HERE);
+        let mut state = board(THERE).with_enemy(ghoul).build();
+        state.investigators.get_mut(&ME).unwrap().skills.combat = 2;
+        if ritual {
+            state.agenda_deck = vec![agenda(RITUAL_BEGINS)];
+            state.agenda_index = 0;
+        }
+        TestSession::new(state)
+            .take(&TurnAction::Fight {
+                investigator: ME,
+                enemy: EnemyId(7),
+            })
+            .resolve_choices(|c| {
+                c.commit_cards(&[]);
+            })
+            .run()
+    };
+
+    let plain = attack(false);
+    assert_event!(plain.events, Event::SkillTestStarted { difficulty: 2, .. });
+    assert_event!(
+        plain.events,
+        Event::SkillTestSucceeded { investigator, margin: 0, .. } if *investigator == ME
+    );
+
+    let harder = attack(true);
+    assert_event!(harder.events, Event::SkillTestStarted { difficulty: 3, .. });
+    assert_event!(
+        harder.events,
+        Event::SkillTestFailed { investigator, by: 1, .. } if *investigator == ME
+    );
+}
+
+/// The same for Evade: the difficulty is the enemy's modified evade
+/// value. Agility 2 against a Ghoul (printed evade 2) succeeds by 0, and
+/// fails by 1 under The Ritual Begins' *"+1 evade"*.
+#[test]
+fn a_modifier_on_an_enemys_evade_raises_an_evade_actions_difficulty() {
+    let dodge = |ritual: bool| {
+        let mut ghoul = test_enemy(7, "Ghoul");
+        ghoul.current_location = Some(HERE);
+        ghoul.engaged_with = Some(ME);
+        let mut state = board(THERE).with_enemy(ghoul).build();
+        state.investigators.get_mut(&ME).unwrap().skills.agility = 2;
+        if ritual {
+            state.agenda_deck = vec![agenda(RITUAL_BEGINS)];
+            state.agenda_index = 0;
+        }
+        TestSession::new(state)
+            .take(&TurnAction::Evade {
+                investigator: ME,
+                enemy: EnemyId(7),
+            })
+            .resolve_choices(|c| {
+                c.commit_cards(&[]);
+            })
+            .run()
+    };
+
+    let plain = dodge(false);
+    assert_event!(plain.events, Event::SkillTestStarted { difficulty: 2, .. });
+    assert_event!(
+        plain.events,
+        Event::SkillTestSucceeded { investigator, margin: 0, .. } if *investigator == ME
+    );
+
+    let harder = dodge(true);
+    assert_event!(harder.events, Event::SkillTestStarted { difficulty: 3, .. });
+    assert_event!(
+        harder.events,
+        Event::SkillTestFailed { investigator, by: 1, .. } if *investigator == ME
+    );
+}
+
+/// The difficulty is read at ST.6, not banked at ST.1: an enemy whose
+/// fight rises **after** the test started is harder to hit than the test
+/// announced. Driven by advancing the agenda deck's index mid-test,
+/// which is the smallest stand-in for a card that changes an enemy's
+/// fight while a test is in flight.
+#[test]
+fn a_fights_difficulty_is_re_read_after_the_test_started() {
+    let mut ghoul = test_enemy(7, "Ghoul");
+    ghoul.current_location = Some(HERE);
+    let mut state = board(THERE).with_enemy(ghoul).build();
+    state.investigators.get_mut(&ME).unwrap().skills.combat = 2;
+    state.agenda_deck = vec![agenda("MOCK-QUIET"), agenda(RITUAL_BEGINS)];
+    state.agenda_index = 0;
+
+    // ST.1: announced against the unmodified fight of 2.
+    let started = take_turn_action(
+        state,
+        &TurnAction::Fight {
+            investigator: ME,
+            enemy: EnemyId(7),
+        },
+    );
+    assert_event!(
+        started.events,
+        Event::SkillTestStarted { difficulty: 2, .. }
+    );
+
+    // The ritual begins while the test is paused at its commit window.
+    let mut state = started.state;
+    state.agenda_index = 1;
+
+    let resolved = apply_no_commits(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple {
+                selected: Vec::new(),
+            },
+        }),
+    );
+    assert_event!(
+        resolved.events,
+        Event::SkillTestFailed { investigator, by: 1, .. } if *investigator == ME
+    );
 }
 
 // ---- the breakdown ----------------------------------------------

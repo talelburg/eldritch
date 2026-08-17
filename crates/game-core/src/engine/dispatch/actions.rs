@@ -109,32 +109,22 @@ pub(super) fn investigate_primary_effect(
     if !location.revealed {
         return EngineOutcome::Done; // precondition lapsed
     }
-    // Shroud is u8 in state but skill-test difficulty is i8. Saturate
-    // at i8::MAX for the absurd case; realistic shrouds are 0–6. The
-    // *modified* shroud folds in everything modifying this location
-    // (Obscuring Fog 01168's +2); with no registry installed (bare unit
-    // tests) it is the printed value.
+    // The difficulty of an investigation *is* this location's modified
+    // shroud, read live at ST.6 — everything modifying the location
+    // (Obscuring Fog 01168's +2) is folded in there rather than snapshotted
+    // here.
     let location_id = location.id;
-    let shroud = crate::engine::modified_value::modified_value(
-        cx.state,
-        crate::card_registry::current(),
-        crate::engine::modified_value::ModifierTarget::Location(location_id),
-        crate::engine::modified_value::ModifiedQuantity::Shroud,
-        crate::engine::modified_value::ReadContext::from_state(cx.state),
-    )
-    .total();
-    let difficulty = i8::try_from(shroud).unwrap_or(i8::MAX);
     super::skill_test::start_skill_test(
         cx,
         investigator,
         SkillKind::Intellect,
         SkillTestKind::Investigate,
-        difficulty,
+        crate::state::DifficultyBasis::Shroud(location_id),
         SkillTestFollowUp::Investigate,
         None,
         None,
         None,
-        0, // no weapon/effect modifier on a base Investigate
+        None, // no weapon/effect modifier on a base Investigate
     )
 }
 
@@ -840,7 +830,7 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
             reason: format!("Fight: {investigator:?} has no current_location to fight from").into(),
         };
     };
-    let fight_difficulty = {
+    {
         let Some(enemy) = cx.state.enemies.get(&enemy_id) else {
             return EngineOutcome::Rejected {
                 reason: format!("Fight: enemy {enemy_id:?} is not in state").into(),
@@ -864,18 +854,20 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
                 .into(),
             };
         }
-        enemy.fight
-    };
+    }
     if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Fight, "Fight")
     {
         return rejected;
     }
+    // The difficulty *is* the enemy's modified fight value, read at ST.6 —
+    // so The Ritual Begins 01144's "Each enemy gets +1 fight" reaches this
+    // attack (#677).
     super::skill_test::start_skill_test(
         cx,
         investigator,
         SkillKind::Combat,
         SkillTestKind::Fight,
-        fight_difficulty,
+        crate::state::DifficultyBasis::Fight(enemy_id),
         SkillTestFollowUp::Fight {
             enemy: enemy_id,
             extra_damage: 0,
@@ -883,7 +875,7 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         None,
         None,
         None,
-        0, // base Fight: no weapon modifier
+        None, // base Fight: no weapon modifier
     )
 }
 
@@ -892,8 +884,7 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
 /// Spends 1 action, runs an Agility skill test against the enemy's
 /// evade value, and on success disengages and exhausts the enemy.
 pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId) -> EngineOutcome {
-    let evade_difficulty = match validate_engaged_action(cx.state, "Evade", investigator, enemy_id)
-    {
+    match validate_engaged_action(cx.state, "Evade", investigator, enemy_id) {
         Ok(enemy) => {
             if enemy.evade < 0 {
                 return EngineOutcome::Rejected {
@@ -904,10 +895,9 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
                     .into(),
                 };
             }
-            enemy.evade
         }
         Err(rejected) => return rejected,
-    };
+    }
     if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Evade, "Evade")
     {
         return rejected;
@@ -917,12 +907,15 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         investigator,
         SkillKind::Agility,
         SkillTestKind::Evade,
-        evade_difficulty,
+        // The difficulty *is* the enemy's modified evade value, read at
+        // ST.6 — Cold Spring Glen 02244's "Each enemy in Cold Spring Glen
+        // gets -1 evade" reaches this test (#677).
+        crate::state::DifficultyBasis::Evade(enemy_id),
         SkillTestFollowUp::Evade { enemy: enemy_id },
         None,
         None,
         None,
-        0, // no weapon/effect modifier on a base Evade
+        None, // no weapon/effect modifier on a base Evade
     )
 }
 

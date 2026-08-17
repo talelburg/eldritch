@@ -25,12 +25,12 @@ pub(crate) use counter::define_id;
 pub use enemy::{Enemy, EnemyId};
 pub use game_state::{
     Act, ActionResume, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, Assignment,
-    AttackLoopStage, CandidateSource, Continuation, DamageSource, EffectFrame, EliminationStep,
-    EncounterDisposition, EnemyAttackSource, EnemyResume, FastActorScope, FastWindowKind,
-    GameState, HandSizeDiscard, HunterChoice, InFlightSkillTest, InvestigationResume, Lifetime,
-    MythosResume, PhaseStep, RecordedModifier, ResolutionCandidate, ResolvedTest, ScenarioEndStep,
-    SkillSubstitution, SkillTestFollowUp, SkillTestId, SkillTestStep, SpawnEngagePending,
-    TimingMode, TimingSub, UpkeepResume,
+    AttackLoopStage, CandidateSource, Continuation, DamageSource, DifficultyBasis, EffectFrame,
+    EliminationStep, EncounterDisposition, EnemyAttackSource, EnemyResume, FastActorScope,
+    FastWindowKind, GameState, HandSizeDiscard, HunterChoice, InFlightSkillTest,
+    InvestigationResume, Lifetime, ModifierTarget, MythosResume, PhaseStep, RecordedModifier,
+    ResolutionCandidate, ResolvedTest, ScenarioEndStep, SkillSubstitution, SkillTestFollowUp,
+    SkillTestId, SkillTestStep, SpawnEngagePending, TimingMode, TimingSub, UpkeepResume,
 };
 pub use investigator::{DefeatCause, Investigator, InvestigatorId, Status};
 pub use location::{Location, LocationId};

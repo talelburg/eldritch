@@ -478,12 +478,15 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             eval_ctx.controller,
             *skill,
             crate::dsl::SkillTestKind::Plain,
-            i8::try_from(*difficulty).unwrap_or(i8::MAX),
+            // A Revelation skill test takes its difficulty as printed: the
+            // number is a base value on the card, not a snapshot of
+            // anything on the board.
+            crate::state::DifficultyBasis::Fixed(i8::try_from(*difficulty).unwrap_or(i8::MAX)),
             crate::state::SkillTestFollowUp::None,
             on_success.as_ref().map(|b| (**b).clone()),
             on_fail.as_ref().map(|b| (**b).clone()),
             eval_ctx.source,
-            0, // a Revelation skill test takes its difficulty as printed
+            None,
         ),
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
         Effect::Cancel => cancel_current_impact(cx),
@@ -848,7 +851,8 @@ fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Resolve [`Effect::Fight`]: snapshot the combat modifier, read the target
+/// Resolve [`Effect::Fight`]: record the combat modifier as a row over the
+/// test about to start, read the target
 /// enemy from the evaluation context (grounded by `ground_chosen_targets`
 /// before this handler runs), and start a Combat skill test whose Fight
 /// follow-up deals `1 + extra_damage`. The activation check has already
@@ -857,23 +861,19 @@ fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
 /// 0 (caught pre-cost) — so a missing target here is a state-shape violation
 /// rejected loudly rather than silently no-oped.
 ///
-/// Both `combat_modifier` and `extra_damage` are evaluated from an
-/// `&IntExpr` (board-state-dependent AST, same path); `extra_damage` is
-/// then clamped to `u8` (negative results treated as 0).
+/// `extra_damage` is evaluated here (it is consumed by the Fight follow-up
+/// as a `u8`, negative results treated as 0). `combat_modifier` is **not**:
+/// it travels into the test as an unevaluated
+/// [`IntExpr`](crate::dsl::IntExpr) so the row it becomes is recalculated at
+/// every read — the rule ADR 0005 applies to every modifier, and what makes
+/// Esoteric Formula 02254's *"+2 \[willpower\] for this attack for each clue
+/// on the attacked enemy"* expressible without a second mechanism.
 fn apply_fight(
     cx: &mut Cx,
     eval_ctx: &EvalContext,
     combat_modifier: &IntExpr,
     extra_damage: &IntExpr,
 ) -> EngineOutcome {
-    let modifier = match eval_int_expr(cx.state, eval_ctx, combat_modifier) {
-        Ok(m) => m,
-        Err(reason) => {
-            return EngineOutcome::Rejected {
-                reason: reason.into(),
-            }
-        }
-    };
     let extra_damage_n = match eval_int_expr(cx.state, eval_ctx, extra_damage) {
         Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
         Err(reason) => {
@@ -892,18 +892,18 @@ fn apply_fight(
     };
     // `enemy_id` came from `enemies_in_scope` over this same map, so
     // it is present — a silent 0-difficulty default would mask corruption.
-    let fight_difficulty = cx
-        .state
-        .enemies
-        .get(&enemy_id)
-        .expect("Fight chosen_enemy returned an id absent from state.enemies")
-        .fight;
+    assert!(
+        cx.state.enemies.contains_key(&enemy_id),
+        "Fight chosen_enemy returned an id absent from state.enemies",
+    );
     crate::engine::dispatch::skill_test::start_skill_test(
         cx,
         eval_ctx.controller,
         SkillKind::Combat,
         SkillTestKind::Fight,
-        fight_difficulty,
+        // The difficulty *is* the enemy's modified fight value, read at
+        // ST.6 rather than snapshotted here (#677).
+        crate::state::DifficultyBasis::Fight(enemy_id),
         crate::state::SkillTestFollowUp::Fight {
             enemy: enemy_id,
             extra_damage: extra_damage_n,
@@ -911,16 +911,28 @@ fn apply_fight(
         None,
         None,
         eval_ctx.source,
-        modifier,
+        // "+N [combat] for this attack" — a row over the controller's
+        // combat skill scoped to the test about to start, not a number
+        // added to a snapshotted total. The expression travels unevaluated
+        // so the row answers from the board at every read (ADR 0005).
+        Some(crate::engine::dispatch::skill_test::InitiatorModifier {
+            target: crate::state::ModifierTarget::Investigator(eval_ctx.controller),
+            stat: crate::dsl::Stat::Combat,
+            delta: combat_modifier.clone(),
+        }),
     )
 }
 
-/// Resolve [`Effect::Investigate`]: apply `shroud_modifier` to the
-/// controller's location difficulty and start an Investigate skill test
-/// (reusing the base Investigate follow-up, so success discovers a clue).
+/// Resolve [`Effect::Investigate`]: start an Investigate skill test against
+/// the controller's location (reusing the base Investigate follow-up, so
+/// success discovers a clue), with `shroud_modifier` recorded as a modifier
+/// of that **location's shroud** for the duration of the test.
+///
 /// The modifier adjusts the *location difficulty* (shroud), not the
-/// investigator's total — the reduced shroud clamps at 0 (RR p.4: game
-/// values can never be reduced below 0). The activation check has already
+/// investigator's total, and it is one contribution among however many the
+/// location carries: Flashlight 01087's `-2` composes with Obscuring Fog
+/// 01168's `+2` into a single shroud, clamped at 0 once at the end (RR p.4:
+/// game values can never be reduced below 0). The activation check has already
 /// confirmed a revealed location to test, so the missing/unrevealed cases
 /// here are defensive (state-shape) rejections.
 fn apply_investigate(
@@ -928,14 +940,6 @@ fn apply_investigate(
     eval_ctx: &EvalContext,
     shroud_modifier: &IntExpr,
 ) -> EngineOutcome {
-    let delta = match eval_int_expr(cx.state, eval_ctx, shroud_modifier) {
-        Ok(d) => d,
-        Err(reason) => {
-            return EngineOutcome::Rejected {
-                reason: reason.into(),
-            }
-        }
-    };
     let Some(location_id) = cx
         .state
         .investigators
@@ -956,34 +960,27 @@ fn apply_investigate(
             reason: format!("Effect::Investigate: location {location_id:?} is not revealed").into(),
         };
     }
-    // The modified shroud folds in everything modifying this location
-    // (Obscuring Fog); with no registry (bare unit tests) it is the printed
-    // value, matching the base Investigate action. Shroud is u8 in state but
-    // difficulty is i8; saturate the conversion (realistic shrouds are 0–6),
-    // apply the (negative) modifier, then clamp the reduced difficulty at 0.
-    let shroud = crate::engine::modified_value::modified_value(
-        cx.state,
-        crate::card_registry::current(),
-        crate::engine::modified_value::ModifierTarget::Location(location_id),
-        crate::engine::modified_value::ModifiedQuantity::Shroud,
-        crate::engine::modified_value::ReadContext::from_state(cx.state),
-    )
-    .total();
-    let difficulty = i8::try_from(shroud)
-        .unwrap_or(i8::MAX)
-        .saturating_add(delta)
-        .max(0);
     crate::engine::dispatch::skill_test::start_skill_test(
         cx,
         eval_ctx.controller,
         SkillKind::Intellect,
         SkillTestKind::Investigate,
-        difficulty,
+        // The difficulty *is* this location's modified shroud, read at
+        // ST.6. The reduction below is one contribution to it, not a
+        // subtraction from a smaller snapshot: Obscuring Fog 01168's +2 and
+        // Flashlight's -2 compose into one shroud, clamped once (#677).
+        crate::state::DifficultyBasis::Shroud(location_id),
         crate::state::SkillTestFollowUp::Investigate,
         None,
         None,
         eval_ctx.source,
-        0,
+        // "Your location gets -2 shroud for this investigation" — a row
+        // over the *location*, scoped to the test about to start.
+        Some(crate::engine::dispatch::skill_test::InitiatorModifier {
+            target: crate::state::ModifierTarget::Location(location_id),
+            stat: crate::dsl::Stat::Shroud,
+            delta: shroud_modifier.clone(),
+        }),
     )
 }
 
@@ -3007,7 +3004,7 @@ mod tests {
                     investigator: InvestigatorId(1),
                     skill: SkillKind::Intellect,
                     kind: SkillTestKind::Investigate,
-                    difficulty: 2,
+                    difficulty_basis: crate::state::DifficultyBasis::Fixed(2),
                     committed_by_active: Vec::new(),
                     tested_location: Some(tested),
                     follow_up: crate::state::SkillTestFollowUp::Investigate,
@@ -3015,7 +3012,6 @@ mod tests {
                     on_success: None,
                     source: None,
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
-                    test_modifier: 0,
                     bonus_attack_damage: 0,
                     bonus_clues_discovered: 0,
                     token_resolution: None,
@@ -3069,7 +3065,7 @@ mod tests {
                     investigator: InvestigatorId(1),
                     skill: SkillKind::Combat,
                     kind: SkillTestKind::Fight,
-                    difficulty: 3,
+                    difficulty_basis: crate::state::DifficultyBasis::Fixed(3),
                     committed_by_active: Vec::new(),
                     tested_location: None,
                     follow_up: crate::state::SkillTestFollowUp::None,
@@ -3077,7 +3073,6 @@ mod tests {
                     on_success: None,
                     source: None,
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
-                    test_modifier: 0,
                     bonus_attack_damage: 0,
                     bonus_clues_discovered: 0,
                     token_resolution: None,
@@ -3133,7 +3128,7 @@ mod tests {
                     investigator: InvestigatorId(1),
                     skill: SkillKind::Intellect,
                     kind: SkillTestKind::Investigate,
-                    difficulty: 3,
+                    difficulty_basis: crate::state::DifficultyBasis::Fixed(3),
                     committed_by_active: Vec::new(),
                     tested_location: None,
                     follow_up: crate::state::SkillTestFollowUp::Investigate,
@@ -3141,7 +3136,6 @@ mod tests {
                     on_success: None,
                     source: None,
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
-                    test_modifier: 0,
                     bonus_attack_damage: 0,
                     bonus_clues_discovered: 0,
                     token_resolution: None,
@@ -3261,7 +3255,7 @@ mod tests {
                     investigator: InvestigatorId(1),
                     skill: SkillKind::Intellect,
                     kind,
-                    difficulty: 2,
+                    difficulty_basis: crate::state::DifficultyBasis::Fixed(2),
                     committed_by_active: Vec::new(),
                     tested_location: Some(LocationId(10)),
                     follow_up: crate::state::SkillTestFollowUp::None,
@@ -3269,7 +3263,6 @@ mod tests {
                     on_success: None,
                     source: None,
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
-                    test_modifier: 0,
                     bonus_attack_damage: 0,
                     bonus_clues_discovered: 0,
                     token_resolution: None,
@@ -3436,7 +3429,7 @@ mod tests {
                     investigator: InvestigatorId(1),
                     skill: SkillKind::Willpower,
                     kind: SkillTestKind::Plain,
-                    difficulty: 2,
+                    difficulty_basis: crate::state::DifficultyBasis::Fixed(2),
                     committed_by_active: Vec::new(),
                     tested_location: None,
                     follow_up: crate::state::SkillTestFollowUp::None,
@@ -3444,7 +3437,6 @@ mod tests {
                     on_success: None,
                     source: None,
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
-                    test_modifier: 0,
                     bonus_attack_damage: 0,
                     bonus_clues_discovered: 0,
                     token_resolution: None,

@@ -743,8 +743,9 @@ pub enum Effect {
         clues: u8,
     },
     /// Initiate a Fight against an enemy *at the controller's location*,
-    /// applying `combat_modifier` (resolved at eval, e.g. .38 Special's +1/+3)
-    /// for this attack and dealing `1 + extra_damage` on success. Per RR you
+    /// with `combat_modifier` (e.g. .38 Special's +1/+3) modifying the
+    /// controller's combat for the duration of the attack, dealing
+    /// `1 + extra_damage` on success. Per RR you
     /// choose an enemy at your location to attack and need not already be
     /// engaged with it, so the candidate scope is co-located, not engaged-only
     /// (#451). Auto-targets on exactly one candidate and suspends for a pick on
@@ -757,7 +758,10 @@ pub enum Effect {
     /// the chosen target, not the controller's engaged count — see Machete
     /// 01020's [`Condition::Native`] predicate (#592).
     Fight {
-        /// Combat modifier for this attack, resolved against state at eval.
+        /// Combat modifier for this attack. Evaluated at every read
+        /// while the attack runs, not once at initiation, so an
+        /// expression that counts something on the board answers from
+        /// the board as it stands.
         combat_modifier: IntExpr,
         /// Bonus damage beyond the base 1 (.38 Special: +1).
         extra_damage: IntExpr,
@@ -801,18 +805,22 @@ pub enum Effect {
     /// resolving it as an effect is a misuse and rejects.
     Restrict(Restriction),
     /// Initiate an Investigate against the controller's current location,
-    /// applying `shroud_modifier` (resolved at eval) to that location's
-    /// shroud *difficulty* for this investigation — Flashlight 01087's
-    /// "-2 shroud for this investigation." The mirror of [`Fight`](Self::Fight):
-    /// the modifier adjusts the **location difficulty**, not the
-    /// investigator's total (which is `InFlightSkillTest.test_modifier`); the
-    /// reduced shroud clamps at 0. Reuses the base Investigate skill-test
+    /// with `shroud_modifier` modifying that location's shroud
+    /// *difficulty* for the duration of the investigation — Flashlight
+    /// 01087's "-2 shroud for this investigation." The mirror of
+    /// [`Fight`](Self::Fight): the modifier adjusts the **location
+    /// difficulty**, not the investigator's total. It is one contribution
+    /// among however many the location carries (Obscuring Fog 01168's +2 is
+    /// another), so the composed shroud clamps at 0 once, after all of
+    /// them. Reuses the base Investigate skill-test
     /// follow-up, so on success it discovers a clue like the action does.
     /// Inspectable (not `Native`) so the activation check can reject — before
     /// any cost is paid — an investigation with no revealed location to test.
     Investigate {
-        /// Shroud-difficulty modifier for this investigation, resolved
-        /// against state at eval (Flashlight: `-2`).
+        /// Shroud-difficulty modifier for this investigation
+        /// (Flashlight: `-2`). Evaluated at every read while the
+        /// investigation runs, like [`Fight`](Self::Fight)'s combat
+        /// modifier.
         shroud_modifier: IntExpr,
     },
     /// Search a region of an investigator's deck for one card matching

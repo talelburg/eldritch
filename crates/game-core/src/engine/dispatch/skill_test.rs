@@ -23,6 +23,32 @@ use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId,
 use super::Cx;
 use crate::action::InputResponse;
 
+/// The one-shot modifier an initiating effect grants the test it starts:
+/// a weapon's *"+N \[combat\] for this attack"*
+/// ([`Effect::Fight`](crate::dsl::Effect::Fight)'s combat modifier) or
+/// Flashlight 01087's *"Your location gets -2 shroud for this
+/// investigation"* ([`Effect::Investigate`](crate::dsl::Effect::Investigate)'s
+/// shroud modifier).
+///
+/// Handed to [`start_skill_test`] **unstamped**: the test it belongs to has
+/// no identity until initiation mints one, and it becomes a
+/// [`RecordedModifier`](crate::state::RecordedModifier) with
+/// [`Lifetime::SkillTest`](crate::state::Lifetime::SkillTest) there. The
+/// delta stays an [`IntExpr`](crate::dsl::IntExpr) — a row is evaluated at
+/// read time, not at push time (ADR 0005), which is what makes Esoteric
+/// Formula 02254's *"+2 \[willpower\] … for each clue on the attacked
+/// enemy"* expressible later.
+#[derive(Debug, Clone)]
+pub(in crate::engine) struct InitiatorModifier {
+    /// What it modifies — the controller for a combat bonus, the
+    /// investigated location for a shroud reduction.
+    pub target: crate::state::ModifierTarget,
+    /// Which quantity of that target.
+    pub stat: crate::dsl::Stat,
+    /// The signed magnitude, evaluated at every read.
+    pub delta: crate::dsl::IntExpr,
+}
+
 // Nine args: the skill-test parameters are genuinely independent axes
 // (skill, kind, difficulty, success/fail follow-ups, source). A params
 // struct would add indirection without grouping anything cohesive.
@@ -32,12 +58,12 @@ pub(in crate::engine) fn start_skill_test(
     investigator: InvestigatorId,
     skill: SkillKind,
     kind: SkillTestKind,
-    difficulty: i8,
+    difficulty_basis: crate::state::DifficultyBasis,
     follow_up: SkillTestFollowUp,
     on_success: Option<card_dsl::dsl::Effect>,
     on_fail: Option<card_dsl::dsl::Effect>,
     source: Option<crate::state::CardInstanceId>,
-    test_modifier: i8,
+    initiator_modifier: Option<InitiatorModifier>,
 ) -> EngineOutcome {
     // Validate-first: investigator must exist and be Active; chaos
     // bag must be non-empty so we can draw; difficulty must be non-
@@ -63,10 +89,18 @@ pub(in crate::engine) fn start_skill_test(
             reason: "skill test requires a non-empty chaos bag".into(),
         };
     }
-    if difficulty < 0 {
-        return EngineOutcome::Rejected {
-            reason: format!("skill test: difficulty {difficulty} must be >= 0").into(),
-        };
+    // A printed difficulty is the one difficulty an initiator supplies as a
+    // number, so it is the one that can be malformed. A basis over a
+    // location or an enemy reads a live quantity, which the query clamps at
+    // zero after every modifier — there is nothing to reject here, and
+    // rejecting on the *unmodified* value would refuse a test a card is
+    // entitled to make easy.
+    if let crate::state::DifficultyBasis::Fixed(n) = difficulty_basis {
+        if n < 0 {
+            return EngineOutcome::Rejected {
+                reason: format!("skill test: difficulty {n} must be >= 0").into(),
+            };
+        }
     }
     if cx.state.has_skill_test_in_flight() {
         return EngineOutcome::Rejected {
@@ -101,7 +135,7 @@ pub(in crate::engine) fn start_skill_test(
             investigator,
             skill,
             kind,
-            difficulty,
+            difficulty_basis,
             committed_by_active: Vec::new(),
             tested_location,
             follow_up,
@@ -109,17 +143,39 @@ pub(in crate::engine) fn start_skill_test(
             on_success,
             source,
             continuation: SkillTestStep::PreCommitWindow,
-            test_modifier,
             bonus_attack_damage: 0,
             bonus_clues_discovered: 0,
             token_resolution: None,
             resolved: None,
             symbol_on_fail: None,
         }));
+    // The initiating effect's one-shot modifier becomes a row scoped to the
+    // test just minted — the weapon's "+N for this attack" and Flashlight's
+    // "-2 shroud for this investigation" alike. Recorded rather than folded
+    // into a snapshot, so ST.5 and ST.6 both re-derive it (ADR 0005), and
+    // stamped here because this is the first moment there is an identity to
+    // stamp it with.
+    if let Some(modifier) = initiator_modifier {
+        cx.state
+            .recorded_modifiers
+            .push(crate::state::RecordedModifier::targeting(
+                modifier.target,
+                investigator,
+                modifier.stat,
+                modifier.delta,
+                crate::state::Lifetime::SkillTest(id),
+                source,
+            ));
+    }
+    // The announced difficulty is the modified difficulty as it stands at
+    // ST.1 — a display value for the client, not the number the test
+    // resolves against. ST.6 re-reads it (`determine_outcome_step`), so a
+    // card that changes it mid-test changes the outcome without changing
+    // what was announced.
     cx.events.push(Event::SkillTestStarted {
         investigator,
         skill,
-        difficulty,
+        difficulty: current_difficulty(cx.state),
     });
 
     // "Use X in place of Y?" (Mind over Matter 01036): if this is a Combat or
@@ -186,16 +242,16 @@ pub(in crate::engine) fn resume_substitution_choice(
     cx.state.continuations.pop();
     if *opt == 0 {
         // Use Intellect: the test becomes an Intellect test (base / icons /
-        // bonuses all key off `skill`), and a weapon's combat bonus
-        // (`test_modifier`) is dropped — FAQ "ignore any bonuses to Combat or
-        // Agility". Bonus damage (`extra_damage` / `bonus_attack_damage`) is
-        // separate and untouched.
+        // bonuses all key off `skill`). A weapon's combat bonus falls away on
+        // its own — it is a row over `Stat::Combat`, and an Intellect test
+        // never reads one — which is the FAQ's "ignore any bonuses to Combat
+        // or Agility" without a second mechanism to keep in step. Bonus damage
+        // (`extra_damage` / `bonus_attack_damage`) is separate and untouched.
         let t = cx
             .state
             .current_skill_test_mut()
             .expect("resume_substitution_choice: in-flight test must exist");
         t.skill = SkillKind::Intellect;
-        t.test_modifier = 0;
     }
     // Park: return `Done` so the `drive` loop's `SkillTest` arm drives the test
     // from its pre-commit cursor — opening the ST.1 player window (#374), then
@@ -508,21 +564,11 @@ fn determine_outcome_step(
                 .expect("token_resolution: set at the Resolving step (ST.3) before this step"),
         )
     };
-    // The total difficulty, read the same way as the total skill value.
-    // Nothing modifies it yet — it is still the value snapshotted at
-    // initiation — but reading it through the query is what lets #677
-    // re-home it onto the tested location or enemy in one place.
-    let difficulty = i8::try_from(
-        modified_value(
-            cx.state,
-            card_registry::current(),
-            ModifierTarget::Test,
-            ModifiedQuantity::Difficulty,
-            ReadContext::DuringTest(kind),
-        )
-        .total(),
-    )
-    .unwrap_or(i8::MAX);
+    // The total difficulty, read the same way as the total skill value: off
+    // the board as it stands now, not as it stood at ST.1. An enemy's
+    // modified fight value *is* the difficulty of a Fight action, so a card
+    // that changed it since initiation has changed this test (#677).
+    let difficulty = current_difficulty(cx.state);
 
     // ST.5 modified skill value — read off the board as the ST.4 symbol effects
     // left it. ST.6 compare against the difficulty.
@@ -679,13 +725,14 @@ fn fire_on_resolution_step(
 /// `AwaitingInput` propagates up the call stack, halting any enclosing forced run
 /// (the commit `ResolveInput` resumes via `finish_skill_test`).
 fn emit_commit_window(cx: &Cx, _investigator: InvestigatorId) -> EngineOutcome {
-    let (skill, difficulty) = {
-        let t = cx
-            .state
-            .current_skill_test()
-            .expect("emit_commit_window: in-flight test must exist");
-        (t.skill, t.difficulty)
-    };
+    let skill = cx
+        .state
+        .current_skill_test()
+        .expect("emit_commit_window: in-flight test must exist")
+        .skill;
+    // The difficulty as it stands at the commit window — what a player
+    // decides how many cards to commit against. ST.6 re-reads it.
+    let difficulty = current_difficulty(cx.state);
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_multiple(format!(
             "Commit cards to the {skill:?} test (difficulty {difficulty}). \
@@ -1099,19 +1146,44 @@ fn validate_commit_indices(
     Ok(indices_u8)
 }
 
+/// The in-flight test's **modified difficulty**, recalculated from the
+/// board at this read: the modified shroud of the location being
+/// investigated, or the modified fight or evade value of the enemy being
+/// attacked or evaded, clamped once at zero after every modifier.
+///
+/// `Skill_Tests.md`, "Variable Difficulty Skill Tests": *"While performing
+/// a skill test whose difficulty is modified based on another aspect of the
+/// game, that difficulty changes whenever the corresponding aspect's status
+/// does."*
+///
+/// `0` with no test in flight. Saturates into `i8` for the absurd case;
+/// realistic difficulties are 0–6.
+fn current_difficulty(state: &GameState) -> i8 {
+    i8::try_from(
+        modified_value(
+            state,
+            card_registry::current(),
+            ModifierTarget::Test,
+            ModifiedQuantity::Difficulty,
+            ReadContext::from_state(state),
+        )
+        .total(),
+    )
+    .unwrap_or(i8::MAX)
+}
+
 /// RR ST.5's modified skill value, less the revealed token: the
 /// investigator's [modified value](modified_value) for `skill` — base
 /// plus every modifier the board carries, recalculated here rather than
-/// banked earlier — plus the two contributions that are properties of
-/// this test rather than of the board, the committed cards' matching and
-/// wild icons and the one-shot modifier the initiating effect
-/// snapshotted.
+/// banked earlier — plus the one contribution that is a property of this
+/// test rather than of the board, the committed cards' matching and wild
+/// icons. A weapon's one-shot *"+N \[combat\] for this attack"* is no
+/// longer added here: it is a recorded row the query itself folds in
+/// (#677).
 ///
 /// **Returned unclamped.** The caller still has the revealed token's ±N
 /// to add, and `Modifiers.md` puts the clamp after *all* modifiers: base
-/// 4 with a −8 token and a +2 is −2 → 0, not 0 + 2 → 2. Both remaining
-/// contributions become recorded rows inside the query in #676, at which
-/// point this function is the clamp and nothing else.
+/// 4 with a −8 token and a +2 is −2 → 0, not 0 + 2 → 2.
 ///
 /// Cards the installed registry can't address contribute 0 — the same
 /// silent-skip policy the sweep uses.
@@ -1136,10 +1208,7 @@ fn sum_skill_value(
     )
     .raw_total();
     let icon_mod = i32::from(sum_committed_icons(committed, skill));
-    // One-shot modifier the initiating effect snapshotted (a weapon's
-    // "+N for this attack"); 0 for player-action tests.
-    let test_mod = i32::from(state.current_skill_test().map_or(0, |t| t.test_modifier));
-    let total = board.saturating_add(icon_mod).saturating_add(test_mod);
+    let total = board.saturating_add(icon_mod);
     i8::try_from(total.clamp(i32::from(i8::MIN), i32::from(i8::MAX)))
         .expect("clamped into i8's range on the line above")
 }
@@ -1457,12 +1526,12 @@ pub(crate) fn perform_skill_test(
         investigator,
         skill,
         SkillTestKind::Plain,
-        difficulty,
+        crate::state::DifficultyBasis::Fixed(difficulty),
         SkillTestFollowUp::None,
         None,
         None,
         None,
-        0, // bare PerformSkillTest: no effect modifier
+        None, // bare PerformSkillTest: no effect modifier
     )
 }
 
@@ -1724,12 +1793,12 @@ mod tests {
             inv,
             SkillKind::Willpower,
             SkillTestKind::Plain,
-            2,
+            crate::state::DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
             Some(deal_horror(InvestigatorTarget::You, 1u8)),
             None,
             None,
-            0,
+            None,
         );
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         let out = finish_skill_test(&mut cx, &[]);
@@ -1766,12 +1835,12 @@ mod tests {
             inv,
             SkillKind::Willpower,
             SkillTestKind::Plain,
-            2,
+            crate::state::DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
             None,
             None,
             None,
-            0,
+            None,
         );
         assert!(
             matches!(out, EngineOutcome::AwaitingInput { .. }),
@@ -1862,12 +1931,12 @@ mod tests {
             inv,
             SkillKind::Willpower,
             SkillTestKind::Plain,
-            2,
+            crate::state::DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
             None,
             None,
             None,
-            0,
+            None,
         );
         // advance parked at AwaitingCommit and emitted the commit prompt.
         let EngineOutcome::AwaitingInput { request, .. } = &out else {
@@ -1930,12 +1999,12 @@ mod tests {
             inv,
             SkillKind::Willpower,
             SkillTestKind::Plain,
-            2,
+            crate::state::DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
             None,
             None,
             None,
-            0,
+            None,
         );
         assert!(
             matches!(out, EngineOutcome::AwaitingInput { .. }),
@@ -2010,12 +2079,12 @@ mod tests {
             inv,
             SkillKind::Willpower,
             SkillTestKind::Plain,
-            2,
+            crate::state::DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
             None,
             None,
             None,
-            0,
+            None,
         );
         assert!(
             matches!(out, EngineOutcome::AwaitingInput { .. }),
@@ -2077,12 +2146,12 @@ mod tests {
             inv,
             SkillKind::Willpower,
             SkillTestKind::Plain,
-            2,
+            crate::state::DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
             None,
             None,
             None,
-            0,
+            None,
         );
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
 
@@ -2146,18 +2215,22 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            // test_modifier 2 stands in for a weapon's +combat bonus.
+            // A weapon's "+2 [combat] for this attack".
             start_skill_test(
                 &mut cx,
                 inv,
                 SkillKind::Combat,
                 SkillTestKind::Fight,
-                3,
+                crate::state::DifficultyBasis::Fixed(3),
                 SkillTestFollowUp::None,
                 None,
                 None,
                 None,
-                2,
+                Some(InitiatorModifier {
+                    target: crate::state::ModifierTarget::Investigator(inv),
+                    stat: crate::dsl::Stat::Combat,
+                    delta: crate::dsl::IntExpr::Lit(2),
+                }),
             )
         };
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }), "prompt");
@@ -2186,7 +2259,29 @@ mod tests {
         let t = state.current_skill_test().unwrap();
         assert_eq!(t.skill, SkillKind::Intellect, "now an intellect test");
         assert_eq!(t.kind, SkillTestKind::Fight, "still a Fight (damage)");
-        assert_eq!(t.test_modifier, 0, "weapon combat bonus dropped");
+        // The weapon's bonus falls away with no second mechanism: it is a row
+        // over `Stat::Combat`, and the test now reads Intellect (FAQ: "ignore
+        // any bonuses to Combat or Agility").
+        let read = |skill| {
+            modified_value(
+                &state,
+                card_registry::current(),
+                ModifierTarget::Investigator(inv),
+                ModifiedQuantity::Skill(skill),
+                ReadContext::DuringTest(SkillTestKind::Fight),
+            )
+            .total()
+        };
+        assert_eq!(
+            read(SkillKind::Intellect),
+            3,
+            "weapon combat bonus does not reach the intellect the test now uses",
+        );
+        assert_eq!(
+            read(SkillKind::Combat),
+            5,
+            "the row itself is still recorded — the stat mismatch is what drops it",
+        );
         assert!(!matches!(
             state.continuations.last(),
             Some(crate::state::Continuation::SubstitutionPrompt { .. })
@@ -2211,12 +2306,12 @@ mod tests {
                 inv,
                 SkillKind::Combat,
                 SkillTestKind::Fight,
-                3,
+                crate::state::DifficultyBasis::Fixed(3),
                 SkillTestFollowUp::None,
                 None,
                 None,
                 None,
-                0,
+                None,
             )
         };
         assert!(
@@ -2255,12 +2350,12 @@ mod tests {
                 inv,
                 SkillKind::Agility,
                 SkillTestKind::Evade,
-                3,
+                crate::state::DifficultyBasis::Fixed(3),
                 SkillTestFollowUp::None,
                 None,
                 None,
                 None,
-                0,
+                None,
             );
         }
         let out = {
@@ -2310,12 +2405,12 @@ mod tests {
                 inv,
                 SkillKind::Combat,
                 SkillTestKind::Fight,
-                3,
+                crate::state::DifficultyBasis::Fixed(3),
                 SkillTestFollowUp::None,
                 None,
                 None,
                 None,
-                2,
+                None,
             )
         };
         assert!(
@@ -2387,12 +2482,12 @@ mod tests {
                 inv,
                 SkillKind::Combat,
                 SkillTestKind::Fight,
-                3,
+                crate::state::DifficultyBasis::Fixed(3),
                 SkillTestFollowUp::None,
                 None,
                 None,
                 None,
-                0,
+                None,
             )
         };
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
@@ -2430,12 +2525,12 @@ mod tests {
             inv,
             SkillKind::Willpower,
             SkillTestKind::Plain,
-            2,
+            crate::state::DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
             None,
             None,
             None,
-            0,
+            None,
         );
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         let out = finish_skill_test(&mut cx, &[]);

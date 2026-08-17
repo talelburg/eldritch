@@ -41,12 +41,24 @@
 //!
 //! Modifiers whose lifetime is decoupled from any card's zone are
 //! *recorded* instead of derived — [`GameState::recorded_modifiers`].
-//! Today that is the [`ModifierScope::ThisSkillTest`] row an activated
-//! ability pushes, which carries the
-//! [`SkillTestId`](crate::state::SkillTestId) of the test it was bought
-//! for and is inert under any other. A recorded row stores its delta as
-//! an **expression**, evaluated at read time exactly as a swept
-//! modifier's condition is.
+//! Today those are the [`ModifierScope::ThisSkillTest`] row an activated
+//! ability pushes and the one-shot modifier an initiating effect grants
+//! the test it starts (a weapon's *"+N \[combat\] for this attack"*,
+//! Flashlight 01087's *"-2 shroud for this investigation"*). Each carries
+//! the [`SkillTestId`](crate::state::SkillTestId) of the test it was bought
+//! for and is inert under any other, and each names its own target — so a
+//! row can modify a location as readily as an investigator. A recorded row
+//! stores its delta as an **expression**, evaluated at read time exactly as
+//! a swept modifier's condition is.
+//!
+//! # Difficulty
+//!
+//! A skill test's difficulty is not a quantity of its own: it *is* the
+//! modified shroud of the location being investigated, or the modified
+//! fight or evade value of the enemy being attacked or evaded. Reading
+//! [`ModifierTarget::Test`] resolves the in-flight test's
+//! [`DifficultyBasis`] and asks that target, so every card modifying the
+//! enemy or the location modifies the test (#677).
 //!
 //! # The fold
 //!
@@ -57,7 +69,7 @@
 //! the clamp; the row transform and the multiplicative pass arrive with
 //! their first corpus consumers (Jim Culver 02004, Hunting Nightgaunt
 //! 01172, Double or Nothing 02026), and substitution (automatic failure
-//! and success) with the difficulty slice, #677. Because
+//! and success) with #630. Because
 //! the clamp is last, [`ModifierBreakdown`] exposes the unclamped sum as
 //! well: a caller that still has modifiers of its own to add — the
 //! skill-test handler, which adds the revealed token's ±N after this
@@ -68,24 +80,16 @@
 use crate::card_data::SkillKind;
 use crate::card_registry::CardRegistry;
 use crate::dsl::{Effect, ModifierAudience, ModifierScope, SkillTestKind, Stat, Trigger};
-use crate::state::{CardCode, CardInPlay, EnemyId, GameState, InvestigatorId, LocationId};
+use crate::state::{
+    CardCode, CardInPlay, DifficultyBasis, EnemyId, GameState, InvestigatorId, LocationId,
+};
 
 /// Which entity's quantity is being asked about.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ModifierTarget {
-    /// An investigator's skills and capacities.
-    Investigator(InvestigatorId),
-    /// A location's shroud.
-    Location(LocationId),
-    /// An enemy's fight, evade or health.
-    Enemy(EnemyId),
-    /// The in-flight skill test itself — its difficulty. Nothing
-    /// contributes to it yet: the difficulty is still snapshotted at
-    /// initiation, and re-homing it onto the tested location or enemy is
-    /// #677's. Reading it through this query is what gives that slice a
-    /// single place to change.
-    Test,
-}
+///
+/// Defined in [`crate::state`] — a [`RecordedModifier`](crate::state::RecordedModifier)
+/// stores one, so it is state rather than query vocabulary — and re-exported
+/// here, where it reads as the query's first argument.
+pub use crate::state::ModifierTarget;
 
 /// Which quantity of the target is being asked about.
 ///
@@ -105,7 +109,10 @@ pub enum ModifiedQuantity {
     Fight,
     /// An enemy's evade value.
     Evade,
-    /// The in-flight skill test's difficulty.
+    /// The in-flight skill test's difficulty — read against
+    /// [`ModifierTarget::Test`], which resolves the test's
+    /// [`DifficultyBasis`] and answers from the location or enemy the test
+    /// is against.
     Difficulty,
 }
 
@@ -226,6 +233,9 @@ pub fn modified_value(
     quantity: ModifiedQuantity,
     context: ReadContext,
 ) -> ModifierBreakdown {
+    if let (ModifierTarget::Test, ModifiedQuantity::Difficulty) = (target, quantity) {
+        return difficulty(state, registry, context);
+    }
     let mut breakdown = ModifierBreakdown {
         base: base_value(state, target, quantity),
         contributions: Vec::new(),
@@ -248,6 +258,49 @@ pub fn modified_value(
         &mut breakdown.contributions,
     );
     breakdown
+}
+
+/// The in-flight test's difficulty: whatever its
+/// [`DifficultyBasis`] names, read as the board stands **now**.
+///
+/// `Skill_Tests.md`, "Variable Difficulty Skill Tests": *"While performing
+/// a skill test whose difficulty is modified based on another aspect of the
+/// game, that difficulty changes whenever the corresponding aspect's status
+/// does."* An enemy's modified fight value *is* the difficulty of a Fight
+/// action, so this delegates rather than folding a difficulty of its own:
+/// every card modifying that enemy's fight modifies the test, and the clamp
+/// happens once, in the delegate's [`ModifierBreakdown::total`].
+///
+/// [`Fixed`](DifficultyBasis::Fixed) — a treachery's printed difficulty —
+/// is a base value with no contributions; a card that modifies a card-test's
+/// difficulty (Double or Nothing 02026 doubles it) wants the fold's
+/// multiplicative stage, which is not built.
+///
+/// With no test in flight there is no difficulty to read: base 0, no
+/// contributions.
+fn difficulty(
+    state: &GameState,
+    registry: Option<&CardRegistry>,
+    context: ReadContext,
+) -> ModifierBreakdown {
+    let Some(basis) = state.current_skill_test().map(|t| t.difficulty_basis) else {
+        return ModifierBreakdown {
+            base: 0,
+            contributions: Vec::new(),
+        };
+    };
+    let (target, quantity) = match basis {
+        DifficultyBasis::Fixed(n) => {
+            return ModifierBreakdown {
+                base: i32::from(n),
+                contributions: Vec::new(),
+            }
+        }
+        DifficultyBasis::Shroud(id) => (ModifierTarget::Location(id), ModifiedQuantity::Shroud),
+        DifficultyBasis::Fight(id) => (ModifierTarget::Enemy(id), ModifiedQuantity::Fight),
+        DifficultyBasis::Evade(id) => (ModifierTarget::Enemy(id), ModifiedQuantity::Evade),
+    };
+    modified_value(state, registry, target, quantity, context)
 }
 
 /// Stage 1: the printed value. Base replacement (Duke 02014) lands with
@@ -280,9 +333,8 @@ fn base_value(state: &GameState, target: ModifierTarget, quantity: ModifiedQuant
             .enemies
             .get(&id)
             .map_or(0, |e| i32::from(e.max_health)),
-        (ModifierTarget::Test, ModifiedQuantity::Difficulty) => state
-            .current_skill_test()
-            .map_or(0, |t| i32::from(t.difficulty)),
+        // `ModifierTarget::Test` never reaches here — `modified_value`
+        // resolves the difficulty basis and asks the underlying target.
         _ => 0,
     }
 }
@@ -399,6 +451,14 @@ fn sweep(
 /// declares itself outside a test (prey ranking, which passes
 /// [`ReadContext::OutsideTest`] explicitly) sees none of them.
 ///
+/// A row names its own [`target`](crate::state::RecordedModifier::target),
+/// so it is not restricted to the investigator who bought it: the shroud
+/// reduction Flashlight 01087 grants the investigation it starts (*"Your
+/// location gets -2 shroud for this investigation."*) is a row over that
+/// **location**, folded into the same query the location's attachments feed
+/// (Obscuring Fog 01168's *"Attached location gets +2 shroud."*) — one
+/// composed shroud, clamped once.
+///
 /// The delta is an expression evaluated **here**, at read time, against
 /// the row's investigator as "you". An expression that cannot be
 /// resolved is skipped rather than counted as zero: contributing a
@@ -413,14 +473,14 @@ fn collect_recorded(
     context: ReadContext,
     out: &mut Vec<Contribution>,
 ) {
-    let (ModifierTarget::Investigator(id), ReadContext::DuringTest(_)) = (target, context) else {
+    let ReadContext::DuringTest(_) = context else {
         return;
     };
     let Some(in_flight) = state.current_skill_test().map(|t| t.id) else {
         return;
     };
     for row in &state.recorded_modifiers {
-        if row.investigator != id
+        if row.target != target
             || !stat_matches(row.stat, quantity)
             || !row.lifetime.applies_during_test(in_flight)
         {
@@ -1215,6 +1275,162 @@ mod tests {
         };
         assert_eq!(read(ModifiedQuantity::Fight), 2);
         assert_eq!(read(ModifiedQuantity::Evade), 2);
+    }
+
+    // ---- the in-flight test's difficulty --------------------------
+
+    /// A board carrying `test` in flight, one investigator, one location
+    /// (printed shroud 2) and one enemy (printed fight 2, evade 2).
+    fn state_with_test(basis: crate::state::DifficultyBasis) -> GameState {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_location(test_location(3, "Study"))
+            .with_enemy(test_enemy(7, "Ghoul"))
+            .build();
+        state
+            .continuations
+            .push(crate::state::Continuation::SkillTest(
+                crate::state::InFlightSkillTest {
+                    difficulty_basis: basis,
+                    ..test_skill_test(
+                        IN_FLIGHT,
+                        InvestigatorId(1),
+                        SkillKind::Intellect,
+                        SkillTestKind::Investigate,
+                        0,
+                    )
+                },
+            ));
+        state
+    }
+
+    fn difficulty_of(state: &GameState) -> i32 {
+        modified_value(
+            state,
+            Some(&mock_registry()),
+            ModifierTarget::Test,
+            ModifiedQuantity::Difficulty,
+            ReadContext::DuringTest(SkillTestKind::Investigate),
+        )
+        .total()
+    }
+
+    /// A card-declared difficulty is a printed base value with nothing
+    /// behind it on the board.
+    #[test]
+    fn a_fixed_difficulty_is_its_printed_number() {
+        let state = state_with_test(crate::state::DifficultyBasis::Fixed(4));
+        assert_eq!(difficulty_of(&state), 4);
+    }
+
+    /// An investigation's difficulty *is* the location's modified shroud,
+    /// attachments and all.
+    #[test]
+    fn an_investigations_difficulty_is_the_locations_modified_shroud() {
+        let mut state = state_with_test(crate::state::DifficultyBasis::Shroud(LocationId(3)));
+        assert_eq!(difficulty_of(&state), 2, "the printed shroud");
+        state
+            .locations
+            .get_mut(&LocationId(3))
+            .unwrap()
+            .attachments
+            .push(CardInPlay::enter_play(
+                CardCode::new("shroud-plus-2"),
+                CardInstanceId(0),
+            ));
+        assert_eq!(difficulty_of(&state), 4, "Obscuring Fog's +2, read live");
+    }
+
+    /// A Fight's difficulty is the enemy's modified fight value; an
+    /// Evade's is its modified evade value.
+    #[test]
+    fn an_enemys_fight_and_evade_are_the_difficulties_of_attacking_and_evading_it() {
+        let state = state_with_test(crate::state::DifficultyBasis::Fight(EnemyId(7)));
+        assert_eq!(difficulty_of(&state), 2);
+        let mut state = state_with_test(crate::state::DifficultyBasis::Evade(EnemyId(7)));
+        assert_eq!(difficulty_of(&state), 2);
+        state.enemies.get_mut(&EnemyId(7)).unwrap().evade = 4;
+        assert_eq!(difficulty_of(&state), 4, "read live, not banked at ST.1");
+    }
+
+    /// The reduction an initiating effect grants (Flashlight 01087's *"-2
+    /// shroud for this investigation"*) is a row over the **location**, so
+    /// it composes with the location's own modifiers and the clamp lands
+    /// once, at the end: 1 + 2 − 2 = 1, not (1 − 2 → 0) + 2 = 2.
+    #[test]
+    fn a_recorded_row_on_a_location_composes_with_its_attachments() {
+        let mut state = state_with_test(crate::state::DifficultyBasis::Shroud(LocationId(3)));
+        let loc = state.locations.get_mut(&LocationId(3)).unwrap();
+        loc.shroud = 1;
+        loc.attachments.push(CardInPlay::enter_play(
+            CardCode::new("shroud-plus-2"),
+            CardInstanceId(0),
+        ));
+        state
+            .recorded_modifiers
+            .push(crate::state::RecordedModifier::targeting(
+                ModifierTarget::Location(LocationId(3)),
+                InvestigatorId(1),
+                Stat::Shroud,
+                IntExpr::Lit(-2),
+                crate::state::Lifetime::SkillTest(IN_FLIGHT),
+                None,
+            ));
+        assert_eq!(difficulty_of(&state), 1);
+    }
+
+    /// The same reduction with nothing else in play goes below zero and is
+    /// clamped there — Flashlight's ruling: *"If you reduce shroud to 0,
+    /// investigating this location will be successful even if you reveal a
+    /// -8 token"* (<https://arkhamdb.com/card/01087>).
+    #[test]
+    fn a_difficulty_reduced_below_zero_clamps_at_zero() {
+        let mut state = state_with_test(crate::state::DifficultyBasis::Shroud(LocationId(3)));
+        state.locations.get_mut(&LocationId(3)).unwrap().shroud = 1;
+        state
+            .recorded_modifiers
+            .push(crate::state::RecordedModifier::targeting(
+                ModifierTarget::Location(LocationId(3)),
+                InvestigatorId(1),
+                Stat::Shroud,
+                IntExpr::Lit(-2),
+                crate::state::Lifetime::SkillTest(IN_FLIGHT),
+                None,
+            ));
+        assert_eq!(difficulty_of(&state), 0);
+    }
+
+    /// A row bought for another test contributes nothing to this one's
+    /// difficulty either — the identity check is not investigator-specific.
+    #[test]
+    fn a_location_row_from_another_test_does_not_change_the_difficulty() {
+        let mut state = state_with_test(crate::state::DifficultyBasis::Shroud(LocationId(3)));
+        state
+            .recorded_modifiers
+            .push(crate::state::RecordedModifier::targeting(
+                ModifierTarget::Location(LocationId(3)),
+                InvestigatorId(1),
+                Stat::Shroud,
+                IntExpr::Lit(-2),
+                crate::state::Lifetime::SkillTest(crate::state::SkillTestId(999)),
+                None,
+            ));
+        assert_eq!(difficulty_of(&state), 2, "the printed shroud, unreduced");
+    }
+
+    /// Outside a test there is no difficulty to read.
+    #[test]
+    fn a_difficulty_with_no_test_in_flight_is_zero() {
+        let state = GameStateBuilder::new().build();
+        let breakdown = modified_value(
+            &state,
+            Some(&mock_registry()),
+            ModifierTarget::Test,
+            ModifiedQuantity::Difficulty,
+            ReadContext::OutsideTest,
+        );
+        assert_eq!(breakdown.base, 0);
+        assert!(breakdown.contributions.is_empty());
     }
 
     // ---- the elder-sign contribution -----------------------------
