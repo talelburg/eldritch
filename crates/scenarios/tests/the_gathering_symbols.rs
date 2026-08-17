@@ -13,7 +13,7 @@ use game_core::test_support::{
     dispatch_turn_action_unchecked, drive_skill_test, perform_skill_test_no_commits, test_enemy,
     test_investigator, test_location, GameStateBuilder, ScriptedResolver,
 };
-use game_core::TurnAction;
+use game_core::{assert_event, assert_event_count, TurnAction};
 use scenarios::REGISTRY;
 
 #[ctor::ctor(unsafe)]
@@ -264,6 +264,118 @@ fn tablet_immediate_damage_suspends_on_soak_without_redrawing() {
         "exactly one ChaosTokenRevealed across the ST.4 soak suspend; events: {:?}",
         r.events
     );
+}
+
+// ---------------------------------------------------------------------------
+// ST.5 reads the board the ST.4 symbol effects left behind (#674)
+// ---------------------------------------------------------------------------
+
+const BEAT_COP: &str = "01018"; // Ally, 2 health, "You get +1 [combat]."
+const COP_INST: CardInstanceId = CardInstanceId(7);
+
+/// The Gathering board for the Beat Cop trace: one Ghoul co-located with the
+/// investigator, a chaos bag holding only `[tablet]` (−2, and 1 damage while a
+/// Ghoul is at your location), and Beat Cop 01018 in play carrying
+/// `cop_damage` damage already.
+fn beat_cop_board(cop_damage: u8) -> game_core::state::GameState {
+    let mut state = gathering_state(ChaosToken::Tablet, 1);
+    let mut cop = CardInPlay::enter_play(CardCode::new(BEAT_COP), COP_INST);
+    cop.accumulated_damage = cop_damage;
+    state
+        .investigators
+        .get_mut(&InvestigatorId(1))
+        .expect("investigator present")
+        .cards_in_play
+        .push(cop);
+    state
+}
+
+/// Drive a difficulty-2 Combat test on `state`, committing nothing and soaking
+/// the `[tablet]`'s ST.4 damage onto the ally (option 1 — option 0 is the
+/// investigator).
+fn drive_combat_test_soaking_onto_the_ally(
+    state: game_core::state::GameState,
+) -> game_core::engine::ApplyResult {
+    let mut resolver = ScriptedResolver::new();
+    // Beat Cop's own [fast] ability makes both RR p.26 player windows live
+    // (ST.1→ST.2 and ST.2→ST.3); pass on each.
+    resolver.skip();
+    resolver.commit_cards(&[]);
+    resolver.skip();
+    resolver.pick_single(OptionId(1));
+    let r = drive_skill_test(state, InvestigatorId(1), SkillKind::Combat, 2, resolver);
+    assert_eq!(r.outcome, EngineOutcome::Done);
+    r
+}
+
+/// `Appendix_II_Timing_and_Gameplay.md` orders ST.4 (*"Apply chaos symbol
+/// effect(s)"*) before ST.5, and ST.5 sums *"all active card abilities that are
+/// modifying the investigator's skill value"* — active **at ST.5**. Beat Cop at
+/// 1 remaining health soaks the `[tablet]`'s ST.4 damage, is discarded, and so
+/// contributes nothing at ST.5: combat 3 + (−2) = 1 against difficulty 2, a
+/// failure by 1. Summing at ST.3 instead credits the dead ally's `+1` and turns
+/// this into a pass.
+#[test]
+fn an_ally_killed_by_the_symbol_damage_does_not_contribute_at_st5() {
+    let r = drive_combat_test_soaking_onto_the_ally(beat_cop_board(1));
+
+    let inv = &r.state.investigators[&InvestigatorId(1)];
+    assert_eq!(inv.damage(), 0, "the damage was soaked, not taken");
+    assert!(
+        !inv.cards_in_play.iter().any(|c| c.instance_id == COP_INST),
+        "Beat Cop took its 2nd damage at ST.4 and left play; in play: {:?}",
+        inv.cards_in_play,
+    );
+    assert!(
+        inv.discard.contains(&CardCode::new(BEAT_COP)),
+        "the discarded Beat Cop is in the discard pile; discard: {:?}",
+        inv.discard,
+    );
+    // combat 3 − 2 = 1 against difficulty 2.
+    assert_event!(
+        r.events,
+        Event::SkillTestFailed {
+            skill: SkillKind::Combat,
+            by: 1,
+            ..
+        }
+    );
+}
+
+/// The mirror of the trace above: the same board with Beat Cop undamaged. It
+/// survives the ST.4 soak, is still in play at ST.5, and its `+1 [combat]`
+/// carries the test — so the fix is the discard, not a blanket loss of the
+/// ally's contribution.
+#[test]
+fn an_ally_that_survives_the_symbol_damage_still_contributes_at_st5() {
+    let r = drive_combat_test_soaking_onto_the_ally(beat_cop_board(0));
+
+    let inv = &r.state.investigators[&InvestigatorId(1)];
+    let cop = inv
+        .cards_in_play
+        .iter()
+        .find(|c| c.instance_id == COP_INST)
+        .expect("Beat Cop survives its 1st damage");
+    assert_eq!(cop.accumulated_damage, 1, "1 damage soaked onto Beat Cop");
+    // combat 3 + 1 − 2 = 2 against difficulty 2.
+    assert_event!(
+        r.events,
+        Event::SkillTestSucceeded {
+            skill: SkillKind::Combat,
+            margin: 0,
+            ..
+        }
+    );
+}
+
+/// The ST.4 soak window suspends *between* the token reveal (ST.3) and the ST.5
+/// sum. Resuming must finish the test without re-drawing the token — the
+/// sibling of `tablet_immediate_damage_suspends_on_soak_without_redrawing`, now
+/// that the determination is computed on the far side of the suspension.
+#[test]
+fn the_soak_suspension_between_st4_and_st5_does_not_redraw_the_token() {
+    let r = drive_combat_test_soaking_onto_the_ally(beat_cop_board(1));
+    assert_event_count!(r.events, 1, Event::ChaosTokenRevealed { .. });
 }
 
 // ---------------------------------------------------------------------------

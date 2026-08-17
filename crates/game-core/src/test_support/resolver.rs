@@ -783,6 +783,7 @@ mod tests {
                 test_modifier: 0,
                 bonus_attack_damage: 0,
                 bonus_clues_discovered: 0,
+                token_resolution: None,
                 resolved: None,
                 symbol_on_fail: None,
             }));

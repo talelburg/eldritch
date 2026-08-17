@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     card::{CardCode, CardInstanceId},
-    chaos_bag::{ChaosBag, TokenModifiers},
+    chaos_bag::{ChaosBag, TokenModifiers, TokenResolution},
     counter::Counter,
     enemy::{Enemy, EnemyId},
     investigator::{Investigator, InvestigatorId},
@@ -1498,8 +1498,8 @@ pub struct InFlightSkillTest {
     /// [`SkillTestStep::AwaitingCommit`] at
     /// `start_skill_test`; advanced in lock-step as the resolution
     /// sequence runs. The test outcome lives on [`resolved`](Self::resolved)
-    /// (set at ST.6), not in the cursor payloads — so the invariant "outcome is
-    /// known iff the test is past the commit window" is `resolved.is_some()`.
+    /// (set at ST.5–ST.6, one step later than the commit window closes — see
+    /// that field), not in the cursor payloads.
     pub continuation: SkillTestStep,
     /// A flat modifier applied to the test total, snapshotted by the
     /// effect that initiated the test (`Effect::Fight`'s combat
@@ -1528,12 +1528,24 @@ pub struct InFlightSkillTest {
     /// second discovery: Cover Up 01007 replaces one discovery of 2, not two
     /// of 1 (#471). See the **Discovery** entry in `CONTEXT.md`.
     pub bonus_clues_discovered: u8,
-    /// The chaos-token determination, set once at the
-    /// [`Resolving`](SkillTestStep::Resolving) step (RR ST.6) and read by every
-    /// post-ST.6 step instead of threading `succeeded`/`failed_by` through each
-    /// cursor variant. `None` until the test resolves — so `resolved.is_some()`
-    /// is the structural witness for "the test is past the commit window," the
-    /// invariant the per-variant `succeeded` payloads used to carry. (Slice D #423.)
+    /// The revealed chaos token's resolution, stashed at the
+    /// [`Resolving`](SkillTestStep::Resolving) step (RR ST.3) and consumed one
+    /// driver step later by
+    /// [`DetermineOutcome`](SkillTestStep::DetermineOutcome), which folds it
+    /// into the ST.5 modified skill value. Held on the frame rather than
+    /// threaded through the cursor because the ST.4 symbol effects sit between
+    /// the two steps and can suspend on a soak window: the token is drawn
+    /// exactly once, at ST.3, and the resume reads it from here instead of
+    /// re-drawing it. `None` until the token is revealed.
+    pub token_resolution: Option<TokenResolution>,
+    /// The test's determination, set once at the
+    /// [`DetermineOutcome`](SkillTestStep::DetermineOutcome) step (RR ST.5–ST.6)
+    /// and read by every later step instead of threading `succeeded`/`failed_by`
+    /// through each cursor variant. `None` until the test resolves — so
+    /// `resolved.is_some()` is the structural witness for "the test is past
+    /// [`DetermineOutcome`](SkillTestStep::DetermineOutcome)". (Slice D #423;
+    /// moved from `Resolving` to `DetermineOutcome` by #674, so the ST.5 sum
+    /// sees the board the ST.4 chaos-symbol effects left behind.)
     pub resolved: Option<ResolvedTest>,
     /// A chaos symbol token's result-conditional `on_fail` effect (Cultist
     /// 01104's "if this test is failed, take 1 horror"), built at the
@@ -1600,10 +1612,10 @@ pub struct ResolvedTest {
 /// fires between steps 2 and 3, not after the entire action ends.
 ///
 /// The test outcome (`succeeded`/`failed_by`/`margin`/`fail_reason`) is
-/// determined once at [`Resolving`](Self::Resolving) (ST.6) and stored on
-/// [`InFlightSkillTest::resolved`]; every subsequent step reads it from there
-/// rather than carrying it in the cursor. `resolved.is_some()` is the witness
-/// for "the test is past the commit window."
+/// determined once at [`DetermineOutcome`](Self::DetermineOutcome) (ST.5–ST.6)
+/// and stored on [`InFlightSkillTest::resolved`]; every subsequent step reads it
+/// from there rather than carrying it in the cursor. `resolved.is_some()` is the
+/// witness for "the test is past `DetermineOutcome`."
 ///
 /// Variants:
 ///
@@ -1648,17 +1660,19 @@ pub enum SkillTestStep {
     /// `advance` opens the window here, pre-advancing to
     /// [`Resolving`](Self::Resolving). (#374.)
     PreTokenWindow,
-    /// Commit submitted: the next driver iteration runs the computation
-    /// body (sum committed icons, resolve the chaos token — RR ST.3–ST.6),
-    /// then pre-advances to [`DetermineOutcome`](Self::DetermineOutcome).
-    /// This step pushes nothing (every effect it would run is deferred to the
-    /// cursor-sequenced steps below), so the driver stays on its own frame
-    /// and `continue`s.
+    /// Commit submitted: the next driver iteration reveals the chaos token
+    /// (RR ST.3) and pushes the symbol's immediate effects (RR ST.4), then
+    /// pre-advances to [`DetermineOutcome`](Self::DetermineOutcome). It stashes
+    /// the token's resolution on
+    /// [`InFlightSkillTest::token_resolution`] and computes **no** total,
+    /// margin, or verdict — those are ST.5/ST.6 and belong after the symbol
+    /// effects have resolved (#674).
     Resolving,
-    /// RR ST.6→ST.7 boundary. Emit the logged
+    /// RR ST.5–ST.7 boundary. Sum the modified skill value (ST.5) from the
+    /// board as it stands *now* — after the ST.4 symbol effects — compare it
+    /// against the difficulty (ST.6), then emit the logged
     /// [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
-    /// [`SkillTestFailed`](crate::Event::SkillTestFailed) (now, *after* the ST.4
-    /// immediate symbol effects that `Resolving` pushed), then fire the general
+    /// [`SkillTestFailed`](crate::Event::SkillTestFailed) and fire the general
     /// skill-test-outcome timing point (`TimingEvent::SkillTestResolved`) for
     /// **every** test and both outcomes — "after you successfully investigate"
     /// (Obscuring Fog 01168 forced + Dr. Milan 01033 reaction) is the
