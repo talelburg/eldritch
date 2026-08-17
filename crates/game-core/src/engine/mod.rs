@@ -15,6 +15,7 @@ pub use cx::Cx;
 mod dispatch;
 pub mod enumerate;
 pub mod evaluator;
+pub mod modified_value;
 mod outcome;
 pub(crate) mod pathfinding;
 
@@ -32,7 +33,11 @@ pub use dispatch::hunters::{enemy_can_enter_location, relocate_enemy};
 pub use dispatch::reveal::reveal_location;
 pub use dispatch::threat_area::{attach_to_location, place_in_threat_area};
 pub use enumerate::{legal_actions, TurnAction};
-pub use evaluator::{effective_shroud, location_id_by_code, EvalContext};
+pub use evaluator::{location_id_by_code, EvalContext};
+pub use modified_value::{
+    modified_value, Contribution, ContributionSource, ModifiedQuantity, ModifierBreakdown,
+    ModifierTarget, ReadContext,
+};
 pub use outcome::{
     ChoiceOption, EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget, ResumeToken,
 };

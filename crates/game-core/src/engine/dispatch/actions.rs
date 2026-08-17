@@ -111,13 +111,18 @@ pub(super) fn investigate_primary_effect(
     }
     // Shroud is u8 in state but skill-test difficulty is i8. Saturate
     // at i8::MAX for the absurd case; realistic shrouds are 0–6. The
-    // *effective* shroud folds in location-attachment modifiers (Obscuring
-    // Fog 01168's +2); fall back to the printed value when no registry is
-    // installed (bare unit tests).
-    let shroud = match crate::card_registry::current() {
-        Some(reg) => crate::engine::evaluator::effective_shroud(reg, location),
-        None => location.shroud,
-    };
+    // *modified* shroud folds in everything modifying this location
+    // (Obscuring Fog 01168's +2); with no registry installed (bare unit
+    // tests) it is the printed value.
+    let location_id = location.id;
+    let shroud = crate::engine::modified_value::modified_value(
+        cx.state,
+        crate::card_registry::current(),
+        crate::engine::modified_value::ModifierTarget::Location(location_id),
+        crate::engine::modified_value::ModifiedQuantity::Shroud,
+        crate::engine::modified_value::ReadContext::from_state(cx.state),
+    )
+    .total();
     let difficulty = i8::try_from(shroud).unwrap_or(i8::MAX);
     super::skill_test::start_skill_test(
         cx,

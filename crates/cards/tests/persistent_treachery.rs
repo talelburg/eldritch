@@ -64,9 +64,16 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
         "a persistent treachery is not auto-discarded after its Revelation",
     );
 
-    // +2 shroud: printed 2 → effective 4.
+    // +2 shroud: printed 2 → modified 4.
     assert_eq!(
-        game_core::effective_shroud(&cards::REGISTRY, loc),
+        game_core::modified_value(
+            &result.state,
+            Some(&cards::REGISTRY),
+            game_core::ModifierTarget::Location(loc.id),
+            game_core::ModifiedQuantity::Shroud,
+            game_core::ReadContext::from_state(&result.state),
+        )
+        .total(),
         4,
         "attached Obscuring Fog grants +2 shroud (printed 2)",
     );

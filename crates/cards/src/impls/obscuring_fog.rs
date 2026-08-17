@@ -13,13 +13,14 @@
 //! own disposition. The Revelation native enforces the printed "Limit 1
 //! per location": a second copy is discarded to the encounter discard
 //! instead of attaching (a treachery that cannot enter play is
-//! discarded). The `+2` shroud is read by `investigate` via
-//! `effective_shroud`; the forced discard runs `Effect::DiscardSelf`,
+//! discarded). The `+2` shroud reaches the attached location through the
+//! `ModifierAudience::AttachedCard` audience, and `investigate` reads it
+//! via `modified_value`; the forced discard runs `Effect::DiscardSelf`,
 //! which finds this attachment by the firing instance.
 
 use card_dsl::dsl::{
-    constant, discard_self, forced_on_event, modify, native, revelation, Ability, EventPattern,
-    EventTiming, ModifierScope, SkillTestKind, Stat, TestOutcome,
+    constant, discard_self, forced_on_event, modify_for, native, revelation, Ability, EventPattern,
+    EventTiming, ModifierAudience, ModifierScope, SkillTestKind, Stat, TestOutcome,
 };
 use game_core::card_registry::NativeEffectFn;
 use game_core::state::{CardCode, Zone};
@@ -34,7 +35,12 @@ const LIMIT1_ATTACH: &str = "01168:limit1-attach";
 pub fn abilities() -> Vec<Ability> {
     vec![
         revelation(native(LIMIT1_ATTACH)),
-        constant(modify(Stat::Shroud, 2, ModifierScope::WhileInPlay)),
+        constant(modify_for(
+            ModifierAudience::AttachedCard,
+            Stat::Shroud,
+            2,
+            ModifierScope::WhileInPlay,
+        )),
         forced_on_event(
             EventPattern::SkillTestResolved {
                 outcome: TestOutcome::Success,
@@ -109,6 +115,7 @@ mod tests {
             &abilities[1].effect,
             Effect::Modify {
                 stat: Stat::Shroud,
+                audience: ModifierAudience::AttachedCard,
                 delta: 2,
                 scope: ModifierScope::WhileInPlay
             }

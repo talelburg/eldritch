@@ -86,6 +86,17 @@ pub struct Enemy {
     /// enemy in the victory display when it is defeated; `None` for enemies
     /// that award no victory points.
     pub victory: Option<u8>,
+    /// Cards attached to this enemy — the enemy-side counterpart of
+    /// [`Location::attachments`](crate::state::Location::attachments).
+    /// Treacheries that attach to an enemy modify it from here
+    /// (Towering Beasts 02256: *"Attached enemy gets +1 fight and +1
+    /// health."*), which is why the modified-value sweep reads it.
+    ///
+    /// No effect populates it yet — the DSL has
+    /// [`AttachSelfToLocation`](crate::dsl::Effect::AttachSelfToLocation)
+    /// and no enemy counterpart — so it is empty on every board the
+    /// engine builds today. Required on the wire (#453).
+    pub attachments: Vec<super::card::CardInPlay>,
 }
 
 #[cfg(test)]
@@ -112,6 +123,7 @@ mod hunter_prey_field_tests {
             retaliate: true,
             code: crate::CardCode::new("01116"),
             victory: Some(2),
+            attachments: Vec::new(),
         };
         assert!(e.hunter);
         assert_eq!(e.prey, Prey::Default);

@@ -15,8 +15,9 @@ use crate::state::{
     InvestigatorId, SkillKind, SkillTestFollowUp, SkillTestStep, Status, TokenResolution, Zone,
 };
 
-use super::super::evaluator::{
-    constant_skill_modifier, elder_sign_modifier, pending_skill_modifier, push_effect, EvalContext,
+use super::super::evaluator::{push_effect, EvalContext};
+use super::super::modified_value::{
+    elder_sign_modifier, modified_value, ModifiedQuantity, ModifierTarget, ReadContext,
 };
 use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use super::Cx;
@@ -489,7 +490,7 @@ fn determine_outcome_step(
     investigator: InvestigatorId,
     committed: &[CardCode],
 ) -> EngineOutcome {
-    let (skill, kind, difficulty, resolution) = {
+    let (skill, kind, resolution) = {
         let t = cx
             .state
             .current_skill_test()
@@ -497,11 +498,25 @@ fn determine_outcome_step(
         (
             t.skill,
             t.kind,
-            t.difficulty,
             t.token_resolution
                 .expect("token_resolution: set at the Resolving step (ST.3) before this step"),
         )
     };
+    // The total difficulty, read the same way as the total skill value.
+    // Nothing modifies it yet — it is still the value snapshotted at
+    // initiation — but reading it through the query is what lets #677
+    // re-home it onto the tested location or enemy in one place.
+    let difficulty = i8::try_from(
+        modified_value(
+            cx.state,
+            card_registry::current(),
+            ModifierTarget::Test,
+            ModifiedQuantity::Difficulty,
+            ReadContext::DuringTest(kind),
+        )
+        .total(),
+    )
+    .unwrap_or(i8::MAX);
 
     // ST.5 modified skill value — read off the board as the ST.4 symbol effects
     // left it. ST.6 compare against the difficulty.
@@ -1059,15 +1074,22 @@ fn validate_commit_indices(
     Ok(indices_u8)
 }
 
-/// Sum the four skill-value contributions: investigator's printed
-/// stat, constant modifiers from cards in play, queued
-/// [`ModifierScope::ThisSkillTest`] pushes, and the committed cards'
-/// matching + wild icons.
+/// RR ST.5's modified skill value, less the revealed token: the
+/// investigator's [modified value](modified_value) for `skill` — base
+/// plus every modifier the board carries, recalculated here rather than
+/// banked earlier — plus the two contributions that are properties of
+/// this test rather than of the board, the committed cards' matching and
+/// wild icons and the one-shot modifier the initiating effect
+/// snapshotted.
 ///
-/// Cards / scopes not addressed by an installed registry contribute
-/// 0 — the same silent-skip policy `constant_skill_modifier` uses.
+/// **Returned unclamped.** The caller still has the revealed token's ±N
+/// to add, and `Modifiers.md` puts the clamp after *all* modifiers: base
+/// 4 with a −8 token and a +2 is −2 → 0, not 0 + 2 → 2. Both remaining
+/// contributions become recorded rows inside the query in #676, at which
+/// point this function is the clamp and nothing else.
 ///
-/// [`ModifierScope::ThisSkillTest`]: crate::dsl::ModifierScope::ThisSkillTest
+/// Cards the installed registry can't address contribute 0 — the same
+/// silent-skip policy the sweep uses.
 fn sum_skill_value(
     state: &GameState,
     investigator: InvestigatorId,
@@ -1075,25 +1097,26 @@ fn sum_skill_value(
     kind: SkillTestKind,
     committed: &[CardCode],
 ) -> i8 {
-    let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
-        unreachable!(
-            "sum_skill_value: investigator {investigator:?} disappeared while test was in \
-             flight; this is a state-corruption invariant violation"
-        )
-    });
-    let base = inv.skills.value(skill);
-    let icon_mod = sum_committed_icons(committed, skill);
-    let constant_mod = card_registry::current().map_or(0, |reg| {
-        constant_skill_modifier(state, reg, investigator, skill, kind)
-    });
-    let pending_mod = pending_skill_modifier(state, investigator, skill);
+    assert!(
+        state.investigators.contains_key(&investigator),
+        "sum_skill_value: investigator {investigator:?} disappeared while test was in flight; \
+         this is a state-corruption invariant violation"
+    );
+    let board = modified_value(
+        state,
+        card_registry::current(),
+        ModifierTarget::Investigator(investigator),
+        ModifiedQuantity::Skill(skill),
+        ReadContext::DuringTest(kind),
+    )
+    .raw_total();
+    let icon_mod = i32::from(sum_committed_icons(committed, skill));
     // One-shot modifier the initiating effect snapshotted (a weapon's
     // "+N for this attack"); 0 for player-action tests.
-    let test_mod = state.current_skill_test().map_or(0, |t| t.test_modifier);
-    base.saturating_add(constant_mod)
-        .saturating_add(pending_mod)
-        .saturating_add(icon_mod)
-        .saturating_add(test_mod)
+    let test_mod = i32::from(state.current_skill_test().map_or(0, |t| t.test_modifier));
+    let total = board.saturating_add(icon_mod).saturating_add(test_mod);
+    i8::try_from(total.clamp(i32::from(i8::MIN), i32::from(i8::MAX)))
+        .expect("clamped into i8's range on the line above")
 }
 
 /// Sum the skill-icon contribution of the `committed` cards (RR ST.5): each

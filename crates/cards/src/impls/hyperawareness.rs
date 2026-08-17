@@ -55,7 +55,7 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Cost, Effect, ModifierScope, Stat, Trigger};
+    use card_dsl::dsl::{Cost, Effect, ModifierAudience, ModifierScope, Stat, Trigger};
 
     #[test]
     fn abilities_are_two_fast_activated_resource_costed_modifies() {
@@ -84,6 +84,7 @@ mod tests {
                 stat: Stat::Intellect,
                 delta: 1,
                 scope: ModifierScope::ThisSkillTest,
+                audience: ModifierAudience::Controller,
             }
         ));
     }
@@ -97,6 +98,7 @@ mod tests {
                 stat: Stat::Agility,
                 delta: 1,
                 scope: ModifierScope::ThisSkillTest,
+                audience: ModifierAudience::Controller,
             }
         ));
     }
