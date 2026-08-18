@@ -23,26 +23,45 @@
 //! is involved; the real consumers (Rex Murphy 02002, Stroke of Luck 02271)
 //! are out of scope here.
 //!
-//! **Not covered here:** the ST.3/ST.4 skip. A determination latched before
-//! the reveal still draws a chaos token today, which is rules-incorrect and
-//! is #687's to fix.
+//! The ST.3/ST.4 **skip** lives here too (#687):
+//!
+//! > If it is known that an investigator automatically succeeds or fails at
+//! > a skill test before Step 3 ("Reveal chaos token") occurs, that step is
+//! > skipped, along with Step 4. No chaos token(s) are revealed from the
+//! > chaos bag, and the investigator immediately moves to Step 5. All other
+//! > steps of the skill test resolve as normal.
+//! >
+//! > If a chaos token effect causes an investigator to automatically succeed
+//! > or fail at a skill test, continue with Steps 3 and 4, as normal.
+//!
+//! The two clauses are the same determination query asked at two different
+//! moments, so they are asserted the same way: on the presence or absence of
+//! `ChaosTokenRevealed` and of the ST.4 symbol effect, never on the RNG
+//! cursor. The `[skull]` symbol effect comes from a mock scenario module
+//! installed alongside the mock card registry, for the same
+//! process-isolation reason.
 
+use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::card_data::CardMetadata;
 use game_core::card_data::{CardKind, Class, SkillIcons};
 use game_core::card_registry::CardRegistry;
 use game_core::dsl::{
-    activated, auto_resolve, gain_resources, on_play, seq, Ability, Cost, Determination,
-    InvestigatorTarget,
+    activated, auto_resolve, gain_resources, on_play, on_skill_test_resolution, seq, Ability, Cost,
+    Determination, InvestigatorTarget, TestOutcome,
 };
-use game_core::engine::{legal_actions, EngineOutcome};
+use game_core::engine::{legal_actions, EngineOutcome, InputKind, InputRequest, OptionId};
 use game_core::event::{Event, FailureReason};
+use game_core::scenario::{
+    ScenarioId, ScenarioModule, ScenarioRegistry, SymbolCtx, SymbolOutcome, TokenEffect,
+};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind,
-    TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId,
+    LocationId, Phase, SkillKind, TokenModifiers, TokenResolution, Zone,
 };
 use game_core::test_support::{
-    dispatch_turn_action_unchecked, drive_skill_test, perform_skill_test_no_commits,
-    test_investigator, GameStateBuilder, TakeOneFastPlay,
+    dispatch_turn_action_unchecked, drive, drive_skill_test, metadata_for_test_inv,
+    perform_skill_test_no_commits, test_investigator, test_location, ChoiceResolver,
+    GameStateBuilder, TakeOneFastPlay,
 };
 use game_core::TurnAction;
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -75,6 +94,20 @@ const PLAY_AUTO_SUCCEED: &str = "MOCK-PLAY-AS";
 /// a test in flight.
 const PLAIN_GAIN: &str = "MOCK-GAIN";
 
+/// Mock card with no abilities at all, committed to a test purely to be
+/// discarded at ST.8.
+const FILLER: &str = "MOCK-FILLER";
+
+/// Mock card whose `OnSkillTestResolution` trigger gains a resource on a
+/// successful test — an end-of-test step that must still run when the draw
+/// was skipped.
+const ON_RESOLUTION_GAIN: &str = "MOCK-OSR-GAIN";
+
+/// The mock scenario whose `[skull]` deals 1 damage immediately, so a
+/// skipped ST.4 has an observable absence. The Gathering's `[tablet]`
+/// shape, minus the Ghoul condition.
+const SYMBOL_SCENARIO: &str = "_mock_symbols";
+
 /// Metadata for [`PLAY_AUTO_SUCCEED`] — the one mock here that is *played*
 /// rather than activated, so the play gate reads its type, cost and `[fast]`
 /// flag. Every other mock is an in-play instance the registry only needs
@@ -103,7 +136,12 @@ fn play_auto_succeed_metadata() -> CardMetadata {
 
 fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
     static M: std::sync::OnceLock<CardMetadata> = std::sync::OnceLock::new();
-    (code.as_str() == PLAY_AUTO_SUCCEED).then(|| M.get_or_init(play_auto_succeed_metadata))
+    // `TEST_INV` first: the symbol token's damage reads the tester's
+    // `max_health()` through the registry, which would otherwise not know
+    // the fixture investigator's card.
+    metadata_for_test_inv(code).or_else(|| {
+        (code.as_str() == PLAY_AUTO_SUCCEED).then(|| M.get_or_init(play_auto_succeed_metadata))
+    })
 }
 
 fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
@@ -140,8 +178,46 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             vec![Cost::Resources(1)],
             gain_resources(InvestigatorTarget::You, 1),
         )]),
+        ON_RESOLUTION_GAIN => Some(vec![on_skill_test_resolution(
+            TestOutcome::Success,
+            gain_resources(InvestigatorTarget::You, 1),
+        )]),
         _ => None,
     }
+}
+
+/// Mock symbol hook: a `[skull]` contributes nothing to the total and deals
+/// 1 damage at ST.4.
+fn mock_resolve_symbol(token: ChaosToken, _ctx: &SymbolCtx) -> SymbolOutcome {
+    match token {
+        ChaosToken::Skull => SymbolOutcome {
+            modifier: 0,
+            immediate: vec![TokenEffect::Damage(1)],
+            on_fail: vec![],
+        },
+        _ => SymbolOutcome::default(),
+    }
+}
+
+fn mock_setup() -> GameState {
+    GameStateBuilder::new().build()
+}
+
+fn mock_apply_resolution(
+    _: &game_core::scenario::Resolution,
+    _: &mut GameState,
+    _: &mut Vec<Event>,
+) {
+}
+
+static SYMBOL_MODULE: ScenarioModule = ScenarioModule {
+    resolve_symbol: Some(mock_resolve_symbol),
+    setup: mock_setup,
+    apply_resolution: mock_apply_resolution,
+};
+
+fn mock_module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
+    (id.as_str() == SYMBOL_SCENARIO).then_some(&SYMBOL_MODULE)
 }
 
 #[ctor::ctor(unsafe)]
@@ -152,6 +228,9 @@ fn install_mock_registry() {
         native_effect_for: |_| None,
         native_eligibility_for: |_| None,
         native_condition_for: |_| None,
+    });
+    let _ = game_core::scenario_registry::install(ScenarioRegistry {
+        module_for: mock_module_for,
     });
 }
 
@@ -181,8 +260,108 @@ fn board_with(
         .with_investigator_turn(id)
         .with_chaos_bag(bag)
         .with_token_modifiers(TokenModifiers::default())
+        // Named so the mock module's symbol hook is reachable; only a
+        // `[skull]` in the bag actually consults it.
+        .with_scenario_id(ScenarioId::new(SYMBOL_SCENARIO))
         .build();
     (state, id)
+}
+
+/// [`board_with`] plus a location the investigator stands at, holding one
+/// clue behind `shroud` — the board an Investigate action needs. Bag is a
+/// single `Numeric(0)`.
+fn investigate_board(hand: &[&str], shroud: u8) -> (GameState, InvestigatorId, LocationId) {
+    let id = InvestigatorId(1);
+    let loc = LocationId(10);
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(loc);
+    inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
+    let mut location = test_location(10, "Study");
+    location.clues = 1;
+    location.shroud = shroud;
+    let state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator(inv)
+        .with_active_investigator(id)
+        .with_turn_order([id])
+        .with_investigator_turn(id)
+        .with_location(location)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .with_scenario_id(ScenarioId::new(SYMBOL_SCENARIO))
+        .build();
+    (state, id, loc)
+}
+
+/// A [`ChoiceResolver`] that takes the first offered fast play *and* commits
+/// a named set of cards at the commit window, declining every other window.
+///
+/// [`TakeOneFastPlay`] commits nothing and [`ScriptedResolver`] cannot pin
+/// down a fast window's prompt count; the skipped-draw tests need both at
+/// once — a card latching the determination before ST.3, and a card
+/// committed to the test it resolves.
+///
+/// [`ScriptedResolver`]: game_core::test_support::ScriptedResolver
+struct FastPlayAndCommit {
+    commit: Vec<CardCode>,
+    used: bool,
+}
+
+impl FastPlayAndCommit {
+    fn committing(codes: &[&str]) -> Self {
+        Self {
+            commit: codes.iter().map(|c| CardCode::new(*c)).collect(),
+            used: false,
+        }
+    }
+}
+
+impl ChoiceResolver for FastPlayAndCommit {
+    fn next(&mut self, request: &InputRequest, state: &GameState) -> InputResponse {
+        // Assumes the first skippable `PickSingle` offering anything is the
+        // test's fast window — true for every board built in this file, where
+        // nothing else opens one.
+        if request.skippable {
+            if !self.used && request.kind == InputKind::PickSingle && !request.options.is_empty() {
+                self.used = true;
+                return InputResponse::PickSingle(request.options[0].id);
+            }
+            return InputResponse::Skip;
+        }
+        match request.kind {
+            InputKind::Confirm => InputResponse::Confirm,
+            // The commit window: hand indices, resolved against the hand as
+            // it stands now (the fast play above already left it).
+            InputKind::PickMultiple => {
+                let inv = state
+                    .current_skill_test()
+                    .and_then(|t| state.investigators.get(&t.investigator))
+                    .expect("the commit window implies an in-flight test");
+                let mut used = vec![false; inv.hand.len()];
+                let selected = self
+                    .commit
+                    .iter()
+                    .map(|code| {
+                        let i = inv
+                            .hand
+                            .iter()
+                            .enumerate()
+                            .find_map(|(i, c)| (!used[i] && c == code).then_some(i))
+                            .unwrap_or_else(|| {
+                                panic!("commit code {code:?} not in hand {:?}", inv.hand)
+                            });
+                        used[i] = true;
+                        OptionId(u32::try_from(i).expect("hand index fits u32"))
+                    })
+                    .collect();
+                InputResponse::PickMultiple { selected }
+            }
+            other => panic!(
+                "FastPlayAndCommit: unexpected non-skippable {other:?}: {:?}",
+                request.prompt
+            ),
+        }
+    }
 }
 
 /// [`board_with`] for the common case: one in-play instance of `code`
@@ -436,4 +615,160 @@ fn the_auto_fail_token_latches_no_second_event() {
         }
     );
     assert_no_event!(result.events, Event::SkillTestDeterminationLatched { .. });
+}
+
+// ---------------------------------------------------------------------------
+// The ST.3/ST.4 skip (#687)
+// ---------------------------------------------------------------------------
+
+/// A determination latched before the driver reaches the resolution step
+/// skips ST.3 outright: *"No chaos token(s) are revealed from the chaos
+/// bag"*. Asserted as the absence of the reveal the player would have seen,
+/// not by reading the RNG cursor — and the bag itself is untouched.
+#[test]
+fn a_determination_latched_before_the_reveal_draws_no_token() {
+    let (state, id, _) = board(AUTO_SUCCEED);
+    let bag_before = state.chaos_bag.clone();
+    let result = test_taking_the_fast_play(state, id, 9);
+
+    assert_no_event!(result.events, Event::ChaosTokenRevealed { .. });
+    assert_event!(
+        result.events,
+        Event::SkillTestSucceeded { investigator, .. } if *investigator == id
+    );
+    // The load-bearing assertion is the absent reveal above; this one pins
+    // the bag's contents, which a draw never mutates anyway.
+    assert_eq!(result.state.chaos_bag, bag_before);
+}
+
+/// *"that step is skipped, along with Step 4"* — the `[skull]`'s immediate
+/// damage never lands, because the token that would have carried it was
+/// never revealed.
+#[test]
+fn a_skipped_draw_pushes_no_chaos_symbol_effects() {
+    let (state, id) = board_with(&[AUTO_SUCCEED], &[], ChaosBag::new([ChaosToken::Skull]));
+    let result = test_taking_the_fast_play(state, id, 9);
+
+    assert_no_event!(result.events, Event::ChaosTokenRevealed { .. });
+    assert_no_event!(result.events, Event::DamageTaken { .. });
+    assert_event!(result.events, Event::SkillTestSucceeded { .. });
+}
+
+/// The control for the test above: with nothing latched, the same board
+/// reveals the `[skull]` and takes its ST.4 damage. Without this, the
+/// absence asserted there could be a mock that never fires.
+#[test]
+fn the_symbol_effects_still_run_when_nothing_is_latched() {
+    let (state, id) = board_with(&[], &[], ChaosBag::new([ChaosToken::Skull]));
+    let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 9);
+
+    assert_event!(
+        result.events,
+        Event::ChaosTokenRevealed {
+            token: ChaosToken::Skull,
+            ..
+        }
+    );
+    assert_event!(result.events, Event::DamageTaken { amount: 1, .. });
+}
+
+/// *"If a chaos token effect causes an investigator to automatically
+/// succeed or fail at a skill test, continue with Steps 3 and 4, as
+/// normal."* The `[auto_fail]` token's determination arrives *from* the
+/// reveal, so there is nothing left to skip: the token is revealed and the
+/// test fails on it.
+#[test]
+fn a_determination_from_the_revealed_token_skips_nothing() {
+    let (state, id) = board_with(&[], &[], ChaosBag::new([ChaosToken::AutoFail]));
+    let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 3);
+
+    assert_event!(
+        result.events,
+        Event::ChaosTokenRevealed {
+            token: ChaosToken::AutoFail,
+            resolution: TokenResolution::AutoFail,
+        }
+    );
+    assert_event!(
+        result.events,
+        Event::SkillTestFailed {
+            reason: FailureReason::AutoFail,
+            by: 3,
+            ..
+        }
+    );
+}
+
+/// *"However, the skill test still takes place. Cards may still be
+/// committed to the test"* — and a committed card is still discarded at
+/// ST.8 when the draw was skipped.
+#[test]
+fn committed_cards_are_still_discarded_when_the_draw_is_skipped() {
+    let (state, id) = board_with(
+        &[AUTO_SUCCEED],
+        &[FILLER],
+        ChaosBag::new([ChaosToken::Numeric(0)]),
+    );
+    let result = drive_skill_test(
+        state,
+        id,
+        SkillKind::Willpower,
+        9,
+        FastPlayAndCommit::committing(&[FILLER]),
+    );
+
+    assert_no_event!(result.events, Event::ChaosTokenRevealed { .. });
+    assert_event!(
+        result.events,
+        Event::CardDiscarded { investigator, code, from: Zone::Hand }
+            if *investigator == id && code.as_str() == FILLER
+    );
+    assert!(
+        result.state.investigators[&id]
+            .discard
+            .contains(&CardCode::new(FILLER)),
+        "the committed card reaches the discard pile",
+    );
+}
+
+/// *"All other steps of the skill test resolve as normal."* An Investigate
+/// whose draw is skipped still runs its ST.7 action follow-up (the clue) and
+/// its end-of-test steps: the committed card's `OnSkillTestResolution`
+/// trigger fires and the test still ends with `SkillTestEnded`.
+#[test]
+fn the_follow_up_and_end_of_test_steps_still_run_on_a_skipped_draw() {
+    let (state, id, loc) = investigate_board(&[PLAY_AUTO_SUCCEED, ON_RESOLUTION_GAIN], 9);
+    let resources_before = state.investigators[&id].resources;
+    let investigate = TurnAction::Investigate { investigator: id };
+    let idx = legal_actions(&state)
+        .iter()
+        .position(|a| a == &investigate)
+        .expect("Investigate must be a legal open-turn action");
+    let result = drive(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(
+                u32::try_from(idx).expect("action index fits u32"),
+            )),
+        }),
+        FastPlayAndCommit::committing(&[ON_RESOLUTION_GAIN]),
+    );
+
+    assert_no_event!(result.events, Event::ChaosTokenRevealed { .. });
+    assert_event!(result.events, Event::SkillTestSucceeded { .. });
+    // ST.7 action follow-up: the shroud-9 location gives up its clue.
+    assert_event!(result.events, Event::CluePlaced { .. });
+    assert_eq!(result.state.locations[&loc].clues, 0);
+    assert_eq!(result.state.investigators[&id].clues, 1);
+    // The committed card's end-of-test trigger.
+    assert_event!(
+        result.events,
+        Event::ResourcesGained { investigator, amount: 1 } if *investigator == id
+    );
+    assert_eq!(
+        result.state.investigators[&id].resources,
+        resources_before + 1
+    );
+    // ST.8 teardown.
+    assert_event!(result.events, Event::SkillTestEnded { investigator } if *investigator == id);
 }

@@ -398,6 +398,29 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 /// test — see [`record_token_contribution`] — so the ST.5 total is one query
 /// rather than a query plus an integer the driver adds afterwards (#684).
 ///
+/// **Both steps are skipped outright when the test's determination is already
+/// known.** `glossary/Automatic_Failure_Success.md`:
+///
+/// > If it is known that an investigator automatically succeeds or fails at a
+/// > skill test before Step 3 ("Reveal chaos token") occurs, that step is
+/// > skipped, along with Step 4. No chaos token(s) are revealed from the chaos
+/// > bag, and the investigator immediately moves to Step 5. All other steps of
+/// > the skill test resolve as normal.
+/// >
+/// > If a chaos token effect causes an investigator to automatically succeed or
+/// > fail at a skill test, continue with Steps 3 and 4, as normal.
+///
+/// The two clauses are one question asked at two moments, not two mechanisms
+/// (ADR 0007): this step asks
+/// [`test_determination`](crate::engine::modified_value::test_determination)
+/// *before* the draw, so a row latched at ST.1/ST.2 (Three Aces 06199 —
+/// *"that test automatically succeeds <i>(do not reveal chaos tokens from the
+/// chaos bag)</i>"*) skips the draw, while the `[auto_fail]` token's own row —
+/// written by [`record_token_contribution`] below, after the reveal — has
+/// nothing left to skip. Nothing is recorded for the skip: there is no
+/// `EngineRecord` for a chaos draw, so a skip that is a pure function of game
+/// state replays identically.
+///
 /// The token is drawn exactly once here; a soak window suspending inside the
 /// ST.4 effects resumes at `DetermineOutcome` and re-draws nothing. The
 /// result-conditional symbol `on_fail` effect (Cultist 01104) is built and
@@ -406,6 +429,18 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 /// on the (by then known) outcome. Pre-advances to `DetermineOutcome`
 /// **before** pushing the immediate effects (the suspend/resume invariant).
 fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
+    // Known already? Then ST.3 and ST.4 do not happen at all: no draw, no
+    // `ChaosTokenRevealed`, no symbol effects — straight to ST.5. Every other
+    // step of the test still runs, so the cursor advances exactly as the
+    // drawing path leaves it.
+    if test_determination(cx.state, ReadContext::from_state(cx.state)).is_some() {
+        cx.state
+            .current_skill_test_mut()
+            .expect("run_resolution: the SkillTest frame must exist")
+            .continuation = SkillTestStep::DetermineOutcome;
+        return;
+    }
+
     // ST.3 reveal the chaos token; resolve any scenario symbol outcome.
     let token_idx = cx.state.rng.next_index(cx.state.chaos_bag.tokens.len());
     let token = cx.state.chaos_bag.tokens[token_idx];
@@ -990,11 +1025,13 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             }
             SkillTestStep::Resolving => {
                 // RR ST.3 (reveal the chaos token) + ST.4 (immediate symbol
-                // effects pushed as Effect::Deal). Stashes the token's resolution
-                // on the frame — no total, margin or verdict — and pre-advances to
-                // DetermineOutcome; if an immediate effect was pushed it is the new
-                // top frame and the loop yields (may suspend on a soak window),
-                // resuming at DetermineOutcome.
+                // effects pushed as Effect::Deal) — both skipped outright when
+                // the test's determination is already known (#687). Stashes
+                // the token's resolution on the frame — no total, margin or
+                // verdict — and pre-advances to DetermineOutcome; if an
+                // immediate effect was pushed it is the new top frame and the
+                // loop yields (may suspend on a soak window), resuming at
+                // DetermineOutcome.
                 run_resolution(cx, investigator);
             }
             SkillTestStep::DetermineOutcome => {
