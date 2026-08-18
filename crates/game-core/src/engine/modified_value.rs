@@ -214,15 +214,32 @@ pub struct ModifierBreakdown {
     /// (`glossary/Automatic_Failure_Success.md`). `None` otherwise, which
     /// is every read outside a determined test.
     ///
-    /// The contributions are **kept**, not discarded: the rules require the
-    /// modified skill value to be determined even on an automatically
-    /// failed test (*"the investigator's total modified skill value is
-    /// still determined, as it may have some bearing on other card
-    /// abilities"*), and the breakdown is where that lives.
+    /// The contributions are **kept**, not discarded, so a substituted
+    /// total still has a composition underneath it. The glossary states
+    /// that requirement for an automatic *success* — its worked example
+    /// has Patrice skipping the reveal, and *"the skill test still takes
+    /// place. Cards may still be committed to the test, and the
+    /// investigator's total modified skill value is still determined, as
+    /// it may have some bearing on other card abilities"* — and says
+    /// nothing either way about an automatic failure. Keeping the
+    /// breakdown on both reads the same rule the same way rather than
+    /// discarding information on the case the example does not cover.
     pub substitution: Option<i32>,
 }
 
 impl ModifierBreakdown {
+    /// A breakdown that is nothing but its base value: no contribution can
+    /// reach it and no determination substitutes it. The shape of a
+    /// printed difficulty, and of a read with no test in flight.
+    #[must_use]
+    fn flat(base: i32) -> Self {
+        Self {
+            base,
+            contributions: Vec::new(),
+            substitution: None,
+        }
+    }
+
     /// Add one more contribution to the fold, attributed to its source.
     ///
     /// For the contributions that are a property of the read rather than of
@@ -284,11 +301,7 @@ pub fn modified_value(
         if let (ModifierTarget::Test, ModifiedQuantity::Difficulty) = (target, quantity) {
             difficulty(state, registry, context)
         } else {
-            let mut breakdown = ModifierBreakdown {
-                base: base_value(state, target, quantity),
-                contributions: Vec::new(),
-                substitution: None,
-            };
+            let mut breakdown = ModifierBreakdown::flat(base_value(state, target, quantity));
             if let Some(registry) = registry {
                 sweep(
                     state,
@@ -425,20 +438,10 @@ fn difficulty(
     context: ReadContext,
 ) -> ModifierBreakdown {
     let Some(basis) = state.current_skill_test().map(|t| t.difficulty_basis) else {
-        return ModifierBreakdown {
-            base: 0,
-            contributions: Vec::new(),
-            substitution: None,
-        };
+        return ModifierBreakdown::flat(0);
     };
     let (target, quantity) = match basis {
-        DifficultyBasis::Fixed(n) => {
-            return ModifierBreakdown {
-                base: i32::from(n),
-                contributions: Vec::new(),
-                substitution: None,
-            }
-        }
+        DifficultyBasis::Fixed(n) => return ModifierBreakdown::flat(i32::from(n)),
         DifficultyBasis::Shroud(id) => (ModifierTarget::Location(id), ModifiedQuantity::Shroud),
         DifficultyBasis::Fight(id) => (ModifierTarget::Enemy(id), ModifiedQuantity::Fight),
         DifficultyBasis::Evade(id) => (ModifierTarget::Enemy(id), ModifiedQuantity::Evade),
@@ -1757,7 +1760,8 @@ mod tests {
             assert_eq!(
                 difficulty_of(&state),
                 2,
-                "the losing automatic success must not zero the difficulty too,                  or 0 versus 0 compares as a success",
+                "the losing automatic success must not zero the difficulty \
+                 too, or 0 versus 0 compares as a success",
             );
         }
     }

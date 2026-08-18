@@ -672,8 +672,26 @@ fn determine_outcome_step(
     let margin = total.saturating_sub(difficulty);
     // The verdict itself is the determination's where there is one, and the
     // comparison's otherwise. The comparison no longer carries a "…and it
-    // wasn't an auto-fail" term: the determination is what says so now, and
-    // it says it for a card-latched failure as readily as for the token's.
+    // wasn't an auto-fail" term, which named the *token*; the determination
+    // is what says so now, and says it for a card-latched failure as
+    // readily as for the token's.
+    //
+    // The failure arm is not merely a restatement of the substituted
+    // comparison. At every difficulty of 1 or more it agrees with it — skill
+    // value 0 loses — but a difficulty of **0** is reachable (a printed
+    // `Fixed(0)`, or Flashlight 01087's *"-2 shroud"* on a shroud-2
+    // location), and there 0 against 0 compares as a success. The glossary
+    // states the substitution and not the verdict, but *"Some card or token
+    // abilities may cause a skill test to automatically fail"* is
+    // unconditional, so the substitution is how the **margin** comes out
+    // right (0 against difficulty 3 fails by 3) rather than how the outcome
+    // is decided. `perform_skill_test_autofail_at_difficulty_zero_still_fails`
+    // is the guard.
+    //
+    // The success arm *is* a restatement — the difficulty is substituted to
+    // 0 and a total is clamped at 0, so the comparison already passes — and
+    // is spelled out anyway so the verdict reads off the determination
+    // rather than off a coincidence of two clamps.
     let (succeeded, fail_reason) = match determination {
         Some(Determination::AutomaticFailure) => (false, FailureReason::AutoFail),
         Some(Determination::AutomaticSuccess) => (true, FailureReason::Total),

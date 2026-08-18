@@ -818,8 +818,10 @@ mod tests {
             "the determination expires with the test's teardown",
         );
 
-        // A second test on the same board resolves on its own numbers:
-        // skill 3 against difficulty 2, with the AutoFail latching afresh.
+        // The bag still holds only the AutoFail, so the second test fails
+        // automatically too — but on a determination latched afresh, which
+        // is what makes `by: 2` (skill value 0 against difficulty 2) rather
+        // than the artefact of a stale row a leak would produce.
         let second = perform_skill_test_no_commits(first.state, id, SkillKind::Willpower, 2);
         assert_event!(
             second.events,
