@@ -1559,12 +1559,18 @@ pub struct InFlightSkillTest {
     /// The revealed chaos token's resolution, stashed at the
     /// [`Resolving`](SkillTestStep::Resolving) step (RR ST.3) and consumed one
     /// driver step later by
-    /// [`DetermineOutcome`](SkillTestStep::DetermineOutcome), which folds it
-    /// into the ST.5 modified skill value. Held on the frame rather than
-    /// threaded through the cursor because the ST.4 symbol effects sit between
-    /// the two steps and can suspend on a soak window: the token is drawn
-    /// exactly once, at ST.3, and the resume reads it from here instead of
-    /// re-drawing it. `None` until the token is revealed.
+    /// [`DetermineOutcome`](SkillTestStep::DetermineOutcome). Held on the frame
+    /// rather than threaded through the cursor because the ST.4 symbol effects
+    /// sit between the two steps and can suspend on a soak window: the token is
+    /// drawn exactly once, at ST.3, and the resume reads it from here instead
+    /// of re-drawing it. `None` until the token is revealed.
+    ///
+    /// What `DetermineOutcome` still needs it *for* is only the `[auto_fail]`
+    /// substitution. The token's ±N and the elder sign's bonus are
+    /// [`RecordedModifier`] rows written at ST.3, folded into the ST.5 total by
+    /// the modified-value query like every other modifier (#684); the
+    /// substitution becomes a determination of its own in #685, at which point
+    /// this field has no reader left.
     pub token_resolution: Option<TokenResolution>,
     /// The test's determination, set once at the
     /// [`DetermineOutcome`](SkillTestStep::DetermineOutcome) step (RR ST.5–ST.6)
@@ -1692,9 +1698,11 @@ pub enum SkillTestStep {
     /// (RR ST.3) and pushes the symbol's immediate effects (RR ST.4), then
     /// pre-advances to [`DetermineOutcome`](Self::DetermineOutcome). It stashes
     /// the token's resolution on
-    /// [`InFlightSkillTest::token_resolution`] and computes **no** total,
-    /// margin, or verdict — those are ST.5/ST.6 and belong after the symbol
-    /// effects have resolved (#674).
+    /// [`InFlightSkillTest::token_resolution`], records the token's modifier
+    /// (or the elder sign's expression) as a [`RecordedModifier`] scoped to
+    /// this test, and computes **no** total, margin, or verdict — those are
+    /// ST.5/ST.6 and belong after the symbol effects have resolved (#674,
+    /// #684).
     Resolving,
     /// RR ST.5–ST.7 boundary. Sum the modified skill value (ST.5) from the
     /// board as it stands *now* — after the ST.4 symbol effects — compare it
