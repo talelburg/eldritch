@@ -2314,8 +2314,9 @@ pub enum RecordedModifierKind {
 /// [`ModifierScope`] — today only
 /// [`ThisSkillTest`](crate::dsl::ModifierScope::ThisSkillTest), which
 /// stamps [`Lifetime::SkillTest`] with the id of the test in flight (and is
-/// refused outright when there is none) — and by the skill-test driver, for
-/// the revealed chaos token's contribution and for the determination an
+/// refused outright when there is none); by its `AutoResolve` arm, under the
+/// same "there must be a test to stamp" gate; and by the skill-test driver,
+/// for the revealed chaos token's contribution and for the determination an
 /// `[auto_fail]` token latches. Read at every modified-value query
 /// alongside the swept population, and dropped by the boundary its
 /// [`lifetime`](Self::lifetime) names.

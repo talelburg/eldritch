@@ -649,6 +649,36 @@ pub enum Effect {
         /// reach past its own controller.
         audience: ModifierAudience,
     },
+    /// Latch the in-flight skill test's [`Determination`]: the test
+    /// automatically fails, or automatically succeeds, whatever the
+    /// numbers say.
+    ///
+    /// `data/rules-reference/rules/glossary/Automatic_Failure_Success.md`:
+    ///
+    /// > Some card or token abilities may cause a skill test to
+    /// > automatically fail or to automatically succeed.
+    ///
+    /// One variant carrying the two-valued determination rather than two
+    /// variants with one consumer each. It is not a job for
+    /// [`Native`](Self::Native): automatic failure and success are Rules
+    /// Reference concepts with their own glossary entry, and the engine has
+    /// to understand them whoever declares them — the substitution they
+    /// name lands in the modified-value fold, not in card-local Rust.
+    ///
+    /// **No window list.** The moment a determination is latched comes from
+    /// the declaring card's own trigger, exactly as
+    /// [`ModifierScope::ThisSkillTest`] already works, so the evaluator
+    /// enumerates no legal windows. The corpus range is wider than "before
+    /// ST.3" — Possession 03340 latches on commit at ST.2, Delusory Evils
+    /// 52065 reacts at ST.6. The one gate is that a test must be **in
+    /// flight**: with none there is no skill-test identity to stamp onto
+    /// the recorded row, so the effect is refused rather than banked (the
+    /// same argument [`Modify`](Self::Modify) with
+    /// [`ModifierScope::ThisSkillTest`] scope makes).
+    AutoResolve {
+        /// Which determination the card declares.
+        determination: Determination,
+    },
     /// Run effects in order. Stops at the first non-`Done` outcome
     /// (rejection, awaiting input).
     Seq(Vec<Effect>),
@@ -1005,8 +1035,8 @@ pub enum ModifierScope {
 /// `game-core`, which this crate cannot name), so it inherits that
 /// population's skill-test identity check, expiry sweep and abandonment
 /// path. The `[auto_fail]`
-/// chaos token writes one; the DSL effect that lets a *card* declare one
-/// arrives with #686.
+/// chaos token writes one, and so does a card declaring one with
+/// [`Effect::AutoResolve`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Determination {
     /// The test automatically fails. Beats a simultaneous
@@ -1638,6 +1668,13 @@ pub fn modify_for(
         scope,
         audience,
     }
+}
+
+/// Build an [`Effect::AutoResolve`] latching `determination` onto the
+/// in-flight skill test.
+#[must_use]
+pub fn auto_resolve(determination: Determination) -> Effect {
+    Effect::AutoResolve { determination }
 }
 
 /// Build an [`Effect::Seq`] from any iterable of effects.

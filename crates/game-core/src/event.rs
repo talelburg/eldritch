@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use card_dsl::card_data::CardType;
 
+use crate::dsl::Determination;
 use crate::scenario::Resolution;
 use crate::state::{
     CardCode, CardInstanceId, ChaosToken, DefeatCause, EnemyId, InvestigatorId, LocationId, Phase,
@@ -158,6 +159,35 @@ pub enum Event {
         skill: SkillKind,
         /// Difficulty: total to meet or exceed for success.
         difficulty: i8,
+    },
+    /// A skill test's [`Determination`] was latched by a card effect: the
+    /// test now automatically fails, or automatically succeeds, whatever
+    /// the numbers say.
+    ///
+    /// **Narrative, not adjudication.** The determination itself lives in
+    /// the recorded-modifier population and is read through the test-level
+    /// query (ADR 0007); nothing in the engine branches on this event. It
+    /// exists because the event log is the client's only narrative channel,
+    /// and an automatic success otherwise renders as a win with a dash
+    /// where the chaos token would be and no stated cause.
+    ///
+    /// Not emitted for the determination an `[auto_fail]` chaos token
+    /// latches: that cause is already on the log as the
+    /// [`ChaosTokenRevealed`](Self::ChaosTokenRevealed) carrying
+    /// [`TokenResolution::AutoFail`], and a second event for the same
+    /// moment would read as two determinations.
+    SkillTestDeterminationLatched {
+        /// The investigator taking the determined test.
+        investigator: InvestigatorId,
+        /// Which determination was latched.
+        determination: Determination,
+        /// The in-play card instance whose ability latched it, when there
+        /// is one. `None` for an effect with no in-play source — an event
+        /// card resolving out of hand, or a card's commit-time effect —
+        /// mirroring the recorded row's own
+        /// [`source`](crate::state::RecordedModifier::source). Widening
+        /// that attribution is the row's problem, not this event's.
+        source: Option<CardInstanceId>,
     },
     /// A skill test succeeded. The investigator's total met or
     /// exceeded the difficulty.
@@ -589,13 +619,14 @@ pub enum FailureReason {
     /// The investigator's clamped total fell short of the difficulty.
     Total,
     /// The test carried a
-    /// [`Determination::AutomaticFailure`](crate::dsl::Determination::AutomaticFailure),
+    /// [`Determination::AutomaticFailure`],
     /// so the investigator's total skill value was considered 0 whatever
     /// their skills and modifiers said.
     ///
     /// Deliberately says nothing about *what* determined it: an
-    /// `[auto_fail]` chaos token is the only source today, but a card can
-    /// latch the same determination with no token drawn at all (#686).
+    /// `[auto_fail]` chaos token is one source, but a card latching an
+    /// [`Effect::AutoResolve`](crate::dsl::Effect::AutoResolve) produces the
+    /// same reason with no token drawn at all.
     AutoFail,
 }
 
