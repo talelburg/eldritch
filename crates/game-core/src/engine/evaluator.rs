@@ -3017,7 +3017,6 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     bonus_attack_damage: 0,
                     bonus_clues_discovered: 0,
-                    token_resolution: None,
                     resolved: None,
                     symbol_on_fail: None,
                 },
@@ -3078,7 +3077,6 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     bonus_attack_damage: 0,
                     bonus_clues_discovered: 0,
-                    token_resolution: None,
                     resolved: None,
                     symbol_on_fail: None,
                 },
@@ -3141,7 +3139,6 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     bonus_attack_damage: 0,
                     bonus_clues_discovered: 0,
-                    token_resolution: None,
                     resolved: None,
                     symbol_on_fail: None,
                 },
@@ -3268,7 +3265,6 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     bonus_attack_damage: 0,
                     bonus_clues_discovered: 0,
-                    token_resolution: None,
                     resolved: None,
                     symbol_on_fail: None,
                 },
@@ -3442,7 +3438,6 @@ mod tests {
                     continuation: crate::state::SkillTestStep::AwaitingCommit,
                     bonus_attack_damage: 0,
                     bonus_clues_discovered: 0,
-                    token_resolution: None,
                     resolved: None,
                     symbol_on_fail: None,
                 },
@@ -3588,10 +3583,12 @@ mod tests {
         assert_eq!(state.recorded_modifiers.len(), 1);
         let m = &state.recorded_modifiers[0];
         assert_eq!(m.investigator, id);
-        assert_eq!(m.stat, Stat::Intellect);
         assert_eq!(
-            m.delta,
-            crate::dsl::IntExpr::Lit(1),
+            m.kind,
+            crate::state::RecordedModifierKind::Delta {
+                stat: Stat::Intellect,
+                delta: crate::dsl::IntExpr::Lit(1),
+            },
             "the row stores an expression, not a resolved integer",
         );
         assert_eq!(m.lifetime, crate::state::Lifetime::SkillTest(test_id));

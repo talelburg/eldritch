@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::card_registry;
-use crate::dsl::{discover_clue, IntExpr, LocationTarget, SkillTestKind, Trigger};
+use crate::dsl::{discover_clue, Determination, IntExpr, LocationTarget, SkillTestKind, Trigger};
 use crate::event::{Event, FailureReason};
 use crate::state::{
     resolve_token, CardCode, ChaosToken, Continuation, GameState, InFlightSkillTest,
@@ -18,8 +18,8 @@ use crate::state::{
 
 use super::super::evaluator::{push_effect, EvalContext};
 use super::super::modified_value::{
-    elder_sign_expr, modified_value, stat_for_skill, ContributionSource, ModifiedQuantity,
-    ModifierBreakdown, ModifierTarget, ReadContext,
+    elder_sign_expr, modified_value, stat_for_skill, test_determination, ContributionSource,
+    ModifiedQuantity, ModifierBreakdown, ModifierTarget, ReadContext,
 };
 use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use super::Cx;
@@ -154,7 +154,6 @@ pub(in crate::engine) fn start_skill_test(
             continuation: SkillTestStep::PreCommitWindow,
             bonus_attack_damage: 0,
             bonus_clues_discovered: 0,
-            token_resolution: None,
             resolved: None,
             symbol_on_fail: None,
         }));
@@ -431,15 +430,16 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
         .as_ref()
         .and_then(|o| symbol_effects_to_effect(&o.on_fail));
 
-    // Stash the token resolution + the ST.7 on_fail effect and pre-advance to
-    // DetermineOutcome BEFORE pushing the ST.4 immediate effects, so a soak
-    // suspend resumes at DetermineOutcome and never re-draws the token.
+    // Stash the ST.7 on_fail effect and pre-advance to DetermineOutcome
+    // BEFORE pushing the ST.4 immediate effects, so a soak suspend resumes
+    // at DetermineOutcome and never re-draws the token. The token's own
+    // contribution needs no stash: it is already a recorded row, and so is
+    // the determination an `[auto_fail]` latches.
     {
         let t = cx
             .state
             .current_skill_test_mut()
             .expect("run_resolution: the SkillTest frame must exist");
-        t.token_resolution = Some(resolution);
         t.symbol_on_fail = symbol_on_fail;
         t.continuation = SkillTestStep::DetermineOutcome;
     }
@@ -473,9 +473,15 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
 ///   location when ST.5 reads the row, not the ones that were there when the
 ///   token came out — the ST.4 window sits between the two. An investigator
 ///   with no elder-sign ability records no row.
-/// - [`AutoFail`](TokenResolution::AutoFail) records nothing: it carries no
-///   modifier, and it still substitutes the total from the driver at ST.6.
-///   It becomes a determination in #685.
+/// - [`AutoFail`](TokenResolution::AutoFail) records a **determination**
+///   rather than a modifier: it carries no ±N, and what it does instead —
+///   *"the investigator's total skill value for that test is considered
+///   0"* (`glossary/Automatic_Failure_Success.md`) — is the fold's stage-5
+///   substitution, read through
+///   [`test_determination`](crate::engine::modified_value::test_determination).
+///   Recording it here rather than special-casing the token at ST.6 is what
+///   makes a card-latched automatic failure (#686) the same one rule and
+///   not a second one.
 fn record_token_contribution(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -498,7 +504,17 @@ fn record_token_contribution(
             };
             expr
         }
-        TokenResolution::AutoFail => return,
+        TokenResolution::AutoFail => {
+            cx.state
+                .recorded_modifiers
+                .push(RecordedModifier::determination(
+                    investigator,
+                    Determination::AutomaticFailure,
+                    Lifetime::SkillTest(test_id),
+                    None,
+                ));
+            return;
+        }
     };
     cx.state.recorded_modifiers.push(RecordedModifier::new(
         investigator,
@@ -621,18 +637,19 @@ fn determine_outcome_step(
     investigator: InvestigatorId,
     committed: &[CardCode],
 ) -> EngineOutcome {
-    let (skill, kind, resolution) = {
+    let (skill, kind) = {
         let t = cx
             .state
             .current_skill_test()
             .expect("determine_outcome_step: the SkillTest frame must persist");
-        (
-            t.skill,
-            t.kind,
-            t.token_resolution
-                .expect("token_resolution: set at the Resolving step (ST.3) before this step"),
-        )
+        (t.skill, t.kind)
     };
+    // ST.6's determination, resolved once for the whole test across both
+    // quantities it can substitute — automatic failure beating automatic
+    // success whichever was latched first (ADR 0007). The `[auto_fail]`
+    // token wrote its row at ST.3 like any other latch; nothing here knows
+    // a token was involved.
+    let determination = test_determination(cx.state, ReadContext::DuringTest(kind));
     // The total difficulty, read the same way as the total skill value: off
     // the board as it stands now, not as it stood at ST.1. An enemy's
     // modified fight value *is* the difficulty of a Fight action, so a card
@@ -642,20 +659,44 @@ fn determine_outcome_step(
     // ST.5 modified skill value — read off the board as the ST.4 symbol effects
     // left it, with the revealed token's own row already among the modifiers
     // it folds and the clamp applied once at the end (#684).
-    let skill_value = sum_skill_value(cx.state, investigator, skill, kind, committed);
-    // ST.6 substitution: an `[auto_fail]` token makes the total 0 whatever the
-    // fold said. `glossary/Automatic_Failure_Success.md`: *"If a skill test
-    // automatically fails, the investigator's total skill value for that test
-    // is considered 0."* It is still the driver's special case rather than a
-    // recorded determination — that move is #685.
-    let auto_fail = matches!(resolution, TokenResolution::AutoFail);
-    let (total, fail_reason) = if auto_fail {
-        (0, FailureReason::AutoFail)
-    } else {
-        (skill_value, FailureReason::Total)
-    };
+    let total = sum_skill_value(cx.state, investigator, skill, kind, committed);
+    // Both quantities above already carry the ST.6 substitution, applied as
+    // the last stage of the fold that produced them:
+    // `glossary/Automatic_Failure_Success.md` — *"If a skill test
+    // automatically fails, the investigator's total skill value for that
+    // test is considered 0"*, *"If a skill test automatically succeeds, the
+    // total difficulty of that test is considered 0"*. So the margin is a
+    // real one either way: skill value 0 against difficulty 3 fails **by
+    // 3**, which is what an "if you fail by 2 or more" clause on the same
+    // test needs to read.
     let margin = total.saturating_sub(difficulty);
-    let succeeded = margin >= 0 && !auto_fail;
+    // The verdict itself is the determination's where there is one, and the
+    // comparison's otherwise. The comparison no longer carries a "…and it
+    // wasn't an auto-fail" term, which named the *token*; the determination
+    // is what says so now, and says it for a card-latched failure as
+    // readily as for the token's.
+    //
+    // The failure arm is not merely a restatement of the substituted
+    // comparison. At every difficulty of 1 or more it agrees with it — skill
+    // value 0 loses — but a difficulty of **0** is reachable (a printed
+    // `Fixed(0)`, or Flashlight 01087's *"-2 shroud"* on a shroud-2
+    // location), and there 0 against 0 compares as a success. The glossary
+    // states the substitution and not the verdict, but *"Some card or token
+    // abilities may cause a skill test to automatically fail"* is
+    // unconditional, so the substitution is how the **margin** comes out
+    // right (0 against difficulty 3 fails by 3) rather than how the outcome
+    // is decided. `perform_skill_test_autofail_at_difficulty_zero_still_fails`
+    // is the guard.
+    //
+    // The success arm *is* a restatement — the difficulty is substituted to
+    // 0 and a total is clamped at 0, so the comparison already passes — and
+    // is spelled out anyway so the verdict reads off the determination
+    // rather than off a coincidence of two clamps.
+    let (succeeded, fail_reason) = match determination {
+        Some(Determination::AutomaticFailure) => (false, FailureReason::AutoFail),
+        Some(Determination::AutomaticSuccess) => (true, FailureReason::Total),
+        None => (margin >= 0, FailureReason::Total),
+    };
     let failed_by = if succeeded {
         0
     } else {

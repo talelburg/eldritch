@@ -21,7 +21,7 @@ use game_core::engine::{apply, legal_actions, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, Lifetime, Phase,
-    SkillKind, Status, TokenModifiers,
+    RecordedModifierKind, SkillKind, Status, TokenModifiers,
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, drive_skill_test, perform_skill_test,
@@ -417,7 +417,13 @@ fn a_test_scoped_row_is_stamped_with_the_running_test_and_carries_its_source() {
     assert_eq!(after_activate.state.recorded_modifiers.len(), 1);
     let row = &after_activate.state.recorded_modifiers[0];
     assert_eq!(row.investigator, id);
-    assert_eq!(row.delta, IntExpr::Lit(1));
+    assert_eq!(
+        row.kind,
+        RecordedModifierKind::Delta {
+            stat: Stat::Intellect,
+            delta: IntExpr::Lit(1),
+        },
+    );
     assert_eq!(row.lifetime, Lifetime::SkillTest(in_flight));
     assert_eq!(row.source, Some(instance_id));
 }

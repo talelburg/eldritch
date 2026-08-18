@@ -801,6 +801,38 @@ mod tests {
         assert_no_event!(result.events, Event::SkillTestSucceeded { .. });
     }
 
+    /// The `[auto_fail]` token latches a determination rather than
+    /// tripping a special case in the driver (#685), and a determination is
+    /// a test-scoped recorded row — so it expires with the test that
+    /// carried it. A leak here would automatically fail the *next* test.
+    #[test]
+    fn an_autofail_determination_does_not_outlive_its_test() {
+        let id = InvestigatorId(1);
+        let state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_chaos_bag(crate::state::ChaosBag::new([ChaosToken::AutoFail]))
+            .build();
+        let first = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 2);
+        assert!(
+            first.state.recorded_modifiers.is_empty(),
+            "the determination expires with the test's teardown",
+        );
+
+        // The bag still holds only the AutoFail, so the second test fails
+        // automatically too — but on a determination latched afresh, which
+        // is what makes `by: 2` (skill value 0 against difficulty 2) rather
+        // than the artefact of a stale row a leak would produce.
+        let second = perform_skill_test_no_commits(first.state, id, SkillKind::Willpower, 2);
+        assert_event!(
+            second.events,
+            Event::SkillTestFailed {
+                reason: FailureReason::AutoFail,
+                by: 2,
+                ..
+            }
+        );
+    }
+
     #[test]
     fn perform_skill_test_clamps_negative_total_to_zero() {
         // skill 3 + Skull(−6) = −3, clamped to 0. Difficulty 2 →
