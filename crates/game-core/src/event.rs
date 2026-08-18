@@ -618,10 +618,9 @@ pub enum Event {
 pub enum FailureReason {
     /// The investigator's clamped total fell short of the difficulty.
     Total,
-    /// The test carried a
-    /// [`Determination::AutomaticFailure`],
-    /// so the investigator's total skill value was considered 0 whatever
-    /// their skills and modifiers said.
+    /// The test carried a [`Determination::AutomaticFailure`], so the
+    /// investigator's total skill value was considered 0 whatever their
+    /// skills and modifiers said.
     ///
     /// Deliberately says nothing about *what* determined it: an
     /// `[auto_fail]` chaos token is one source, but a card latching an

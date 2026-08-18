@@ -155,26 +155,42 @@ fn install_mock_registry() {
     });
 }
 
-/// Board: the controller with one in-play instance of `code` (instance 0),
-/// willpower 5, and a single-`Numeric(0)` chaos bag so the token contributes
-/// nothing and every number below is the card's doing.
-fn board(code: &str) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
+/// The one board every test here builds on: the controller at willpower 5,
+/// holding `hand`, with an in-play instance of each code in `in_play`
+/// (instance ids ascending from 0), drawing from `bag`.
+fn board_with(
+    in_play: &[&str],
+    hand: &[&str],
+    bag: ChaosBag,
+) -> (game_core::GameState, InvestigatorId) {
     let id = InvestigatorId(1);
-    let instance_id = CardInstanceId(0);
     let mut inv = test_investigator(1);
     inv.skills.willpower = 5;
-    inv.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(code), instance_id));
+    inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
+    for (i, code) in in_play.iter().enumerate() {
+        inv.cards_in_play.push(CardInPlay::enter_play(
+            CardCode::new(*code),
+            CardInstanceId(u32::try_from(i).expect("a handful of mocks")),
+        ));
+    }
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)
         .with_investigator_turn(id)
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_chaos_bag(bag)
         .with_token_modifiers(TokenModifiers::default())
         .build();
-    (state, id, instance_id)
+    (state, id)
+}
+
+/// [`board_with`] for the common case: one in-play instance of `code`
+/// (instance 0), empty hand, and a single-`Numeric(0)` chaos bag so the token
+/// contributes nothing and every number below is the card's doing.
+fn board(code: &str) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
+    let (state, id) = board_with(&[code], &[], ChaosBag::new([ChaosToken::Numeric(0)]));
+    (state, id, CardInstanceId(0))
 }
 
 /// Run a willpower test against `difficulty`, taking the card's offered fast
@@ -274,22 +290,15 @@ fn automatic_failure_beats_automatic_success_latched_success_first() {
 /// declaring card's own trigger. Here that is `OnPlay` — a `[fast]` event
 /// played from hand at the running test's player window, Stroke of Luck
 /// 02271's shape — rather than the `Activated` trigger every other test in
-/// this file uses. The corpus range is wider still: Delusory Evils 52065
-/// reacts at ST.6.
+/// this file uses. The snapshot's latch range is wider still: Delusory Evils
+/// 52065 reacts at ST.6.
 #[test]
 fn a_determination_can_be_latched_from_a_play_trigger() {
-    let id = InvestigatorId(1);
-    let mut inv = test_investigator(1);
-    inv.skills.willpower = 5;
-    inv.hand = vec![CardCode::new(PLAY_AUTO_SUCCEED)];
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(inv)
-        .with_active_investigator(id)
-        .with_investigator_turn(id)
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_token_modifiers(TokenModifiers::default())
-        .build();
+    let (state, id) = board_with(
+        &[],
+        &[PLAY_AUTO_SUCCEED],
+        ChaosBag::new([ChaosToken::Numeric(0)]),
+    );
 
     let result = test_taking_the_fast_play(state, id, 9);
 
@@ -415,15 +424,7 @@ fn the_latch_event_names_the_determination_and_its_source() {
 /// second event for the same moment would read as two determinations.
 #[test]
 fn the_auto_fail_token_latches_no_second_event() {
-    let (state, id, _) = board(PLAIN_GAIN);
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(state.investigators[&id].clone())
-        .with_active_investigator(id)
-        .with_investigator_turn(id)
-        .with_chaos_bag(ChaosBag::new([ChaosToken::AutoFail]))
-        .with_token_modifiers(TokenModifiers::default())
-        .build();
+    let (state, id) = board_with(&[], &[], ChaosBag::new([ChaosToken::AutoFail]));
     let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 3);
 
     assert_event!(

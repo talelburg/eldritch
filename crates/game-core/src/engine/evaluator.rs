@@ -24,6 +24,11 @@
 //!   it after `SkillTestEnded`. [`ThisTurn`] is not yet wired; rejects
 //!   with TODO until a card or test demands the turn-scoped
 //!   accumulator.
+//! - [`Effect::AutoResolve`] writes a test's
+//!   [`Determination`] into the same recorded
+//!   population, under the same gate: with no test in flight there is no
+//!   identity to stamp, so it rejects rather than banking a determination
+//!   for whatever test comes next.
 //!
 //! [`WhileInPlay`]: crate::dsl::ModifierScope::WhileInPlay
 //! [`WhileInPlayDuring`]: crate::dsl::ModifierScope::WhileInPlayDuring
@@ -66,8 +71,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::card_registry::CardRegistry;
 use crate::dsl::{
-    CmpOp, Condition, Effect, EnemyTarget, HarmKind, IntExpr, InvestigatorTarget, LocationTarget,
-    ModifierScope, Quantity, SkillTestKind, Trigger,
+    CmpOp, Condition, Determination, Effect, EnemyTarget, HarmKind, IntExpr, InvestigatorTarget,
+    LocationTarget, ModifierScope, Quantity, SkillTestKind, Trigger,
 };
 use crate::event::Event;
 use crate::state::{GameState, InvestigatorId, SkillKind};
@@ -1309,7 +1314,7 @@ fn modify(
 }
 
 /// Apply an [`Effect::AutoResolve`]: latch the in-flight test's
-/// [`Determination`](crate::dsl::Determination).
+/// [`Determination`].
 ///
 /// `data/rules-reference/rules/glossary/Automatic_Failure_Success.md`:
 ///
@@ -1332,9 +1337,9 @@ fn modify(
 ///
 /// The evaluator does not ask *when* the effect is resolving. The moment
 /// comes from the declaring card's own trigger, exactly as
-/// [`ModifierScope::ThisSkillTest`] does, and the corpus range is wider than
-/// the rules' "before Step 3" skip clause: Possession 03340 latches on
-/// commit at ST.2, Delusory Evils 52065 reacts at ST.6.
+/// [`ModifierScope::ThisSkillTest`] does, and the snapshot's latch range is
+/// wider than the rules' "before Step 3" skip clause: Possession 03340
+/// latches on commit at ST.2, Delusory Evils 52065 reacts at ST.6.
 ///
 /// # A determination with no test
 ///
@@ -1347,11 +1352,7 @@ fn modify(
 /// determination belongs to the test, and a card may latch one on a test
 /// another investigator is taking. `source` is the effect's own, so the
 /// event and the row agree on attribution.
-fn auto_resolve(
-    cx: &mut Cx,
-    eval_ctx: EvalContext,
-    determination: crate::dsl::Determination,
-) -> EngineOutcome {
+fn auto_resolve(cx: &mut Cx, eval_ctx: EvalContext, determination: Determination) -> EngineOutcome {
     let Some(test) = cx.state.current_skill_test() else {
         return EngineOutcome::Rejected {
             reason: format!(

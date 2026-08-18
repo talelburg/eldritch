@@ -668,9 +668,10 @@ pub enum Effect {
     /// **No window list.** The moment a determination is latched comes from
     /// the declaring card's own trigger, exactly as
     /// [`ModifierScope::ThisSkillTest`] already works, so the evaluator
-    /// enumerates no legal windows. The corpus range is wider than "before
-    /// ST.3" — Possession 03340 latches on commit at ST.2, Delusory Evils
-    /// 52065 reacts at ST.6. The one gate is that a test must be **in
+    /// enumerates no legal windows. The snapshot's latch range is wider
+    /// than "before ST.3" — Possession 03340 latches on commit at ST.2,
+    /// Delusory Evils 52065 reacts at ST.6, and neither is in the corpus
+    /// yet. The one gate is that a test must be **in
     /// flight**: with none there is no skill-test identity to stamp onto
     /// the recorded row, so the effect is refused rather than banked (the
     /// same argument [`Modify`](Self::Modify) with
