@@ -8,16 +8,18 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::card_registry;
-use crate::dsl::{discover_clue, LocationTarget, SkillTestKind, Trigger};
+use crate::dsl::{discover_clue, IntExpr, LocationTarget, SkillTestKind, Trigger};
 use crate::event::{Event, FailureReason};
 use crate::state::{
     resolve_token, CardCode, ChaosToken, Continuation, GameState, InFlightSkillTest,
-    InvestigatorId, SkillKind, SkillTestFollowUp, SkillTestStep, Status, TokenResolution, Zone,
+    InvestigatorId, Lifetime, RecordedModifier, SkillKind, SkillTestFollowUp, SkillTestStep,
+    Status, TokenResolution, Zone,
 };
 
 use super::super::evaluator::{push_effect, EvalContext};
 use super::super::modified_value::{
-    elder_sign_modifier, modified_value, ModifiedQuantity, ModifierTarget, ReadContext,
+    elder_sign_expr, modified_value, stat_for_skill, ContributionSource, ModifiedQuantity,
+    ModifierBreakdown, ModifierTarget, ReadContext,
 };
 use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use super::Cx;
@@ -392,8 +394,10 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 /// `[tablet]` in The Gathering deals 1 damage when a Ghoul is present, that
 /// damage can be soaked onto a Beat Cop 01018 (*"You get +1 [combat]."*,
 /// printed health 2), and a Beat Cop discarded at ST.4 must not still be
-/// contributing its `+1` at ST.5 (#674). This step therefore stashes only the
-/// token's [`TokenResolution`] on the frame, for `DetermineOutcome` to fold in.
+/// contributing its `+1` at ST.5 (#674). What this step *does* write down is
+/// the token's own contribution, as a [`RecordedModifier`] scoped to this
+/// test — see [`record_token_contribution`] — so the ST.5 total is one query
+/// rather than a query plus an integer the driver adds afterwards (#684).
 ///
 /// The token is drawn exactly once here; a soak window suspending inside the
 /// ST.4 effects resumes at `DetermineOutcome` and re-draws nothing. The
@@ -418,6 +422,7 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     };
     cx.events
         .push(Event::ChaosTokenRevealed { token, resolution });
+    record_token_contribution(cx, investigator, resolution);
 
     // Build the ST.7 symbol on_fail effect (Cultist horror) for later. Built
     // unconditionally — the outcome is not known until ST.6, and the
@@ -445,6 +450,63 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     if let Some(o) = &symbol_outcome {
         push_symbol_effects(cx, investigator, &o.immediate);
     }
+}
+
+/// Record the revealed token's contribution to this test's ST.5 total as a
+/// [`RecordedModifier`] over the tested skill, scoped to this test.
+///
+/// ADR 0005 names *"the revealed chaos token's ±N"* among the lifetimes that
+/// are recorded rather than derived from where a card sits: there is nothing
+/// on the board to sweep for it, and it expires with the test. Recording it
+/// is what lets the whole ST.5 total — base, every additive row, the clamp —
+/// be a single fold with the clamp genuinely last, instead of a query whose
+/// result the driver then adds to and clamps itself (#684).
+///
+/// The three resolutions:
+///
+/// - [`Modifier(n)`](TokenResolution::Modifier) records `n` as a literal,
+///   including `0`, so the breakdown always names the token.
+/// - [`ElderSign`](TokenResolution::ElderSign) records the investigator
+///   card's elder-sign [`IntExpr`] **unevaluated**. Roland Banks 01001's
+///   *"`[elder_sign]` effect: +1 for each clue on your location."*
+///   (`data/arkhamdb-snapshot/pack/core/core.json`) counts the clues on his
+///   location when ST.5 reads the row, not the ones that were there when the
+///   token came out — the ST.4 window sits between the two. An investigator
+///   with no elder-sign ability records no row.
+/// - [`AutoFail`](TokenResolution::AutoFail) records nothing: it carries no
+///   modifier, and it still substitutes the total from the driver at ST.6.
+///   It becomes a determination in #685.
+fn record_token_contribution(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    resolution: TokenResolution,
+) {
+    let (test_id, skill) = {
+        let t = cx
+            .state
+            .current_skill_test()
+            .expect("record_token_contribution: the SkillTest frame must exist");
+        (t.id, t.skill)
+    };
+    let delta = match resolution {
+        TokenResolution::Modifier(n) => IntExpr::Lit(n),
+        TokenResolution::ElderSign => {
+            let Some(expr) = card_registry::current()
+                .and_then(|reg| elder_sign_expr(cx.state, reg, investigator))
+            else {
+                return;
+            };
+            expr
+        }
+        TokenResolution::AutoFail => return,
+    };
+    cx.state.recorded_modifiers.push(RecordedModifier::new(
+        investigator,
+        stat_for_skill(skill),
+        delta,
+        Lifetime::SkillTest(test_id),
+        None,
+    ));
 }
 
 /// Read the determination stashed on the in-flight test at the
@@ -578,26 +640,20 @@ fn determine_outcome_step(
     let difficulty = current_difficulty(cx.state);
 
     // ST.5 modified skill value — read off the board as the ST.4 symbol effects
-    // left it. ST.6 compare against the difficulty.
+    // left it, with the revealed token's own row already among the modifiers
+    // it folds and the clamp applied once at the end (#684).
     let skill_value = sum_skill_value(cx.state, investigator, skill, kind, committed);
-    let (total, fail_reason) = match resolution {
-        TokenResolution::Modifier(n) => {
-            (skill_value.saturating_add(n).max(0), FailureReason::Total)
-        }
-        TokenResolution::ElderSign => {
-            // The bonus is the controller's investigator-card elder-sign
-            // modifier (0 for every investigator without one). Computed in the
-            // arm so non-ElderSign draws skip the registry lookup.
-            let bonus = card_registry::current()
-                .map_or(0, |reg| elder_sign_modifier(cx.state, reg, investigator));
-            (
-                skill_value.saturating_add(bonus).max(0),
-                FailureReason::Total,
-            )
-        }
-        TokenResolution::AutoFail => (0, FailureReason::AutoFail),
-    };
+    // ST.6 substitution: an `[auto_fail]` token makes the total 0 whatever the
+    // fold said. `glossary/Automatic_Failure_Success.md`: *"If a skill test
+    // automatically fails, the investigator's total skill value for that test
+    // is considered 0."* It is still the driver's special case rather than a
+    // recorded determination — that move is #685.
     let auto_fail = matches!(resolution, TokenResolution::AutoFail);
+    let (total, fail_reason) = if auto_fail {
+        (0, FailureReason::AutoFail)
+    } else {
+        (skill_value, FailureReason::Total)
+    };
     let margin = total.saturating_sub(difficulty);
     let succeeded = margin >= 0 && !auto_fail;
     let failed_by = if succeeded {
@@ -1178,18 +1234,20 @@ fn current_difficulty(state: &GameState) -> i8 {
     .unwrap_or(i8::MAX)
 }
 
-/// RR ST.5's modified skill value, less the revealed token: the
-/// investigator's [modified value](modified_value) for `skill` — base
-/// plus every modifier the board carries, recalculated here rather than
-/// banked earlier — plus the one contribution that is a property of this
-/// test rather than of the board, the committed cards' matching and wild
-/// icons. A weapon's one-shot *"+N \[combat\] for this attack"* is no
-/// longer added here: it is a recorded row the query itself folds in
-/// (#677).
+/// RR ST.5's **total** modified skill value: the investigator's
+/// [modified value](modified_value) for `skill` — base plus every
+/// modifier the board carries and every recorded row scoped to this
+/// test, recalculated here rather than banked earlier — with the one
+/// contribution that is a property of this test rather than of the
+/// board, the committed cards' matching and wild icons, pushed into the
+/// same breakdown. A weapon's one-shot *"+N \[combat\] for this attack"*
+/// is a recorded row the query itself folds in (#677), and so is the
+/// revealed token's ±N and the elder sign's bonus (#684).
 ///
-/// **Returned unclamped.** The caller still has the revealed token's ±N
-/// to add, and `Modifiers.md` puts the clamp after *all* modifiers: base
-/// 4 with a −8 token and a +2 is −2 → 0, not 0 + 2 → 2.
+/// **Returned clamped**, because nothing is left to add: the icons go
+/// into the breakdown rather than onto its result, so the clamp is last
+/// and `Modifiers.md`'s worked example comes out right — base 4 with a
+/// −8 token and a +2 is −2 → 0, not 0 + 2 → 2.
 ///
 /// Cards the installed registry can't address contribute 0 — the same
 /// silent-skip policy the sweep uses.
@@ -1205,48 +1263,59 @@ fn sum_skill_value(
         "sum_skill_value: investigator {investigator:?} disappeared while test was in flight; \
          this is a state-corruption invariant violation"
     );
-    let board = modified_value(
+    let mut breakdown = modified_value(
         state,
         card_registry::current(),
         ModifierTarget::Investigator(investigator),
         ModifiedQuantity::Skill(skill),
         ReadContext::DuringTest(kind),
+    );
+    push_committed_icons(&mut breakdown, committed, skill);
+    i8::try_from(
+        breakdown
+            .total()
+            .clamp(i32::from(i8::MIN), i32::from(i8::MAX)),
     )
-    .raw_total();
-    let icon_mod = i32::from(sum_committed_icons(committed, skill));
-    let total = board.saturating_add(icon_mod);
-    i8::try_from(total.clamp(i32::from(i8::MIN), i32::from(i8::MAX)))
-        .expect("clamped into i8's range on the line above")
+    .expect("clamped into i8's range on the line above")
 }
 
-/// Sum the skill-icon contribution of the `committed` cards (RR ST.5): each
-/// card adds its matching-skill icons plus its wild icons. Cards whose code
-/// isn't in the installed registry contribute 0; no registry installed = 0
-/// contribution overall.
+/// Push the skill-icon contribution of the `committed` cards (RR ST.5) onto
+/// a breakdown: each card adds its matching-skill icons plus its wild icons,
+/// attributed to the card that was committed. Cards whose code isn't in the
+/// installed registry contribute nothing; no registry installed = no
+/// contributions at all.
+///
+/// They are contributions rather than a number added to the fold's result so
+/// that the clamp stays last (see [`sum_skill_value`]) and so the breakdown
+/// can say which committed card bought which point.
 ///
 /// Reads the codes the commit hop moved into limbo, **not** the hand — the
 /// ST.2→ST.3 player window sits between the commit and this sum and is free to
 /// mutate the hand (#631).
-fn sum_committed_icons(committed: &[CardCode], skill: SkillKind) -> i8 {
+fn push_committed_icons(out: &mut ModifierBreakdown, committed: &[CardCode], skill: SkillKind) {
     let Some(reg) = card_registry::current() else {
-        return 0;
+        return;
     };
-    committed
-        .iter()
-        .map(|code| {
-            (reg.metadata_for)(code).map_or(0_i8, |meta| {
-                let icons = meta.skill_icons();
-                let matching = match skill {
-                    SkillKind::Willpower => icons.willpower,
-                    SkillKind::Intellect => icons.intellect,
-                    SkillKind::Combat => icons.combat,
-                    SkillKind::Agility => icons.agility,
-                };
-                let raw = matching.saturating_add(icons.wild);
-                i8::try_from(raw).unwrap_or(i8::MAX)
-            })
-        })
-        .fold(0_i8, i8::saturating_add)
+    for code in committed {
+        let Some(meta) = (reg.metadata_for)(code) else {
+            continue;
+        };
+        let icons = meta.skill_icons();
+        let matching = match skill {
+            SkillKind::Willpower => icons.willpower,
+            SkillKind::Intellect => icons.intellect,
+            SkillKind::Combat => icons.combat,
+            SkillKind::Agility => icons.agility,
+        };
+        let delta = i8::try_from(matching.saturating_add(icons.wild)).unwrap_or(i8::MAX);
+        out.push(
+            ContributionSource::Card {
+                code: code.clone(),
+                instance: None,
+            },
+            delta,
+        );
+    }
 }
 
 /// RR ST.8: *"Discard all cards that were committed to this skill test."* Move

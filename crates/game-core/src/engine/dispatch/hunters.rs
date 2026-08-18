@@ -37,9 +37,9 @@ pub(super) enum PreyResolution {
 /// The *modified* value (Rules Reference p.18 Modifiers, p.12 remaining
 /// health): the [modified value](modified_value) of the underlying
 /// quantity, less any damage taken for remaining health, floored at zero
-/// (RR p.15 — a stat cannot function below zero). The subtraction sits
-/// inside the floor, so an investigator whose modified max health is
-/// exceeded by their damage ranks at 0 rather than below it.
+/// (RR p.15 — a stat cannot function below zero). The floor is applied
+/// again after the subtraction, so an investigator whose damage exceeds
+/// their modified max health ranks at 0 rather than below it.
 ///
 /// Prey resolves outside any skill test, so the read passes
 /// [`ReadContext::OutsideTest`] explicitly: only unconditional
@@ -66,7 +66,7 @@ fn measure_value(
         quantity,
         ReadContext::OutsideTest,
     )
-    .raw_total();
+    .total();
     (value - damage).max(0)
 }
 

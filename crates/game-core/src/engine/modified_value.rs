@@ -69,13 +69,12 @@
 //! the clamp; the row transform and the multiplicative pass arrive with
 //! their first corpus consumers (Jim Culver 02004, Hunting Nightgaunt
 //! 01172, Double or Nothing 02026), and substitution (automatic failure
-//! and success) with #630. Because
-//! the clamp is last, [`ModifierBreakdown`] exposes the unclamped sum as
-//! well: a caller that still has modifiers of its own to add — the
-//! skill-test handler, which adds the revealed token's ±N after this
-//! query returns — must add them *before* clamping, or `Modifiers.md`'s
-//! own worked example comes out wrong (base 4, a −8 token and a +2 is
-//! −2 → 0, **not** 0 + 2 → 2).
+//! and success) with #630. The clamp is genuinely last: every
+//! contribution to a skill test's ST.5 total is a row this query folds,
+//! including the revealed chaos token's ±N and the elder sign's bonus
+//! (#684), so nothing is added after [`ModifierBreakdown::total`]
+//! returns. That is what `Modifiers.md`'s own worked example demands —
+//! base 4, a −8 token and a +2 is −2 → 0, **not** 0 + 2 → 2.
 
 use crate::card_data::SkillKind;
 use crate::card_registry::CardRegistry;
@@ -191,24 +190,32 @@ pub struct ModifierBreakdown {
 }
 
 impl ModifierBreakdown {
-    /// The fold's result **before** the clamp: base plus every
-    /// contribution. Callers with modifiers still to add (the revealed
-    /// chaos token's ±N) sum against this and clamp themselves, since
-    /// `Modifiers.md` puts the clamp after *all* modifiers.
+    /// Add one more contribution to the fold, attributed to its source.
+    ///
+    /// For the contributions that are a property of the read rather than of
+    /// the board, and so cannot be swept or recorded: the committed cards'
+    /// matching and wild icons at RR ST.5. They go *into* the fold rather
+    /// than onto [`total`](Self::total)'s result, because the clamp is last
+    /// — the whole point of there being no unclamped accessor.
+    pub fn push(&mut self, source: ContributionSource, delta: i8) {
+        self.contributions.push(Contribution { source, delta });
+    }
+
+    /// The modified value: the base plus every contribution, with the
+    /// clamp applied last. `Modifiers.md`: *"after all active modifiers
+    /// have been applied, any resultant value below zero is treated as
+    /// zero"*.
+    ///
+    /// There is no unclamped counterpart, because there is no caller
+    /// with modifiers still to add: a contribution that is not on the
+    /// board is a [`RecordedModifier`](crate::state::RecordedModifier)
+    /// this query already folds.
     #[must_use]
-    pub fn raw_total(&self) -> i32 {
+    pub fn total(&self) -> i32 {
         self.contributions
             .iter()
             .fold(self.base, |acc, c| acc.saturating_add(i32::from(c.delta)))
-    }
-
-    /// The modified value: [`raw_total`](Self::raw_total) with the
-    /// clamp applied. `Modifiers.md`: *"after all active modifiers have
-    /// been applied, any resultant value below zero is treated as
-    /// zero"*.
-    #[must_use]
-    pub fn total(&self) -> i32 {
-        self.raw_total().max(0)
+            .max(0)
     }
 }
 
@@ -467,12 +474,19 @@ fn sweep(
 /// composed shroud, clamped once.
 ///
 /// The delta is an expression evaluated **here**, at read time, against
-/// the row's investigator as "you". An expression that cannot be
-/// resolved is skipped rather than counted as zero: contributing a
-/// silently-wrong number is worse than contributing none, and nothing
-/// can write such a row today — the DSL's `Modify` carries a literal
-/// delta, so every row is an [`IntExpr::Lit`](crate::dsl::IntExpr::Lit),
-/// which cannot fail.
+/// the row's investigator as "you". A `Modify` writes an
+/// [`IntExpr::Lit`](crate::dsl::IntExpr::Lit), as does the revealed chaos
+/// token's ±N; the elder-sign row carries the investigator card's own
+/// expression, so Roland Banks 01001's *"+1 for each clue on your
+/// location"* counts the clues that are there at ST.5 rather than the ones
+/// that were there at the reveal (#684).
+///
+/// An expression that cannot be resolved is **skipped**, not counted as
+/// zero and not asserted on: contributing a silently-wrong number is worse
+/// than contributing none, and a malformed elder sign (an `IntExpr` over a
+/// `Condition` the evaluator cannot express) is card data rather than an
+/// engine invariant, so it must not panic mid-test. That is the guard the
+/// superseded `elder_sign_modifier` carried in its own `unwrap_or(0)`.
 fn collect_recorded(
     state: &GameState,
     target: ModifierTarget,
@@ -499,10 +513,6 @@ fn collect_recorded(
         );
         let Ok(delta) = crate::engine::evaluator::eval_int_expr(state, &eval_ctx, &row.delta)
         else {
-            debug_assert!(
-                false,
-                "recorded modifier {row:?} carries an unresolvable delta expression",
-            );
             continue;
         };
         out.push(Contribution {
@@ -533,10 +543,7 @@ fn scope_applies(scope: ModifierScope, context: ReadContext) -> bool {
 /// Whether a DSL [`Stat`] names the quantity being asked about.
 fn stat_matches(stat: Stat, quantity: ModifiedQuantity) -> bool {
     match quantity {
-        ModifiedQuantity::Skill(SkillKind::Willpower) => stat == Stat::Willpower,
-        ModifiedQuantity::Skill(SkillKind::Intellect) => stat == Stat::Intellect,
-        ModifiedQuantity::Skill(SkillKind::Combat) => stat == Stat::Combat,
-        ModifiedQuantity::Skill(SkillKind::Agility) => stat == Stat::Agility,
+        ModifiedQuantity::Skill(skill) => stat == stat_for_skill(skill),
         ModifiedQuantity::MaxHealth => stat == Stat::MaxHealth,
         ModifiedQuantity::MaxSanity => stat == Stat::MaxSanity,
         ModifiedQuantity::Shroud => stat == Stat::Shroud,
@@ -608,51 +615,62 @@ fn source_location(state: &GameState, placement: Placement) -> Option<LocationId
     }
 }
 
-/// The controller's **elder-sign** skill-test modifier: the
-/// [`IntExpr`](crate::dsl::IntExpr) on their investigator card's
-/// [`Trigger::ElderSign`] ability, evaluated for the controller.
+/// The controller's **elder-sign** skill-test modifier as an
+/// [`IntExpr`](crate::dsl::IntExpr): the expression on their investigator
+/// card's [`Trigger::ElderSign`] ability, **copied unevaluated**.
 ///
 /// Lives here rather than in the evaluator because it answers the same
 /// question as [`modified_value`] — what is contributing to this
 /// investigator's total right now — for the one contributor the sweep
-/// cannot see: the revealed chaos token. It is not folded into the
-/// breakdown yet because the token's own ±N is still resolved to an
-/// integer at ST.3 and added by the skill-test handler. The recorded
-/// population they belong in — and the skill-test lifetime that would
-/// scope them — exists since #676; what keeps them out of it is the
-/// clamp, which must stay last (see [`ModifierBreakdown::raw_total`]), so
-/// they become rows in the slice that moves the clamp inside the query.
+/// cannot see: the revealed chaos token. When an `[elder_sign]` is
+/// revealed at ST.3 the skill-test driver records this expression as a
+/// [`RecordedModifier`](crate::state::RecordedModifier) scoped to that
+/// test, and [`collect_recorded`] evaluates it at ST.5 like every other
+/// row (#684).
 ///
-/// Returns `0` when the controller is not found, the card isn't in the
+/// The expression must **not** be resolved to a literal at reveal time.
+/// Roland Banks 01001 (*"`[elder_sign]` effect: +1 for each clue on your
+/// location."*) is the corpus consumer, and freezing his clue count at the
+/// reveal would pin it across the ST.4 window — the staleness ADR 0005
+/// exists to kill. A sweep of the snapshot found twelve investigators with
+/// a state-contingent elder-sign modifier, so it is not a one-card concern
+/// (ADR 0007).
+///
+/// `None` when the controller is not found, the card isn't in the
 /// registry, or it carries no elder-sign ability — so every investigator
-/// without an elder-sign resolves as 0.
+/// without an elder-sign contributes no row at all rather than a zero one.
 ///
 /// **Scope (#118), sunset by #448:** handles only pure-modifier
 /// elder-signs. Signs that also run an effect (Daisy / Agnes) are
 /// deferred — see [`Trigger::ElderSign`].
 #[must_use]
-pub(crate) fn elder_sign_modifier(
+pub(crate) fn elder_sign_expr(
     state: &GameState,
     registry: &CardRegistry,
     controller: InvestigatorId,
-) -> i8 {
-    let Some(inv) = state.investigators.get(&controller) else {
-        return 0;
-    };
-    let Some(abilities) = (registry.abilities_for)(&inv.investigator_card.code) else {
-        return 0;
-    };
-    let ctx = super::evaluator::EvalContext::for_controller(controller);
-    for ability in &abilities {
-        if let Trigger::ElderSign { modifier } = &ability.trigger {
-            // A malformed elder-sign IntExpr (unexpressible Condition) yields
-            // Err; treat it as no bonus rather than panicking mid-test — the
-            // only in-scope IntExpr is Count(CluesAtControllerLocation), which
-            // is always Ok.
-            return super::evaluator::eval_int_expr(state, &ctx, modifier).unwrap_or(0);
-        }
+) -> Option<crate::dsl::IntExpr> {
+    let inv = state.investigators.get(&controller)?;
+    let abilities = (registry.abilities_for)(&inv.investigator_card.code)?;
+    abilities.iter().find_map(|ability| match &ability.trigger {
+        Trigger::ElderSign { modifier } => Some(modifier.clone()),
+        _ => None,
+    })
+}
+
+/// The [`Stat`] a tested [`SkillKind`] names.
+///
+/// The one place the two vocabularies are mapped: [`stat_matches`] reads it
+/// to *filter* rows by the quantity being asked about, and the skill-test
+/// driver reads it to *write* a row against the skill a test is being taken
+/// with (the revealed token's ±N and the elder sign's bonus, #684).
+#[must_use]
+pub(crate) fn stat_for_skill(skill: SkillKind) -> Stat {
+    match skill {
+        SkillKind::Willpower => Stat::Willpower,
+        SkillKind::Intellect => Stat::Intellect,
+        SkillKind::Combat => Stat::Combat,
+        SkillKind::Agility => Stat::Agility,
     }
-    0
 }
 
 #[cfg(test)]
@@ -767,7 +785,7 @@ mod tests {
             ModifiedQuantity::Skill(skill),
             ReadContext::DuringTest(SkillTestKind::Plain),
         )
-        .raw_total()
+        .total()
     }
 
     // ---- the fold's arithmetic -----------------------------------
@@ -792,11 +810,15 @@ mod tests {
                 },
             ],
         };
-        assert_eq!(breakdown.raw_total(), -2, "the fold itself does not clamp");
         assert_eq!(breakdown.total(), 0, "4 - 8 + 2 = -2, treated as 0");
+        // The answer a fold that clamped between the −8 and the +2 would
+        // give, spelled out so the assertion below still discriminates:
+        // (4 − 8 → 0) + 2 = 2.
+        let clamping_early = 4_i32.saturating_add(-8).max(0).saturating_add(2);
+        assert_eq!(clamping_early, 2, "the wrong fold's arithmetic");
         assert_ne!(
             breakdown.total(),
-            2,
+            clamping_early,
             "clamping before the +2 would give 2 — the answer the rules \
              reference explicitly rules out"
         );
@@ -986,7 +1008,7 @@ mod tests {
                 ModifiedQuantity::Skill(SkillKind::Intellect),
                 context,
             )
-            .raw_total()
+            .total()
         };
         assert_eq!(read(ReadContext::DuringTest(SkillTestKind::Investigate)), 4);
         assert_eq!(read(ReadContext::DuringTest(SkillTestKind::Plain)), 3);
@@ -1014,7 +1036,7 @@ mod tests {
                     ModifiedQuantity::Skill(SkillKind::Willpower),
                     context,
                 )
-                .raw_total(),
+                .total(),
                 4,
                 "WhileInPlay should apply in {context:?}",
             );
@@ -1034,7 +1056,7 @@ mod tests {
                 ModifiedQuantity::Skill(SkillKind::Willpower),
                 ReadContext::DuringTest(SkillTestKind::Investigate),
             )
-            .raw_total(),
+            .total(),
             3,
         );
     }
@@ -1157,7 +1179,7 @@ mod tests {
                 ModifiedQuantity::Skill(SkillKind::Willpower),
                 ReadContext::OutsideTest,
             )
-            .raw_total(),
+            .total(),
             3,
         );
     }
@@ -1442,10 +1464,11 @@ mod tests {
 
     // ---- the elder-sign contribution -----------------------------
 
-    /// `elder_sign_modifier` reads the controller's investigator card's
-    /// `Trigger::ElderSign { modifier }` and evaluates it. Roland's
-    /// `Count(CluesAtControllerLocation)` returns the clue count at his
-    /// location; an investigator with no elder-sign ability returns 0.
+    /// `elder_sign_expr` reads the controller's investigator card's
+    /// `Trigger::ElderSign { modifier }` and hands back the expression
+    /// itself. Roland's `Count(CluesAtControllerLocation)` evaluates to the
+    /// clue count at his location; an investigator with no elder-sign
+    /// ability has no expression to record at all.
     #[test]
     fn an_elder_sign_modifier_evaluates_its_expression() {
         let mut inv = test_investigator(1);
@@ -1457,17 +1480,20 @@ mod tests {
             .with_investigator(inv)
             .with_location(loc)
             .build();
+        let expr = elder_sign_expr(&state, &mock_registry(), InvestigatorId(1))
+            .expect("the investigator card carries an elder-sign ability");
+        let ctx = crate::engine::evaluator::EvalContext::for_controller(InvestigatorId(1));
         assert_eq!(
-            elder_sign_modifier(&state, &mock_registry(), InvestigatorId(1)),
-            2
+            crate::engine::evaluator::eval_int_expr(&state, &ctx, &expr),
+            Ok(2)
         );
 
         let mut plain = test_investigator(2);
         plain.investigator_card.code = CardCode::new("no-elder-sign");
         let state = GameStateBuilder::new().with_investigator(plain).build();
         assert_eq!(
-            elder_sign_modifier(&state, &mock_registry(), InvestigatorId(2)),
-            0
+            elder_sign_expr(&state, &mock_registry(), InvestigatorId(2)),
+            None
         );
     }
 }
