@@ -190,6 +190,17 @@ pub struct ModifierBreakdown {
 }
 
 impl ModifierBreakdown {
+    /// Add one more contribution to the fold, attributed to its source.
+    ///
+    /// For the contributions that are a property of the read rather than of
+    /// the board, and so cannot be swept or recorded: the committed cards'
+    /// matching and wild icons at RR ST.5. They go *into* the fold rather
+    /// than onto [`total`](Self::total)'s result, because the clamp is last
+    /// — the whole point of there being no unclamped accessor.
+    pub fn push(&mut self, source: ContributionSource, delta: i8) {
+        self.contributions.push(Contribution { source, delta });
+    }
+
     /// The modified value: the base plus every contribution, with the
     /// clamp applied last. `Modifiers.md`: *"after all active modifiers
     /// have been applied, any resultant value below zero is treated as
@@ -463,14 +474,19 @@ fn sweep(
 /// composed shroud, clamped once.
 ///
 /// The delta is an expression evaluated **here**, at read time, against
-/// the row's investigator as "you". An expression that cannot be
-/// resolved is skipped rather than counted as zero: contributing a
-/// silently-wrong number is worse than contributing none. A `Modify`
-/// writes an [`IntExpr::Lit`](crate::dsl::IntExpr::Lit), as does the
-/// revealed chaos token's ±N; the elder-sign row carries the investigator
-/// card's own expression, so Roland Banks 01001's *"+1 for each clue on
-/// your location"* counts the clues that are there at ST.5 rather than
-/// the ones that were there at the reveal (#684).
+/// the row's investigator as "you". A `Modify` writes an
+/// [`IntExpr::Lit`](crate::dsl::IntExpr::Lit), as does the revealed chaos
+/// token's ±N; the elder-sign row carries the investigator card's own
+/// expression, so Roland Banks 01001's *"+1 for each clue on your
+/// location"* counts the clues that are there at ST.5 rather than the ones
+/// that were there at the reveal (#684).
+///
+/// An expression that cannot be resolved is **skipped**, not counted as
+/// zero and not asserted on: contributing a silently-wrong number is worse
+/// than contributing none, and a malformed elder sign (an `IntExpr` over a
+/// `Condition` the evaluator cannot express) is card data rather than an
+/// engine invariant, so it must not panic mid-test. That is the guard the
+/// superseded `elder_sign_modifier` carried in its own `unwrap_or(0)`.
 fn collect_recorded(
     state: &GameState,
     target: ModifierTarget,
@@ -497,10 +513,6 @@ fn collect_recorded(
         );
         let Ok(delta) = crate::engine::evaluator::eval_int_expr(state, &eval_ctx, &row.delta)
         else {
-            debug_assert!(
-                false,
-                "recorded modifier {row:?} carries an unresolvable delta expression",
-            );
             continue;
         };
         out.push(Contribution {
@@ -531,10 +543,7 @@ fn scope_applies(scope: ModifierScope, context: ReadContext) -> bool {
 /// Whether a DSL [`Stat`] names the quantity being asked about.
 fn stat_matches(stat: Stat, quantity: ModifiedQuantity) -> bool {
     match quantity {
-        ModifiedQuantity::Skill(SkillKind::Willpower) => stat == Stat::Willpower,
-        ModifiedQuantity::Skill(SkillKind::Intellect) => stat == Stat::Intellect,
-        ModifiedQuantity::Skill(SkillKind::Combat) => stat == Stat::Combat,
-        ModifiedQuantity::Skill(SkillKind::Agility) => stat == Stat::Agility,
+        ModifiedQuantity::Skill(skill) => stat == stat_for_skill(skill),
         ModifiedQuantity::MaxHealth => stat == Stat::MaxHealth,
         ModifiedQuantity::MaxSanity => stat == Stat::MaxSanity,
         ModifiedQuantity::Shroud => stat == Stat::Shroud,
@@ -648,10 +657,12 @@ pub(crate) fn elder_sign_expr(
     })
 }
 
-/// The [`Stat`] a tested [`SkillKind`] names — the inverse of the
-/// [`stat_matches`] filter, for the caller that has to *write* a row
-/// against the skill a test is being taken with (the revealed token's ±N
-/// and the elder sign's bonus, #684).
+/// The [`Stat`] a tested [`SkillKind`] names.
+///
+/// The one place the two vocabularies are mapped: [`stat_matches`] reads it
+/// to *filter* rows by the quantity being asked about, and the skill-test
+/// driver reads it to *write* a row against the skill a test is being taken
+/// with (the revealed token's ±N and the elder sign's bonus, #684).
 #[must_use]
 pub(crate) fn stat_for_skill(skill: SkillKind) -> Stat {
     match skill {
@@ -800,9 +811,14 @@ mod tests {
             ],
         };
         assert_eq!(breakdown.total(), 0, "4 - 8 + 2 = -2, treated as 0");
+        // The answer a fold that clamped between the −8 and the +2 would
+        // give, spelled out so the assertion below still discriminates:
+        // (4 − 8 → 0) + 2 = 2.
+        let clamping_early = 4_i32.saturating_add(-8).max(0).saturating_add(2);
+        assert_eq!(clamping_early, 2, "the wrong fold's arithmetic");
         assert_ne!(
             breakdown.total(),
-            2,
+            clamping_early,
             "clamping before the +2 would give 2 — the answer the rules \
              reference explicitly rules out"
         );

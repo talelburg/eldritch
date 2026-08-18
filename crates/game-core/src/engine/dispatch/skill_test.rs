@@ -18,8 +18,8 @@ use crate::state::{
 
 use super::super::evaluator::{push_effect, EvalContext};
 use super::super::modified_value::{
-    elder_sign_expr, modified_value, stat_for_skill, Contribution, ContributionSource,
-    ModifiedQuantity, ModifierTarget, ReadContext,
+    elder_sign_expr, modified_value, stat_for_skill, ContributionSource, ModifiedQuantity,
+    ModifierBreakdown, ModifierTarget, ReadContext,
 };
 use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use super::Cx;
@@ -1270,7 +1270,7 @@ fn sum_skill_value(
         ModifiedQuantity::Skill(skill),
         ReadContext::DuringTest(kind),
     );
-    push_committed_icons(&mut breakdown.contributions, committed, skill);
+    push_committed_icons(&mut breakdown, committed, skill);
     i8::try_from(
         breakdown
             .total()
@@ -1292,7 +1292,7 @@ fn sum_skill_value(
 /// Reads the codes the commit hop moved into limbo, **not** the hand — the
 /// ST.2→ST.3 player window sits between the commit and this sum and is free to
 /// mutate the hand (#631).
-fn push_committed_icons(out: &mut Vec<Contribution>, committed: &[CardCode], skill: SkillKind) {
+fn push_committed_icons(out: &mut ModifierBreakdown, committed: &[CardCode], skill: SkillKind) {
     let Some(reg) = card_registry::current() else {
         return;
     };
@@ -1308,13 +1308,13 @@ fn push_committed_icons(out: &mut Vec<Contribution>, committed: &[CardCode], ski
             SkillKind::Agility => icons.agility,
         };
         let delta = i8::try_from(matching.saturating_add(icons.wild)).unwrap_or(i8::MAX);
-        out.push(Contribution {
-            source: ContributionSource::Card {
+        out.push(
+            ContributionSource::Card {
                 code: code.clone(),
                 instance: None,
             },
             delta,
-        });
+        );
     }
 }
 
