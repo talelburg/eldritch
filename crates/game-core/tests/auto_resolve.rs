@@ -318,6 +318,9 @@ impl FastPlayAndCommit {
 
 impl ChoiceResolver for FastPlayAndCommit {
     fn next(&mut self, request: &InputRequest, state: &GameState) -> InputResponse {
+        // Assumes the first skippable `PickSingle` offering anything is the
+        // test's fast window — true for every board built in this file, where
+        // nothing else opens one.
         if request.skippable {
             if !self.used && request.kind == InputKind::PickSingle && !request.options.is_empty() {
                 self.used = true;
@@ -633,10 +636,9 @@ fn a_determination_latched_before_the_reveal_draws_no_token() {
         result.events,
         Event::SkillTestSucceeded { investigator, .. } if *investigator == id
     );
-    assert_eq!(
-        result.state.chaos_bag, bag_before,
-        "a skipped draw does not consult the bag",
-    );
+    // The load-bearing assertion is the absent reveal above; this one pins
+    // the bag's contents, which a draw never mutates anyway.
+    assert_eq!(result.state.chaos_bag, bag_before);
 }
 
 /// *"that step is skipped, along with Step 4"* — the `[skull]`'s immediate
@@ -745,7 +747,9 @@ fn the_follow_up_and_end_of_test_steps_still_run_on_a_skipped_draw() {
     let result = drive(
         state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+            response: InputResponse::PickSingle(OptionId(
+                u32::try_from(idx).expect("action index fits u32"),
+            )),
         }),
         FastPlayAndCommit::committing(&[ON_RESOLUTION_GAIN]),
     );
