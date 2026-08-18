@@ -982,6 +982,40 @@ pub enum ModifierScope {
     ThisTurn,
 }
 
+/// A skill test's **determination**: the two-valued statement that the
+/// test resolves a particular way whatever the numbers say.
+///
+/// `data/rules-reference/rules/glossary/Automatic_Failure_Success.md`:
+///
+/// > Some card or token abilities may cause a skill test to
+/// > automatically fail or to automatically succeed.
+/// >
+/// > - If a skill test automatically fails, the investigator's total
+/// >   skill value for that test is considered 0.
+/// > - If a skill test automatically succeeds, the total difficulty of
+/// >   that test is considered 0.
+///
+/// The two are **not** symmetric quantities of one axis: they substitute
+/// different quantities, and automatic failure takes precedence over
+/// automatic success. That precedence is resolved once for the whole
+/// test, above the modified-value fold, because a fold evaluating either
+/// quantity cannot see the other's rows — see ADR 0007.
+///
+/// Stored as a `RecordedModifier` row scoped to the test (over in
+/// `game-core`, which this crate cannot name), so it inherits that
+/// population's skill-test identity check, expiry sweep and abandonment
+/// path. The `[auto_fail]`
+/// chaos token writes one; the DSL effect that lets a *card* declare one
+/// arrives with #686.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Determination {
+    /// The test automatically fails. Beats a simultaneous
+    /// [`AutomaticSuccess`](Self::AutomaticSuccess).
+    AutomaticFailure,
+    /// The test automatically succeeds.
+    AutomaticSuccess,
+}
+
 /// A constant restriction a card imposes while in play, carried by a
 /// [`Trigger::Constant`] [`Effect::Restrict`]. The engine inspects these
 /// at decision points rather than executing them.

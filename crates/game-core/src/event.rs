@@ -170,12 +170,12 @@ pub enum Event {
         margin: i8,
     },
     /// A skill test failed. Either the total fell short of the
-    /// difficulty, or an `AutoFail` chaos token forced the total to 0.
+    /// difficulty, or the test was determined to fail automatically.
     ///
     /// Note: per the Rules Reference, the investigator's total is
     /// clamped to a minimum of 0 before the margin is computed (a
-    /// negative `skill + modifier` is treated as 0). `AutoFail` short-
-    /// circuits to the same total = 0 regardless of skill or modifier.
+    /// negative `skill + modifier` is treated as 0). An automatic failure
+    /// substitutes the same total = 0 regardless of skill or modifier.
     /// In both cases `by` reflects the clamped margin.
     SkillTestFailed {
         /// Investigator who failed the test.
@@ -580,15 +580,22 @@ pub enum Event {
 ///
 /// Both variants produce a `by` margin on the bracketing
 /// [`SkillTestFailed`](Event::SkillTestFailed) event; this enum names
-/// the *cause*, which some card effects key off independently of the
-/// numeric margin.
+/// the *cause*, for **display attribution** rather than adjudication. No
+/// Core + Dunwich card keys off a failure being automatic rather than
+/// ordinary, and nothing in the engine branches on it (ADR 0007).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum FailureReason {
     /// The investigator's clamped total fell short of the difficulty.
     Total,
-    /// An `AutoFail` chaos token forced the total to 0, regardless of
-    /// skill value or other modifiers.
+    /// The test carried a
+    /// [`Determination::AutomaticFailure`](crate::dsl::Determination::AutomaticFailure),
+    /// so the investigator's total skill value was considered 0 whatever
+    /// their skills and modifiers said.
+    ///
+    /// Deliberately says nothing about *what* determined it: an
+    /// `[auto_fail]` chaos token is the only source today, but a card can
+    /// latch the same determination with no token drawn at all (#686).
     AutoFail,
 }
 

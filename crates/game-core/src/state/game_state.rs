@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     card::{CardCode, CardInstanceId},
-    chaos_bag::{ChaosBag, TokenModifiers, TokenResolution},
+    chaos_bag::{ChaosBag, TokenModifiers},
     counter::Counter,
     enemy::{Enemy, EnemyId},
     investigator::{Investigator, InvestigatorId},
@@ -14,7 +14,7 @@ use super::{
     phase::Phase,
 };
 use crate::card_data::{CardKind, CardMetadata};
-use crate::dsl::{IntExpr, SkillTestKind, Stat};
+use crate::dsl::{Determination, IntExpr, SkillTestKind, Stat};
 use crate::rng::RngState;
 use card_dsl::card_data::SkillKind;
 
@@ -1556,22 +1556,6 @@ pub struct InFlightSkillTest {
     /// second discovery: Cover Up 01007 replaces one discovery of 2, not two
     /// of 1 (#471). See the **Discovery** entry in `CONTEXT.md`.
     pub bonus_clues_discovered: u8,
-    /// The revealed chaos token's resolution, stashed at the
-    /// [`Resolving`](SkillTestStep::Resolving) step (RR ST.3) and consumed one
-    /// driver step later by
-    /// [`DetermineOutcome`](SkillTestStep::DetermineOutcome). Held on the frame
-    /// rather than threaded through the cursor because the ST.4 symbol effects
-    /// sit between the two steps and can suspend on a soak window: the token is
-    /// drawn exactly once, at ST.3, and the resume reads it from here instead
-    /// of re-drawing it. `None` until the token is revealed.
-    ///
-    /// What `DetermineOutcome` still needs it *for* is only the `[auto_fail]`
-    /// substitution. The token's ±N and the elder sign's bonus are
-    /// [`RecordedModifier`] rows written at ST.3, folded into the ST.5 total by
-    /// the modified-value query like every other modifier (#684); the
-    /// substitution becomes a determination of its own in #685, at which point
-    /// this field has no reader left.
-    pub token_resolution: Option<TokenResolution>,
     /// The test's determination, set once at the
     /// [`DetermineOutcome`](SkillTestStep::DetermineOutcome) step (RR ST.5–ST.6)
     /// and read by every later step instead of threading `succeeded`/`failed_by`
@@ -1599,7 +1583,8 @@ pub struct InFlightSkillTest {
 /// lives separately on [`InFlightSkillTest::symbol_on_fail`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedTest {
-    /// Whether the test passed (`total >= difficulty`, no `AutoFail`).
+    /// Whether the test passed: the test's determination where it has one,
+    /// and `total >= difficulty` otherwise.
     pub succeeded: bool,
     /// Failure margin (`difficulty - total`, clamped ≥ 0); `0` on success.
     /// Read by `IntExpr::Count(Quantity::SkillTestFailedBy)` in an `on_fail`
@@ -1696,13 +1681,12 @@ pub enum SkillTestStep {
     PreTokenWindow,
     /// Commit submitted: the next driver iteration reveals the chaos token
     /// (RR ST.3) and pushes the symbol's immediate effects (RR ST.4), then
-    /// pre-advances to [`DetermineOutcome`](Self::DetermineOutcome). It stashes
-    /// the token's resolution on
-    /// [`InFlightSkillTest::token_resolution`], records the token's modifier
-    /// (or the elder sign's expression) as a [`RecordedModifier`] scoped to
-    /// this test, and computes **no** total, margin, or verdict — those are
-    /// ST.5/ST.6 and belong after the symbol effects have resolved (#674,
-    /// #684).
+    /// pre-advances to [`DetermineOutcome`](Self::DetermineOutcome). It records
+    /// the token's modifier (or the elder sign's expression) as a
+    /// [`RecordedModifier`] scoped to this test — an `[auto_fail]` records a
+    /// [`Determination`] instead — and computes
+    /// **no** total, margin, or verdict: those are ST.5/ST.6 and belong after
+    /// the symbol effects have resolved (#674, #684, #685).
     Resolving,
     /// RR ST.5–ST.7 boundary. Sum the modified skill value (ST.5) from the
     /// board as it stands *now* — after the ST.4 symbol effects — compare it
@@ -2167,11 +2151,19 @@ pub enum ModifierTarget {
     Location(LocationId),
     /// An enemy's fight, evade or health.
     Enemy(EnemyId),
-    /// The in-flight skill test's difficulty, which is not a quantity of
-    /// its own: reading it resolves the test's
-    /// [`DifficultyBasis`] and asks that target instead. No modifier
-    /// targets it — a card modifies a test's difficulty by modifying the
-    /// location or enemy the test is against.
+    /// The in-flight skill test itself. Its **difficulty** is not a
+    /// quantity of its own: reading it resolves the test's
+    /// [`DifficultyBasis`] and asks that target instead, so a card that
+    /// wants a test to be harder or easier modifies the location or enemy
+    /// the test is against rather than naming the test.
+    ///
+    /// What *does* target the test is a
+    /// [`Determination`] row (#685). An
+    /// automatic success substitutes the test's total difficulty, and an
+    /// automatic failure the tester's total skill value; neither belongs
+    /// to the location or the enemy, and the precedence between them is a
+    /// property of the test. So a determination row carries this target
+    /// whichever of the two it is.
     Test,
 }
 
@@ -2268,6 +2260,43 @@ impl Lifetime {
     }
 }
 
+/// What a recorded row does to the quantity it names: add to it, or
+/// replace it wholesale.
+///
+/// The two are different stages of ADR 0005's fold — the additive pass and
+/// the stage-5 substitution — and they carry different payloads, so a row
+/// is one or the other rather than a struct with fields that go unread.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum RecordedModifierKind {
+    /// A signed magnitude on one stat, folded into the additive pass.
+    Delta {
+        /// Which stat the modifier targets (the modified-value query maps
+        /// `SkillKind` → `Stat` for matching).
+        stat: Stat,
+        /// The signed magnitude, as an **expression evaluated at read
+        /// time** rather than a resolved integer — the same rule ADR 0005
+        /// applies to the swept population. Esoteric Formula 02254 (*"You
+        /// get +2 \[willpower\] for this attack for each clue on the
+        /// attacked enemy"*) is the corpus consumer: freezing that to a
+        /// number when the row is pushed reintroduces the stale-quantity
+        /// bug one level down. Every row a `Modify` writes today carries a
+        /// literal, since that is all the DSL's `Modify` can carry; the
+        /// elder sign's row carries the investigator card's own expression.
+        delta: IntExpr,
+    },
+    /// The test resolves a particular way whatever the numbers say — the
+    /// fold's stage-5 whole-quantity substitution.
+    ///
+    /// Named against [`ModifierTarget::Test`], because the determination
+    /// belongs to the test rather than to either quantity it substitutes,
+    /// and read through the test-level query that resolves the precedence
+    /// between the two (ADR 0007). Carries no stat: which quantity gets
+    /// substituted follows from *which* determination it is, not from
+    /// anything the row says.
+    Determination(Determination),
+}
+
 /// One **recorded** modifier: a contribution whose lifetime is decoupled
 /// from any card's zone, so the modified-value sweep over the board cannot
 /// find it.
@@ -2277,7 +2306,9 @@ impl Lifetime {
 /// [`ModifierScope`] — today only
 /// [`ThisSkillTest`](crate::dsl::ModifierScope::ThisSkillTest), which
 /// stamps [`Lifetime::SkillTest`] with the id of the test in flight (and is
-/// refused outright when there is none). Read at every modified-value query
+/// refused outright when there is none) — and by the skill-test driver, for
+/// the revealed chaos token's contribution and for the determination an
+/// `[auto_fail]` token latches. Read at every modified-value query
 /// alongside the swept population, and dropped by the boundary its
 /// [`lifetime`](Self::lifetime) names.
 ///
@@ -2293,24 +2324,15 @@ pub struct RecordedModifier {
     /// investigation it starts (Flashlight 01087's *"Your location gets -2
     /// shroud for this investigation."*).
     pub target: ModifierTarget,
-    /// The "you" the [`delta`](Self::delta) expression is evaluated
+    /// The "you" a
+    /// [`Delta`](RecordedModifierKind::Delta)'s expression is evaluated
     /// against — the controller of the ability that wrote the row, which is
     /// also the investigator taking the test the row is scoped to. Distinct
     /// from [`target`](Self::target): Flashlight's row modifies a location
     /// but counts clues for *its controller* if it ever needs to.
     pub investigator: InvestigatorId,
-    /// Which stat the modifier targets (the modified-value query maps
-    /// `SkillKind` → `Stat` for matching).
-    pub stat: Stat,
-    /// The signed magnitude, as an **expression evaluated at read time**
-    /// rather than a resolved integer — the same rule ADR 0005 applies to
-    /// the swept population. Esoteric Formula 02254 (*"You get +2
-    /// \[willpower\] for this attack for each clue on the attacked
-    /// enemy"*) is the corpus consumer: freezing that to a number when the
-    /// row is pushed reintroduces the stale-quantity bug one level down.
-    /// Every row written today is a `Modify`'s literal delta, since that is
-    /// all the DSL's `Modify` can carry.
-    pub delta: IntExpr,
+    /// What the row does to the quantity it names.
+    pub kind: RecordedModifierKind,
     /// When the row stops applying.
     pub lifetime: Lifetime,
     /// The in-play instance that produced the modifier, if any.
@@ -2346,9 +2368,34 @@ impl RecordedModifier {
         )
     }
 
+    /// Construct the row that latches a test's
+    /// [`Determination`].
+    ///
+    /// Targets [`ModifierTarget::Test`] — the determination is a property
+    /// of the test, not of either quantity it substitutes — with
+    /// `investigator` naming the tester. `lifetime` is the caller's to
+    /// stamp, exactly as for a `Modify`'s row: there is no determination
+    /// without a test to scope it to.
+    #[must_use]
+    pub fn determination(
+        investigator: InvestigatorId,
+        determination: Determination,
+        lifetime: Lifetime,
+        source: Option<CardInstanceId>,
+    ) -> Self {
+        Self {
+            target: ModifierTarget::Test,
+            investigator,
+            kind: RecordedModifierKind::Determination(determination),
+            lifetime,
+            source,
+        }
+    }
+
     /// Construct a [`RecordedModifier`] over an arbitrary
     /// [`target`](Self::target), with `investigator` as the "you" its
-    /// [`delta`](Self::delta) expression reads. The shroud reduction an
+    /// [`Delta`](RecordedModifierKind::Delta) expression reads. The shroud
+    /// reduction an
     /// [`Effect::Investigate`](crate::dsl::Effect::Investigate) grants
     /// (Flashlight 01087) is the one row today whose target is not its
     /// controller.
@@ -2364,8 +2411,7 @@ impl RecordedModifier {
         Self {
             target,
             investigator,
-            stat,
-            delta,
+            kind: RecordedModifierKind::Delta { stat, delta },
             lifetime,
             source,
         }

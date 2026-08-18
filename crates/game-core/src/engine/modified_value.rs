@@ -49,7 +49,10 @@
 //! for and is inert under any other, and each names its own target — so a
 //! row can modify a location as readily as an investigator. A recorded row
 //! stores its delta as an **expression**, evaluated at read time exactly as
-//! a swept modifier's condition is.
+//! a swept modifier's condition is. A row can carry the test's
+//! [determination](crate::dsl::Determination) in place of a delta — the
+//! `[auto_fail]` chaos token writes one — which is read through
+//! [`test_determination`] rather than folded additively.
 //!
 //! # Difficulty
 //!
@@ -65,11 +68,22 @@
 //! ADR 0005 folds a modified quantity in the Rules Reference's own order
 //! — base value, a transform over rows, addition and subtraction,
 //! doubling and halving with rounding, then the clamp and whole-quantity
-//! substitution. This module implements the base, the additive pass and
-//! the clamp; the row transform and the multiplicative pass arrive with
-//! their first corpus consumers (Jim Culver 02004, Hunting Nightgaunt
-//! 01172, Double or Nothing 02026), and substitution (automatic failure
-//! and success) with #630. The clamp is genuinely last: every
+//! substitution. This module implements the base, the additive pass, the
+//! clamp and the substitution; the row transform and the multiplicative
+//! pass arrive with their first corpus consumers (Jim Culver 02004,
+//! Hunting Nightgaunt 01172, Double or Nothing 02026).
+//!
+//! Substitution — the [determination](test_determination) of automatic
+//! failure or automatic success — is the last stage, and the one stage
+//! that is not decided inside the fold. The two determinations substitute
+//! *different* quantities (the tester's total skill value, the test's
+//! total difficulty) and automatic failure takes precedence over
+//! automatic success, so a fold evaluating either quantity alone cannot
+//! resolve the rule: two independent substitutions would both yield 0 and
+//! compare as a success. A test-level query resolves it once and both
+//! quantity reads consult it (ADR 0007).
+//!
+//! The clamp is genuinely last among the additive stages: every
 //! contribution to a skill test's ST.5 total is a row this query folds,
 //! including the revealed chaos token's ±N and the elder sign's bonus
 //! (#684), so nothing is added after [`ModifierBreakdown::total`]
@@ -78,9 +92,12 @@
 
 use crate::card_data::SkillKind;
 use crate::card_registry::CardRegistry;
-use crate::dsl::{Effect, ModifierAudience, ModifierScope, SkillTestKind, Stat, Trigger};
+use crate::dsl::{
+    Determination, Effect, ModifierAudience, ModifierScope, SkillTestKind, Stat, Trigger,
+};
 use crate::state::{
     CardCode, CardInPlay, DifficultyBasis, EnemyId, GameState, InvestigatorId, LocationId,
+    RecordedModifierKind,
 };
 
 /// Which entity's quantity is being asked about.
@@ -187,6 +204,22 @@ pub struct ModifierBreakdown {
     pub base: i32,
     /// Every active modifier, in sweep order.
     pub contributions: Vec<Contribution>,
+    /// The fold's **stage 5**: a value substituted for the whole quantity,
+    /// overriding base, contributions and clamp alike.
+    ///
+    /// `Some(0)` when the in-flight test's
+    /// [determination](test_determination) substitutes *this* quantity —
+    /// the tester's total skill value on an automatic failure, the test's
+    /// total difficulty on an automatic success
+    /// (`glossary/Automatic_Failure_Success.md`). `None` otherwise, which
+    /// is every read outside a determined test.
+    ///
+    /// The contributions are **kept**, not discarded: the rules require the
+    /// modified skill value to be determined even on an automatically
+    /// failed test (*"the investigator's total modified skill value is
+    /// still determined, as it may have some bearing on other card
+    /// abilities"*), and the breakdown is where that lives.
+    pub substitution: Option<i32>,
 }
 
 impl ModifierBreakdown {
@@ -206,12 +239,19 @@ impl ModifierBreakdown {
     /// have been applied, any resultant value below zero is treated as
     /// zero"*.
     ///
+    /// A [`substitution`](Self::substitution) wins outright — it is the
+    /// fold's stage 5, after the clamp, and it replaces the quantity
+    /// rather than contributing to it.
+    ///
     /// There is no unclamped counterpart, because there is no caller
     /// with modifiers still to add: a contribution that is not on the
     /// board is a [`RecordedModifier`](crate::state::RecordedModifier)
     /// this query already folds.
     #[must_use]
     pub fn total(&self) -> i32 {
+        if let Some(substituted) = self.substitution {
+            return substituted;
+        }
         self.contributions
             .iter()
             .fold(self.base, |acc, c| acc.saturating_add(i32::from(c.delta)))
@@ -240,31 +280,120 @@ pub fn modified_value(
     quantity: ModifiedQuantity,
     context: ReadContext,
 ) -> ModifierBreakdown {
-    if let (ModifierTarget::Test, ModifiedQuantity::Difficulty) = (target, quantity) {
-        return difficulty(state, registry, context);
-    }
-    let mut breakdown = ModifierBreakdown {
-        base: base_value(state, target, quantity),
-        contributions: Vec::new(),
-    };
-    if let Some(registry) = registry {
-        sweep(
-            state,
-            registry,
-            target,
-            quantity,
-            context,
-            &mut breakdown.contributions,
-        );
-    }
-    collect_recorded(
-        state,
-        target,
-        quantity,
-        context,
-        &mut breakdown.contributions,
-    );
+    let mut breakdown =
+        if let (ModifierTarget::Test, ModifiedQuantity::Difficulty) = (target, quantity) {
+            difficulty(state, registry, context)
+        } else {
+            let mut breakdown = ModifierBreakdown {
+                base: base_value(state, target, quantity),
+                contributions: Vec::new(),
+                substitution: None,
+            };
+            if let Some(registry) = registry {
+                sweep(
+                    state,
+                    registry,
+                    target,
+                    quantity,
+                    context,
+                    &mut breakdown.contributions,
+                );
+            }
+            collect_recorded(
+                state,
+                target,
+                quantity,
+                context,
+                &mut breakdown.contributions,
+            );
+            breakdown
+        };
+    // Stage 5, last: the in-flight test's determination substitutes the
+    // whole quantity. Applied here rather than inside either branch so the
+    // difficulty read gets it too — and after the delegation, so the
+    // substitution lands on the *test's* difficulty rather than on the
+    // location's shroud or the enemy's fight value it is read from.
+    breakdown.substitution = substitution(state, target, quantity, context);
     breakdown
+}
+
+/// The in-flight skill test's **determination**, resolved across every
+/// recorded row scoped to it: automatically failed, automatically
+/// succeeded, or neither.
+///
+/// This is the query ADR 0007 puts *above* the fold. The precedence —
+/// automatic failure beats automatic success — is a rule spanning two
+/// quantities, and a fold evaluating either one cannot see the other's
+/// rows; two independent stage-5 substitutions would both yield 0 and
+/// compare as a success, which is the wrong answer.
+///
+/// Resolved at **read** time, so both rows may coexist: neither suppresses
+/// nor overwrites the other, and the answer does not depend on which was
+/// latched first.
+///
+/// `None` when the read declares itself outside a test
+/// ([`ReadContext::OutsideTest`], as prey ranking does) or when no test is
+/// in flight — the same gate the recorded-row collector applies, since a
+/// determination *is* one of those rows.
+#[must_use]
+pub fn test_determination(state: &GameState, context: ReadContext) -> Option<Determination> {
+    let ReadContext::DuringTest(_) = context else {
+        return None;
+    };
+    let in_flight = state.current_skill_test().map(|t| t.id)?;
+    let mut found = None;
+    for row in &state.recorded_modifiers {
+        let RecordedModifierKind::Determination(d) = row.kind else {
+            continue;
+        };
+        if !row.lifetime.applies_during_test(in_flight) {
+            continue;
+        }
+        match d {
+            Determination::AutomaticFailure => return Some(Determination::AutomaticFailure),
+            Determination::AutomaticSuccess => found = Some(Determination::AutomaticSuccess),
+        }
+    }
+    found
+}
+
+/// The fold's stage-5 substitution for one `target`/`quantity` pair:
+/// `Some(0)` when the test's determination replaces this quantity
+/// wholesale, `None` otherwise.
+///
+/// `glossary/Automatic_Failure_Success.md`:
+///
+/// > - If a skill test automatically fails, the investigator's total skill
+/// >   value for that test is considered 0.
+/// > - If a skill test automatically succeeds, the total difficulty of
+/// >   that test is considered 0.
+///
+/// The failure clause is narrowed to the tester's *tested* skill, which is
+/// the only quantity the rule names ("the investigator's total skill value
+/// **for that test**"): a determined test does not zero a bystander's
+/// willpower, nor the tester's other three skills.
+fn substitution(
+    state: &GameState,
+    target: ModifierTarget,
+    quantity: ModifiedQuantity,
+    context: ReadContext,
+) -> Option<i32> {
+    let determination = test_determination(state, context)?;
+    let test = state.current_skill_test()?;
+    match determination {
+        Determination::AutomaticFailure
+            if target == ModifierTarget::Investigator(test.investigator)
+                && quantity == ModifiedQuantity::Skill(test.skill) =>
+        {
+            Some(0)
+        }
+        Determination::AutomaticSuccess
+            if target == ModifierTarget::Test && quantity == ModifiedQuantity::Difficulty =>
+        {
+            Some(0)
+        }
+        _ => None,
+    }
 }
 
 /// The in-flight test's difficulty: whatever its
@@ -299,6 +428,7 @@ fn difficulty(
         return ModifierBreakdown {
             base: 0,
             contributions: Vec::new(),
+            substitution: None,
         };
     };
     let (target, quantity) = match basis {
@@ -306,6 +436,7 @@ fn difficulty(
             return ModifierBreakdown {
                 base: i32::from(n),
                 contributions: Vec::new(),
+                substitution: None,
             }
         }
         DifficultyBasis::Shroud(id) => (ModifierTarget::Location(id), ModifiedQuantity::Shroud),
@@ -501,8 +632,14 @@ fn collect_recorded(
         return;
     };
     for row in &state.recorded_modifiers {
+        // A determination row is not an additive contribution: it is the
+        // fold's stage-5 substitution, read through `test_determination`
+        // once for the whole test rather than folded per quantity.
+        let RecordedModifierKind::Delta { stat, ref delta } = row.kind else {
+            continue;
+        };
         if row.target != target
-            || !stat_matches(row.stat, quantity)
+            || !stat_matches(stat, quantity)
             || !row.lifetime.applies_during_test(in_flight)
         {
             continue;
@@ -511,8 +648,7 @@ fn collect_recorded(
             row.investigator,
             row.source,
         );
-        let Ok(delta) = crate::engine::evaluator::eval_int_expr(state, &eval_ctx, &row.delta)
-        else {
+        let Ok(delta) = crate::engine::evaluator::eval_int_expr(state, &eval_ctx, delta) else {
             continue;
         };
         out.push(Contribution {
@@ -809,6 +945,7 @@ mod tests {
                     delta: 2,
                 },
             ],
+            substitution: None,
         };
         assert_eq!(breakdown.total(), 0, "4 - 8 + 2 = -2, treated as 0");
         // The answer a fold that clamped between the −8 and the +2 would
@@ -1333,6 +1470,19 @@ mod tests {
         state
     }
 
+    /// Investigator 1's modified `skill`, read under the investigation
+    /// [`state_with_test`] puts in flight.
+    fn skill_of(state: &GameState, skill: SkillKind) -> i32 {
+        modified_value(
+            state,
+            Some(&mock_registry()),
+            ModifierTarget::Investigator(InvestigatorId(1)),
+            ModifiedQuantity::Skill(skill),
+            ReadContext::DuringTest(SkillTestKind::Investigate),
+        )
+        .total()
+    }
+
     fn difficulty_of(state: &GameState) -> i32 {
         modified_value(
             state,
@@ -1494,6 +1644,179 @@ mod tests {
         assert_eq!(
             elder_sign_expr(&state, &mock_registry(), InvestigatorId(2)),
             None
+        );
+    }
+
+    // ---- the fold's stage 5: the test's determination -------------
+
+    /// A determination row scoped to [`IN_FLIGHT`].
+    fn determination_row(d: crate::dsl::Determination) -> crate::state::RecordedModifier {
+        crate::state::RecordedModifier::determination(
+            InvestigatorId(1),
+            d,
+            crate::state::Lifetime::SkillTest(IN_FLIGHT),
+            None,
+        )
+    }
+
+    /// The board [`state_with_test`] builds (investigator 1 taking an
+    /// Intellect investigation against the Study's shroud 2), with `rows`
+    /// recorded on top.
+    fn state_with_determinations(rows: Vec<crate::state::RecordedModifier>) -> GameState {
+        let mut state = state_with_test(crate::state::DifficultyBasis::Shroud(LocationId(3)));
+        state.recorded_modifiers = rows;
+        state
+    }
+
+    /// `glossary/Automatic_Failure_Success.md`: *"If a skill test
+    /// automatically fails, the investigator's total skill value for that
+    /// test is considered 0."* The difficulty is **not** touched, which is
+    /// what keeps the margin real — 0 against shroud 2 fails by 2.
+    #[test]
+    fn an_automatic_failure_substitutes_the_testers_total_skill_value() {
+        let state =
+            state_with_determinations(vec![determination_row(Determination::AutomaticFailure)]);
+        assert_eq!(skill_of(&state, SkillKind::Intellect), 0);
+        assert_eq!(difficulty_of(&state), 2, "the difficulty is left alone");
+    }
+
+    /// *"the investigator's total modified skill value is still
+    /// determined, as it may have some bearing on other card abilities"* —
+    /// so the substitution replaces the **total**, and the breakdown that
+    /// produced it survives intact underneath.
+    #[test]
+    fn an_automatic_failure_keeps_the_breakdown_it_substitutes() {
+        let mut state =
+            state_with_determinations(vec![determination_row(Determination::AutomaticFailure)]);
+        state
+            .recorded_modifiers
+            .push(recorded(InvestigatorId(1), Stat::Intellect, 2));
+        let breakdown = modified_value(
+            &state,
+            Some(&mock_registry()),
+            ModifierTarget::Investigator(InvestigatorId(1)),
+            ModifiedQuantity::Skill(SkillKind::Intellect),
+            ReadContext::DuringTest(SkillTestKind::Investigate),
+        );
+        assert_eq!(breakdown.base, 3, "the printed intellect");
+        assert_eq!(breakdown.contributions.len(), 1, "the +2 row still counts");
+        assert_eq!(breakdown.substitution, Some(0));
+        assert_eq!(breakdown.total(), 0);
+    }
+
+    /// *"If a skill test automatically succeeds, the total difficulty of
+    /// that test is considered 0."* The location's own shroud is
+    /// unchanged: the substitution lands on the **test's** difficulty, not
+    /// on the quantity it is read from.
+    #[test]
+    fn an_automatic_success_substitutes_the_tests_total_difficulty() {
+        let state =
+            state_with_determinations(vec![determination_row(Determination::AutomaticSuccess)]);
+        assert_eq!(difficulty_of(&state), 0);
+        assert_eq!(
+            modified_value(
+                &state,
+                Some(&mock_registry()),
+                ModifierTarget::Location(LocationId(3)),
+                ModifiedQuantity::Shroud,
+                ReadContext::DuringTest(SkillTestKind::Investigate),
+            )
+            .total(),
+            2,
+            "the location's shroud is still 2",
+        );
+        assert_eq!(
+            skill_of(&state, SkillKind::Intellect),
+            3,
+            "the skill value is left alone",
+        );
+    }
+
+    /// Automatic failure beats automatic success (ADR 0007), and the two
+    /// rows coexist: neither suppresses the other, so the answer cannot
+    /// depend on which was latched first. Asserted in both orders — the
+    /// bug this rules out is a 0-versus-0 comparison passing as a success.
+    #[test]
+    fn automatic_failure_beats_automatic_success_in_either_latch_order() {
+        for rows in [
+            vec![
+                determination_row(Determination::AutomaticFailure),
+                determination_row(Determination::AutomaticSuccess),
+            ],
+            vec![
+                determination_row(Determination::AutomaticSuccess),
+                determination_row(Determination::AutomaticFailure),
+            ],
+        ] {
+            let state = state_with_determinations(rows);
+            assert_eq!(
+                test_determination(&state, ReadContext::DuringTest(SkillTestKind::Investigate)),
+                Some(Determination::AutomaticFailure),
+            );
+            assert_eq!(skill_of(&state, SkillKind::Intellect), 0);
+            assert_eq!(
+                difficulty_of(&state),
+                2,
+                "the losing automatic success must not zero the difficulty too,                  or 0 versus 0 compares as a success",
+            );
+        }
+    }
+
+    /// *"the investigator's total skill value **for that test**"* — the
+    /// three skills the test is not against are untouched, and so is
+    /// anyone else's.
+    #[test]
+    fn an_automatic_failure_zeroes_only_the_tested_skill() {
+        let state =
+            state_with_determinations(vec![determination_row(Determination::AutomaticFailure)]);
+        assert_eq!(
+            skill_of(&state, SkillKind::Intellect),
+            0,
+            "the tested skill"
+        );
+        assert_eq!(skill_of(&state, SkillKind::Willpower), 3);
+        assert_eq!(skill_of(&state, SkillKind::Combat), 3);
+        assert_eq!(skill_of(&state, SkillKind::Agility), 3);
+    }
+
+    /// A determination is a recorded row like any other, so it carries the
+    /// skill-test identity check: one bought for another test is inert.
+    #[test]
+    fn a_determination_scoped_to_another_test_is_inert() {
+        let mut state =
+            state_with_determinations(vec![crate::state::RecordedModifier::determination(
+                InvestigatorId(1),
+                Determination::AutomaticFailure,
+                crate::state::Lifetime::SkillTest(crate::state::SkillTestId(99)),
+                None,
+            )]);
+        assert_eq!(skill_of(&state, SkillKind::Intellect), 3);
+        assert_eq!(
+            test_determination(&state, ReadContext::DuringTest(SkillTestKind::Investigate)),
+            None,
+        );
+        // And it is gone for good once its own test tears down.
+        state.expire_modifiers_for_test(crate::state::SkillTestId(99));
+        assert!(state.recorded_modifiers.is_empty());
+    }
+
+    /// A read that declares itself outside a test (prey ranking) sees no
+    /// determination, exactly as it sees no recorded row.
+    #[test]
+    fn a_read_outside_a_test_sees_no_determination() {
+        let state =
+            state_with_determinations(vec![determination_row(Determination::AutomaticFailure)]);
+        assert_eq!(test_determination(&state, ReadContext::OutsideTest), None,);
+        assert_eq!(
+            modified_value(
+                &state,
+                Some(&mock_registry()),
+                ModifierTarget::Investigator(InvestigatorId(1)),
+                ModifiedQuantity::Skill(SkillKind::Intellect),
+                ReadContext::OutsideTest,
+            )
+            .total(),
+            3,
         );
     }
 }
