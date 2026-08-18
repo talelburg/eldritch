@@ -24,6 +24,11 @@
 //!   it after `SkillTestEnded`. [`ThisTurn`] is not yet wired; rejects
 //!   with TODO until a card or test demands the turn-scoped
 //!   accumulator.
+//! - [`Effect::AutoResolve`] writes a test's
+//!   [`Determination`] into the same recorded
+//!   population, under the same gate: with no test in flight there is no
+//!   identity to stamp, so it rejects rather than banking a determination
+//!   for whatever test comes next.
 //!
 //! [`WhileInPlay`]: crate::dsl::ModifierScope::WhileInPlay
 //! [`WhileInPlayDuring`]: crate::dsl::ModifierScope::WhileInPlayDuring
@@ -66,8 +71,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::card_registry::CardRegistry;
 use crate::dsl::{
-    CmpOp, Condition, Effect, EnemyTarget, HarmKind, IntExpr, InvestigatorTarget, LocationTarget,
-    ModifierScope, Quantity, SkillTestKind, Trigger,
+    CmpOp, Condition, Determination, Effect, EnemyTarget, HarmKind, IntExpr, InvestigatorTarget,
+    LocationTarget, ModifierScope, Quantity, SkillTestKind, Trigger,
 };
 use crate::event::Event;
 use crate::state::{GameState, InvestigatorId, SkillKind};
@@ -437,6 +442,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             scope,
             audience,
         } => modify(cx, eval_ctx, *stat, *delta, *scope, *audience),
+        Effect::AutoResolve { determination } => auto_resolve(cx, eval_ctx, *determination),
         Effect::If {
             condition,
             then,
@@ -1307,6 +1313,72 @@ fn modify(
     }
 }
 
+/// Apply an [`Effect::AutoResolve`]: latch the in-flight test's
+/// [`Determination`].
+///
+/// `data/rules-reference/rules/glossary/Automatic_Failure_Success.md`:
+///
+/// > Some card or token abilities may cause a skill test to automatically
+/// > fail or to automatically succeed.
+///
+/// The determination is written as a
+/// [`RecordedModifier`](crate::state::RecordedModifier) row stamped with the
+/// running test's [`SkillTestId`](crate::state::SkillTestId) — the same
+/// population, the same identity check and the same teardown sweep the
+/// `[auto_fail]` chaos token's row goes through (#685), so a card-latched
+/// determination is the one rule and not a second one. Precedence between a
+/// simultaneous failure and success is resolved at *read* time, above the
+/// fold, by
+/// [`test_determination`](crate::engine::modified_value::test_determination):
+/// this arm neither suppresses nor overwrites an existing row, so the answer
+/// does not depend on the order two cards latched in (ADR 0007).
+///
+/// # No window list
+///
+/// The evaluator does not ask *when* the effect is resolving. The moment
+/// comes from the declaring card's own trigger, exactly as
+/// [`ModifierScope::ThisSkillTest`] does, and the snapshot's latch range is
+/// wider than the rules' "before Step 3" skip clause: Possession 03340
+/// latches on commit at ST.2, Delusory Evils 52065 reacts at ST.6.
+///
+/// # A determination with no test
+///
+/// **Rejected**, for want of a test identity to stamp — the structural
+/// guard, not a defensive one. A determination banked with no test would
+/// surface as an unexplained automatic result on whatever test came next,
+/// which is the same failure mode a test-scoped `Modify` is refused for.
+///
+/// The row names the **tester**, not the effect's controller: the
+/// determination belongs to the test, and a card may latch one on a test
+/// another investigator is taking. `source` is the effect's own, so the
+/// event and the row agree on attribution.
+fn auto_resolve(cx: &mut Cx, eval_ctx: EvalContext, determination: Determination) -> EngineOutcome {
+    let Some(test) = cx.state.current_skill_test() else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "AutoResolve resolved with no skill test in flight: there is no test for the \
+                 {determination:?} to attach to, so it cannot be recorded."
+            )
+            .into(),
+        };
+    };
+    let (test_id, investigator) = (test.id, test.investigator);
+    cx.state
+        .recorded_modifiers
+        .push(crate::state::RecordedModifier::determination(
+            investigator,
+            determination,
+            crate::state::Lifetime::SkillTest(test_id),
+            eval_ctx.source,
+        ));
+    cx.events.push(Event::SkillTestDeterminationLatched {
+        investigator,
+        determination,
+        source: eval_ctx.source,
+    });
+    EngineOutcome::Done
+}
+
 /// Standard rejection message for effect variants whose evaluator
 /// needs `AwaitingInput` plumbing (engine-side producer + `ResolveInput`
 /// resume). Centralizes the message so the un-stub path is one grep.
@@ -2065,10 +2137,15 @@ pub(crate) fn effect_can_change_state(
         // enumerator from offering Hyperawareness 01034 at a window where
         // clicking it would only cost a resource and reject — the same
         // menu/validator agreement #639 established for the activation gate.
+        //
+        // `AutoResolve` shares the arm for the same reason on the same gate: a
+        // determination latched with no test in flight has no identity to stamp
+        // either, so `auto_resolve` refuses it and nothing changes.
         Effect::Modify {
             scope: ModifierScope::ThisSkillTest,
             ..
-        } => state.current_skill_test().is_some(),
+        }
+        | Effect::AutoResolve { .. } => state.current_skill_test().is_some(),
         // A sequence changes state iff any step can (an empty `Seq` is inert).
         Effect::Seq(steps) => steps
             .iter()

@@ -480,8 +480,9 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
 ///   substitution, read through
 ///   [`test_determination`](crate::engine::modified_value::test_determination).
 ///   Recording it here rather than special-casing the token at ST.6 is what
-///   makes a card-latched automatic failure (#686) the same one rule and
-///   not a second one.
+///   makes a card-latched automatic failure
+///   ([`Effect::AutoResolve`](crate::dsl::Effect::AutoResolve)) the same one
+///   rule and not a second one.
 fn record_token_contribution(
     cx: &mut Cx,
     investigator: InvestigatorId,
