@@ -377,6 +377,58 @@ fn an_engaged_enemy_still_follows_the_move_that_discards_barricade() {
     assert_no_event!(r.events, Event::EnemyDisengaged { .. });
 }
 
+/// The other half of the ruling on the very move that discards Barricade: with
+/// a Barricade at **both** ends, leaving A discards A's copy in the `when` cell
+/// and B's copy still blocks, so the engaged non-Elite enemy disengages and
+/// stays behind — *"the engaged enemy will disengage and remain in the
+/// investigator's previous location"* (<https://arkhamdb.com/card/01038>).
+///
+/// The block is read at the resolve step, *after* the `when` cell has run, so
+/// this is the case that proves the discard does not disturb it.
+#[test]
+fn an_engaged_enemy_still_disengages_on_the_move_that_discards_barricade() {
+    let mut enemy = ghoul(100, GHOUL_MINION, A);
+    enemy.engaged_with = Some(INV);
+    enemy.attack_damage = 0;
+    enemy.attack_horror = 0;
+    let mut state = map_leaving_barricaded_a(Some(enemy));
+    state
+        .locations
+        .get_mut(&B)
+        .unwrap()
+        .attachments
+        .push(CardInPlay::enter_play(
+            CardCode::new(BARRICADE),
+            CardInstanceId(901),
+        ));
+
+    let r = take_turn_action(
+        state,
+        &TurnAction::Move {
+            investigator: INV,
+            destination: B,
+        },
+    );
+    assert_event_sequence!(
+        r.events,
+        Event::CardDiscarded { .. },
+        Event::EnemyDisengaged { .. },
+        Event::InvestigatorMoved { .. },
+    );
+    let enemy = &r.state.enemies[&EnemyId(100)];
+    assert_eq!(enemy.current_location, Some(A), "the enemy stayed behind");
+    assert_eq!(enemy.engaged_with, None, "engagement broke");
+    assert!(
+        r.state.locations[&A].attachments.is_empty(),
+        "A's Barricade discarded on leave",
+    );
+    assert_eq!(
+        r.state.locations[&B].attachments.len(),
+        1,
+        "B's Barricade is untouched — nobody left B",
+    );
+}
+
 /// Linear map A—B with a Barricade attached at **A**, the investigator there,
 /// and `enemy` optionally on the board. The move A→B is the one that fires the
 /// card's own forced self-discard.

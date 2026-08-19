@@ -509,6 +509,17 @@ pub(super) fn resolve_departure(
         // asserted. No corpus card removes an investigator from an interrupt on
         // a departure; suppressing (as the connection re-check above does)
         // beats panicking if one ever does.
+        //
+        // The rest of the §D re-check — that the actor is still standing at
+        // `from`, and that `from` is still connected to a `destination` that
+        // still exists — is deliberately *not* repeated here, though the `when`
+        // cell can now in principle invalidate all three. Nothing in the corpus
+        // relocates an investigator or removes a location from an interrupt on
+        // a departure, and a departure that declined to land would still leave
+        // the `MoveEnter` frame beneath this sequence to resolve the arrival: a
+        // half-move, worse than the state it guards against. The first card
+        // that can do either wants the whole move re-validated at this step and
+        // the arrival frame cancelled with it — not one field re-read.
         return;
     }
     // Engaged enemies move with the investigator — unless the destination is
@@ -548,7 +559,7 @@ pub(super) fn resolve_departure(
         // predicate borrows the whole state immutably.
         let enemy = cx.state.enemies.get(&enemy_id).unwrap_or_else(|| {
             unreachable!(
-                "move_primary_effect: enemy {enemy_id:?} vanished between the engagement scan \
+                "resolve_departure: enemy {enemy_id:?} vanished between the engagement scan \
                  and the drag-along; this is a state-corruption invariant violation"
             )
         });

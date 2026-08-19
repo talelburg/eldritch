@@ -675,12 +675,14 @@ pub enum Continuation {
         /// The card mid-play — see [`Continuation::play_in_progress`].
         card: Option<CardCode>,
     },
-    /// The entered-location half of a Move, parked beneath the left location's
-    /// queued `LeftLocation` forced abilities (#569). Pushed by
-    /// `move_primary_effect` after the relocation lands and *before* it emits
-    /// `LeftLocation`, so Barricade 01038's self-discard resolves first; when the
-    /// loop re-exposes this frame it pops, auto-engages the destination's ready
-    /// enemies, and emits `EnteredLocation` in tail position.
+    /// The entered-location half of a Move, parked beneath the whole
+    /// `LeftLocation` sequence (#569). Pushed by `move_primary_effect`
+    /// immediately before it emits `LeftLocation` — and since #721 that emit
+    /// carries the relocation too, which the coordinator performs at the
+    /// condition's own resolve step *above* this frame, so Barricade 01038's
+    /// self-discard resolves before the departure lands. When the loop
+    /// re-exposes this frame it pops, reveals the destination, auto-engages its
+    /// ready enemies, and emits `EnteredLocation` in tail position.
     ///
     /// Exists because the emit queues rather than resolves (ADR 0003): running
     /// the engage + entered-location emit inline after it pushed them *above*

@@ -1068,6 +1068,57 @@ fn a_when_cell_left_location_forced_resolves_before_the_departure_lands() {
     );
 }
 
+/// The destination reveal is the **arrival's** business, not the departure's:
+/// it rides the `MoveEnter` frame parked beneath the emit, so it lands after
+/// the whole `LeftLocation` sequence and before the entered location's own
+/// forced ability.
+///
+/// #721 moved it there. Left in `move_primary_effect` it would have revealed
+/// the destination before the investigator had even left the location they
+/// were on — Rules Reference p.14 reveals a location when an investigator
+/// *enters* it.
+#[test]
+fn the_destination_reveal_belongs_to_the_arrival_not_the_departure() {
+    use game_core::state::{CardInPlay, CardInstanceId};
+
+    let mut from = test_location(10, "Hallway");
+    from.connections = vec![LocationId(11)];
+    from.attachments.push(CardInPlay::enter_play(
+        CardCode(WHEN_LEFT_LOCATION.into()),
+        CardInstanceId(7),
+    ));
+    let mut attic = test_location(11, "Attic");
+    attic.code = CardCode(HORROR_ATTIC.into());
+    attic.revealed = false;
+
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    inv.actions_remaining = 3;
+
+    let state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(from)
+        .with_location(attic)
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1)])
+        .with_investigator_turn(InvestigatorId(1))
+        .build();
+
+    let r = move_action(state, InvestigatorId(1), LocationId(11));
+    assert_event_sequence!(
+        r.events,
+        Event::HorrorTaken { .. },
+        Event::InvestigatorMoved { .. },
+        Event::LocationRevealed { .. },
+        Event::HorrorTaken { .. },
+    );
+    assert!(
+        r.state.locations[&LocationId(11)].revealed,
+        "the destination is still revealed by the move",
+    );
+}
+
 /// The mid-sequence board, observed directly: with two `when`-cell
 /// `LeftLocation` abilities the lead has to order them, and the move suspends
 /// with the departure **not yet resolved** — the investigator still standing on
