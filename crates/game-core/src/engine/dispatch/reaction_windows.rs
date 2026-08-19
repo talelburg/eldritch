@@ -58,9 +58,9 @@ pub(super) fn queue_reaction_window(
     event: &crate::engine::TimingEvent,
     bucket: EventTiming,
 ) {
-    // The last three single-cell conditions — `EnemyAttacks`,
-    // `WouldDiscoverClues` and `EnemyAttackDamagedSelf` — open their window at
-    // the one `bucket` their caller names; every other condition walks the
+    // The last two single-cell conditions — `EnemyAttacks` and
+    // `EnemyAttackDamagedSelf` — open their window at the one `bucket` their
+    // caller names; every other condition walks the
     // `when → at → after` coordinator, which opens its per-cell windows through
     // `open_reaction_run` (#702).
     let candidates = scan_reactions_at(cx.state, event, bucket);
@@ -273,11 +273,12 @@ fn scan_pending_triggers(
                 continue;
             }
         }
-        // "When YOU would discover … at YOUR location" (Cover Up 01007, Axis D
-        // #336): the reaction's controller is the discoverer and must be at the
-        // discovery location. (The per-card `clues > 0` potential gate is in the
-        // card loop below.)
-        if let TimingEvent::WouldDiscoverClues {
+        // "…YOU … at YOUR location" (Cover Up 01007, Axis D #336): a candidate's
+        // controller is the discoverer and must be at the discovery location.
+        // Applies in every cell — the scoping is the condition's, not the
+        // interrupt's. (The per-card `clues > 0` potential gate is in the card
+        // loop below.)
+        if let TimingEvent::DiscoverClues {
             investigator,
             location,
             ..
@@ -562,13 +563,17 @@ fn trigger_matches(
     // D #336); the "at your location" / eligibility scoping lives in the scans.
     match timing {
         EventTiming::When => {
+            // Clue discovery carries the same controller narrowing its
+            // `at`/`after` arm below does: one condition, one scoping, whichever
+            // cell an ability declares (#703).
+            if let (TimingEvent::DiscoverClues { investigator, .. }, EventPattern::DiscoverClues) =
+                (event, pattern)
+            {
+                return *investigator == controller;
+            }
             return matches!(
                 (event, pattern),
                 (TimingEvent::EnemyAttacks { .. }, EventPattern::EnemyAttacks)
-                    | (
-                        TimingEvent::WouldDiscoverClues { .. },
-                        EventPattern::WouldDiscoverClues
-                    )
                     // "When the round ends, investigators … may … advance" — act
                     // 01109's group advance (#434). A board-scoped reaction (no
                     // per-controller narrowing); the contributor scoping lives in
@@ -619,6 +624,12 @@ fn trigger_matches(
                 && outcome == p_out
                 && (p_kind.is_none() || *p_kind == Some(*kind))
         }
+        // "…you discover clues": scoped to the discovering investigator, the way
+        // the `when` pairing above is. The "at your location" narrowing lives in
+        // the scan, which has the board (#703).
+        (TimingEvent::DiscoverClues { investigator, .. }, EventPattern::DiscoverClues) => {
+            *investigator == controller
+        }
         // Scoped to the entered card's owner; the self-instance scoping is in
         // the scan (Research Librarian 01032).
         (
@@ -632,7 +643,7 @@ fn trigger_matches(
         // forced-only events (PhaseEnded / ActAdvanced / AgendaAdvanced /
         // RoundEnded / EndOfTurn / GameEnd / EnteredLocation / LeftLocation /
         // EnteredLocation) never open a reaction window; the `When`-timing
-        // events (EnemyAttacks / WouldDiscoverClues) returned above.
+        // pairings (EnemyAttacks, DiscoverClues, RoundEnded) returned above.
         _ => false,
     }
 }
@@ -1151,13 +1162,13 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         Some(crate::engine::TimingEvent::EnemyAttackDamagedSelf { enemy, .. }) => {
             eval_ctx.set_attacking_enemy(*enemy);
         }
-        // For `WouldDiscoverClues`, bind the would-be discovery count so the
+        // For `DiscoverClues`, bind the would-be discovery count so the
         // replacement effect (Cover Up's "discard that many") discards the
         // right number. Mirrors `attacking_enemy`. `count` is the **capped**
         // count — `discover_clue` caps at the location's clues before emitting
         // (#471) — so "that many" is what would actually have been discovered,
         // not what was requested.
-        Some(crate::engine::TimingEvent::WouldDiscoverClues { count, .. }) => {
+        Some(crate::engine::TimingEvent::DiscoverClues { count, .. }) => {
             eval_ctx.set_clue_discovery_count(*count);
         }
         _ => {}
@@ -1465,15 +1476,8 @@ fn run_reaction_continuation(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome 
         TimingEvent::EnemyAttackDamagedSelf { .. } | TimingEvent::EnemyAttacks { .. } => {
             super::combat::resume_enemy_attack(cx)
         }
-        // Before-discover (Cover Up 01007, Axis D #336): perform the deferred
-        // discovery unless a reaction cancelled it, then re-enter the in-flight
-        // skill-test driver if any (Investigate's follow-up).
-        TimingEvent::WouldDiscoverClues {
-            investigator,
-            location,
-            count,
-        } => resume_before_discover_window(cx, *investigator, *location, *count),
-        // After-defeat / after-investigate / entered-play: no continuation work
+        // After-defeat / after-investigate / entered-play / clue discovery: no
+        // continuation work
         // here. Return `Done` so the `drive` loop dispatches the now-top frame —
         // a mid-resolution `SkillTest` resumes by being re-dispatched, *not* by an
         // inline `advance` call. (Contrast `run_fast_continuation`'s `SkillTest`
@@ -1486,9 +1490,13 @@ fn run_reaction_continuation(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome 
         // separate `SkillTest` the loop owns; the round-end `when` act-advance
         // window (act 01109, #434) sits above the coordinator's `TimingPoint`,
         // which advances to its `Done` sub when re-dispatched.
+        // The clue discovery is the worked case of the last sentence: its `when`
+        // window used to perform the deferred discovery here, and since #703 the
+        // coordinator's resolve step does it one frame later instead.
         TimingEvent::EnemyDefeated { .. }
         | TimingEvent::SkillTestResolved { .. }
         | TimingEvent::EnteredPlay { .. }
+        | TimingEvent::DiscoverClues { .. }
         | TimingEvent::RoundEnded => EngineOutcome::Done,
         other => unreachable!("run_reaction_continuation: {other:?} opens no reaction window"),
     }
@@ -1516,29 +1524,6 @@ pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> Engine
         FastWindowKind::Phase(_) => super::phases::anchor_on_child_pop(cx),
         FastWindowKind::SkillTest { .. } => super::skill_test::advance(cx),
     }
-}
-
-/// Resume after a before-discover-clues window closes (Cover Up
-/// 01007, Axis D #336). If a reaction cancelled the discovery (Cover Up played
-/// its `Seq[discard, Cancel]`), skip it; otherwise perform the deferred
-/// discovery. Then, if a skill test is in flight (the dominant path:
-/// Investigate's follow-up discovery), re-enter its driver — its continuation
-/// was pre-advanced to `PostFollowUp` by `finish_skill_test` before the
-/// follow-up suspended, so this picks up at teardown.
-fn resume_before_discover_window(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    location: crate::state::LocationId,
-    count: u8,
-) -> EngineOutcome {
-    let cancelled = std::mem::take(&mut cx.state.pending_cancellation);
-    if !cancelled {
-        crate::engine::evaluator::perform_discovery(cx, location, count, investigator);
-    }
-    // If a skill test is mid-flight (the dominant path: Investigate's follow-up
-    // discovery), the `drive` loop dispatches it once this returns — no reach-down
-    // into `skill_test::advance` (Slice C-plumbing).
-    EngineOutcome::Done
 }
 
 /// Advance the enemy-phase cursor past `investigator` and open the next
@@ -2333,7 +2318,7 @@ mod trigger_matches_tests {
     #[test]
     fn before_pairs_match_only_their_own_when_event() {
         let inv = InvestigatorId(1);
-        let would_discover = TimingEvent::WouldDiscoverClues {
+        let discover = TimingEvent::DiscoverClues {
             investigator: inv,
             location: LocationId(2),
             count: 1,
@@ -2345,10 +2330,10 @@ mod trigger_matches_tests {
             EventTiming::When,
             inv,
         ));
-        // WouldDiscoverClues ↔ WouldDiscoverClues (When) — Cover Up 01007.
+        // DiscoverClues ↔ DiscoverClues (When) — Cover Up 01007.
         assert!(trigger_matches(
-            &would_discover,
-            &EventPattern::WouldDiscoverClues,
+            &discover,
+            &EventPattern::DiscoverClues,
             EventTiming::When,
             inv,
         ));
@@ -2362,7 +2347,7 @@ mod trigger_matches_tests {
         // A When event only matches its own pattern.
         assert!(!trigger_matches(
             &enemy_attacks(inv),
-            &EventPattern::WouldDiscoverClues,
+            &EventPattern::DiscoverClues,
             EventTiming::When,
             inv,
         ));

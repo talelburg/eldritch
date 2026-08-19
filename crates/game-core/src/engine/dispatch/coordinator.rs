@@ -49,7 +49,12 @@ use super::Cx;
 /// to interrupt. An ability that declares one is rejected rather than dropped
 /// (this project never silently no-ops); see [`ConditionResolution::Caller`] and
 /// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
-pub(super) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
+///
+/// Visible to `engine` rather than to `dispatch` alone because the evaluator's
+/// bounded test driver has to walk the coordinator too: since #703 an effect
+/// leaf can emit a condition whose own resolution happens here, so a driver that
+/// stopped at this frame would leave the effect half-resolved.
+pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
     let Some(Continuation::EmitEvent { event, step }) = cx.state.continuations.last().cloned()
     else {
         unreachable!("dispatch_emit_event: top frame is not EmitEvent");
@@ -58,8 +63,23 @@ pub(super) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
     if step == EmitStep::ResolveCondition {
         advance_or_finish_emit(cx);
         return match resolution {
-            ConditionResolution::Coordinator(resolve) => resolve(cx, &event),
-            // Already resolved, by the caller, before it emitted.
+            ConditionResolution::Coordinator(resolve) => {
+                if cancelled_in_the_when_cell(cx) {
+                    // A replacement effect fired in the `when` cell and
+                    // cancelled the condition, so step 2 does not happen —
+                    // `glossary/Instead.md`: *"A replacement effect is an effect
+                    // that replaces the resolution of a triggering condition
+                    // with an alternate means of resolution."* The `at` and
+                    // `after` cells still run: what was replaced is the
+                    // condition's own impact, not its sequence.
+                    EngineOutcome::Done
+                } else {
+                    resolve(cx, &event)
+                }
+            }
+            // Already resolved, by the caller, before it emitted. The caller
+            // also owns the cancellation signal (`combat::resume_enemy_attack`
+            // reads it on its own resume), so it is left untouched here.
             ConditionResolution::Caller => EngineOutcome::Done,
         };
     }
@@ -80,7 +100,7 @@ pub(super) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
                     "timing coordinator: {event:?} is a caller-owned triggering condition, so its \
                      `when` cell is not walked — an ability declaring interrupt timing on it \
                      cannot resolve before the condition, which has already resolved. Migrate the \
-                     condition to a coordinator-owned arm — TODO(#703/#704): the caller-owned \
+                     condition to a coordinator-owned arm — TODO(#704): the caller-owned \
                      arm is scaffolding, migrated one condition at a time (see \
                      docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md)."
                 )
@@ -112,7 +132,9 @@ pub(super) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
 ///   finish the bucket. The cursor advances to `Done` before opening, so the
 ///   re-dispatch after the window closes finishes (never re-opens).
 /// - **`Done`** — advance the parent `EmitEvent`'s cursor and pop self.
-pub(super) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
+///
+/// Visible to `engine` for the same reason as [`dispatch_emit_event`].
+pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
     let Some(Continuation::TimingPoint { event, bucket, sub }) =
         cx.state.continuations.last().cloned()
     else {
@@ -176,6 +198,23 @@ fn advance_or_finish_emit(cx: &mut Cx) {
             cx.state.continuations.pop();
         }
     }
+}
+
+/// Read **and clear** the cancellation signal an [`Effect::Cancel`](crate::dsl::Effect::Cancel)
+/// in the `when` cell set (Cover Up 01007's *"…instead"*, #336).
+///
+/// Read at the resolve step rather than at the window's close: the check belongs
+/// between the `when` cell and step 2, which is where the sequence puts the
+/// chance to prevent the condition from resolving.
+///
+/// The clear is **every** coordinator-owned arm's, not this or that condition's
+/// — including one whose resolve step ignores the value, like the round end's
+/// bare milestone. That is deliberate: an unconsumed signal would otherwise
+/// reach the next condition's resolve step and cancel the wrong thing. A
+/// caller-owned condition is untouched, because its emit site does its own
+/// read-and-clear (`combat::resume_enemy_attack`).
+fn cancelled_in_the_when_cell(cx: &mut Cx) -> bool {
+    std::mem::take(&mut cx.state.pending_cancellation)
 }
 
 /// Set the top [`Continuation::TimingPoint`]'s `sub` cursor.

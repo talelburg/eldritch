@@ -11,9 +11,9 @@
 //!
 //! Persistent treachery: the Revelation self-places into the threat area
 //! with 3 clues (`Effect::PutIntoThreatArea`), so `resolve_encounter_card`
-//! does not auto-discard it. The before-timing clue-discovery interrupt
-//! and the game-end forced trauma ride the C5a seam (`WouldDiscoverClues`
-//! / `GameEnd`), backed by the two native effects below — ports of the
+//! does not auto-discard it. The clue-discovery interrupt is the `when` cell of
+//! the `DiscoverClues` condition (#703) and the game-end forced trauma the
+//! `GameEnd` one, backed by the two native effects below — ports of the
 //! synthetic Cover-Up fixture C5a proved (`scenarios::test_fixtures::synth_cards`).
 
 use card_dsl::dsl::{
@@ -42,12 +42,13 @@ pub fn abilities() -> Vec<Ability> {
     vec![
         revelation(put_into_threat_area_with_clues(CODE, 3)),
         reaction_on_event(
-            EventPattern::WouldDiscoverClues,
+            EventPattern::DiscoverClues,
             EventTiming::When,
             // "Discard that many clues from Cover Up instead": run the discard,
             // then cancel the discovery — cancel = degenerate replacement
-            // (Axis D #336). The before-discover window's continuation skips
-            // the deferred discovery when `pending_cancellation` is set.
+            // (Axis D #336). The `when` cell resolves before the clues move, and
+            // the coordinator skips its resolve step when `pending_cancellation`
+            // is set (#703), so the discovery never happens.
             Effect::Seq(vec![native(DISCARD_TAG), Effect::Cancel]),
         )
         .with_eligibility(HAS_CLUES_TAG),
@@ -162,7 +163,7 @@ mod tests {
         assert!(matches!(
             abilities[1].trigger,
             Trigger::OnEvent {
-                pattern: EventPattern::WouldDiscoverClues,
+                pattern: EventPattern::DiscoverClues,
                 timing: EventTiming::When,
                 ..
             }
@@ -192,7 +193,7 @@ mod tests {
     fn has_clues_predicate_gates_on_source_instance_clues() {
         use game_core::state::{CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId};
 
-        // The WouldDiscoverClues reaction now carries the eligibility tag.
+        // The DiscoverClues reaction now carries the eligibility tag.
         let abilities = super::abilities();
         assert_eq!(
             abilities[1].eligibility.as_deref(),

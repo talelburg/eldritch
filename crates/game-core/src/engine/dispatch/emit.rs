@@ -122,13 +122,16 @@ pub enum TimingEvent {
         enemy: EnemyId,
         investigator: InvestigatorId,
     },
-    /// An investigator is about to discover clues (reaction-only, Before).
-    /// Opens the `BeforeDiscoverClues` replacement window — Cover Up 01007.
-    /// (Axis D #336; migrated from the C5a `clue_interrupt` seam.)
-    WouldDiscoverClues {
+    /// An investigator discovers clues (reaction only, all three cells).
+    /// **Coordinator-owned** (#703): the emitting `discover_clue` only caps the
+    /// count and emits, and the coordinator moves the clues at its resolve step,
+    /// between the `when` and `at` cells. So a `when` ability interrupts the
+    /// discovery before the clues move — Cover Up 01007's replacement — while an
+    /// `at` or `after` one sees them already moved.
+    DiscoverClues {
         investigator: InvestigatorId,
         location: LocationId,
-        /// Clues that would actually be discovered — already capped at the
+        /// Clues that will actually be discovered — already capped at the
         /// location's clue count by the emitting `discover_clue`, so a
         /// replacement effect's "discard that many" (Cover Up) reads the real
         /// quantity, not the requested one (#471).
@@ -207,7 +210,7 @@ impl TimingEvent {
             TimingEvent::EnemyAttackDamagedSelf { .. }
             | TimingEvent::EnemyAttacks { .. }
             | TimingEvent::EnteredPlay { .. }
-            | TimingEvent::WouldDiscoverClues { .. } => None,
+            | TimingEvent::DiscoverClues { .. } => None,
         }
     }
 
@@ -228,9 +231,17 @@ impl TimingEvent {
             // walk — which is why act 01109 The Barrier's *"When the round ends"*
             // objective resolves there today.
             TimingEvent::RoundEnded => ConditionResolution::Coordinator(resolve_bare_milestone),
+            // The first migration (#703). Cover Up 01007 prints *"[reaction] When
+            // you would discover 1 or more clues at your location: Discard that
+            // many clues from Cover Up instead"*, so the discovery has to be able
+            // to not happen — which it cannot be if the caller has already moved
+            // the clues by the time the `when` cell runs.
+            TimingEvent::DiscoverClues { .. } => {
+                ConditionResolution::Coordinator(resolve_clue_discovery)
+            }
             // Every other condition is still caller-owned: the emitting call site
             // mutates the board and *then* emits. Each flips to a coordinator-
-            // owned arm when a card demands its `when` cell (#702–#704).
+            // owned arm when a card demands its `when` cell (#704).
             TimingEvent::EnteredLocation { .. }
             | TimingEvent::PhaseEnded { .. }
             | TimingEvent::ActAdvanced { .. }
@@ -242,7 +253,6 @@ impl TimingEvent {
             | TimingEvent::EnemyAttackDamagedSelf { .. }
             | TimingEvent::SkillTestResolved { .. }
             | TimingEvent::EnemyAttacks { .. }
-            | TimingEvent::WouldDiscoverClues { .. }
             | TimingEvent::EnteredPlay { .. }
             | TimingEvent::LeftLocation { .. } => ConditionResolution::Caller,
         }
@@ -280,9 +290,10 @@ pub(crate) enum ConditionResolution {
     /// **Migrating one event** means: move the caller's mutation into a named
     /// function (the emit site keeps only the emit, in tail position per ADR
     /// 0003), point a `Coordinator` arm at it, and let the coordinator call it at
-    /// the resolve step. Worked examples land with #703 (clue discovery) and #704
-    /// (the enemy attack), whose mutations are already factored out for a resume
-    /// frame to call.
+    /// the resolve step. The worked example is `resolve_clue_discovery` (#703):
+    /// that mutation was already factored into `perform_discovery` for a resume
+    /// frame to call, so the migration moved the call site and deleted the
+    /// resume. #704 does the same for the enemy attack.
     ///
     /// **This arm exists to migrate existing callers, not to accommodate new
     /// ones.** A new timing event has no legacy emit site to invert, so it is
@@ -304,6 +315,27 @@ pub(crate) type ResolveConditionFn = fn(&mut Cx, &TimingEvent) -> EngineOutcome;
 /// Nothing to resolve, so nothing happens here; the cells around it are the
 /// whole of the sequence.
 fn resolve_bare_milestone(_cx: &mut Cx, _event: &TimingEvent) -> EngineOutcome {
+    EngineOutcome::Done
+}
+
+/// The resolve step of [`TimingEvent::DiscoverClues`]: move the clues (#703).
+///
+/// The impact of "you discover clues" is the clues arriving on the investigator,
+/// so this is where they move — after the `when` cell's replacement effects have
+/// had their chance to cancel it, and before the `at` and `after` cells see the
+/// board. `count` is the count fixed at the moment of the would-be discovery;
+/// `perform_discovery`'s own `min` is the shrinkage backstop for a `when`
+/// reaction that removed clues in between (#471).
+fn resolve_clue_discovery(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
+    let TimingEvent::DiscoverClues {
+        investigator,
+        location,
+        count,
+    } = event
+    else {
+        unreachable!("resolve_clue_discovery: not a DiscoverClues event: {event:?}");
+    };
+    crate::engine::evaluator::perform_discovery(cx, *location, *count, *investigator);
     EngineOutcome::Done
 }
 
@@ -344,29 +376,26 @@ fn resolve_bare_milestone(_cx: &mut Cx, _event: &TimingEvent) -> EngineOutcome {
               frame, not after this call (ADR 0003). Return the outcome, or bind \
               it to `_` at a site whose caller owns the suspension channel"]
 pub(crate) fn queue_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
-    // The enemy-attack machinery's three conditions keep their pre-#702
+    // The enemy-attack machinery's two remaining conditions keep their pre-#702
     // single-cell handling; every other condition walks the coordinator.
     //
-    // All three share one obstruction: their emit sites read the stack
-    // *synchronously* after the emit — `open_windows()` at
-    // `combat::deal_head_and_maybe_park` / `process_head_attacker`, the top
-    // window's kind at `evaluator`'s discovery — which is the shape ADR 0003
-    // forbids, and which a coordinator frame breaks (the window it will open
-    // is not open yet when the caller looks). Clearing it means the attack
-    // loop stops draining inline and parks on its `AttackLoop` frame for the
-    // `drive` loop to re-expose, so the migration is a ticket each rather than
-    // a line here.
+    // Both share one obstruction: their emit sites read the stack *synchronously*
+    // after the emit — `open_windows()` at
+    // `combat::deal_head_and_maybe_park` / `process_head_attacker` — which is
+    // the shape ADR 0003 forbids, and which a coordinator frame breaks (the
+    // window it will open is not open yet when the caller looks). Clearing it
+    // means the attack loop stops draining inline and parks on its `AttackLoop`
+    // frame for the `drive` loop to re-expose, so the migration is its own
+    // ticket (#704) rather than a line here.
     //
-    // - `EnemyAttacks` (Dodge 01023's cancel) and `WouldDiscoverClues` (Cover
-    //   Up 01007's replacement) are additionally **interrupt-timed**: they are
-    //   caller-owned with a populated `when` cell, so walking them would hit
-    //   the caller-owned `when`-cell reject and take both cards down with it.
-    //   #704 and #703 respectively.
+    // - `EnemyAttacks` (Dodge 01023's cancel) is additionally
+    //   **interrupt-timed**: caller-owned with a populated `when` cell, so
+    //   walking it would hit the caller-owned `when`-cell reject and take Dodge
+    //   down with it.
     // - `EnemyAttackDamagedSelf` (Guard Dog 01021's soak retaliate) is
     //   modelled `after`-timed, so under today's declaration nothing about
     //   *which cell* it resolves in is at stake — only the drive shape is. It
-    //   rides along with #704, which owns the same loop. (#702 found it; the
-    //   ticket had anticipated two holdouts, not three.)
+    //   rides along with #704, which owns the same loop.
     //
     //   The declaration is itself wrong, which is why this holdout is not as
     //   cheap as it looks. Guard Dog prints *"[reaction] **When** an enemy
@@ -374,6 +403,10 @@ pub(crate) fn queue_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     //   enemy."* — one of the mis-tagged declarations #694 retags — so once it
     //   is `when`-timed it needs a walked `when` cell, and this condition must
     //   be coordinator-owned before that can happen.
+    //
+    // `DiscoverClues` was the third until #703 migrated it: its mutation was
+    // already factored into `perform_discovery`, so the emit site's stack peek
+    // could just be deleted rather than a loop restructured.
     if let Some(bucket) = single_cell_holdout_bucket(event) {
         super::reaction_windows::queue_reaction_window(cx, event, bucket);
         return EngineOutcome::Done;
@@ -393,16 +426,14 @@ pub(crate) fn queue_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
 /// cannot be widened in one place and forgotten in the other.
 ///
 /// The last remnant of the per-condition cell table #702 deleted, kept alive only
-/// by the three conditions that still bypass the coordinator. It goes with them
-/// (#703/#704).
+/// by the two conditions that still bypass the coordinator. It goes with them
+/// (#704).
 fn single_cell_holdout_bucket(event: &TimingEvent) -> Option<crate::dsl::EventTiming> {
     use crate::dsl::EventTiming;
     match event {
-        // Interrupt timing: Dodge 01023 cancels the attack, Cover Up 01007
-        // replaces the discovery — both before the condition's impact lands.
-        TimingEvent::EnemyAttacks { .. } | TimingEvent::WouldDiscoverClues { .. } => {
-            Some(EventTiming::When)
-        }
+        // Interrupt timing: Dodge 01023 cancels the attack before its impact
+        // lands.
+        TimingEvent::EnemyAttacks { .. } => Some(EventTiming::When),
         // Guard Dog 01021 is *declared* after-timed, though it prints "when" —
         // see the note on `queue_event`.
         TimingEvent::EnemyAttackDamagedSelf { .. } => Some(EventTiming::After),

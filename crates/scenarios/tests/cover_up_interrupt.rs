@@ -3,16 +3,17 @@
 //! process → installs `TEST_REGISTRY`.
 //!
 //! Originally the C5a (#236) bespoke `clue_interrupt` seam; migrated in Axis D
-//! (#336) onto the general `BeforeDiscoverClues` reaction window. The reaction
-//! is now *played* via `PickSingle` (a replacement reaction: discard-from-self
-//! then `Effect::Cancel` the discovery), or declined via `Skip`.
+//! (#336) onto a general reaction window, and since #703 that window is the
+//! `when` cell of the one `DiscoverClues` triggering condition. The reaction is
+//! *played* via `PickSingle` (a replacement reaction: discard-from-self then
+//! `Effect::Cancel` the discovery), or declined via `Skip`.
 
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{Resolution, ScenarioId};
 use game_core::state::{
     Act, CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
-    GameState, InvestigatorId, LocationId, Phase, ResolutionCandidate,
+    EmitStep, GameState, InvestigatorId, LocationId, Phase, ResolutionCandidate, TimingSub,
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
@@ -152,13 +153,13 @@ fn no_interrupt_when_cover_up_has_no_clues() {
     assert_eq!(state.investigators[&INV].clues, 1);
 }
 
-/// State paused at a `BeforeDiscoverClues` window for a `count`-clue discovery
-/// with a Cover Up holding `cover_up_clues` in the threat area. Built by
-/// pushing the resolution frame directly, so `count` can be set independently
-/// of any discovery source, exercising the `BeforeDiscoverClues.count` →
-/// `clue_discovery_count` → discard-from-self threading and the **Cover Up
-/// discard cap** — `min(count, card.clues)`, how many of the replaced clues
-/// Cover Up can actually absorb.
+/// State paused at the `when` cell of a `count`-clue discovery, with a Cover Up
+/// holding `cover_up_clues` in the threat area. Built by pushing the frames
+/// directly, so `count` can be set independently of any discovery source,
+/// exercising the `DiscoverClues.count` → `clue_discovery_count` →
+/// discard-from-self threading and the **Cover Up discard cap** —
+/// `min(count, card.clues)`, how many of the replaced clues Cover Up can
+/// actually absorb.
 ///
 /// Distinct from the **location cap** (`min(count, location.clues)`, #471),
 /// which `discover_clue` applies *before* emitting the timing point: by the
@@ -167,7 +168,15 @@ fn no_interrupt_when_cover_up_has_no_clues() {
 /// reachable states under that cap. (The real-Investigate flows — `count == 1`
 /// plain, and `count == 2` with Deduction 01039 committed — are covered above
 /// and in `cards/tests/cover_up.rs`.)
-fn paused_before_discover_window(count: u8, loc_clues: u8, cover_up_clues: u8) -> GameState {
+///
+/// All three frames are pushed, not just the window: since #703 the discovery
+/// itself is the **coordinator's** resolve step, so a bare window would test a
+/// state the engine never builds — and would silently never discover anything,
+/// which is exactly what the cancel assertions expect to see. Mirrors what
+/// `queue_event(DiscoverClues)` leaves on the stack once the coordinator has
+/// opened the `when` cell: the `EmitEvent` cursor still on `When`, the cell's
+/// `TimingPoint` past its forced sub, and the window on top.
+fn paused_at_the_when_cell(count: u8, loc_clues: u8, cover_up_clues: u8) -> GameState {
     let mut investigator = test_investigator(1);
     investigator.threat_area.push(cover_up(cover_up_clues));
     let mut location = test_location(10, "Study");
@@ -179,16 +188,24 @@ fn paused_before_discover_window(count: u8, loc_clues: u8, cover_up_clues: u8) -
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .build();
-    // Mirror what `queue_event(WouldDiscoverClues)` builds (#433): a
-    // `TimingPointWindow` reaction window keyed by the `WouldDiscoverClues`
-    // timing event, offering Cover Up's first (reaction) ability. The candidate
-    // is built via `ResolutionCandidate::new` (the struct is `#[non_exhaustive]`).
+    let event = game_core::engine::TimingEvent::DiscoverClues {
+        investigator: INV,
+        location: LOC,
+        count,
+    };
+    state.continuations.push(Continuation::EmitEvent {
+        event: event.clone(),
+        step: EmitStep::When,
+    });
+    state.continuations.push(Continuation::TimingPoint {
+        event: event.clone(),
+        bucket: game_core::dsl::EventTiming::When,
+        sub: TimingSub::Done,
+    });
+    // The candidate is built via `ResolutionCandidate::new` (the struct is
+    // `#[non_exhaustive]`): Cover Up's first (reaction) ability.
     state.continuations.push(Continuation::TimingPointWindow {
-        event: game_core::engine::TimingEvent::WouldDiscoverClues {
-            investigator: INV,
-            location: LOC,
-            count,
-        },
+        event,
         bucket: game_core::dsl::EventTiming::When,
         mode: game_core::state::TimingMode::Reaction,
         candidates: vec![ResolutionCandidate::new(
@@ -205,7 +222,7 @@ fn paused_before_discover_window(count: u8, loc_clues: u8, cover_up_clues: u8) -
 fn playing_cover_up_discards_the_full_replaced_count() {
     // count=2, Cover Up holds 3 → discover nothing, discard exactly 2.
     let r = apply(
-        paused_before_discover_window(2, 5, 3),
+        paused_at_the_when_cell(2, 5, 3),
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
         }),
@@ -223,6 +240,11 @@ fn playing_cover_up_discards_the_full_replaced_count() {
         .find(|c| c.code.as_str() == SYNTH_COVER_UP_CODE)
         .unwrap();
     assert_eq!(cu.clues, 1, "2 of 3 clues discarded from Cover Up");
+    assert!(
+        r.state.continuations.is_empty(),
+        "the coordinator walked its remaining cells and popped: {:?}",
+        r.state.continuations
+    );
 }
 
 #[test]
@@ -230,7 +252,7 @@ fn playing_cover_up_caps_discard_at_held_clue_count() {
     // count=3 but Cover Up only holds 1 → discard is capped at 1 (no
     // underflow), and the discovery is still fully replaced.
     let r = apply(
-        paused_before_discover_window(3, 5, 1),
+        paused_at_the_when_cell(3, 5, 1),
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
         }),
@@ -247,6 +269,11 @@ fn playing_cover_up_caps_discard_at_held_clue_count() {
         .find(|c| c.code.as_str() == SYNTH_COVER_UP_CODE)
         .unwrap();
     assert_eq!(cu.clues, 0, "discard capped at the 1 clue Cover Up held");
+    assert!(
+        r.state.continuations.is_empty(),
+        "the coordinator walked its remaining cells and popped: {:?}",
+        r.state.continuations
+    );
 }
 
 /// Terminal-act state whose `AdvanceAct` latches a Won resolution, with a

@@ -76,7 +76,7 @@ pub const SYNTH_CHOICE_TREACHERY_CODE: &str = "_synth_choice_treachery";
 pub const SYNTH_FAST_EVENT_CODE: &str = "_synth_fast_event";
 
 /// Code for the synthetic Cover-Up-shaped treachery (C5a #236). Carries a
-/// `WouldDiscoverClues` before-timing interrupt + a `GameEnd` forced
+/// `DiscoverClues` `when`-cell interrupt + a `GameEnd` forced
 /// trauma, both backed by Native effects on [`TEST_REGISTRY`]. Underscore
 /// prefix guarantees no collision with real `ArkhamDB` codes.
 pub const SYNTH_COVER_UP_CODE: &str = "_synth_cover_up";
@@ -352,7 +352,7 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         SYNTH_FAST_EVENT_CODE => Some(vec![on_play(gain_resources(InvestigatorTarget::You, 1))]),
         SYNTH_COVER_UP_CODE => Some(vec![
             reaction_on_event(
-                EventPattern::WouldDiscoverClues,
+                EventPattern::DiscoverClues,
                 EventTiming::When,
                 // Discard from self, then cancel the discovery (Axis D #336) —
                 // mirrors the real Cover Up 01007 (`cover_up`).
@@ -461,7 +461,7 @@ mod tests {
         assert!(matches!(
             abilities[0].trigger,
             game_core::dsl::Trigger::OnEvent {
-                pattern: game_core::dsl::EventPattern::WouldDiscoverClues,
+                pattern: game_core::dsl::EventPattern::DiscoverClues,
                 timing: game_core::dsl::EventTiming::When,
                 ..
             }
