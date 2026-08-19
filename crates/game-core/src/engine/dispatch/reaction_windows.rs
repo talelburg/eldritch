@@ -843,32 +843,47 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
 ///
 /// Unlike [`withdraw_lapsed_candidates`], this is not a re-scan: the withdrawn
 /// options are still perfectly initiable, and would still be found by a fresh
-/// scan. What has gone is the condition they reference. Dodge 01023's ruling,
-/// `data/arkhamdb-faq/core/01023.md`, verbatim:
+/// scan. What has gone is the condition they reference. The rule and its
+/// citations are on `coordinator::prevented_in_the_when_cell`, which reads the
+/// same signal one frame down; the half that matters here is
+/// that Dodge 01023's ruling covers a `when`-cell ability, so the suppression
+/// reaches the rest of the *current* cell and not only the cells after it.
 ///
-/// > If the attacking enemy has a **Forced** ability that says "When attacks" or
-/// > "After attacks", that ability does not trigger if an attack is Dodged.
+/// Scoped twice over. To the `when` cell, because it is the only cell whose
+/// abilities resolve before the condition does, so it is the only one a live
+/// prevention signal can belong to. And to a **coordinator-owned** condition,
+/// because a caller-owned one has already mutated the board and reads the signal
+/// at its own emit site (`combat::resume_enemy_attack`) — the enemy attack
+/// inherits this the moment #704 migrates it, which is the order #714 and #704
+/// were sequenced in, rather than gaining half of it here.
 ///
-/// Dodge is itself a `when`-cell ability, so the suppression reaches the rest of
-/// the *current* cell and not only the cells after it — which is why this exists
-/// beside the coordinator's cursor-level check
-/// (`coordinator::dispatch_timing_point`).
+/// Both window modes are covered — a forced run empties the same way and closes
+/// itself, rather than demanding a pick for a condition that is no longer
+/// happening. The forced arm is unreachable today (no coordinator-owned
+/// condition with a `when`-cell cancel has a [`ForcedTriggerPoint`] — clue
+/// discovery has none at all), so it is proved at the unit seam rather than
+/// through a card; it becomes reachable with #704, whose ruling is stated about
+/// a **Forced** ability. `0` for any other top frame, so the callers need no
+/// guard.
 ///
-/// Scoped to the `when` cell: it is the only cell whose abilities resolve before
-/// the condition does, so it is the only one a live prevention signal can belong
-/// to. Both window modes are covered — a forced run empties the same way and
-/// closes itself, rather than demanding a pick for a condition that is no longer
-/// happening. `0` for any other top frame, so the callers need no guard.
+/// [`ForcedTriggerPoint`]: super::forced_triggers::ForcedTriggerPoint
 fn withdraw_suppressed_candidates(cx: &mut Cx) -> usize {
     if !cx.state.pending_cancellation {
         return 0;
     }
     let suppressed = match cx.state.continuations.last() {
         Some(Continuation::TimingPointWindow {
+            event,
             bucket: EventTiming::When,
             candidates,
             ..
-        }) => candidates.clone(),
+        }) if matches!(
+            event.condition_resolution(),
+            super::emit::ConditionResolution::Coordinator(_)
+        ) =>
+        {
+            candidates.clone()
+        }
         _ => return 0,
     };
     if suppressed.is_empty() {
@@ -2854,18 +2869,29 @@ mod withdraw_suppressed_candidates_tests {
         }
     }
 
-    /// A one-candidate reaction window on `bucket`, on top of a minimal state
-    /// whose `pending_cancellation` is `prevented`.
+    /// A one-candidate **reaction** window on `bucket`. The common case; see
+    /// [`state_with_window_of`] for the other axes.
     fn state_with_window(bucket: EventTiming, prevented: bool) -> GameState {
+        state_with_window_of(discovery(), bucket, TimingMode::Reaction, prevented)
+    }
+
+    /// A one-candidate window over `event`, in `bucket`, of `mode`, on top of a
+    /// minimal state whose `pending_cancellation` is `prevented`.
+    fn state_with_window_of(
+        event: TimingEvent,
+        bucket: EventTiming,
+        mode: TimingMode,
+        prevented: bool,
+    ) -> GameState {
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_active_investigator(INV)
             .build();
         state.pending_cancellation = prevented;
         state.continuations.push(Continuation::TimingPointWindow {
-            event: discovery(),
+            event,
             bucket,
-            mode: TimingMode::Reaction,
+            mode,
             candidates: vec![ResolutionCandidate::new(
                 CardCode::new(CODE),
                 INV,
@@ -2933,6 +2959,52 @@ mod withdraw_suppressed_candidates_tests {
             assert_eq!(n, 0, "{bucket:?} must not be suppressed");
             assert_eq!(remaining(&state), 1);
         }
+    }
+
+    /// The forced arm: a 2+ lead-ordered run (#213) empties the same way, so it
+    /// closes itself instead of demanding a pick for a condition that is no
+    /// longer happening. Proved here because no coordinator-owned condition with
+    /// a `when`-cell cancel carries a forced trigger point yet — the shape #704
+    /// makes reachable, and the shape Dodge 01023's ruling is stated about.
+    #[test]
+    fn a_forced_run_in_the_when_cell_empties_too() {
+        let mut state =
+            state_with_window_of(discovery(), EventTiming::When, TimingMode::Forced, true);
+        let (n, events) = withdraw(&mut state);
+        assert_eq!(
+            n, 1,
+            "a forced run is withdrawn from like a reaction window"
+        );
+        assert_eq!(remaining(&state), 0);
+        crate::assert_event!(
+            events,
+            Event::ReactionOptionLapsed {
+                reason: LapseReason::ConditionPrevented,
+                ..
+            }
+        );
+    }
+
+    /// A **caller-owned** condition is left alone: it has already mutated the
+    /// board, and reads the signal at its own emit site
+    /// (`combat::resume_enemy_attack`) rather than here. The enemy attack
+    /// inherits this suppression when #704 migrates it to the coordinator, which
+    /// is the order #714 and #704 were sequenced in.
+    #[test]
+    fn a_caller_owned_conditions_window_is_untouched() {
+        let attack = TimingEvent::EnemyAttacks {
+            enemy: crate::state::EnemyId(1),
+            investigator: INV,
+        };
+        debug_assert!(matches!(
+            attack.condition_resolution(),
+            super::super::emit::ConditionResolution::Caller
+        ));
+        let mut state = state_with_window_of(attack, EventTiming::When, TimingMode::Reaction, true);
+        let (n, events) = withdraw(&mut state);
+        assert_eq!(n, 0, "the enemy attack is #704's to migrate");
+        assert_eq!(remaining(&state), 1);
+        assert!(events.is_empty(), "no lapse to report; events = {events:?}");
     }
 
     /// A frame that is not a resolution window at all — here the `when` cell's

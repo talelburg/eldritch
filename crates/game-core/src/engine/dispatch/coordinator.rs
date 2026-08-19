@@ -157,6 +157,15 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
         // closed; this is the cursor half, skipping the sub-steps not yet
         // started. Finishing the point hands back to the coordinator, which
         // reads the same signal at its resolve step and abandons the sequence.
+        //
+        // No ownership check is needed: a caller-owned condition's `when` cell is
+        // never walked (the arm above returns before any `TimingPoint` is
+        // pushed), so a `When` bucket here is coordinator-owned by construction.
+        // The signal names no condition, though — it is one global bool while
+        // Before-windows cannot nest (TODO(#367)) — so a condition emitted while
+        // it is live would consume it and skip the wrong cell. Unreachable today:
+        // the only setter, `Effect::Cancel`, is terminal in every card that uses
+        // it, and one cancellable impact is in flight at a time.
         finish_timing_point(cx);
         return EngineOutcome::Done;
     }
@@ -241,7 +250,7 @@ fn advance_or_finish_emit(cx: &mut Cx) {
 /// that uses the word "would" changes the nature of a triggering condition, the
 /// original triggering condition is replaced with the new triggering condition.
 /// No further abilities referencing the original triggering condition may be
-/// used."* Cover Up 01007 (*"When you **would** discover 1 or more clues at your
+/// used."* Cover Up 01007 (*"When you would discover 1 or more clues at your
 /// location: Discard that many clues from Cover Up instead."*) is exactly that.
 ///
 /// **One signal, two suppressing arms.** A cancel (`glossary/Cancel.md`: *"Cancel
@@ -267,11 +276,12 @@ fn prevented_in_the_when_cell(cx: &mut Cx) -> bool {
 /// remaining cells are not visited at all, so nothing is left for a later
 /// re-dispatch to pick up.
 fn abandon_emit(cx: &mut Cx) {
-    let popped = cx.state.continuations.pop();
-    debug_assert!(
-        matches!(popped, Some(Continuation::EmitEvent { .. })),
-        "abandon_emit: expected an EmitEvent on top, popped {popped:?}",
-    );
+    // `unreachable!` rather than a debug-only assertion: the pop is unconditional,
+    // so a violated invariant would silently discard *someone else's* frame in a
+    // release build. Matches this file's other invariant checks.
+    let Some(Continuation::EmitEvent { .. }) = cx.state.continuations.pop() else {
+        unreachable!("abandon_emit: expected an EmitEvent on top of the stack");
+    };
 }
 
 /// Set the top [`Continuation::TimingPoint`]'s `sub` cursor.

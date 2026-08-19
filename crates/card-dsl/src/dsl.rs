@@ -765,11 +765,9 @@ pub enum Effect {
     ///
     /// A cancelled triggering condition takes **the rest of its sequence** with
     /// it: the `at` and `after` cells do not run, and neither does the rest of
-    /// the `when` cell (#714). Dodge 01023's ruling states it for the enemy
-    /// attack — *"If the attacking enemy has a **Forced** ability that says
-    /// "When attacks" or "After attacks", that ability does not trigger if an
-    /// attack is Dodged."* — and the coordinator applies it to every
-    /// coordinator-owned condition.
+    /// the `when` cell (#714). Dodge 01023's ruling is the citation, quoted at
+    /// the engine's read site (`coordinator::prevented_in_the_when_cell`), which
+    /// applies it to every coordinator-owned condition.
     ///
     /// Cancel is the degenerate replacement ("replace with nothing"): a card
     /// that replaces with its own effect runs that effect then `Cancel`
