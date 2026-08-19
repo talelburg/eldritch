@@ -455,6 +455,44 @@ pub(super) fn move_primary_effect(
         return EngineOutcome::Done; // precondition lapsed: suppress
     }
 
+    resolve_departure(cx, investigator, from, destination);
+    // Reveal the destination if this is the first investigator entry
+    // (Rules Reference p.14). No-op if already revealed.
+    super::reveal::reveal_location(cx, destination);
+    // Park the entered-location half on its own frame, then emit in tail
+    // position (ADR 0003). The emit *queues* the left location's "when an
+    // investigator leaves attached location" forced abilities (Barricade 01038's
+    // self-discard); running the engage + entered-location emit inline after it
+    // — the pre-#569 shape — pushed them above those frames, so entering
+    // resolved before leaving.
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::MoveEnter {
+            investigator,
+            destination,
+        });
+    super::emit::queue_event(
+        cx,
+        &super::emit::TimingEvent::LeftLocation {
+            investigator,
+            location: from,
+        },
+    )
+}
+
+/// The departure's own impact: the engaged enemies that ride along (or
+/// disengage because they cannot), the investigator's location assignment, and
+/// the `InvestigatorMoved` event.
+///
+/// Extracted from [`move_primary_effect`] verbatim (#721). `from` is the
+/// location being left and `destination` the one being entered; both are
+/// re-validated by the caller before this runs.
+fn resolve_departure(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    from: LocationId,
+    destination: LocationId,
+) {
     // Engaged enemies move with the investigator — unless the destination is
     // one the enemy cannot enter. Barricade 01038's "Non-Elite enemies cannot
     // move into attached location" is absolute (RR glossary, "Cannot": "The
@@ -522,28 +560,6 @@ pub(super) fn move_primary_effect(
         from,
         to: destination,
     });
-    // Reveal the destination if this is the first investigator entry
-    // (Rules Reference p.14). No-op if already revealed.
-    super::reveal::reveal_location(cx, destination);
-    // Park the entered-location half on its own frame, then emit in tail
-    // position (ADR 0003). The emit *queues* the left location's "when an
-    // investigator leaves attached location" forced abilities (Barricade 01038's
-    // self-discard); running the engage + entered-location emit inline after it
-    // — the pre-#569 shape — pushed them above those frames, so entering
-    // resolved before leaving.
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::MoveEnter {
-            investigator,
-            destination,
-        });
-    super::emit::queue_event(
-        cx,
-        &super::emit::TimingEvent::LeftLocation {
-            investigator,
-            location: from,
-        },
-    )
 }
 
 /// The entered-location half of a Move, run when the `drive` loop re-exposes the
