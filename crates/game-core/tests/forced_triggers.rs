@@ -14,6 +14,8 @@
 
 use game_core::action::InputResponse;
 use game_core::assert_event;
+use game_core::assert_event_sequence;
+use game_core::assert_no_event;
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::CardRegistry;
 use game_core::dsl::Phase as DslPhase;
@@ -67,6 +69,19 @@ const ROUND_END_AGENDA: &str = "test-round-end-agenda";
 /// each dealing 1 horror to the leaving investigator. The Barricade-01038 shape
 /// doubled, so leaving opens a lead-ordered run that *suspends* mid-move (#569).
 const DOUBLE_LEFT_LOCATION: &str = "test-double-left-location";
+
+/// Mock location attachment: one `EventPattern::LeftLocation` forced ability in
+/// the **`when`** cell, dealing 1 horror to the leaving investigator. The
+/// Barricade-01038 shape as the card actually prints it — *"Forced - When an
+/// investigator leaves attached location"* — declarable since #721 made
+/// `LeftLocation` coordinator-owned.
+const WHEN_LEFT_LOCATION: &str = "test-when-left-location";
+
+/// The same, doubled: two `when`-cell `LeftLocation` forced abilities, so
+/// leaving opens a lead-ordered run that suspends *before the departure has
+/// landed*. The suspension is what makes the mid-sequence board state
+/// observable.
+const DOUBLE_WHEN_LEFT_LOCATION: &str = "test-double-when-left-location";
 
 /// Mock threat-area card: one `EventPattern::SkillTestResolved { Success,
 /// Some(Investigate) }` forced ability dealing 1 horror to the controller. The
@@ -134,6 +149,25 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             forced_on_event(
                 EventPattern::LeftLocation,
                 EventTiming::After,
+                deal_horror(InvestigatorTarget::You, 1u8),
+            ),
+        ])
+    } else if code.as_str() == WHEN_LEFT_LOCATION {
+        Some(vec![forced_on_event(
+            EventPattern::LeftLocation,
+            EventTiming::When,
+            deal_horror(InvestigatorTarget::You, 1u8),
+        )])
+    } else if code.as_str() == DOUBLE_WHEN_LEFT_LOCATION {
+        Some(vec![
+            forced_on_event(
+                EventPattern::LeftLocation,
+                EventTiming::When,
+                deal_horror(InvestigatorTarget::You, 1u8),
+            ),
+            forced_on_event(
+                EventPattern::LeftLocation,
+                EventTiming::When,
                 deal_horror(InvestigatorTarget::You, 1u8),
             ),
         ])
@@ -963,6 +997,153 @@ fn suspending_left_location_forced_still_engages_and_fires_entered_location() {
          EnteredLocation forced; events = {:?}",
         done.events,
     );
+}
+
+/// A `when`-cell `LeftLocation` forced resolves **before** the departure lands,
+/// and the entered-location half still resolves after it (#721 over #569).
+///
+/// `glossary/When.md`: *"the moment immediately after the specified timing point
+/// or triggering condition initiates, but before its impact upon the game state
+/// resolves"* — and the departure's impact is `InvestigatorMoved`. Barricade
+/// 01038's *"Forced - When an investigator leaves attached location: Discard
+/// Barricade."* is the real card this shape stands in for; its own end-to-end
+/// coverage is `cards/tests/barricade.rs`.
+#[test]
+fn a_when_cell_left_location_forced_resolves_before_the_departure_lands() {
+    use game_core::state::{CardInPlay, CardInstanceId, EnemyId};
+
+    let mut from = test_location(10, "Hallway");
+    from.connections = vec![LocationId(11)];
+    from.attachments.push(CardInPlay::enter_play(
+        CardCode(WHEN_LEFT_LOCATION.into()),
+        CardInstanceId(7),
+    ));
+    // The destination has its own on-enter forced (1 horror) and a ready enemy,
+    // so the whole tail of the move is visible in one event log.
+    let mut attic = test_location(11, "Attic");
+    attic.code = CardCode(HORROR_ATTIC.into());
+
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    inv.actions_remaining = 3;
+
+    let mut enemy = game_core::test_support::test_enemy(1, "Lurker");
+    enemy.current_location = Some(LocationId(11));
+
+    let mut state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(from)
+        .with_location(attic)
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1)])
+        .with_investigator_turn(InvestigatorId(1))
+        .build();
+    state.enemies.insert(EnemyId(1), enemy);
+
+    let r = move_action(state, InvestigatorId(1), LocationId(11));
+    assert!(
+        !matches!(r.outcome, EngineOutcome::Rejected { .. }),
+        "the `when` cell is walked on a coordinator-owned condition: {:?}",
+        r.outcome,
+    );
+    // The whole sequence, in order: the interrupt, then the departure's own
+    // impact, then the arrival's engage, then the entered location's forced.
+    assert_event_sequence!(
+        r.events,
+        Event::HorrorTaken { .. },
+        Event::InvestigatorMoved { .. },
+        Event::EnemyEngaged { .. },
+        Event::HorrorTaken { .. },
+    );
+    assert_eq!(
+        r.state.investigators[&InvestigatorId(1)].horror(),
+        2,
+        "1 horror from leaving, 1 from the entered location's forced",
+    );
+    assert_eq!(
+        r.state.investigators[&InvestigatorId(1)].current_location,
+        Some(LocationId(11)),
+        "the departure still lands",
+    );
+}
+
+/// The mid-sequence board, observed directly: with two `when`-cell
+/// `LeftLocation` abilities the lead has to order them, and the move suspends
+/// with the departure **not yet resolved** — the investigator still standing on
+/// the location they are leaving, the enemy engaged with them still beside them.
+///
+/// This is the state-level counterpart to the event-order assertion above, and
+/// the one an event log cannot make: before #721 the caller had already moved
+/// both by the time any ability ran. It also pins that the engaged enemy still
+/// rides along (`glossary/Enemy_Engagement.md`: such an enemy *"remains engaged
+/// and moves to the new location simultaneously with the investigator"*) when the
+/// departure finally lands.
+#[test]
+fn a_suspended_when_cell_sees_the_investigator_still_at_the_location_they_are_leaving() {
+    use game_core::state::{CardInPlay, CardInstanceId, EnemyId};
+
+    let mut from = test_location(10, "Hallway");
+    from.connections = vec![LocationId(11)];
+    from.attachments.push(CardInPlay::enter_play(
+        CardCode(DOUBLE_WHEN_LEFT_LOCATION.into()),
+        CardInstanceId(7),
+    ));
+    let mut attic = test_location(11, "Attic");
+    attic.connections = vec![LocationId(10)];
+
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(10));
+    inv.actions_remaining = 3;
+
+    // Engaged, and exhausted so the departure is not followed by a re-engage at
+    // the destination muddying the reading.
+    let mut enemy = game_core::test_support::test_enemy(1, "Lurker");
+    enemy.current_location = Some(LocationId(10));
+    enemy.engaged_with = Some(InvestigatorId(1));
+    enemy.exhausted = true;
+
+    let mut state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(from)
+        .with_location(attic)
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1)])
+        .with_investigator_turn(InvestigatorId(1))
+        .build();
+    state.enemies.insert(EnemyId(1), enemy);
+
+    let paused = move_action(state, InvestigatorId(1), LocationId(11));
+    assert!(
+        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
+        "the two `when`-cell abilities must open an ordering run",
+    );
+    assert_eq!(
+        paused.state.investigators[&InvestigatorId(1)].current_location,
+        Some(LocationId(10)),
+        "the `when` cell interrupts the departure: it has not landed yet",
+    );
+    assert_eq!(
+        paused.state.enemies[&EnemyId(1)].current_location,
+        Some(LocationId(10)),
+        "nor has the engaged enemy been dragged along yet",
+    );
+    assert_no_event!(paused.events, Event::InvestigatorMoved { .. });
+
+    let done = resolve_pick(resolve_pick(paused.state, 0).state, 0);
+    assert_eq!(
+        done.state.investigators[&InvestigatorId(1)].current_location,
+        Some(LocationId(11)),
+        "the departure lands once the `when` cell is done",
+    );
+    let enemy = &done.state.enemies[&EnemyId(1)];
+    assert_eq!(
+        enemy.current_location,
+        Some(LocationId(11)),
+        "the engaged enemy rides along at the resolve step",
+    );
+    assert_eq!(enemy.engaged_with, Some(InvestigatorId(1)), "still engaged");
 }
 
 /// Step 4.6's `PhaseEnded { Upkeep }` forced ability resolves before the round

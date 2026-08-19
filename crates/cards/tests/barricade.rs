@@ -1,6 +1,13 @@
 //! #323 integration: Barricade 01038's attach / non-Elite movement block /
 //! leave-location self-discard, end-to-end against the real `cards::REGISTRY`.
 //!
+//! Since #721 the self-discard is declared in the **`when`** cell of the
+//! `LeftLocation` condition, as the card prints it — *"**Forced** - When an
+//! investigator leaves attached location: Discard Barricade."* — so it resolves
+//! before the departure lands. That ordering spans the move handler, the
+//! registry lookup and the card's own effect, which is why it is proved here
+//! rather than in `game-core`.
+//!
 //! The movement tests drive the real Enemy phase via `EndTurn` (hunter
 //! movement is step 3.2) — the same entry `dodge.rs` uses.
 //!
@@ -14,7 +21,7 @@ use game_core::state::{
 use game_core::test_support::{
     take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
 };
-use game_core::{assert_event, assert_event_sequence, TurnAction};
+use game_core::{assert_event, assert_event_sequence, assert_no_event, TurnAction};
 
 const BARRICADE: &str = "01038";
 const GHOUL_PRIEST: &str = "01116"; // Humanoid. Monster. Ghoul. Elite. + Hunter
@@ -304,4 +311,102 @@ fn leaving_the_barricaded_location_discards_barricade() {
             .contains(&CardCode::new(BARRICADE)),
         "to the owner's player discard",
     );
+}
+
+/// The `when` cell, end to end: Barricade discards **before** the departure
+/// lands (#721). `glossary/When.md` pins the printed word to *"the moment
+/// immediately after the specified timing point or triggering condition
+/// initiates, but before its impact upon the game state resolves"*, and the
+/// departure's impact is the investigator arriving — `InvestigatorMoved`.
+///
+/// Before the migration `LeftLocation` was caller-owned: the move handler
+/// assigned the location and *then* emitted, so the card was tagged `After` and
+/// discarded with the investigator already at B.
+#[test]
+fn barricade_discards_before_the_departure_lands() {
+    let r = take_turn_action(
+        map_leaving_barricaded_a(None),
+        &TurnAction::Move {
+            investigator: INV,
+            destination: B,
+        },
+    );
+    assert_event_sequence!(
+        r.events,
+        Event::CardDiscarded { .. },
+        Event::InvestigatorMoved { .. },
+    );
+    assert!(
+        r.state.locations[&A].attachments.is_empty(),
+        "Barricade discarded on leave",
+    );
+    assert_eq!(
+        r.state.investigators[&INV].current_location,
+        Some(B),
+        "and the departure still lands",
+    );
+}
+
+/// The drag-along is part of the departure's impact, so it happens at the
+/// resolve step — after the discard, not before it. An engaged non-Elite enemy
+/// still follows into an unbarricaded destination on the very move that
+/// discards Barricade (`glossary/Enemy_Engagement.md`: such an enemy *"remains
+/// engaged and moves to the new location simultaneously with the
+/// investigator"*).
+#[test]
+fn an_engaged_enemy_still_follows_the_move_that_discards_barricade() {
+    let mut enemy = ghoul(100, GHOUL_MINION, A);
+    enemy.engaged_with = Some(INV);
+    enemy.attack_damage = 0;
+    enemy.attack_horror = 0;
+    let r = take_turn_action(
+        map_leaving_barricaded_a(Some(enemy)),
+        &TurnAction::Move {
+            investigator: INV,
+            destination: B,
+        },
+    );
+    assert_event_sequence!(
+        r.events,
+        Event::CardDiscarded { .. },
+        Event::InvestigatorMoved { .. },
+    );
+    let enemy = &r.state.enemies[&EnemyId(100)];
+    assert_eq!(enemy.current_location, Some(B), "the enemy followed");
+    assert_eq!(enemy.engaged_with, Some(INV), "still engaged");
+    assert_no_event!(r.events, Event::EnemyDisengaged { .. });
+}
+
+/// Linear map A—B with a Barricade attached at **A**, the investigator there,
+/// and `enemy` optionally on the board. The move A→B is the one that fires the
+/// card's own forced self-discard.
+fn map_leaving_barricaded_a(enemy: Option<Enemy>) -> game_core::GameState {
+    let mut inv = test_investigator(1);
+    // A real investigator code, so max_health()/max_sanity() read from the
+    // installed cards registry (see `map_with_barricade_at_b`).
+    inv.investigator_card.code = CardCode::new("01003");
+    inv.current_location = Some(A);
+    let mut a = test_location(1, "A");
+    a.connections = vec![B];
+    let mut b = test_location(2, "B");
+    b.connections = vec![A];
+    let mut builder = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator(inv)
+        .with_location(a)
+        .with_location(b)
+        .with_active_investigator(INV)
+        .with_turn_order([INV])
+        .with_investigator_turn(INV);
+    if let Some(enemy) = enemy {
+        builder = builder.with_enemy(enemy);
+    }
+    let mut state = builder.build();
+    state
+        .locations
+        .get_mut(&A)
+        .unwrap()
+        .attachments
+        .push(CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST));
+    state
 }
