@@ -3,8 +3,8 @@
 //! condition's own resolution between the first two (#701).
 //!
 //! [`super::emit::queue_event`] pushes a [`Continuation::EmitEvent`] for **every**
-//! triggering condition (#702 — bar the three enemy-attack-machinery holdouts it
-//! documents); the `drive` loop dispatches it here.
+//! triggering condition — no exceptions since #704 retired the last two, the
+//! enemy attack and its soak window; the `drive` loop dispatches it here.
 //!
 //! - [`dispatch_emit_event`] walks `When → ResolveCondition → At → After` —
 //!   the three RR timing cells with the triggering condition's own resolution
@@ -82,9 +82,10 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
                     resolve(cx, &event)
                 }
             }
-            // Already resolved, by the caller, before it emitted. The caller
-            // also owns the cancellation signal (`combat::resume_enemy_attack`
-            // reads it on its own resume), so it is left untouched here.
+            // Already resolved, by the caller, before it emitted — so there is
+            // nothing here to prevent, and the signal is left untouched (a
+            // caller-owned condition's `when` cell is not walked, so no ability
+            // of its own can have set it).
             ConditionResolution::Caller => {
                 advance_or_finish_emit(cx);
                 EngineOutcome::Done
@@ -108,8 +109,9 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
                     "timing coordinator: {event:?} is a caller-owned triggering condition, so its \
                      `when` cell is not walked — an ability declaring interrupt timing on it \
                      cannot resolve before the condition, which has already resolved. Migrate the \
-                     condition to a coordinator-owned arm — TODO(#704): the caller-owned \
-                     arm is scaffolding, migrated one condition at a time (see \
+                     condition to a coordinator-owned arm: the caller-owned arm is \
+                     scaffolding, migrated one condition at a time (worked examples: \
+                     #703's clue discovery, #704's enemy attack — see \
                      docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md)."
                 )
                 .into(),
@@ -265,8 +267,8 @@ fn advance_or_finish_emit(cx: &mut Cx) {
 /// — including one whose resolve step ignores the value, like the round end's
 /// bare milestone. That is deliberate: an unconsumed signal would otherwise
 /// reach the next condition's resolve step and cancel the wrong thing. A
-/// caller-owned condition is untouched, because its emit site does its own
-/// read-and-clear (`combat::resume_enemy_attack`).
+/// caller-owned condition is untouched: its `when` cell is never walked, so it
+/// has no interrupt of its own to have set the signal.
 fn prevented_in_the_when_cell(cx: &mut Cx) -> bool {
     std::mem::take(&mut cx.state.pending_cancellation)
 }

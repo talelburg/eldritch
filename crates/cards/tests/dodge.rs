@@ -24,11 +24,14 @@ fn install_real_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
-/// An engaged ready enemy at `loc` dealing 2 damage / 0 horror.
+/// An engaged ready enemy at `loc` dealing 2 damage / 1 horror. Both tracks are
+/// non-zero so *"Cancel that attack"* can be proved to stop both — a dodged
+/// attack that dealt 0 horror because the attacker had none to deal would be a
+/// vacuous assertion.
 fn engaged_attacker(id: u32, inv: InvestigatorId, loc: LocationId) -> Enemy {
     let mut e = test_enemy(id, format!("Attacker {id}"));
     e.attack_damage = 2;
-    e.attack_horror = 0;
+    e.attack_horror = 1;
     e.current_location = Some(loc);
     e.engaged_with = Some(inv);
     e
@@ -79,6 +82,128 @@ fn dodge_state() -> (GameState, InvestigatorId, EnemyId) {
     (state, inv_id, enemy_id)
 }
 
+/// Silver Twilight Acolyte (01102), verbatim from the pinned snapshot:
+///
+/// ```text
+/// Prey - Bearer only.
+/// Hunter.
+/// Forced - After Silver Twilight Acolyte attacks: Place 1 doom on the current
+///   agenda.
+/// ```
+const ACOLYTE: &str = "01102";
+
+/// The `dodge_state` board with the attacker replaced by a real Silver Twilight
+/// Acolyte and an agenda for it to place doom on. Its **printed** statistics (1
+/// damage, 0 horror — `data/arkhamdb-snapshot/pack/core/core.json`) are set here
+/// rather than read from metadata, matching the rest of this file's fixtures;
+/// the both-tracks-cancelled claim is `engaged_attacker`'s to prove, since this
+/// enemy prints no horror to cancel.
+fn acolyte_state() -> (GameState, InvestigatorId, EnemyId) {
+    let (mut state, inv_id, enemy_id) = dodge_state();
+    let enemy = state
+        .enemies
+        .get_mut(&enemy_id)
+        .expect("dodge_state seeds one attacker");
+    enemy.code = CardCode::new(ACOLYTE);
+    enemy.attack_damage = 1;
+    enemy.attack_horror = 0;
+    state.agenda_deck = vec![game_core::state::Agenda {
+        code: CardCode::new("01105"),
+        doom_threshold: 3,
+        resolution: None,
+    }];
+    state.agenda_index = 0;
+    (state, inv_id, enemy_id)
+}
+
+/// The Dodge ruling's own example, inverted — `data/arkhamdb-faq/core/01023.md`,
+/// verbatim:
+///
+/// > If the attacking enemy has a **Forced** ability that says "When attacks" or
+/// > "After attacks", that ability does not trigger if an attack is Dodged.
+///
+/// The suppression is #714's, in the coordinator; what #704 adds is that the
+/// attack now walks its cells at all, so the Acolyte's forced ability sits in a
+/// cell the cancel can suppress. Verified against the real corpus: 01102's
+/// abilities come from the installed `cards::REGISTRY`.
+#[test]
+fn dodging_a_silver_twilight_acolyte_stops_its_forced_doom() {
+    let (state, inv_id, enemy_id) = acolyte_state();
+
+    let result = take_turn_action(state, &TurnAction::EndTurn);
+    assert!(
+        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        "the `when` cell offers Dodge: {:?}",
+        result.outcome
+    );
+    // Play Dodge → the attack is prevented, so its `after` cell never runs.
+    let result = apply(
+        result.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(0)),
+        }),
+    );
+    let state = result.state;
+
+    // 1, not 0: the `EndTurn` cascade runs on through Upkeep into the next
+    // round's Mythos, whose step 1.2 places a doom of its own before parking on
+    // the encounter-draw prompt. The Acolyte's would have made it 2 — see the
+    // control test below.
+    assert_eq!(
+        state.agenda_doom, 1,
+        "the Acolyte's `Forced - After … attacks` doom must not fire on a dodged \
+         attack (only Mythos step 1.2's doom is here)"
+    );
+    assert_eq!(
+        state.investigators[&inv_id].damage(),
+        0,
+        "the cancelled attack dealt no damage"
+    );
+    assert!(
+        result.events.iter().any(|e| matches!(
+            e,
+            Event::EnemyExhausted { enemy } if *enemy == enemy_id
+        )),
+        "the attacker still exhausts (01023 ruling): {:?}",
+        result.events
+    );
+}
+
+/// The control: undodged, the same Acolyte's forced ability *does* fire, and it
+/// fires in the `after` cell — once the damage has landed.
+#[test]
+fn an_undodged_silver_twilight_acolyte_places_its_doom_after_the_damage() {
+    let (state, inv_id, _) = acolyte_state();
+
+    let result = take_turn_action(state, &TurnAction::EndTurn);
+    let result = apply(
+        result.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Skip,
+        }),
+    );
+
+    // 2 = the Acolyte's forced doom + Mythos step 1.2's, against the dodged
+    // run's 1.
+    assert_eq!(
+        result.state.agenda_doom, 2,
+        "the Acolyte's forced after-attack doom fired"
+    );
+    assert_eq!(
+        result.state.investigators[&inv_id].damage(),
+        1,
+        "the attack landed its 1 damage"
+    );
+    assert!(
+        result
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::DamageTaken { .. })),
+        "damage precedes the `after` cell; events = {:?}",
+        result.events
+    );
+}
+
 #[test]
 fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
     let (state, inv_id, enemy_id) = dodge_state();
@@ -109,12 +234,13 @@ fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
         0,
         "the cancelled attack dealt no damage"
     );
+    assert_eq!(state.investigators[&inv_id].horror(), 0, "…and no horror");
     assert!(
         !result
             .events
             .iter()
-            .any(|e| matches!(e, Event::DamageTaken { .. })),
-        "a cancelled attack deals no damage: {:?}",
+            .any(|e| matches!(e, Event::DamageTaken { .. } | Event::HorrorTaken { .. })),
+        "a cancelled attack deals neither damage nor horror: {:?}",
         result.events
     );
     // The attacker still exhausts (RR p.6 + p.25) — asserted via the event,

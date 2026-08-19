@@ -100,6 +100,7 @@ pub mod rise_of_the_ghouls;
 pub mod roland_38_special;
 pub mod roland_banks;
 pub mod rotting_remains;
+pub mod silver_twilight_acolyte;
 pub mod the_barrier;
 pub mod theyre_getting_out;
 pub mod trapped;
@@ -153,6 +154,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         roland_38_special::CODE => Some(roland_38_special::abilities()),
         roland_banks::CODE => Some(roland_banks::abilities()),
         rotting_remains::CODE => Some(rotting_remains::abilities()),
+        silver_twilight_acolyte::CODE => Some(silver_twilight_acolyte::abilities()),
         the_barrier::CODE => Some(the_barrier::abilities()),
         theyre_getting_out::CODE => Some(theyre_getting_out::abilities()),
         trapped::CODE => Some(trapped::abilities()),
@@ -182,6 +184,7 @@ pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEf
         .or_else(|| ancient_evils::native_effect_for(tag))
         .or_else(|| crypt_chill::native_effect_for(tag))
         .or_else(|| obscuring_fog::native_effect_for(tag))
+        .or_else(|| silver_twilight_acolyte::native_effect_for(tag))
 }
 
 /// Dispatch a native eligibility-predicate tag to its card-local handler;

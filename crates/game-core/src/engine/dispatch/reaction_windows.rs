@@ -1,7 +1,7 @@
 //! Reaction-window and fast-window helpers.
 //!
 //! Contains the open/scan/fire/close pipeline for after-event reaction
-//! windows ([`queue_reaction_window`], [`scan_pending_triggers`],
+//! windows ([`scan_pending_triggers`],
 //! [`trigger_matches`], [`open_queued_reaction_window`],
 //! [`resume_reaction_window`], [`fire_pending_trigger`],
 //! [`bump_usage_counter`], [`close_reaction_window`],
@@ -28,52 +28,9 @@ use super::super::evaluator::{push_effect, EvalContext};
 use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use super::Cx;
 
-/// Queue a reaction window of the given `kind` if any candidate matches —
-/// an in-play card with a matching `Trigger::OnEvent` ability *or* (Axis C,
-/// #335) a Fast event in hand whose play-instruction matches. No-op when the
-/// registry isn't installed or nothing matches.
-///
-/// Pushes the window onto [`GameState::open_windows`], symmetric with the
-/// Fast-window path ([`open_fast_window`]). If no candidate matches the
-/// function returns early without pushing — the window never opens.
-///
-/// The hand events are appended *after* the in-play triggers in the single
-/// `pending_triggers` list, so they are offered as options after the
-/// triggers; each carries [`CandidateSource::Hand`] so the fire path *plays*
-/// it rather than firing an in-play ability.
-///
-/// The window suspends the surrounding driver
-/// (today, [`advance`]) at its next step boundary: after the
-/// emit here the driver sees a non-empty `open_windows` stack and
-/// returns [`EngineOutcome::AwaitingInput`] so the player can act.
-///
-/// Idempotency: if a window is already queued for this apply, the new
-/// `kind` overwrites it. Phase-3 actions only emit one defeating
-/// event per apply (a single Fight's `damage_enemy` call), so this case
-/// doesn't arise; the overwrite is a loud-on-debug placeholder
-/// rather than silent stacking — multi-window queueing lands when a
-/// multi-defeat effect arrives.
-pub(super) fn queue_reaction_window(
-    cx: &mut Cx,
-    event: &crate::engine::TimingEvent,
-    bucket: EventTiming,
-) {
-    // The last two single-cell conditions — `EnemyAttacks` and
-    // `EnemyAttackDamagedSelf` — open their window at the one `bucket` their
-    // caller names; every other condition walks the
-    // `when → at → after` coordinator, which opens its per-cell windows through
-    // `open_reaction_run` (#702).
-    let candidates = scan_reactions_at(cx.state, event, bucket);
-    if candidates.is_empty() {
-        return;
-    }
-    push_reaction_window(cx, event, bucket, candidates);
-}
-
 /// Push a reaction window frame for `candidates` at `bucket`. The shared push
-/// behind [`queue_reaction_window`] (which queues and returns) and
-/// [`open_reaction_run`] (which queues and then opens) — the two differ only in
-/// whether they surface the prompt.
+/// behind [`open_reaction_run`] (which queues and then opens) and the coordinator's
+/// per-cell scan.
 ///
 /// Reaction windows admit any investigator's Fast actions (RR: Fast may be
 /// played at any player window) — encoded by `mode: Reaction` (the former
@@ -333,7 +290,7 @@ fn scan_pending_triggers(
                 if *kind != TriggerKind::Reaction || *timing != bucket {
                     continue;
                 }
-                if !trigger_matches(event, pattern, *timing, id) {
+                if !trigger_matches(event, pattern, id) {
                     continue;
                 }
                 let ability_index = u8::try_from(idx)
@@ -413,7 +370,7 @@ fn scan_act_agenda_reactions(
             };
             if *kind != TriggerKind::Reaction
                 || *timing != bucket
-                || !trigger_matches(event, pattern, *timing, lead)
+                || !trigger_matches(event, pattern, lead)
             {
                 continue;
             }
@@ -503,7 +460,7 @@ fn scan_hand_fast_events(
                 if *kind != TriggerKind::Reaction || *timing != bucket {
                     continue;
                 }
-                if !trigger_matches(event, pattern, *timing, id) {
+                if !trigger_matches(event, pattern, id) {
                     continue;
                 }
                 // RR initiation gate: a Fast event can't be played if its effect
@@ -550,44 +507,19 @@ fn scan_hand_fast_events(
 ///   [`EventTiming::After`]. The `by_controller` qualifier narrows to
 ///   defeats credited to this ability's controller.
 ///
-/// `EventTiming::When` interrupt timing ("Forced — when X would Y") fires
-/// only on the Before-windows matched below; the general after-event
-/// reaction pipeline ignores it.
+/// **Timing is not consulted here** (#704). Which cell an ability resolves in is
+/// the coordinator's business — it scans one cell at a time and `push_matching` /
+/// the scans filter on `timing == bucket` — so a pattern pairs with its condition
+/// identically in all three cells. The former `When` whitelist of
+/// condition/pattern pairs permitted to carry interrupt timing is gone with the
+/// last single-cell condition; an interrupt declared on a condition that cannot
+/// honour it is rejected loudly by the coordinator's caller-owned `when` arm
+/// rather than silently failing to match here.
 fn trigger_matches(
     event: &TimingEvent,
     pattern: &EventPattern,
-    timing: EventTiming,
     controller: InvestigatorId,
 ) -> bool {
-    // When-timing windows fire only for their exact event/pattern pairing (Axis
-    // D #336); the "at your location" / eligibility scoping lives in the scans.
-    match timing {
-        EventTiming::When => {
-            // Clue discovery carries the same controller narrowing its
-            // `at`/`after` arm below does: one condition, one scoping, whichever
-            // cell an ability declares (#703).
-            if let (TimingEvent::DiscoverClues { investigator, .. }, EventPattern::DiscoverClues) =
-                (event, pattern)
-            {
-                return *investigator == controller;
-            }
-            return matches!(
-                (event, pattern),
-                (TimingEvent::EnemyAttacks { .. }, EventPattern::EnemyAttacks)
-                    // "When the round ends, investigators … may … advance" — act
-                    // 01109's group advance (#434). A board-scoped reaction (no
-                    // per-controller narrowing); the contributor scoping lives in
-                    // the native + the round-end coordinator's `When` cell.
-                    | (TimingEvent::RoundEnded, EventPattern::RoundEnded)
-            );
-        }
-        // An `at`-timed reaction pairs with its condition exactly as an
-        // `after`-timed one does — the cell it resolves in is the coordinator's
-        // business, not the pattern's — so both fall through to the pattern
-        // match below. No corpus card carries one yet (#702's synthetic
-        // `timing_cells.rs` registry does).
-        EventTiming::At | EventTiming::After => {}
-    }
     match (event, pattern) {
         (
             TimingEvent::EnemyDefeated { by, .. },
@@ -602,10 +534,23 @@ fn trigger_matches(
                 true
             }
         }
-        // The soaked-asset self-binding is enforced by the instance filter in
-        // `scan_pending_triggers` (only the `asset` instance reaches here). Sole
-        // consumer: Guard Dog 01021's retaliate reaction. (C5b #237.)
-        (TimingEvent::EnemyAttackDamagedSelf { .. }, EventPattern::EnemyAttackDamagedSelf) => true,
+        // Three pairings whose narrowing is entirely someone else's: the pattern
+        // matching its condition is the whole answer here.
+        //
+        // - "an enemy attacks an investigator at your location" — Dodge 01023 in
+        //   the `when` cell, Silver Twilight Acolyte 01102 in the `after` one.
+        //   The co-location narrowing lives in the scans, which have the board.
+        // - "When the round ends, investigators … may … advance" — act 01109's
+        //   group advance (#434). Board-scoped; the contributor scoping lives in
+        //   the native and in the round-end coordinator's `when` cell.
+        // - the soaked-asset self-binding — Guard Dog 01021's retaliate (C5b
+        //   #237) — is enforced by the instance filter in
+        //   `scan_pending_triggers`, so only the `asset` instance reaches here.
+        (TimingEvent::EnemyAttacks { .. }, EventPattern::EnemyAttacks)
+        | (TimingEvent::RoundEnded, EventPattern::RoundEnded)
+        | (TimingEvent::EnemyAttackDamagedSelf { .. }, EventPattern::EnemyAttackDamagedSelf) => {
+            true
+        }
         // "after you succeed/fail a skill test" — scoped to the controller's
         // own test ("after **you** …"), narrowed by outcome and (optionally)
         // test kind. Dr. Milan 01033 is `{ Success, Some(Investigate) }`.
@@ -639,11 +584,10 @@ fn trigger_matches(
             },
             EventPattern::EnteredPlay,
         ) => *window_controller == controller,
-        // Every other (event, pattern) pairing opens no reaction. The
-        // forced-only events (PhaseEnded / ActAdvanced / AgendaAdvanced /
-        // RoundEnded / EndOfTurn / GameEnd / EnteredLocation / LeftLocation /
-        // EnteredLocation) never open a reaction window; the `When`-timing
-        // pairings (EnemyAttacks, DiscoverClues, RoundEnded) returned above.
+        // Every other (event, pattern) pairing opens no reaction: the
+        // forced-only conditions (PhaseEnded / ActAdvanced / AgendaAdvanced /
+        // EndOfTurn / GameEnd / EliminationGameEnd / EnteredLocation /
+        // LeftLocation) never open a reaction window.
         _ => false,
     }
 }
@@ -852,19 +796,18 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
 /// Scoped twice over. To the `when` cell, because it is the only cell whose
 /// abilities resolve before the condition does, so it is the only one a live
 /// prevention signal can belong to. And to a **coordinator-owned** condition,
-/// because a caller-owned one has already mutated the board and reads the signal
-/// at its own emit site (`combat::resume_enemy_attack`) — the enemy attack
-/// inherits this the moment #704 migrates it, which is the order #714 and #704
-/// were sequenced in, rather than gaining half of it here.
+/// because a caller-owned one has already mutated the board and never walks its
+/// `when` cell at all. #704 migrated the enemy attack into the coordinator, and
+/// it inherited this rather than reimplementing it — the order #714 and #704
+/// were sequenced in.
 ///
 /// Both window modes are covered — a forced run empties the same way and closes
 /// itself, rather than demanding a pick for a condition that is no longer
-/// happening. The forced arm is unreachable today (no coordinator-owned
-/// condition with a `when`-cell cancel has a [`ForcedTriggerPoint`] — clue
-/// discovery has none at all), so it is proved at the unit seam rather than
-/// through a card; it becomes reachable with #704, whose ruling is stated about
-/// a **Forced** ability. `0` for any other top frame, so the callers need no
-/// guard.
+/// happening. Reachable since #704 gave the enemy attack a
+/// [`ForcedTriggerPoint`] of its own — Dodge 01023's ruling is stated about a
+/// **Forced** ability, and `crates/cards/tests/dodge.rs` proves it against
+/// Silver Twilight Acolyte 01102. `0` for any other top frame, so the callers
+/// need no guard.
 ///
 /// [`ForcedTriggerPoint`]: super::forced_triggers::ForcedTriggerPoint
 fn withdraw_suppressed_candidates(cx: &mut Cx) -> usize {
@@ -997,13 +940,9 @@ fn candidate_still_offerable(state: &GameState, candidate: &ResolutionCandidate)
     scan_reactions_at(state, event, bucket).contains(candidate)
 }
 
-/// Return [`AwaitingInput`] for the already-open reaction window at
-/// the top of [`GameState::open_windows`]. Called by [`advance`]
-/// at a step boundary when an earlier step queued a window via
-/// [`queue_reaction_window`].
-///
-/// The window is pushed onto the stack by [`queue_reaction_window`]
-/// (not here), at queue time, symmetric with the [`open_fast_window`] path.
+/// Return [`AwaitingInput`] for the reaction window / forced run
+/// [`push_reaction_window`] (via [`open_reaction_run`] /
+/// [`open_forced_resolution`]) has just pushed as the top frame.
 pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
     // The queue and this prompt are not the same instant: `queue_event` queues the
     // window and then the point's *forced* abilities above it, and the `drive`
@@ -1539,14 +1478,14 @@ pub(super) fn close_reaction_window(cx: &mut Cx) -> EngineOutcome {
 /// closes, keyed on its [`TimingEvent`]. Called from [`close_reaction_window`]'s
 /// pop path. Returns `Done`, or `AwaitingInput` when a body suspends (an Enemy
 /// soak window, …).
-fn run_reaction_continuation(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
+fn run_reaction_continuation(_cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     match event {
-        // Soak (C5b #237) + before-attack cancel (Axis D #336): re-enter the
-        // enemy-attack loop the window suspended. `resume_enemy_attack` reads
-        // its parked phase to either honour the cancel + deal the head attacker
-        // (BeforeAttack) or drain the remaining attackers (AfterSoak).
+        // The enemy attack and its soak window walk the coordinator since #704,
+        // so neither has a continuation of its own any more: the `TimingPoint`
+        // beneath finishes its cell, the `EmitEvent` above the parked
+        // `AttackLoop` finishes the sequence, and the loop picks up from there.
         TimingEvent::EnemyAttackDamagedSelf { .. } | TimingEvent::EnemyAttacks { .. } => {
-            super::combat::resume_enemy_attack(cx)
+            EngineOutcome::Done
         }
         // After-defeat / after-investigate / entered-play / clue discovery: no
         // continuation work
@@ -1601,11 +1540,11 @@ pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> Engine
 /// Advance the enemy-phase cursor past `investigator` and open the next
 /// window (C5b #237).
 ///
-/// Extracted from the [`PhaseStep::BeforeInvestigatorAttacked`]
-/// continuation so it runs from BOTH that arm (after the attack loop
-/// completes without suspending) AND
-/// [`super::combat::resume_enemy_attack`] (after a suspended loop
-/// resumes and finishes). Advances the `EnemyPhase` anchor's `attacking`
+/// Since #704 there is one caller: `combat::finish_attack_loop`, run when the
+/// attack loop's list drains. The [`PhaseStep::BeforeInvestigatorAttacked`]
+/// continuation no longer calls it — the loop only *queues* its attacks, so a
+/// `Done` there means queued, not finished (ADR 0003). Advances the
+/// `EnemyPhase` anchor's `attacking`
 /// cursor to the next Active investigator AFTER `investigator` via
 /// [`cursor::next_active_investigator_after`](super::cursor::next_active_investigator_after)
 /// — the helper indexes off `turn_order` (not the filtered-Active
@@ -2387,73 +2326,59 @@ mod trigger_matches_tests {
         }
     }
 
+    /// The pattern↔condition pairings, which since #704 are **timing-free**:
+    /// `trigger_matches` no longer takes a timing, so a card pairs with its
+    /// condition identically in all three cells and the cell filtering happens
+    /// in the scans. Deleting the `When` whitelist is what makes an
+    /// `after`-an-enemy-attacks ability declarable at all.
     #[test]
-    fn before_pairs_match_only_their_own_when_event() {
+    fn a_pattern_pairs_with_its_condition_in_every_cell() {
         let inv = InvestigatorId(1);
         let discover = TimingEvent::DiscoverClues {
             investigator: inv,
             location: LocationId(2),
             count: 1,
         };
-        // EnemyAttacks ↔ EnemyAttacks (When) — Dodge 01023.
+        // EnemyAttacks ↔ EnemyAttacks — Dodge 01023 (`when`) and any
+        // `at`/`after` ability on the same condition.
         assert!(trigger_matches(
             &enemy_attacks(inv),
             &EventPattern::EnemyAttacks,
-            EventTiming::When,
             inv,
         ));
-        // DiscoverClues ↔ DiscoverClues (When) — Cover Up 01007.
+        // DiscoverClues ↔ DiscoverClues — Cover Up 01007.
         assert!(trigger_matches(
             &discover,
             &EventPattern::DiscoverClues,
-            EventTiming::When,
-            inv,
+            inv
         ));
-        // Wrong timing for the pairing → no match.
-        assert!(!trigger_matches(
-            &enemy_attacks(inv),
-            &EventPattern::EnemyAttacks,
-            EventTiming::After,
-            inv,
-        ));
-        // A When event only matches its own pattern.
+        // A condition still only matches its own pattern.
         assert!(!trigger_matches(
             &enemy_attacks(inv),
             &EventPattern::DiscoverClues,
-            EventTiming::When,
             inv,
         ));
     }
 
     #[test]
-    fn round_ended_matches_only_its_when_reaction() {
+    fn round_ended_matches_its_own_pattern_board_scoped() {
         let lead = InvestigatorId(1);
-        // RoundEnded ↔ RoundEnded (When) — act 01109's group advance (#434).
+        // RoundEnded ↔ RoundEnded — act 01109's group advance (#434).
         // Board-scoped: matches regardless of the candidate's controller.
         assert!(trigger_matches(
             &TimingEvent::RoundEnded,
             &EventPattern::RoundEnded,
-            EventTiming::When,
             lead,
         ));
         assert!(trigger_matches(
             &TimingEvent::RoundEnded,
             &EventPattern::RoundEnded,
-            EventTiming::When,
             InvestigatorId(2),
         ));
-        // The `at`/`after` buckets carry the round-end *forced* doom, not a
-        // reaction — RoundEnded opens no reaction window there.
+        // Another condition's pattern still does not match it.
         assert!(!trigger_matches(
             &TimingEvent::RoundEnded,
-            &EventPattern::RoundEnded,
-            EventTiming::At,
-            lead,
-        ));
-        assert!(!trigger_matches(
-            &TimingEvent::RoundEnded,
-            &EventPattern::RoundEnded,
-            EventTiming::After,
+            &EventPattern::EnemyAttacks,
             lead,
         ));
     }
@@ -2475,7 +2400,6 @@ mod trigger_matches_tests {
         assert!(trigger_matches(
             &soak,
             &EventPattern::EnemyAttackDamagedSelf,
-            EventTiming::After,
             controller,
         ));
         // No other pattern matches the soak event.
@@ -2485,14 +2409,6 @@ mod trigger_matches_tests {
                 by_controller: false,
                 code: None,
             },
-            EventTiming::After,
-            controller,
-        ));
-        // Before timing never matches this After-only pairing.
-        assert!(!trigger_matches(
-            &soak,
-            &EventPattern::EnemyAttackDamagedSelf,
-            EventTiming::When,
             controller,
         ));
         // The soak pattern must NOT match a different event (guards the
@@ -2505,7 +2421,6 @@ mod trigger_matches_tests {
         assert!(!trigger_matches(
             &defeat,
             &EventPattern::EnemyAttackDamagedSelf,
-            EventTiming::After,
             controller,
         ));
     }
@@ -2963,9 +2878,9 @@ mod withdraw_suppressed_candidates_tests {
 
     /// The forced arm: a 2+ lead-ordered run (#213) empties the same way, so it
     /// closes itself instead of demanding a pick for a condition that is no
-    /// longer happening. Proved here because no coordinator-owned condition with
-    /// a `when`-cell cancel carries a forced trigger point yet — the shape #704
-    /// makes reachable, and the shape Dodge 01023's ruling is stated about.
+    /// longer happening. The unit half of the shape Dodge 01023's ruling is
+    /// stated about; the corpus half — dodging Silver Twilight Acolyte 01102 —
+    /// is `crates/cards/tests/dodge.rs`.
     #[test]
     fn a_forced_run_in_the_when_cell_empties_too() {
         let mut state =
@@ -2986,23 +2901,24 @@ mod withdraw_suppressed_candidates_tests {
     }
 
     /// A **caller-owned** condition is left alone: it has already mutated the
-    /// board, and reads the signal at its own emit site
-    /// (`combat::resume_enemy_attack`) rather than here. The enemy attack
-    /// inherits this suppression when #704 migrates it to the coordinator, which
-    /// is the order #714 and #704 were sequenced in.
+    /// board by the time any window opens, so a prevention signal in flight is
+    /// not its to consume. The enemy attack used to be this fixture; #704
+    /// migrated it, so the soak condition (Guard Dog 01021's, caller-owned until
+    /// #694 retags Guard Dog to the `when` it prints) stands in.
     #[test]
     fn a_caller_owned_conditions_window_is_untouched() {
-        let attack = TimingEvent::EnemyAttacks {
+        let soak = TimingEvent::EnemyAttackDamagedSelf {
+            asset: crate::state::CardInstanceId(1),
             enemy: crate::state::EnemyId(1),
-            investigator: INV,
+            controller: INV,
         };
         debug_assert!(matches!(
-            attack.condition_resolution(),
+            soak.condition_resolution(),
             super::super::emit::ConditionResolution::Caller
         ));
-        let mut state = state_with_window_of(attack, EventTiming::When, TimingMode::Reaction, true);
+        let mut state = state_with_window_of(soak, EventTiming::When, TimingMode::Reaction, true);
         let (n, events) = withdraw(&mut state);
-        assert_eq!(n, 0, "the enemy attack is #704's to migrate");
+        assert_eq!(n, 0, "a caller-owned condition is not suppressed here");
         assert_eq!(remaining(&state), 1);
         assert!(events.is_empty(), "no lapse to report; events = {events:?}");
     }

@@ -889,19 +889,13 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
                      `attacking` cursor == None; state-corruption invariant violation"
                 )
             });
-            let outcome = super::combat::resolve_attacks_for_investigator(cx, investigator);
-            // The attack loop suspended on a mid-loop soak reaction window (C5b
-            // #237): surface it WITHOUT advancing the cursor. The cursor advances
-            // later, once the loop truly finishes, via resume_enemy_attack →
-            // after_enemy_phase_attacks on window close.
-            if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
-                return outcome;
-            }
-            debug_assert!(
-                matches!(outcome, EngineOutcome::Done),
-                "resolve_attacks_for_investigator returned unexpected {outcome:?}",
-            );
-            super::reaction_windows::after_enemy_phase_attacks(cx, investigator)
+            // Tail position (ADR 0003): since #704 the attack loop parks itself
+            // on a `Continuation::AttackLoop` frame and hands each attack to the
+            // timing coordinator, so a `Done` here means *queued*, not *the
+            // attacks are over*. The per-investigator cursor advance
+            // (`after_enemy_phase_attacks`) therefore runs from the loop's own
+            // drain (`finish_attack_loop`), never from this arm.
+            super::combat::resolve_attacks_for_investigator(cx, investigator)
         }
         Some(Continuation::EnemyPhase {
             resume: EnemyResume::AfterAllAttacked,
@@ -2937,17 +2931,25 @@ mod enemy_phase_tests {
         enemy.attack_horror = 0;
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
+            .with_turn_order([inv_id])
             .with_enemy(enemy)
+            // The loop's own tail advances the enemy-phase cursor once it drains
+            // (#704), so it needs its anchor; driving past it cascades on into
+            // the next phase, which these assertions do not read.
+            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
+                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+                attacking: Some(inv_id),
+            })
             .build();
         let mut events = Vec::new();
 
-        super::super::combat::resolve_attacks_for_investigator(
-            &mut super::super::Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            inv_id,
-        );
+        // The attack is queued on the timing coordinator (#704), so drive it out.
+        let mut cx = super::super::Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let queued = super::super::combat::resolve_attacks_for_investigator(&mut cx, inv_id);
+        let _ = super::super::drive(&mut cx, queued);
 
         // Damage placed.
         assert!(
@@ -2958,11 +2960,9 @@ mod enemy_phase_tests {
             "expected DamageTaken {{ amount: 1 }}; events = {events:?}"
         );
 
-        // Enemy exhausted in state and event.
-        assert!(
-            state.enemies[&enemy_id].exhausted,
-            "enemy must be exhausted"
-        );
+        // Exhaust asserted on the event, not on post-drive state: driving the
+        // drained loop's tail cascades on into Upkeep, which readies every
+        // exhausted enemy again. The event is the record of the moment.
         assert!(
             events.iter().any(|e| matches!(
                 e,
@@ -3008,19 +3008,24 @@ mod enemy_phase_tests {
 
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
+            .with_turn_order([inv_id])
             .with_enemy(e1)
             .with_enemy(e2)
             .with_enemy(e3)
+            // See the sibling test: the drained loop advances its own cursor.
+            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
+                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+                attacking: Some(inv_id),
+            })
             .build();
         let mut events = Vec::new();
 
-        super::super::combat::resolve_attacks_for_investigator(
-            &mut super::super::Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            inv_id,
-        );
+        let mut cx = super::super::Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let queued = super::super::combat::resolve_attacks_for_investigator(&mut cx, inv_id);
+        let _ = super::super::drive(&mut cx, queued);
 
         // Exactly one DamageTaken (from e3, amount 1).
         let damages: Vec<&Event> = events
@@ -3034,21 +3039,9 @@ mod enemy_phase_tests {
         );
         assert!(matches!(damages[0], Event::DamageTaken { amount: 1, .. }));
 
-        // Only e3 exhausted; e1 already was; e2 must remain ready.
-        assert!(
-            state.enemies[&EnemyId(1)].exhausted,
-            "e1 was already exhausted; still is"
-        );
-        assert!(
-            !state.enemies[&EnemyId(2)].exhausted,
-            "e2 must NOT exhaust (didn't attack)"
-        );
-        assert!(
-            state.enemies[&EnemyId(3)].exhausted,
-            "e3 attacked and exhausted"
-        );
-
-        // Exactly one EnemyExhausted event (e3). e1's prior-state exhausted doesn't re-emit.
+        // Only e3 exhausted (e1 was already, and does not re-emit; e2 never
+        // attacked). Asserted on events rather than post-drive state — the
+        // cascade past the drained loop reaches Upkeep, which readies enemies.
         let exhausted_events: Vec<&Event> = events
             .iter()
             .filter(|e| matches!(e, Event::EnemyExhausted { .. }))
@@ -3088,13 +3081,12 @@ mod enemy_phase_tests {
         let mut events = Vec::new();
 
         // 2 ready engaged enemies → suspend on the order pick (#143), not EnemyId order.
-        let outcome = super::super::combat::resolve_attacks_for_investigator(
-            &mut super::super::Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            inv_id,
-        );
+        let mut cx = super::super::Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let queued = super::super::combat::resolve_attacks_for_investigator(&mut cx, inv_id);
+        let outcome = super::super::drive(&mut cx, queued);
         let EngineOutcome::AwaitingInput { request, .. } = outcome else {
             panic!("expected an attack-order prompt, got {outcome:?}");
         };
@@ -3113,18 +3105,16 @@ mod enemy_phase_tests {
             "EnemyId(10) is option 1 in EnemyId order"
         );
 
-        let resumed = resolve_input(
-            &mut super::super::Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            &InputResponse::PickSingle(pick),
-        );
+        let mut cx = super::super::Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let resumed = resolve_input(&mut cx, &InputResponse::PickSingle(pick));
+        // Driving past the drained loop cascades into the next phase, so the
+        // outcome here is that phase's prompt rather than the loop's; what this
+        // test pins is the order the two attacks landed in.
+        let _ = super::super::drive(&mut cx, resumed);
         // Both attacks resolved; the chosen (EnemyId 10, dmg 2) struck first.
-        assert!(
-            !matches!(resumed, EngineOutcome::AwaitingInput { .. }),
-            "loop drained, got {resumed:?}"
-        );
         let damages: Vec<u8> = events
             .iter()
             .filter_map(|e| match e {
@@ -3137,7 +3127,18 @@ mod enemy_phase_tests {
             vec![2, 1],
             "chosen EnemyId(10) (dmg 2) attacked before EnemyId(2) (dmg 1)"
         );
-        assert!(state.enemies[&EnemyId(2)].exhausted && state.enemies[&EnemyId(10)].exhausted);
+        let exhausted: Vec<EnemyId> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::EnemyExhausted { enemy } => Some(*enemy),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            exhausted,
+            vec![EnemyId(10), EnemyId(2)],
+            "each attacker exhausts as its own attack completes"
+        );
     }
 
     #[test]
@@ -3177,13 +3178,12 @@ mod enemy_phase_tests {
         // 2 engaged → order pick first (#143). Pick EnemyId(1) (the killer) to
         // strike first; after it defeats the investigator, the active check at the
         // loop top early-breaks before any re-prompt, so EnemyId(2) never attacks.
-        let outcome = super::super::combat::resolve_attacks_for_investigator(
-            &mut super::super::Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            inv_id,
-        );
+        let mut cx = super::super::Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let queued = super::super::combat::resolve_attacks_for_investigator(&mut cx, inv_id);
+        let outcome = super::super::drive(&mut cx, queued);
         let EngineOutcome::AwaitingInput { request, .. } = outcome else {
             panic!("expected an order pick, got {outcome:?}");
         };
@@ -3193,23 +3193,25 @@ mod enemy_phase_tests {
             .find(|o| o.label == format!("{:?}", EnemyId(1)))
             .expect("EnemyId(1) offered")
             .id;
-        let _ = resolve_input(
-            &mut super::super::Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            &InputResponse::PickSingle(pick),
-        );
+        let mut cx = super::super::Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let resumed = resolve_input(&mut cx, &InputResponse::PickSingle(pick));
+        let _ = super::super::drive(&mut cx, resumed);
 
-        // e1 attacked + exhausted.
+        // e1's attack killed the sole investigator, so the scenario's resolution
+        // latched and the parked attack loop is one of the frames that cancels
+        // (ADR 0004 — `cancelled_by_scenario_end`). Nothing further in the round
+        // happens, including e1's own exhaust, which since #704 follows its
+        // attack rather than being part of it.
         assert!(
-            state.enemies[&EnemyId(1)].exhausted,
-            "e1 attacked, must exhaust"
+            state.resolution.is_some(),
+            "the sole investigator's defeat ended the scenario"
         );
-        // e2 did NOT attack and did NOT exhaust.
         assert!(
-            !state.enemies[&EnemyId(2)].exhausted,
-            "e2 must not exhaust (early-break)"
+            !state.enemies[&EnemyId(1)].exhausted && !state.enemies[&EnemyId(2)].exhausted,
+            "the ended scenario cancels the rest of the loop"
         );
 
         let damages: Vec<&Event> = events
@@ -3222,15 +3224,10 @@ mod enemy_phase_tests {
             "only e1's attack lands; events = {events:?}"
         );
 
-        let exhausted_events: Vec<&Event> = events
-            .iter()
-            .filter(|e| matches!(e, Event::EnemyExhausted { .. }))
-            .collect();
-        assert_eq!(exhausted_events.len(), 1);
-        assert!(matches!(
-            exhausted_events[0],
-            Event::EnemyExhausted { enemy: EnemyId(1) }
-        ));
+        // No exhaust at all: e1's attack ended the scenario before its own
+        // post-attack exhaust step ran (see the assertions above), and e2 never
+        // attacked.
+        crate::assert_no_event!(events, Event::EnemyExhausted { .. });
 
         // Investigator was defeated.
         assert_eq!(state.investigators[&inv_id].status, Status::Killed);

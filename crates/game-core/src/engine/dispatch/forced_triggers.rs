@@ -8,7 +8,8 @@
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
 use crate::state::{
-    CandidateSource, CardCode, InvestigatorId, LocationId, Phase, ResolutionCandidate, Status,
+    CandidateSource, CardCode, EnemyId, InvestigatorId, LocationId, Phase, ResolutionCandidate,
+    Status,
 };
 
 use super::super::evaluator::{push_effect, EvalContext};
@@ -62,6 +63,23 @@ pub(crate) enum ForcedTriggerPoint {
     EnemyDefeated {
         /// Printed code of the defeated enemy (for `code`-narrow matching).
         code: CardCode,
+    },
+    /// An enemy attacked an investigator (RR p.25 step 3.3). Scans the
+    /// **attacking enemy's own card** for `EventPattern::EnemyAttacks` forced
+    /// abilities — Silver Twilight Acolyte 01102's *"**Forced** - After Silver
+    /// Twilight Acolyte attacks: Place 1 doom on the current agenda."* Binds
+    /// controller = the attacked investigator (a board-wide effect ignores it;
+    /// nothing in the corpus reads it).
+    ///
+    /// The only forced point whose scan source is an enemy: the attack is the
+    /// only triggering condition an enemy's own printed ability keys off in the
+    /// Core/Dunwich corpus. Which zones a point reaches is #698's question, not
+    /// this variant's.
+    EnemyAttacks {
+        /// The attacking enemy — the instance whose card is scanned.
+        enemy: EnemyId,
+        /// The investigator being attacked (controller binding).
+        investigator: InvestigatorId,
     },
     /// The round ended (step 4.6). Scans the current act and agenda for
     /// `EventPattern::RoundEnded` forced abilities; binds controller =
@@ -297,6 +315,25 @@ pub(super) fn collect_forced_hits(
                     },
                 );
             }
+        }
+        ForcedTriggerPoint::EnemyAttacks {
+            enemy,
+            investigator,
+        } => {
+            let Some(attacker) = state.enemies.get(enemy) else {
+                // The attacker was removed mid-sequence (a `when` reaction
+                // defeated it). Nothing to scan; the cell is simply empty.
+                return hits;
+            };
+            push_matching(
+                reg,
+                &attacker.code,
+                *investigator,
+                CandidateSource::Board,
+                &mut hits,
+                bucket,
+                |p| matches!(p, EventPattern::EnemyAttacks),
+            );
         }
         ForcedTriggerPoint::RoundEnded => {
             let Some(lead) = state.turn_order.first().copied() else {
