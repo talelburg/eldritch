@@ -12,11 +12,12 @@
 //! #704. `Prey` and `Hunter` are printed keywords the pipeline ingests into
 //! metadata, not abilities; only the forced doom is declared here.
 //!
-//! Card-local native (#276), sharing Ancient Evils 01166's shape: "place doom on
-//! the current agenda" has two consumers now, but the effect is one call into
-//! the engine's `place_doom_on_current_agenda` (place + threshold check) rather
-//! than a pattern two cards spell differently — a shared `Effect` variant still
-//! buys nothing.
+//! Card-local native (#276), sharing Ancient Evils 01166's shape: the effect is
+//! one call into the engine's `place_doom_on_current_agenda` (place + threshold
+//! check), so what the two cards duplicate is the tag and its shim, not the
+//! logic. This is the second consumer, which is the repo's threshold for
+//! graduating a pattern to a DSL primitive — filed as #716, where the cards that
+//! need it *inside* a `Seq` or `ChooseOne` make the case.
 //!
 //! **Dodging the attack suppresses this.** `data/arkhamdb-faq/core/01023.md`,
 //! verbatim:

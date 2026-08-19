@@ -10,7 +10,9 @@
 //! earning a shared `Effect` variant. Silver Twilight Acolyte 01102 is the
 //! second consumer of that call, but the two cards spell the effect
 //! identically and the logic already lives in the engine, so a DSL primitive
-//! would only move the same one-liner twice.
+//! would only move the same one-liner twice. Six in-corpus cards print the
+//! clause, though, three of them inside a `Seq` or `ChooseOne` where a native
+//! tag cannot go — so the variant is filed as #716.
 
 use card_dsl::dsl::{native, revelation, Ability};
 use game_core::card_registry::NativeEffectFn;
