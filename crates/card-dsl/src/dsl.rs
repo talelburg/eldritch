@@ -479,13 +479,12 @@ pub enum Phase {
 ///
 /// Within a cell, forced abilities resolve before reactions.
 ///
-/// **A `When` declaration can be rejected.** Whether a condition's `when` cell
-/// is walked at all depends on who performs step 2 — the coordinator, or the
-/// emitting call site that still mutates the board before emitting. The latter
-/// are being migrated one condition at a time, and until a condition is
-/// migrated an interrupt declared on it is **rejected loudly** rather than
-/// resolved in the wrong cell. The reject names the condition and the ADR;
-/// migrating the condition is the fix, not retagging the card. See
+/// **A `When` declaration can be rejected**, on a triggering condition whose
+/// resolve step the coordinator does not perform yet. The reject names the
+/// condition, and migrating that condition — not retagging the card — is the
+/// fix. What migrating costs, and why the arm is scaffolding with a terminal
+/// condition, is on `ConditionResolution::Caller` in
+/// `crates/game-core/src/engine/dispatch/emit.rs`; the reasoning is
 /// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EventTiming {
@@ -508,13 +507,19 @@ pub enum EventTiming {
     /// interpretation, after the condition's own impact has landed.
     ///
     /// Since #702 this cell is reachable on **every** triggering condition, not
-    /// just the round end as before, and regardless of who owns the resolve
-    /// step: caller-owned costs the `when` cell only.
+    /// just the round end as before — the enemy attack and its soak window, the
+    /// last two conditions to bypass the coordinator entirely, joined the walk
+    /// in #704 — and regardless of who owns the resolve step: caller-owned costs
+    /// the `when` cell only.
     At,
     /// Resolves once the triggering condition has finished — `glossary/After.md`:
     /// *"the moment immediately after the specified timing point or triggering
-    /// condition has fully resolved."* A condition prevented in the `when` cell
-    /// never fully resolves, so this cell does not run at all.
+    /// condition has fully resolved."*
+    ///
+    /// A coordinator-owned condition prevented in its `when` cell never fully
+    /// resolves, and takes the **rest of its sequence** with it: neither this
+    /// cell nor [`At`](Self::At) runs, and the remainder of the `when` cell is
+    /// withdrawn too (#714; `data/arkhamdb-faq/core/01023.md`).
     After,
 }
 
