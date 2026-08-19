@@ -401,13 +401,26 @@ pub enum EventPattern {
     /// "\[reaction\] When an enemy attack deals damage to Guard Dog: Deal 1
     /// damage to the attacking enemy." (C5b #237.)
     EnemyAttackDamagedSelf,
-    /// An enemy is making an attack against an investigator (RR p.25 step
-    /// 3.3). Before-timing only: the cancel/replacement window where Dodge
-    /// 01023 ("when an enemy attacks an investigator at your location:
-    /// cancel that attack") fires. Bare — the "at your location" spatial
-    /// scoping lives in the reaction-window scan (which has board state),
-    /// mirroring the soaked-asset filter for [`EnemyAttackDamagedSelf`].
-    /// (Axis D #336.)
+    /// An enemy attacks an investigator (RR p.25 step 3.3) — one triggering
+    /// condition in all three cells since #704, so a card declares this pattern
+    /// plus the trigger word it prints:
+    ///
+    /// - [`When`](EventTiming::When) — the cancel/replacement window. Dodge
+    ///   01023: *"Fast. Play when an enemy attacks an investigator at your
+    ///   location. / Cancel that attack."*
+    /// - [`At`](EventTiming::At) — between the two. No corpus card yet.
+    /// - [`After`](EventTiming::After) — once the damage and horror have landed.
+    ///   Silver Twilight Acolyte 01102: *"**Forced** - After Silver Twilight
+    ///   Acolyte attacks: Place 1 doom on the current agenda."*
+    ///
+    /// Bare — the "at your location" spatial scoping lives in the
+    /// reaction-window scan (which has board state), mirroring the soaked-asset
+    /// filter for [`EnemyAttackDamagedSelf`]; the forced scan reads the
+    /// **attacking enemy's** own card.
+    ///
+    /// A cancel in the `when` cell suppresses the rest of the sequence, so an
+    /// `at`/`after` ability on a dodged attack does not fire (#714;
+    /// `data/arkhamdb-faq/core/01023.md`).
     ///
     /// [`EnemyAttackDamagedSelf`]: Self::EnemyAttackDamagedSelf
     EnemyAttacks,
@@ -458,10 +471,9 @@ pub enum EventTiming {
     When,
     /// Resolves between `when` and `after` abilities with the same
     /// triggering condition ("at the …" / "if …"), after the condition's own
-    /// impact has landed. Since #702 this cell is reachable on every triggering
-    /// condition the timing coordinator walks — which is all of them bar the
-    /// three enemy-attack-machinery holdouts named on `queue_event`, not just
-    /// the round end as before.
+    /// impact has landed. Since #702 this cell is reachable on **every**
+    /// triggering condition — the enemy attack and its soak window, the last two
+    /// exceptions, joined the walk in #704 — not just the round end as before.
     At,
     /// Resolves after the triggering event has finalized.
     After,

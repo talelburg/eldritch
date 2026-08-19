@@ -333,26 +333,29 @@ pub enum EnemyAttackSource {
     Retaliate,
 }
 
-/// Which point in the per-attacker sequence a parked enemy-attack loop
-/// suspended at (Axis D #336).
+/// Where a parked enemy-attack loop stands in its per-attacker sequence (#704).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AttackLoopStage {
-    /// Suspended on the `BeforeEnemyAttack` cancel window, *before* the head
-    /// attacker dealt damage. Resume reads `pending_cancellation`, then deals
-    /// (or skips) and exhausts the head attacker.
-    BeforeAttack,
-    /// Suspended on the `AfterEnemyAttackDamagedAsset` soak window, *after*
-    /// the head attacker dealt + exhausted. Resume drains the rest (the
-    /// pre-Axis-D behavior).
-    AfterSoak,
+    /// The head attacker's `EnemyAttacks` triggering condition is walking its
+    /// `when → resolve → at → after` sequence on the coordinator frame above
+    /// this one (#704). The head is still at the front of `remaining_attackers`
+    /// — the loop takes it off when the coordinator pops and this frame is
+    /// re-exposed, exhausting it (enemy phase only) before moving on.
+    ///
+    /// Not a suspension: the `drive` loop dispatches this frame directly. It
+    /// exists so the attack's sequence can suspend *anywhere* inside itself (a
+    /// `when` cancel window, the soak distribution prompt, an `after` reaction)
+    /// without the loop having to read the stack after emitting — the shape ADR
+    /// 0003 forbids, and the reason the attack was the last condition to bypass
+    /// the coordinator.
+    Attacking,
     /// Suspended on the player's attack-order `PickSingle` (#143/K4): 2+
     /// attackers remain and none has dealt this iteration. The `AttackLoop`
-    /// frame is the **top** frame (no reaction window above it) and *is* the
-    /// prompt. Resume reorders `remaining_attackers` to put the picked enemy at
-    /// the head, deals it, then continues. Unlike the window stages — which park
-    /// *beneath* a reaction window and resume on window-close via
-    /// [`resume_enemy_attack`](crate::engine) — this stage resumes on
-    /// `ResolveInput` via `resume_attack_order_pick`.
+    /// frame is the **top** frame and *is* the prompt. Resume reorders
+    /// `remaining_attackers` to put the picked enemy at the head and begins its
+    /// attack. Unlike [`Attacking`](Self::Attacking), which the `drive` loop
+    /// dispatches, this stage resumes on `ResolveInput` via
+    /// `resume_attack_order_pick`.
     PickOrder,
 }
 
@@ -380,16 +383,13 @@ pub struct Assignment {
 /// distributing the harm across soakers and themselves (#44/K5b).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DamageSource {
-    /// An enemy attack: after placement, queue soak reaction windows for the
-    /// damaged survivors, exhaust the attacker (enemy phase), and continue the
-    /// attack loop over `remaining_attackers`.
+    /// An enemy attack: after placement, emit the soak triggering condition for
+    /// each damaged survivor. The rest of the attack — the `at`/`after` cells,
+    /// and the exhaust the parked [`Continuation::AttackLoop`] owns — is driven
+    /// by the frames beneath, so this carries no attacker list (#704).
     EnemyAttack {
-        /// The attacking enemy (for the soak window + exhaust).
+        /// The attacking enemy (binds the soak condition).
         enemy: EnemyId,
-        /// Attackers not yet resolved, in resolution order (head already removed).
-        remaining_attackers: Vec<EnemyId>,
-        /// Which loop drives this attack.
-        attack_source: EnemyAttackSource,
     },
     /// A card/treachery `Effect::Deal` (K5b-2): after placing the drained point,
     /// resume the parked effect walk so any remaining iterations run.
@@ -554,7 +554,7 @@ pub enum Continuation {
     /// cells `When → At → After` with the condition's *own* resolution between
     /// the first two (EmitEvent-frame C-coordinators, #434; the resolve step,
     /// #701). `step` is the cursor. Pushed by `queue_event` for **every**
-    /// triggering condition (#702, bar the enemy-attack holdouts it documents);
+    /// triggering condition (#702; no exceptions since #704);
     /// the `drive` loop dispatches it, pushing a
     /// [`TimingPoint`](Self::TimingPoint) per populated cell and re-scanning
     /// each cell fresh. Suspends wherever a cell opens a window — the round-end
@@ -763,27 +763,30 @@ pub enum Continuation {
         /// test leaves it `false`.
         ending: bool,
     },
-    /// A parked enemy-attack loop, suspended because an attack opened a reaction
-    /// window — either the soak window (`AfterEnemyAttackDamagedAsset`, after
-    /// damage; C5b #237) or the before-attack cancel window (`BeforeEnemyAttack`,
-    /// before damage; Axis D #336), distinguished by its `stage`. Pushed
-    /// *beneath* that reaction window by the attack-loop driver
-    /// (`drive_attack_loop` / `park_on_soak_window`); resumed by
-    /// `resume_enemy_attack` (which pops it) once the window
-    /// closes. An internal sequencing frame — never awaits player input itself
-    /// (the window above it does); it is only ever momentarily on top inside
-    /// `resume_enemy_attack`, between the window pop and its own pop. Lifted off
-    /// the former `GameState::pending_enemy_attack` (#411, step 3 of #393).
+    /// A parked enemy-attack loop: the attackers of one investigator, resolved
+    /// one at a time (RR p.25 step 3.3). Since #704 the loop parks itself on
+    /// this frame around **every** attack rather than only around a reaction
+    /// window: the head attacker's `EnemyAttacks` condition walks the
+    /// [`EmitEvent`](Self::EmitEvent) coordinator pushed above this frame, and
+    /// the `drive` loop re-exposes this one when that coordinator pops. So the
+    /// loop never reads the stack after emitting (ADR 0003) and an attack may
+    /// suspend anywhere inside its own sequence.
+    ///
+    /// Never awaits player input at [`AttackLoopStage::Attacking`] — the
+    /// coordinator above it owns any prompt; at
+    /// [`AttackLoopStage::PickOrder`] it *is* the prompt. Lifted off the former
+    /// `GameState::pending_enemy_attack` (#411, step 3 of #393).
     AttackLoop {
         /// The investigator whose engaged enemies are attacking.
         investigator: InvestigatorId,
-        /// Attackers not yet resolved, in resolution order. The current attacker
-        /// is still at the head for [`AttackLoopStage::BeforeAttack`] (it has not
-        /// dealt yet); already removed for [`AttackLoopStage::AfterSoak`].
+        /// Attackers not yet resolved, in resolution order. At
+        /// [`AttackLoopStage::Attacking`] the attacker whose sequence is running
+        /// is still at the head — the loop removes it (and exhausts it) when the
+        /// coordinator pops.
         remaining_attackers: Vec<EnemyId>,
         /// Which loop to re-enter.
         source: EnemyAttackSource,
-        /// Where in the per-attacker sequence the loop suspended (Axis D #336).
+        /// Where in the per-attacker sequence the loop stands (#704).
         stage: AttackLoopStage,
     },
     /// An action paused over its attack-of-opportunity loop (#293, keystone of
@@ -1178,10 +1181,11 @@ impl Continuation {
             // sentinel (only ever momentarily on top inside `drive`'s resume
             // tail), not a prompt.
             Continuation::InvestigatorTurn { ending: false, .. } => true,
-            // The parked attack loop is internal sequencing: the reaction window
-            // pushed above it is the player-facing prompt, not this frame — only
-            // ever momentarily on top inside `resume_enemy_attack`, never at a
-            // suspension boundary (#411). The `ending: true` rotation transient
+            // The parked attack loop is internal sequencing: the coordinator
+            // above it owns any prompt the attack raises, and the `drive` loop
+            // dispatches this frame the moment it is exposed, so it is never on
+            // top at a suspension boundary (#411/#704). `PickOrder` is the one
+            // stage that *is* a prompt, and `resolve_input` routes it by stage. The `ending: true` rotation transient
             // and `ActionResolution` likewise never await input here.
             // The ending frame is inert like a phase anchor: the acknowledge /
             // ordering run its `GameEnd` emit queues sits *above* it and is the
@@ -3102,18 +3106,14 @@ mod enemy_attack_loop_tests {
 
     #[test]
     fn damage_assignment_frame_round_trips_through_serde() {
-        use crate::state::{Assignment, Continuation, DamageSource, EnemyAttackSource, EnemyId};
+        use crate::state::{Assignment, Continuation, DamageSource, EnemyId};
         let mut state = GameStateBuilder::new().build();
         state.continuations.push(Continuation::DamageAssignment {
             investigator: InvestigatorId(1),
             remaining_damage: 2,
             remaining_horror: 0,
             assignment: Assignment::default(),
-            source: DamageSource::EnemyAttack {
-                enemy: EnemyId(5),
-                remaining_attackers: vec![EnemyId(6)],
-                attack_source: EnemyAttackSource::EnemyPhase,
-            },
+            source: DamageSource::EnemyAttack { enemy: EnemyId(5) },
         });
         let json = serde_json::to_string(&state).expect("serialize");
         let back: GameState = serde_json::from_str(&json).expect("deserialize");
@@ -3128,7 +3128,7 @@ mod enemy_attack_loop_tests {
             investigator: InvestigatorId(7),
             remaining_attackers: vec![EnemyId(2), EnemyId(3)],
             source: EnemyAttackSource::EnemyPhase,
-            stage: AttackLoopStage::AfterSoak,
+            stage: AttackLoopStage::Attacking,
         });
         let json = serde_json::to_string(&state).expect("serialize");
         let back: GameState = serde_json::from_str(&json).expect("deserialize");

@@ -46,9 +46,8 @@ pub(crate) mod encounter;
 pub(super) mod forced_triggers;
 pub(crate) mod hunters;
 pub(super) mod phases;
-// `pub(super)` so the evaluator's `discover_clue` can open the Before-discover
-// window via the `pub(crate)` `open_queued_reaction_window` (Axis D #336);
-// other items stay `pub(super)`-to-dispatch.
+// `pub(crate)` so the evaluator can reach `open_queued_reaction_window`; other
+// items stay `pub(super)`-to-dispatch.
 pub(crate) mod reaction_windows;
 pub(crate) mod reveal;
 // pub(super): engine::evaluator reaches start_skill_test for Effect::SkillTest.
@@ -368,6 +367,19 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
                     other => return other,
                 }
             }
+            // A parked enemy-attack loop re-exposed once the head attacker's
+            // `EnemyAttacks` coordinator popped (#704): take the head off,
+            // exhaust it (enemy phase), and either begin the next attack, prompt
+            // for the order, or run the loop's source-keyed tail. The
+            // `PickOrder` stage is a prompt the player owes an answer to, so it
+            // idles in the `_` arm instead.
+            Some(Continuation::AttackLoop {
+                stage: crate::state::AttackLoopStage::Attacking,
+                ..
+            }) => match combat::drive_parked_attack_loop(cx) {
+                EngineOutcome::Done => {}
+                other => return other,
+            },
             // The open turn is ending: a suspending `EndOfTurn` forced (a single
             // skill test, or a 2+ forced run) stranded `end_turn` before rotation
             // and flagged this frame. Re-exposed on top now that the suspension

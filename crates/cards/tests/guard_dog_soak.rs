@@ -478,16 +478,20 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         1,
         "first attacker's 1 damage soaked"
     );
-    // First attacker resolved + exhausted; second not yet.
+    // Neither attacker has exhausted yet: since #704 the exhaust follows the
+    // *whole* attack sequence — RR p.25's "upon completion of dealing the attack
+    // (and all abilities triggered by the attack)" — and the first attack's soak
+    // reaction is one of those abilities, still pending.
     assert!(
-        state.enemies[&first].exhausted,
-        "first attacker exhausted before suspend"
+        !state.enemies[&first].exhausted,
+        "first attacker exhausts only once its sequence completes"
     );
     assert!(
         !state.enemies[&second].exhausted,
         "second attacker not yet resolved"
     );
-    // The remaining attacker is parked on the AttackLoop frame.
+    // The parked loop still carries the attacking head plus the untouched
+    // second attacker; the head comes off when its sequence pops.
     assert_eq!(
         state.continuations.iter().rev().find_map(|c| match c {
             Continuation::AttackLoop {
@@ -496,8 +500,8 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
             } => Some(remaining_attackers.clone()),
             _ => None,
         }),
-        Some(vec![second]),
-        "second attacker parked for resume"
+        Some(vec![first, second]),
+        "the attacking head and the parked second attacker"
     );
 
     // Resolve the first reaction window → the first attacker takes the
@@ -521,8 +525,12 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         "second attacker's 1 damage also soaked onto Guard Dog"
     );
     assert!(
-        state.enemies[&second].exhausted,
-        "second attacker resolved and exhausted after resume"
+        state.enemies[&first].exhausted,
+        "first attacker exhausts once its retaliate reaction has resolved"
+    );
+    assert!(
+        !state.enemies[&second].exhausted,
+        "the second attacker's own soak reaction is still pending"
     );
     // ...and the loop re-suspended on the second attacker's soak window.
     assert!(

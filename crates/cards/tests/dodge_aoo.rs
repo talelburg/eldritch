@@ -96,9 +96,10 @@ fn engaged_attacker(
 /// Verifies the end-to-end suspend/resume chain:
 ///   Move → push `ActionResolution` → `drive_aoo` → `drive_attack_loop` →
 ///   `BeforeEnemyAttack` window opens → `AwaitingInput` →
-///   `ResolveInput{PickSingle(0)}` → plays Dodge → cancel →
-///   `resume_enemy_attack` (`BeforeAttack` arm, `cancelled=true`) → no damage →
-///   loop `Done` (`AoO` source) → `drive` → `ActionResolution` on top →
+///   `ResolveInput{PickSingle(0)}` → plays Dodge → cancel → the coordinator
+///   abandons the attack's sequence at its resolve step → no damage → the
+///   parked `AttackLoop` is re-exposed and drains (`AoO` source, so no
+///   exhaust) → `drive` → `ActionResolution` on top →
 ///   `resume_action_resolution` → `move_primary_effect` → `Done`.
 #[test]
 fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exhausted() {
