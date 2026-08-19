@@ -262,8 +262,8 @@ impl TimingEvent {
             // cannot be if the caller has already dealt the damage by the time
             // the `when` cell runs. The attack's impact is the damage and horror
             // it places, so that is what moves to the resolve step; the
-            // attacker's *exhaust* does not (`glossary`-adjacent ruling on
-            // 01023: *"If an attack was cancelled during the Enemy phase, the
+            // attacker's *exhaust* does not (`data/arkhamdb-faq/core/01023.md`:
+            // *"If an attack was cancelled during the Enemy phase, the
             // attacking enemy still exhausts."*), and lives on the parked
             // `AttackLoop` frame instead.
             TimingEvent::EnemyAttacks { .. } => {
@@ -386,8 +386,9 @@ fn resolve_clue_discovery(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
 /// prevents. It belongs to the enemy phase's own step and lives on the parked
 /// [`AttackLoop`](crate::state::Continuation::AttackLoop) frame, which the
 /// `drive` loop re-exposes once this whole sequence has run. That also matches
-/// RR p.25: the attacker exhausts *"upon completion of the attack"*, which is
-/// after the `after` cell, not before it.
+/// `Appendix_II_Timing_and_Gameplay.md` step 3.3: *"Upon completion of dealing
+/// the attack (and all abilities triggered by the attack), exhaust the enemy."*
+/// — which is after the `after` cell, not before it.
 fn resolve_enemy_attack(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     let TimingEvent::EnemyAttacks {
         enemy,

@@ -37,7 +37,7 @@ use game_core::state::{
 use game_core::test_support::{
     take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
 };
-use game_core::{Action, InputResponse, PlayerAction, TurnAction};
+use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
 
 /// `when`-tagged reaction on a card the attacked investigator controls: +4
 /// resources. Declaring interrupt timing on this condition is *accepted* now
@@ -290,13 +290,7 @@ fn a_cancelled_attack_suppresses_the_at_and_after_cells_but_still_exhausts() {
         r.state.investigators[&INV].resources, 1,
         "no marker fired; the 1 is Upkeep step 4.4's"
     );
-    assert!(
-        r.events
-            .iter()
-            .any(|e| matches!(e, Event::EnemyExhausted { enemy } if *enemy == ATTACKER)),
-        "the attacker still exhausts (01023 ruling); events = {:?}",
-        r.events
-    );
+    assert_event!(&r.events, Event::EnemyExhausted { enemy } if *enemy == ATTACKER);
     assert!(
         !r.state.pending_cancellation,
         "the signal must be consumed at the resolve step, not left to catch the \

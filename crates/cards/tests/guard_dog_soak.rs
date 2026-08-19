@@ -479,9 +479,10 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         "first attacker's 1 damage soaked"
     );
     // Neither attacker has exhausted yet: since #704 the exhaust follows the
-    // *whole* attack sequence — RR p.25's "upon completion of dealing the attack
-    // (and all abilities triggered by the attack)" — and the first attack's soak
-    // reaction is one of those abilities, still pending.
+    // *whole* attack sequence — `Appendix_II_Timing_and_Gameplay.md` step 3.3's
+    // "Upon completion of dealing the attack (and all abilities triggered by the
+    // attack), exhaust the enemy." — and the first attack's soak reaction is one
+    // of those abilities, still pending.
     assert!(
         !state.enemies[&first].exhausted,
         "first attacker exhausts only once its sequence completes"

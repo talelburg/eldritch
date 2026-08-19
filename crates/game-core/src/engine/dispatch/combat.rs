@@ -753,11 +753,12 @@ fn place_and_emit_soak(
 /// phase's own step, run by the parked [`Continuation::AttackLoop`] once the
 /// attack's `when → resolve → at → after` walk has popped.
 ///
-/// Two rules put it here rather than inside the attack's resolve step. Rules
-/// Reference p.25, verbatim:
+/// Two rules put it here rather than inside the attack's resolve step.
+/// `data/rules-reference/rules/Appendix_II_Timing_and_Gameplay.md` on step 3.3,
+/// verbatim:
 ///
 /// > Upon completion of dealing the attack (and all abilities triggered by the
-/// > attack), the attacking enemy exhausts.
+/// > attack), exhaust the enemy.
 ///
 /// — so it follows the `after` cell, not the damage. And `data/arkhamdb-faq/core/01023.md`
 /// on Dodge, verbatim:
@@ -1181,12 +1182,13 @@ fn drive_attack_loop(
         .investigators
         .get(&investigator)
         .is_some_and(|inv| inv.status == Status::Active);
-    match attackers.len() {
-        _ if !active => finish_attack_loop(cx, source, investigator),
-        0 => finish_attack_loop(cx, source, investigator),
-        1 => begin_head_attack(cx, investigator, attackers, source),
-        _ => suspend_order_pick(cx, investigator, attackers, source),
+    if !active || attackers.is_empty() {
+        return finish_attack_loop(cx, source, investigator);
     }
+    if attackers.len() == 1 {
+        return begin_head_attack(cx, investigator, attackers, source);
+    }
+    suspend_order_pick(cx, investigator, attackers, source)
 }
 
 /// The source-keyed step that runs once an attack loop drains to

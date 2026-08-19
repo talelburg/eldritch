@@ -5,9 +5,12 @@
 //!   the current agenda to advance.
 //! ```
 //!
-//! Card-local native (#276): a single consumer of "place doom on the
-//! current agenda", so it doesn't earn a shared `Effect` variant. Calls
-//! the engine's `place_doom_on_current_agenda` (place + threshold check).
+//! Card-local native (#276): calls the engine's
+//! `place_doom_on_current_agenda` (place + threshold check) rather than
+//! earning a shared `Effect` variant. Silver Twilight Acolyte 01102 is the
+//! second consumer of that call, but the two cards spell the effect
+//! identically and the logic already lives in the engine, so a DSL primitive
+//! would only move the same one-liner twice.
 
 use card_dsl::dsl::{native, revelation, Ability};
 use game_core::card_registry::NativeEffectFn;

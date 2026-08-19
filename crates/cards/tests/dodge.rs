@@ -24,11 +24,14 @@ fn install_real_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
-/// An engaged ready enemy at `loc` dealing 2 damage / 0 horror.
+/// An engaged ready enemy at `loc` dealing 2 damage / 1 horror. Both tracks are
+/// non-zero so *"Cancel that attack"* can be proved to stop both — a dodged
+/// attack that dealt 0 horror because the attacker had none to deal would be a
+/// vacuous assertion.
 fn engaged_attacker(id: u32, inv: InvestigatorId, loc: LocationId) -> Enemy {
     let mut e = test_enemy(id, format!("Attacker {id}"));
     e.attack_damage = 2;
-    e.attack_horror = 0;
+    e.attack_horror = 1;
     e.current_location = Some(loc);
     e.engaged_with = Some(inv);
     e
@@ -90,9 +93,11 @@ fn dodge_state() -> (GameState, InvestigatorId, EnemyId) {
 const ACOLYTE: &str = "01102";
 
 /// The `dodge_state` board with the attacker replaced by a real Silver Twilight
-/// Acolyte and an agenda for it to place doom on. Its printed statistics (1
-/// damage, 0 horror) are set here rather than read from metadata, matching the
-/// rest of this file's fixtures.
+/// Acolyte and an agenda for it to place doom on. Its **printed** statistics (1
+/// damage, 0 horror — `data/arkhamdb-snapshot/pack/core/core.json`) are set here
+/// rather than read from metadata, matching the rest of this file's fixtures;
+/// the both-tracks-cancelled claim is `engaged_attacker`'s to prove, since this
+/// enemy prints no horror to cancel.
 fn acolyte_state() -> (GameState, InvestigatorId, EnemyId) {
     let (mut state, inv_id, enemy_id) = dodge_state();
     let enemy = state
@@ -154,7 +159,6 @@ fn dodging_a_silver_twilight_acolyte_stops_its_forced_doom() {
         0,
         "the cancelled attack dealt no damage"
     );
-    assert_eq!(state.investigators[&inv_id].horror(), 0, "…and no horror");
     assert!(
         result.events.iter().any(|e| matches!(
             e,
@@ -230,12 +234,13 @@ fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
         0,
         "the cancelled attack dealt no damage"
     );
+    assert_eq!(state.investigators[&inv_id].horror(), 0, "…and no horror");
     assert!(
         !result
             .events
             .iter()
-            .any(|e| matches!(e, Event::DamageTaken { .. })),
-        "a cancelled attack deals no damage: {:?}",
+            .any(|e| matches!(e, Event::DamageTaken { .. } | Event::HorrorTaken { .. })),
+        "a cancelled attack deals neither damage nor horror: {:?}",
         result.events
     );
     // The attacker still exhausts (RR p.6 + p.25) — asserted via the event,

@@ -1185,8 +1185,9 @@ impl Continuation {
             // above it owns any prompt the attack raises, and the `drive` loop
             // dispatches this frame the moment it is exposed, so it is never on
             // top at a suspension boundary (#411/#704). `PickOrder` is the one
-            // stage that *is* a prompt, and `resolve_input` routes it by stage. The `ending: true` rotation transient
-            // and `ActionResolution` likewise never await input here.
+            // stage that *is* a prompt, and `resolve_input` routes it by
+            // stage. The `ending: true` rotation transient and
+            // `ActionResolution` likewise never await input here.
             // The ending frame is inert like a phase anchor: the acknowledge /
             // ordering run its `GameEnd` emit queues sits *above* it and is the
             // prompt, and once those have drained the apply boundary finalizes
