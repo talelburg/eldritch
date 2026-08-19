@@ -179,7 +179,14 @@ pub struct GameState {
     /// Read-and-cleared by whoever owns the condition's resolution: the timing
     /// coordinator at its resolve step for a coordinator-owned condition (clue
     /// discovery, #703), the emit site after the window closes for a
-    /// caller-owned one (the enemy-attack loop). A bool suffices because
+    /// caller-owned one (the enemy-attack loop).
+    ///
+    /// While set, a coordinator-owned condition's sequence is **abandoned**, not
+    /// merely stripped of its resolve step: the `at` and `after` cells and the
+    /// rest of the `when` cell are all suppressed (#714 — Dodge 01023's ruling;
+    /// citations on `coordinator::prevented_in_the_when_cell`). One bool for
+    /// both suppressing arms, a cancel and a nature-changing replacement, which
+    /// behave identically; the non-suppressing third arm is #366. A bool suffices because
     /// Before-windows do not nest in scope — exactly one cancellable impact is
     /// ever in flight. TODO(#367): typed marker once Before-windows can nest.
     /// Required on the wire (#453).

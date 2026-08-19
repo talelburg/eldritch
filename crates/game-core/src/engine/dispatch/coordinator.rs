@@ -17,6 +17,10 @@
 //!   which since #702 is the *only* mechanism for that ordering (the pre-#702
 //!   single-cell path achieved it structurally, by queueing the reaction window
 //!   beneath the forced frames).
+//! - A `when`-cell ability that **prevents** the condition suppresses the rest
+//!   of the sequence — the resolve step, the `at` and `after` cells, and the
+//!   remainder of the `when` cell itself (#714; citations on
+//!   [`prevented_in_the_when_cell`]).
 //!
 //! Neither driver suspends *itself*: each does one step and returns `Done`, and
 //! the loop re-dispatches the (mutated) top frame — or `AwaitingInput` when the
@@ -24,6 +28,7 @@
 //! already been advanced, so re-dispatch makes progress (never re-scans the same
 //! cell into a loop).
 
+use crate::dsl::EventTiming;
 use crate::state::{Continuation, EmitStep, TimingSub};
 
 use super::super::outcome::EngineOutcome;
@@ -61,26 +66,29 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
     };
     let resolution = event.condition_resolution();
     if step == EmitStep::ResolveCondition {
-        advance_or_finish_emit(cx);
         return match resolution {
             ConditionResolution::Coordinator(resolve) => {
-                if cancelled_in_the_when_cell(cx) {
-                    // A replacement effect fired in the `when` cell and
-                    // cancelled the condition, so step 2 does not happen —
-                    // `glossary/Instead.md`: *"A replacement effect is an effect
-                    // that replaces the resolution of a triggering condition
-                    // with an alternate means of resolution."* The `at` and
-                    // `after` cells still run: what was replaced is the
-                    // condition's own impact, not its sequence.
+                if prevented_in_the_when_cell(cx) {
+                    // A `when`-cell ability prevented the condition, so neither
+                    // step 2 nor the cells after it happen: the sequence is
+                    // abandoned where it stands (#714, and see
+                    // [`prevented_in_the_when_cell`] for the citations).
+                    abandon_emit(cx);
                     EngineOutcome::Done
                 } else {
+                    // Advance *before* resolving, so a resolution that suspends
+                    // resumes at the `at` cell rather than resolving twice.
+                    advance_or_finish_emit(cx);
                     resolve(cx, &event)
                 }
             }
             // Already resolved, by the caller, before it emitted. The caller
             // also owns the cancellation signal (`combat::resume_enemy_attack`
             // reads it on its own resume), so it is left untouched here.
-            ConditionResolution::Caller => EngineOutcome::Done,
+            ConditionResolution::Caller => {
+                advance_or_finish_emit(cx);
+                EngineOutcome::Done
+            }
         };
     }
     let Some(bucket) = step.cell() else {
@@ -140,6 +148,18 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
     else {
         unreachable!("dispatch_timing_point: top frame is not TimingPoint");
     };
+    if bucket == EventTiming::When && cx.state.pending_cancellation {
+        // A `when`-cell ability just prevented the condition. The rest of *this*
+        // cell is suppressed along with the cells after it (#714) — Dodge
+        // 01023's ruling reaches the `when` cell itself. Any candidate still
+        // pending in an open window of this cell was withdrawn by
+        // `reaction_windows::withdraw_suppressed_candidates` before that window
+        // closed; this is the cursor half, skipping the sub-steps not yet
+        // started. Finishing the point hands back to the coordinator, which
+        // reads the same signal at its resolve step and abandons the sequence.
+        finish_timing_point(cx);
+        return EngineOutcome::Done;
+    }
     match sub {
         TimingSub::Forced => {
             // Advance our own cursor first (see the `Reaction`-resumes-correctly
@@ -200,12 +220,37 @@ fn advance_or_finish_emit(cx: &mut Cx) {
     }
 }
 
-/// Read **and clear** the cancellation signal an [`Effect::Cancel`](crate::dsl::Effect::Cancel)
-/// in the `when` cell set (Cover Up 01007's *"…instead"*, #336).
+/// Read **and clear** the prevention signal an
+/// [`Effect::Cancel`](crate::dsl::Effect::Cancel) in the `when` cell set (Cover
+/// Up 01007's *"…instead"*, #336).
 ///
 /// Read at the resolve step rather than at the window's close: the check belongs
 /// between the `when` cell and step 2, which is where the sequence puts the
 /// chance to prevent the condition from resolving.
+///
+/// A `true` here suppresses **the whole rest of the sequence**, not just step 2
+/// (#714). Dodge 01023's ruling, `data/arkhamdb-faq/core/01023.md`, verbatim:
+///
+/// > If the attacking enemy has a **Forced** ability that says "When attacks" or
+/// > "After attacks", that ability does not trigger if an attack is Dodged.
+///
+/// `glossary/After.md` agrees from the other side — after is *"the moment
+/// immediately after the specified timing point or triggering condition **has
+/// fully resolved**"*, and a prevented condition never fully resolves — as does
+/// `glossary/Instead.md` for the nature-changing case: *"If a replacement effect
+/// that uses the word "would" changes the nature of a triggering condition, the
+/// original triggering condition is replaced with the new triggering condition.
+/// No further abilities referencing the original triggering condition may be
+/// used."* Cover Up 01007 (*"When you **would** discover 1 or more clues at your
+/// location: Discard that many clues from Cover Up instead."*) is exactly that.
+///
+/// **One signal, two suppressing arms.** A cancel (`glossary/Cancel.md`: *"Cancel
+/// abilities interrupt the initiation of an effect, and prevent the effect from
+/// initiating."*) and a nature-changing replacement suppress identically, so the
+/// engine does not distinguish them. The third arm — a replacement that resolves
+/// the condition *by other means*, whose later cells presumably do still run —
+/// is **not** modelled: no corpus card wants one, and it is already recorded as
+/// #366 (replace-with-different-impact). See ADR 0008.
 ///
 /// The clear is **every** coordinator-owned arm's, not this or that condition's
 /// — including one whose resolve step ignores the value, like the round end's
@@ -213,8 +258,20 @@ fn advance_or_finish_emit(cx: &mut Cx) {
 /// reach the next condition's resolve step and cancel the wrong thing. A
 /// caller-owned condition is untouched, because its emit site does its own
 /// read-and-clear (`combat::resume_enemy_attack`).
-fn cancelled_in_the_when_cell(cx: &mut Cx) -> bool {
+fn prevented_in_the_when_cell(cx: &mut Cx) -> bool {
     std::mem::take(&mut cx.state.pending_cancellation)
+}
+
+/// Pop the [`Continuation::EmitEvent`] coordinator on top **without** walking
+/// the rest of its sequence — the prevented condition's exit (#714). The
+/// remaining cells are not visited at all, so nothing is left for a later
+/// re-dispatch to pick up.
+fn abandon_emit(cx: &mut Cx) {
+    let popped = cx.state.continuations.pop();
+    debug_assert!(
+        matches!(popped, Some(Continuation::EmitEvent { .. })),
+        "abandon_emit: expected an EmitEvent on top, popped {popped:?}",
+    );
 }
 
 /// Set the top [`Continuation::TimingPoint`]'s `sub` cursor.

@@ -656,6 +656,15 @@ pub enum LapseReason {
     /// have acted on, e.g. took the location's last clue before a second
     /// "discover 1 clue at your location" could resolve.
     NoStateChange,
+    /// The triggering condition the window belongs to was **prevented** from
+    /// resolving by a sibling `when`-cell ability, so the rest of its sequence
+    /// is suppressed — Dodge 01023's ruling, `data/arkhamdb-faq/core/01023.md`:
+    /// *"If the attacking enemy has a **Forced** ability that says "When
+    /// attacks" or "After attacks", that ability does not trigger if an attack
+    /// is Dodged."* Unlike the three probes above, this candidate is not
+    /// withdrawn by a re-scan — it is still perfectly initiable; the condition
+    /// it references is simply no longer happening (#714).
+    ConditionPrevented,
     /// The residual: the candidate no longer survives the scan, but none of the
     /// three named probes explains it. Reachable through the window's own
     /// scoping (a before-attack window admits only reactors co-located with the
