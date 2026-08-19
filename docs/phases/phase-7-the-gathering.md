@@ -503,6 +503,23 @@ called the `at` cell dormant) now describes the three cells as they work and nam
 the reject, `CONTEXT.md` defines **timing cell** including the `"if … would …"`
 when-tier distinction, and `CLAUDE.md` and `docs/agents/standards.md` carry a
 sentence and an index row apiece.
+**#719 ✅ shipped (PR #723)** started spending that vocabulary on the corpus: #694's
+audit found six of the nineteen shipped `EventTiming` declarations naming the wrong
+cell, and the three printing *"at"* or *"if"* — act 01110, Frozen in Fear 01164,
+agenda 01107's enemy-phase-end move — retag to `At` with no engine change, since the
+`at` cell is walked whoever owns the resolve step. The other three print *"when"* on
+caller-owned conditions and ride their migrations (#720/#721/#722), which is why the
+retag ticket split from them. The conventions that stop a seventh mis-tag landed
+alongside: `CLAUDE.md` now requires the declared cell to match the trigger word in
+the module's own verbatim card-text block *and* the module's prose to name the cell
+and why, with the licensed exception spelled out (a *"when"* card on an unmigrated
+condition stays `After` until it migrates). The automated check #694 originally
+specified is withdrawn with its reasoning recorded, because the trigger word is not
+mechanically derivable — a parser would encode one reading of the rules and then be
+trusted as though it had checked them. The evidence was never missing; every
+mis-tagged module quoted its own trigger word three lines above the wrong enum, so
+what the standards row adds is an assignee for the reading. The retrofit onto the
+modules the PR didn't touch is #724.
 The attacker's **exhaust** could not move to the resolve step — a cancelled attack
 still exhausts (Dodge 01023's ruling) and a cancel abandons the sequence before step
 2 — so it sits on the parked loop frame, after the `after` cell, where step 3.3 puts
