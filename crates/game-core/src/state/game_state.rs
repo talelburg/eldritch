@@ -844,6 +844,13 @@ pub enum Continuation {
     /// holding the [`ScenarioRegistry`](crate::scenario::ScenarioRegistry) — pops
     /// it and runs the victory-display scan + the module's `apply_resolution`.
     ///
+    /// That shape is also what makes `GameEnd` a **bare milestone**, and so
+    /// coordinator-owned with a no-op resolve step (#720): the ending's teardown
+    /// belongs to this frame's `Finalize` step, *after* the whole timing
+    /// sequence, rather than to the condition. So the `when` cell is safe to
+    /// walk, which is the cell Cover Up's *"When the game ends"* prints. See
+    /// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
+    ///
     /// Never awaits input (the acknowledge above it is the prompt); pushed once
     /// per scenario and popped once, so its presence *is* the once-only finalize
     /// marker: [`GameState::resolution`] answers "did the scenario end", this
@@ -886,6 +893,15 @@ pub enum Continuation {
     /// off `Status`, never off a zone having been drained;
     /// `combat::place_assignment`'s asset sweep is the one such caller today and
     /// does exactly that.
+    ///
+    /// Same shape, same conclusion as [`ScenarioEnd`](Self::ScenarioEnd):
+    /// `EliminationGameEnd` is a **bare milestone** too (#720). Steps 1–6 —
+    /// including step 0's own *"Then, remove those weaknesses from the game"*
+    /// tail — ride this frame and run at `RunSteps`, after the whole sequence,
+    /// so they are not the condition's impact and its `when` cell is safe to
+    /// walk. `apply_investigator_defeat`'s fork predicate must therefore ask
+    /// about **every** cell: a hardcoded one drops a retagged ability silently,
+    /// by taking the inline path and removing the weakness unfired.
     ///
     /// Never awaits input (the interactive acknowledge above it is the prompt),
     /// and never cancelled by a latched resolution: elimination is mandatory

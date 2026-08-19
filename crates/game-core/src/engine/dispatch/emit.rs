@@ -238,16 +238,39 @@ impl TimingEvent {
     /// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
     pub(crate) fn condition_resolution(&self) -> ConditionResolution {
         match self {
-            // The round ending is a **bare milestone**: nothing about the game
-            // state changes as the condition itself resolves (the round-end
-            // teardown — expiring "until the end of the round" effects, Upkeep →
-            // Mythos — runs after the whole sequence, on the Upkeep anchor's
-            // `AfterRoundEnd` resume). There is no impact for a caller to have
-            // mutated ahead of the emit and none for the coordinator to perform,
-            // so the coordinator owns a no-op step and the `when` cell is safe to
-            // walk — which is why act 01109 The Barrier's *"When the round ends"*
-            // objective resolves there today.
-            TimingEvent::RoundEnded => ConditionResolution::Coordinator(resolve_bare_milestone),
+            // The **bare milestones**: nothing about the game state changes as
+            // the condition itself resolves, so there is no impact for a caller
+            // to have mutated ahead of the emit and none for the coordinator to
+            // perform. Each owns a no-op resolve step and each `when` cell is
+            // genuinely safe to walk. In all three the teardown that *looks*
+            // like the impact runs after the whole sequence, on a frame the
+            // `drive` loop re-exposes once the sequence has drained:
+            //
+            // - `RoundEnded` — expiring "until the end of the round" effects and
+            //   Upkeep → Mythos run on the Upkeep anchor's `AfterRoundEnd`
+            //   resume, which is why act 01109 The Barrier's *"When the round
+            //   ends"* objective has resolved in the `when` cell all along.
+            // - `GameEnd` — the victory-display scan and `apply_resolution` run
+            //   at the apply boundary, once the `ScenarioEnd` frame is re-exposed
+            //   at `ScenarioEndStep::Finalize` (#720). The frame advances its own
+            //   cursor before emitting, so the emit is in tail position and the
+            //   ending finishes only after every ability it queued has drained —
+            //   which is why Cover Up 01007's trauma, with its interactive
+            //   acknowledge, can span `apply` calls.
+            // - `EliminationGameEnd` — Rules Reference p.10 Elimination steps 1–6
+            //   (including the *"remove those weaknesses from the game"* tail
+            //   that reads like this condition's impact) run on the re-exposed
+            //   `Elimination` frame at `EliminationStep::RunSteps`, again after a
+            //   tail-position emit. It migrates with `GameEnd` and for the same
+            //   card: a weakness prints one *"when the game ends"* trigger, and
+            //   Cover Up's `EventPattern::GameEnd` declaration is scanned by both
+            //   points, so leaving this one caller-owned would reject the
+            //   elimination that the retag was meant to serve.
+            TimingEvent::RoundEnded
+            | TimingEvent::GameEnd
+            | TimingEvent::EliminationGameEnd { .. } => {
+                ConditionResolution::Coordinator(resolve_bare_milestone)
+            }
             // The first migration (#703). Cover Up 01007 prints *"[reaction] When
             // you would discover 1 or more clues at your location: Discard that
             // many clues from Cover Up instead"*, so the discovery has to be able
@@ -280,8 +303,6 @@ impl TimingEvent {
             | TimingEvent::AgendaAdvanced { .. }
             | TimingEvent::EnemyDefeated { .. }
             | TimingEvent::EndOfTurn { .. }
-            | TimingEvent::GameEnd
-            | TimingEvent::EliminationGameEnd { .. }
             | TimingEvent::EnemyAttackDamagedSelf { .. }
             | TimingEvent::SkillTestResolved { .. }
             | TimingEvent::EnteredPlay { .. }
@@ -344,9 +365,16 @@ pub(crate) enum ConditionResolution {
 pub(crate) type ResolveConditionFn = fn(&mut Cx, &TimingEvent) -> EngineOutcome;
 
 /// The resolve step of a condition that is a **bare milestone** — a phase,
-/// round, turn or step boundary whose occurrence changes nothing by itself.
-/// Nothing to resolve, so nothing happens here; the cells around it are the
-/// whole of the sequence.
+/// round, turn, step or game boundary whose occurrence changes nothing by
+/// itself. Nothing to resolve, so nothing happens here; the cells around it are
+/// the whole of the sequence.
+///
+/// A milestone is bare when the teardown that follows it belongs to the frame
+/// that emitted it rather than to the condition: it runs after the whole
+/// sequence, on a resume, not between the `when` and `at` cells. See the arm in
+/// [`TimingEvent::condition_resolution`] for that argument on each of the three
+/// members, and
+/// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
 fn resolve_bare_milestone(_cx: &mut Cx, _event: &TimingEvent) -> EngineOutcome {
     EngineOutcome::Done
 }
