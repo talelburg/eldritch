@@ -257,11 +257,14 @@ impl TimingEvent {
             //   ending finishes only after every ability it queued has drained —
             //   which is why Cover Up 01007's trauma, with its interactive
             //   acknowledge, can span `apply` calls.
-            // - `EliminationGameEnd` — Rules Reference p.10 Elimination steps 1–6
-            //   (including the *"remove those weaknesses from the game"* tail
-            //   that reads like this condition's impact) run on the re-exposed
-            //   `Elimination` frame at `EliminationStep::RunSteps`, again after a
-            //   tail-position emit. It migrates with `GameEnd` and for the same
+            // - `EliminationGameEnd` — Rules Reference p.10 Elimination steps
+            //   1–6 run on the re-exposed `Elimination` frame at
+            //   `EliminationStep::RunSteps`, again after a tail-position emit.
+            //   That includes the sentence that reads most like this condition's
+            //   own impact, step 0's *"Then, remove those weaknesses from the
+            //   game."* — the engine discharges it through step 1's threat-area
+            //   partition, so it too runs after the whole sequence rather than
+            //   between the cells. It migrates with `GameEnd` and for the same
             //   card: a weakness prints one *"when the game ends"* trigger, and
             //   Cover Up's `EventPattern::GameEnd` declaration is scanned by both
             //   points, so leaving this one caller-owned would reject the

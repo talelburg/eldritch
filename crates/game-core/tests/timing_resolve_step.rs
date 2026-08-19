@@ -265,3 +265,17 @@ fn the_game_ending_is_a_bare_milestone_that_walks_its_when_cell() {
          between them leaving the order undisturbed"
     );
 }
+
+/// `EmitStep::cells()` is the whole-sequence cell list, derived from the
+/// coordinator's own cursor rather than written out beside it (#720). Pinned
+/// here because a caller asking a whole-sequence question — elimination's
+/// `has_weakness_game_end_ability` — gets a *silent drop* if the list is short,
+/// not a reject: it is the one failure mode the fork cannot report.
+#[test]
+fn the_cell_list_is_every_cell_of_the_sequence_in_order() {
+    assert_eq!(
+        game_core::state::EmitStep::cells().collect::<Vec<_>>(),
+        vec![EventTiming::When, EventTiming::At, EventTiming::After],
+        "the three cells, in sequence order, with the resolve step filtered out"
+    );
+}

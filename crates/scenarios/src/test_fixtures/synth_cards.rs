@@ -361,7 +361,10 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             .with_eligibility(SYNTH_COVER_UP_HAS_CLUES_TAG),
             forced_on_event(
                 EventPattern::GameEnd,
-                EventTiming::After,
+                // The `when` cell, as the real card prints and declares since
+                // #720 — the fixture mirrors 01007, so a stale cell here would
+                // exercise a sequence position no real card occupies.
+                EventTiming::When,
                 native(SYNTH_COVER_UP_TRAUMA_TAG),
             ),
         ]),

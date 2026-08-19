@@ -1508,6 +1508,26 @@ impl EmitStep {
             EmitStep::After => None,
         }
     }
+
+    /// Every cell of the sequence, in order: the cursor walked from its start,
+    /// keeping the steps that are cells.
+    ///
+    /// For a caller asking about the **whole sequence** rather than about one
+    /// cell — *"does this investigator own a weakness with any game-end
+    /// ability?"* — where scanning a single hardcoded cell answers a different
+    /// question. That mistake does not reject; it drops the ability silently,
+    /// which is why #720 hit it in `has_weakness_game_end_ability` and #723 hit
+    /// it in three `test_support` helpers.
+    ///
+    /// **Derived, not listed.** A fourth cell has to be an `EmitStep` before the
+    /// coordinator can walk it at all, and both [`cell`](Self::cell) and
+    /// [`next`](Self::next) are exhaustive matches — so it arrives here on its
+    /// own rather than waiting to be remembered. That is the same reason ADR
+    /// 0008 keeps `ConditionResolution` an exhaustive match instead of a table:
+    /// *a table is a thing a new variant can be forgotten from*.
+    pub fn cells() -> impl Iterator<Item = crate::dsl::EventTiming> {
+        core::iter::successors(Some(EmitStep::When), |step| step.next()).filter_map(EmitStep::cell)
+    }
 }
 
 /// The forced-then-reaction sub-cursor of a [`Continuation::TimingPoint`]

@@ -97,17 +97,13 @@ pub(super) fn apply_investigator_defeat(
 /// report, since a dropped ability leaves no reject behind. Cover Up 01007's
 /// game-end trauma is a `when`-cell ability since #720, and the hardcoded
 /// `After` here would have silently swallowed it.
+/// [`EmitStep::cells`](crate::state::EmitStep::cells) derives the list from the
+/// coordinator's own cursor, so a fourth cell cannot be forgotten here.
 fn has_weakness_game_end_ability(
     state: &crate::state::GameState,
     investigator: InvestigatorId,
 ) -> bool {
-    [
-        crate::dsl::EventTiming::When,
-        crate::dsl::EventTiming::At,
-        crate::dsl::EventTiming::After,
-    ]
-    .into_iter()
-    .any(|cell| {
+    crate::state::EmitStep::cells().any(|cell| {
         !super::forced_triggers::collect_forced_hits(
             state,
             &super::forced_triggers::ForcedTriggerPoint::EliminationGameEnd { investigator },
