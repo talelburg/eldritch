@@ -553,11 +553,11 @@ pub enum Continuation {
         event: crate::engine::TimingEvent,
         /// The sequence cursor (`When` → `ResolveCondition` → `At` → `After`).
         ///
-        /// Serialized as `step`; `#[serde(alias = "bucket")]` keeps game states
-        /// persisted before the resolve step existed loadable — the three cell
-        /// names are unchanged, so an old `"bucket": "At"` reads as
-        /// [`EmitStep::At`].
-        #[serde(alias = "bucket")]
+        /// Renamed from `bucket` with no compatibility shim: a coordinator frame
+        /// exists only in memory, mid-sequence, between two `apply` calls, and
+        /// the server persists a seed state plus a `ResolveInput`-only action log
+        /// (`crates/server/src/session.rs`), so no persisted artifact can carry
+        /// this field.
         step: EmitStep,
     },
     /// Coordinator: one timing bucket of an [`EmitEvent`](Self::EmitEvent) walk,
@@ -3610,21 +3610,5 @@ mod emit_step_tests {
         let json = serde_json::to_string(&frame).expect("serialize");
         let back: Continuation = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(frame, back);
-    }
-
-    /// A game state persisted before the resolve step existed carries the
-    /// cursor as `bucket`; `#[serde(alias = "bucket")]` keeps it loadable, and
-    /// the three cell names are unchanged.
-    #[test]
-    fn a_frame_persisted_before_the_resolve_step_still_loads() {
-        let legacy = r#"{"EmitEvent":{"event":"RoundEnded","bucket":"At"}}"#;
-        let back: Continuation = serde_json::from_str(legacy).expect("deserialize legacy frame");
-        assert_eq!(
-            back,
-            Continuation::EmitEvent {
-                event: TimingEvent::RoundEnded,
-                step: EmitStep::At,
-            }
-        );
     }
 }
