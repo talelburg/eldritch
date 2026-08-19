@@ -3,7 +3,7 @@
 //! condition's own resolution between the first two (#701).
 //!
 //! [`super::emit::queue_event`] pushes a [`Continuation::EmitEvent`] for **every**
-//! triggering condition (#702 — bar the two interrupt-timed holdouts it
+//! triggering condition (#702 — bar the three enemy-attack-machinery holdouts it
 //! documents); the `drive` loop dispatches it here.
 //!
 //! - [`dispatch_emit_event`] walks `When → ResolveCondition → At → After` —

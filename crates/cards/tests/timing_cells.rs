@@ -59,36 +59,38 @@ const REACT: &str = "_tc_react";
 /// same card — the `after` cell's fresh re-scan must no longer find it.
 const RESCAN: &str = "_tc_rescan";
 
-/// Every ability keys off the same triggering condition: "after you succeed at a
-/// skill test" (unnarrowed by kind). Only the timing cell differs.
+/// The one triggering condition every ability in this file keys off: "you
+/// succeeded at a skill test", unnarrowed by kind. Only the timing cell differs.
+fn succeeded() -> EventPattern {
+    EventPattern::SkillTestResolved {
+        outcome: TestOutcome::Success,
+        kind: None,
+    }
+}
+
+/// A forced ability in `timing`'s cell that gains `amount` resources — the
+/// marker these tests read cell order off.
 fn on_success(timing: EventTiming, amount: u8) -> Ability {
     forced_on_event(
-        EventPattern::SkillTestResolved {
-            outcome: TestOutcome::Success,
-            kind: None,
-        },
+        succeeded(),
         timing,
         gain_resources(InvestigatorTarget::You, amount),
     )
 }
 
 fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    let pattern = EventPattern::SkillTestResolved {
-        outcome: TestOutcome::Success,
-        kind: None,
-    };
     match code.as_str() {
         AT => Some(vec![on_success(EventTiming::At, 1)]),
         AFTER => Some(vec![on_success(EventTiming::After, 2)]),
         WHEN => Some(vec![on_success(EventTiming::When, 4)]),
         REACT => Some(vec![reaction_on_event(
-            pattern,
+            succeeded(),
             EventTiming::At,
             gain_resources(InvestigatorTarget::You, 7),
         )]),
         RESCAN => Some(vec![
             forced_on_event(
-                pattern,
+                succeeded(),
                 EventTiming::At,
                 Effect::Seq(vec![
                     gain_resources(InvestigatorTarget::You, 1),
@@ -152,6 +154,20 @@ fn gains(events: &[Event]) -> Vec<u8> {
         .collect()
 }
 
+/// Whether the condition's own impact — the skill test resolving, logged as
+/// `SkillTestSucceeded` — precedes the first ability the sequence fired. Every
+/// cell in these tests is `at` or `after`, both of which sit past the resolve
+/// step, so this must hold for all of them.
+fn resolved_before_first_gain(events: &[Event]) -> bool {
+    let position = |pred: fn(&Event) -> bool| events.iter().position(pred);
+    let resolved = position(|e| matches!(e, Event::SkillTestSucceeded { .. }));
+    let first_gain = position(|e| matches!(e, Event::ResourcesGained { .. }));
+    match (resolved, first_gain) {
+        (Some(r), Some(g)) => r < g,
+        _ => false,
+    }
+}
+
 /// The headline claim: on a condition that is *not* the round end, an
 /// `at`-tagged forced ability resolves, and it resolves before the `after`
 /// cell. Before #702 the `at` cell was unreachable off the round end and the
@@ -165,16 +181,33 @@ fn an_at_tagged_forced_resolves_before_the_after_cell() {
         "the `at` cell must resolve before the `after` cell; events = {:?}",
         r.events
     );
+    assert!(
+        resolved_before_first_gain(&r.events),
+        "both cells sit past the resolve step, so the test's own resolution must be \
+         logged first; events = {:?}",
+        r.events
+    );
     assert_eq!(r.state.investigators[&INV].resources, 3);
 }
 
 /// An `after`-tagged ability keeps resolving after the condition's impact, and
 /// the two cells it does not occupy are skipped without a prompt: the drive
 /// reaches its terminal outcome with exactly one ability resolved.
+///
+/// The impact of "you succeeded at a skill test" is the test's own resolution,
+/// logged as `SkillTestSucceeded` — `glossary/After.md` pins after as *"the
+/// moment immediately after the specified timing point or triggering condition
+/// has fully resolved"* — so the assertion is that the gain follows that event,
+/// not merely that it happened.
 #[test]
 fn an_empty_cell_is_skipped_without_prompting() {
     let r = perform_skill_test_no_commits(board_with(&[AFTER]), INV, SkillKind::Intellect, 0);
     assert_eq!(gains(&r.events), vec![2], "events = {:?}", r.events);
+    assert!(
+        resolved_before_first_gain(&r.events),
+        "the `after` cell resolved before the condition's impact landed; events = {:?}",
+        r.events
+    );
     assert!(
         r.state.continuations.is_empty(),
         "the empty `when`/`at` cells left frames behind: {:?}",

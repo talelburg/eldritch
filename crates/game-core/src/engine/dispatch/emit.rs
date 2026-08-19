@@ -42,10 +42,11 @@ use super::Cx;
 ///
 /// The union of `ForcedTriggerPoint` (the forced dispatch key) and the
 /// event-driven reaction-window points (the reaction dispatch key). Each
-/// variant maps to an optional forced point (`forced_point`) and to whether
-/// it opens a reaction window (`opens_reaction_window`); `EnemyDefeated` and
+/// variant maps to an optional forced point (`forced_point`) and to who resolves
+/// the condition itself (`condition_resolution`); `EnemyDefeated` and
 /// `SkillTestResolved` are **dual** (both forced and reaction at the
-/// same point).
+/// same point). Whether a cell holds a reaction is **not** tabulated — the
+/// coordinator's per-cell scan answers it (#702).
 ///
 /// `SkillTestResolved` is the general skill-test-outcome timing point (RR
 /// ST.6), of which "after you successfully investigate" (Obscuring Fog forced +
@@ -362,21 +363,19 @@ pub(crate) fn queue_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     //   the caller-owned `when`-cell reject and take both cards down with it.
     //   #704 and #703 respectively.
     // - `EnemyAttackDamagedSelf` (Guard Dog 01021's soak retaliate) is
-    //   `after`-timed, so nothing about *which cell* it resolves in is at
-    //   stake — only the drive shape is. It rides along with #704, which owns
-    //   the same loop. (#702 found it; the ticket had anticipated two holdouts,
-    //   not three.)
-    if matches!(
-        event,
-        TimingEvent::EnemyAttacks { .. }
-            | TimingEvent::WouldDiscoverClues { .. }
-            | TimingEvent::EnemyAttackDamagedSelf { .. }
-    ) {
-        super::reaction_windows::queue_reaction_window(
-            cx,
-            event,
-            single_cell_holdout_bucket(event),
-        );
+    //   modelled `after`-timed, so under today's declaration nothing about
+    //   *which cell* it resolves in is at stake — only the drive shape is. It
+    //   rides along with #704, which owns the same loop. (#702 found it; the
+    //   ticket had anticipated two holdouts, not three.)
+    //
+    //   The declaration is itself wrong, which is why this holdout is not as
+    //   cheap as it looks. Guard Dog prints *"[reaction] **When** an enemy
+    //   attack deals damage to Guard Dog: Deal 1 damage to the attacking
+    //   enemy."* — one of the mis-tagged declarations #694 retags — so once it
+    //   is `when`-timed it needs a walked `when` cell, and this condition must
+    //   be coordinator-owned before that can happen.
+    if let Some(bucket) = single_cell_holdout_bucket(event) {
+        super::reaction_windows::queue_reaction_window(cx, event, bucket);
         return EngineOutcome::Done;
     }
     cx.state
@@ -388,20 +387,25 @@ pub(crate) fn queue_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// The one cell a [single-cell holdout](queue_event) opens its reaction window
-/// at — the last remnant of the per-condition cell table #702 deleted, kept
-/// alive only by the three conditions that still bypass the coordinator. It goes
-/// with them (#703/#704).
-fn single_cell_holdout_bucket(event: &TimingEvent) -> crate::dsl::EventTiming {
+/// `Some(cell)` for a [single-cell holdout](queue_event) — the one cell it opens
+/// its reaction window at — and `None` for every condition that walks the
+/// coordinator. Membership and cell are one answer rather than two, so the set
+/// cannot be widened in one place and forgotten in the other.
+///
+/// The last remnant of the per-condition cell table #702 deleted, kept alive only
+/// by the three conditions that still bypass the coordinator. It goes with them
+/// (#703/#704).
+fn single_cell_holdout_bucket(event: &TimingEvent) -> Option<crate::dsl::EventTiming> {
     use crate::dsl::EventTiming;
     match event {
         // Interrupt timing: Dodge 01023 cancels the attack, Cover Up 01007
         // replaces the discovery — both before the condition's impact lands.
         TimingEvent::EnemyAttacks { .. } | TimingEvent::WouldDiscoverClues { .. } => {
-            EventTiming::When
+            Some(EventTiming::When)
         }
-        // Guard Dog 01021 retaliates *after* the attack damaged it.
-        TimingEvent::EnemyAttackDamagedSelf { .. } => EventTiming::After,
-        other => unreachable!("single_cell_holdout_bucket: {other:?} walks the coordinator"),
+        // Guard Dog 01021 is *declared* after-timed, though it prints "when" —
+        // see the note on `queue_event`.
+        TimingEvent::EnemyAttackDamagedSelf { .. } => Some(EventTiming::After),
+        _ => None,
     }
 }

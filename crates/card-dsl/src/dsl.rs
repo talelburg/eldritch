@@ -445,8 +445,10 @@ pub enum EventTiming {
     When,
     /// Resolves between `when` and `after` abilities with the same
     /// triggering condition ("at the …" / "if …"), after the condition's own
-    /// impact has landed. Reachable on **every** triggering condition since
-    /// #702, not just the round end.
+    /// impact has landed. Since #702 this cell is reachable on every triggering
+    /// condition the timing coordinator walks — which is all of them bar the
+    /// three enemy-attack-machinery holdouts named on `queue_event`, not just
+    /// the round end as before.
     At,
     /// Resolves after the triggering event has finalized.
     After,
