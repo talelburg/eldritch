@@ -352,6 +352,70 @@ fn guard_dog_retaliates_on_a_lethal_assignment_then_is_defeated() {
 }
 
 // ---------------------------------------------------------------------
+// Case 2c — the attacker is defeated by the retaliate *during its own
+// enemy-phase attack*, so there is nothing left to exhaust.
+//
+// #704 moved the exhaust off the attack's resolve step and onto the parked
+// `AttackLoop` frame, which runs it after the whole sequence
+// (`Appendix_II_Timing_and_Gameplay.md` step 3.3: "Upon completion of dealing
+// the attack (and all abilities triggered by the attack), exhaust the enemy.").
+// #727 made this path *more* reachable: the retaliate now resolves in the `when`
+// cell, before the damage is placed, so an attacker can die mid-sequence even on
+// the attack that would have killed the dog.
+// ---------------------------------------------------------------------
+
+#[test]
+fn an_attacker_defeated_by_the_retaliate_mid_attack_has_nothing_to_exhaust() {
+    let dog = CardInstanceId(1);
+    let enemy_id = EnemyId(7);
+    let inv = InvestigatorId(1);
+    let loc = LocationId(101);
+    // The attacker has 1 health, so Guard Dog's 1 retaliate damage defeats it
+    // in the `when` cell of its own attack's damage. Enemy phase, so it *would*
+    // have exhausted had it survived (unlike the AoO/Retaliate cases).
+    let (mut state, inv_id, _) = soak_state(
+        vec![(GUARD_DOG, dog)],
+        vec![engaged_attacker(7, inv, loc, 2, 1)],
+    );
+
+    let result = take_turn_action(state, &TurnAction::EndTurn);
+    let result = distribute_onto(result, dog);
+    let result = fire_retaliate(result.state);
+    state = result.state;
+
+    assert!(
+        !state.enemies.contains_key(&enemy_id),
+        "the retaliate defeated the attacker during its own attack: {:?}",
+        result.events
+    );
+    assert!(
+        !result
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::EnemyExhausted { enemy } if *enemy == enemy_id)),
+        "a defeated attacker has nothing to exhaust: {:?}",
+        result.events
+    );
+    // The rest of the sequence still ran: the damage it had already assigned is
+    // placed even though the attacker is gone, because the assignment was
+    // settled before the retaliate (RR step 1 precedes step 2).
+    assert_eq!(
+        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        2,
+        "the dead attacker's assigned damage still lands on Guard Dog"
+    );
+    // And the loop drained rather than stalling on a missing attacker.
+    assert!(
+        !state
+            .continuations
+            .iter()
+            .any(|c| matches!(c, Continuation::AttackLoop { .. })),
+        "the attack loop completed: {:?}",
+        state.continuations
+    );
+}
+
+// ---------------------------------------------------------------------
 // Case 2b — overflow defeats Guard Dog AFTER it survives a prior attack
 // (accumulated damage builds across attacks; the lethal one removes it)
 // ---------------------------------------------------------------------

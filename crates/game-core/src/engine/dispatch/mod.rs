@@ -371,7 +371,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // distribute, announce the assignment, place it, resume the caller.
             // Each emit lands a coordinator above this frame and the loop drives
             // that first; the frame is re-exposed when the coordinator pops.
-            Some(Continuation::DealDamage { .. }) => match combat::drive_deal_damage_frame(cx) {
+            Some(Continuation::DealDamage { .. }) => match combat::drive_deal_damage(cx) {
                 EngineOutcome::Done => {}
                 other => return other,
             },
@@ -839,7 +839,8 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
             ..
         }) => combat::resume_damage_distribution(cx, response),
         Some(Continuation::DealDamage { .. }) => EngineOutcome::Rejected {
-            reason: "ResolveInput: no input prompt is outstanding (a deal of damage is                      mid-sequence)"
+            reason: "ResolveInput: no input prompt is outstanding (a deal of damage \
+                     is mid-sequence)"
                 .into(),
         },
         // The interactive slot make-room choice (#498): the `SlotDiscard` frame

@@ -3,42 +3,57 @@
 //!
 //! `data/rules-reference/rules/glossary/Nested_Sequences.md`, verbatim:
 //!
-//! > Roland and Agnes are embroiled in a fierce battle. Roland has a Guard Dog
-//! > in his play area, and is engaged with a Goat Spawn with 2 damage on it. […]
+//! > Roland and Agnes are embroiled in a fierce battle. Roland has a Guard Dog in
+//! > his play area, and is engaged with a Goat Spawn with 2 damage on it. […]
 //! > Roland wishes to play a .45 Automatic, which provokes an attack of
 //! > opportunity from the Goat Spawn, dealing 1 damage to Roland. Roland assigns
-//! > this damage to his Guard Dog, which has a [reaction] ability: "When an
-//! > enemy attack deals damage to Guard Dog: Deal 1 damage to the attacking
-//! > enemy." **Before resolving the playing of Roland's .45 Automatic**, Guard
-//! > Dog's ability resolves, and 1 damage is dealt to the Goat Spawn, which
-//! > would defeat it. […] **Before resolving the damage dealt to the Guard
-//! > Dog**, 1 horror is dealt to each investigator at the location […] Now that
-//! > there are no further [reaction] or **Forced** abilities to trigger, the
-//! > players return to the previous triggering condition and resolve the Goat
-//! > Spawn's defeat […] Then, the players resolve the damage dealt to the Guard
-//! > Dog, and resolve any "After…" effects that might occur from that damage.
-//! > Finally, the players return to the original triggering condition, and
-//! > Roland is able to put his .45 Automatic into play.
+//! > this damage to his Guard Dog, which has a [reaction] ability: “When an enemy
+//! > attack deals damage to Guard Dog: Deal 1 damage to the attacking enemy.”
+//! > Before resolving the playing of Roland’s .45 Automatic, Guard Dog’s ability
+//! > resolves, and 1 damage is dealt to the Goat Spawn, which would defeat it.
+//! > […] Before resolving the damage dealt to the Guard Dog, 1 horror is dealt to
+//! > each investigator at the location, including Agnes, who has a [reaction]
+//! > ability: “After 1 or more horror is placed on Agnes Baker: Deal 1 damage to
+//! > an enemy at your location.” Before resolving the Goat Spawn’s defeat, Agnes
+//! > deals 1 damage to the Ghoul Minion engaged with her. […] Now that there are
+//! > no further [reaction] or **Forced** abilities to trigger, the players return
+//! > to the previous triggering condition and resolve the Goat Spawn’s defeat,
+//! > and resolve any “After...” effects that might occur when it is defeated.
+//! > Then, the players resolve the damage dealt to the Guard Dog, and resolve any
+//! > “After...” effects that might occur from that damage. Finally, the players
+//! > return to the original triggering condition, and Roland is able to put his
+//! > .45 Automatic into play.
 //!
-//! Every sentence of that is a cell, and the load-bearing one is *"Before
-//! resolving the damage dealt to the Guard Dog"*: the damage the Guard Dog
-//! reacted to is **assigned but not placed** for the whole of the nested
-//! sequence its reaction spawns. That is what
+//! Quoted with the source's own emphasis, elisions marked; the emphasis from
+//! here on is ours. Every sentence of that paragraph is a cell, and the
+//! load-bearing one is *"Before resolving the damage dealt to the Guard Dog"*:
+//! the damage the Guard Dog reacted to is **assigned but not placed** for the
+//! whole of the nested sequence its reaction spawns. That is what
 //! `docs/adr/0009-damage-is-assigned-then-placed.md` splits `DamageAssigned`
 //! from `DamagePlaced` to model, and it is the whole of what this file asserts.
 //!
-//! **Two substitutions**, both forced by corpus membership rather than by
-//! convenience — the Goat Spawn's *"**Forced** - When Goat Spawn is defeated:
-//! Each investigator at this location takes 1 horror."* and Agnes Baker 01004's
-//! *"After 1 or more horror is placed on Agnes Baker"* are neither of them in
-//! the Core or Dunwich corpus. So the nested sequence hanging off the defeat is
-//! **Roland Banks 01001's own** *"[reaction] After you defeat an enemy: Discover
-//! 1 clue at your location."* — a different ability in the same structural
-//! position, spawned by the same defeat, and it has to complete before the
-//! original deal of damage resolves for exactly the same reason. The example's
-//! third level (Agnes's reaction to the horror) has no corpus stand-in and is
-//! not reproduced; the LIFO discipline it demonstrates is the same one asserted
-//! here one level up.
+//! **Two substitutions**, and neither is a convenience. Both of the example's
+//! other cards are in the corpus but **unimplemented** — they have no
+//! `abilities()` impl, so the engine sees only their metadata:
+//!
+//! - Goat Spawn 01180 (`pack/core/core_encounter.json`), *"**Forced** - When
+//!   Goat Spawn is defeated: Each investigator at this location takes 1
+//!   horror."* So the nested sequence hanging off the defeat is **Roland Banks
+//!   01001's own** *"[reaction] After you defeat an enemy: Discover 1 clue at
+//!   your location. (Limit once per round.)"* — a different ability in the same
+//!   structural position, spawned by the same defeat, and it has to complete
+//!   before the original deal of damage resolves for exactly the same reason.
+//! - Agnes Baker 01004 (`pack/core/core.json`), *"[reaction] After 1 or more
+//!   horror is placed on Agnes Baker: Deal 1 damage to an enemy at your
+//!   location. (Limit once per phase.)"* — the example's third nesting level.
+//!   Implementing it would need a card-facing pattern for `DamagePlaced`, which
+//!   #727 deliberately did **not** build ("a card-facing pattern with no corpus
+//!   declaration would be decoration"), so that level is not reproduced. The
+//!   LIFO discipline it demonstrates is the same one asserted here one level up.
+//!
+//! Implementing either card is card work neither #727 nor #722 asked for; what
+//! this file owes them is the *shape*, and the shape does not depend on which
+//! ability the defeat spawns.
 //!
 //! Sibling files: `guard_dog_soak.rs` (the soak pipeline itself),
 //! `enemy_attack_cells.rs` (#704's condition), `clue_discovery_cells.rs` (#703's).

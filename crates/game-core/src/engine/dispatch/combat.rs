@@ -382,14 +382,14 @@ fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
 /// (Cover Up 01007) finishes on a continuation frame, so the zone is still
 /// populated when this returns.
 ///
-/// Returns nothing. It used to return the damaged assets that survived step 3,
-/// because the soak reaction was announced *after* placement and a defeated
-/// soaker had left play by then — which made Guard Dog 01021 not retaliate on
-/// the attack that killed it, against its own ruling
+/// Announces nothing and returns nothing: by the time this runs, both conditions
+/// around it have been emitted by the
+/// [`DealDamage`](crate::state::Continuation::DealDamage) frame, and this *is*
+/// `DamagePlaced`'s resolve step. Which soakers survive it is therefore no
+/// question of this function's — an asset assigned lethal damage had its say one
+/// cursor step ago, which is what its ruling requires
 /// (`data/arkhamdb-faq/core/01021.md`: *"You can use Guard Dog's ability when you
-/// assign lethal damage/horror to it."*). Since #727 the announcement is
-/// `DamageAssigned`, one cursor step before anything is placed, so there is no
-/// survivor question to answer here (ADR 0009).
+/// assign lethal damage/horror to it."*). See ADR 0009.
 pub(super) fn place_assignment(cx: &mut Cx, investigator: InvestigatorId, assignment: &Assignment) {
     // 1. Accumulate on assets (simultaneous placement).
     for (inst, dmg) in &assignment.asset_damage {
@@ -526,9 +526,11 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
 /// [`DamageAssigned`](super::emit::TimingEvent::DamageAssigned) nor
 /// [`DamagePlaced`](super::emit::TimingEvent::DamagePlaced): there is no cursor
 /// here to sequence two emits on, and emitting one synchronously is what ADR
-/// 0003 forbids. Migrating those two entry points onto
-/// [`begin_deal_damage`] is **#728**; until then an ability keyed to either
-/// condition fires for an enemy attack and for `Effect::Deal` but not for these.
+/// 0003 forbids.
+///
+/// TODO(#728): migrate both entry points onto [`begin_deal_damage`]. Until then
+/// an ability keyed to either condition fires for an enemy attack and for
+/// `Effect::Deal` but not for these.
 /// Nothing in the Core or Dunwich corpus observes the gap.
 ///
 /// `build_soakers` returns empty when no registry is installed or the
@@ -887,13 +889,13 @@ pub(super) fn resume_damage_distribution(
 ) -> EngineOutcome {
     let Some(Continuation::DealDamage {
         investigator,
-        source,
         mut assignment,
         step:
             DealDamageStep::Distribute {
                 mut remaining_damage,
                 mut remaining_horror,
             },
+        ..
     }) = cx.state.continuations.last().cloned()
     else {
         unreachable!("resume_damage_distribution: top frame is not DealDamage{{Distribute}}");
@@ -934,7 +936,7 @@ pub(super) fn resume_damage_distribution(
             remaining_horror,
         },
     );
-    drive_deal_damage(cx, investigator, source)
+    drive_deal_damage(cx)
 }
 
 /// Overwrite the top [`Continuation::DealDamage`] frame's live assignment and
@@ -953,8 +955,8 @@ fn set_deal_damage(cx: &mut Cx, new_assignment: Assignment, new_step: DealDamage
 }
 
 /// Dispatch the top [`Continuation::DealDamage`] frame one step — the `drive`
-/// loop's arm for it, and the resume tail of
-/// [`resume_damage_distribution`].
+/// loop's arm for it, and the resume tail of [`resume_damage_distribution`]. All
+/// four bindings come off the frame, which is the only thing that knows them.
 ///
 /// The cursor is the Rules Reference's two steps plus the bookends that get it
 /// there and hand back (`glossary/Dealing_Damage_Horror.md`; ADR 0009):
@@ -972,16 +974,18 @@ fn set_deal_damage(cx: &mut Cx, new_assignment: Assignment, new_step: DealDamage
 /// Both emits **advance the cursor before emitting**, so each is in tail
 /// position (ADR 0003): the coordinator they push lands above this frame and
 /// runs its whole sequence before the loop re-exposes this one.
-pub(super) fn drive_deal_damage(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    source: crate::state::DamageSource,
-) -> EngineOutcome {
+pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
     let Some(Continuation::DealDamage {
-        assignment, step, ..
+        investigator,
+        source,
+        assignment,
+        step,
     }) = cx.state.continuations.last().cloned()
     else {
-        unreachable!("drive_deal_damage: top frame is not DealDamage");
+        unreachable!(
+            "drive_deal_damage: top frame is not DealDamage; the `drive` loop routes \
+             here only when it is — state-corruption invariant violation"
+        );
     };
     match step {
         DealDamageStep::Distribute {
@@ -1048,25 +1052,6 @@ pub(super) fn drive_deal_damage(
             }
         }
     }
-}
-
-/// Dispatch the top [`Continuation::DealDamage`] frame, reading its bindings off
-/// the frame itself — the `drive` loop's entry point (it holds no bindings of
-/// its own).
-pub(crate) fn drive_deal_damage_frame(cx: &mut Cx) -> EngineOutcome {
-    let Some(Continuation::DealDamage {
-        investigator,
-        source,
-        ..
-    }) = cx.state.continuations.last()
-    else {
-        unreachable!(
-            "drive_deal_damage_frame: top frame is not DealDamage; the `drive` loop \
-             routes here only when it is — state-corruption invariant violation"
-        );
-    };
-    let (investigator, source) = (*investigator, *source);
-    drive_deal_damage(cx, investigator, source)
 }
 
 /// Deal one enemy attack: the resolve step of the `EnemyAttacks` triggering
@@ -1555,7 +1540,7 @@ mod combat_tests {
         // Distribute: no soaker can take a point, so it drains without
         // prompting and the cursor reaches `Announce` with the whole 2 on the
         // investigator's share.
-        assert_eq!(super::drive_deal_damage_frame(&mut cx), EngineOutcome::Done);
+        assert_eq!(super::drive_deal_damage(&mut cx), EngineOutcome::Done);
         let Some(Continuation::DealDamage {
             assignment, step, ..
         }) = cx.state.continuations.last()
@@ -1567,7 +1552,7 @@ mod combat_tests {
 
         // Announce: the cursor advances *before* the emit (tail position), and
         // the coordinator it pushed is now on top.
-        assert_eq!(super::drive_deal_damage_frame(&mut cx), EngineOutcome::Done);
+        assert_eq!(super::drive_deal_damage(&mut cx), EngineOutcome::Done);
         assert!(matches!(
             cx.state.continuations.last(),
             Some(Continuation::EmitEvent {
@@ -1585,7 +1570,7 @@ mod combat_tests {
 
         // Place: same shape, and again nothing has landed until the coordinator
         // reaches its resolve step.
-        assert_eq!(super::drive_deal_damage_frame(&mut cx), EngineOutcome::Done);
+        assert_eq!(super::drive_deal_damage(&mut cx), EngineOutcome::Done);
         let Some(Continuation::EmitEvent {
             event: placed @ crate::engine::TimingEvent::DamagePlaced { .. },
             ..
@@ -1618,7 +1603,7 @@ mod combat_tests {
 
         // Finish: pop and hand back to the caller. An enemy attack's own
         // sequence continues on the frames beneath, so this is just `Done`.
-        assert_eq!(super::drive_deal_damage_frame(&mut cx), EngineOutcome::Done);
+        assert_eq!(super::drive_deal_damage(&mut cx), EngineOutcome::Done);
         assert!(
             !cx.state
                 .continuations

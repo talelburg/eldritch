@@ -2583,7 +2583,7 @@ mod tests {
                 // this bounded stand-in must too, or `Deal` in a unit test
                 // assigns damage that is never placed.
                 Some(Continuation::DealDamage { .. }) => {
-                    crate::engine::dispatch::combat::drive_deal_damage_frame(cx)
+                    crate::engine::dispatch::combat::drive_deal_damage(cx)
                 }
                 _ => return EngineOutcome::Done,
             };

@@ -226,8 +226,8 @@ pub enum TimingEvent {
 impl TimingEvent {
     /// The forced dispatch point for this timing event, if it fires forced
     /// abilities. `None` for the reaction-only ones — including both halves of
-    /// dealing damage, whose forced takers (Baron Samedi 05019, Vulnerable Heart
-    /// 85043) are all outside the corpus, so a `Some` here would be a scan with
+    /// dealing damage, whose forced takers (Baron Samedi 05019, Extraterrestrial
+    /// Physiology 85007) are all outside the corpus, so a `Some` here would be a scan with
     /// nothing to find.
     /// `pub(super)` so the coordinator ([`super::coordinator`]) can re-scan a
     /// bucket's forced abilities (#434).
