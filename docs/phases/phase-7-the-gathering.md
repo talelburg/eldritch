@@ -477,8 +477,13 @@ condition at a time: **#703 ✅ shipped (PR #713)** made clue discovery the firs
 coordinator-owned migration — `WouldDiscoverClues` collapsed into `DiscoverClues`,
 one condition in all three cells, with `discover_clue` reduced to cap-and-emit and
 the clues moving at the coordinator's resolve step. Cancellation moved there with it:
-a `when` replacement's signal is read between the `when` cell and step 2, so the
-discovery does not resolve while the `at` and `after` cells still do. Two conditions
+a `when` replacement's signal is read between the `when` cell and step 2.
+**#714 ✅ shipped (PR #715)** then made that read suppress the *whole* rest of the
+sequence rather than step 2 alone — the `at` and `after` cells, and the remainder of
+the `when` cell, per Dodge 01023's ruling — so a prevented condition abandons its
+coordinator frame and an open `when`-cell window is emptied
+(`LapseReason::ConditionPrevented`). Scoped to coordinator-owned conditions, so the
+enemy attack inherits it on migration rather than half-gaining it early. Two conditions
 still bypass the coordinator entirely, both in the enemy-attack machinery, because
 their emit sites read the continuation stack synchronously after emitting (the shape
 ADR 0003 forbids): #704 takes the enemy attack and the soak window that rides the
@@ -493,7 +498,9 @@ no `DecisionCursor`. DSL targets bind through `ground_chosen_targets`
 Spatial targets use `Choose<S> { scope }` (`LocationSet { Here, Anywhere }` /
 `EntityScope`). Before-timing cancellation is a Before window the caller suspends on
 + an `Effect::Cancel` leaf setting `pending_cancellation` (a `bool` suffices —
-Before-windows don't nest in scope, #367), honored on window close. A reaction event
+Before-windows don't nest in scope, #367), honored on window close. One bool for
+both suppressing arms (cancel, nature-changing replacement); the non-suppressing
+third — replace-with-a-different-impact — is #366, unmodelled until a card wants it. A reaction event
 (Evidence! 01022) rides the window's candidate list and is *played* when picked
 (`TriggerKind::Reaction` `OnEvent`, window-only).
 
