@@ -112,6 +112,8 @@ Backstopped structurally since #161: `apply_via` (`crates/game-core/src/engine/m
 
 `crates/card-dsl/src/dsl.rs` defines `Ability { trigger: Trigger, effect: Effect }`. Triggers: `Constant`, `OnPlay`, `OnCommit` (+ `OnEvent` / `Activated` / reaction triggers later). Effects: `GainResources`, `DiscoverClue`, `Modify`, `Seq`, `If`, `ForEach`, `ChooseOne`. The evaluator (`crates/game-core/src/engine/evaluator.rs`) walks effect trees under the same validate-first contract.
 
+An `OnEvent` ability declares the **timing cell** its printed trigger word names (`CONTEXT.md`), and a `When` declaration is rejected on a triggering condition whose resolve step has not been migrated to the coordinator yet — migrating that condition is the fix, not retagging the card; see [ADR 0008](docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md).
+
 Cards are **Rust source** (typed, compiler-checked), not JSON: each is a module `crates/cards/src/impls/<name>.rs` exposing `CODE: &str` and `abilities() -> Vec<Ability>`. Cards needing primitives the DSL lacks get a Rust impl. **Don't add DSL primitives speculatively** — wait until two or more hand-written cards want the same pattern.
 
 A card is **playable** iff it has an `abilities()` impl (`cards::is_playable(code)`); unimplemented cards appear in deckbuilding but are refused by the deck-import gate (Phase 9). `PlayCard` on an unimplemented card rejects loudly — never silently no-op. On play: assets land in `cards_in_play` and stay (their `Trigger::Constant` abilities contribute via the registry while in play); events run their `OnPlay` effects then move to `discard` (emit `CardDiscarded { from: Zone::Hand, … }`). Every other `CardType` rejects.

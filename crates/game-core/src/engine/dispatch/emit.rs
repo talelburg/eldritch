@@ -271,7 +271,9 @@ impl TimingEvent {
             }
             // Every other condition is still caller-owned: the emitting call site
             // mutates the board and *then* emits. Each flips to a coordinator-
-            // owned arm when a card demands its `when` cell (#704).
+            // owned arm when a card demands its `when` cell — what that costs,
+            // and the terminal condition for the arm itself, is on
+            // [`ConditionResolution::Caller`].
             TimingEvent::EnteredLocation { .. }
             | TimingEvent::PhaseEnded { .. }
             | TimingEvent::ActAdvanced { .. }
