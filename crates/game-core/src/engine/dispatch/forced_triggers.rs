@@ -573,8 +573,8 @@ fn push_matching(
             // 01109 carries a `When`-`RoundEnded` *reaction* the forced scan must
             // not collect — so `kind` filtering is load-bearing, not cosmetic.
             // Scan only the bucket being resolved (the EmitEvent coordinator's
-            // current cell). Today every site passes `After` except the round-end
-            // `At` cell (agenda 01107 doom, Dissonant Voices 01165).
+            // current cell). Since #702 every condition walks all three, so a
+            // card is collected in the cell its printed trigger word names.
             if *kind == TriggerKind::Forced && *timing == bucket && want(pattern) {
                 out.push(ResolutionCandidate {
                     code: code.clone(),

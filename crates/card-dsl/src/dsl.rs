@@ -444,8 +444,11 @@ pub enum EventTiming {
     /// replacement timing — "when … would …").
     When,
     /// Resolves between `when` and `after` abilities with the same
-    /// triggering condition ("at the …"). Dormant until Slice B-iii
-    /// re-tags the round-end doom onto it.
+    /// triggering condition ("at the …" / "if …"), after the condition's own
+    /// impact has landed. Since #702 this cell is reachable on every triggering
+    /// condition the timing coordinator walks — which is all of them bar the
+    /// three enemy-attack-machinery holdouts named on `queue_event`, not just
+    /// the round end as before.
     At,
     /// Resolves after the triggering event has finalized.
     After,

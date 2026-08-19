@@ -151,8 +151,8 @@ fn caller_owned_condition_rejects_a_declared_interrupt() {
         "the reject names the ADR: {reason}"
     );
     assert!(
-        reason.contains("#702"),
-        "the reject names the migration that removes it: {reason}"
+        reason.contains("#703") && reason.contains("#704"),
+        "the reject names the migrations that remove it: {reason}"
     );
 }
 

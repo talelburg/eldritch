@@ -53,22 +53,37 @@ use super::Cx;
 /// doesn't arise; the overwrite is a loud-on-debug placeholder
 /// rather than silent stacking — multi-window queueing lands when a
 /// multi-defeat effect arrives.
-pub(super) fn queue_reaction_window(cx: &mut Cx, event: &crate::engine::TimingEvent) {
-    // Single-bucket events open their window at their natural timing; the
-    // coordinator opens per-cell windows directly (#434, Task 3).
-    let bucket = event.reaction_bucket();
-    let mut candidates = scan_pending_triggers(cx.state, event, bucket);
-    // Axis C (#335): the window also opens for a matching Fast event in hand,
-    // so a defeat with Evidence! in hand (and no in-play reaction) still opens
-    // the after-defeat window. Hand plays are offered after the in-play
-    // triggers.
-    candidates.extend(scan_hand_fast_events(cx.state, event, bucket));
+pub(super) fn queue_reaction_window(
+    cx: &mut Cx,
+    event: &crate::engine::TimingEvent,
+    bucket: EventTiming,
+) {
+    // The last three single-cell conditions — `EnemyAttacks`,
+    // `WouldDiscoverClues` and `EnemyAttackDamagedSelf` — open their window at
+    // the one `bucket` their caller names; every other condition walks the
+    // `when → at → after` coordinator, which opens its per-cell windows through
+    // `open_reaction_run` (#702).
+    let candidates = scan_reactions_at(cx.state, event, bucket);
     if candidates.is_empty() {
         return;
     }
-    // Reaction windows admit any investigator's Fast actions (RR: Fast may be
-    // played at any player window) — encoded by `mode: Reaction` (the former
-    // `FastActorScope::Any` binding). Multi-window nesting is structural.
+    push_reaction_window(cx, event, bucket, candidates);
+}
+
+/// Push a reaction window frame for `candidates` at `bucket`. The shared push
+/// behind [`queue_reaction_window`] (which queues and returns) and
+/// [`open_reaction_run`] (which queues and then opens) — the two differ only in
+/// whether they surface the prompt.
+///
+/// Reaction windows admit any investigator's Fast actions (RR: Fast may be
+/// played at any player window) — encoded by `mode: Reaction` (the former
+/// `FastActorScope::Any` binding). Multi-window nesting is structural.
+fn push_reaction_window(
+    cx: &mut Cx,
+    event: &crate::engine::TimingEvent,
+    bucket: EventTiming,
+    candidates: Vec<ResolutionCandidate>,
+) {
     cx.state
         .continuations
         .push(Continuation::TimingPointWindow {
@@ -81,8 +96,9 @@ pub(super) fn queue_reaction_window(cx: &mut Cx, event: &crate::engine::TimingEv
 
 /// All reaction candidates (in-play + hand Fast + current act/agenda) for
 /// `event` at `bucket` — the `EmitEvent`/`TimingPoint` coordinator's per-cell
-/// reaction scan (#434). Unlike [`queue_reaction_window`] (which reads the
-/// event's *natural* bucket), the coordinator passes the cell it is resolving.
+/// reaction scan (#434). The caller names the cell it is resolving; a cell is
+/// populated iff this finds something in it (#702 deleted the per-event table of
+/// whether a condition opens a reaction window at all).
 pub(super) fn scan_reactions_at(
     state: &GameState,
     event: &crate::engine::TimingEvent,
@@ -118,14 +134,7 @@ pub(super) fn open_reaction_run(
         !candidates.is_empty(),
         "open_reaction_run: caller must pass a non-empty candidate list"
     );
-    cx.state
-        .continuations
-        .push(Continuation::TimingPointWindow {
-            event: event.clone(),
-            bucket,
-            mode: crate::state::TimingMode::Reaction,
-            candidates,
-        });
+    push_reaction_window(cx, event, bucket, candidates);
     #[cfg(debug_assertions)]
     {
         let withdrawn = withdraw_lapsed_candidates(cx);
@@ -219,12 +228,11 @@ fn ability_eligible(
 /// / turn-order resolution order (act/agenda board candidates, controlled by the
 /// lead, appended last).
 ///
-/// The `bucket` filter is what lets the round-end coordinator scan one timing
-/// cell at a time (#434): `When` surfaces act 01109's group advance; `At`/`After`
-/// surface nothing for `RoundEnded` (its doom is *forced*, not a reaction). For
-/// single-bucket events the caller passes the event's `reaction_bucket` — the
-/// abilities that pass `bucket` are exactly those that matched before, so it is
-/// behaviour-preserving.
+/// The `bucket` filter is what lets the coordinator scan one timing cell at a
+/// time (#434): on `RoundEnded`, `When` surfaces act 01109's group advance while
+/// `At`/`After` surface nothing (its doom is *forced*, not a reaction). Since
+/// #702 every condition is scanned this way; the three that still bypass the
+/// coordinator pass the one cell they open at.
 ///
 /// Returns an empty vec when the registry isn't installed (tests that
 /// don't touch card data) or no cards match.
@@ -568,8 +576,11 @@ fn trigger_matches(
                     | (TimingEvent::RoundEnded, EventPattern::RoundEnded)
             );
         }
-        // No `At`-timed reaction exists yet; treat it like `After` (fall through
-        // to pattern matching). Dormant.
+        // An `at`-timed reaction pairs with its condition exactly as an
+        // `after`-timed one does — the cell it resolves in is the coordinator's
+        // business, not the pattern's — so both fall through to the pattern
+        // match below. No corpus card carries one yet (#702's synthetic
+        // `timing_cells.rs` registry does).
         EventTiming::At | EventTiming::After => {}
     }
     match (event, pattern) {

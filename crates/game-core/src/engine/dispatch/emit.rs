@@ -2,11 +2,13 @@
 //!
 //! [`queue_event`] is the single entry point for forced + reaction trigger
 //! dispatch at a framework/game timing point. A [`TimingEvent`] names the
-//! timing point and carries its binding context; `queue_event` runs the
+//! timing point and carries its binding context; `queue_event` pushes the
+//! [coordinator](super::coordinator) that walks the condition's
+//! `when → resolve → at → after` sequence, and each cell of that walk runs the
 //! two phases — Rules Reference p.2 forced-then-reaction:
 //!
 //! 1. **forced** — mandatory abilities are queued (via
-//!    [`queue_forced_triggers`] for a lone hit, or the lead-ordered run for
+//!    `queue_forced_triggers` for a lone hit, or the lead-ordered run for
 //!    2+ simultaneous ones).
 //! 2. **reaction** — the optional player reaction window opens.
 //!
@@ -32,7 +34,7 @@ use crate::state::{CardCode, CardInstanceId, EnemyId, InvestigatorId, LocationId
 use serde::{Deserialize, Serialize};
 
 use super::super::outcome::EngineOutcome;
-use super::forced_triggers::{collect_forced_hits, queue_forced_triggers, ForcedTriggerPoint};
+use super::forced_triggers::ForcedTriggerPoint;
 use super::Cx;
 
 /// A game/framework timing point at which forced and/or reaction triggers
@@ -40,10 +42,11 @@ use super::Cx;
 ///
 /// The union of `ForcedTriggerPoint` (the forced dispatch key) and the
 /// event-driven reaction-window points (the reaction dispatch key). Each
-/// variant maps to an optional forced point (`forced_point`) and to whether
-/// it opens a reaction window (`opens_reaction_window`); `EnemyDefeated` and
+/// variant maps to an optional forced point (`forced_point`) and to who resolves
+/// the condition itself (`condition_resolution`); `EnemyDefeated` and
 /// `SkillTestResolved` are **dual** (both forced and reaction at the
-/// same point).
+/// same point). Whether a cell holds a reaction is **not** tabulated — the
+/// coordinator's per-cell scan answers it (#702).
 ///
 /// `SkillTestResolved` is the general skill-test-outcome timing point (RR
 /// ST.6), of which "after you successfully investigate" (Obscuring Fog forced +
@@ -208,22 +211,6 @@ impl TimingEvent {
         }
     }
 
-    /// The RR timing bucket at which this event's reaction window opens. Read
-    /// when opening a single-bucket event's window (`queue_reaction_window`) so
-    /// the scan filters reactions to the right `EventTiming`. The Before-windows
-    /// (`EnemyAttacks`, `WouldDiscoverClues`) and the round-end act advance are
-    /// `When`; every other reaction-capable point is `After`. Forced-only events
-    /// never open a reaction window, so their value here is moot (`After`).
-    pub(crate) fn reaction_bucket(&self) -> crate::dsl::EventTiming {
-        use crate::dsl::EventTiming;
-        match self {
-            TimingEvent::EnemyAttacks { .. }
-            | TimingEvent::WouldDiscoverClues { .. }
-            | TimingEvent::RoundEnded => EventTiming::When,
-            _ => EventTiming::After,
-        }
-    }
-
     /// Who resolves this triggering condition's own impact — step 2 of the
     /// sequence in `glossary/Nested_Sequences.md`. An **exhaustive** match, so a
     /// new timing event cannot compile without choosing an arm; see
@@ -259,20 +246,6 @@ impl TimingEvent {
             | TimingEvent::EnteredPlay { .. }
             | TimingEvent::LeftLocation { .. } => ConditionResolution::Caller,
         }
-    }
-
-    /// Whether this timing event opens a reaction window. `true` only for the
-    /// reaction-capable points.
-    pub(crate) fn opens_reaction_window(&self) -> bool {
-        matches!(
-            self,
-            TimingEvent::EnemyDefeated { .. }
-                | TimingEvent::EnemyAttackDamagedSelf { .. }
-                | TimingEvent::SkillTestResolved { .. }
-                | TimingEvent::EnemyAttacks { .. }
-                | TimingEvent::WouldDiscoverClues { .. }
-                | TimingEvent::EnteredPlay { .. }
-        )
     }
 }
 
@@ -334,17 +307,14 @@ fn resolve_bare_milestone(_cx: &mut Cx, _event: &TimingEvent) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Dispatch a timing event: queue its reaction window (phase 2), then queue
-/// its forced abilities (phase 1).
+/// Dispatch a timing event: push its `when → resolve → at → after` coordinator
+/// (#702).
 ///
 /// # This queues; it does not resolve
 ///
-/// Every path here pushes frames for the `drive` loop to own: a lone forced hit
-/// becomes an effect frame (plus an `AcknowledgeForced` above it in interactive
-/// mode), 2+ simultaneous hits become a lead-ordered `TimingPointWindow`, and a
-/// reaction-capable point pushes its window. So **`Done` means queued, not
-/// resolved** — a caller that does synchronous work after this call pushes that
-/// work *above* the abilities it just queued, and it runs *first*.
+/// Every path here pushes frames for the `drive` loop to own. So **`Done` means
+/// queued, not resolved** — a caller that does synchronous work after this call
+/// pushes that work *above* the abilities it just queued, and it runs *first*.
 ///
 /// A caller with post-emit work therefore **emits in tail position and resumes
 /// on its own frame**: arm the resume cursor (`enemy_phase_end` /
@@ -354,57 +324,88 @@ fn resolve_bare_milestone(_cx: &mut Cx, _event: &TimingEvent) -> EngineOutcome {
 /// then return this outcome unexamined. See
 /// `docs/adr/0003-emitting-a-timing-point-queues-abilities.md` (#569).
 ///
-/// # Phase ordering
+/// # The sequence
 ///
-/// The reaction window is queued before the forced abilities are, so it sits
-/// *beneath* them on the stack and the forced frames resolve first — RR p.2
-/// forced-before-reaction, structurally rather than by hand-ordering.
+/// `glossary/Nested_Sequences.md` gives *every* triggering condition the same
+/// three-part sequence, and `glossary/At.md` adds the middle cell — so there is
+/// no per-event table of which cells an event supports and no single-cell fast
+/// path. A cell is populated iff [the coordinator's per-cell
+/// scan](super::coordinator::dispatch_emit_event) finds something in it, and an
+/// empty cell is skipped without prompting. Forced-before-reaction within a cell
+/// (RR p.2) is the [`TimingPoint`](crate::state::Continuation::TimingPoint)
+/// frame's `sub` cursor.
 ///
-/// Returns the forced phase's [`EngineOutcome`]: `Done` when the queueing is
-/// complete, `AwaitingInput` when 2+ simultaneous forced abilities need the
-/// lead's ordering pick before any of them can be queued for resolution.
+/// Returns `Done`: the walk itself never suspends here, because pushing the
+/// coordinator *is* the whole of the queueing. The suspensions it will produce —
+/// a reaction window, or the lead's ordering pick for 2+ simultaneous forced
+/// abilities (#213) — surface from the `drive` loop as it walks the cells, which
+/// is why a call site's only obligation is to emit in tail position.
 #[must_use = "queue_event only queues frames: post-emit work belongs on a resume \
               frame, not after this call (ADR 0003). Return the outcome, or bind \
               it to `_` at a site whose caller owns the suspension channel"]
 pub(crate) fn queue_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
-    // The only multi-bucket event (#434): cede to the `when → at → after`
-    // coordinator + the global loop. `queue_event` returns `Done`; the caller
-    // must do no synchronous post-emit work (`upkeep_phase_end` sets its anchor
-    // resume cursor first). Every other event is single-bucket and queues
-    // inline below (Checkpoint-C: no coordinator frame for a single cell).
-    if matches!(event, TimingEvent::RoundEnded) {
-        cx.state
-            .continuations
-            .push(crate::state::Continuation::EmitEvent {
-                event: event.clone(),
-                step: crate::state::EmitStep::When,
-            });
+    // The enemy-attack machinery's three conditions keep their pre-#702
+    // single-cell handling; every other condition walks the coordinator.
+    //
+    // All three share one obstruction: their emit sites read the stack
+    // *synchronously* after the emit — `open_windows()` at
+    // `combat::deal_head_and_maybe_park` / `process_head_attacker`, the top
+    // window's kind at `evaluator`'s discovery — which is the shape ADR 0003
+    // forbids, and which a coordinator frame breaks (the window it will open
+    // is not open yet when the caller looks). Clearing it means the attack
+    // loop stops draining inline and parks on its `AttackLoop` frame for the
+    // `drive` loop to re-expose, so the migration is a ticket each rather than
+    // a line here.
+    //
+    // - `EnemyAttacks` (Dodge 01023's cancel) and `WouldDiscoverClues` (Cover
+    //   Up 01007's replacement) are additionally **interrupt-timed**: they are
+    //   caller-owned with a populated `when` cell, so walking them would hit
+    //   the caller-owned `when`-cell reject and take both cards down with it.
+    //   #704 and #703 respectively.
+    // - `EnemyAttackDamagedSelf` (Guard Dog 01021's soak retaliate) is
+    //   modelled `after`-timed, so under today's declaration nothing about
+    //   *which cell* it resolves in is at stake — only the drive shape is. It
+    //   rides along with #704, which owns the same loop. (#702 found it; the
+    //   ticket had anticipated two holdouts, not three.)
+    //
+    //   The declaration is itself wrong, which is why this holdout is not as
+    //   cheap as it looks. Guard Dog prints *"[reaction] **When** an enemy
+    //   attack deals damage to Guard Dog: Deal 1 damage to the attacking
+    //   enemy."* — one of the mis-tagged declarations #694 retags — so once it
+    //   is `when`-timed it needs a walked `when` cell, and this condition must
+    //   be coordinator-owned before that can happen.
+    if let Some(bucket) = single_cell_holdout_bucket(event) {
+        super::reaction_windows::queue_reaction_window(cx, event, bucket);
         return EngineOutcome::Done;
     }
-    if event.opens_reaction_window() {
-        super::reaction_windows::queue_reaction_window(cx, event);
-    }
-    let Some(point) = event.forced_point() else {
-        return EngineOutcome::Done;
-    };
-    // Forced phase. When 2+ forced abilities fire at this timing point, the lead
-    // investigator orders them (#213): open the forced-resolution run and
-    // suspend for the choice. 0 or 1 queue without suspending.
-    let candidates = collect_forced_hits(cx.state, &point, crate::dsl::EventTiming::After);
-    if candidates.len() >= 2 {
-        // 2+ simultaneous forced: the lead orders them (#213). The run carries
-        // no continuation (#434) — on close the `drive` loop re-dispatches the
-        // exposed parent frame, which is the emit site's own resume frame (ADR
-        // 0003). That is the same frame the 0/1 cases are re-exposed through, so
-        // a site is correct here iff it emits in tail position — there is no
-        // separate "may 2+" obligation to reason about.
-        super::reaction_windows::open_forced_resolution(
-            cx,
-            event,
-            crate::dsl::EventTiming::After,
-            candidates,
-        )
-    } else {
-        queue_forced_triggers(cx, &point, crate::dsl::EventTiming::After)
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::EmitEvent {
+            event: event.clone(),
+            step: crate::state::EmitStep::When,
+        });
+    EngineOutcome::Done
+}
+
+/// `Some(cell)` for a [single-cell holdout](queue_event) — the one cell it opens
+/// its reaction window at — and `None` for every condition that walks the
+/// coordinator. Membership and cell are one answer rather than two, so the set
+/// cannot be widened in one place and forgotten in the other.
+///
+/// The last remnant of the per-condition cell table #702 deleted, kept alive only
+/// by the three conditions that still bypass the coordinator. It goes with them
+/// (#703/#704).
+fn single_cell_holdout_bucket(event: &TimingEvent) -> Option<crate::dsl::EventTiming> {
+    use crate::dsl::EventTiming;
+    match event {
+        // Interrupt timing: Dodge 01023 cancels the attack, Cover Up 01007
+        // replaces the discovery — both before the condition's impact lands.
+        TimingEvent::EnemyAttacks { .. } | TimingEvent::WouldDiscoverClues { .. } => {
+            Some(EventTiming::When)
+        }
+        // Guard Dog 01021 is *declared* after-timed, though it prints "when" —
+        // see the note on `queue_event`.
+        TimingEvent::EnemyAttackDamagedSelf { .. } => Some(EventTiming::After),
+        _ => None,
     }
 }

@@ -464,13 +464,12 @@ pub enum Continuation {
     TimingPointWindow {
         /// The timing event that opened this window/run.
         event: crate::engine::TimingEvent,
-        /// The timing cell whose scan produced `candidates` — the event's own
-        /// `reaction_bucket` for a single-bucket event, or the cell the
-        /// `when → at → after` coordinator
-        /// was resolving (#434). Carried so the fire-time re-validation of a
-        /// reaction window (#568) can re-ask the scan the *same* question it was
-        /// first asked; re-deriving it from `event` would answer for the `when`
-        /// cell of a multi-bucket event no matter which cell opened the window.
+        /// The timing cell whose scan produced `candidates` — the cell the
+        /// `when → at → after` coordinator was resolving (#434/#702), or the
+        /// caller-named cell of one of the three conditions that still bypass it.
+        /// Carried so the fire-time re-validation of a reaction window (#568) can
+        /// re-ask the scan the *same* question it was first asked; re-deriving it
+        /// from `event` would answer for the wrong cell.
         bucket: crate::dsl::EventTiming,
         /// Reaction window vs. forced run.
         mode: TimingMode,
