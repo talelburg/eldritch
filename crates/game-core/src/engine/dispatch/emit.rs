@@ -224,6 +224,43 @@ impl TimingEvent {
         }
     }
 
+    /// Who resolves this triggering condition's own impact — step 2 of the
+    /// sequence in `glossary/Nested_Sequences.md`. An **exhaustive** match, so a
+    /// new timing event cannot compile without choosing an arm; see
+    /// [`ConditionResolution`] and
+    /// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
+    pub(crate) fn condition_resolution(&self) -> ConditionResolution {
+        match self {
+            // The round ending is a **bare milestone**: nothing about the game
+            // state changes as the condition itself resolves (the round-end
+            // teardown — expiring "until the end of the round" effects, Upkeep →
+            // Mythos — runs after the whole sequence, on the Upkeep anchor's
+            // `AfterRoundEnd` resume). There is no impact for a caller to have
+            // mutated ahead of the emit and none for the coordinator to perform,
+            // so the coordinator owns a no-op step and the `when` cell is safe to
+            // walk — which is why act 01109 The Barrier's *"When the round ends"*
+            // objective resolves there today.
+            TimingEvent::RoundEnded => ConditionResolution::Coordinator(resolve_bare_milestone),
+            // Every other condition is still caller-owned: the emitting call site
+            // mutates the board and *then* emits. Each flips to a coordinator-
+            // owned arm when a card demands its `when` cell (#702–#704).
+            TimingEvent::EnteredLocation { .. }
+            | TimingEvent::PhaseEnded { .. }
+            | TimingEvent::ActAdvanced { .. }
+            | TimingEvent::AgendaAdvanced { .. }
+            | TimingEvent::EnemyDefeated { .. }
+            | TimingEvent::EndOfTurn { .. }
+            | TimingEvent::GameEnd
+            | TimingEvent::EliminationGameEnd { .. }
+            | TimingEvent::EnemyAttackDamagedSelf { .. }
+            | TimingEvent::SkillTestResolved { .. }
+            | TimingEvent::EnemyAttacks { .. }
+            | TimingEvent::WouldDiscoverClues { .. }
+            | TimingEvent::EnteredPlay { .. }
+            | TimingEvent::LeftLocation { .. } => ConditionResolution::Caller,
+        }
+    }
+
     /// Whether this timing event opens a reaction window. `true` only for the
     /// reaction-capable points.
     pub(crate) fn opens_reaction_window(&self) -> bool {
@@ -237,6 +274,64 @@ impl TimingEvent {
                 | TimingEvent::EnteredPlay { .. }
         )
     }
+}
+
+/// Who resolves a triggering condition's own impact — step 2 of the sequence in
+/// `glossary/Nested_Sequences.md`, which the Rules Reference puts *inside* the
+/// sequence: *"1) execute "when..." effects that interrupt that triggering
+/// condition, (2) resolve the triggering condition, and then, (3) execute
+/// "after..." effects in response to that triggering condition."*
+///
+/// Returned by `TimingEvent::condition_resolution`, an exhaustive match: a new
+/// timing event cannot compile without a decision — the discipline ADR 0004
+/// established for classifying continuation frames. Never stored on a frame; the
+/// coordinator recomputes it from the event's own value at
+/// [`EmitStep::ResolveCondition`](crate::state::EmitStep::ResolveCondition),
+/// because frames are serialized and cannot hold a fn pointer.
+///
+/// See `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ConditionResolution {
+    /// The **coordinator** resolves the condition, between the `when` and `at`
+    /// cells. The `when` cell is walked: an interrupt there resolves before the
+    /// condition's impact lands, which is what the card prints.
+    Coordinator(ResolveConditionFn),
+    /// The **emitting caller** mutates the board and then emits, so the
+    /// condition has already resolved by the time the coordinator runs.
+    ///
+    /// The migration arm. Its `when` cell is *not* walked and an interrupt
+    /// declared on it is rejected rather than dropped: the caller has already
+    /// mutated, so resolving the interrupt here would resolve it *after* the
+    /// thing it was meant to interrupt — worse than not resolving it at all.
+    ///
+    /// **Migrating one event** means: move the caller's mutation into a named
+    /// function (the emit site keeps only the emit, in tail position per ADR
+    /// 0003), point a `Coordinator` arm at it, and let the coordinator call it at
+    /// the resolve step. Worked examples land with #703 (clue discovery) and #704
+    /// (the enemy attack), whose mutations are already factored out for a resume
+    /// frame to call.
+    ///
+    /// **This arm exists to migrate existing callers, not to accommodate new
+    /// ones.** A new timing event has no legacy emit site to invert, so it is
+    /// born `Coordinator`. When the last member migrates, this arm — and the
+    /// classification, and the reject — are deleted together.
+    Caller,
+}
+
+/// A coordinator-owned condition's resolution step: what the condition itself
+/// does to the game state, run between the `when` and `at` cells.
+///
+/// A plain fn pointer rather than a closure — the coordinator frame is part of
+/// serialized game state, so the step is dispatched from the timing event's own
+/// value on every visit instead of being captured when the frame is pushed.
+pub(crate) type ResolveConditionFn = fn(&mut Cx, &TimingEvent) -> EngineOutcome;
+
+/// The resolve step of a condition that is a **bare milestone** — a phase,
+/// round, turn or step boundary whose occurrence changes nothing by itself.
+/// Nothing to resolve, so nothing happens here; the cells around it are the
+/// whole of the sequence.
+fn resolve_bare_milestone(_cx: &mut Cx, _event: &TimingEvent) -> EngineOutcome {
+    EngineOutcome::Done
 }
 
 /// Dispatch a timing event: queue its reaction window (phase 2), then queue
@@ -282,7 +377,7 @@ pub(crate) fn queue_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
             .continuations
             .push(crate::state::Continuation::EmitEvent {
                 event: event.clone(),
-                bucket: crate::dsl::EventTiming::When,
+                step: crate::state::EmitStep::When,
             });
         return EngineOutcome::Done;
     }
