@@ -452,30 +452,74 @@ pub enum Phase {
     Upkeep,
 }
 
-/// When an [`Trigger::OnEvent`] ability fires relative to the triggering
-/// event finalizing — the RR "when → at → after" timing axis (the order
-/// simultaneous abilities sharing a triggering condition resolve in).
+/// Which **timing cell** a [`Trigger::OnEvent`] ability resolves in — the
+/// three-part sequence the Rules Reference runs around every triggering
+/// condition. `glossary/Nested_Sequences.md`: *"Each time a triggering
+/// condition occurs, the following sequence is followed: 1) execute "when..."
+/// effects that interrupt that triggering condition, (2) resolve the triggering
+/// condition, and then, (3) execute "after..." effects in response to that
+/// triggering condition."*
 ///
-/// - [`When`](Self::When) — the "Forced — when … would …" interrupt timing
-///   that lets an effect interpose on an in-progress event (Dodge 01023's
-///   cancel, Cover Up 01007's replacement).
-/// - [`At`](Self::At) — "at the …" timing, resolving between `when` and
-///   `after` abilities sharing a triggering condition. Dormant: no ability
-///   is tagged `At` until Slice B-iii.
-/// - [`After`](Self::After) — most reaction cards ("After you defeat an
-///   enemy …").
+/// **Declare the trigger word the card prints.** Reading the card is meant to
+/// be enough to write the declaration; the cells are named after the words.
+///
+/// - [`When`](Self::When) — interrupts the condition, resolving *before* its
+///   impact lands. Dodge 01023's *"Fast. Play when an enemy attacks an
+///   investigator at your location. / Cancel that attack."*, Cover Up 01007's
+///   *"`[reaction]` When you would discover 1 or more clues at your location:
+///   Discard that many clues from Cover Up instead."*
+/// - [`At`](Self::At) — between the other two, after the condition's impact has
+///   landed. The cell the printed words *"at"* and *"if"* name: agenda 01107's
+///   *"**Forced** - At the end of the round: Place 1 doom on this agenda for
+///   each `[[Ghoul]]` enemy in the Hallway or Parlor."*, Dissonant Voices 01165's
+///   *"**Forced** - At the end of the round: Discard Dissonant Voices."*
+/// - [`After`](Self::After) — once the condition has fully resolved. Most
+///   reaction cards, and Silver Twilight Acolyte 01102's *"**Forced** - After
+///   Silver Twilight Acolyte attacks: Place 1 doom on the current agenda."*
+///
+/// Within a cell, forced abilities resolve before reactions.
+///
+/// **A `When` declaration can be rejected**, on a triggering condition whose
+/// resolve step the coordinator does not perform yet. The reject names the
+/// condition, and migrating that condition — not retagging the card — is the
+/// fix. What migrating costs, and why the arm is scaffolding with a terminal
+/// condition, is on `ConditionResolution::Caller` in
+/// `crates/game-core/src/engine/dispatch/emit.rs`; the reasoning is
+/// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EventTiming {
-    /// Resolves as the triggering event would finalize (interrupt /
-    /// replacement timing — "when … would …").
+    /// Interrupts the triggering condition — `glossary/When.md`: *"the moment
+    /// immediately after the specified timing point or triggering condition
+    /// initiates, but before its impact upon the game state resolves."* The
+    /// cell a printed *"when"* names, whether or not the clause says *"would"*.
+    ///
+    /// `glossary/Instead.md` gives this cell an internal sub-order the engine
+    /// does not implement — *"'When X would occur' resolves before 'When X
+    /// occurs.'"* — because no corpus card puts both on one condition.
+    ///
+    /// Rejected on a condition whose resolve step has not been migrated; see
+    /// the enum's own docs.
     When,
-    /// Resolves between `when` and `after` abilities with the same
-    /// triggering condition ("at the …" / "if …"), after the condition's own
-    /// impact has landed. Since #702 this cell is reachable on **every**
-    /// triggering condition — the enemy attack and its soak window, the last two
-    /// exceptions, joined the walk in #704 — not just the round end as before.
+    /// Resolves between `when` and `after` abilities with the same triggering
+    /// condition — `glossary/At.md` (identical in `glossary/If.md`): *"These
+    /// abilities trigger in between any "when..." abilities and any "after..."
+    /// abilities with the same triggering condition."* — and, per ADR 0008's
+    /// interpretation, after the condition's own impact has landed.
+    ///
+    /// Since #702 this cell is reachable on **every** triggering condition, not
+    /// just the round end as before — the enemy attack and its soak window, the
+    /// last two conditions to bypass the coordinator entirely, joined the walk
+    /// in #704 — and regardless of who owns the resolve step: caller-owned costs
+    /// the `when` cell only.
     At,
-    /// Resolves after the triggering event has finalized.
+    /// Resolves once the triggering condition has finished — `glossary/After.md`:
+    /// *"the moment immediately after the specified timing point or triggering
+    /// condition has fully resolved."*
+    ///
+    /// A coordinator-owned condition prevented in its `when` cell never fully
+    /// resolves, and takes the **rest of its sequence** with it: neither this
+    /// cell nor [`At`](Self::At) runs, and the remainder of the `when` cell is
+    /// withdrawn too (#714; `data/arkhamdb-faq/core/01023.md`).
     After,
 }
 
