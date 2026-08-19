@@ -509,7 +509,8 @@ cell, and the three printing *"at"* or *"if"* — act 01110, Frozen in Fear 0116
 agenda 01107's enemy-phase-end move — retag to `At` with no engine change, since the
 `at` cell is walked whoever owns the resolve step. The other three print *"when"* on
 caller-owned conditions and ride their migrations (#720/#721/#722), which is why the
-retag ticket split from them — the first of those has since shipped. The conventions that stop a seventh mis-tag landed
+retag ticket split from them — two of those three have since shipped, leaving Guard
+Dog 01021. The conventions that stop a seventh mis-tag landed
 alongside: `CLAUDE.md` now requires the declared cell to match the trigger word in
 the module's own verbatim card-text block *and* the module's prose to name the cell
 and why, with the licensed exception spelled out (a *"when"* card on an unmigrated
@@ -538,6 +539,32 @@ whole-sequence question does not reject, it drops the ability silently — the f
 takes its inline path and step 1 removes the weakness unfired. The list is now
 *derived* from the coordinator's own cursor (`EmitStep::cells()`) rather than written
 out beside it, so a fourth cell cannot be forgotten from it.
+**#721 ✅ shipped (PR #726)** rode the second: Barricade 01038's *"**Forced** - When
+an investigator leaves attached location: Discard Barricade."* retags to `When`, and
+`LeftLocation` migrates ahead of it — the first migration whose condition was **not**
+a bare milestone, so the departure genuinely had to move. Its mutation was the inline
+kind #704 made expensive rather than #703's already-named function, so the prefactor
+came first as its own commit: the engaged-enemy drag (and the disengage of one that
+cannot follow), the location assignment and the `InvestigatorMoved` event became
+`resolve_departure`, with the existing move coverage green across it, and only then
+did the arm flip. `move_primary_effect` now validates and emits, nothing else.
+**Two things deliberately stayed put**, and one of them moved the *other* way. The
+entered-location half keeps riding the `MoveEnter` frame #569 parked beneath the emit
+— that frame is the whole reason entering does not resolve before leaving, and a
+migration that quietly undid it would have re-opened the bug ADR 0003 exists for. The
+destination **reveal** moved off `move_primary_effect` and *onto* that frame: it is
+the arrival's business, and after the migration the arrival happens further down the
+stack than the point the reveal used to sit at, so leaving it where it was would have
+revealed a location before the investigator had left the one they were standing on.
+Nothing in the corpus was watching it — every test fixture location is born
+`revealed: true` — which is why the relocation needed a test built to see it.
+The retag itself is **invisible in the corpus**: no Core or Dunwich card observes
+whether Barricade discards before or after the departure lands, so unlike #720 this
+fixed a wrong tag rather than a live bug. It was done because a permanently-waived row
+is the rot a self-clearing list exists to prevent, and because ADR 0008's terminal
+condition — every arm flipped, the classification and the reject deleted together —
+only stays reachable if the arms actually flip. `CLAUDE.md`'s licensed mismatch now
+names Guard Dog 01021 alone.
 The attacker's **exhaust** could not move to the resolve step — a cancelled attack
 still exhausts (Dodge 01023's ruling) and a cancel abandons the sequence before step
 2 — so it sits on the parked loop frame, after the `after` cell, where step 3.3 puts

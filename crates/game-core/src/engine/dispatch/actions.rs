@@ -416,14 +416,16 @@ pub(super) fn move_action(
 /// completes (#293). Re-derives `from` from the live `current_location` (the `AoO`
 /// never moves the actor) and re-checks the destination is still connected —
 /// the §D primary-precondition re-check — suppressing the move (returns `Done`)
-/// if it no longer holds. Engaged enemies move with the investigator, except
-/// those that cannot enter the destination (a Barricade 01038 block), which
-/// disengage and stay behind.
+/// if it no longer holds.
 ///
-/// Ends by queueing the *left* location's Forced abilities; the entered half —
-/// auto-engagement and the entered location's Forced abilities — rides the
-/// [`MoveEnter`](crate::state::Continuation::MoveEnter) frame this pushes and
-/// runs in [`resume_move_enter`] once they have resolved (#569).
+/// Then it does nothing but emit. The departure itself — the engaged enemies
+/// that ride along, the location assignment, the `InvestigatorMoved` event —
+/// is [`resolve_departure`], which the timing coordinator runs at
+/// `LeftLocation`'s resolve step (#721). The entered half — the destination
+/// reveal, auto-engagement, and the entered location's Forced abilities — rides
+/// the [`MoveEnter`](crate::state::Continuation::MoveEnter) frame this pushes
+/// and runs in [`resume_move_enter`] once the whole departure sequence has
+/// resolved (#569).
 pub(super) fn move_primary_effect(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -455,6 +457,71 @@ pub(super) fn move_primary_effect(
         return EngineOutcome::Done; // precondition lapsed: suppress
     }
 
+    // Park the entered-location half on its own frame, then emit in tail
+    // position (ADR 0003) with nothing of the departure done yet: since #721
+    // `LeftLocation` is coordinator-owned, so the coordinator runs
+    // [`resolve_departure`] at its own resolve step, between the `when` and
+    // `at` cells. Barricade 01038's *"Forced - When an investigator leaves
+    // attached location: Discard Barricade."* therefore discards before the
+    // departure lands, which is what the card prints.
+    //
+    // The frame beneath the emit is #569's: running the engage + entered-
+    // location emit inline after the emit — the pre-#569 shape — pushed them
+    // above the abilities the emit had just queued, so entering resolved
+    // before leaving. The destination reveal rides that frame too; it is the
+    // arrival's business, not the departure's.
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::MoveEnter {
+            investigator,
+            destination,
+        });
+    super::emit::queue_event(
+        cx,
+        &super::emit::TimingEvent::LeftLocation {
+            investigator,
+            location: from,
+            destination,
+        },
+    )
+}
+
+/// The departure's own impact: the engaged enemies that ride along (or
+/// disengage because they cannot), the investigator's location assignment, and
+/// the `InvestigatorMoved` event.
+///
+/// Since #721 this is `LeftLocation`'s **resolve step** — step 2 of the
+/// sequence in `glossary/Nested_Sequences.md` — run by the timing coordinator
+/// between the `when` and `at` cells rather than by `move_primary_effect`
+/// before the emit. `from` is the location being left and `destination` the one
+/// being entered; both were re-validated by `move_primary_effect` before it
+/// emitted. Reached through
+/// [`resolve_left_location`](super::emit::resolve_left_location).
+pub(super) fn resolve_departure(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    from: LocationId,
+    destination: LocationId,
+) {
+    if !cx.state.investigators.contains_key(&investigator) {
+        // The `when` cell ran between `move_primary_effect`'s validation and
+        // this step, so the actor's presence is re-checked rather than
+        // asserted. No corpus card removes an investigator from an interrupt on
+        // a departure; suppressing (as the connection re-check above does)
+        // beats panicking if one ever does.
+        //
+        // The rest of the §D re-check — that the actor is still standing at
+        // `from`, and that `from` is still connected to a `destination` that
+        // still exists — is deliberately *not* repeated here, though the `when`
+        // cell can now in principle invalidate all three. Nothing in the corpus
+        // relocates an investigator or removes a location from an interrupt on
+        // a departure, and a departure that declined to land would still leave
+        // the `MoveEnter` frame beneath this sequence to resolve the arrival: a
+        // half-move, worse than the state it guards against. The first card
+        // that can do either wants the whole move re-validated at this step and
+        // the arrival frame cancelled with it — not one field re-read.
+        return;
+    }
     // Engaged enemies move with the investigator — unless the destination is
     // one the enemy cannot enter. Barricade 01038's "Non-Elite enemies cannot
     // move into attached location" is absolute (RR glossary, "Cannot": "The
@@ -492,7 +559,7 @@ pub(super) fn move_primary_effect(
         // predicate borrows the whole state immutably.
         let enemy = cx.state.enemies.get(&enemy_id).unwrap_or_else(|| {
             unreachable!(
-                "move_primary_effect: enemy {enemy_id:?} vanished between the engagement scan \
+                "resolve_departure: enemy {enemy_id:?} vanished between the engagement scan \
                  and the drag-along; this is a state-corruption invariant violation"
             )
         });
@@ -515,35 +582,13 @@ pub(super) fn move_primary_effect(
     cx.state
         .investigators
         .get_mut(&investigator)
-        .expect("investigator existence checked above via current_location")
+        .expect("investigator presence re-checked at the top of this function")
         .current_location = Some(destination);
     cx.events.push(Event::InvestigatorMoved {
         investigator,
         from,
         to: destination,
     });
-    // Reveal the destination if this is the first investigator entry
-    // (Rules Reference p.14). No-op if already revealed.
-    super::reveal::reveal_location(cx, destination);
-    // Park the entered-location half on its own frame, then emit in tail
-    // position (ADR 0003). The emit *queues* the left location's "when an
-    // investigator leaves attached location" forced abilities (Barricade 01038's
-    // self-discard); running the engage + entered-location emit inline after it
-    // — the pre-#569 shape — pushed them above those frames, so entering
-    // resolved before leaving.
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::MoveEnter {
-            investigator,
-            destination,
-        });
-    super::emit::queue_event(
-        cx,
-        &super::emit::TimingEvent::LeftLocation {
-            investigator,
-            location: from,
-        },
-    )
 }
 
 /// The entered-location half of a Move, run when the `drive` loop re-exposes the
@@ -558,6 +603,12 @@ pub(super) fn resume_move_enter(cx: &mut Cx) -> EngineOutcome {
     else {
         unreachable!("resume_move_enter: top frame is not a MoveEnter");
     };
+    // Reveal the destination if this is the first investigator entry
+    // (Rules Reference p.14). No-op if already revealed. Lives here rather than
+    // in `move_primary_effect` because it is the arrival's business: the
+    // investigator has to have arrived to have entered, and since #721 the
+    // arrival happens at the departure's resolve step, further down the stack.
+    super::reveal::reveal_location(cx, destination);
     // Framework engagement on entering (RR engagement rules): "Each time an
     // investigator enters a location, each ready enemy at that location
     // automatically engages that investigator." Runs after the move is applied

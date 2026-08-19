@@ -158,11 +158,21 @@ pub enum TimingEvent {
     },
     /// An investigator left a location (forced only — Barricade 01038's
     /// self-discard). Scans the left location's attachment zone.
+    ///
+    /// Coordinator-owned since #721: the departure itself resolves at
+    /// `resolve_left_location`, so a `when` ability sees the investigator
+    /// still standing at `location`, while an `at` or `after` one sees them
+    /// already at `destination`.
     LeftLocation {
         /// The investigator who left.
         investigator: InvestigatorId,
         /// The location they left.
         location: LocationId,
+        /// The location they are moving to. Carried because the departure's own
+        /// impact — the engaged-enemy drag and the location assignment — is
+        /// resolved from this event's value at the coordinator's resolve step,
+        /// where `move_primary_effect`'s locals are long out of scope.
+        destination: LocationId,
     },
 }
 
@@ -214,6 +224,7 @@ impl TimingEvent {
             TimingEvent::LeftLocation {
                 investigator,
                 location,
+                destination: _,
             } => Some(ForcedTriggerPoint::LeftLocation {
                 investigator: *investigator,
                 location: *location,
@@ -295,6 +306,18 @@ impl TimingEvent {
             TimingEvent::EnemyAttacks { .. } => {
                 ConditionResolution::Coordinator(resolve_enemy_attack)
             }
+            // The third migration (#721). Barricade 01038 prints *"**Forced** -
+            // When an investigator leaves attached location: Discard
+            // Barricade."*, so the discard has to resolve before the departure
+            // lands — which it cannot if the caller has already moved the
+            // investigator by the time the `when` cell runs. The departure's
+            // impact is the engaged-enemy drag and the location assignment, so
+            // that is what moves to the resolve step; the destination *reveal*
+            // and the auto-engagement do not, being the arrival's business, and
+            // stay on the `MoveEnter` frame parked beneath the emit (#569).
+            TimingEvent::LeftLocation { .. } => {
+                ConditionResolution::Coordinator(resolve_left_location)
+            }
             // Every other condition is still caller-owned: the emitting call site
             // mutates the board and *then* emits. Each flips to a coordinator-
             // owned arm when a card demands its `when` cell — what that costs,
@@ -308,8 +331,7 @@ impl TimingEvent {
             | TimingEvent::EndOfTurn { .. }
             | TimingEvent::EnemyAttackDamagedSelf { .. }
             | TimingEvent::SkillTestResolved { .. }
-            | TimingEvent::EnteredPlay { .. }
-            | TimingEvent::LeftLocation { .. } => ConditionResolution::Caller,
+            | TimingEvent::EnteredPlay { .. } => ConditionResolution::Caller,
         }
     }
 }
@@ -431,6 +453,33 @@ fn resolve_enemy_attack(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
         unreachable!("resolve_enemy_attack: not an EnemyAttacks event: {event:?}");
     };
     super::combat::deal_enemy_attack(cx, *investigator, *enemy)
+}
+
+/// The resolve step of [`TimingEvent::LeftLocation`]: the departure lands
+/// (#721).
+///
+/// The impact of "an investigator leaves a location" is the investigator (and
+/// the enemies engaged with them) arriving at the destination, so that is what
+/// happens here — after the `when` cell has had its chance to interrupt, and
+/// before the `at` and `after` cells see the board. Barricade 01038's
+/// *"**Forced** - When an investigator leaves attached location: Discard
+/// Barricade."* is the `when`-cell ability this exists for.
+///
+/// **Not** here: the destination reveal and the entered location's
+/// auto-engagement. Both belong to the arrival, not the departure, and stay on
+/// the [`MoveEnter`](crate::state::Continuation::MoveEnter) frame parked beneath
+/// the emit — which is also what keeps #569's ordering, entering after leaving.
+fn resolve_left_location(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
+    let TimingEvent::LeftLocation {
+        investigator,
+        location,
+        destination,
+    } = event
+    else {
+        unreachable!("resolve_left_location: not a LeftLocation event: {event:?}");
+    };
+    super::actions::resolve_departure(cx, *investigator, *location, *destination);
+    EngineOutcome::Done
 }
 
 /// Dispatch a timing event: push its `when → resolve → at → after` coordinator

@@ -14,6 +14,18 @@
 //! location); and a `Forced` self-discard when an investigator leaves the
 //! attached location (`EventPattern::LeftLocation` → `Effect::DiscardSelf`,
 //! routed to the owner's player discard).
+//!
+//! **Cell: the `when` cell of the `LeftLocation` condition.** The printed word
+//! is *"When"* — *"**Forced** - When an investigator leaves attached location:
+//! Discard Barricade."* — and `glossary/When.md` pins that word to *"the moment
+//! immediately after the specified timing point or triggering condition
+//! initiates, but before its impact upon the game state resolves"*. The impact
+//! of a departure is the investigator (and any enemy engaged with them)
+//! arriving at the destination, so the discard resolves while they are still
+//! standing on the attached location. That cell only became declarable when
+//! #721 migrated `LeftLocation` to a coordinator-owned condition; until then the
+//! departure had already landed by the time the coordinator ran, and the tag
+//! read `After` under the licensed mismatch in `CLAUDE.md`.
 
 use card_dsl::dsl::{
     attach_self_to_location, constant, discard_self, forced_on_event, on_play, restrict, Ability,
@@ -32,7 +44,7 @@ pub fn abilities() -> Vec<Ability> {
         constant(restrict(Restriction::EnemyMovementBlocked)),
         forced_on_event(
             EventPattern::LeftLocation,
-            EventTiming::After,
+            EventTiming::When,
             discard_self(),
         ),
     ]
@@ -40,7 +52,7 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, EventPattern, Restriction, Trigger, TriggerKind};
+    use card_dsl::dsl::{Effect, EventPattern, EventTiming, Restriction, Trigger, TriggerKind};
 
     #[test]
     fn abilities_are_attach_block_and_leave_discard() {
@@ -53,14 +65,20 @@ mod tests {
             a[1].effect,
             Effect::Restrict(Restriction::EnemyMovementBlocked)
         );
-        assert!(matches!(
+        assert!(
+            matches!(
+                a[2].trigger,
+                Trigger::OnEvent {
+                    pattern: EventPattern::LeftLocation,
+                    kind: TriggerKind::Forced,
+                    timing: EventTiming::When,
+                }
+            ),
+            "the card prints *\"When an investigator leaves attached location\"*, so \
+             the discard belongs in the `when` cell — before the departure lands \
+             (#721); trigger = {:?}",
             a[2].trigger,
-            Trigger::OnEvent {
-                pattern: EventPattern::LeftLocation,
-                kind: TriggerKind::Forced,
-                ..
-            }
-        ));
+        );
         assert_eq!(a[2].effect, Effect::DiscardSelf);
     }
 }
