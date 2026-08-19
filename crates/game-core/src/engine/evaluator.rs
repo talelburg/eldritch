@@ -90,11 +90,13 @@ pub struct SkillTestBinding {
     pub failed_by: u8,
 }
 
-/// Clue count a before-discovery interrupt is replacing (bound only while
-/// resolving a `WouldDiscoverClues` ability's effect).
+/// The clue count of the discovery an ability is responding to (bound only
+/// while resolving a `DiscoverClues` ability's effect, in any of the three
+/// cells — a `when` replacement reads it to know how many clues it is
+/// replacing).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiscoveryBinding {
-    /// Clues the interrupt is replacing.
+    /// Clues the discovery moves — what a `when` replacement is replacing.
     pub clue_discovery_count: u8,
 }
 
@@ -147,9 +149,9 @@ pub struct EvalContext {
     /// Skill-test margin binding, bound only while running an `on_fail` effect.
     /// Read via [`Self::failed_by`]. `None` outside that window.
     pub skill_test: Option<SkillTestBinding>,
-    /// Before-discovery interrupt binding, bound only while resolving a
-    /// `WouldDiscoverClues` ability's effect. Read via
-    /// [`Self::clue_discovery_count`]. `None` outside that window.
+    /// Clue-discovery binding, bound only while resolving a `DiscoverClues`
+    /// ability's effect (any cell). Read via [`Self::clue_discovery_count`].
+    /// `None` outside that window.
     pub discovery: Option<DiscoveryBinding>,
     /// Enemy-attack reaction binding, bound only while resolving an
     /// `EnemyAttackDamagedSelf` reaction. Read via [`Self::attacking_enemy`].
@@ -225,8 +227,9 @@ impl EvalContext {
     pub fn failed_by(&self) -> Option<u8> {
         self.skill_test.map(|b| b.failed_by)
     }
-    /// Clue count a before-discovery interrupt is replacing (bound only while
-    /// resolving a `WouldDiscoverClues` ability's effect).
+    /// The clue count of the discovery this ability is responding to — what a
+    /// `when` replacement is replacing (Cover Up 01007's "that many"). Bound
+    /// only while resolving a `DiscoverClues` ability's effect.
     #[must_use]
     pub fn clue_discovery_count(&self) -> Option<u8> {
         self.discovery.map(|b| b.clue_discovery_count)
@@ -261,7 +264,7 @@ impl EvalContext {
     pub fn set_failed_by(&mut self, margin: u8) {
         self.skill_test = Some(SkillTestBinding { failed_by: margin });
     }
-    /// Bind the before-discovery clue count (see [`Self::clue_discovery_count`]).
+    /// Bind the discovery's clue count (see [`Self::clue_discovery_count`]).
     pub fn set_clue_discovery_count(&mut self, count: u8) {
         self.discovery = Some(DiscoveryBinding {
             clue_discovery_count: count,
@@ -1482,7 +1485,7 @@ fn discover_clue(
     // at it, you can only discover 1 clue at most when you investigate it."*
     // Cap **here**, before the timing point, so the would-be-discovery count
     // every replacement effect reads is the real one — Cover Up's "discard that
-    // many" derives from `WouldDiscoverClues.count` (#471, ex-#368 item 2).
+    // many" derives from `DiscoverClues.count` (#471, ex-#368 item 2).
     //
     // Locked at emission: `perform_discovery`'s own `min` stays as the
     // shrinkage backstop, so a mid-window reaction that *removes* clues shrinks
@@ -1491,41 +1494,25 @@ fn discover_clue(
     // Up is never prompted for a 0-clue discard.
     let capped = count.min(location.clues);
 
-    // Before-timing clue-discovery window (Cover Up 01007; Axis D #336,
-    // migrated from the C5a `clue_interrupt` seam). Reaction-only Before timing
-    // point: `queue_event` queues the window iff an eligible `WouldDiscoverClues`
-    // reaction is controlled at the discovery location — the "at your location"
-    // scoping and the `card.clues > 0` potential-gate stand-in (RR p.2) live in
-    // the window scan. If the window opened, suspend; the
-    // `BeforeDiscoverClues` continuation performs the deferred discovery on
-    // close (unless a reaction cancelled it). No registry / no eligible card →
-    // `open_windows` stays empty and the discovery happens now.
-    let _ = crate::engine::dispatch::emit::queue_event(
+    // Emit the clue-discovery triggering condition and stop: the condition is
+    // **coordinator-owned** (#703), so the clues move at the coordinator's
+    // resolve step, between the `when` and `at` cells — not here. That is what
+    // lets Cover Up 01007's *"[reaction] When you would discover 1 or more clues
+    // at your location: Discard that many clues from Cover Up instead"* replace
+    // a discovery that has not happened yet.
+    //
+    // In tail position with nothing after it, per ADR 0003: this returns
+    // `Done` when nothing was queued *and* when a `when` window was, and the
+    // `drive` loop owns both. The pre-#703 code peeked at the top frame here to
+    // tell those apart, which is the shape the ADR forbids.
+    crate::engine::dispatch::emit::queue_event(
         cx,
-        &crate::engine::dispatch::emit::TimingEvent::WouldDiscoverClues {
+        &crate::engine::dispatch::emit::TimingEvent::DiscoverClues {
             investigator: eval_ctx.controller,
             location: location_id,
             count: capped,
         },
-    );
-    // `queue_event` pushes the before-discover window (if any eligible reaction
-    // matched) on *top* of the stack. Check the top window's kind rather than
-    // "any window open" — `discover_clue` can run while an *outer* reaction
-    // window is already open (e.g. Evidence! 01022 played in an after-defeat
-    // window then discovers a clue), and that outer window must not be mistaken
-    // for a queued before-discover window.
-    if matches!(
-        cx.state
-            .continuations
-            .last()
-            .and_then(crate::state::Continuation::window_timing_event),
-        Some(crate::engine::TimingEvent::WouldDiscoverClues { .. })
-    ) {
-        return crate::engine::dispatch::reaction_windows::open_queued_reaction_window(cx);
-    }
-
-    perform_discovery(cx, location_id, capped, eval_ctx.controller);
-    EngineOutcome::Done
+    )
 }
 
 /// Set the `pending_cancellation` signal for [`Effect::Cancel`] (Axis D #336).
@@ -1551,18 +1538,20 @@ fn cancel_current_impact(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Move `count` clues (capped at availability) from `location_id` to
-/// `controller`, emitting `CluePlaced` + `LocationCluesChanged`. The
-/// committed mutation half of [`discover_clue`], factored out so the
-/// clue-discovery interrupt's `Skip` resume can perform the deferred
-/// discovery (C5a #236). Caller guarantees both ids exist and the
-/// location has clues.
+/// `controller`, emitting `CluePlaced` + `LocationCluesChanged`.
+///
+/// The clue-discovery condition's **resolve step** — step 2 of
+/// `glossary/Nested_Sequences.md`, called by the timing coordinator between the
+/// `when` and `at` cells (`emit::resolve_clue_discovery`, #703), never by
+/// [`discover_clue`], which only caps the count and emits. Caller guarantees
+/// both ids exist and the location has clues.
 ///
 /// `count` arrives already capped at the location's clues as of the
 /// would-be-discovery timing point ([`discover_clue`] caps before emitting, so
 /// the count a replacement effect reads is the real one). The `min` here is the
-/// **shrinkage backstop** for the gap between emission and this call: a reaction
-/// that removed clues mid-window shrinks the discovery, while one that added
-/// clues does not grow it — the quantity is fixed at the moment of the would-be
+/// **shrinkage backstop** for the gap between emission and this call: a `when`
+/// ability that removed clues shrinks the discovery, while one that added clues
+/// does not grow it — the quantity is fixed at the moment of the would-be
 /// discovery (#471).
 pub(crate) fn perform_discovery(
     cx: &mut Cx,
@@ -2558,22 +2547,36 @@ mod tests {
     }
 
     /// Bounded effect driver — the deleted production `drive_effect_to_base`,
-    /// now test-only (Slice D #423). Steps the top contiguous `Effect` run until
-    /// it shrinks to `base` (run complete → `Done`) or a leaf suspends for a pick
+    /// now test-only (Slice D #423). Steps the top contiguous run until it
+    /// shrinks to `base` (run complete → `Done`) or a leaf suspends for a pick
     /// (`AwaitingInput`), WITHOUT touching fixture frames beneath `base` (an
     /// in-flight `SkillTest` carrying `tested_location`, say). The production
     /// path no longer needs this — the global `drive` loop drives the parked run
     /// and then *does* advance the enclosing frame — but a unit test parks
     /// fixtures it does not want driven, so it drives bounded instead.
+    ///
+    /// The run includes the timing coordinator, because a leaf can emit a
+    /// triggering condition whose *own resolution* the coordinator performs —
+    /// `Effect::DiscoverClue` since #703 only caps the count and emits, and the
+    /// clues move at the coordinator's resolve step. Stopping at the `EmitEvent`
+    /// frame would leave the effect half-resolved in a way `apply` never does.
     fn drive_effect_run_to(cx: &mut Cx, base: usize) -> EngineOutcome {
         use crate::state::Continuation;
         loop {
-            if cx.state.continuations.len() <= base
-                || !matches!(cx.state.continuations.last(), Some(Continuation::Effect(_)))
-            {
+            if cx.state.continuations.len() <= base {
                 return EngineOutcome::Done;
             }
-            match step_effect_frame(cx) {
+            let outcome = match cx.state.continuations.last() {
+                Some(Continuation::Effect(_)) => step_effect_frame(cx),
+                Some(Continuation::EmitEvent { .. }) => {
+                    crate::engine::dispatch::coordinator::dispatch_emit_event(cx)
+                }
+                Some(Continuation::TimingPoint { .. }) => {
+                    crate::engine::dispatch::coordinator::dispatch_timing_point(cx)
+                }
+                _ => return EngineOutcome::Done,
+            };
+            match outcome {
                 EngineOutcome::Done => {}
                 other => return other,
             }

@@ -174,10 +174,12 @@ pub struct GameState {
     // [`Self::current_encounter_drawer`]. The former `mythos_draw_pending:
     // Option<InvestigatorId>` cursor is removed — the continuation stack is the
     // single source of truth (mirroring the `mulligan_pending` fold).
-    /// Set by [`Effect::Cancel`](crate::dsl::Effect::Cancel) while a
-    /// Before-timing reaction window resolves; read-and-cleared by the emit
-    /// site (the enemy-attack loop, `discover_clue`) after the window closes,
-    /// to skip the prevented impact (Axis D #336). A bool suffices because
+    /// Set by [`Effect::Cancel`](crate::dsl::Effect::Cancel) while a `when`-cell
+    /// reaction window resolves, to skip the prevented impact (Axis D #336).
+    /// Read-and-cleared by whoever owns the condition's resolution: the timing
+    /// coordinator at its resolve step for a coordinator-owned condition (clue
+    /// discovery, #703), the emit site after the window closes for a
+    /// caller-owned one (the enemy-attack loop). A bool suffices because
     /// Before-windows do not nest in scope — exactly one cancellable impact is
     /// ever in flight. TODO(#367): typed marker once Before-windows can nest.
     /// Required on the wire (#453).
@@ -543,10 +545,12 @@ pub enum Continuation {
     /// Coordinator: walk one triggering condition's timing sequence — the three
     /// cells `When → At → After` with the condition's *own* resolution between
     /// the first two (EmitEvent-frame C-coordinators, #434; the resolve step,
-    /// #701). `step` is the cursor. Pushed by `queue_event` for the only
-    /// multi-cell event (`RoundEnded`); the `drive` loop dispatches it, pushing
-    /// a [`TimingPoint`](Self::TimingPoint) per populated cell and re-scanning
-    /// each cell fresh. Suspends at the round-end `when` act-advance window.
+    /// #701). `step` is the cursor. Pushed by `queue_event` for **every**
+    /// triggering condition (#702, bar the enemy-attack holdouts it documents);
+    /// the `drive` loop dispatches it, pushing a
+    /// [`TimingPoint`](Self::TimingPoint) per populated cell and re-scanning
+    /// each cell fresh. Suspends wherever a cell opens a window — the round-end
+    /// `when` act-advance, a clue discovery's `when` replacement (#703).
     EmitEvent {
         /// The game event whose timing cells are being walked.
         event: crate::engine::TimingEvent,

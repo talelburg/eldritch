@@ -362,14 +362,27 @@ pub enum EventPattern {
         /// Narrow to a test type, or `None` for any.
         kind: Option<SkillTestKind>,
     },
-    /// An investigator is about to discover one or more clues. Matched
-    /// **only** by the clue-discovery interrupt seam in `discover_clue`
-    /// (paired with [`EventTiming::When`]), never by the general
-    /// reaction-window pipeline — `trigger_matches` returns `false` for
-    /// it, like the forced-only patterns above. First consumer: Cover Up
-    /// 01007's "`[reaction]` When you would discover 1 or more clues at your
-    /// location: Discard that many clues from Cover Up instead." (C5a #236.)
-    WouldDiscoverClues,
+    /// An investigator discovers one or more clues — the **one** triggering
+    /// condition for clue discovery, reaction-only in all three cells (#703; a
+    /// *forced* ability on it is not collected in any cell, since the condition
+    /// has no forced dispatch point yet). Which cell an ability lands in is its
+    /// [`EventTiming`], not a second pattern:
+    /// [`When`](EventTiming::When) interrupts the discovery (a replacement
+    /// effect, before the clues move), [`At`](EventTiming::At) and
+    /// [`After`](EventTiming::After) resolve once they have.
+    ///
+    /// The condition is coordinator-owned, so its `when` cell is walked: the
+    /// discovery itself happens between the `when` and `at` cells. First
+    /// consumer: Cover Up 01007's "`[reaction]` When you would discover 1 or
+    /// more clues at your location: Discard that many clues from Cover Up
+    /// instead." — `When` + [`Effect::Cancel`], which prevents the discovery
+    /// from resolving at all (`glossary/Instead.md`).
+    ///
+    /// The engine binds *you* = the discovering investigator and, for a `when`
+    /// ability, the would-be discovery's count (Cover Up's "that many"). That
+    /// count is what would **actually** be discovered — capped at the clues
+    /// present, per the **Discovery** entry in `CONTEXT.md` (#471).
+    DiscoverClues,
     /// The game ended (a scenario resolution latched). Fired forced via
     /// `ForcedTriggerPoint::GameEnd` from `fire_scenario_resolution`,
     /// scanning every investigator's controlled card instances; binds
@@ -2556,8 +2569,8 @@ mod tests {
     }
 
     #[test]
-    fn would_discover_clues_and_game_end_round_trip() {
-        for p in [EventPattern::WouldDiscoverClues, EventPattern::GameEnd] {
+    fn discover_clues_and_game_end_round_trip() {
+        for p in [EventPattern::DiscoverClues, EventPattern::GameEnd] {
             let json = serde_json::to_string(&p).expect("serialize");
             let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(p, back);

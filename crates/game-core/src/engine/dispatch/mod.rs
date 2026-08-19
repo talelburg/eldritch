@@ -355,8 +355,9 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // walks the buckets (pushing a `TimingPoint` per populated cell);
             // `TimingPoint` runs one bucket's forced-then-reaction. Each does one
             // step and returns `Done` (loop re-dispatches the mutated top) or
-            // `AwaitingInput` (a window / forced run opened). Only `RoundEnded`
-            // uses them today (the round-end `when` advance + `at` doom).
+            // `AwaitingInput` (a window / forced run opened). Every condition
+            // walks them (#702), and a coordinator-owned one also resolves its
+            // own impact mid-walk (#701/#703).
             Some(Continuation::EmitEvent { .. }) => match coordinator::dispatch_emit_event(cx) {
                 EngineOutcome::Done => {}
                 other => return other,
