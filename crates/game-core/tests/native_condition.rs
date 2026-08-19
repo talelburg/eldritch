@@ -98,7 +98,8 @@ fn native_condition_holding_takes_the_then_branch() {
     let mut state = state_with_agenda(AGENDA, 1);
     let before = resources(&state);
     let mut events = Vec::new();
-    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+    let outcome =
+        fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy, EventTiming::After);
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(resources(&state), before + 2, "predicate true → `then`");
 }
@@ -108,7 +109,8 @@ fn native_condition_failing_takes_the_else_branch() {
     let mut state = state_with_agenda(AGENDA, 0);
     let before = resources(&state);
     let mut events = Vec::new();
-    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+    let outcome =
+        fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy, EventTiming::After);
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(resources(&state), before + 5, "predicate false → `else_`");
 }
@@ -120,7 +122,8 @@ fn native_condition_rejects_unknown_tag() {
     let mut state = state_with_agenda(AGENDA_BAD, 1);
     let before = resources(&state);
     let mut events = Vec::new();
-    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+    let outcome =
+        fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy, EventTiming::After);
     assert!(
         matches!(outcome, EngineOutcome::Rejected { .. }),
         "unknown tag rejects; got {outcome:?}"

@@ -7,10 +7,23 @@
 //!
 //! Forced (no "may" — Rules Reference p.3; the bare "advance" with no
 //! clue threshold cannot be the optional clue-spend ability): the act
-//! advances the instant the Ghoul Priest (01116) is defeated, firing its
-//! terminal Won/R1 resolution. Wired via `ForcedTriggerPoint::EnemyDefeated`
-//! from the defeat path; narrowed to 01116 so other ghouls' defeats don't
-//! advance it.
+//! advances when the Ghoul Priest (01116) is defeated, firing its terminal
+//! Won/R1 resolution. Wired via `ForcedTriggerPoint::EnemyDefeated` from the
+//! defeat path; narrowed to 01116 so other ghouls' defeats don't advance it.
+//!
+//! **Cell: the `at` cell of the `EnemyDefeated` condition.** The printed word
+//! is *"If"* on a state that has already settled — and `glossary/If.md`
+//! reaches this card by name: *"Some abilities have triggering conditions
+//! that use the words "at" or "if" instead of specifying "when" or "after,"
+//! such as "at the end of the round," or "if the Ghoul Priest is defeated."
+//! These abilities trigger in between any "when..." abilities and any
+//! "after..." abilities with the same triggering condition."* The ruling
+//! agrees in card terms: *"The **Objective** ability is mandatory, it will
+//! trigger as soon as you defeat the Ghoul Priest, before any "After you
+//! defeat an enemy" reactions can be used."*
+//! (<https://arkhamdb.com/card/01110>). So the defeat's own impact — the
+//! enemy leaving play, its 2 victory points reaching the victory display —
+//! lands first, and the advance still beats every `after` reaction to it.
 //!
 //! Act-3's *reverse* (the R1/R2 resolution choice) is deferred to Phase 9
 //! (campaign log gives the branch meaning); the scenario keeps a single
@@ -30,7 +43,7 @@ pub fn abilities() -> Vec<Ability> {
             by_controller: false,
             code: Some("01116".to_owned()),
         },
-        EventTiming::After,
+        EventTiming::At,
         advance_current_act(),
     )]
 }
@@ -50,7 +63,7 @@ mod tests {
                     by_controller: false,
                     code: Some("01116".into()),
                 },
-                timing: EventTiming::After,
+                timing: EventTiming::At,
                 kind: card_dsl::dsl::TriggerKind::Forced,
             }
         );

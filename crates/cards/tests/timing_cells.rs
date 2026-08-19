@@ -17,12 +17,16 @@
 //! > "when..." abilities and any "after..." abilities with the same triggering
 //! > condition.
 //!
-//! No corpus card declares an `at`- or `when`-tagged ability on any condition
-//! other than the round end, so the walk is proved with a hand-built registry
-//! (prior art: `advance_act_interactive_reverse`). The round end's own three
-//! consumers — act 01109, agenda 01107, Dissonant Voices 01165 — are covered
-//! against the *real* corpus in `theyre_getting_out.rs` and
-//! `the_barrier_eligibility.rs`, which must not move.
+//! The round end is the only condition whose cells the corpus *contests*: the
+//! three other `at`-tagged corpus abilities — act 01110's objective, Frozen in
+//! Fear 01164's end-of-turn test, agenda 01107's enemy-phase-end move — are
+//! each alone on their condition, so no card orders against them and their own
+//! module tests pin the declaration and nothing more. So the walk is proved
+//! with a hand-built registry (prior art: `advance_act_interactive_reverse`).
+//! The round end's own three consumers — act 01109, agenda 01107, Dissonant
+//! Voices 01165 — are covered against the *real* corpus in
+//! `theyre_getting_out.rs` and `the_barrier_eligibility.rs`, which must not
+//! move.
 //!
 //! The condition under test is `SkillTestResolved` (RR ST.6), picked because
 //! both its forced and its reaction scan read the investigator's own controlled

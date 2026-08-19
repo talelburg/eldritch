@@ -12,6 +12,7 @@ Standards live in exactly one place each. Most already have a home in `CLAUDE.md
 | Test layering, the `TestGame` builder, the event-assertion macros | `CLAUDE.md` → Architecture → Test layering |
 | Never hand-edit `crates/cards/src/generated/cards.rs` | `CLAUDE.md` → Architecture → Card-data pipeline |
 | Don't add DSL primitives speculatively — wait for two hand-written cards wanting the same pattern | `CLAUDE.md` → Architecture → Hybrid card-effect DSL |
+| A declared `EventTiming` must match the trigger word in the card module's verbatim card-text block, and the module's prose must name the cell the ability resolves in and why — a reading, not a parse (the rule says why no automated check exists) | `CLAUDE.md` → Architecture → Hybrid card-effect DSL |
 | A card declaring `EventTiming::When` needs its triggering condition migrated to coordinator-owned resolution first — the per-condition migration, its cost, and its terminal condition | `CLAUDE.md` → Architecture → Hybrid card-effect DSL, for the one-line rule; [ADR 0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md) and `ConditionResolution::Caller` (`crates/game-core/src/engine/dispatch/emit.rs`) for the detail |
 | Card text and rules citation policy (read the vendored text locally, always read the FAQ, never fetch) | `CLAUDE.md` → Architecture → Domain knowledge |
 | Running local checks with CI's exact strict flags | `CLAUDE.md` → Commands |

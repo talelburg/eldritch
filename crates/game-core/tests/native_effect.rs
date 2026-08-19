@@ -83,7 +83,8 @@ fn state_with_agenda(code: &str) -> GameState {
 fn native_effect_runs_via_registry() {
     let mut state = state_with_agenda(AGENDA);
     let mut events = Vec::new();
-    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+    let outcome =
+        fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy, EventTiming::After);
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.agenda_doom, 7, "native effect mutated state");
 }
@@ -92,7 +93,8 @@ fn native_effect_runs_via_registry() {
 fn native_effect_rejects_unknown_tag() {
     let mut state = state_with_agenda(AGENDA_BAD);
     let mut events = Vec::new();
-    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+    let outcome =
+        fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy, EventTiming::After);
     assert!(
         matches!(outcome, EngineOutcome::Rejected { .. }),
         "unknown tag rejects"

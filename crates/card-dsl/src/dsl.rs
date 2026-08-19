@@ -462,6 +462,11 @@ pub enum Phase {
 ///
 /// **Declare the trigger word the card prints.** Reading the card is meant to
 /// be enough to write the declaration; the cells are named after the words.
+/// The declaration is checked against the trigger word in the card module's
+/// own verbatim card-text block, and the module's prose names the cell it
+/// resolves in — by reading, not by parsing. Both conventions, and why there
+/// is no automated check, are in `CLAUDE.md` → Architecture → Hybrid
+/// card-effect DSL.
 ///
 /// - [`When`](Self::When) — interrupts the condition, resolving *before* its
 ///   impact lands. Dodge 01023's *"Fast. Play when an enemy attacks an
@@ -472,7 +477,9 @@ pub enum Phase {
 ///   landed. The cell the printed words *"at"* and *"if"* name: agenda 01107's
 ///   *"**Forced** - At the end of the round: Place 1 doom on this agenda for
 ///   each `[[Ghoul]]` enemy in the Hallway or Parlor."*, Dissonant Voices 01165's
-///   *"**Forced** - At the end of the round: Discard Dissonant Voices."*
+///   *"**Forced** - At the end of the round: Discard Dissonant Voices."*, and
+///   for the *"if"* half act 01110's *"**Objective** - If the Ghoul Priest is
+///   Defeated, advance."* — the example `glossary/If.md` itself uses.
 /// - [`After`](Self::After) — once the condition has fully resolved. Most
 ///   reaction cards, and Silver Twilight Acolyte 01102's *"**Forced** - After
 ///   Silver Twilight Acolyte attacks: Place 1 doom on the current agenda."*

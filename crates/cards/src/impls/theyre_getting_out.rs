@@ -13,6 +13,15 @@
 //! `EventPattern::PhaseEnded { Enemy }`; the round-end doom off the new
 //! `EventPattern::RoundEnded`.
 //!
+//! **Cell: the `at` cell, for both.** Each prints *"At"* — *"At the end of
+//! the enemy phase"* and *"At the end of the round"* — and `glossary/At.md`
+//! puts such abilities *"in between any "when..." abilities and any
+//! "after..." abilities with the same triggering condition."* The ruling on
+//! the round-end half says it in this scenario's own terms: *""At the end of
+//! the round" effects trigger after "When the round ends" effects (e.g. The
+//! Barrier)"* (<https://arkhamdb.com/card/01107>) — act 01109's *when* half
+//! resolves first, then this doom placement, then any `after` ability.
+//!
 //! Map note: on The Gathering's star map (Hallway hub ↔ Attic/Cellar/
 //! Parlor), every location has a unique shortest first step toward the
 //! Parlor, so the lowest-`LocationId` tie-break below is unreachable in
@@ -48,7 +57,7 @@ pub fn abilities() -> Vec<Ability> {
             EventPattern::PhaseEnded {
                 phase: Phase::Enemy,
             },
-            EventTiming::After,
+            EventTiming::At,
             native(MOVE_GHOULS),
         ),
         forced_on_event(
@@ -190,7 +199,7 @@ mod tests {
                 pattern: EventPattern::PhaseEnded {
                     phase: Phase::Enemy
                 },
-                timing: EventTiming::After,
+                timing: EventTiming::At,
                 kind: card_dsl::dsl::TriggerKind::Forced,
             }
         );

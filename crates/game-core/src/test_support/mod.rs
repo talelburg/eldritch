@@ -129,19 +129,27 @@ pub fn fire_forced_on_enter(
     crate::engine::drive(&mut cx, out)
 }
 
-/// Test helper: fire forced triggers for a phase ending, returning the
-/// `EngineOutcome`. Constructs the internal `ForcedTriggerPoint` so
-/// integration tests don't need it public. See `fire_forced_on_enter`.
+/// Test helper: fire one timing cell's forced triggers for a phase ending,
+/// returning the `EngineOutcome`. Constructs the internal
+/// `ForcedTriggerPoint` so integration tests don't need it public. See
+/// `fire_forced_on_enter`.
+///
+/// The caller names the `cell`, because this helper fires exactly one — the
+/// real emit walks all three. A card declaring a different cell than the one
+/// asked for here fires nothing, so pass the cell the card under test prints:
+/// agenda 01107's *"**Forced** - At the end of the enemy phase"* is
+/// [`EventTiming::At`](crate::dsl::EventTiming::At).
 pub fn fire_forced_on_phase_end(
     state: &mut crate::state::GameState,
     events: &mut Vec<crate::event::Event>,
     phase: crate::state::Phase,
+    cell: crate::dsl::EventTiming,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
     let out = crate::engine::queue_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::PhaseEnded { phase },
-        crate::dsl::EventTiming::After,
+        cell,
     );
     crate::engine::drive(&mut cx, out)
 }
@@ -264,18 +272,22 @@ pub fn fire_forced_on_agenda_advance(
     crate::engine::drive(&mut cx, out)
 }
 
-/// Test helper: fire forced triggers for an enemy defeat, returning the
-/// `EngineOutcome`. See `fire_forced_on_enter`.
+/// Test helper: fire one timing cell's forced triggers for an enemy defeat,
+/// returning the `EngineOutcome`. See `fire_forced_on_enter`, and
+/// `fire_forced_on_phase_end` for why the caller names the `cell`: act
+/// 01110's *"**Objective** - If the Ghoul Priest is Defeated, advance."* is
+/// [`EventTiming::At`](crate::dsl::EventTiming::At).
 pub fn fire_forced_on_enemy_defeat(
     state: &mut crate::state::GameState,
     events: &mut Vec<crate::event::Event>,
     code: crate::state::CardCode,
+    cell: crate::dsl::EventTiming,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
     let out = crate::engine::queue_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::EnemyDefeated { code },
-        crate::dsl::EventTiming::After,
+        cell,
     );
     crate::engine::drive(&mut cx, out)
 }
