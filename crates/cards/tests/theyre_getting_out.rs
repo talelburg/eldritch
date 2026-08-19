@@ -5,6 +5,7 @@
 //! resolves before this agenda's "at the end of the round" doom (RR `when`
 //! before `at`).
 
+use card_dsl::dsl::EventTiming;
 use game_core::action::InputResponse;
 use game_core::engine::TimingEvent;
 use game_core::state::{
@@ -54,7 +55,8 @@ fn enemy_phase_end_moves_ghoul_toward_parlor() {
     let mut state = board_with_agenda();
     state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway
     let mut events = Vec::new();
-    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+    // The `at` cell — 01107 prints *"At the end of the enemy phase"*.
+    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy, EventTiming::At);
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
         state.enemies[&EnemyId(1)].current_location,

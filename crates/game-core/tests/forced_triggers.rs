@@ -322,7 +322,8 @@ fn state_with_doom_agenda() -> game_core::state::GameState {
 fn forced_on_enemy_phase_end_fires_agenda_ability() {
     let mut state = state_with_doom_agenda();
     let mut events = Vec::new();
-    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+    let outcome =
+        fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy, EventTiming::After);
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
@@ -341,7 +342,8 @@ fn forced_on_phase_end_wrong_phase_fires_nothing() {
     // The agenda ability is keyed to Enemy; firing Mythos should be a no-op.
     let mut state = state_with_doom_agenda();
     let mut events = Vec::new();
-    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Mythos);
+    let outcome =
+        fire_forced_on_phase_end(&mut state, &mut events, Phase::Mythos, EventTiming::After);
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
@@ -362,7 +364,7 @@ fn dsl_phase_mapping_non_enemy_phases_produce_no_hits() {
     for phase in [Phase::Mythos, Phase::Investigation, Phase::Upkeep] {
         let mut state = state_with_doom_agenda();
         let mut events = Vec::new();
-        let outcome = fire_forced_on_phase_end(&mut state, &mut events, phase);
+        let outcome = fire_forced_on_phase_end(&mut state, &mut events, phase, EventTiming::After);
 
         assert_eq!(
             outcome,
@@ -397,7 +399,8 @@ fn forced_on_phase_end_no_op_when_agenda_has_no_abilities() {
     state.agenda_index = 0;
 
     let mut events = Vec::new();
-    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+    let outcome =
+        fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy, EventTiming::After);
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 0);
@@ -415,7 +418,8 @@ fn forced_on_phase_end_no_op_when_no_act_or_agenda() {
     // state.agenda_deck / act_deck are empty by default from GameStateBuilder.
 
     let mut events = Vec::new();
-    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+    let outcome =
+        fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy, EventTiming::After);
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert!(events.is_empty(), "no events when decks are empty");
@@ -428,7 +432,8 @@ fn forced_on_phase_end_no_op_when_no_lead_investigator() {
     state.turn_order.clear();
 
     let mut events = Vec::new();
-    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+    let outcome =
+        fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy, EventTiming::After);
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert!(events.is_empty(), "no events without a lead investigator");
@@ -456,7 +461,8 @@ fn forced_on_phase_end_fires_act_ability() {
     state.agenda_index = 0;
 
     let mut events = Vec::new();
-    let outcome = fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy);
+    let outcome =
+        fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy, EventTiming::After);
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
@@ -487,7 +493,12 @@ fn fire_forced_at_end_of_turn_resolves_threat_area_ability() {
         .build();
 
     let mut events = Vec::new();
-    let outcome = fire_forced_at_end_of_turn(&mut state, &mut events, InvestigatorId(1));
+    let outcome = fire_forced_at_end_of_turn(
+        &mut state,
+        &mut events,
+        InvestigatorId(1),
+        EventTiming::After,
+    );
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 1);
@@ -505,7 +516,12 @@ fn fire_forced_at_end_of_turn_no_op_without_threat_area_card() {
         .build();
 
     let mut events = Vec::new();
-    let outcome = fire_forced_at_end_of_turn(&mut state, &mut events, InvestigatorId(1));
+    let outcome = fire_forced_at_end_of_turn(
+        &mut state,
+        &mut events,
+        InvestigatorId(1),
+        EventTiming::After,
+    );
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 0);

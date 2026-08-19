@@ -17,6 +17,13 @@
 //! The forced ability runs a willpower(3) `Effect::SkillTest` that
 //! discards the card on **success** (`on_success = DiscardSelf`) and has no
 //! failure-side effect.
+//!
+//! **Cell: the `at` cell of the `EndOfTurn` condition.** The printed word is
+//! *"At"* — *"**Forced** - At the end of your turn: …"* — and `glossary/At.md`
+//! puts those abilities *"in between any "when..." abilities and any
+//! "after..." abilities with the same triggering condition."* So the turn's
+//! end lands first and the willpower test runs before anything reacting to
+//! the finished turn.
 
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{
@@ -37,7 +44,7 @@ pub fn abilities() -> Vec<Ability> {
         })),
         forced_on_event(
             EventPattern::EndOfTurn,
-            EventTiming::After,
+            EventTiming::At,
             // Test willpower(3): on success discard Frozen in Fear.
             skill_test(SkillKind::Willpower, 3, Some(discard_self()), None),
         ),
@@ -77,7 +84,7 @@ mod tests {
             &abilities[2].trigger,
             Trigger::OnEvent {
                 pattern: EventPattern::EndOfTurn,
-                timing: EventTiming::After,
+                timing: EventTiming::At,
                 ..
             }
         ));

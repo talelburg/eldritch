@@ -4,6 +4,7 @@
 //! with the real registry. End-to-end defeat->Won via a real Fight is
 //! C7b (#245).
 
+use card_dsl::dsl::EventTiming;
 use game_core::engine::{EngineOutcome, TurnAction};
 use game_core::scenario::Resolution;
 use game_core::state::{Act, CardCode, InvestigatorId, Phase};
@@ -36,6 +37,8 @@ fn defeating_ghoul_priest_advances_act_3_to_won() {
         &mut state,
         &mut events,
         CardCode("01116".into()), // the Ghoul Priest
+        // The `at` cell — 01110 prints *"If the Ghoul Priest is Defeated"*.
+        EventTiming::At,
     );
     assert_eq!(out, EngineOutcome::Done);
     assert!(
@@ -52,6 +55,7 @@ fn defeating_other_enemy_does_not_advance_act_3() {
         &mut state,
         &mut events,
         CardCode("01103".into()), // some other enemy, not the Ghoul Priest
+        EventTiming::At,
     );
     assert_eq!(out, EngineOutcome::Done);
     assert!(
