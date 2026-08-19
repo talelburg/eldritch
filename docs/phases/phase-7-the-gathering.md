@@ -464,7 +464,18 @@ window above the `SkillTest`, then the `SkillTest`, then a forced run beneath �
 driver distinguishes "above" from "below". Reaction/forced windows resume via
 `PickSingle(OptionId)`. The `when → at → after` axis is a `Continuation::EmitEvent`/
 `TimingPoint` coordinator that re-scans each cell fresh (the per-cell re-scan,
-`tests/round_end_rescan.rs`).
+`tests/round_end_rescan.rs`). **Every** triggering condition walks that sequence
+(#702 ✅ shipped, PR #712), not just the round end — a cell is populated iff the
+per-cell scan finds something in it, so there is no per-condition table of which
+cells a condition supports. The condition's own resolution is step 2 of the walk
+([ADR-0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md),
+#701 ✅ shipped, PR #711); who performs it is an exhaustive classification, and a
+condition still owned by its emitting caller does not walk its `when` cell —
+declaring an interrupt on one is **rejected**, never dropped. Three conditions still
+bypass the coordinator entirely, all in the enemy-attack machinery, because their
+emit sites read the continuation stack synchronously after emitting (the shape ADR
+0003 forbids): #703 migrates clue discovery, #704 the enemy attack and the soak
+window that rides the same loop.
 
 **Choice & cancellation.** Interactive choice runs inside the **effect evaluator's
 `Continuation::Effect` frames** (#422 / PR #424): `resolve_choice_count` (0 ⇒
