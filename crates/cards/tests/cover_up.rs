@@ -18,7 +18,8 @@ use game_core::test_support::{
     TestSession,
 };
 use game_core::{
-    apply, assert_no_event, Action, EngineOutcome, InputResponse, PlayerAction, TurnAction,
+    apply, assert_event_sequence, assert_no_event, Action, EngineOutcome, InputResponse,
+    PlayerAction, TurnAction,
 };
 
 const COVER_UP: &str = "01007";
@@ -270,27 +271,31 @@ fn resolving_state(cover_up_clues: u8) -> GameState {
     state
 }
 
+/// The trauma resolves in the `when` cell of the `GameEnd` condition (#720), and
+/// the ending finalizes only once the whole sequence has drained — so the order
+/// is trauma *then* `ScenarioResolved`, never the reverse.
+///
+/// That ordering is what the bare-milestone claim rests on: the game's ending is
+/// a bare milestone precisely because the victory-display scan and
+/// `apply_resolution` are not the condition's impact but the `ScenarioEnd`
+/// frame's own tail, run at the apply boundary after a tail-position emit. If
+/// the finalize ever moved ahead of the queued abilities, the resolve step would
+/// stop being a no-op and the `when` cell would stop being safe to walk — so
+/// this is asserted as a sequence rather than as two independent presences.
 #[test]
-fn game_end_emits_mental_trauma_when_cover_up_has_clues() {
+fn game_end_trauma_resolves_before_the_ending_finalizes() {
     let r = take_turn_action(
         resolving_state(3),
         &TurnAction::AdvanceAct { investigator: INV },
     );
-    assert!(r
-        .events
-        .iter()
-        .any(|e| matches!(e, Event::ScenarioResolved { .. })));
-    assert!(
-        r.events.iter().any(|e| matches!(
-            e,
-            Event::TraumaSuffered {
-                kind: TraumaKind::Mental,
-                amount: 1,
-                ..
-            }
-        )),
-        "expected mental trauma at game end; events = {:?}",
-        r.events
+    assert_event_sequence!(
+        r.events,
+        Event::TraumaSuffered {
+            kind: TraumaKind::Mental,
+            amount: 1,
+            ..
+        },
+        Event::ScenarioResolved { .. },
     );
 }
 
@@ -366,12 +371,14 @@ fn interactive_game_end_trauma_surfaces_an_acknowledge_before_resolving() {
         "expected mental trauma once acknowledged; events = {:?}",
         done.events,
     );
-    assert!(
-        done.events
-            .iter()
-            .any(|e| matches!(e, Event::ScenarioResolved { .. })),
-        "the resolution completes after the forced effect; events = {:?}",
+    // ...and in that order: the acknowledge completes, the trauma lands, and
+    // only then does the ending finalize. Same claim as
+    // `game_end_trauma_resolves_before_the_ending_finalizes`, across the apply
+    // boundary the interactive acknowledge introduces.
+    assert_event_sequence!(
         done.events,
+        Event::TraumaSuffered { .. },
+        Event::ScenarioResolved { .. },
     );
     assert!(
         done.state.continuations.is_empty(),

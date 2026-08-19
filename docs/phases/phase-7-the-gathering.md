@@ -509,7 +509,7 @@ cell, and the three printing *"at"* or *"if"* — act 01110, Frozen in Fear 0116
 agenda 01107's enemy-phase-end move — retag to `At` with no engine change, since the
 `at` cell is walked whoever owns the resolve step. The other three print *"when"* on
 caller-owned conditions and ride their migrations (#720/#721/#722), which is why the
-retag ticket split from them. The conventions that stop a seventh mis-tag landed
+retag ticket split from them — the first of those has since shipped. The conventions that stop a seventh mis-tag landed
 alongside: `CLAUDE.md` now requires the declared cell to match the trigger word in
 the module's own verbatim card-text block *and* the module's prose to name the cell
 and why, with the licensed exception spelled out (a *"when"* card on an unmigrated
@@ -520,6 +520,24 @@ trusted as though it had checked them. The evidence was never missing; every
 mis-tagged module quoted its own trigger word three lines above the wrong enum, so
 what the standards row adds is an assignee for the reading. The retrofit onto the
 modules the PR didn't touch is #724.
+**#720 ✅ shipped (PR #725)** rode the first of those three: Cover Up 01007's
+*"**Forced** - When the game ends…"* trauma retags to `When`, and `GameEnd` migrates
+ahead of it as the second **bare milestone** — the class `RoundEnded` was the sole
+member of. Nothing about game state changes as the ending resolves: the `ScenarioEnd`
+frame advances its cursor to `Finalize` and emits in tail position, so the
+victory-display scan and `apply_resolution` land at the apply boundary after every
+queued ability has drained, which is why the trauma's interactive acknowledge already
+spanned `apply` calls. `EliminationGameEnd` migrated with it — RR p.10 Elimination
+step 0 scans the same declaration, since a weakness prints one *"when the game ends"*
+trigger rather than two, and Cover Up's ruling says it fires there — so migrating one
+without the other would have made the retag reject the elimination it was meant to
+serve. The dear part was neither classification but a **fork predicate**:
+`has_weakness_game_end_ability` decides whether elimination needs its frame at all,
+and asked the per-cell scan about `After` only. A per-cell scan answering a
+whole-sequence question does not reject, it drops the ability silently — the fork
+takes its inline path and step 1 removes the weakness unfired. The list is now
+*derived* from the coordinator's own cursor (`EmitStep::cells()`) rather than written
+out beside it, so a fourth cell cannot be forgotten from it.
 The attacker's **exhaust** could not move to the resolve step — a cancelled attack
 still exhausts (Dodge 01023's ruling) and a cancel abandons the sequence before step
 2 — so it sits on the parked loop frame, after the `after` cell, where step 3.3 puts

@@ -11,10 +11,28 @@
 //!
 //! Persistent treachery: the Revelation self-places into the threat area
 //! with 3 clues (`Effect::PutIntoThreatArea`), so `resolve_encounter_card`
-//! does not auto-discard it. The clue-discovery interrupt is the `when` cell of
-//! the `DiscoverClues` condition (#703) and the game-end forced trauma the
-//! `GameEnd` one, backed by the two native effects below — ports of the
-//! synthetic Cover-Up fixture C5a proved (`scenarios::test_fixtures::synth_cards`).
+//! does not auto-discard it. Both triggered abilities are backed by the native
+//! effects below — ports of the synthetic Cover-Up fixture C5a proved
+//! (`scenarios::test_fixtures::synth_cards`).
+//!
+//! **Cell: the `when` cell of the `DiscoverClues` condition** for the reaction
+//! (#703). The printed word is *"When you **would** discover…"*, and the
+//! replacement has to land before the clues move or there is nothing left to
+//! replace.
+//!
+//! **Cell: the `when` cell of the `GameEnd` condition** for the Forced trauma
+//! (#720). The printed word is *"When the game ends"*, and `glossary/When.md`
+//! puts that *"immediately after the specified timing point or triggering
+//! condition initiates, but before its impact upon the game state resolves."*
+//! The game's ending is a **bare milestone** — its resolve step is a documented
+//! no-op, because the victory-display scan and `apply_resolution` run after the
+//! whole sequence, at the apply boundary — so the `when` cell here is the first
+//! cell of a sequence that changes nothing as it resolves, and the trauma lands
+//! with the board exactly as the ending found it. The same declaration is
+//! scanned at Rules Reference p.10 Elimination step 0, which is why an
+//! eliminated Roland suffers it too: *"If Roland is eliminated (by being
+//! defeated or taking a **resign** action) while Cover Up is in play, Cover Up's
+//! **Forced** effect triggers"* (<https://arkhamdb.com/card/01007>).
 
 use card_dsl::dsl::{
     forced_on_event, native, put_into_threat_area_with_clues, reaction_on_event, revelation,
@@ -56,11 +74,7 @@ pub fn abilities() -> Vec<Ability> {
             Effect::Seq(vec![native(DISCARD_TAG), Effect::Cancel]),
         )
         .with_eligibility(HAS_CLUES_TAG),
-        forced_on_event(
-            EventPattern::GameEnd,
-            EventTiming::After,
-            native(TRAUMA_TAG),
-        ),
+        forced_on_event(EventPattern::GameEnd, EventTiming::When, native(TRAUMA_TAG)),
     ]
 }
 
@@ -177,10 +191,13 @@ mod tests {
             &abilities[1].effect,
             Effect::Seq(steps) if steps.len() == 2 && matches!(steps[1], Effect::Cancel)
         ));
+        // *"**Forced** - When the game ends…"* — the `when` cell of the
+        // `GameEnd` condition, a bare milestone since #720.
         assert!(matches!(
             abilities[2].trigger,
             Trigger::OnEvent {
                 pattern: EventPattern::GameEnd,
+                timing: EventTiming::When,
                 ..
             }
         ));

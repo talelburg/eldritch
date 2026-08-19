@@ -39,7 +39,14 @@ const WEAKNESS: &str = "test-weakness-game-end";
 /// makes the weakness filter falsifiable.
 const NOT_A_WEAKNESS: &str = "test-asset-game-end";
 
-/// Native tag shared by both mock cards: emit a mental-trauma event iff the
+/// The weakness shape the real corpus now has: a `GameEnd` forced declared in
+/// the **`when` cell**, as Cover Up 01007 declares since #720. `EliminationGameEnd`
+/// became a coordinator-owned bare milestone in the same change, so this cell is
+/// walked here rather than rejected — and the fork that decides whether
+/// elimination needs its frame at all has to scan every cell to find it.
+const WEAKNESS_WHEN_CELL: &str = "test-weakness-game-end-when";
+
+/// Native tag shared by all three mock cards: emit a mental-trauma event iff the
 /// firing instance still holds clues. A direct port of Cover Up's `trauma`, and
 /// deliberately clue-gated — reading the source instance is what proves the
 /// ability fired *while the card was still in play*, i.e. before step 1 removed
@@ -69,6 +76,10 @@ fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
     static PLAIN: std::sync::OnceLock<CardMetadata> = std::sync::OnceLock::new();
     match code.as_str() {
         WEAKNESS => Some(WEAK.get_or_init(|| metadata(WEAKNESS, true))),
+        WEAKNESS_WHEN_CELL => {
+            static WHEN: std::sync::OnceLock<CardMetadata> = std::sync::OnceLock::new();
+            Some(WHEN.get_or_init(|| metadata(WEAKNESS_WHEN_CELL, true)))
+        }
         NOT_A_WEAKNESS => Some(PLAIN.get_or_init(|| metadata(NOT_A_WEAKNESS, false))),
         // `test_investigator`'s TEST_INV code, so `max_health()` resolves.
         _ => game_core::test_support::metadata_for_test_inv(code),
@@ -76,15 +87,16 @@ fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
 }
 
 fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    if code.as_str() == WEAKNESS || code.as_str() == NOT_A_WEAKNESS {
-        Some(vec![forced_on_event(
-            EventPattern::GameEnd,
-            EventTiming::After,
-            native(TRAUMA_TAG),
-        )])
-    } else {
-        None
-    }
+    let cell = match code.as_str() {
+        WEAKNESS | NOT_A_WEAKNESS => EventTiming::After,
+        WEAKNESS_WHEN_CELL => EventTiming::When,
+        _ => return None,
+    };
+    Some(vec![forced_on_event(
+        EventPattern::GameEnd,
+        cell,
+        native(TRAUMA_TAG),
+    )])
 }
 
 /// "If there are any clues on it: you suffer 1 mental trauma."
@@ -313,5 +325,48 @@ fn interactive_elimination_acknowledges_step_zero_before_running_the_steps() {
             .any(|c| matches!(c, Continuation::Elimination { .. })),
         "no stranded elimination frame; stack = {:?}",
         done.state.continuations,
+    );
+}
+
+/// Step 0's condition is a **bare milestone**, so its `when` cell is walked
+/// (#720). The unit-level counterpart of `GameEnd`'s cell walk in
+/// `timing_resolve_step.rs`, on the point that scans the same
+/// `EventPattern::GameEnd` declaration.
+///
+/// Two regressions fail this test, and neither announces itself the same way.
+/// Put `EliminationGameEnd` back on the caller-owned arm and the elimination
+/// **rejects**, because a caller-owned condition's `when` cell is not walked.
+/// Leave `has_weakness_game_end_ability` scanning one hardcoded cell and the
+/// ability is **silently dropped** instead: the fork takes its inline path and
+/// step 1 removes the weakness unfired, with no reject to show for it. The
+/// clue-gated trauma catches both, since it can only fire while the card is
+/// still in play.
+#[test]
+fn elimination_fires_a_when_cell_weakness_ability() {
+    let mut state = board(WEAKNESS_WHEN_CELL, 3, true);
+    let mut events = Vec::new();
+    let outcome = eliminate_by_damage(&mut state, &mut events, InvestigatorId(1), 8);
+
+    assert_eq!(
+        outcome,
+        EngineOutcome::Done,
+        "the `when` cell is walked rather than rejecting the declaration"
+    );
+    assert_event!(events, Event::TraumaSuffered {
+        investigator, kind: TraumaKind::Mental, amount: 1
+    } if *investigator == InvestigatorId(1));
+
+    // Step 0's tail still runs: firing in an earlier cell does not skip it.
+    let inv = &state.investigators[&InvestigatorId(1)];
+    assert!(
+        inv.threat_area.is_empty(),
+        "the weakness left the threat area"
+    );
+    assert!(
+        inv.removed_from_game
+            .iter()
+            .any(|c| c.as_str() == WEAKNESS_WHEN_CELL),
+        "removed from the game; removed = {:?}",
+        inv.removed_from_game,
     );
 }

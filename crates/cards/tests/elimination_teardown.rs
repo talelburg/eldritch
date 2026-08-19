@@ -258,6 +258,14 @@ fn eliminated_investigator_fires_cover_ups_game_end_trauma() {
     // **Supersedes #567's acceptance criterion** ("Eliminated investigator's
     // Cover Up does not fire GameEnd trauma"), which read step 1 without step 0
     // — the step that exists precisely to carve weaknesses out of it.
+    //
+    // Since #720 this is also the regression guard for the **fork predicate**.
+    // `EliminationGameEnd` became a coordinator-owned bare milestone alongside
+    // `GameEnd`, and Cover Up's declaration retagged to the `when` cell; a
+    // `has_weakness_game_end_ability` that scans one hardcoded cell then finds
+    // nothing, routes elimination down its inline path, and lets steps 1–6
+    // remove Cover Up without ever firing it — a silent drop with no reject to
+    // show for it. This test and the multiplayer one below are what caught it.
     let r = reveal_committing(board_at_lethal_range(8, &[], &[(COVER_UP, 3)]), &[]);
 
     assert_event!(r.events, Event::TraumaSuffered {
