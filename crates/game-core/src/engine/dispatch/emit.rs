@@ -229,8 +229,7 @@ impl TimingEvent {
     /// new timing event cannot compile without choosing an arm; see
     /// [`ConditionResolution`] and
     /// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
-    #[must_use]
-    pub fn condition_resolution(&self) -> ConditionResolution {
+    pub(crate) fn condition_resolution(&self) -> ConditionResolution {
         match self {
             // The round ending is a **bare milestone**: nothing about the game
             // state changes as the condition itself resolves (the round-end
@@ -283,7 +282,7 @@ impl TimingEvent {
 /// condition, (2) resolve the triggering condition, and then, (3) execute
 /// "after..." effects in response to that triggering condition."*
 ///
-/// Returned by [`TimingEvent::condition_resolution`], an exhaustive match: a new
+/// Returned by `TimingEvent::condition_resolution`, an exhaustive match: a new
 /// timing event cannot compile without a decision — the discipline ADR 0004
 /// established for classifying continuation frames. Never stored on a frame; the
 /// coordinator recomputes it from the event's own value at
@@ -292,7 +291,7 @@ impl TimingEvent {
 ///
 /// See `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
 #[derive(Debug, Clone, Copy)]
-pub enum ConditionResolution {
+pub(crate) enum ConditionResolution {
     /// The **coordinator** resolves the condition, between the `when` and `at`
     /// cells. The `when` cell is walked: an interrupt there resolves before the
     /// condition's impact lands, which is what the card prints.
@@ -325,7 +324,7 @@ pub enum ConditionResolution {
 /// A plain fn pointer rather than a closure — the coordinator frame is part of
 /// serialized game state, so the step is dispatched from the timing event's own
 /// value on every visit instead of being captured when the frame is pushed.
-pub type ResolveConditionFn = fn(&mut Cx, &TimingEvent) -> EngineOutcome;
+pub(crate) type ResolveConditionFn = fn(&mut Cx, &TimingEvent) -> EngineOutcome;
 
 /// The resolve step of a condition that is a **bare milestone** — a phase,
 /// round, turn or step boundary whose occurrence changes nothing by itself.

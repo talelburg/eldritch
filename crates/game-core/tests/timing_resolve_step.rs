@@ -150,6 +150,10 @@ fn caller_owned_condition_rejects_a_declared_interrupt() {
         reason.contains("0008-a-triggering-condition-resolves-inside-its-own-sequence"),
         "the reject names the ADR: {reason}"
     );
+    assert!(
+        reason.contains("#702"),
+        "the reject names the migration that removes it: {reason}"
+    );
 }
 
 #[test]

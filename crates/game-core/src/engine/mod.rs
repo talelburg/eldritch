@@ -51,7 +51,7 @@ pub use pathfinding::{shortest_first_steps, shortest_first_steps_with};
 // (PhaseEnded).
 pub(crate) use dispatch::forced_triggers::{queue_forced_triggers, ForcedTriggerPoint};
 // The unified trigger-dispatch chokepoint's key (Axis-B T5a).
-pub use dispatch::emit::{ConditionResolution, ResolveConditionFn, TimingEvent};
+pub use dispatch::emit::TimingEvent;
 // Round-end driver + act-window resume, exposed for `test_support`'s
 // `run_upkeep_round_end` / `resume_round_end_window` (the `when→at` ordering
 // regression in `crates/cards/tests/theyre_getting_out.rs` drives them end-to-end).

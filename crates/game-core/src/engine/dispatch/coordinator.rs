@@ -51,9 +51,10 @@ pub(super) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
     else {
         unreachable!("dispatch_emit_event: top frame is not EmitEvent");
     };
+    let resolution = event.condition_resolution();
     if step == EmitStep::ResolveCondition {
         advance_or_finish_emit(cx);
-        return match event.condition_resolution() {
+        return match resolution {
             ConditionResolution::Coordinator(resolve) => resolve(cx, &event),
             // Already resolved, by the caller, before it emitted.
             ConditionResolution::Caller => EngineOutcome::Done,
@@ -62,7 +63,7 @@ pub(super) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
     let Some(bucket) = step.cell() else {
         unreachable!("dispatch_emit_event: ResolveCondition handled above");
     };
-    let caller_owned = matches!(event.condition_resolution(), ConditionResolution::Caller);
+    let caller_owned = matches!(resolution, ConditionResolution::Caller);
     // Per-cell re-scan (#434): the prior cell may have changed board state.
     let has_forced = event.forced_point().is_some_and(|point| {
         !super::forced_triggers::collect_forced_hits(cx.state, &point, bucket).is_empty()
@@ -76,7 +77,8 @@ pub(super) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
                     "timing coordinator: {event:?} is a caller-owned triggering condition, so its \
                      `when` cell is not walked — an ability declaring interrupt timing on it \
                      cannot resolve before the condition, which has already resolved. Migrate the \
-                     condition to a coordinator-owned arm (see \
+                     condition to a coordinator-owned arm — TODO(#702): the caller-owned arm is \
+                     scaffolding, migrated one condition at a time by #702-#704 (see \
                      docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md)."
                 )
                 .into(),

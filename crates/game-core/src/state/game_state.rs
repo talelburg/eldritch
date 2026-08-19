@@ -1431,7 +1431,7 @@ pub enum UpkeepResume {
 /// condition."* [`ResolveCondition`](Self::ResolveCondition) is that step 2; the
 /// `At` cell sits between it and `After` per `glossary/At.md`.
 ///
-/// Who performs step 2 is [`ConditionResolution`](crate::engine::ConditionResolution),
+/// Who performs step 2 is the engine-internal `ConditionResolution` classification,
 /// dispatched from the timing event's own value — the frame is serialized, so
 /// the step cannot hold a closure. See
 /// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
