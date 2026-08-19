@@ -497,6 +497,12 @@ window rode into the coordinator alongside (caller-owned until #694 retags Guard
 the last two per-condition tables are gone with them: the single-cell bucket lookup
 and the `when`-timing whitelist in `trigger_matches`, which no longer takes a timing
 at all. Forced-before-reaction has exactly one mechanism, the `TimingPoint` cursor.
+**#705 ✅ shipped (PR #718)** made the migration discoverable to the card author
+rather than only to the ADR's reader: `EventTiming`'s own doc comment (which still
+called the `at` cell dormant) now describes the three cells as they work and names
+the reject, `CONTEXT.md` defines **timing cell** including the `"if … would …"`
+when-tier distinction, and `CLAUDE.md` and `docs/agents/standards.md` carry a
+sentence and an index row apiece.
 The attacker's **exhaust** could not move to the resolve step — a cancelled attack
 still exhausts (Dodge 01023's ruling) and a cancel abandons the sequence before step
 2 — so it sits on the parked loop frame, after the `after` cell, where step 3.3 puts
