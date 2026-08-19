@@ -367,6 +367,14 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
                     other => return other,
                 }
             }
+            // A deal of damage, mid-procedure (#727): step its cursor —
+            // distribute, announce the assignment, place it, resume the caller.
+            // Each emit lands a coordinator above this frame and the loop drives
+            // that first; the frame is re-exposed when the coordinator pops.
+            Some(Continuation::DealDamage { .. }) => match combat::drive_deal_damage_frame(cx) {
+                EngineOutcome::Done => {}
+                other => return other,
+            },
             // A parked enemy-attack loop re-exposed once the head attacker's
             // `EnemyAttacks` coordinator popped (#704): take the head off,
             // exhaust it (enemy phase), and either begin the next attack, prompt
@@ -821,11 +829,19 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
             reason: "ResolveInput: no input prompt is outstanding (a parked attack loop is top)"
                 .into(),
         },
-        // The interactive soak distribution's per-point prompt (#44/K5b): the
-        // `DamageAssignment` frame is the top prompt, resumed by its `PickSingle`.
-        Some(Continuation::DamageAssignment { .. }) => {
-            combat::resume_damage_assignment(cx, response)
-        }
+        // The interactive soak distribution's per-point prompt (#44/K5b): a
+        // `DealDamage` frame at its `Distribute` step is the top prompt, resumed
+        // by its `PickSingle`. Its other three steps are internal sequencing the
+        // loop dispatches on sight and never await input, so they reject
+        // defensively (the `AttackLoop` contract).
+        Some(Continuation::DealDamage {
+            step: crate::state::DealDamageStep::Distribute { .. },
+            ..
+        }) => combat::resume_damage_distribution(cx, response),
+        Some(Continuation::DealDamage { .. }) => EngineOutcome::Rejected {
+            reason: "ResolveInput: no input prompt is outstanding (a deal of damage is                      mid-sequence)"
+                .into(),
+        },
         // The interactive slot make-room choice (#498): the `SlotDiscard` frame
         // is the top prompt, resumed by its `PickSingle`.
         Some(Continuation::SlotDiscard { .. }) => slots::resume_slot_discard(cx, response),

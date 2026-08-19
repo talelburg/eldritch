@@ -164,7 +164,7 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
 
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "the AoO soak window must suspend the activation: {:?}",
+        "the AoO's damage window must suspend the activation: {:?}",
         result.outcome
     );
     let dog_in_play = state.investigators[&inv_id]
@@ -172,9 +172,13 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
         .iter()
         .find(|c| c.instance_id == dog)
         .expect("Guard Dog still in play");
+    // The AoO's damage is *assigned* to Guard Dog and not yet placed: the open
+    // window is Guard Dog's own `when` cell, which the Rules Reference puts
+    // between assigning and placing (#727). What this test is about is that the
+    // AoO suspended the activation at all, and it does so one step earlier now.
     assert_eq!(
-        dog_in_play.accumulated_damage, 2,
-        "AoO damage from the activation soaked onto Guard Dog"
+        dog_in_play.accumulated_damage, 0,
+        "AoO damage from the activation is assigned to Guard Dog, not yet placed"
     );
     assert_eq!(
         state.investigators[&inv_id].damage(),

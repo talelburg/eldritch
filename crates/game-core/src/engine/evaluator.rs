@@ -100,7 +100,8 @@ pub struct DiscoveryBinding {
     pub clue_discovery_count: u8,
 }
 
-/// Attacking enemy bound while resolving an `EnemyAttackDamagedSelf` reaction.
+/// Attacking enemy bound while resolving a `DamageAssigned` reaction whose
+/// source is an enemy attack (Guard Dog 01021's retaliate).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnemyAttackBinding {
     /// The enemy whose attack is being reacted to.
@@ -154,7 +155,7 @@ pub struct EvalContext {
     /// `None` outside that window.
     pub discovery: Option<DiscoveryBinding>,
     /// Enemy-attack reaction binding, bound only while resolving an
-    /// `EnemyAttackDamagedSelf` reaction. Read via [`Self::attacking_enemy`].
+    /// enemy-attack `DamageAssigned` reaction. Read via [`Self::attacking_enemy`].
     /// `None` outside that window. (C5b #237.)
     pub enemy_attack: Option<EnemyAttackBinding>,
     /// Grounded `*::Chosen` picks, bound during a grounded-choice evaluation
@@ -234,7 +235,8 @@ impl EvalContext {
     pub fn clue_discovery_count(&self) -> Option<u8> {
         self.discovery.map(|b| b.clue_discovery_count)
     }
-    /// Attacking enemy bound while resolving an `EnemyAttackDamagedSelf` reaction.
+    /// Attacking enemy bound while resolving an enemy-attack `DamageAssigned`
+    /// reaction (Guard Dog 01021's retaliate).
     #[must_use]
     pub fn attacking_enemy(&self) -> Option<crate::state::EnemyId> {
         self.enemy_attack.map(|b| b.attacking_enemy)
@@ -1615,16 +1617,17 @@ fn deal_effect(
             reason: format!("Deal: investigator {target_id:?} is not in the state").into(),
         };
     }
-    // Interactive distribution across soakers + self (#44 / K5b-2): prompt when a
-    // soaker can take a contested point, else place synchronously. The harm path
-    // (soak-first + investigator defeat on a lethal share) is unchanged — only
-    // the *interactivity* is added vs. the K5a `take_damage`/`take_horror`
-    // wrappers (still used by the deferred loop sites).
+    // Dealing damage is the two-step procedure of ADR 0009, walked on a
+    // `DealDamage` frame: distribution across soakers + self (#44/K5b-2, prompting
+    // per contested point), then the `DamageAssigned` and `DamagePlaced`
+    // conditions. This call is therefore **tail position** — the effect walk is
+    // parked on its own frame beneath and `Finish` resumes it. The `take_damage` /
+    // `take_horror` wrappers still place synchronously and announce nothing (#728).
     let (damage, horror) = match kind {
         HarmKind::Damage => (amount, 0),
         HarmKind::Horror => (0, amount),
     };
-    crate::engine::dispatch::combat::soak_and_distribute(
+    crate::engine::dispatch::combat::begin_deal_damage(
         cx,
         target_id,
         damage,
@@ -2573,6 +2576,14 @@ mod tests {
                 }
                 Some(Continuation::TimingPoint { .. }) => {
                     crate::engine::dispatch::coordinator::dispatch_timing_point(cx)
+                }
+                // `Effect::Deal` parks one of these and returns in tail position
+                // (#727): the two steps of dealing the damage are the frame's,
+                // not the effect walk's. The real `drive` loop dispatches it, so
+                // this bounded stand-in must too, or `Deal` in a unit test
+                // assigns damage that is never placed.
+                Some(Continuation::DealDamage { .. }) => {
+                    crate::engine::dispatch::combat::drive_deal_damage_frame(cx)
                 }
                 _ => return EngineOutcome::Done,
             };

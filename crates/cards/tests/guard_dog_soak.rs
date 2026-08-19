@@ -5,13 +5,14 @@
 //! can't install the real `cards::REGISTRY` (the engine crate can't depend
 //! on `cards`):
 //!
-//! 1. Happy path: an enemy attack soaks onto Guard Dog; the
-//!    `AfterEnemyAttackDamagedAsset` window opens; firing Guard Dog's
-//!    reaction deals 1 damage to the attacker.
+//! 1. Happy path: an enemy attack assigns damage to Guard Dog; the
+//!    `DamageAssigned` window opens **before anything is placed**; firing
+//!    Guard Dog's reaction deals 1 damage to the attacker, and only then
+//!    does the damage land on the dog.
 //! 2. Asset defeat on overflow: damage reaching Guard Dog's printed
 //!    health (3) defeats it (`CardDiscarded`, removed from
-//!    `cards_in_play`), and a Guard Dog killed by the *same* attack gets
-//!    no reaction window (survivor filter).
+//!    `cards_in_play`) — *after* it has retaliated, since the assignment
+//!    is announced while it is still in play.
 //! 3. Instance self-binding: with a second damage-soaking asset in play
 //!    that has no reaction, only Guard Dog's reaction is offered.
 //! 4. Two-attacker suspend/resume: an investigator engaged by two enemies
@@ -20,6 +21,14 @@
 //!
 //! Guard Dog 01021: "[reaction] When an enemy attack deals damage to Guard
 //! Dog: Deal 1 damage to the attacking enemy." Health 3, sanity 1, Ally.
+//!
+//! **The retaliate resolves in the `when` cell of `DamageAssigned`** (#722),
+//! which is why every case here reads the dog's `accumulated_damage` as 0 at
+//! the window and non-zero only after the reaction has resolved. That order is
+//! the Rules Reference's — `glossary/Nested_Sequences.md` runs its worked
+//! example on this card, and `glossary/Dealing_Damage_Horror.md` puts the
+//! window between assigning and placing. See
+//! `docs/adr/0009-damage-is-assigned-then-placed.md`.
 
 use game_core::engine::{apply, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
@@ -84,6 +93,11 @@ fn soak_state(
         .into_iter()
         .map(|(code, inst)| CardInPlay::enter_play(CardCode::new(code), inst))
         .collect();
+    // A deck with cards left in it. The Upkeep draw these cases cascade through
+    // otherwise draws from an empty deck, whose penalty is 1 horror (#429) —
+    // which Guard Dog's 1 printed sanity soaks and dies to, in the middle of a
+    // test measuring what the *attack* did to it.
+    inv.deck = vec![CardCode::new("01087"); 5];
 
     let mut builder = game_core::test_support::GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -173,6 +187,13 @@ fn distribute_onto(mut result: ApplyResult, inst: CardInstanceId) -> ApplyResult
     result
 }
 
+/// Fire the single pending trigger of an open reaction window — Guard Dog's
+/// retaliate, in every case here. Since #727 the window is `DamageAssigned`'s
+/// `when` cell, so this is also what lets the deal proceed to its placement.
+fn fire_retaliate(state: game_core::GameState) -> ApplyResult {
+    resolve_pick(state, OptionId(0))
+}
+
 // ---------------------------------------------------------------------
 // Case 1 — happy path
 // ---------------------------------------------------------------------
@@ -195,17 +216,19 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
     let result = distribute_onto(result, dog);
     state = result.state;
 
-    // The attack-loop suspended on Guard Dog's soak reaction window.
+    // The attack-loop suspended on Guard Dog's `when`-cell window.
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "soak window must suspend the attack loop: {:?}",
+        "the assignment's when-cell window must suspend the attack loop: {:?}",
         result.outcome
     );
-    // Damage soaked onto Guard Dog, investigator took none.
+    // Nothing is placed yet: the damage is *assigned* to Guard Dog — tokens
+    // "next to" it, in the Rules Reference's words — and the window between the
+    // two steps is what is open.
     assert_eq!(
         guard_dog_card(&state, inv_id, dog).accumulated_damage,
-        2,
-        "Guard Dog soaked all 2 damage"
+        0,
+        "damage is assigned, not yet placed, while the when cell is open"
     );
     assert_eq!(
         state.investigators[&inv_id].damage(),
@@ -216,18 +239,24 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
     assert_eq!(state.enemies[&enemy_id].damage, 0);
 
     // Fire Guard Dog's reaction (the single pending trigger).
-    let result = apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
-        }),
-    );
+    let result = fire_retaliate(state);
     state = result.state;
 
     // The attacker took exactly 1 damage.
     assert_eq!(
         state.enemies[&enemy_id].damage, 1,
         "Guard Dog dealt 1 damage to the attacker"
+    );
+    // …and only then did the assignment land on Guard Dog.
+    assert_eq!(
+        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        2,
+        "Guard Dog takes its assigned 2 damage once the when cell has run"
+    );
+    assert_eq!(
+        state.investigators[&inv_id].damage(),
+        0,
+        "investigator still took none"
     );
     assert!(
         result.events.iter().any(|e| matches!(
@@ -240,17 +269,24 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
 }
 
 // ---------------------------------------------------------------------
-// Case 2a — overflow defeats Guard Dog by the SAME attack: no reaction
+// Case 2a — overflow defeats Guard Dog by the SAME attack: it retaliates
+// anyway, because the assignment is announced while it is still in play.
+//
+// This is the live bug #727 fixed, not merely a retag. Placement used to
+// come first and only *surviving* damaged assets were announced, so a Guard
+// Dog killed by the attack that damaged it never bit back — against its own
+// ruling, `data/arkhamdb-faq/core/01021.md`: "You can use Guard Dog's
+// ability when you assign lethal damage/horror to it."
 // ---------------------------------------------------------------------
 
 #[test]
-fn attack_reaching_printed_health_defeats_guard_dog_with_no_reaction_window() {
+fn guard_dog_retaliates_on_a_lethal_assignment_then_is_defeated() {
     let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
     let inv = InvestigatorId(1);
     let loc = LocationId(101);
-    // Attack deals 3 damage = Guard Dog's printed health → defeated by the
-    // same attack. Survivor filter: no reaction window, no retaliation.
+    // Attack deals 3 damage = Guard Dog's printed health → the assignment is
+    // lethal, and the dog is defeated once it is placed.
     let (mut state, inv_id, _) = soak_state(
         vec![(GUARD_DOG, dog)],
         vec![engaged_attacker(7, inv, loc, 3, 3)],
@@ -260,17 +296,27 @@ fn attack_reaching_printed_health_defeats_guard_dog_with_no_reaction_window() {
     let result = distribute_onto(result, dog);
     state = result.state;
 
-    // Guard Dog left play (discarded), so no soak window suspended the loop;
-    // the enemy phase cascaded onward, all the way through Upkeep into the
-    // round-ending Mythos step-1.4 encounter-draw prompt (#348). Reaching the
-    // Mythos draw prompt (rather than parking on a soak window) is the
-    // definitive "no soak window opened" proof.
+    // The lethal assignment opened Guard Dog's `when` cell, with the dog still
+    // in play and undamaged.
     assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. })
-            && state.phase == Phase::Mythos
-            && state.current_encounter_drawer().is_some(),
-        "the loop cascaded onward to the Mythos draw prompt (not a soak park): {:?}",
+        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        "a lethal assignment still opens the when cell: {:?}",
         result.outcome
+    );
+    assert_eq!(
+        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        0,
+        "nothing placed yet — the dog is alive and about to bite"
+    );
+
+    let result = fire_retaliate(state);
+    state = result.state;
+
+    // It bit back, and *then* the damage landed and defeated it.
+    assert_eq!(
+        state.enemies.get(&enemy_id).map(|e| e.damage),
+        Some(1),
+        "a Guard Dog assigned lethal damage still retaliates (01021's ruling)"
     );
     assert!(
         !state.investigators[&inv_id]
@@ -288,11 +334,20 @@ fn attack_reaching_printed_health_defeats_guard_dog_with_no_reaction_window() {
         "Guard Dog discard emitted: {:?}",
         result.events
     );
-    // No reaction fired: attacker undamaged, no soak window ever opened.
-    assert_eq!(
-        state.enemies.get(&enemy_id).map(|e| e.damage),
-        Some(0),
-        "defeated-this-attack Guard Dog does not retaliate"
+    // The retaliate preceded the damage it reacted to, in the log as in the
+    // rules: `EnemyDamaged` before the dog's `CardDiscarded`.
+    let retaliate_at = result
+        .events
+        .iter()
+        .position(|e| matches!(e, Event::EnemyDamaged { enemy, .. } if *enemy == enemy_id));
+    let discard_at = result.events.iter().position(|e| {
+        matches!(e, Event::CardDiscarded { code, from, .. }
+            if *code == CardCode::new(GUARD_DOG) && *from == Zone::InPlay)
+    });
+    assert!(
+        retaliate_at < discard_at,
+        "the when-cell retaliate precedes the placement that defeats the dog: {:?}",
+        result.events
     );
 }
 
@@ -318,6 +373,9 @@ fn guard_dog_defeated_on_overflow_is_discarded_from_play() {
 
     let result = take_turn_action(state, &TurnAction::EndTurn);
     let result = distribute_onto(result, dog);
+    // The assignment's `when` cell opens with the dog still in play; firing its
+    // retaliate lets the deal proceed to the placement that defeats it.
+    let result = fire_retaliate(result.state);
     state = result.state;
 
     assert!(
@@ -336,11 +394,11 @@ fn guard_dog_defeated_on_overflow_is_discarded_from_play() {
         "Guard Dog discard emitted: {:?}",
         result.events
     );
-    // Defeated by this attack → no retaliation (survivor filter). The
-    // attacker (max_health 3, attack 2) is never defeated, so index directly.
+    // The attacker (max_health 3, attack 2) took the retaliate the dog got in
+    // before its own defeat.
     assert_eq!(
-        state.enemies[&enemy_id].damage, 0,
-        "attacker took no retaliation"
+        state.enemies[&enemy_id].damage, 1,
+        "the dog retaliated from the assignment, before the placement killed it"
     );
 }
 
@@ -359,7 +417,7 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
     //
     // The self-binding point: the Vest is a controlled soaker too, but the
     // soak window is scoped to the *damaged* asset, and only Guard Dog has
-    // an `EnemyAttackDamagedSelf` reaction. So exactly one soak window opens
+    // an `EnemyAttackDamagedSelf` reaction. So exactly one window opens
     // — keyed to Guard Dog's instance — even though another soaker sits in
     // play. (Two surviving *damaged* soakers from a single attack isn't
     // constructible: `assign_attack` fills each soaker to capacity before
@@ -381,17 +439,18 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
     let result = distribute_onto(result, dog);
     state = result.state;
 
-    // The surviving Guard Dog's reaction window suspended the loop.
+    // Guard Dog's reaction window suspended the loop.
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "the surviving Guard Dog's reaction window suspends the loop: {:?}",
+        "Guard Dog's reaction window suspends the loop: {:?}",
         result.outcome
     );
-    // Guard Dog soaked the damage; the Vest sits untouched.
+    // The whole assignment went to Guard Dog; nothing is placed yet, and the
+    // Vest is in neither the assignment nor the window.
     assert_eq!(
         guard_dog_card(&state, inv_id, dog).accumulated_damage,
-        2,
-        "Guard Dog soaked the attack and survived"
+        0,
+        "assigned to Guard Dog, not yet placed"
     );
     assert_eq!(
         state.investigators[&inv_id]
@@ -400,38 +459,49 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
             .find(|c| c.instance_id == vest)
             .map(|c| c.accumulated_damage),
         Some(0),
-        "Bulletproof Vest took no damage (attack fully soaked by Guard Dog)"
+        "Bulletproof Vest is not in the assignment (Guard Dog absorbed it all)"
     );
-    // Exactly one pending soak window, keyed to Guard Dog's instance — not
-    // the Vest's (a controlled soaker with no `EnemyAttackDamagedSelf`).
+    // Exactly one pending window, and the assignment it carries names Guard
+    // Dog's instance — not the Vest's (a controlled soaker with no
+    // `EnemyAttackDamagedSelf` ability).
     let soak_windows: Vec<_> = state
         .open_windows()
         .iter()
         .filter_map(|w| match w.window_timing_event() {
-            Some(game_core::engine::TimingEvent::EnemyAttackDamagedSelf { asset, .. }) => {
-                Some(*asset)
+            Some(game_core::engine::TimingEvent::DamageAssigned { assignment, .. }) => {
+                Some(assignment.asset_damage.keys().copied().collect::<Vec<_>>())
             }
             _ => None,
         })
+        .flatten()
         .collect();
     assert_eq!(
         soak_windows,
         vec![dog],
-        "exactly the Guard Dog instance's soak window is open, not the Vest's"
+        "exactly the Guard Dog instance is in the open window's assignment, not the Vest's"
     );
 
     // Firing the single offered trigger retaliates (it's Guard Dog's, not
     // the Vest's — the Vest contributes no trigger at all).
-    let result = apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
-        }),
-    );
+    let result = fire_retaliate(state);
     state = result.state;
     assert_eq!(
         state.enemies[&enemy_id].damage, 1,
         "Guard Dog's reaction (not the Vest's) dealt 1 damage"
+    );
+    assert_eq!(
+        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        2,
+        "and the assigned damage then landed on Guard Dog"
+    );
+    assert_eq!(
+        state.investigators[&inv_id]
+            .cards_in_play
+            .iter()
+            .find(|c| c.instance_id == vest)
+            .map(|c| c.accumulated_damage),
+        Some(0),
+        "Bulletproof Vest still untouched after placement"
     );
 }
 
@@ -475,8 +545,8 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     );
     assert_eq!(
         guard_dog_card(&state, inv_id, dog).accumulated_damage,
-        1,
-        "first attacker's 1 damage soaked"
+        0,
+        "first attacker's 1 damage is assigned, not yet placed"
     );
     // Neither attacker has exhausted yet: since #704 the exhaust follows the
     // *whole* attack sequence — `Appendix_II_Timing_and_Gameplay.md` step 3.3's
@@ -519,11 +589,12 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         state.enemies[&first].damage, 1,
         "first attacker took Guard Dog's retaliation"
     );
-    // The second attacker resolved on resume: its damage soaked, it exhausted.
+    // The first attack's damage has now landed; the second attack's is assigned
+    // but not yet placed, its own `when` cell being the window we are parked on.
     assert_eq!(
         guard_dog_card(&state, inv_id, dog).accumulated_damage,
-        2,
-        "second attacker's 1 damage also soaked onto Guard Dog"
+        1,
+        "first attacker's damage placed; the second's is only assigned"
     );
     assert!(
         state.enemies[&first].exhausted,
@@ -557,6 +628,11 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         state.enemies[&second].damage, 1,
         "second attacker took Guard Dog's retaliation on the second window"
     );
+    assert_eq!(
+        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        2,
+        "both attacks' damage has landed once both sequences complete"
+    );
     assert!(
         !state
             .continuations
@@ -584,10 +660,10 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
 //   deals damage', with no carve-out for AoO).
 //
 // The before-#293 behaviour was: `drive_aoo` dropped the survivor list so
-// Guard Dog's soak window was never queued. After #293 the AoO runs through
-// `drive_attack_loop` (which opens both the BeforeEnemyAttack cancel window
-// and the AfterEnemyAttackDamagedAsset soak window), so the full suspend/
-// resume cycle now applies to AoO attacks.
+// Guard Dog's window was never queued. After #293 the AoO runs through
+// `drive_attack_loop` (which opens both the `EnemyAttacks` cancel window and
+// the `DamageAssigned` window inside the attack's damage), so the full
+// suspend/resume cycle now applies to AoO attacks.
 // ---------------------------------------------------------------------
 
 #[test]
@@ -652,11 +728,12 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
         "AoO soak window must suspend the loop: {:?}",
         result.outcome
     );
-    // AoO damage fully soaked onto Guard Dog; investigator took none.
+    // The AoO damage is *assigned* to Guard Dog and not yet placed — the open
+    // window is the one between the two steps.
     assert_eq!(
         guard_dog_card(&state, inv_id, dog).accumulated_damage,
-        2,
-        "AoO damage soaked onto Guard Dog"
+        0,
+        "AoO damage assigned to Guard Dog, not yet placed"
     );
     assert_eq!(
         state.investigators[&inv_id].damage(),
@@ -672,19 +749,20 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
     // No retaliation damage on the attacker yet.
     assert_eq!(state.enemies[&enemy_id].damage, 0);
 
-    // Step 2: fire Guard Dog's soak reaction (the single pending trigger).
-    let result = apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
-        }),
-    );
+    // Step 2: fire Guard Dog's reaction (the single pending trigger).
+    let result = fire_retaliate(state);
     state = result.state;
 
     // Guard Dog dealt 1 retaliate damage to the attacker.
     assert_eq!(
         state.enemies[&enemy_id].damage, 1,
         "Guard Dog's reaction dealt 1 damage to the AoO attacker"
+    );
+    // …and the assigned damage then landed on it.
+    assert_eq!(
+        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        2,
+        "AoO damage placed on Guard Dog once the when cell has run"
     );
     assert!(
         result.events.iter().any(|e| matches!(
@@ -759,6 +837,9 @@ fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
     // Distribute soak-first: fill Guard Dog to capacity (3), then the rest
     // onto the investigator.
     let result = distribute_onto(result, dog);
+    // The assignment gives Guard Dog damage, so its `when` cell opens before
+    // anything is placed; fire the retaliate to let the deal reach step 2.
+    let result = fire_retaliate(result.state);
     state = result.state;
 
     // Guard Dog reached printed health → defeated and discarded from play.
@@ -831,6 +912,8 @@ fn investigator_card_overflow_eliminates_the_investigator() {
 
     let result = take_turn_action(state, &TurnAction::EndTurn);
     let result = distribute_onto(result, dog);
+    // Guard Dog is in the assignment, so its `when` cell opens first.
+    let result = fire_retaliate(result.state);
     state = result.state;
 
     // The investigator card reached its printed health → elimination, with
@@ -900,6 +983,8 @@ fn co_overflowing_asset_is_removed_from_game_not_discarded_when_investigator_eli
 
     let result = take_turn_action(state, &TurnAction::EndTurn);
     let result = distribute_onto(result, dog);
+    // Guard Dog is in the assignment, so its `when` cell opens first.
+    let result = fire_retaliate(result.state);
     state = result.state;
 
     // Investigator eliminated (Killed).

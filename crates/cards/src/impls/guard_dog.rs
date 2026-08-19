@@ -8,16 +8,30 @@
 //! Health 3, sanity 1, Ally slot. As an ally with printed health/sanity,
 //! Guard Dog is a soak container (RR p.7): enemy-attack damage routes onto
 //! it before the controller (C5b's soak pipeline). The reaction below is
-//! the *other* half — when that soak actually lands damage on Guard Dog, it
-//! bites back.
+//! the *other* half — when that soak sends damage its way, it bites back.
+//!
+//! **The ability resolves in the `when` cell of the `DamageAssigned`
+//! condition**, which is the word it prints. Dealing damage is two Rules
+//! Reference steps with a named window between them
+//! (`glossary/Dealing_Damage_Horror.md`): damage is **assigned** — tokens set
+//! *"next to the cards that will be taking the damage/horror"* — and only then
+//! **placed**. *"When an enemy attack deals damage to Guard Dog"* is the first of
+//! those, so the retaliate interrupts the deal before any damage is on this
+//! card. That is what `glossary/Nested_Sequences.md` works its example on, using
+//! this exact card: *"**Before resolving** the damage dealt to the Guard Dog, 1
+//! horror is dealt to each investigator at the location"*. And it is what makes
+//! the card's own ruling true — `data/arkhamdb-faq/core/01021.md`: *"You can use
+//! Guard Dog's ability when you assign lethal damage/horror to it."* — since the
+//! Guard Dog is still in play when a lethal assignment is announced. See
+//! `docs/adr/0009-damage-is-assigned-then-placed.md`.
 //!
 //! The reaction is a card-local [`Effect::Native`](card_dsl::dsl::Effect::Native)
 //! handler rather than a shared `Effect` variant: it names the attacking
 //! enemy, which only exists in the firing window's context. It keys off
-//! `EventPattern::EnemyAttackDamagedSelf`, matched **only** by
-//! the after-enemy-attack-damaged-asset reaction window (scoped to this one soaked
-//! instance), and reads the attacker from `EvalContext.attacking_enemy`,
-//! which the soak window binds. (C5b #237.)
+//! `EventPattern::EnemyAttackDamagedSelf`, which pairs with `DamageAssigned`
+//! narrowed to an enemy *attack* and scoped to a card the assignment gives
+//! damage to, and reads the attacker from `EvalContext.attacking_enemy`, which
+//! the window binds. (C5b #237.)
 
 use card_dsl::dsl::{native, reaction_on_event, Ability, EventPattern, EventTiming};
 use game_core::card_registry::NativeEffectFn;
@@ -32,7 +46,7 @@ const RETALIATE: &str = "01021:retaliate";
 pub fn abilities() -> Vec<Ability> {
     vec![reaction_on_event(
         EventPattern::EnemyAttackDamagedSelf,
-        EventTiming::After,
+        EventTiming::When,
         native(RETALIATE),
     )]
 }
@@ -47,15 +61,15 @@ pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
 }
 
 /// "Deal 1 damage to the attacking enemy." The attacker is bound on
-/// `EvalContext.attacking_enemy` by the `AfterEnemyAttackDamagedAsset`
-/// soak window — the only context that fires this ability. If it is
+/// `EvalContext.attacking_enemy` by the `DamageAssigned` window whose source is
+/// an enemy attack — the only context that fires this ability. If it is
 /// somehow absent we reject loudly (matching the card-effect error
 /// policy) rather than panic.
 fn retaliate(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     let Some(enemy) = ctx.attacking_enemy() else {
         return EngineOutcome::Rejected {
             reason: "01021:retaliate fired without attacking_enemy bound — \
-                     only the AfterEnemyAttackDamagedAsset window fires this \
+                     only an enemy-attack DamageAssigned window fires this \
                      ability"
                 .into(),
         };
@@ -86,15 +100,20 @@ mod tests {
         (out, events)
     }
 
+    /// The declared cell against the printed word, the review step
+    /// `docs/agents/standards.md` names: the module's verbatim text block above
+    /// reads *"[reaction] **When** an enemy attack deals damage to Guard Dog"*,
+    /// and `CONTEXT.md`'s **Timing cell** entry puts *"when"* in the interrupt
+    /// cell — so `EventTiming::When`, on the `DamageAssigned` condition (#722).
     #[test]
-    fn ability_is_one_after_reaction_native() {
+    fn ability_is_one_when_reaction_native() {
         let abilities = abilities();
         assert_eq!(abilities.len(), 1);
         assert_eq!(
             abilities[0].trigger,
             Trigger::OnEvent {
                 pattern: EventPattern::EnemyAttackDamagedSelf,
-                timing: EventTiming::After,
+                timing: EventTiming::When,
                 kind: card_dsl::dsl::TriggerKind::Reaction,
             }
         );

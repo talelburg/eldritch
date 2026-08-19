@@ -347,7 +347,7 @@ pub(crate) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8)
     // applies investigator defeat (cause Horror) when the investigator's share is
     // lethal, preserving this wrapper's prior behaviour. No soak reaction window
     // (Effect source, not an enemy attack), so the survivor list is dropped.
-    let _ = super::combat::soak_and_place(cx, investigator, 0, amount);
+    super::combat::soak_and_place(cx, investigator, 0, amount);
 }
 
 /// Apply `amount` damage to `investigator` via the numeric helper,
@@ -363,7 +363,7 @@ pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
     // asset (Guard Dog, Beat Cop) absorbs non-attack damage; `place_assignment`
     // applies investigator defeat (cause Damage) when the investigator's share is
     // lethal, preserving this wrapper's prior behaviour. No soak reaction window.
-    let _ = super::combat::soak_and_place(cx, investigator, amount, 0);
+    super::combat::soak_and_place(cx, investigator, amount, 0);
 }
 
 /// Emit [`Event::AllInvestigatorsDefeated`] when no `Active`

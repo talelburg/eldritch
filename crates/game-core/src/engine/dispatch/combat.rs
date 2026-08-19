@@ -4,8 +4,8 @@ use crate::engine::outcome::{InputRequest, OptionId, ResumeToken};
 use crate::engine::EngineOutcome;
 use crate::event::Event;
 use crate::state::{
-    Assignment, AttackLoopStage, CardCode, CardInstanceId, Continuation, DefeatCause,
-    EnemyAttackSource, EnemyId, GameState, InvestigatorId, Status,
+    Assignment, AttackLoopStage, CardCode, CardInstanceId, Continuation, DealDamageStep,
+    DefeatCause, EnemyAttackSource, EnemyId, GameState, InvestigatorId, Status,
 };
 
 use super::Cx;
@@ -221,8 +221,8 @@ fn sole_active_investigator(state: &GameState) -> Option<InvestigatorId> {
 
 // `Assignment` (the computed damage/horror distribution) lives in
 // `crate::state` alongside the other `Continuation` payload types, since the
-// interactive distribution (#44/K5b) parks an in-progress one on a
-// `Continuation::DamageAssignment` frame. Imported above.
+// live one is owned by the `Continuation::DealDamage` frame that walks the two
+// steps of dealing it (ADR 0009). Imported above.
 
 /// One eligible soaker for [`assign_attack`] (C5b #237).
 ///
@@ -262,7 +262,7 @@ pub(super) struct Soaker {
 /// point is contested (no soaker with capacity) and by the remaining
 /// synchronous callers of `take_damage`/`take_horror`. The interactive
 /// per-point distribution (#44/K5) lives in [`deal_enemy_attack`] /
-/// [`resume_damage_assignment`] and `soak_and_distribute`; the two sites
+/// [`resume_damage_distribution`] and `begin_deal_damage`; the two sites
 /// still routed through the synchronous auto-soak wrapper are tracked in
 /// `TODO(#427)` (Dynamite Blast's native loop) and `TODO(#429)` (the
 /// deck-out horror penalty).
@@ -382,18 +382,15 @@ fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
 /// (Cover Up 01007) finishes on a continuation frame, so the zone is still
 /// populated when this returns.
 ///
-/// Returns the damaged assets that **survive** step 3 — i.e. instances
-/// still in `cards_in_play` after defeat resolution. This is the chosen
-/// reading of the soak reaction's timing: an asset defeated by the same
-/// attack that damaged it has left play before the reaction would
-/// resolve, so it does **not** get a reaction window (Guard Dog 01021
-/// does not retaliate on the attack that kills it). Only survivors are
-/// returned for the after-enemy-attack-damaged-asset reaction window queue.
-pub(super) fn place_assignment(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    assignment: &Assignment,
-) -> Vec<CardInstanceId> {
+/// Returns nothing. It used to return the damaged assets that survived step 3,
+/// because the soak reaction was announced *after* placement and a defeated
+/// soaker had left play by then — which made Guard Dog 01021 not retaliate on
+/// the attack that killed it, against its own ruling
+/// (`data/arkhamdb-faq/core/01021.md`: *"You can use Guard Dog's ability when you
+/// assign lethal damage/horror to it."*). Since #727 the announcement is
+/// `DamageAssigned`, one cursor step before anything is placed, so there is no
+/// survivor question to answer here (ADR 0009).
+pub(super) fn place_assignment(cx: &mut Cx, investigator: InvestigatorId, assignment: &Assignment) {
     // 1. Accumulate on assets (simultaneous placement).
     for (inst, dmg) in &assignment.asset_damage {
         if let Some(card) = find_controlled_mut(cx.state, investigator, *inst) {
@@ -430,24 +427,11 @@ pub(super) fn place_assignment(
         .get(&investigator)
         .is_some_and(|inv| inv.status != Status::Active);
     if eliminated {
-        return Vec::new();
+        return;
     }
 
-    // 3. Defeat overflowed assets, then return only the surviving damaged
-    //    assets (see fn doc for the defeated-soaker timing reading).
+    // 3. Defeat overflowed assets.
     defeat_overflowed_assets(cx, investigator);
-    let still_in_play = |inst: &CardInstanceId| {
-        cx.state
-            .investigators
-            .get(&investigator)
-            .is_some_and(|inv| inv.cards_in_play.iter().any(|c| c.instance_id == *inst))
-    };
-    assignment
-        .asset_damage
-        .keys()
-        .copied()
-        .filter(still_in_play)
-        .collect()
 }
 
 /// Add `amount` to the investigator's `damage` and emit
@@ -533,60 +517,57 @@ pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, am
 
 /// Distribute `damage` + `horror` to `investigator` across eligible soakers
 /// then self (soak-first, RR p.7), place simultaneously, and defeat overflowed
-/// assets — the shared soak entry for **both** enemy attacks and non-attack
-/// card/treachery harm (#44/K5a). Returns the damaged surviving soaker assets
-/// (the [`place_assignment`] survivor list) so an attack caller can queue one
-/// after-enemy-attack-damaged-asset reaction window per survivor;
-/// non-attack callers pass one of `damage`/`horror` as 0 and ignore the return
-/// (treachery harm opens no soak reaction window — Guard Dog 01021 retaliates
-/// only to enemy *attacks*).
+/// assets — **synchronously, in one call** (#44/K5a).
+///
+/// This is the shape the whole of dealing damage had before #727, and the two
+/// callers left on it are `take_damage` / `take_horror`, whose own callers do
+/// synchronous work afterwards (Dynamite Blast 01024's `for inv in
+/// investigators` loop most of all). So it announces neither
+/// [`DamageAssigned`](super::emit::TimingEvent::DamageAssigned) nor
+/// [`DamagePlaced`](super::emit::TimingEvent::DamagePlaced): there is no cursor
+/// here to sequence two emits on, and emitting one synchronously is what ADR
+/// 0003 forbids. Migrating those two entry points onto
+/// [`begin_deal_damage`] is **#728**; until then an ability keyed to either
+/// condition fires for an enemy attack and for `Effect::Deal` but not for these.
+/// Nothing in the Core or Dunwich corpus observes the gap.
 ///
 /// `build_soakers` returns empty when no registry is installed or the
 /// investigator controls no soak-bearing asset, so the assignment then drops
 /// all damage/horror on the investigator — behavior-identical to the pre-soak
 /// direct-apply path.
-pub(super) fn soak_and_place(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    damage: u8,
-    horror: u8,
-) -> Vec<CardInstanceId> {
+pub(super) fn soak_and_place(cx: &mut Cx, investigator: InvestigatorId, damage: u8, horror: u8) {
     let soakers = build_soakers(cx.state, investigator);
     let assignment = assign_attack(&soakers, damage, horror);
-    place_assignment(cx, investigator, &assignment)
+    place_assignment(cx, investigator, &assignment);
 }
 
-/// Interactive soak entry (#44 / K5b-2): distribute `damage`/`horror` soak-first
-/// as far as deterministic; the moment a point is **contested** (a controlled
-/// soaker can take it) suspend on the player's per-point distribution prompt,
-/// parking the rest on a [`Continuation::DamageAssignment`] frame carrying
-/// `source`. Otherwise (no soaker can take any point) place synchronously and
-/// return `Done` — the uncontested path is behaviour-identical to
-/// [`soak_and_place`]. The effect/treachery `Effect::Deal` path uses this with
-/// `DamageSource::Effect`; the enemy-attack path has its own entry
-/// ([`deal_enemy_attack`], the attack condition's resolve step). Mirrors that
-/// gating exactly.
-pub(crate) fn soak_and_distribute(
+/// Begin one deal of `damage` + `horror` to `investigator`: push the
+/// [`Continuation::DealDamage`] frame at its first step and return `Done`, which
+/// hands the `drive` loop a frame it dispatches on sight.
+///
+/// The whole of the Rules Reference's two-step procedure runs on that frame —
+/// distribution, then the `DamageAssigned` and `DamagePlaced` conditions, then
+/// the resume — so **this is a tail-position call** (ADR 0003) exactly like an
+/// emit: a caller with work to do afterwards puts it on a frame beneath, and the
+/// two that do (the enemy attack's coordinator, and `Effect::Deal`'s parked
+/// effect walk) already have one. See
+/// `docs/adr/0009-damage-is-assigned-then-placed.md`.
+pub(crate) fn begin_deal_damage(
     cx: &mut Cx,
     investigator: InvestigatorId,
     damage: u8,
     horror: u8,
     source: crate::state::DamageSource,
 ) -> EngineOutcome {
-    let mut assignment = Assignment::default();
-    let (mut rd, mut rh) = (damage, horror);
-    let soakers = build_soakers(cx.state, investigator);
-    if advance_distribution(&soakers, &mut rd, &mut rh, &mut assignment).is_none() {
-        cx.state.continuations.push(Continuation::DamageAssignment {
-            investigator,
-            remaining_damage: rd,
-            remaining_horror: rh,
-            assignment,
-            source,
-        });
-        return prompt_current_point(cx, investigator);
-    }
-    let _ = place_assignment(cx, investigator, &assignment);
+    cx.state.continuations.push(Continuation::DealDamage {
+        investigator,
+        source,
+        assignment: Assignment::default(),
+        step: DealDamageStep::Distribute {
+            remaining_damage: damage,
+            remaining_horror: horror,
+        },
+    });
     EngineOutcome::Done
 }
 
@@ -704,49 +685,6 @@ pub(super) fn resolve_attacks_for_investigator(
         .map(|(id, _)| *id)
         .collect();
     drive_attack_loop(cx, investigator, attackers, EnemyAttackSource::EnemyPhase)
-}
-
-/// Place an already-computed `assignment` for one attacker and emit the soak
-/// triggering condition for each damaged survivor — the deterministic tail
-/// shared by the no-prompt synchronous path ([`deal_enemy_attack`]) and the
-/// interactive [`resume_damage_assignment`] (#44/K5b). `assignment` is already
-/// built (soak-first or player-chosen); this never prompts.
-///
-/// The attacker's **exhaust is not here** — it belongs to the enemy phase's own
-/// step, runs after the whole attack sequence, and survives a cancel. See
-/// [`exhaust_after_attack`].
-fn place_and_emit_soak(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    enemy_id: EnemyId,
-    assignment: &Assignment,
-) {
-    // Simultaneous placement + defeat (RR p.7); returns the damaged surviving
-    // soaker assets (C5b #237).
-    let damaged_survivors = place_assignment(cx, investigator, assignment);
-
-    // Emit one soak triggering condition per surviving damaged asset (Guard Dog
-    // 01021's retaliate; inert unless a soaker has an `EnemyAttackDamagedSelf`
-    // ability). Each emit pushes its own coordinator frame, so they nest inside
-    // this attack's resolve step and the `drive` loop walks them before the
-    // attack's own `at` cell — the nested sequence of
-    // `glossary/Nested_Sequences.md`.
-    //
-    // Pushed in reverse so they *resolve* in `damaged_survivors` order (the
-    // stack pops last-pushed first). Two damaged survivors from one attack is
-    // unconstructible today — one soak reactor in the corpus, one Ally slot,
-    // fill-to-capacity assignment (#294) — so the order is a determinism
-    // guarantee rather than a rule (simultaneous-trigger ordering is #213).
-    for asset in damaged_survivors.into_iter().rev() {
-        let _ = super::emit::queue_event(
-            cx,
-            &super::emit::TimingEvent::EnemyAttackDamagedSelf {
-                asset,
-                enemy: enemy_id,
-                controller: investigator,
-            },
-        );
-    }
 }
 
 /// Exhaust the attacker that has just completed its attack sequence — the enemy
@@ -903,16 +841,20 @@ fn soak_options(targets: &[DistributionTarget]) -> Vec<crate::engine::ChoiceOpti
 }
 
 /// Build the `PickSingle` over the eligible targets for the next point (the top
-/// `DamageAssignment` frame must already be in place). Damage points precede horror.
+/// `DealDamage` frame must already be at [`DealDamageStep::Distribute`]). Damage
+/// points precede horror.
 fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    let Some(Continuation::DamageAssignment {
-        remaining_damage,
-        remaining_horror,
+    let Some(Continuation::DealDamage {
         assignment,
+        step:
+            DealDamageStep::Distribute {
+                remaining_damage,
+                remaining_horror,
+            },
         ..
     }) = cx.state.continuations.last()
     else {
-        unreachable!("prompt_current_point: top frame is not DamageAssignment");
+        unreachable!("prompt_current_point: top frame is not DealDamage{{Distribute}}");
     };
     let (rd, rh) = (*remaining_damage, *remaining_horror);
     let assignment = assignment.clone();
@@ -931,25 +873,30 @@ fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
 }
 
 /// Resume a soak distribution with the player's `PickSingle`: credit one point
-/// to the chosen target, decrement that counter, then advance — re-prompt if a
-/// point is still contested, else place once (simultaneous) and resume by
-/// source. Invalid pick → reject, keep the frame (the `HunterMove` contract).
-/// Runs **outside** [`drive_attack_loop`], so on completion the `EnemyAttack`
-/// source re-drives the remaining attackers itself.
-pub(super) fn resume_damage_assignment(
+/// to the chosen target, decrement that counter, then re-drive the frame — which
+/// re-prompts if a point is still contested, or advances the cursor to
+/// `Announce` once both counters drain. Invalid pick → reject, keep the frame
+/// (the `HunterMove` contract).
+///
+/// Only Rules Reference step 1 happens here. The two conditions and the
+/// placement are the frame's other steps, which the `drive` loop reaches when
+/// this returns `Done` (ADR 0009).
+pub(super) fn resume_damage_distribution(
     cx: &mut Cx,
     response: &crate::action::InputResponse,
 ) -> EngineOutcome {
-    use crate::state::DamageSource;
-    let Some(Continuation::DamageAssignment {
+    let Some(Continuation::DealDamage {
         investigator,
-        mut remaining_damage,
-        mut remaining_horror,
-        mut assignment,
         source,
+        mut assignment,
+        step:
+            DealDamageStep::Distribute {
+                mut remaining_damage,
+                mut remaining_horror,
+            },
     }) = cx.state.continuations.last().cloned()
     else {
-        unreachable!("resume_damage_assignment: top frame is not DamageAssignment");
+        unreachable!("resume_damage_distribution: top frame is not DealDamage{{Distribute}}");
     };
     let crate::action::InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
@@ -971,63 +918,169 @@ pub(super) fn resume_damage_assignment(
             .into(),
         };
     };
-    // Valid: pop the frame we validated against, credit the point, advance.
-    cx.state.continuations.pop();
+    // Valid: credit the point on the frame we validated against, then let the
+    // frame's own driver decide whether to re-prompt or move on.
     credit_point(&mut assignment, target, damage_point);
     if damage_point {
         remaining_damage -= 1;
     } else {
         remaining_horror -= 1;
     }
-    if advance_distribution(
-        &soakers,
-        &mut remaining_damage,
-        &mut remaining_horror,
-        &mut assignment,
-    )
-    .is_none()
-    {
-        // Still contested: re-park with the updated counters/assignment, re-prompt.
-        cx.state.continuations.push(Continuation::DamageAssignment {
-            investigator,
+    set_deal_damage(
+        cx,
+        assignment,
+        DealDamageStep::Distribute {
             remaining_damage,
             remaining_horror,
-            assignment,
-            source,
-        });
-        return prompt_current_point(cx, investigator);
+        },
+    );
+    drive_deal_damage(cx, investigator, source)
+}
+
+/// Overwrite the top [`Continuation::DealDamage`] frame's live assignment and
+/// cursor. The frame owns the assignment — each emit only snapshots it — so this
+/// is the single writer (ADR 0009).
+fn set_deal_damage(cx: &mut Cx, new_assignment: Assignment, new_step: DealDamageStep) {
+    match cx.state.continuations.last_mut() {
+        Some(Continuation::DealDamage {
+            assignment, step, ..
+        }) => {
+            *assignment = new_assignment;
+            *step = new_step;
+        }
+        other => unreachable!("set_deal_damage: expected a DealDamage on top, got {other:?}"),
     }
-    // Drained → place once, then resume by source.
-    match source {
-        // The attack's resolve step, resumed (#704). Place the drained
-        // assignment and emit the soak conditions; the rest of the attack — its
-        // `at` and `after` cells, then the parked `AttackLoop`'s exhaust and the
-        // next attacker — is on the frames beneath, and the `drive` loop reaches
-        // them when this returns.
-        DamageSource::EnemyAttack { enemy } => {
-            place_and_emit_soak(cx, investigator, enemy, &assignment);
+}
+
+/// Dispatch the top [`Continuation::DealDamage`] frame one step — the `drive`
+/// loop's arm for it, and the resume tail of
+/// [`resume_damage_distribution`].
+///
+/// The cursor is the Rules Reference's two steps plus the bookends that get it
+/// there and hand back (`glossary/Dealing_Damage_Horror.md`; ADR 0009):
+///
+/// - `Distribute` — step 1's determination, interactive per point (#44/K5b). It
+///   drains immediately when uncontested, so the cursor always starts at the
+///   top; while a point is contested this frame *is* the prompt.
+/// - `Announce` — emit `DamageAssigned`, a bare milestone whose `when` cell is
+///   the window the rules put *between* the two steps.
+/// - `Place` — emit `DamagePlaced`, whose resolve step places the assignment
+///   simultaneously. It re-reads the frame, so what lands is whatever
+///   `DamageAssigned`'s cells made of it.
+/// - `Finish` — pop and resume by source.
+///
+/// Both emits **advance the cursor before emitting**, so each is in tail
+/// position (ADR 0003): the coordinator they push lands above this frame and
+/// runs its whole sequence before the loop re-exposes this one.
+pub(super) fn drive_deal_damage(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    source: crate::state::DamageSource,
+) -> EngineOutcome {
+    let Some(Continuation::DealDamage {
+        assignment, step, ..
+    }) = cx.state.continuations.last().cloned()
+    else {
+        unreachable!("drive_deal_damage: top frame is not DealDamage");
+    };
+    match step {
+        DealDamageStep::Distribute {
+            mut remaining_damage,
+            mut remaining_horror,
+        } => {
+            let mut assignment = assignment;
+            let soakers = build_soakers(cx.state, investigator);
+            if advance_distribution(
+                &soakers,
+                &mut remaining_damage,
+                &mut remaining_horror,
+                &mut assignment,
+            )
+            .is_none()
+            {
+                // Still contested: re-park with the updated counters/assignment
+                // and put the next point to the player.
+                set_deal_damage(
+                    cx,
+                    assignment,
+                    DealDamageStep::Distribute {
+                        remaining_damage,
+                        remaining_horror,
+                    },
+                );
+                return prompt_current_point(cx, investigator);
+            }
+            set_deal_damage(cx, assignment, DealDamageStep::Announce);
             EngineOutcome::Done
         }
-        // K5b-2 (effect/treachery path): place this point's drained assignment,
-        // then resume the parked effect walk — the parent `Seq` or `Leaf` frame
-        // is now on top, so subsequent effects run (and may prompt again) with
-        // no point lost (#422 / #44).
-        DamageSource::Effect => {
-            let _ = place_assignment(cx, investigator, &assignment);
-            super::choice::resume_effect_walk(cx)
+        DealDamageStep::Announce => {
+            set_deal_damage(cx, assignment.clone(), DealDamageStep::Place);
+            super::emit::queue_event(
+                cx,
+                &super::emit::TimingEvent::DamageAssigned {
+                    source,
+                    investigator,
+                    assignment,
+                },
+            )
+        }
+        DealDamageStep::Place => {
+            set_deal_damage(cx, assignment.clone(), DealDamageStep::Finish);
+            super::emit::queue_event(
+                cx,
+                &super::emit::TimingEvent::DamagePlaced {
+                    source,
+                    investigator,
+                    assignment,
+                },
+            )
+        }
+        DealDamageStep::Finish => {
+            cx.state.continuations.pop();
+            match source {
+                // The attack's own sequence continues on the frames beneath: its
+                // `at` and `after` cells on the coordinator, then the parked
+                // `AttackLoop`'s exhaust and the next attacker (#704).
+                crate::state::DamageSource::EnemyAttack { .. } => EngineOutcome::Done,
+                // K5b-2: resume the parked effect walk, so subsequent effects
+                // run (and may prompt again) with no point lost (#422/#44).
+                crate::state::DamageSource::Effect => super::choice::resume_effect_walk(cx),
+            }
         }
     }
+}
+
+/// Dispatch the top [`Continuation::DealDamage`] frame, reading its bindings off
+/// the frame itself — the `drive` loop's entry point (it holds no bindings of
+/// its own).
+pub(crate) fn drive_deal_damage_frame(cx: &mut Cx) -> EngineOutcome {
+    let Some(Continuation::DealDamage {
+        investigator,
+        source,
+        ..
+    }) = cx.state.continuations.last()
+    else {
+        unreachable!(
+            "drive_deal_damage_frame: top frame is not DealDamage; the `drive` loop \
+             routes here only when it is — state-corruption invariant violation"
+        );
+    };
+    let (investigator, source) = (*investigator, *source);
+    drive_deal_damage(cx, investigator, source)
 }
 
 /// Deal one enemy attack: the resolve step of the `EnemyAttacks` triggering
 /// condition (#704), reached from [`super::emit`] once the `when` cell has run
 /// without preventing it.
 ///
-/// Distributes the attacker's damage and horror soak-first as far as
-/// deterministic; if a point is contested (a soaker can take it), suspends on
-/// the player's distribution prompt, parking the rest on the
-/// [`Continuation::DamageAssignment`] frame (#44/K5b). Otherwise places the
-/// assignment and emits a soak condition per damaged survivor.
+/// The attack's impact is the damage and horror it deals, so this is one call to
+/// [`begin_deal_damage`] with the attacker's printed values — and dealing them
+/// is itself the two-step procedure of ADR 0009, walked on the
+/// [`Continuation::DealDamage`] frame this pushes above the coordinator. So the
+/// attack's `at` and `after` cells run after *both* halves of the damage, and
+/// Guard Dog 01021's retaliate resolves in between, in `DamageAssigned`'s `when`
+/// cell — which is the nesting `glossary/Nested_Sequences.md` works its example
+/// on.
 ///
 /// A cancelled attack never reaches here at all: the coordinator abandons the
 /// sequence at its resolve step (#714), which is also why the exhaust is not
@@ -1037,28 +1090,20 @@ pub(super) fn deal_enemy_attack(
     investigator: InvestigatorId,
     enemy_id: EnemyId,
 ) -> EngineOutcome {
-    let mut assignment = Assignment::default();
     let enemy = cx.state.enemies.get(&enemy_id).unwrap_or_else(|| {
         unreachable!(
             "deal_enemy_attack: attacking enemy {enemy_id:?} is gone from \
              state.enemies; state-corruption invariant violation"
         )
     });
-    let (mut rd, mut rh) = (enemy.attack_damage, enemy.attack_horror);
-    let soakers = build_soakers(cx.state, investigator);
-    if advance_distribution(&soakers, &mut rd, &mut rh, &mut assignment).is_none() {
-        cx.state.continuations.push(Continuation::DamageAssignment {
-            investigator,
-            remaining_damage: rd,
-            remaining_horror: rh,
-            assignment,
-            source: crate::state::DamageSource::EnemyAttack { enemy: enemy_id },
-        });
-        return prompt_current_point(cx, investigator);
-    }
-    // Not contested: `assignment` is the complete soak-first assignment.
-    place_and_emit_soak(cx, investigator, enemy_id, &assignment);
-    EngineOutcome::Done
+    let (damage, horror) = (enemy.attack_damage, enemy.attack_horror);
+    begin_deal_damage(
+        cx,
+        investigator,
+        damage,
+        horror,
+        crate::state::DamageSource::EnemyAttack { enemy: enemy_id },
+    )
 }
 
 /// Begin the head attacker's attack: park the loop on its
@@ -1378,8 +1423,7 @@ mod combat_tests {
             events: &mut events,
         };
 
-        let survivors = super::soak_and_place(&mut cx, id, 2, 1);
-        assert!(survivors.is_empty(), "no soakers → no survivors");
+        super::soak_and_place(&mut cx, id, 2, 1);
 
         assert_eq!(state.investigators[&id].damage(), 2, "all damage on inv");
         assert_eq!(state.investigators[&id].horror(), 1, "all horror on inv");
@@ -1417,19 +1461,21 @@ mod combat_tests {
     }
 
     #[test]
-    fn resume_damage_assignment_rejects_invalid_pick_and_keeps_frame() {
-        use crate::state::{Continuation, DamageSource, EnemyId};
+    fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
+        use crate::state::{Continuation, DamageSource, DealDamageStep, EnemyId};
         let inv_id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
-        // Park a DamageAssignment frame directly (2 damage to assign).
-        state.continuations.push(Continuation::DamageAssignment {
+        // Park a DealDamage frame mid-distribution (2 damage to assign).
+        state.continuations.push(Continuation::DealDamage {
             investigator: inv_id,
-            remaining_damage: 2,
-            remaining_horror: 0,
-            assignment: super::Assignment::default(),
             source: DamageSource::EnemyAttack { enemy: EnemyId(7) },
+            assignment: super::Assignment::default(),
+            step: DealDamageStep::Distribute {
+                remaining_damage: 2,
+                remaining_horror: 0,
+            },
         });
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -1438,25 +1484,200 @@ mod combat_tests {
         };
 
         // Wrong response variant → reject, frame untouched.
-        let wrong = super::resume_damage_assignment(&mut cx, &crate::action::InputResponse::Skip);
+        let wrong = super::resume_damage_distribution(&mut cx, &crate::action::InputResponse::Skip);
         assert!(matches!(wrong, EngineOutcome::Rejected { .. }));
 
         // Out-of-range option (no soakers → only the investigator is eligible,
         // so any index ≥ 1 is invalid) → reject, frame untouched.
-        let oob = super::resume_damage_assignment(
+        let oob = super::resume_damage_distribution(
             &mut cx,
             &crate::action::InputResponse::PickSingle(crate::engine::OptionId(5)),
         );
         assert!(matches!(oob, EngineOutcome::Rejected { .. }));
 
-        // The frame survives both rejections for the client to retry.
+        // The frame survives both rejections, at the same step, for the client
+        // to retry — a rejection must not advance the cursor.
         assert!(
             matches!(
                 state.continuations.last(),
-                Some(Continuation::DamageAssignment { .. })
+                Some(Continuation::DealDamage {
+                    step: DealDamageStep::Distribute {
+                        remaining_damage: 2,
+                        remaining_horror: 0
+                    },
+                    ..
+                })
             ),
-            "DamageAssignment frame retained after invalid picks"
+            "DealDamage{{Distribute}} frame retained after invalid picks"
         );
+    }
+
+    /// The cursor's whole walk (#727): `Distribute → Announce → Place → Finish`,
+    /// stepped one dispatch at a time with no soaker in play, so distribution
+    /// drains immediately and the frame never prompts.
+    ///
+    /// What it pins is *where the placement is*: nothing is on the investigator
+    /// until the `DamagePlaced` coordinator the `Place` step pushes has reached
+    /// its own resolve step. The `when` cell between the two conditions is
+    /// exactly the gap this walk opens (ADR 0009).
+    #[test]
+    fn deal_damage_cursor_walks_distribute_announce_place_finish() {
+        use crate::state::{Continuation, DamageSource, DealDamageStep, EnemyId};
+        crate::test_support::install_test_registry();
+        let id = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        // Entry parks the frame at the top of the cursor and returns `Done`:
+        // dealing damage is tail position, like an emit.
+        let out = super::begin_deal_damage(
+            &mut cx,
+            id,
+            2,
+            0,
+            DamageSource::EnemyAttack { enemy: EnemyId(7) },
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        assert!(matches!(
+            cx.state.continuations.last(),
+            Some(Continuation::DealDamage {
+                step: DealDamageStep::Distribute { .. },
+                ..
+            })
+        ));
+
+        // Distribute: no soaker can take a point, so it drains without
+        // prompting and the cursor reaches `Announce` with the whole 2 on the
+        // investigator's share.
+        assert_eq!(super::drive_deal_damage_frame(&mut cx), EngineOutcome::Done);
+        let Some(Continuation::DealDamage {
+            assignment, step, ..
+        }) = cx.state.continuations.last()
+        else {
+            panic!("frame gone after Distribute");
+        };
+        assert_eq!(*step, DealDamageStep::Announce);
+        assert_eq!(assignment.investigator_damage, 2);
+
+        // Announce: the cursor advances *before* the emit (tail position), and
+        // the coordinator it pushed is now on top.
+        assert_eq!(super::drive_deal_damage_frame(&mut cx), EngineOutcome::Done);
+        assert!(matches!(
+            cx.state.continuations.last(),
+            Some(Continuation::EmitEvent {
+                event: crate::engine::TimingEvent::DamageAssigned { .. },
+                ..
+            })
+        ));
+        assert_eq!(
+            cx.state.investigators[&id].damage(),
+            0,
+            "an assignment is a proposal: nothing is placed at the announcement"
+        );
+        // Drain that coordinator (a bare milestone with no takers here).
+        cx.state.continuations.pop();
+
+        // Place: same shape, and again nothing has landed until the coordinator
+        // reaches its resolve step.
+        assert_eq!(super::drive_deal_damage_frame(&mut cx), EngineOutcome::Done);
+        let Some(Continuation::EmitEvent {
+            event: placed @ crate::engine::TimingEvent::DamagePlaced { .. },
+            ..
+        }) = cx.state.continuations.last().cloned()
+        else {
+            panic!("Place must emit DamagePlaced");
+        };
+        assert_eq!(
+            cx.state.investigators[&id].damage(),
+            0,
+            "still nothing placed until DamagePlaced resolves"
+        );
+        cx.state.continuations.pop();
+        // The resolve step is where it lands.
+        let resolution = placed.condition_resolution();
+        let crate::engine::dispatch::emit::ConditionResolution::Coordinator(resolve) = resolution
+        else {
+            panic!("DamagePlaced must be coordinator-owned");
+        };
+        assert_eq!(resolve(&mut cx, &placed), EngineOutcome::Done);
+        assert_eq!(cx.state.investigators[&id].damage(), 2, "placed at last");
+        assert!(
+            cx.events.iter().any(|e| matches!(
+                e,
+                Event::DamageTaken { investigator, amount: 2 } if *investigator == id
+            )),
+            "DamageTaken emitted at the placement: {:?}",
+            cx.events
+        );
+
+        // Finish: pop and hand back to the caller. An enemy attack's own
+        // sequence continues on the frames beneath, so this is just `Done`.
+        assert_eq!(super::drive_deal_damage_frame(&mut cx), EngineOutcome::Done);
+        assert!(
+            !cx.state
+                .continuations
+                .iter()
+                .any(|c| matches!(c, Continuation::DealDamage { .. })),
+            "the frame pops at Finish"
+        );
+    }
+
+    /// `DamageAssigned` is the **bare milestone** of the pair and `DamagePlaced`
+    /// the one with an impact (ADR 0008's classification, ADR 0009's split).
+    /// Asserted directly, because the whole `when`-cell licence Guard Dog needs
+    /// rests on the first of those being true.
+    #[test]
+    fn the_two_damage_conditions_are_classified_as_the_adr_says() {
+        use crate::engine::TimingEvent;
+        use crate::state::{Assignment, DamageSource, EnemyId};
+        let assigned = TimingEvent::DamageAssigned {
+            source: DamageSource::EnemyAttack { enemy: EnemyId(1) },
+            investigator: InvestigatorId(1),
+            assignment: Assignment::default(),
+        };
+        let placed = TimingEvent::DamagePlaced {
+            source: DamageSource::EnemyAttack { enemy: EnemyId(1) },
+            investigator: InvestigatorId(1),
+            assignment: Assignment::default(),
+        };
+        // Both coordinator-owned, so both walk their `when` cell.
+        for event in [&assigned, &placed] {
+            assert!(
+                matches!(
+                    event.condition_resolution(),
+                    crate::engine::dispatch::emit::ConditionResolution::Coordinator(_)
+                ),
+                "{event:?} must be coordinator-owned"
+            );
+        }
+        // The milestone's resolve step changes nothing; the other's places.
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        let before = state.clone();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let crate::engine::dispatch::emit::ConditionResolution::Coordinator(resolve) =
+            assigned.condition_resolution()
+        else {
+            unreachable!()
+        };
+        assert_eq!(resolve(&mut cx, &assigned), EngineOutcome::Done);
+        assert_eq!(*cx.state, before, "a bare milestone resolves to nothing");
+        assert!(events.is_empty());
+        // Neither fires forced abilities: every forced taker in the sweep is
+        // outside the corpus (ADR 0009).
+        assert!(assigned.forced_point().is_none());
+        assert!(placed.forced_point().is_none());
     }
 
     #[test]
@@ -1496,7 +1717,7 @@ mod combat_tests {
     }
 
     #[test]
-    fn place_assignment_accumulates_on_asset_and_returns_damaged_list() {
+    fn place_assignment_accumulates_on_asset_and_investigator() {
         use crate::state::{CardCode, CardInPlay, CardInstanceId};
         use std::collections::BTreeMap;
         // Pre-construct an Assignment placing 1 damage + 1 horror on an
@@ -1530,7 +1751,7 @@ mod combat_tests {
             asset_horror,
         };
 
-        let survivors = super::place_assignment(&mut cx, id, &assignment);
+        super::place_assignment(&mut cx, id, &assignment);
 
         let card = &state.investigators[&id].cards_in_play[0];
         assert_eq!(card.accumulated_damage, 1, "asset soaked 1 damage");
@@ -1539,11 +1760,6 @@ mod combat_tests {
             state.investigators[&id].damage(),
             1,
             "investigator took overflow damage"
-        );
-        assert_eq!(
-            survivors,
-            vec![inst],
-            "the surviving damaged asset is returned for the soak window"
         );
         assert_event!(events, Event::DamageTaken { investigator, amount: 1 } if *investigator == id);
     }

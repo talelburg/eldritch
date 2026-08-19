@@ -95,12 +95,59 @@ pub enum TimingEvent {
         /// The investigator being eliminated.
         investigator: InvestigatorId,
     },
-    /// An enemy attack soaked damage onto a controlled asset (reaction
-    /// only — Guard Dog 01021's retaliate).
-    EnemyAttackDamagedSelf {
-        asset: CardInstanceId,
-        enemy: EnemyId,
-        controller: InvestigatorId,
+    /// Damage and/or horror has been **assigned** — Rules Reference step 1 of
+    /// dealing damage, `glossary/Dealing_Damage_Horror.md`: *"Determine the
+    /// amount of damage and/or horror being dealt. Place damage and/or horror
+    /// tokens equal to the amount of damage and horror being dealt **next to**
+    /// the cards that will be taking the damage/horror."* Nothing is on any card
+    /// yet, so this is a **bare milestone** (ADR 0008): its resolve step is a
+    /// documented no-op and the mutation the whole procedure has is
+    /// [`DamagePlaced`](Self::DamagePlaced)'s.
+    ///
+    /// Its `when` cell is the window the Rules Reference names between the two
+    /// steps — *"Abilities that prevent, reduce, or reassign damage and/or
+    /// horror that is being dealt are resolved between steps 1 and 2."* — and is
+    /// the cell Guard Dog 01021 prints: *"\[reaction\] **When** an enemy attack
+    /// deals damage to Guard Dog: Deal 1 damage to the attacking enemy."*
+    ///
+    /// Reaction only. See `docs/adr/0009-damage-is-assigned-then-placed.md`.
+    DamageAssigned {
+        /// What is dealing the harm — the scoping Guard Dog's *"an enemy
+        /// attack"* narrows on, and what binds the attacker its retaliate names.
+        source: crate::state::DamageSource,
+        /// The investigator the harm is being dealt to.
+        investigator: InvestigatorId,
+        /// The assignment as this step left it: a snapshot of the live value the
+        /// [`DealDamage`](crate::state::Continuation::DealDamage) frame owns.
+        assignment: crate::state::Assignment,
+    },
+    /// Assigned damage and/or horror is **placed** — Rules Reference step 2:
+    /// *"Any assigned damage/horror that has not been prevented is now placed on
+    /// each card to which it has been assigned, simultaneously."*
+    ///
+    /// **Coordinator-owned** with a real impact (ADR 0008): its resolve step is
+    /// `place_assignment` — the simultaneous placement and the defeat
+    /// determination that follows it (RR p.7). So a `when` ability here
+    /// interrupts the placement with the assignment already settled (Baron
+    /// Samedi 05019's *"Forced - When any amount of damage is placed on an
+    /// investigator in Baron Samedi's location: Place 1 additional damage on
+    /// that investigator."*), while an `at` or `after` one sees the tokens on
+    /// the cards (Mark Harrigan 03001's *"After damage is placed on a card you
+    /// control"*).
+    ///
+    /// No card-facing [`EventPattern`](crate::dsl::EventPattern) yet: none of
+    /// those cards is in the Core or Dunwich corpus, and a pattern with no
+    /// declaration to match is decoration. See
+    /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
+    DamagePlaced {
+        /// What dealt the harm.
+        source: crate::state::DamageSource,
+        /// The investigator the harm is being dealt to.
+        investigator: InvestigatorId,
+        /// The assignment being placed — re-read from the frame after
+        /// [`DamageAssigned`](Self::DamageAssigned)'s cells, so it is what
+        /// actually lands.
+        assignment: crate::state::Assignment,
     },
     /// A skill test resolved (RR ST.6). **Dual:** forced + reaction. The
     /// general timing point of which "after you successfully investigate"
@@ -178,7 +225,10 @@ pub enum TimingEvent {
 
 impl TimingEvent {
     /// The forced dispatch point for this timing event, if it fires forced
-    /// abilities. `None` for the reaction-only `EnemyAttackDamagedSelf`.
+    /// abilities. `None` for the reaction-only ones — including both halves of
+    /// dealing damage, whose forced takers (Baron Samedi 05019, Vulnerable Heart
+    /// 85043) are all outside the corpus, so a `Some` here would be a scan with
+    /// nothing to find.
     /// `pub(super)` so the coordinator ([`super::coordinator`]) can re-scan a
     /// bucket's forced abilities (#434).
     pub(super) fn forced_point(&self) -> Option<ForcedTriggerPoint> {
@@ -236,7 +286,8 @@ impl TimingEvent {
                 enemy: *enemy,
                 investigator: *investigator,
             }),
-            TimingEvent::EnemyAttackDamagedSelf { .. }
+            TimingEvent::DamageAssigned { .. }
+            | TimingEvent::DamagePlaced { .. }
             | TimingEvent::EnteredPlay { .. }
             | TimingEvent::DiscoverClues { .. } => None,
         }
@@ -280,10 +331,30 @@ impl TimingEvent {
             //   Cover Up's `EventPattern::GameEnd` declaration is scanned by both
             //   points, so leaving this one caller-owned would reject the
             //   elimination that the retag was meant to serve.
+            // - `DamageAssigned` — the assignment is a *proposal*, tokens
+            //   sitting "next to the cards that will be taking the
+            //   damage/horror" (`glossary/Dealing_Damage_Horror.md` step 1).
+            //   Nothing is on any card, so there is nothing for this condition
+            //   to resolve; the placement that looks like its impact is the next
+            //   cursor step's own condition, `DamagePlaced`. It is the one
+            //   member whose teardown is a second *condition* rather than a
+            //   resume, which is what the named window between the two rules
+            //   steps requires (ADR 0009).
             TimingEvent::RoundEnded
             | TimingEvent::GameEnd
-            | TimingEvent::EliminationGameEnd { .. } => {
+            | TimingEvent::EliminationGameEnd { .. }
+            | TimingEvent::DamageAssigned { .. } => {
                 ConditionResolution::Coordinator(resolve_bare_milestone)
+            }
+            // The fourth migration (#727/#722), which cost a model rather than
+            // an arm: `EnemyAttackDamagedSelf` could not be flipped to
+            // coordinator-owned, because one condition emitted per damaged asset
+            // *after* a single collapsed place-and-announce call was neither of
+            // the Rules Reference's two steps. `DamagePlaced` is the second of
+            // them, and its impact is the simultaneous placement plus the defeat
+            // determination (RR p.7).
+            TimingEvent::DamagePlaced { .. } => {
+                ConditionResolution::Coordinator(resolve_damage_placed)
             }
             // The first migration (#703). Cover Up 01007 prints *"[reaction] When
             // you would discover 1 or more clues at your location: Discard that
@@ -329,7 +400,6 @@ impl TimingEvent {
             | TimingEvent::AgendaAdvanced { .. }
             | TimingEvent::EnemyDefeated { .. }
             | TimingEvent::EndOfTurn { .. }
-            | TimingEvent::EnemyAttackDamagedSelf { .. }
             | TimingEvent::SkillTestResolved { .. }
             | TimingEvent::EnteredPlay { .. } => ConditionResolution::Caller,
         }
@@ -397,7 +467,7 @@ pub(crate) type ResolveConditionFn = fn(&mut Cx, &TimingEvent) -> EngineOutcome;
 /// A milestone is bare when the teardown that follows it belongs to the frame
 /// that emitted it rather than to the condition: it runs after the whole
 /// sequence, on a resume, not between the `when` and `at` cells. See the arm in
-/// [`TimingEvent::condition_resolution`] for that argument on each of the three
+/// [`TimingEvent::condition_resolution`] for that argument on each of the four
 /// members, and
 /// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
 fn resolve_bare_milestone(_cx: &mut Cx, _event: &TimingEvent) -> EngineOutcome {
@@ -453,6 +523,35 @@ fn resolve_enemy_attack(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
         unreachable!("resolve_enemy_attack: not an EnemyAttacks event: {event:?}");
     };
     super::combat::deal_enemy_attack(cx, *investigator, *enemy)
+}
+
+/// The resolve step of [`TimingEvent::DamagePlaced`]: the tokens land (#727).
+///
+/// `glossary/Dealing_Damage_Horror.md` step 2, verbatim: *"Any assigned
+/// damage/horror that has not been prevented is now placed on each card to which
+/// it has been assigned, simultaneously."* — so this is one call,
+/// [`place_assignment`](super::combat::place_assignment), placing every share at
+/// once and then determining defeat (RR p.7). The assignment comes off the
+/// event, which the [`DealDamage`](crate::state::Continuation::DealDamage) frame
+/// snapshotted from its live value *after*
+/// [`DamageAssigned`](TimingEvent::DamageAssigned)'s cells had their chance at
+/// it.
+///
+/// **Not** here: the determination of *how much* is being dealt and to whom.
+/// That is step 1, and it has already happened on the frame's `Distribute` step
+/// — which is the whole point of the split, since the Rules Reference puts a
+/// named window between the two.
+fn resolve_damage_placed(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
+    let TimingEvent::DamagePlaced {
+        investigator,
+        assignment,
+        ..
+    } = event
+    else {
+        unreachable!("resolve_damage_placed: not a DamagePlaced event: {event:?}");
+    };
+    super::combat::place_assignment(cx, *investigator, assignment);
+    EngineOutcome::Done
 }
 
 /// The resolve step of [`TimingEvent::LeftLocation`]: the departure lands

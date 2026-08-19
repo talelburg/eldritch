@@ -5,7 +5,7 @@
 //! and resumes without losing iterations — the case the old suspend-and-replay
 //! model dropped (#422 / #44). Driven through the real `apply` revelation path.
 //! After #426 the damage is one `Deal { amount: N }` not N×`Deal { amount: 1 }`;
-//! the per-point prompt loop still fires via the `DamageAssignment` frame.
+//! the per-point prompt loop still fires via the `DealDamage` frame.
 
 use game_core::action::EngineRecord;
 use game_core::engine::OptionId;
@@ -73,7 +73,7 @@ fn dog_damage(result: &game_core::ApplyResult) -> Option<u8> {
 fn grasping_hands_distributes_both_points_onto_guard_dog() {
     // Agility 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2 → 2 damage, dealt
     // as a single Deal { amount: 2 }. Two per-point prompts still fire via the
-    // DamageAssignment frame. The player assigns both to Guard Dog
+    // DealDamage frame at its Distribute step. The player assigns both to Guard Dog
     // (option 1 = the asset; option 0 = self). The old replay model lost the
     // second point here — this proves no loss (#422).
     let result = reveal_distributing(

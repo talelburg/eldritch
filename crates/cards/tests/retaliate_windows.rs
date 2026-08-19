@@ -199,8 +199,9 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
     let (state, _, _) = fight_state(enemy, vec![], vec![guard_dog_in_play]);
 
     // Initiate Fight → empty commit → fails → fire_retaliate_if_any → drive_retaliate
-    // → Guard Dog has no cancel reaction so BeforeEnemyAttack auto-skips → damage
-    // lands on Guard Dog → AfterEnemyAttackDamagedAsset window opens → suspend.
+    // → Guard Dog has no cancel reaction so the attack's `when` cell auto-skips →
+    // its damage is assigned to Guard Dog → the `DamageAssigned` window opens →
+    // suspend, before anything is placed.
     let result = submit_empty_commit(state, inv_id, enemy_id);
     // The retaliate's damage prompts the soak distribution (#44/K5b): assign it
     // onto Guard Dog → soak window opens.
@@ -213,15 +214,17 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
         result.outcome
     );
 
-    // Guard Dog soaked the retaliate's 1 damage; investigator took none.
+    // The retaliate's 1 damage is assigned to Guard Dog and not yet placed: the
+    // open window is Guard Dog's own `when` cell, between the two rules steps
+    // (#727).
     let dog_in_play = state.investigators[&inv_id]
         .cards_in_play
         .iter()
         .find(|c| c.instance_id == dog)
         .expect("Guard Dog still in play before reaction fires");
     assert_eq!(
-        dog_in_play.accumulated_damage, 1,
-        "retaliate's 1 damage soaked onto Guard Dog"
+        dog_in_play.accumulated_damage, 0,
+        "retaliate's 1 damage assigned to Guard Dog, not yet placed"
     );
     assert_eq!(
         state.investigators[&inv_id].damage(),
@@ -254,6 +257,16 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
     assert_eq!(
         state.enemies[&enemy_id].damage, 1,
         "Guard Dog's reaction dealt 1 damage to the retaliating enemy"
+    );
+    // …and only then did the retaliate's own damage land on Guard Dog.
+    assert_eq!(
+        state.investigators[&inv_id]
+            .cards_in_play
+            .iter()
+            .find(|c| c.instance_id == dog)
+            .map(|c| c.accumulated_damage),
+        Some(1),
+        "the retaliate's damage is placed once Guard Dog's when cell has run"
     );
     assert!(
         result.events.iter().any(|e| matches!(

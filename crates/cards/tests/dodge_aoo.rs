@@ -419,25 +419,26 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
 
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "Guard Dog soak window must suspend the AoO loop: {:?}",
+        "Guard Dog's when-cell window must suspend the AoO loop: {:?}",
         result.outcome
     );
-    // Guard Dog soaked the damage; investigator took none.
+    // The damage is assigned to Guard Dog and not yet placed — the open window
+    // is the one the rules put between assigning and placing (#727).
     let dog_in_play = state.investigators[&inv_id]
         .cards_in_play
         .iter()
         .find(|c| c.instance_id == dog)
         .expect("Guard Dog still in play");
     assert_eq!(
-        dog_in_play.accumulated_damage, 2,
-        "AoO damage soaked onto Guard Dog"
+        dog_in_play.accumulated_damage, 0,
+        "AoO damage assigned to Guard Dog, not yet placed"
     );
     assert_eq!(state.investigators[&inv_id].damage(), 0);
     // Move not yet resolved (parked on ActionResolution).
     assert_eq!(
         state.investigators[&inv_id].current_location,
         Some(from),
-        "move not yet resolved while soak window is open"
+        "move not yet resolved while the damage window is open"
     );
     // No retaliate damage yet.
     assert_eq!(state.enemies[&enemy_id].damage, 0);
@@ -455,6 +456,16 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
     assert_eq!(
         state.enemies[&enemy_id].damage, 1,
         "Guard Dog's reaction dealt 1 damage to the AoO attacker"
+    );
+    // …and only then did the assigned damage land on it.
+    assert_eq!(
+        state.investigators[&inv_id]
+            .cards_in_play
+            .iter()
+            .find(|c| c.instance_id == dog)
+            .map(|c| c.accumulated_damage),
+        Some(2),
+        "AoO damage placed on Guard Dog once its when cell has run"
     );
     assert!(
         result.events.iter().any(|e| matches!(
@@ -488,7 +499,7 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
             Event::InvestigatorMoved { investigator, to, .. }
                 if *investigator == inv_id && *to == dest
         )),
-        "InvestigatorMoved emitted after the soak window closed: {:?}",
+        "InvestigatorMoved emitted after the damage window closed: {:?}",
         result.events
     );
 
