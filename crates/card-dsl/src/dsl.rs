@@ -763,10 +763,19 @@ pub enum Effect {
     /// RR p.6: the cancelled thing is "still regarded as initiated", only
     /// its effects are prevented. (Axis D #336.)
     ///
+    /// A cancelled triggering condition takes **the rest of its sequence** with
+    /// it: the `at` and `after` cells do not run, and neither does the rest of
+    /// the `when` cell (#714). Dodge 01023's ruling is the citation, quoted at
+    /// the engine's read site (`coordinator::prevented_in_the_when_cell`), which
+    /// applies it to every coordinator-owned condition.
+    ///
     /// Cancel is the degenerate replacement ("replace with nothing"): a card
     /// that replaces with its own effect runs that effect then `Cancel`
-    /// (Cover Up = `Seq[discard-from-self, Cancel]`).
-    /// TODO(#366): a true replace-with-a-different-impact effect.
+    /// (Cover Up = `Seq[discard-from-self, Cancel]`). Both suppress the rest of
+    /// the sequence, so the engine models them as one signal.
+    /// TODO(#366): a true replace-with-a-different-impact effect — the one
+    /// replacement whose condition still resolves, and whose later cells
+    /// therefore presumably still run.
     Cancel,
     /// Put the card with this printed `code` into the controller's threat
     /// area as a fresh in-play instance. The Revelation of persistent

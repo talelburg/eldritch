@@ -838,6 +838,73 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
     lapsed.len()
 }
 
+/// Withdraw **every** remaining candidate from an open `when`-cell window whose
+/// triggering condition has just been prevented from resolving (#714).
+///
+/// Unlike [`withdraw_lapsed_candidates`], this is not a re-scan: the withdrawn
+/// options are still perfectly initiable, and would still be found by a fresh
+/// scan. What has gone is the condition they reference. The rule and its
+/// citations are on `coordinator::prevented_in_the_when_cell`, which reads the
+/// same signal one frame down; the half that matters here is
+/// that Dodge 01023's ruling covers a `when`-cell ability, so the suppression
+/// reaches the rest of the *current* cell and not only the cells after it.
+///
+/// Scoped twice over. To the `when` cell, because it is the only cell whose
+/// abilities resolve before the condition does, so it is the only one a live
+/// prevention signal can belong to. And to a **coordinator-owned** condition,
+/// because a caller-owned one has already mutated the board and reads the signal
+/// at its own emit site (`combat::resume_enemy_attack`) — the enemy attack
+/// inherits this the moment #704 migrates it, which is the order #714 and #704
+/// were sequenced in, rather than gaining half of it here.
+///
+/// Both window modes are covered — a forced run empties the same way and closes
+/// itself, rather than demanding a pick for a condition that is no longer
+/// happening. The forced arm is unreachable today (no coordinator-owned
+/// condition with a `when`-cell cancel has a [`ForcedTriggerPoint`] — clue
+/// discovery has none at all), so it is proved at the unit seam rather than
+/// through a card; it becomes reachable with #704, whose ruling is stated about
+/// a **Forced** ability. `0` for any other top frame, so the callers need no
+/// guard.
+///
+/// [`ForcedTriggerPoint`]: super::forced_triggers::ForcedTriggerPoint
+fn withdraw_suppressed_candidates(cx: &mut Cx) -> usize {
+    if !cx.state.pending_cancellation {
+        return 0;
+    }
+    let suppressed = match cx.state.continuations.last() {
+        Some(Continuation::TimingPointWindow {
+            event,
+            bucket: EventTiming::When,
+            candidates,
+            ..
+        }) if matches!(
+            event.condition_resolution(),
+            super::emit::ConditionResolution::Coordinator(_)
+        ) =>
+        {
+            candidates.clone()
+        }
+        _ => return 0,
+    };
+    if suppressed.is_empty() {
+        return 0;
+    }
+    for candidate in &suppressed {
+        cx.events.push(Event::ReactionOptionLapsed {
+            investigator: candidate.controller,
+            code: candidate.code.clone(),
+            reason: LapseReason::ConditionPrevented,
+        });
+    }
+    cx.state
+        .continuations
+        .last_mut()
+        .and_then(Continuation::pending_candidates_mut)
+        .expect("withdraw_suppressed_candidates: the frame matched above is still on top")
+        .clear();
+    suppressed.len()
+}
+
 /// The `(event, cell)` an open **reaction** window on top of the stack was
 /// scanned at — the question a re-scan has to re-ask, and the single place the
 /// "which frames are re-validated" test lives (#568).
@@ -1300,7 +1367,12 @@ fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcom
 /// window being driven is always the top frame (the stack-is-resolution-order
 /// invariant), so there is no index to thread.
 pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
-    // The candidate that just resolved may have withdrawn its siblings — spent
+    // The candidate that just resolved may have *prevented the condition itself*
+    // — Cover Up 01007's replacement, Dodge 01023's cancel. Then no sibling of
+    // this `when` cell may still be offered, however initiable it remains
+    // (#714), and the window closes into a sequence the coordinator abandons.
+    withdraw_suppressed_candidates(cx);
+    // Short of that, the candidate may have withdrawn its siblings — spent
     // the shared wallet, or consumed what they would have acted on (#568). Re-ask
     // before re-prompting, so the list below is the *current* set of legal
     // initiations rather than the scan's.
@@ -2777,5 +2849,179 @@ mod candidate_source_present_tests {
             &state,
             &candidate(CandidateSource::Location(LocationId(11)))
         ));
+    }
+}
+
+#[cfg(test)]
+mod withdraw_suppressed_candidates_tests {
+    use super::*;
+    use crate::state::LocationId;
+    use crate::test_support::{test_investigator, GameStateBuilder};
+
+    const INV: InvestigatorId = InvestigatorId(1);
+    const CODE: &str = "_synth_reaction";
+
+    fn discovery() -> TimingEvent {
+        TimingEvent::DiscoverClues {
+            investigator: INV,
+            location: LocationId(10),
+            count: 1,
+        }
+    }
+
+    /// A one-candidate **reaction** window on `bucket`. The common case; see
+    /// [`state_with_window_of`] for the other axes.
+    fn state_with_window(bucket: EventTiming, prevented: bool) -> GameState {
+        state_with_window_of(discovery(), bucket, TimingMode::Reaction, prevented)
+    }
+
+    /// A one-candidate window over `event`, in `bucket`, of `mode`, on top of a
+    /// minimal state whose `pending_cancellation` is `prevented`.
+    fn state_with_window_of(
+        event: TimingEvent,
+        bucket: EventTiming,
+        mode: TimingMode,
+        prevented: bool,
+    ) -> GameState {
+        let mut state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .with_active_investigator(INV)
+            .build();
+        state.pending_cancellation = prevented;
+        state.continuations.push(Continuation::TimingPointWindow {
+            event,
+            bucket,
+            mode,
+            candidates: vec![ResolutionCandidate::new(
+                CardCode::new(CODE),
+                INV,
+                0,
+                CandidateSource::InPlay(CardInstanceId(1)),
+            )],
+        });
+        state
+    }
+
+    fn withdraw(state: &mut GameState) -> (usize, Vec<Event>) {
+        let mut events = Vec::new();
+        let n = withdraw_suppressed_candidates(&mut Cx {
+            state,
+            events: &mut events,
+        });
+        (n, events)
+    }
+
+    fn remaining(state: &GameState) -> usize {
+        state
+            .continuations
+            .last()
+            .and_then(Continuation::pending_candidates)
+            .expect("the window is still on top")
+            .len()
+    }
+
+    /// The Dodge 01023 shape: the condition was prevented in this very cell, so
+    /// the sibling still pending in the window is withdrawn rather than offered.
+    #[test]
+    fn a_prevented_condition_empties_its_when_cell_window() {
+        let mut state = state_with_window(EventTiming::When, true);
+        let (n, events) = withdraw(&mut state);
+        assert_eq!(n, 1, "the pending sibling must be withdrawn");
+        assert_eq!(remaining(&state), 0);
+        crate::assert_event!(
+            events,
+            Event::ReactionOptionLapsed {
+                reason: LapseReason::ConditionPrevented,
+                ..
+            }
+        );
+    }
+
+    /// No signal, no suppression — the ordinary window is left entirely alone
+    /// (its own re-scan withdrawal is `withdraw_lapsed_candidates`' job).
+    #[test]
+    fn an_unprevented_condition_withdraws_nothing() {
+        let mut state = state_with_window(EventTiming::When, false);
+        let (n, events) = withdraw(&mut state);
+        assert_eq!(n, 0);
+        assert_eq!(remaining(&state), 1);
+        assert!(events.is_empty(), "no lapse to report; events = {events:?}");
+    }
+
+    /// Scoped to the `when` cell: it is the only one whose abilities resolve
+    /// before the condition does, so a signal seen at an `at` or `after` window
+    /// belongs to something else and must not empty it.
+    #[test]
+    fn a_later_cells_window_is_untouched() {
+        for bucket in [EventTiming::At, EventTiming::After] {
+            let mut state = state_with_window(bucket, true);
+            let (n, _) = withdraw(&mut state);
+            assert_eq!(n, 0, "{bucket:?} must not be suppressed");
+            assert_eq!(remaining(&state), 1);
+        }
+    }
+
+    /// The forced arm: a 2+ lead-ordered run (#213) empties the same way, so it
+    /// closes itself instead of demanding a pick for a condition that is no
+    /// longer happening. Proved here because no coordinator-owned condition with
+    /// a `when`-cell cancel carries a forced trigger point yet — the shape #704
+    /// makes reachable, and the shape Dodge 01023's ruling is stated about.
+    #[test]
+    fn a_forced_run_in_the_when_cell_empties_too() {
+        let mut state =
+            state_with_window_of(discovery(), EventTiming::When, TimingMode::Forced, true);
+        let (n, events) = withdraw(&mut state);
+        assert_eq!(
+            n, 1,
+            "a forced run is withdrawn from like a reaction window"
+        );
+        assert_eq!(remaining(&state), 0);
+        crate::assert_event!(
+            events,
+            Event::ReactionOptionLapsed {
+                reason: LapseReason::ConditionPrevented,
+                ..
+            }
+        );
+    }
+
+    /// A **caller-owned** condition is left alone: it has already mutated the
+    /// board, and reads the signal at its own emit site
+    /// (`combat::resume_enemy_attack`) rather than here. The enemy attack
+    /// inherits this suppression when #704 migrates it to the coordinator, which
+    /// is the order #714 and #704 were sequenced in.
+    #[test]
+    fn a_caller_owned_conditions_window_is_untouched() {
+        let attack = TimingEvent::EnemyAttacks {
+            enemy: crate::state::EnemyId(1),
+            investigator: INV,
+        };
+        debug_assert!(matches!(
+            attack.condition_resolution(),
+            super::super::emit::ConditionResolution::Caller
+        ));
+        let mut state = state_with_window_of(attack, EventTiming::When, TimingMode::Reaction, true);
+        let (n, events) = withdraw(&mut state);
+        assert_eq!(n, 0, "the enemy attack is #704's to migrate");
+        assert_eq!(remaining(&state), 1);
+        assert!(events.is_empty(), "no lapse to report; events = {events:?}");
+    }
+
+    /// A frame that is not a resolution window at all — here the `when` cell's
+    /// own [`Continuation::TimingPoint`], which is what the stack holds while a
+    /// single forced ability resolves inline. No candidates to withdraw, so the
+    /// callers need no guard of their own.
+    #[test]
+    fn a_non_window_frame_is_a_no_op() {
+        let mut state = GameStateBuilder::default().build();
+        state.pending_cancellation = true;
+        state.continuations.push(Continuation::TimingPoint {
+            event: discovery(),
+            bucket: EventTiming::When,
+            sub: crate::state::TimingSub::Reaction,
+        });
+        let (n, events) = withdraw(&mut state);
+        assert_eq!(n, 0);
+        assert!(events.is_empty());
     }
 }

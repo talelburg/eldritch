@@ -183,6 +183,14 @@ pub struct GameState {
     /// Before-windows do not nest in scope — exactly one cancellable impact is
     /// ever in flight. TODO(#367): typed marker once Before-windows can nest.
     /// Required on the wire (#453).
+    ///
+    /// While set, a coordinator-owned condition's sequence is **abandoned**, not
+    /// merely stripped of its resolve step: the `at` and `after` cells and the
+    /// rest of the `when` cell are all suppressed (#714). One bool serves both
+    /// suppressing arms — a cancel and a nature-changing replacement behave
+    /// identically — and the non-suppressing third arm is #366. The citations
+    /// live on `coordinator::prevented_in_the_when_cell`, which is where the
+    /// signal is read.
     pub pending_cancellation: bool,
     // The former `pending_revelation_discard: Option<CardCode>` side-channel is
     // removed (#380): a drawn treachery's disposal now rides a

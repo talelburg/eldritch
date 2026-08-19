@@ -32,13 +32,13 @@ use card_dsl::dsl::{
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::CardRegistry;
 use game_core::engine::OptionId;
-use game_core::event::Event;
+use game_core::event::{Event, LapseReason};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId,
     LocationId, Phase,
 };
 use game_core::test_support::{test_investigator, test_location, GameStateBuilder, TestSession};
-use game_core::{ApplyResult, TurnAction};
+use game_core::{assert_event, ApplyResult, TurnAction};
 
 /// `when`-tagged reaction: +4 resources. Declaring interrupt timing on this
 /// condition is accepted now that it is coordinator-owned — before #703 the
@@ -213,27 +213,67 @@ fn an_at_ability_resolves_after_the_clues_move_and_before_any_after_ability() {
     );
 }
 
-/// `glossary/Instead.md`: *"A replacement effect is an effect that replaces the
-/// resolution of a triggering condition with an alternate means of
-/// resolution."* So the cancel prevents step 2 — and only step 2: the `at` and
-/// `after` cells still run, because what was replaced is the condition's
-/// impact, not its sequence.
+/// A prevented condition runs **none** of the rest of its sequence (#714).
+/// Dodge 01023's ruling (`data/arkhamdb-faq/core/01023.md`) settles it for the
+/// sibling condition: *"If the attacking enemy has a **Forced** ability that
+/// says "When attacks" or "After attacks", that ability does not trigger if an
+/// attack is Dodged."* — both later cells, not just the resolve step. And
+/// `glossary/Instead.md` reaches the same place for this condition: Cover Up
+/// 01007's *"when you **would** discover"* changes the nature of the discovery,
+/// and *"No further abilities referencing the original triggering condition may
+/// be used."*
 #[test]
-fn a_cancelled_discovery_does_not_resolve_but_the_later_cells_still_run() {
-    let r = investigate_firing(board_with(&[CANCEL, AT, AFTER], 2), 3);
+fn a_cancelled_discovery_suppresses_the_at_and_after_cells() {
+    // One window only: the `when` cell. The `at` and `after` cells never open,
+    // and `ScriptedResolver` would panic on an unscripted prompt if they did.
+    let r = investigate_firing(board_with(&[CANCEL, AT, AFTER], 2), 1);
     assert_eq!(
         timeline(&r.events),
-        vec![Some(1), Some(2)],
-        "no `CluePlaced` may appear between the cells; events = {:?}",
+        Vec::<Option<u8>>::new(),
+        "neither the discovery nor any later cell may run; events = {:?}",
         r.events
     );
     assert_eq!(r.state.locations[&LOC].clues, 2, "location untouched");
     assert_eq!(r.state.investigators[&INV].clues, 0, "discovered nothing");
+    assert_eq!(r.state.investigators[&INV].resources, 0, "no marker fired");
     assert!(
         !r.state.pending_cancellation,
-        "the cancellation signal must be consumed at the resolve step, not left \
-         to catch the next condition"
+        "the signal must be consumed at the resolve step, not left to catch the \
+         next condition"
     );
+    assert!(
+        no_queued_frames(&r),
+        "the abandoned sequence left frames behind: {:?}",
+        r.state.continuations
+    );
+}
+
+/// Suppression reaches the rest of the **current** cell too, per the same Dodge
+/// ruling: a `when` forced ability *"does not trigger if an attack is Dodged"*,
+/// and the ability that dodges is itself a `when`-cell one. So the sibling
+/// still pending in the open window is withdrawn rather than offered.
+#[test]
+fn a_cancel_withdraws_the_remaining_when_cell_abilities() {
+    // The `when` cell opens with two candidates (CANCEL first, in threat-area
+    // order); firing CANCEL withdraws WHEN rather than re-prompting, so one
+    // pick is the whole script.
+    let r = investigate_firing(board_with(&[CANCEL, WHEN, AT, AFTER], 2), 1);
+    assert_eq!(
+        timeline(&r.events),
+        Vec::<Option<u8>>::new(),
+        "no sibling `when` ability may resolve after the cancel; events = {:?}",
+        r.events
+    );
+    assert_event!(
+        &r.events,
+        Event::ReactionOptionLapsed {
+            code,
+            reason: LapseReason::ConditionPrevented,
+            ..
+        } if *code == CardCode::new(WHEN)
+    );
+    assert_eq!(r.state.locations[&LOC].clues, 2, "location untouched");
+    assert_eq!(r.state.investigators[&INV].resources, 0, "no marker fired");
 }
 
 /// A discovery of nothing is not a discovery: `discover_clue` returns before
