@@ -483,11 +483,26 @@ sequence rather than step 2 alone — the `at` and `after` cells, and the remain
 the `when` cell, per Dodge 01023's ruling — so a prevented condition abandons its
 coordinator frame and an open `when`-cell window is emptied
 (`LapseReason::ConditionPrevented`). Scoped to coordinator-owned conditions, so the
-enemy attack inherits it on migration rather than half-gaining it early. Two conditions
-still bypass the coordinator entirely, both in the enemy-attack machinery, because
-their emit sites read the continuation stack synchronously after emitting (the shape
-ADR 0003 forbids): #704 takes the enemy attack and the soak window that rides the
-same loop.
+enemy attack inherited it on migration rather than half-gaining it early.
+**#704 ✅ shipped (PR #717)** was that migration, and the last one the arc needed:
+the enemy attack is one coordinator-owned condition in all three cells, with the
+damage and horror placed at the resolve step. Its obstruction was never ownership
+but drive shape — the attack loop emitted and then read `open_windows()`
+synchronously, which ADR 0003 forbids — so the loop now parks on its `AttackLoop`
+frame around *every* attack (head left at the list's front), emits in tail position,
+and the `drive` loop walks the sequence above it; `BeforeAttack`/`AfterSoak`,
+`resume_enemy_attack` and the single-soak-window guard went with it, and the soak
+window rode into the coordinator alongside (caller-owned until #694 retags Guard Dog
+01021 to the `when` it prints). **No condition bypasses the coordinator now**, and
+the last two per-condition tables are gone with them: the single-cell bucket lookup
+and the `when`-timing whitelist in `trigger_matches`, which no longer takes a timing
+at all. Forced-before-reaction has exactly one mechanism, the `TimingPoint` cursor.
+The attacker's **exhaust** could not move to the resolve step — a cancelled attack
+still exhausts (Dodge 01023's ruling) and a cancel abandons the sequence before step
+2 — so it sits on the parked loop frame, after the `after` cell, where step 3.3 puts
+it. Silver Twilight Acolyte 01102 is the corpus proof: the first card to declare the
+attack condition, and the first forced point whose scan source is an enemy's own
+card. Dodging it places no doom.
 
 **Choice & cancellation.** Interactive choice runs inside the **effect evaluator's
 `Continuation::Effect` frames** (#422 / PR #424): `resolve_choice_count` (0 ⇒
