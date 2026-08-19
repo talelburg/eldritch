@@ -26,8 +26,8 @@ pub use enemy::{Enemy, EnemyId};
 pub use game_state::{
     Act, ActionResume, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, Assignment,
     AttackLoopStage, CandidateSource, Continuation, DamageSource, DifficultyBasis, EffectFrame,
-    EliminationStep, EncounterDisposition, EnemyAttackSource, EnemyResume, FastActorScope,
-    FastWindowKind, GameState, HandSizeDiscard, HunterChoice, InFlightSkillTest,
+    EliminationStep, EmitStep, EncounterDisposition, EnemyAttackSource, EnemyResume,
+    FastActorScope, FastWindowKind, GameState, HandSizeDiscard, HunterChoice, InFlightSkillTest,
     InvestigationResume, Lifetime, ModifierTarget, MythosResume, PhaseStep, RecordedModifier,
     RecordedModifierKind, ResolutionCandidate, ResolvedTest, ScenarioEndStep, SkillSubstitution,
     SkillTestFollowUp, SkillTestId, SkillTestStep, SpawnEngagePending, TimingMode, TimingSub,

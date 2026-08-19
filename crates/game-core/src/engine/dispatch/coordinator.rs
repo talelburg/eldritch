@@ -1,10 +1,13 @@
-//! The `when → at → after` timing-bucket coordinator frames (EmitEvent-frame
-//! C-coordinators, #434).
+//! The timing-sequence coordinator frames (EmitEvent-frame C-coordinators,
+//! #434): the `when → at → after` cells of one triggering condition, with the
+//! condition's own resolution between the first two (#701).
 //!
 //! [`super::emit::queue_event`] pushes a [`Continuation::EmitEvent`] for the only
-//! multi-bucket event (`RoundEnded`); the `drive` loop dispatches it here.
+//! multi-cell event (`RoundEnded`); the `drive` loop dispatches it here.
 //!
-//! - [`dispatch_emit_event`] walks `When → At → After`, pushing a
+//! - [`dispatch_emit_event`] walks `When → ResolveCondition → At → After` —
+//!   the three RR timing cells with the triggering condition's own resolution
+//!   between the first two (#701) — pushing a
 //!   [`Continuation::TimingPoint`] for each *populated* bucket and **re-scanning
 //!   each cell fresh** (the per-cell eligibility re-scan — a `when` reaction can
 //!   change whether an `at` forced fires; the grid is not pre-computed).
@@ -18,28 +21,70 @@
 //! already been advanced, so re-dispatch makes progress (never re-scans the same
 //! cell into a loop).
 
-use crate::dsl::EventTiming;
-use crate::state::{Continuation, TimingSub};
+use crate::state::{Continuation, EmitStep, TimingSub};
 
 use super::super::outcome::EngineOutcome;
+use super::emit::ConditionResolution;
 use super::Cx;
 
 /// Dispatch the [`Continuation::EmitEvent`] coordinator on top of the stack
-/// (called only by the `drive` loop with one on top). Re-scans the current
-/// bucket; if it has any forced or reaction ability, pushes a
-/// [`Continuation::TimingPoint`] and yields; otherwise advances the cursor (or
-/// pops the coordinator after `After`).
+/// (called only by the `drive` loop with one on top). One step of the sequence
+/// `When → ResolveCondition → At → After`:
+///
+/// - **a cell** (`When` / `At` / `After`) — re-scan it; if it holds any forced
+///   or reaction ability, push a [`Continuation::TimingPoint`] and yield,
+///   otherwise advance the cursor (popping the coordinator after `After`).
+/// - **`ResolveCondition`** — step 2 of `glossary/Nested_Sequences.md`: the
+///   triggering condition's own impact, run by the coordinator when the
+///   condition is [`ConditionResolution::Coordinator`] and already done by the
+///   emitting caller when it is [`ConditionResolution::Caller`]. The cursor
+///   advances to `At` *before* the step runs, so a resolution that suspends
+///   resumes at the `at` cell rather than resolving the condition twice.
+///
+/// A caller-owned condition's `when` cell is **not walked** — the caller has
+/// already mutated, so an interrupt there would resolve after the thing it meant
+/// to interrupt. An ability that declares one is rejected rather than dropped
+/// (this project never silently no-ops); see [`ConditionResolution::Caller`] and
+/// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
 pub(super) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
-    let Some(Continuation::EmitEvent { event, bucket }) = cx.state.continuations.last().cloned()
+    let Some(Continuation::EmitEvent { event, step }) = cx.state.continuations.last().cloned()
     else {
         unreachable!("dispatch_emit_event: top frame is not EmitEvent");
     };
-    // Per-cell re-scan (#434): the prior bucket may have changed board state.
+    if step == EmitStep::ResolveCondition {
+        advance_or_finish_emit(cx);
+        return match event.condition_resolution() {
+            ConditionResolution::Coordinator(resolve) => resolve(cx, &event),
+            // Already resolved, by the caller, before it emitted.
+            ConditionResolution::Caller => EngineOutcome::Done,
+        };
+    }
+    let Some(bucket) = step.cell() else {
+        unreachable!("dispatch_emit_event: ResolveCondition handled above");
+    };
+    let caller_owned = matches!(event.condition_resolution(), ConditionResolution::Caller);
+    // Per-cell re-scan (#434): the prior cell may have changed board state.
     let has_forced = event.forced_point().is_some_and(|point| {
         !super::forced_triggers::collect_forced_hits(cx.state, &point, bucket).is_empty()
     });
     let has_reaction =
         !super::reaction_windows::scan_reactions_at(cx.state, &event, bucket).is_empty();
+    if caller_owned && step == EmitStep::When {
+        if has_forced || has_reaction {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "timing coordinator: {event:?} is a caller-owned triggering condition, so its \
+                     `when` cell is not walked — an ability declaring interrupt timing on it \
+                     cannot resolve before the condition, which has already resolved. Migrate the \
+                     condition to a coordinator-owned arm (see \
+                     docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md)."
+                )
+                .into(),
+            };
+        }
+        advance_or_finish_emit(cx);
+        return EngineOutcome::Done;
+    }
     if has_forced || has_reaction {
         cx.state.continuations.push(Continuation::TimingPoint {
             event,
@@ -114,16 +159,15 @@ fn finish_timing_point(cx: &mut Cx) {
     advance_or_finish_emit(cx);
 }
 
-/// Advance the top [`Continuation::EmitEvent`]'s bucket cursor `When → At →
-/// After`, or pop the coordinator once `After` is done.
+/// Advance the top [`Continuation::EmitEvent`]'s cursor `When →
+/// ResolveCondition → At → After`, or pop the coordinator once `After` is done.
 fn advance_or_finish_emit(cx: &mut Cx) {
-    let Some(Continuation::EmitEvent { bucket, .. }) = cx.state.continuations.last_mut() else {
+    let Some(Continuation::EmitEvent { step, .. }) = cx.state.continuations.last_mut() else {
         unreachable!("advance_or_finish_emit: expected an EmitEvent on top");
     };
-    match *bucket {
-        EventTiming::When => *bucket = EventTiming::At,
-        EventTiming::At => *bucket = EventTiming::After,
-        EventTiming::After => {
+    match step.next() {
+        Some(next) => *step = next,
+        None => {
             cx.state.continuations.pop();
         }
     }

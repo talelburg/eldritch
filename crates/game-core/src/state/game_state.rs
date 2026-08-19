@@ -541,17 +541,24 @@ pub enum Continuation {
     /// A suspended upkeep hand-size discard (#111), migrated off the former
     /// `GameState::hand_size_discard_pending` field (#348).
     HandSizeDiscard(HandSizeDiscard),
-    /// Coordinator: walk the RR timing buckets `When → At → After` for one game
-    /// event (EmitEvent-frame C-coordinators, #434). `bucket` is the cursor.
-    /// Pushed by `queue_event` for the only multi-bucket event (`RoundEnded`);
-    /// the `drive` loop dispatches it, pushing a [`TimingPoint`](Self::TimingPoint)
-    /// per populated bucket and re-scanning each cell fresh. Suspends at the
-    /// round-end `when` act-advance window.
+    /// Coordinator: walk one triggering condition's timing sequence — the three
+    /// cells `When → At → After` with the condition's *own* resolution between
+    /// the first two (EmitEvent-frame C-coordinators, #434; the resolve step,
+    /// #701). `step` is the cursor. Pushed by `queue_event` for the only
+    /// multi-cell event (`RoundEnded`); the `drive` loop dispatches it, pushing
+    /// a [`TimingPoint`](Self::TimingPoint) per populated cell and re-scanning
+    /// each cell fresh. Suspends at the round-end `when` act-advance window.
     EmitEvent {
-        /// The game event whose timing buckets are being walked.
+        /// The game event whose timing cells are being walked.
         event: crate::engine::TimingEvent,
-        /// The bucket cursor (`When` → `At` → `After`).
-        bucket: crate::dsl::EventTiming,
+        /// The sequence cursor (`When` → `ResolveCondition` → `At` → `After`).
+        ///
+        /// Serialized as `step`; `#[serde(alias = "bucket")]` keeps game states
+        /// persisted before the resolve step existed loadable — the three cell
+        /// names are unchanged, so an old `"bucket": "At"` reads as
+        /// [`EmitStep::At`].
+        #[serde(alias = "bucket")]
+        step: EmitStep,
     },
     /// Coordinator: one timing bucket of an [`EmitEvent`](Self::EmitEvent) walk,
     /// running forced then reaction (`sub` cursor). What single-bucket
@@ -1411,6 +1418,64 @@ pub enum UpkeepResume {
     /// effects, Upkeep → Mythos). Set before the coordinator is queued
     /// (#434 — subsumes `ForcedContinuation::UpkeepAfterRoundEnded`).
     AfterRoundEnd,
+}
+
+/// The cursor of a [`Continuation::EmitEvent`] walk: one triggering condition's
+/// timing sequence (#701).
+///
+/// The Rules Reference puts the condition's own resolution *inside* the
+/// sequence — `glossary/Nested_Sequences.md`: *"Each time a triggering condition
+/// occurs, the following sequence is followed: 1) execute "when..." effects that
+/// interrupt that triggering condition, (2) resolve the triggering condition,
+/// and then, (3) execute "after..." effects in response to that triggering
+/// condition."* [`ResolveCondition`](Self::ResolveCondition) is that step 2; the
+/// `At` cell sits between it and `After` per `glossary/At.md`.
+///
+/// Who performs step 2 is [`ConditionResolution`](crate::engine::ConditionResolution),
+/// dispatched from the timing event's own value — the frame is serialized, so
+/// the step cannot hold a closure. See
+/// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EmitStep {
+    /// The `when` cell: abilities that interrupt the condition, resolving
+    /// before its impact lands. Walked only for a coordinator-owned condition —
+    /// a caller-owned one has already mutated, so an interrupt here would
+    /// resolve *after* the thing it meant to interrupt.
+    When,
+    /// Step 2: resolve the triggering condition itself. A no-op for a
+    /// caller-owned condition (the emitting caller already mutated).
+    ResolveCondition,
+    /// The `at` cell: `at …` / `if …` abilities, between the when and after
+    /// cells.
+    At,
+    /// The `after` cell: abilities responding to the fully-resolved condition.
+    After,
+}
+
+impl EmitStep {
+    /// The timing cell this step scans for abilities, or `None` for the
+    /// resolve step (which scans nothing — it resolves the condition).
+    #[must_use]
+    pub fn cell(self) -> Option<crate::dsl::EventTiming> {
+        match self {
+            EmitStep::When => Some(crate::dsl::EventTiming::When),
+            EmitStep::ResolveCondition => None,
+            EmitStep::At => Some(crate::dsl::EventTiming::At),
+            EmitStep::After => Some(crate::dsl::EventTiming::After),
+        }
+    }
+
+    /// The next step in the sequence, or `None` once `After` is done (the
+    /// coordinator pops).
+    #[must_use]
+    pub fn next(self) -> Option<Self> {
+        match self {
+            EmitStep::When => Some(EmitStep::ResolveCondition),
+            EmitStep::ResolveCondition => Some(EmitStep::At),
+            EmitStep::At => Some(EmitStep::After),
+            EmitStep::After => None,
+        }
+    }
 }
 
 /// The forced-then-reaction sub-cursor of a [`Continuation::TimingPoint`]
@@ -3504,5 +3569,62 @@ mod effect_frame_tests {
         let json = serde_json::to_string(&frame).expect("serialize");
         let back: Continuation = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(frame, back);
+    }
+}
+
+#[cfg(test)]
+mod emit_step_tests {
+    use crate::engine::TimingEvent;
+    use crate::state::{Continuation, EmitStep};
+
+    #[test]
+    fn emit_step_walks_the_sequence_with_the_resolve_step_between_when_and_at() {
+        let mut step = EmitStep::When;
+        let mut walk = vec![step];
+        while let Some(next) = step.next() {
+            step = next;
+            walk.push(step);
+        }
+        assert_eq!(
+            walk,
+            vec![
+                EmitStep::When,
+                EmitStep::ResolveCondition,
+                EmitStep::At,
+                EmitStep::After
+            ],
+            "the condition resolves between the `when` and `at` cells (RR Nested Sequences)"
+        );
+        assert!(
+            EmitStep::ResolveCondition.cell().is_none(),
+            "the resolve step scans no cell — it resolves the condition"
+        );
+    }
+
+    #[test]
+    fn emit_event_frame_roundtrips_serde() {
+        let frame = Continuation::EmitEvent {
+            event: TimingEvent::RoundEnded,
+            step: EmitStep::ResolveCondition,
+        };
+        let json = serde_json::to_string(&frame).expect("serialize");
+        let back: Continuation = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(frame, back);
+    }
+
+    /// A game state persisted before the resolve step existed carries the
+    /// cursor as `bucket`; `#[serde(alias = "bucket")]` keeps it loadable, and
+    /// the three cell names are unchanged.
+    #[test]
+    fn a_frame_persisted_before_the_resolve_step_still_loads() {
+        let legacy = r#"{"EmitEvent":{"event":"RoundEnded","bucket":"At"}}"#;
+        let back: Continuation = serde_json::from_str(legacy).expect("deserialize legacy frame");
+        assert_eq!(
+            back,
+            Continuation::EmitEvent {
+                event: TimingEvent::RoundEnded,
+                step: EmitStep::At,
+            }
+        );
     }
 }

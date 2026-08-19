@@ -191,6 +191,29 @@ pub fn run_enemy_phase_end(
     crate::engine::drive(&mut cx, out)
 }
 
+/// Test helper: walk one triggering condition's whole timing sequence — push
+/// the [`EmitEvent`](crate::state::Continuation::EmitEvent) coordinator for
+/// `event` at the `when` cell and drive it to its next suspension or
+/// completion.
+///
+/// `queue_event` routes only `RoundEnded` through the coordinator until #702, so
+/// this is the only way to walk another condition's cells — notably the
+/// caller-owned `when`-cell reject (#701). Delete it with the classification.
+pub fn run_timing_sequence(
+    state: &mut crate::state::GameState,
+    events: &mut Vec<crate::event::Event>,
+    event: crate::engine::TimingEvent,
+) -> crate::engine::EngineOutcome {
+    let mut cx = crate::engine::Cx { state, events };
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::EmitEvent {
+            event,
+            step: crate::state::EmitStep::When,
+        });
+    crate::engine::drive(&mut cx, crate::engine::EngineOutcome::Done)
+}
+
 /// Test helper: resume the round-end `when` act-advance reaction window (#434)
 /// with `response` (`PickSingle`/`Skip`), driving the coordinator through to its
 /// next suspension or completion via the player-action entry.
