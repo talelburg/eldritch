@@ -493,7 +493,12 @@ fn fire_forced_at_end_of_turn_resolves_threat_area_ability() {
         .build();
 
     let mut events = Vec::new();
-    let outcome = fire_forced_at_end_of_turn(&mut state, &mut events, InvestigatorId(1));
+    let outcome = fire_forced_at_end_of_turn(
+        &mut state,
+        &mut events,
+        InvestigatorId(1),
+        EventTiming::After,
+    );
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 1);
@@ -511,7 +516,12 @@ fn fire_forced_at_end_of_turn_no_op_without_threat_area_card() {
         .build();
 
     let mut events = Vec::new();
-    let outcome = fire_forced_at_end_of_turn(&mut state, &mut events, InvestigatorId(1));
+    let outcome = fire_forced_at_end_of_turn(
+        &mut state,
+        &mut events,
+        InvestigatorId(1),
+        EventTiming::After,
+    );
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 0);

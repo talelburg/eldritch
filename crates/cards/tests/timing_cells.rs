@@ -17,16 +17,22 @@
 //! > "when..." abilities and any "after..." abilities with the same triggering
 //! > condition.
 //!
-//! The round end is the only condition whose cells the corpus *contests*: the
-//! three other `at`-tagged corpus abilities — act 01110's objective, Frozen in
-//! Fear 01164's end-of-turn test, agenda 01107's enemy-phase-end move — are
-//! each alone on their condition, so no card orders against them and their own
-//! module tests pin the declaration and nothing more. So the walk is proved
-//! with a hand-built registry (prior art: `advance_act_interactive_reverse`).
-//! The round end's own three consumers — act 01109, agenda 01107, Dissonant
-//! Voices 01165 — are covered against the *real* corpus in
-//! `theyre_getting_out.rs` and `the_barrier_eligibility.rs`, which must not
-//! move.
+//! Two conditions have their cells *contested* by the corpus, and both are
+//! covered against the real corpus rather than here. The **round end** —
+//! act 01109's `when`, agenda 01107's and Dissonant Voices 01165's `at` — in
+//! `theyre_getting_out.rs` and `the_barrier_eligibility.rs`. The **enemy
+//! defeat** — act 01110's `at` objective against Roland Banks 01001's
+//! *"`[reaction]` After you defeat an enemy: Discover 1 clue at your
+//! location."* — in `scenarios/tests/the_gathering_resolutions.rs`, whose C7b
+//! gate defeats the real Ghoul Priest and asserts Roland's window never opens,
+//! per 01110's ruling that the objective fires *"before any "After you defeat
+//! an enemy" reactions can be used."* None of those must move.
+//!
+//! The corpus's two remaining `at`-tagged abilities — Frozen in Fear 01164's
+//! end-of-turn test, agenda 01107's enemy-phase-end move — are alone on their
+//! condition, so nothing orders against them and their own module tests pin
+//! the declaration and nothing more. So the walk itself is proved with a
+//! hand-built registry (prior art: `advance_act_interactive_reverse`).
 //!
 //! The condition under test is `SkillTestResolved` (RR ST.6), picked because
 //! both its forced and its reaction scan read the investigator's own controlled

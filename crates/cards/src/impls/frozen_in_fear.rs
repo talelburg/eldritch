@@ -19,7 +19,7 @@
 //! failure-side effect.
 //!
 //! **Cell: the `at` cell of the `EndOfTurn` condition.** The printed word is
-//! *"At"* — *"**Forced** - At the end of your turn"* — and `glossary/At.md`
+//! *"At"* — *"**Forced** - At the end of your turn: …"* — and `glossary/At.md`
 //! puts those abilities *"in between any "when..." abilities and any
 //! "after..." abilities with the same triggering condition."* So the turn's
 //! end lands first and the willpower test runs before anything reacting to

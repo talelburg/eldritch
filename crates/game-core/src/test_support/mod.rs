@@ -292,19 +292,24 @@ pub fn fire_forced_on_enemy_defeat(
     crate::engine::drive(&mut cx, out)
 }
 
-/// Test helper: fire `ForcedTriggerPoint::EndOfTurn` for `investigator`,
-/// returning the `EngineOutcome`. See `fire_forced_on_enter`. Exercises
-/// the threat-area "at the end of your turn" forced path.
+/// Test helper: fire one timing cell's forced triggers for `investigator`'s
+/// turn ending, returning the `EngineOutcome`. See `fire_forced_on_enter`, and
+/// `fire_forced_on_phase_end` for why the caller names the `cell`: Frozen in
+/// Fear 01164's *"**Forced** - At the end of your turn: …"* is
+/// [`EventTiming::At`](crate::dsl::EventTiming::At), so a corpus test of the
+/// threat-area path wants that cell — the mock-registry callers here declare
+/// [`After`](crate::dsl::EventTiming::After) and pass it.
 pub fn fire_forced_at_end_of_turn(
     state: &mut crate::state::GameState,
     events: &mut Vec<crate::event::Event>,
     investigator: crate::state::InvestigatorId,
+    cell: crate::dsl::EventTiming,
 ) -> crate::engine::EngineOutcome {
     let mut cx = crate::engine::Cx { state, events };
     let out = crate::engine::queue_forced_triggers(
         &mut cx,
         &crate::engine::ForcedTriggerPoint::EndOfTurn { investigator },
-        crate::dsl::EventTiming::After,
+        cell,
     );
     crate::engine::drive(&mut cx, out)
 }
