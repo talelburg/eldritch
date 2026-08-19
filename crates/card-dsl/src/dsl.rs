@@ -444,8 +444,9 @@ pub enum EventTiming {
     /// replacement timing — "when … would …").
     When,
     /// Resolves between `when` and `after` abilities with the same
-    /// triggering condition ("at the …"). Dormant until Slice B-iii
-    /// re-tags the round-end doom onto it.
+    /// triggering condition ("at the …" / "if …"), after the condition's own
+    /// impact has landed. Reachable on **every** triggering condition since
+    /// #702, not just the round end.
     At,
     /// Resolves after the triggering event has finalized.
     After,

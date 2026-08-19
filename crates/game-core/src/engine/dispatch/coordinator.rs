@@ -2,8 +2,9 @@
 //! #434): the `when → at → after` cells of one triggering condition, with the
 //! condition's own resolution between the first two (#701).
 //!
-//! [`super::emit::queue_event`] pushes a [`Continuation::EmitEvent`] for the only
-//! multi-cell event (`RoundEnded`); the `drive` loop dispatches it here.
+//! [`super::emit::queue_event`] pushes a [`Continuation::EmitEvent`] for **every**
+//! triggering condition (#702 — bar the two interrupt-timed holdouts it
+//! documents); the `drive` loop dispatches it here.
 //!
 //! - [`dispatch_emit_event`] walks `When → ResolveCondition → At → After` —
 //!   the three RR timing cells with the triggering condition's own resolution
@@ -11,9 +12,11 @@
 //!   [`Continuation::TimingPoint`] for each *populated* bucket and **re-scanning
 //!   each cell fresh** (the per-cell eligibility re-scan — a `when` reaction can
 //!   change whether an `at` forced fires; the grid is not pre-computed).
-//! - [`dispatch_timing_point`] resolves one bucket's forced-then-reaction
-//!   (`sub` cursor `Forced → Reaction → Done`) — what single-bucket
-//!   `queue_event` does today, made frame-resumable.
+//! - [`dispatch_timing_point`] resolves one cell's forced-then-reaction
+//!   (`sub` cursor `Forced → Reaction → Done`) — RR p.2's forced-before-reaction,
+//!   which since #702 is the *only* mechanism for that ordering (the pre-#702
+//!   single-cell path achieved it structurally, by queueing the reaction window
+//!   beneath the forced frames).
 //!
 //! Neither driver suspends *itself*: each does one step and returns `Done`, and
 //! the loop re-dispatches the (mutated) top frame — or `AwaitingInput` when the
@@ -77,8 +80,8 @@ pub(super) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
                     "timing coordinator: {event:?} is a caller-owned triggering condition, so its \
                      `when` cell is not walked — an ability declaring interrupt timing on it \
                      cannot resolve before the condition, which has already resolved. Migrate the \
-                     condition to a coordinator-owned arm — TODO(#702): the caller-owned arm is \
-                     scaffolding, migrated one condition at a time by #702-#704 (see \
+                     condition to a coordinator-owned arm — TODO(#703/#704): the caller-owned \
+                     arm is scaffolding, migrated one condition at a time (see \
                      docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md)."
                 )
                 .into(),

@@ -53,16 +53,16 @@ use super::Cx;
 /// doesn't arise; the overwrite is a loud-on-debug placeholder
 /// rather than silent stacking — multi-window queueing lands when a
 /// multi-defeat effect arrives.
-pub(super) fn queue_reaction_window(cx: &mut Cx, event: &crate::engine::TimingEvent) {
-    // Single-bucket events open their window at their natural timing; the
-    // coordinator opens per-cell windows directly (#434, Task 3).
-    let bucket = event.reaction_bucket();
-    let mut candidates = scan_pending_triggers(cx.state, event, bucket);
-    // Axis C (#335): the window also opens for a matching Fast event in hand,
-    // so a defeat with Evidence! in hand (and no in-play reaction) still opens
-    // the after-defeat window. Hand plays are offered after the in-play
-    // triggers.
-    candidates.extend(scan_hand_fast_events(cx.state, event, bucket));
+pub(super) fn queue_reaction_window(
+    cx: &mut Cx,
+    event: &crate::engine::TimingEvent,
+    bucket: EventTiming,
+) {
+    // The last two single-cell events (`EnemyAttacks`, `WouldDiscoverClues`)
+    // open their window at the `bucket` their caller names; every other
+    // condition walks the `when → at → after` coordinator, which opens its
+    // per-cell windows through `open_reaction_run` (#702).
+    let candidates = scan_reactions_at(cx.state, event, bucket);
     if candidates.is_empty() {
         return;
     }
@@ -81,8 +81,9 @@ pub(super) fn queue_reaction_window(cx: &mut Cx, event: &crate::engine::TimingEv
 
 /// All reaction candidates (in-play + hand Fast + current act/agenda) for
 /// `event` at `bucket` — the `EmitEvent`/`TimingPoint` coordinator's per-cell
-/// reaction scan (#434). Unlike [`queue_reaction_window`] (which reads the
-/// event's *natural* bucket), the coordinator passes the cell it is resolving.
+/// reaction scan (#434). The caller names the cell it is resolving; a cell is
+/// populated iff this finds something in it (#702 deleted the per-event table of
+/// whether a condition opens a reaction window at all).
 pub(super) fn scan_reactions_at(
     state: &GameState,
     event: &crate::engine::TimingEvent,
@@ -568,8 +569,11 @@ fn trigger_matches(
                     | (TimingEvent::RoundEnded, EventPattern::RoundEnded)
             );
         }
-        // No `At`-timed reaction exists yet; treat it like `After` (fall through
-        // to pattern matching). Dormant.
+        // An `at`-timed reaction pairs with its condition exactly as an
+        // `after`-timed one does — the cell it resolves in is the coordinator's
+        // business, not the pattern's — so both fall through to the pattern
+        // match below. No corpus card carries one yet (#702's synthetic
+        // `timing_cells.rs` registry does).
         EventTiming::At | EventTiming::After => {}
     }
     match (event, pattern) {
