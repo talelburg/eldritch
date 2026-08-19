@@ -140,7 +140,8 @@ bonus_clues_discovered`, the clue-side sibling of Vicious Blow 01025's
 `bonus_attack_damage`), and the Investigate follow-up makes **one** discovery of
 `1 + bonus` at `LocationTarget::TestedLocation` — a base-Investigate change, since
 the PR deletes Deduction's own `TestedLocation` anchoring. `discover_clue` caps at
-`min(count, location.clues)` **before** emitting `WouldDiscoverClues`, so Cover Up
+`min(count, location.clues)` **before** emitting the discovery condition (then named
+`WouldDiscoverClues`; one condition, `DiscoverClues`, since #703), so Cover Up
 01007's "discard that many" reads the real quantity; `perform_discovery` keeps its
 own `min` as the shrinkage backstop, fixing the count at the moment of the would-be
 discovery. The shape distinction is now glossary vocabulary (**Discovery** in
@@ -471,11 +472,17 @@ cells a condition supports. The condition's own resolution is step 2 of the walk
 ([ADR-0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md),
 #701 ✅ shipped, PR #711); who performs it is an exhaustive classification, and a
 condition still owned by its emitting caller does not walk its `when` cell —
-declaring an interrupt on one is **rejected**, never dropped. Three conditions still
-bypass the coordinator entirely, all in the enemy-attack machinery, because their
-emit sites read the continuation stack synchronously after emitting (the shape ADR
-0003 forbids): #703 migrates clue discovery, #704 the enemy attack and the soak
-window that rides the same loop.
+declaring an interrupt on one is **rejected**, never dropped. Ownership migrates one
+condition at a time: **#703 ✅ shipped (PR #713)** made clue discovery the first
+coordinator-owned migration — `WouldDiscoverClues` collapsed into `DiscoverClues`,
+one condition in all three cells, with `discover_clue` reduced to cap-and-emit and
+the clues moving at the coordinator's resolve step. Cancellation moved there with it:
+a `when` replacement's signal is read between the `when` cell and step 2, so the
+discovery does not resolve while the `at` and `after` cells still do. Two conditions
+still bypass the coordinator entirely, both in the enemy-attack machinery, because
+their emit sites read the continuation stack synchronously after emitting (the shape
+ADR 0003 forbids): #704 takes the enemy attack and the soak window that rides the
+same loop.
 
 **Choice & cancellation.** Interactive choice runs inside the **effect evaluator's
 `Continuation::Effect` frames** (#422 / PR #424): `resolve_choice_count` (0 ⇒
