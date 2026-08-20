@@ -2053,8 +2053,8 @@ fn reject_untrackable_usage_limit(
     }
     Err(format!(
         "ActivateAbility: {code}'s ability carries a usage limit, but {source:?} has no card \
-         instance to record uses against (usage state lives on in-play instances); tracked as \
-         issue #699"
+         instance to record uses against (usage state lives on in-play instances); \
+         TODO(#699): usage limits on a location / act / agenda need a state-level counter"
     )
     .into())
 }

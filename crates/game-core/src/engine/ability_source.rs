@@ -152,6 +152,13 @@ pub(crate) fn reachable_sources(
     // (Obscuring Fog 01168), and the enemies standing on it, which are exactly
     // the encounter cards the Parley abilities are printed on (Herman Collins
     // 01138, Mob Enforcer 01101). An enemy's own attachments ride with it.
+    //
+    // The bullet says *scenario* card, and attachments are taken unfiltered:
+    // `Effect::AttachSelfToLocation` has one caller in the corpus and it is an
+    // encounter card, so no player card can sit in either collection today. The
+    // day one can — an attaching player asset — this is where the encounter /
+    // player distinction goes, and it wants the card's own metadata rather than
+    // the collection it landed in.
     sources.extend(location.attachments.iter().map(as_instance));
     for enemy in state
         .enemies

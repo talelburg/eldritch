@@ -21,6 +21,10 @@
 //! Parlor's Resign missing from the menu is as much the defect as its being
 //! refused on submission.
 //!
+//! The engine-side peer of these cases — the reachability predicate's own
+//! answers, without a registry — is `engine::ability_source`'s unit tests,
+//! which build the same board shape one crate down.
+//!
 //! Own integration-test binary so it can install a hand-rolled `CardRegistry`.
 //! **No corpus card can exercise this**: the Parlor 01115 (*"[action]
 //! **Resign.** 'This is too much for me!' You run out the front door, fleeing
@@ -31,12 +35,14 @@
 
 use std::sync::OnceLock;
 
+use game_core::assert_event;
 use game_core::card_data::{CardKind, CardMetadata};
 use game_core::card_registry::{self, CardRegistry};
 use game_core::dsl::{
     activated, gain_resources, heal_damage, Ability, InvestigatorTarget, UsageLimit, UsagePeriod,
 };
 use game_core::engine::{legal_actions, EngineOutcome, TurnAction};
+use game_core::event::Event;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState, InvestigatorId,
     LocationId, Phase,
@@ -205,6 +211,7 @@ fn assert_offered_and_activatable(state: GameState, source: AbilitySource, why: 
         legal_actions(&state),
     );
 
+    let before = state.investigators[&MINE].resources;
     let result = dispatch_turn_action_unchecked(state, &action);
     assert!(
         !matches!(result.outcome, EngineOutcome::Rejected { .. }),
@@ -212,8 +219,9 @@ fn assert_offered_and_activatable(state: GameState, source: AbilitySource, why: 
         result.outcome,
     );
     assert_eq!(
-        result.state.investigators[&MINE].resources, 6,
-        "the ability's effect should have run",
+        result.state.investigators[&MINE].resources,
+        before + 1,
+        "the ability's effect (gain 1 resource) should have run",
     );
 }
 
@@ -250,6 +258,24 @@ fn the_location_you_stand_at_offers_its_ability() {
         board(),
         AbilitySource::Location(HERE),
         "you are standing at this location",
+    );
+}
+
+/// `Event::AbilityActivated` names the **source**, not a card instance: a
+/// location has none, so the event has to say what actually carried the
+/// ability.
+#[test]
+fn the_activation_event_names_a_source_with_no_card_instance() {
+    let result =
+        dispatch_turn_action_unchecked(board(), &activation(AbilitySource::Location(HERE), LIVE));
+    assert_event!(
+        result.events,
+        Event::AbilityActivated {
+            investigator,
+            source: AbilitySource::Location(location),
+            code,
+            ability_index: LIVE,
+        } if *investigator == MINE && *location == HERE && code.as_str() == HALL
     );
 }
 
