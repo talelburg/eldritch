@@ -798,11 +798,54 @@ pub enum Effect {
     /// and the act's on-advance reverse fires. Used by act objectives
     /// like 01110 ("If the Ghoul Priest is Defeated, advance.").
     AdvanceCurrentAct,
+    /// Place `count` doom on the current agenda, then run the doom-threshold
+    /// check once — the *"This effect can cause the current agenda to
+    /// advance"* clause that six in-corpus cards print (Ancient Evils 01166,
+    /// Silver Twilight Acolyte 01102, Dark Memory 01013, Offer of Power 01178,
+    /// Saracenic Script 02240, Blood on the Altar 02195).
+    ///
+    /// `data/rules-reference/rules/glossary/Doom.md`:
+    ///
+    /// > If there are no "**Objective** – " requirements for advancing the
+    /// > current agenda and the requisite amount of doom is in play (among the
+    /// > agenda and all cards in play), the agenda advances during the "Check
+    /// > doom threshold" step of the Mythos phase. Unless a card otherwise
+    /// > specifies that it can advance the agenda, this is the only time at
+    /// > which the agenda can advance.
+    ///
+    /// The printed clause is that "otherwise specifies", which is why the
+    /// threshold check rides along with the placement rather than waiting for
+    /// Mythos. It runs **once, after all `count` doom is placed** — Offer of
+    /// Power 01178's *"place 2 doom"* is one placement of two, not two
+    /// placements of one, so a threshold reached by the first cannot advance
+    /// the agenda out from under the second.
+    ///
+    /// `count` is an [`IntExpr`] rather than a `u8` because the clause is
+    /// already printed with two different numbers in the corpus (01166's 1,
+    /// 01178's 2) and out of corpus with a computed one (Jeremiah Pierce
+    /// 50044's *"for each point you fail by"*). A `count` that evaluates
+    /// negative places nothing.
+    ///
+    /// Typed rather than [`Native`](Self::Native) (graduated from two
+    /// card-local tags in #716) so it can sit inside a [`Seq`](Self::Seq),
+    /// [`ChooseOne`](Self::ChooseOne), or [`If`](Self::If) as a sub-effect —
+    /// which 01178, 02240, and 02195 each need.
+    PlaceDoomOnCurrentAgenda {
+        /// How much doom to place. Evaluated once, at resolution.
+        count: IntExpr,
+    },
     /// A card-local Rust effect, resolved by tag through the host's
     /// `CardRegistry.native_effect_for`. The generic escape hatch for
     /// single-use card logic that doesn't earn a shared `Effect` variant
     /// (see issue #276). The `cards` crate maps the tag to a Rust fn; the
     /// evaluator rejects loudly on an unknown tag or absent registry.
+    ///
+    /// **A pattern a second card wants graduates to a variant** (`CLAUDE.md`,
+    /// Architecture). *"Place N doom on the current agenda"* was the first to
+    /// do so: Ancient Evils 01166 and Silver Twilight Acolyte 01102 each
+    /// carried a byte-identical `<code>:place-doom` tag until #716 replaced
+    /// both with [`PlaceDoomOnCurrentAgenda`](Self::PlaceDoomOnCurrentAgenda).
+    /// Reach for that variant, not a fresh tag.
     Native { tag: String },
     /// Initiate a skill test as part of a card effect (treachery
     /// Revelation, agenda forced effect, …). The evaluator maps `skill`
@@ -1836,6 +1879,14 @@ pub fn choose_one(effects: impl IntoIterator<Item = Effect>) -> Effect {
 #[must_use]
 pub fn advance_current_act() -> Effect {
     Effect::AdvanceCurrentAct
+}
+
+/// Build an [`Effect::PlaceDoomOnCurrentAgenda`] placing `count` doom.
+#[must_use]
+pub fn place_doom_on_current_agenda(count: impl Into<IntExpr>) -> Effect {
+    Effect::PlaceDoomOnCurrentAgenda {
+        count: count.into(),
+    }
 }
 
 /// Build an [`Effect::Native`] referencing a host-registered Rust effect

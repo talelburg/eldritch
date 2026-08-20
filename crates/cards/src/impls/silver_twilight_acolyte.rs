@@ -12,12 +12,12 @@
 //! #704. `Prey` and `Hunter` are printed keywords the pipeline ingests into
 //! metadata, not abilities; only the forced doom is declared here.
 //!
-//! Card-local native (#276), sharing Ancient Evils 01166's shape: the effect is
-//! one call into the engine's `place_doom_on_current_agenda` (place + threshold
-//! check), so what the two cards duplicate is the tag and its shim, not the
-//! logic. This is the second consumer, which is the repo's threshold for
-//! graduating a pattern to a DSL primitive — filed as #716, where the cards that
-//! need it *inside* a `Seq` or `ChooseOne` make the case.
+//! Being that second consumer is what graduated *"place N doom on the current
+//! agenda"* from a card-local native tag to
+//! [`Effect::PlaceDoomOnCurrentAgenda`](card_dsl::dsl::Effect::PlaceDoomOnCurrentAgenda)
+//! in #716 — the repo's two-consumer bar (`CLAUDE.md`, Architecture), met
+//! against Ancient Evils 01166's byte-identical tag. The effect places the doom
+//! and runs the threshold check, so this attack can advance the agenda.
 //!
 //! **Cell: the `after` cell of the `EnemyAttacks` condition.** The printed word
 //! is *"After"* — *"**Forced** - After Silver Twilight Acolyte attacks: Place 1
@@ -37,39 +37,26 @@
 //! cancel abandons the condition's whole sequence (#714), so the `after` cell
 //! this ability sits in is never walked.
 
-use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
-use game_core::card_registry::NativeEffectFn;
-use game_core::{place_doom_on_current_agenda, Cx, EngineOutcome, EvalContext};
+use card_dsl::dsl::{
+    forced_on_event, place_doom_on_current_agenda, Ability, EventPattern, EventTiming,
+};
 
 /// `ArkhamDB` code for Silver Twilight Acolyte.
 pub const CODE: &str = "01102";
-
-const PLACE_DOOM: &str = "01102:place-doom";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![forced_on_event(
         EventPattern::EnemyAttacks,
         EventTiming::After,
-        native(PLACE_DOOM),
+        place_doom_on_current_agenda(1u8),
     )]
-}
-
-/// Resolve this enemy's native-effect tag. Wired into the crate registry's
-/// `native_effect_for`.
-pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    (tag == PLACE_DOOM).then_some(place_doom as NativeEffectFn)
-}
-
-fn place_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    place_doom_on_current_agenda(cx);
-    EngineOutcome::Done
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::{Effect, Trigger, TriggerKind};
+    use card_dsl::dsl::{Effect, IntExpr, Trigger, TriggerKind};
 
     #[test]
     fn forced_after_it_attacks_places_doom() {
@@ -85,8 +72,12 @@ mod tests {
             "the card prints `Forced - After … attacks`, so it declares the \
              attack condition's `after` cell"
         );
-        assert!(matches!(&abilities[0].effect, Effect::Native { tag } if tag == PLACE_DOOM));
-        assert!(native_effect_for(PLACE_DOOM).is_some());
-        assert!(native_effect_for("nope").is_none());
+        assert_eq!(
+            abilities[0].effect,
+            Effect::PlaceDoomOnCurrentAgenda {
+                count: IntExpr::Lit(1)
+            },
+            "the card prints `Place 1 doom on the current agenda`"
+        );
     }
 }

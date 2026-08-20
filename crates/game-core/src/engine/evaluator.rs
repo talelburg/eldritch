@@ -478,6 +478,9 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         Effect::ForEach { .. } => awaiting_input_stub("ForEach"),
         Effect::ChooseOne(branches) => step_choose_one(cx, branches, eval_ctx, effect),
         Effect::AdvanceCurrentAct => apply_advance_current_act(cx),
+        Effect::PlaceDoomOnCurrentAgenda { count } => {
+            apply_place_doom_on_current_agenda(cx, &eval_ctx, count)
+        }
         Effect::Native { tag } => step_native(cx, tag, eval_ctx, effect),
         Effect::SkillTest {
             skill,
@@ -1724,6 +1727,33 @@ fn apply_advance_current_act(cx: &mut Cx) -> EngineOutcome {
         // the on-card flip (#558).
         None => advance_act(cx, crate::state::AdvanceTrigger::Forced),
     }
+    EngineOutcome::Done
+}
+
+/// Resolve [`Effect::PlaceDoomOnCurrentAgenda`]: evaluate `count`, place that
+/// much doom on the current agenda, then run the doom-threshold check once
+/// (Ancient Evils 01166's *"This effect can cause the current agenda to
+/// advance."*).
+///
+/// A `count` that evaluates negative places nothing — the clamp is the same one
+/// [`Effect::Deal`] applies to its own [`IntExpr`]. Unlike
+/// [`Effect::AdvanceCurrentAct`], an unmodeled agenda deck is **not** a
+/// rejection: the placement is a no-op there, which is what fixtures without an
+/// agenda need and what the Mythos step 1.2 helper already does.
+fn apply_place_doom_on_current_agenda(
+    cx: &mut Cx,
+    eval_ctx: &EvalContext,
+    count: &IntExpr,
+) -> EngineOutcome {
+    let n = match eval_int_expr(cx.state, eval_ctx, count) {
+        Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
+    crate::engine::dispatch::act_agenda::place_doom_on_current_agenda(cx, n);
     EngineOutcome::Done
 }
 
@@ -4979,6 +5009,184 @@ mod tests {
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(state.act_index, 0, "terminal act does not move the cursor");
         assert!(matches!(state.resolution, Some(Resolution::Won { .. })));
+    }
+
+    /// A two-agenda fixture with the given doom threshold on the current one.
+    fn state_with_agenda(threshold: u8) -> crate::state::GameState {
+        use crate::state::{Agenda, CardCode, InvestigatorId};
+        use crate::test_support::GameStateBuilder;
+        let mut state = GameStateBuilder::new()
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        state.agenda_deck = vec![
+            Agenda {
+                code: CardCode("ag1".into()),
+                doom_threshold: threshold,
+                resolution: None,
+            },
+            Agenda {
+                code: CardCode("ag2".into()),
+                doom_threshold: 9,
+                resolution: None,
+            },
+        ];
+        state
+    }
+
+    #[test]
+    fn place_doom_on_current_agenda_below_threshold_only_places() {
+        use crate::dsl::IntExpr;
+        use crate::state::InvestigatorId;
+        let mut state = state_with_agenda(3);
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = run(
+            &mut cx,
+            &Effect::PlaceDoomOnCurrentAgenda {
+                count: IntExpr::Lit(1),
+            },
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        assert_eq!(state.agenda_doom, 1);
+        assert_eq!(state.agenda_index, 0, "1 of 3 doom does not advance");
+    }
+
+    #[test]
+    fn place_doom_on_current_agenda_advances_at_threshold() {
+        use crate::dsl::IntExpr;
+        use crate::state::InvestigatorId;
+        let mut state = state_with_agenda(1);
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = run(
+            &mut cx,
+            &Effect::PlaceDoomOnCurrentAgenda {
+                count: IntExpr::Lit(1),
+            },
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        // The advance is deferred to an AdvanceReverse frame (#482); drive it
+        // (no registry ⇒ the reverse fires nothing ⇒ it drives straight through).
+        crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        assert_eq!(
+            state.agenda_index, 1,
+            "Ancient Evils 01166: `This effect can cause the current agenda to advance`"
+        );
+        assert_eq!(state.agenda_doom, 0, "doom reset on advance");
+    }
+
+    /// Offer of Power 01178's *"place 2 doom"* is one placement of two, so the
+    /// threshold is checked once, after both — the second doom is not placed on
+    /// an agenda the first already advanced past.
+    #[test]
+    fn place_doom_places_the_whole_count_before_checking_the_threshold() {
+        use crate::dsl::IntExpr;
+        use crate::state::InvestigatorId;
+        let mut state = state_with_agenda(2);
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = run(
+            &mut cx,
+            &Effect::PlaceDoomOnCurrentAgenda {
+                count: IntExpr::Lit(2),
+            },
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        assert_eq!(state.agenda_index, 1, "both doom landed, then it advanced");
+        assert_eq!(state.agenda_doom, 0);
+    }
+
+    /// A computed count is read at resolution, not at declaration — the reason
+    /// the variant carries an [`IntExpr`] rather than a `u8`.
+    #[test]
+    fn place_doom_evaluates_a_computed_count() {
+        use crate::dsl::IntExpr;
+        use crate::state::InvestigatorId;
+        let mut state = state_with_agenda(9);
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let mut eval_ctx = EvalContext::for_controller(InvestigatorId(1));
+        eval_ctx.set_failed_by(3);
+        let out = run(
+            &mut cx,
+            &Effect::PlaceDoomOnCurrentAgenda {
+                count: IntExpr::Count(crate::dsl::Quantity::SkillTestFailedBy),
+            },
+            eval_ctx,
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        assert_eq!(state.agenda_doom, 3);
+    }
+
+    /// The point of the variant over a card-local `Native` tag (#716): it
+    /// nests. Saracenic Script 02240 places its doom as the last step of a
+    /// `Seq`; Offer of Power 01178 places 2 inside a `ChooseOne` branch.
+    #[test]
+    fn place_doom_composes_as_a_sub_effect() {
+        use crate::dsl::IntExpr;
+        use crate::state::InvestigatorId;
+        let mut state = state_with_agenda(9);
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = run(
+            &mut cx,
+            &Effect::Seq(vec![
+                Effect::PlaceDoomOnCurrentAgenda {
+                    count: IntExpr::Lit(1),
+                },
+                Effect::PlaceDoomOnCurrentAgenda {
+                    count: IntExpr::Lit(2),
+                },
+            ]),
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        assert_eq!(state.agenda_doom, 3);
+    }
+
+    #[test]
+    fn place_doom_without_an_agenda_deck_is_a_no_op() {
+        use crate::dsl::IntExpr;
+        use crate::state::InvestigatorId;
+        use crate::test_support::GameStateBuilder;
+        let mut state = GameStateBuilder::new()
+            .with_turn_order([InvestigatorId(1)])
+            .build();
+        assert!(state.agenda_deck.is_empty());
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = run(
+            &mut cx,
+            &Effect::PlaceDoomOnCurrentAgenda {
+                count: IntExpr::Lit(1),
+            },
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert_eq!(out, EngineOutcome::Done, "no agenda modeled ⇒ no rejection");
+        assert_eq!(state.agenda_doom, 0);
     }
 
     #[test]

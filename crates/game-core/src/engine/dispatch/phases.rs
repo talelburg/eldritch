@@ -442,7 +442,7 @@ fn mythos_phase(cx: &mut Cx) -> EngineOutcome {
         });
 
     // 1.2 Place 1 doom on the current agenda.
-    super::act_agenda::place_doom_on_agenda(cx);
+    super::act_agenda::place_doom_on_agenda(cx, 1);
 
     // 1.3 Check doom threshold (may push an AdvanceReverse frame above the anchor).
     super::act_agenda::check_doom_threshold(cx);

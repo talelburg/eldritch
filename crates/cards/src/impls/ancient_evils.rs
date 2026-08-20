@@ -5,52 +5,40 @@
 //!   the current agenda to advance.
 //! ```
 //!
-//! Card-local native (#276): calls the engine's
-//! `place_doom_on_current_agenda` (place + threshold check) rather than
-//! earning a shared `Effect` variant. Silver Twilight Acolyte 01102 is the
-//! second consumer of that call, but the two cards spell the effect
-//! identically and the logic already lives in the engine, so a DSL primitive
-//! would only move the same one-liner twice. Six in-corpus cards print the
-//! clause, though, three of them inside a `Seq` or `ChooseOne` where a native
-//! tag cannot go — so the variant is filed as #716.
+//! The clause is a DSL primitive as of #716
+//! ([`Effect::PlaceDoomOnCurrentAgenda`](card_dsl::dsl::Effect::PlaceDoomOnCurrentAgenda)),
+//! which places the doom and runs the threshold check — the *"can cause the
+//! current agenda to advance"* half. It reached the repo's two-consumer bar
+//! (`CLAUDE.md`, Architecture) against Silver Twilight Acolyte 01102's
+//! byte-identical native tag, and four more in-corpus cards print it, three of
+//! them inside a `Seq` or `ChooseOne` where a native tag cannot go.
 
-use card_dsl::dsl::{native, revelation, Ability};
-use game_core::card_registry::NativeEffectFn;
-use game_core::{place_doom_on_current_agenda, Cx, EngineOutcome, EvalContext};
+use card_dsl::dsl::{place_doom_on_current_agenda, revelation, Ability};
 
 /// `ArkhamDB` code for Ancient Evils.
 pub const CODE: &str = "01166";
 
-const PLACE_DOOM: &str = "01166:place-doom";
-
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![revelation(native(PLACE_DOOM))]
-}
-
-/// Resolve this treachery's native-effect tag. Wired into the crate
-/// registry's `native_effect_for`.
-pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    (tag == PLACE_DOOM).then_some(place_doom as NativeEffectFn)
-}
-
-fn place_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    place_doom_on_current_agenda(cx);
-    EngineOutcome::Done
+    vec![revelation(place_doom_on_current_agenda(1u8))]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::{Effect, Trigger};
+    use card_dsl::dsl::{Effect, IntExpr, Trigger};
 
     #[test]
-    fn revelation_is_native_place_doom() {
+    fn revelation_places_one_doom_on_the_current_agenda() {
         let abilities = abilities();
         assert_eq!(abilities.len(), 1);
         assert_eq!(abilities[0].trigger, Trigger::Revelation);
-        assert!(matches!(&abilities[0].effect, Effect::Native { tag } if tag == PLACE_DOOM));
-        assert!(native_effect_for(PLACE_DOOM).is_some());
-        assert!(native_effect_for("nope").is_none());
+        assert_eq!(
+            abilities[0].effect,
+            Effect::PlaceDoomOnCurrentAgenda {
+                count: IntExpr::Lit(1)
+            },
+            "the card prints `Place 1 doom on the current agenda`"
+        );
     }
 }
