@@ -14,6 +14,14 @@
 //! `Effect::DiscardSelf` fires on `RoundEnded` (resolving alongside the
 //! agenda's round-end forced effect via the dispatcher's deterministic
 //! multi-resolve).
+//!
+//! **Cell: the `at` cell of the `RoundEnded` condition.** The printed word is
+//! *"At"* — *"**Forced** - At the end of the round: Discard Dissonant
+//! Voices."* — and `glossary/At.md` puts such abilities *"in between any
+//! "when..." abilities and any "after..." abilities with the same triggering
+//! condition."* So act 01109 The Barrier's *"When the round ends"* objective
+//! gets its clue-spend in first, and this self-discard follows it. The card has
+//! no rulings (recorded in `data/arkhamdb-faq/no-rulings.txt`).
 
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{

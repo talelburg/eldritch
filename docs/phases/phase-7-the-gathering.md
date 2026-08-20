@@ -520,7 +520,7 @@ mechanically derivable — a parser would encode one reading of the rules and th
 trusted as though it had checked them. The evidence was never missing; every
 mis-tagged module quoted its own trigger word three lines above the wrong enum, so
 what the standards row adds is an assignee for the reading. The retrofit onto the
-modules the PR didn't touch is #724.
+modules the PR didn't touch is **#724 ✅ shipped (PR #730)**, below.
 **#720 ✅ shipped (PR #725)** rode the first of those three: Cover Up 01007's
 *"**Forced** - When the game ends…"* trauma retags to `When`, and `GameEnd` migrates
 ahead of it as the second **bare milestone** — the class `RoundEnded` was the sole
@@ -607,6 +607,30 @@ cell would abandon the coordinator's sequence but not the frame beneath it, whic
 bool cannot say *whose*. `run_reaction_continuation` was deleted on the way out: with
 the last two conditions that had post-window work now walking the coordinator, every
 arm had collapsed to `Done`.
+
+**#724 ✅ shipped (PR #730)** closed the arc #719 opened, retrofitting the
+cell-naming paragraph onto the thirteen `OnEvent` modules that predated the
+convention. Prose only — no declaration retagged, no test changed — and the point
+of it is what the reading found: **no seventh mis-tag**. Every one of the fifteen
+declared cells matches the trigger word in its own module's verbatim card-text
+block, which is the first time that has been checked module by module rather than
+inferred from #694's audit. Two readings were worth writing down. The four
+**reverse-side** abilities (agendas 01105/01106, acts 01108/01109) print no trigger
+word at all, so the rule that the printed word names the cell cannot decide them:
+each is step 2 of `glossary/Act_Deck_and_Agenda_Deck.md`'s advance procedure,
+*"Flip the advancing card over and follow the instructions on the reverse ("b")
+side."*, and declaring them in the flip's `after` cell is what puts them between
+step 1's token removal and step 3's *"the next card in the deck becomes the current
+act/agenda"* — exactly where the `AdvanceReverse` frame holds the deck cursor until
+its `Finalize` step. The modules say outright that nothing contests the cell rather
+than implying a reading they didn't make; whether step 2 *is* the condition
+resolving, which would make these `at`-tier, is the one question this pass leaves
+open and the likeliest ADR to come out of it. Silver Twilight Acolyte 01102, which
+had named its `after` cell only as a consequence of the Dodge ruling, now names it
+from its own printed *"After"* first. And `CLAUDE.md` gained the paragraph's
+**form** — a bold inline `**Cell: …**` lead-in, not a `# Cell` heading — after the
+sweep produced both and found neither was written down; all twenty cell-declaring
+modules now use one shape, Guard Dog 01021's one-off phrasing included.
 
 **Choice & cancellation.** Interactive choice runs inside the **effect evaluator's
 `Continuation::Effect` frames** (#422 / PR #424): `resolve_choice_count` (0 ⇒

@@ -10,6 +10,15 @@
 //! entering investigator ("you"). The Victory 1 and Clues 2 are location
 //! *state* set by the scenario's `setup()`, not ability data — only the
 //! Forced horror lives here.
+//!
+//! **Cell: the `after` cell of the `EnteredLocation` condition.** The printed
+//! word is *"After"* — *"**Forced** - After you enter the Attic: Take 1
+//! horror."* — and `glossary/After.md` puts that *"immediately after the
+//! specified timing point or triggering condition has fully resolved."* So the
+//! entry is finished, with the investigator already at the Attic, before the
+//! horror lands. The ruling scopes *whose* entry counts, not when it lands:
+//! *"The **Forced** ability triggers each time an investigator enters this
+//! location."* (<https://arkhamdb.com/card/01113>).
 
 use card_dsl::dsl::{
     deal_horror, forced_on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,

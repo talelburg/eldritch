@@ -19,6 +19,14 @@
 //! graduating a pattern to a DSL primitive — filed as #716, where the cards that
 //! need it *inside* a `Seq` or `ChooseOne` make the case.
 //!
+//! **Cell: the `after` cell of the `EnemyAttacks` condition.** The printed word
+//! is *"After"* — *"**Forced** - After Silver Twilight Acolyte attacks: Place 1
+//! doom on the current agenda."* — and `glossary/After.md` puts that
+//! *"immediately after the specified timing point or triggering condition has
+//! fully resolved."* So the attack has landed its damage and horror before the
+//! doom goes down, and Dodge 01023's `when`-cell cancel gets in ahead of it —
+//! which is what the ruling below turns on.
+//!
 //! **Dodging the attack suppresses this.** `data/arkhamdb-faq/core/01023.md`,
 //! verbatim:
 //!

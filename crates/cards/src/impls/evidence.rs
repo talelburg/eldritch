@@ -18,6 +18,16 @@
 //! pattern (Axis C, #335 / #304). The Fast/cost/Insight metadata comes from
 //! the generated corpus.
 //!
+//! **Cell: the `after` cell of the `EnemyDefeated` condition.** The printed
+//! word is *"after"* — *"Fast. Play after you defeat an enemy."* — and
+//! `glossary/After.md` puts that *"immediately after the specified timing point
+//! or triggering condition has fully resolved."* So the defeat is complete —
+//! the enemy out of play, any victory points banked — before the clue is
+//! discovered, which is also what puts this behind act 01110's `at`-cell *"If
+//! the Ghoul Priest is Defeated"* objective on the same defeat. The ruling
+//! constrains the effect rather than the cell: *"You can only 'discover' a clue
+//! if there is a clue on your location."* (<https://arkhamdb.com/card/01022>).
+//!
 //! [`Trigger::OnEvent`]: card_dsl::dsl::Trigger::OnEvent
 //! [`UsageLimit`]: card_dsl::dsl::UsageLimit
 

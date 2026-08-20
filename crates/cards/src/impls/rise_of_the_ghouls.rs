@@ -29,6 +29,19 @@
 //! one investigator; a tied-prey multi-investigator spawn would suspend
 //! (`AwaitingInput`) — unreachable through the single-trigger
 //! forced-advance path until #212/#213, consistent with Slice 1.
+//!
+//! **Cell: the `after` cell of the `AgendaAdvanced` condition.** The reverse
+//! prints no trigger word, because it is not a triggered ability: it is step 2
+//! of the Rules Reference's advance procedure — *"Flip the advancing card over
+//! and follow the instructions on the reverse ("b") side."*
+//! (`glossary/Act_Deck_and_Agenda_Deck.md`). Declaring it in the `after` cell of
+//! the flip is what puts it where the procedure puts it: after step 1's token
+//! removal and the flip itself, and before step 3's *"the next card in the deck
+//! becomes the current act/agenda"* — the `AdvanceReverse` frame holds the deck
+//! cursor until its `Finalize` step, which it reaches only once the dig has
+//! drained, so the drawn Ghoul spawns while this agenda is still the current
+//! one. With no printed word to read against, nothing contests the cell. The
+//! card has no rulings (recorded in `data/arkhamdb-faq/no-rulings.txt`).
 
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};

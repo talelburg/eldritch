@@ -16,6 +16,17 @@
 //! enemy-attack loop) skips the attack's damage/horror but still exhausts the
 //! attacker (RR p.6 + p.25). The Fast/cost metadata comes from the corpus.
 //!
+//! **Cell: the `when` cell of the `EnemyAttacks` condition.** The printed word
+//! is *"when"* — *"Fast. Play when an enemy attacks an investigator at your
+//! location."* — and `glossary/When.md` puts that *"immediately after the
+//! specified timing point or triggering condition initiates, but before its
+//! impact upon the game state resolves."* A cancel has nowhere else to sit: the
+//! attack's impact is the damage and horror it places, so the cancel has to
+//! land before the resolve step or there is nothing left to cancel. What the
+//! `when` cell does *not* reach is the attacker's exhaust, which is not part of
+//! that impact — *"If an attack was cancelled during the Enemy phase, the
+//! attacking enemy still exhausts."* (<https://arkhamdb.com/card/01023>).
+//!
 //! [`Trigger::OnEvent`]: card_dsl::dsl::Trigger::OnEvent
 //! [`Effect::Cancel`]: card_dsl::dsl::Effect::Cancel
 

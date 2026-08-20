@@ -8,6 +8,15 @@
 //! Forced-on-enter via the `EnteredLocation` dispatch path; the
 //! controller binding is the entering investigator ("you"). Shroud /
 //! Clues / Victory are location state set by `setup()`.
+//!
+//! **Cell: the `after` cell of the `EnteredLocation` condition.** The printed
+//! word is *"After"* — *"**Forced** - After you enter the Cellar: Take 1
+//! damage."* — and `glossary/After.md` puts that *"immediately after the
+//! specified timing point or triggering condition has fully resolved."* So the
+//! entry is finished, with the investigator already at the Cellar, before the
+//! damage lands. The ruling scopes *whose* entry counts, not when it lands:
+//! *"The **Forced** ability triggers each time an investigator enters this
+//! location."* (<https://arkhamdb.com/card/01114>).
 
 use card_dsl::dsl::{
     deal_damage, forced_on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,

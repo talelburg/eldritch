@@ -19,6 +19,15 @@
 //! engine-modeled from that metadata (#44/K5, shared with Holy Rosary /
 //! Beat Cop); `abilities()` declares only the +1 intellect and the
 //! reaction — the soak half rides on metadata.
+//!
+//! **Cell: the `after` cell of the `SkillTestResolved` condition.** The printed
+//! word is *"After"* — *"`[reaction]` After you successfully investigate: Gain
+//! 1 resource."* — and `glossary/After.md` puts that *"immediately after the
+//! specified timing point or triggering condition has fully resolved."* So the
+//! investigation has already paid out, clue and all, before the resource
+//! arrives — and a barren location still fires it, since *"You can successfully
+//! **Investigate** a location even if there are no clues on it."*
+//! (<https://arkhamdb.com/card/01033>).
 
 use card_dsl::dsl::{
     constant, gain_resources, modify, reaction_on_event, Ability, EventPattern, EventTiming,
