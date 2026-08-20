@@ -1,11 +1,12 @@
 //! Activated-ability dispatch handlers.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use crate::card_registry;
 use crate::dsl::{Cost, Trigger};
 use crate::event::Event;
-use crate::state::{CardCode, CardInstanceId, Investigator, InvestigatorId, UseKind};
+use crate::state::{CardCode, CardInPlay, CardInstanceId, Investigator, InvestigatorId, UseKind};
 
 use super::super::evaluator::{push_effect, EvalContext};
 use super::super::outcome::EngineOutcome;
@@ -43,7 +44,7 @@ use super::Cx;
 /// - [`Cost::Resources`](crate::dsl::Cost::Resources): validates
 ///   wallet, deducts on payment, emits [`Event::ResourcesPaid`].
 /// - [`Cost::Exhaust`](crate::dsl::Cost::Exhaust): validates source
-///   not already exhausted, flips `cards_in_play[i].exhausted`,
+///   not already exhausted, flips `exhausted` on the source instance,
 ///   emits [`Event::CardExhausted`].
 /// - [`Cost::DiscardCardFromHand`](crate::dsl::Cost::DiscardCardFromHand):
 ///   rejects with a TODO — target-card selection needs an engine
@@ -67,7 +68,6 @@ pub(super) fn activate_ability(
     ability_index: u8,
 ) -> EngineOutcome {
     let super::ActivateCheckResult {
-        in_play_pos,
         source_code,
         action_cost,
         costs,
@@ -84,15 +84,16 @@ pub(super) fn activate_ability(
     };
 
     // Mutate.
-    pay_activation_costs(
+    if let Err(reason) = pay_activation_costs(
         cx,
         investigator,
         instance_id,
-        in_play_pos,
         &source_code,
         action_cost,
         &costs,
-    );
+    ) {
+        return EngineOutcome::Rejected { reason };
+    }
     cx.events.push(Event::AbilityActivated {
         investigator,
         instance_id,
@@ -176,15 +177,27 @@ pub(super) fn resume_activate_ability(
 /// Pay the action cost and every payment cost of an activated
 /// ability. Mutates state in place and pushes the matching events.
 /// Caller has already validated that every cost is payable.
+///
+/// # Addressing the source
+///
+/// Every source-referencing cost (`Exhaust`, `SpendUses`, `DiscardSelf`)
+/// re-resolves the source by its [`CardInstanceId`] at the moment it is paid,
+/// rather than indexing a position cached during validation (#706). A cost can
+/// remove the source mid-payment — `SpendUses` depleting a `discard_when_empty`
+/// asset, or `DiscardSelf` — and a cached position would then address whichever
+/// card slid down into the vacated slot, silently exhausting or draining a
+/// different card. Resolving by identity cannot: the source is simply absent, so
+/// a later source-referencing cost returns `Err` and the whole activation is
+/// rejected. `apply_via` snapshot-restores state, events and the RNG position on
+/// rejection (#161), so a mid-payment `Err` leaves the board untouched.
 fn pay_activation_costs(
     cx: &mut Cx,
     investigator: InvestigatorId,
     instance_id: CardInstanceId,
-    in_play_pos: usize,
     source_code: &CardCode,
     action_cost: u8,
     costs: &[Cost],
-) {
+) -> Result<(), Cow<'static, str>> {
     if action_cost > 0 {
         let inv_mut = cx
             .state
@@ -213,11 +226,8 @@ fn pay_activation_costs(
                 });
             }
             Cost::Exhaust => {
-                cx.state
-                    .investigators
-                    .get_mut(&investigator)
-                    .expect("validated above")
-                    .cards_in_play[in_play_pos]
+                source_in_play_mut(cx, investigator, instance_id)
+                    .ok_or_else(|| source_gone(cost, source_code, instance_id))?
                     .exhausted = true;
                 cx.events.push(Event::CardExhausted {
                     investigator,
@@ -226,12 +236,8 @@ fn pay_activation_costs(
                 });
             }
             Cost::SpendUses { kind, count } => {
-                let card = &mut cx
-                    .state
-                    .investigators
-                    .get_mut(&investigator)
-                    .expect("validated above")
-                    .cards_in_play[in_play_pos];
+                let card = source_in_play_mut(cx, investigator, instance_id)
+                    .ok_or_else(|| source_gone(cost, source_code, instance_id))?;
                 let remaining = card.uses.entry(*kind).or_insert(0);
                 *remaining = remaining.saturating_sub(*count);
                 let depleted = *remaining == 0;
@@ -248,14 +254,10 @@ fn pay_activation_costs(
                 // (depletes via this cost) the SpendUses arm is observationally
                 // correct.
                 //
-                // HAZARD (TODO(#353)): like `Cost::DiscardSelf`, this removes the
-                // source mid-payment, invalidating the cached `in_play_pos` —
-                // any *later* source-referencing cost in this `costs` loop would
-                // index a shifted `cards_in_play`. Safe in scope: no in-scope
-                // `discard_when_empty` card pairs `SpendUses` with a later such
-                // cost, and `reject_incompatible_costs` doesn't yet know about
-                // depletion. The #353 relocation to post-resolution dissolves it;
-                // until then a new depleting card must keep `SpendUses` last.
+                // Like `Cost::DiscardSelf`, this removes the source mid-payment.
+                // That is no longer a trap: a later source-referencing cost
+                // re-resolves by identity, finds nothing, and rejects the whole
+                // activation rather than addressing a shifted neighbour (#706).
                 let discards_when_empty = card_registry::current()
                     .and_then(|r| (r.metadata_for)(source_code))
                     .and_then(|m| match m.kind {
@@ -268,6 +270,9 @@ fn pay_activation_costs(
                 }
             }
             Cost::DiscardSelf => {
+                if source_in_play_mut(cx, investigator, instance_id).is_none() {
+                    return Err(source_gone(cost, source_code, instance_id));
+                }
                 super::cards::discard_card_from_play(cx, investigator, instance_id);
             }
             Cost::DiscardCardFromHand => {
@@ -275,6 +280,37 @@ fn pay_activation_costs(
             }
         }
     }
+    Ok(())
+}
+
+/// The source card instance in `investigator`'s in-play collection, found by
+/// identity. `None` once an earlier cost in the same activation removed it.
+fn source_in_play_mut<'a>(
+    cx: &'a mut Cx,
+    investigator: InvestigatorId,
+    instance_id: CardInstanceId,
+) -> Option<&'a mut CardInPlay> {
+    cx.state
+        .investigators
+        .get_mut(&investigator)
+        .expect("validated above")
+        .cards_in_play
+        .iter_mut()
+        .find(|c| c.instance_id == instance_id)
+}
+
+/// Rejection reason for a cost whose source left play earlier in this
+/// activation's own cost payment.
+fn source_gone(
+    cost: &Cost,
+    source_code: &CardCode,
+    instance_id: CardInstanceId,
+) -> Cow<'static, str> {
+    format!(
+        "ActivateAbility: cost {cost:?} needs its source {source_code} ({instance_id:?}), but an \
+         earlier cost on the same ability removed it from play"
+    )
+    .into()
 }
 
 /// Resolve the activated ability at `(code, ability_index)` from the

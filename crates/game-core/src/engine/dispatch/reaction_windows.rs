@@ -2048,19 +2048,21 @@ pub(crate) fn check_activate_ability(
         )
         .into());
     }
-    let Some(in_play_pos) = inv
+    // Addressed by identity, never by position: the position a validation
+    // computes is stale the moment a cost removes the source (#706).
+    let Some(source) = inv
         .cards_in_play
         .iter()
-        .position(|c| c.instance_id == instance_id)
+        .find(|c| c.instance_id == instance_id)
     else {
         return Err(format!(
             "ActivateAbility: {investigator:?} has no in-play instance {instance_id:?}",
         )
         .into());
     };
-    let source_code = inv.cards_in_play[in_play_pos].code.clone();
-    let source_exhausted = inv.cards_in_play[in_play_pos].exhausted;
-    let source_uses = inv.cards_in_play[in_play_pos].uses.clone();
+    let source_code = source.code.clone();
+    let source_exhausted = source.exhausted;
+    let source_uses = source.uses.clone();
 
     // Invariant: `resolve_activated_ability` currently returns only `Ok(...)`
     // (success) or `Err(EngineOutcome::Rejected { ... })` (validation failure).
@@ -2136,7 +2138,6 @@ pub(crate) fn check_activate_ability(
     check_activation_changes_state(state, investigator, instance_id, &source_code, &effect)?;
 
     Ok(super::ActivateCheckResult {
-        in_play_pos,
         source_code,
         action_cost,
         costs,

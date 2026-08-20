@@ -641,8 +641,6 @@ pub(crate) struct PlayCheckResult {
 #[derive(Debug)]
 #[allow(dead_code)] // Fields consumed by any_fast_play_eligible in T05.
 pub(super) struct ActivateCheckResult {
-    /// Position of the source card in the investigator's `cards_in_play`.
-    pub in_play_pos: usize,
     /// The card code of the source card.
     pub source_code: CardCode,
     /// Action cost from the ability's `Trigger::Activated`.
