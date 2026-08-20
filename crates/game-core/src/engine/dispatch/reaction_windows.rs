@@ -2025,8 +2025,8 @@ fn reject_incompatible_costs(costs: &[crate::dsl::Cost]) -> Result<(), Cow<'stat
 }
 
 /// Reject an ability whose *"Limit X per \[period\]"* sits on a source with no
-/// card instance to record the use against — a location today, the act and the
-/// agenda with #709.
+/// card instance to record the use against — a location, an enemy, the act or
+/// the agenda.
 ///
 /// Usage state is `CardInPlay::ability_usage`, a per-instance map, and a
 /// location has no instance (`bump_usage_counter`'s `unreachable!` says so for

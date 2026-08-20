@@ -93,10 +93,10 @@ pub(super) fn activate_ability(
     {
         return EngineOutcome::Rejected { reason };
     }
-    // The event names the **source**, not a card instance: #708's location and
-    // enemy kinds have no `CardInstanceId`, and neither will #709's act and
-    // agenda. Consumers that want the instance ask `source.instance()` and
-    // handle the `None`.
+    // The event names the **source**, not a card instance: the location and
+    // enemy kinds (#708) and the act and agenda kinds (#709) have no
+    // `CardInstanceId`. Consumers that want the instance ask `source.instance()`
+    // and handle the `None`.
     cx.events.push(Event::AbilityActivated {
         investigator,
         source,

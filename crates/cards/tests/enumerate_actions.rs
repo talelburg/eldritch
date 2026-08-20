@@ -199,3 +199,66 @@ fn full_enumeration_covers_every_action_category_and_all_apply() {
         );
     }
 }
+
+/// The Gathering's real act 1 and agenda 1, current on the board.
+const TRAPPED: &str = "01108";
+const WHATS_GOING_ON: &str = "01105";
+
+/// The act/agenda bullet's real-corpus half (#709): widening which sources an
+/// investigator can reach must not turn a **Forced** ability into an
+/// activatable one.
+///
+/// Every act and agenda ability in the corpus is a `Trigger::OnEvent` reverse —
+/// Trapped 01108's board build and What's Going On?! 01105's *"The lead
+/// investigator must decide (choose one)…"* both fire from the advance
+/// procedure, not from a player initiating them. So the current act and agenda
+/// are now **reachable**, and the enumerator still offers nothing on them: the
+/// filter that stops them is the trigger kind, which is what the rejection
+/// reason has to say. A reason naming reachability instead would mean the
+/// bullet had not landed at all, and the assertion would pass for the wrong
+/// reason.
+#[test]
+fn the_corpus_act_and_agenda_are_reachable_but_offer_no_activation() {
+    use game_core::state::{Act, Agenda};
+
+    let mut state = open_turn_state(&[], Vec::new());
+    state.act_deck = vec![Act {
+        code: CardCode::new(TRAPPED),
+        clue_threshold: 2,
+        resolution: None,
+    }];
+    state.agenda_deck = vec![Agenda {
+        code: CardCode::new(WHATS_GOING_ON),
+        doom_threshold: 3,
+        resolution: None,
+    }];
+
+    let menu = legal_actions(&state);
+    for source in [AbilitySource::Act, AbilitySource::Agenda] {
+        assert!(
+            !menu.iter().any(|a| matches!(
+                a,
+                TurnAction::ActivateAbility { source: s, .. } if *s == source
+            )),
+            "{source:?}'s only ability is Forced, so nothing on it belongs in the turn menu; \
+             menu was {menu:?}",
+        );
+
+        let result = game_core::test_support::dispatch_turn_action_unchecked(
+            state.clone(),
+            &TurnAction::ActivateAbility {
+                investigator: INV,
+                source,
+                ability_index: 0,
+            },
+        );
+        let EngineOutcome::Rejected { reason } = &result.outcome else {
+            panic!("a Forced ability must not be activatable; got {result:?}");
+        };
+        assert!(
+            reason.contains("not an Activated trigger"),
+            "the refusal must be about the trigger, not about reachability — the source is \
+             reachable now. Got: {reason}",
+        );
+    }
+}
