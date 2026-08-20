@@ -18,10 +18,8 @@
 //! pattern (Axis C, #335 / #304). The Fast/cost/Insight metadata comes from
 //! the generated corpus.
 //!
-//! # Cell
-//!
-//! **The `after` cell of the `EnemyDefeated` condition.** The printed word is
-//! *"after"* — *"Fast. Play after you defeat an enemy."* — and
+//! **Cell: the `after` cell of the `EnemyDefeated` condition.** The printed
+//! word is *"after"* — *"Fast. Play after you defeat an enemy."* — and
 //! `glossary/After.md` puts that *"immediately after the specified timing point
 //! or triggering condition has fully resolved."* So the defeat is complete —
 //! the enemy out of play, any victory points banked — before the clue is

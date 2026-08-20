@@ -20,11 +20,9 @@
 //! Beat Cop); `abilities()` declares only the +1 intellect and the
 //! reaction — the soak half rides on metadata.
 //!
-//! # Cell
-//!
-//! **The `after` cell of the `SkillTestResolved` condition.** The printed word
-//! is *"After"* — *"`[reaction]` After you successfully investigate: Gain 1
-//! resource."* — and `glossary/After.md` puts that *"immediately after the
+//! **Cell: the `after` cell of the `SkillTestResolved` condition.** The printed
+//! word is *"After"* — *"`[reaction]` After you successfully investigate: Gain
+//! 1 resource."* — and `glossary/After.md` puts that *"immediately after the
 //! specified timing point or triggering condition has fully resolved."* So the
 //! investigation has already paid out, clue and all, before the resource
 //! arrives — and a barren location still fires it, since *"You can successfully

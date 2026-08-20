@@ -28,19 +28,16 @@
 //! clause attaches as a [`UsageLimit`] with `count: 1, period:
 //! UsagePeriod::Round`.
 //!
-//! # Cell
-//!
-//! **The `after` cell of the `EnemyDefeated` condition**, for the
-//! `[reaction]`. The printed word is *"After"* — *"`[reaction]` After you defeat
-//! an enemy: Discover 1 clue at your location. (Limit once per round.)"* — and
-//! `glossary/After.md` puts
-//! that *"immediately after the specified timing point or triggering condition
-//! has fully resolved."* So the defeat is complete before the clue is
-//! discovered, and act 01110's `at`-cell objective on the same defeat beats
-//! this reaction to it. The rulings widen *whose* defeat counts rather than
-//! moving the cell: *"You can trigger Roland's `[reaction]` reaction after you
-//! use any card under your control to defeat an enemy (e.g. Guard Dog)."*
-//! (<https://arkhamdb.com/card/01001>).
+//! **Cell: the `after` cell of the `EnemyDefeated` condition**, for the
+//! `[reaction]`. The printed word is *"After"* — *"`[reaction]` After you
+//! defeat an enemy: Discover 1 clue at your location. (Limit once per round.)"*
+//! — and `glossary/After.md` puts that *"immediately after the specified timing
+//! point or triggering condition has fully resolved."* So the defeat is
+//! complete before the clue is discovered, and act 01110's `at`-cell objective
+//! on the same defeat beats this reaction to it. The rulings widen *whose*
+//! defeat counts rather than moving the cell: *"You can trigger Roland's
+//! `[reaction]` reaction after you use any card under your control to defeat an
+//! enemy (e.g. Guard Dog)."* (<https://arkhamdb.com/card/01001>).
 //!
 //! [`Trigger::OnEvent`]: card_dsl::dsl::Trigger::OnEvent
 //! [`Trigger::ElderSign`]: card_dsl::dsl::Trigger::ElderSign

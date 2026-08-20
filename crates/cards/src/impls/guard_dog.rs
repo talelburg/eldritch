@@ -10,19 +10,19 @@
 //! it before the controller (C5b's soak pipeline). The reaction below is
 //! the *other* half — when that soak sends damage its way, it bites back.
 //!
-//! **The ability resolves in the `when` cell of the `DamageAssigned`
-//! condition**, which is the word it prints. Dealing damage is two Rules
-//! Reference steps with a named window between them
-//! (`glossary/Dealing_Damage_Horror.md`): damage is **assigned** — tokens set
-//! *"next to the cards that will be taking the damage/horror"* — and only then
-//! **placed**. *"When an enemy attack deals damage to Guard Dog"* is the first of
-//! those, so the retaliate interrupts the deal before any damage is on this
-//! card. That is what `glossary/Nested_Sequences.md` works its example on, using
-//! this exact card: *"**Before resolving** the damage dealt to the Guard Dog, 1
-//! horror is dealt to each investigator at the location"*. And it is what makes
-//! the card's own ruling true — `data/arkhamdb-faq/core/01021.md`: *"You can use
-//! Guard Dog's ability when you assign lethal damage/horror to it."* — since the
-//! Guard Dog is still in play when a lethal assignment is announced. See
+//! **Cell: the `when` cell of the `DamageAssigned` condition**, which is the
+//! word it prints. Dealing damage is two Rules Reference steps with a named
+//! window between them (`glossary/Dealing_Damage_Horror.md`): damage is
+//! **assigned** — tokens set *"next to the cards that will be taking the
+//! damage/horror"* — and only then **placed**. *"When an enemy attack deals
+//! damage to Guard Dog"* is the first of those, so the retaliate interrupts the
+//! deal before any damage is on this card. That is what
+//! `glossary/Nested_Sequences.md` works its example on, using this exact card:
+//! *"**Before resolving** the damage dealt to the Guard Dog, 1 horror is dealt
+//! to each investigator at the location"*. And it is what makes the card's own
+//! ruling true — `data/arkhamdb-faq/core/01021.md`: *"You can use Guard Dog's
+//! ability when you assign lethal damage/horror to it."* — since the Guard Dog
+//! is still in play when a lethal assignment is announced. See
 //! `docs/adr/0009-damage-is-assigned-then-placed.md`.
 //!
 //! The reaction is a card-local [`Effect::Native`](card_dsl::dsl::Effect::Native)
