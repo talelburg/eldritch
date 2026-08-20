@@ -38,10 +38,10 @@
 //! the flip is what puts it where the procedure puts it: after step 1's token
 //! removal and the flip itself, and before step 3's *"the next card in the deck
 //! becomes the current act/agenda"* — the `AdvanceReverse` frame holds the deck
-//! cursor at `Finalize` until the dig has drained, so the drawn Ghoul spawns
-//! while this agenda is still the current one. With no printed word to read
-//! against, nothing contests the cell. The card has no rulings (recorded in
-//! `data/arkhamdb-faq/no-rulings.txt`).
+//! cursor until its `Finalize` step, which it reaches only once the dig has
+//! drained, so the drawn Ghoul spawns while this agenda is still the current
+//! one. With no printed word to read against, nothing contests the cell. The
+//! card has no rulings (recorded in `data/arkhamdb-faq/no-rulings.txt`).
 
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};

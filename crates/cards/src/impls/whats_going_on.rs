@@ -31,11 +31,11 @@
 //! the flip is what puts it where the procedure puts it: after step 1's token
 //! removal and the flip itself, and before step 3's *"the next card in the deck
 //! becomes the current act/agenda"* — the `AdvanceReverse` frame holds the deck
-//! cursor at `Finalize` until this choice has drained. With no printed word to
-//! read against, nothing contests the cell. The ruling is about the choice, not
-//! the timing: *"The lead investigator can choose the first option even if one
-//! of the investigators has no cards in hand (but at least one does)."*
-//! (<https://arkhamdb.com/card/01105>).
+//! cursor until its `Finalize` step, which it reaches only once this choice has
+//! drained. With no printed word to read against, nothing contests the cell.
+//! The ruling is about the choice, not the timing: *"The lead investigator can
+//! choose the first option even if one of the investigators has no cards in
+//! hand (but at least one does)."* (<https://arkhamdb.com/card/01105>).
 
 use card_dsl::dsl::{
     choose_one, deal_horror, forced_on_event, native, Ability, EventPattern, EventTiming,

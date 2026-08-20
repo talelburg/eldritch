@@ -32,7 +32,8 @@
 //!
 //! **The `after` cell of the `EnemyDefeated` condition**, for the
 //! `[reaction]`. The printed word is *"After"* — *"`[reaction]` After you defeat
-//! an enemy: Discover 1 clue at your location."* — and `glossary/After.md` puts
+//! an enemy: Discover 1 clue at your location. (Limit once per round.)"* — and
+//! `glossary/After.md` puts
 //! that *"immediately after the specified timing point or triggering condition
 //! has fully resolved."* So the defeat is complete before the clue is
 //! discovered, and act 01110's `at`-cell objective on the same defeat beats
