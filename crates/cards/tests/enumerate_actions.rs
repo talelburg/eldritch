@@ -5,8 +5,8 @@
 //! rather than in `game-core`'s registry-less unit tests.
 
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, InvestigationResume,
-    InvestigatorId, Phase,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
+    InvestigationResume, InvestigatorId, Phase,
 };
 use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
 use game_core::{
@@ -76,7 +76,7 @@ fn activate_offered_for_an_in_play_activated_ability() {
     assert!(
         legal_actions(&state).contains(&TurnAction::ActivateAbility {
             investigator: INV,
-            instance_id: inst,
+            source: AbilitySource::InPlay(inst),
             ability_index: 0,
         })
     );

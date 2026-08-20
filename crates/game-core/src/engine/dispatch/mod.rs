@@ -92,9 +92,9 @@ pub(crate) fn dispatch_turn_action(
         } => cards::play_card(cx, *investigator, *hand_index),
         TurnAction::ActivateAbility {
             investigator,
-            instance_id,
+            source,
             ability_index,
-        } => abilities::activate_ability(cx, *investigator, *instance_id, *ability_index),
+        } => abilities::activate_ability(cx, *investigator, *source, *ability_index),
         TurnAction::AdvanceAct { investigator } => {
             act_agenda::advance_act_action(cx, *investigator)
         }
@@ -556,10 +556,9 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
         ActionResume::Resource => actions::resource_primary_effect(cx, investigator),
         ActionResume::Engage { enemy } => actions::engage_primary_effect(cx, investigator, enemy),
         ActionResume::Draw => cards::draw_primary_effect(cx, investigator),
-        ActionResume::ActivateAbility {
-            instance_id,
-            effect,
-        } => abilities::resume_activate_ability(cx, investigator, instance_id, &effect),
+        ActionResume::ActivateAbility { source, effect } => {
+            abilities::resume_activate_ability(cx, investigator, source, &effect)
+        }
         ActionResume::PlayCard { card } => {
             let Some(card) = card else {
                 unreachable!(

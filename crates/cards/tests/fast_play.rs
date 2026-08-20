@@ -34,8 +34,8 @@
 
 use game_core::engine::EngineOutcome;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Continuation, EnemyId, FastActorScope, FastWindowKind,
-    InvestigatorId, LocationId, MythosResume, Phase, PhaseStep,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, Continuation, EnemyId, FastActorScope,
+    FastWindowKind, InvestigatorId, LocationId, MythosResume, Phase, PhaseStep,
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location, GameStateBuilder,
@@ -249,7 +249,7 @@ fn board_with_beat_cop(open_window: bool) -> game_core::GameState {
 /// `+1 [combat]`).
 const BEAT_COP_FAST: TurnAction = TurnAction::ActivateAbility {
     investigator: InvestigatorId(2),
-    instance_id: CardInstanceId(1),
+    source: AbilitySource::InPlay(CardInstanceId(1)),
     ability_index: 1,
 };
 

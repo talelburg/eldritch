@@ -42,13 +42,25 @@ pub(crate) fn rooms() -> Rooms {
 
 /// Get the room for `game_id`, lazily loading it from the action log on
 /// a cache miss (e.g. first access, or after a server restart). Returns
-/// `None` if no such game exists.
+/// `None` if no such game exists — and also if its log cannot be replayed,
+/// which is logged at `error` first rather than passed off as absence (#707).
+/// A session that cannot be reconstructed is never served half-built.
 async fn get_or_load_room(state: &AppState, game_id: &GameId) -> Option<Arc<GameRoom>> {
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get(game_id) {
         return Some(room.clone());
     }
-    let session = GameSession::load(state.db.clone(), game_id).await.ok()??;
+    let session = match GameSession::load(state.db.clone(), game_id).await {
+        Ok(session) => session?,
+        Err(err) => {
+            tracing::error!(
+                game_id = game_id.as_str(),
+                error = %err,
+                "refusing to attach: this game's action log cannot be replayed",
+            );
+            return None;
+        }
+    };
     let (tx, _rx) = broadcast::channel(BROADCAST_CAPACITY);
     let room = Arc::new(GameRoom {
         session: Mutex::new(session),

@@ -20,8 +20,8 @@ use game_core::dsl::{
 use game_core::engine::{apply, legal_actions, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, Lifetime, Phase,
-    RecordedModifierKind, SkillKind, Status, TokenModifiers,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId,
+    Lifetime, Phase, RecordedModifierKind, SkillKind, Status, TokenModifiers,
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, drive_skill_test, perform_skill_test,
@@ -135,7 +135,7 @@ fn fast_resource_loop_activates_and_resolves_effect() {
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
-            instance_id,
+            source: AbilitySource::InPlay(instance_id),
             ability_index: 0,
         },
     );
@@ -180,7 +180,7 @@ fn action_exhaust_gain_exhausts_source_and_blocks_reactivation() {
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
-            instance_id,
+            source: AbilitySource::InPlay(instance_id),
             ability_index: 0,
         },
     );
@@ -203,7 +203,7 @@ fn action_exhaust_gain_exhausts_source_and_blocks_reactivation() {
         after_first.state,
         &TurnAction::ActivateAbility {
             investigator: id,
-            instance_id,
+            source: AbilitySource::InPlay(instance_id),
             ability_index: 0,
         },
     );
@@ -223,7 +223,7 @@ fn insufficient_resources_reject_without_payment() {
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
-            instance_id,
+            source: AbilitySource::InPlay(instance_id),
             ability_index: 0,
         },
     );
@@ -242,7 +242,7 @@ fn insufficient_actions_reject_action_cost_ability() {
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
-            instance_id,
+            source: AbilitySource::InPlay(instance_id),
             ability_index: 0,
         },
     );
@@ -262,7 +262,7 @@ fn ability_index_pointing_at_non_activated_trigger_rejects() {
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
-            instance_id,
+            source: AbilitySource::InPlay(instance_id),
             ability_index: 0,
         },
     );
@@ -278,7 +278,7 @@ fn ability_index_out_of_bounds_rejects() {
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
-            instance_id,
+            source: AbilitySource::InPlay(instance_id),
             ability_index: 9,
         },
     );
@@ -294,7 +294,7 @@ fn discard_card_from_hand_cost_rejects_with_todo() {
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
-            instance_id,
+            source: AbilitySource::InPlay(instance_id),
             ability_index: 0,
         },
     );
@@ -327,7 +327,7 @@ fn activating_with_defeated_status_doesnt_need_registry() {
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
-            instance_id,
+            source: AbilitySource::InPlay(instance_id),
             ability_index: 0,
         },
     );
@@ -438,7 +438,7 @@ fn activating_a_test_scoped_modifier_outside_a_test_is_rejected() {
     let resources_before = state.investigators[&id].resources;
     let action = TurnAction::ActivateAbility {
         investigator: id,
-        instance_id,
+        source: AbilitySource::InPlay(instance_id),
         ability_index: 0,
     };
 

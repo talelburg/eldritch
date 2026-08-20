@@ -13,8 +13,8 @@ use game_core::dsl::{activated, fight, Ability, Cost, IntExpr};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase,
-    TokenModifiers,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId,
+    LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{
     apply_no_commits, dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location,
@@ -201,7 +201,7 @@ fn weapon_fight_spends_ammo_and_deals_bonus_damage() {
         .position(|a| {
             a == &TurnAction::ActivateAbility {
                 investigator: id,
-                instance_id: weapon,
+                source: AbilitySource::InPlay(weapon),
                 ability_index: 0,
             }
         })
@@ -253,7 +253,7 @@ fn weapon_fight_targets_a_co_located_unengaged_enemy() {
         .position(|a| {
             a == &TurnAction::ActivateAbility {
                 investigator: id,
-                instance_id: weapon,
+                source: AbilitySource::InPlay(weapon),
                 ability_index: 0,
             }
         })
@@ -317,7 +317,7 @@ fn weapon_fight_rejects_an_enemy_at_a_different_location() {
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
-            instance_id: weapon_inst,
+            source: AbilitySource::InPlay(weapon_inst),
             ability_index: 0,
         },
     );
@@ -346,7 +346,7 @@ fn weapon_fight_rejects_when_no_co_located_enemy() {
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
-            instance_id: weapon,
+            source: AbilitySource::InPlay(weapon),
             ability_index: 0,
         },
     );
@@ -373,7 +373,7 @@ fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
         .position(|a| {
             a == &TurnAction::ActivateAbility {
                 investigator: id,
-                instance_id: weapon,
+                source: AbilitySource::InPlay(weapon),
                 ability_index: 0,
             }
         })

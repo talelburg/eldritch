@@ -24,8 +24,8 @@
 use game_core::engine::{ApplyResult, EngineOutcome, TurnAction};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId, Phase,
-    SkillKind, TokenModifiers,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState,
+    InvestigatorId, Phase, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, drive_skill_test, perform_skill_test,
@@ -174,7 +174,7 @@ fn activation_with_no_test_in_flight_is_rejected_and_buffs_nothing_later() {
     let resources_before = state.investigators[&id].resources;
     let action = TurnAction::ActivateAbility {
         investigator: id,
-        instance_id,
+        source: AbilitySource::InPlay(instance_id),
         ability_index: 0,
     };
 
@@ -225,7 +225,7 @@ fn activation_rejects_when_controller_lacks_a_resource() {
         started.state,
         &TurnAction::ActivateAbility {
             investigator: id,
-            instance_id,
+            source: AbilitySource::InPlay(instance_id),
             ability_index: 0,
         },
     );

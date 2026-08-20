@@ -1064,16 +1064,16 @@ pub enum ActionResume {
     Engage { enemy: EnemyId },
     /// Draw 1 card (with the empty-deck penalty path).
     Draw,
-    /// Run the activated ability's `effect` for `instance_id`'s source (#361).
-    /// Unlike the basic actions, this snapshots the resolved `effect` rather
-    /// than re-deriving it: an ability's effect is fixed at activation (not
+    /// Run the activated ability's `effect` for `source` (#361). Unlike the
+    /// basic actions, this snapshots the resolved `effect` rather than
+    /// re-deriving it: an ability's effect is fixed at activation (not
     /// board-dependent), and the source may have self-discarded as a cost
     /// (First Aid 01019 depleting its last supply), so a live re-resolution by
-    /// instance would be fragile. `instance_id` is kept only as the eval
-    /// context's source.
+    /// source would be fragile. `source` is kept only as the eval context's
+    /// source.
     ActivateAbility {
-        /// The source card instance — the eval context's `source` on resume.
-        instance_id: CardInstanceId,
+        /// The ability source — the eval context's `source` on resume (#707).
+        source: crate::state::AbilitySource,
         /// The ability's effect, resolved at activation, run after the `AoO` loop.
         effect: card_dsl::dsl::Effect,
     },

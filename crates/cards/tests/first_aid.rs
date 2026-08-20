@@ -10,7 +10,7 @@ use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Phase, UseKind,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Phase, UseKind,
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, take_turn_action, test_investigator, test_location,
@@ -70,7 +70,7 @@ fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
         state,
         &TurnAction::ActivateAbility {
             investigator: INV,
-            instance_id: KIT_INST,
+            source: AbilitySource::InPlay(KIT_INST),
             ability_index: 0,
         },
     )
@@ -175,7 +175,7 @@ fn an_undamaged_solo_investigator_cannot_activate_first_aid() {
         before,
         &TurnAction::ActivateAbility {
             investigator: INV,
-            instance_id: KIT_INST,
+            source: AbilitySource::InPlay(KIT_INST),
             ability_index: 0,
         },
     );
@@ -204,7 +204,7 @@ fn an_undamaged_solo_investigator_cannot_activate_first_aid() {
 fn the_turn_menu_does_not_offer_first_aid_with_nothing_to_heal() {
     let activation = TurnAction::ActivateAbility {
         investigator: INV,
-        instance_id: KIT_INST,
+        source: AbilitySource::InPlay(KIT_INST),
         ability_index: 0,
     };
     assert!(

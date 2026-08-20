@@ -34,6 +34,22 @@ pub enum SessionError {
     /// roster, unknown/non-investigator code, or an already-started seed).
     #[error("seating rejected: {0}")]
     Seating(String),
+    /// A logged action was rejected while replaying it over the seed state, so
+    /// the reconstructed session would not be the session that was played.
+    ///
+    /// The action log carries no schema version (#581), so an engine change to
+    /// what an action *means* — #707 rewrote the activation payload, and
+    /// `ResolveInput(PickSingle(OptionId))` addresses the turn menu by
+    /// position — can leave an old log deserializable but no longer replayable.
+    /// Failing here is deliberate: a partially reconstructed session is a
+    /// silently wrong one.
+    #[error("replay rejected at action {seq}: {reason}")]
+    Replay {
+        /// Zero-based position of the offending action in the log.
+        seq: i64,
+        /// The engine's rejection reason.
+        reason: String,
+    },
 }
 
 /// A live game: derived state plus its connection to the action log.
@@ -177,8 +193,9 @@ impl GameSession {
     ///
     /// # Errors
     ///
-    /// [`SessionError::Db`] if a query fails, or [`SessionError::Serde`] if the
-    /// persisted seed state or a logged action fails to deserialize.
+    /// [`SessionError::Db`] if a query fails, [`SessionError::Serde`] if the
+    /// persisted seed state or a logged action fails to deserialize, or
+    /// [`SessionError::Replay`] if a logged action replays to a rejection.
     pub async fn load(db: SqlitePool, game_id: &GameId) -> Result<Option<Self>, SessionError> {
         let Some((_scenario_id, seed_state, seed_outcome, seed_setup_events)) =
             store::load_game(&db, game_id).await?
@@ -196,6 +213,15 @@ impl GameSession {
         for action_json in store::load_actions(&db, game_id).await? {
             let action: Action = serde_json::from_str(&action_json)?;
             let result = game_core::apply(state, action);
+            // A rejection means the log no longer reproduces the session it
+            // recorded. Stop loudly rather than serving the prefix that did
+            // replay (#707) — see `SessionError::Replay`.
+            if let EngineOutcome::Rejected { reason } = &result.outcome {
+                return Err(SessionError::Replay {
+                    seq,
+                    reason: reason.to_string(),
+                });
+            }
             state = result.state;
             outcome = result.outcome;
             seq += 1;

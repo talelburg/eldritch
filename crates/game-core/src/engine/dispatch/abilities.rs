@@ -6,7 +6,9 @@ use std::collections::BTreeMap;
 use crate::card_registry;
 use crate::dsl::{Cost, Trigger};
 use crate::event::Event;
-use crate::state::{CardCode, CardInPlay, CardInstanceId, Investigator, InvestigatorId, UseKind};
+use crate::state::{
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, Investigator, InvestigatorId, UseKind,
+};
 
 use super::super::evaluator::{push_effect, EvalContext};
 use super::super::outcome::EngineOutcome;
@@ -14,7 +16,9 @@ use super::Cx;
 
 /// Handler for `TurnAction::ActivateAbility`.
 ///
-/// Validates the named card instance, the indexed ability's trigger,
+/// Validates that the acting investigator can reach the named
+/// [`AbilitySource`] (`engine::ability_source`, #707), the indexed ability's
+/// trigger,
 /// and every cost-payability precondition. On success, pays every cost
 /// (emitting cost events per primitive), emits [`Event::AbilityActivated`],
 /// and dispatches the ability's effect through the DSL evaluator.
@@ -64,7 +68,7 @@ use super::Cx;
 pub(super) fn activate_ability(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    instance_id: CardInstanceId,
+    source: AbilitySource,
     ability_index: u8,
 ) -> EngineOutcome {
     let super::ActivateCheckResult {
@@ -76,7 +80,7 @@ pub(super) fn activate_ability(
     } = match super::reaction_windows::check_activate_ability(
         cx.state,
         investigator,
-        instance_id,
+        source,
         ability_index,
     ) {
         Ok(r) => r,
@@ -84,16 +88,16 @@ pub(super) fn activate_ability(
     };
 
     // Mutate.
-    if let Err(reason) = pay_activation_costs(
-        cx,
-        investigator,
-        instance_id,
-        &source_code,
-        action_cost,
-        &costs,
-    ) {
+    if let Err(reason) =
+        pay_activation_costs(cx, investigator, source, &source_code, action_cost, &costs)
+    {
         return EngineOutcome::Rejected { reason };
     }
+    // Irrefutable on purpose: `Event::AbilityActivated` carries a
+    // `CardInstanceId`, and #709's act / agenda kinds have none. This should stop
+    // compiling when they land — the event's field is what has to change then —
+    // rather than becoming a panic reachable from player input.
+    let AbilitySource::InPlay(instance_id) = source;
     cx.events.push(Event::AbilityActivated {
         investigator,
         instance_id,
@@ -112,17 +116,15 @@ pub(super) fn activate_ability(
             .continuations
             .push(crate::state::Continuation::ActionResolution {
                 investigator,
-                resume: crate::state::ActionResume::ActivateAbility {
-                    instance_id,
-                    effect,
-                },
+                resume: crate::state::ActionResume::ActivateAbility { source, effect },
             });
         return super::combat::drive_aoo(cx, investigator);
     }
 
     // Fast (not an action), or an AoO-exempt Fight ability: push the effect for
     // the drive loop (Slice D, #423) — no enclosing frame, no post-logic.
-    let eval_ctx = EvalContext::for_controller_with_source(investigator, instance_id);
+    let eval_ctx =
+        EvalContext::for_controller_with_optional_source(investigator, source.instance());
     push_effect(cx, &effect, eval_ctx);
     EngineOutcome::Done
 }
@@ -166,10 +168,11 @@ fn provokes_aoo(action_cost: u8, effect: &crate::dsl::Effect) -> bool {
 pub(super) fn resume_activate_ability(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    instance_id: CardInstanceId,
+    source: AbilitySource,
     effect: &crate::dsl::Effect,
 ) -> EngineOutcome {
-    let eval_ctx = EvalContext::for_controller_with_source(investigator, instance_id);
+    let eval_ctx =
+        EvalContext::for_controller_with_optional_source(investigator, source.instance());
     push_effect(cx, effect, eval_ctx);
     EngineOutcome::Done
 }
@@ -195,7 +198,7 @@ pub(super) fn resume_activate_ability(
 fn pay_activation_costs(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    instance_id: CardInstanceId,
+    source: AbilitySource,
     source_code: &CardCode,
     action_cost: u8,
     costs: &[Cost],
@@ -228,8 +231,9 @@ fn pay_activation_costs(
                 });
             }
             Cost::Exhaust => {
-                require_source_in_play(cx, investigator, instance_id, cost, source_code)?
-                    .exhausted = true;
+                let card = require_source_reachable(cx, investigator, source, cost, source_code)?;
+                card.exhausted = true;
+                let instance_id = card.instance_id;
                 cx.events.push(Event::CardExhausted {
                     investigator,
                     instance_id,
@@ -237,8 +241,8 @@ fn pay_activation_costs(
                 });
             }
             Cost::SpendUses { kind, count } => {
-                let card =
-                    require_source_in_play(cx, investigator, instance_id, cost, source_code)?;
+                let card = require_source_reachable(cx, investigator, source, cost, source_code)?;
+                let instance_id = card.instance_id;
                 let remaining = card.uses.entry(*kind).or_insert(0);
                 *remaining = remaining.saturating_sub(*count);
                 let depleted = *remaining == 0;
@@ -267,7 +271,7 @@ fn pay_activation_costs(
                     })
                     .is_some_and(|u| u.discard_when_empty && u.kind == *kind);
                 if depleted && discards_when_empty {
-                    super::cards::discard_card_from_play(cx, investigator, instance_id);
+                    discard_source(cx, investigator, instance_id)?;
                 }
             }
             Cost::DiscardSelf => {
@@ -278,8 +282,10 @@ fn pay_activation_costs(
                 // `discard_card_from_play`'s `unreachable!` — if that validation
                 // rejection is ever lifted, this is the difference between a
                 // rejection and a panic reachable from player input.
-                require_source_in_play(cx, investigator, instance_id, cost, source_code)?;
-                super::cards::discard_card_from_play(cx, investigator, instance_id);
+                let instance_id =
+                    require_source_reachable(cx, investigator, source, cost, source_code)?
+                        .instance_id;
+                discard_source(cx, investigator, instance_id)?;
             }
             Cost::DiscardCardFromHand => {
                 unreachable!("DiscardCardFromHand rejected earlier in check_cost_payable")
@@ -289,35 +295,70 @@ fn pay_activation_costs(
     Ok(())
 }
 
-/// The source card instance in `investigator`'s in-play collection, found by
-/// identity, or the rejection reason for `cost` if an earlier cost in this same
-/// activation already removed it from play.
+/// The card instance behind `source`, found by identity, or the rejection
+/// reason for `cost` if an earlier cost in this same activation already removed
+/// it from play.
 ///
 /// The single gate every source-referencing cost passes through, so "the source
-/// might be gone by now" has one answer rather than one per cost arm.
-fn require_source_in_play<'a>(
+/// might be gone by now" has one answer rather than one per cost arm. Delegates
+/// to the same reachability predicate the validator used (#707), so a cost
+/// cannot reach a card the activation was never allowed to name.
+fn require_source_reachable<'a>(
     cx: &'a mut Cx,
     investigator: InvestigatorId,
-    instance_id: CardInstanceId,
+    source: AbilitySource,
     cost: &Cost,
     source_code: &CardCode,
 ) -> Result<&'a mut CardInPlay, Cow<'static, str>> {
-    cx.state
+    crate::engine::ability_source::resolve_mut(cx.state, investigator, source).ok_or_else(|| {
+        format!(
+            "ActivateAbility: the {} cost needs its source {source_code} \
+             ({source:?}), but an earlier cost on the same ability removed it \
+             from play",
+            cost_label(cost),
+        )
+        .into()
+    })
+}
+
+/// Discard the source instance from wherever it sits: a card in play goes to
+/// its controller's discard pile, a threat-area card to the encounter discard
+/// (`threat_area::discard_from_threat_area`).
+///
+/// The investigator card is the one reachable source that cannot be discarded —
+/// it is a permanent, and nothing in the rules removes it as a cost — so it
+/// rejects rather than reaching `discard_card_from_play`'s `unreachable!`. A
+/// **panic reachable from player input must not ship**, and widening which
+/// sources an activation can name (#707) is what made that branch reachable.
+/// Deliberately unlifted with no tracking issue (YAGNI, as with
+/// `reject_incompatible_costs`); whoever prints such a card files one.
+fn discard_source(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    instance_id: CardInstanceId,
+) -> Result<(), Cow<'static, str>> {
+    let inv = cx
+        .state
         .investigators
-        .get_mut(&investigator)
-        .expect("validated above")
+        .get(&investigator)
+        .expect("validated above");
+    if inv
         .cards_in_play
-        .iter_mut()
-        .find(|c| c.instance_id == instance_id)
-        .ok_or_else(|| {
-            format!(
-                "ActivateAbility: the {} cost needs its source {source_code} \
-                 ({instance_id:?}), but an earlier cost on the same ability removed it \
-                 from play",
-                cost_label(cost),
-            )
-            .into()
-        })
+        .iter()
+        .any(|c| c.instance_id == instance_id)
+    {
+        super::cards::discard_card_from_play(cx, investigator, instance_id);
+        return Ok(());
+    }
+    if super::threat_area::discard_from_threat_area(cx, investigator, instance_id) {
+        return Ok(());
+    }
+    Err(format!(
+        "ActivateAbility: {investigator:?}'s source {instance_id:?} is in no zone a discard \
+         can remove it from (today only the investigator card, which is a permanent), so it \
+         cannot be discarded as a cost",
+    )
+    .into())
 }
 
 /// Prose name for a [`Cost`] in a rejection reason. Reasons reach the client, so

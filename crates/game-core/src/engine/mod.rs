@@ -10,6 +10,7 @@
 //! replaying it via [`apply`] from the initial state reproduces the
 //! current state bit-for-bit.
 
+pub(crate) mod ability_source;
 mod cx;
 pub use cx::Cx;
 mod dispatch;
@@ -324,8 +325,8 @@ mod tests {
     use crate::event::{Event, FailureReason};
     use crate::state::EnemyId;
     use crate::state::{
-        CardCode, ChaosToken, DefeatCause, GameState, InvestigatorId, LocationId, Phase, SkillKind,
-        Status, TokenModifiers, TokenResolution, Zone,
+        AbilitySource, CardCode, ChaosToken, DefeatCause, GameState, InvestigatorId, LocationId,
+        Phase, SkillKind, Status, TokenModifiers, TokenResolution, Zone,
     };
     use crate::test_support::{
         apply_no_commits, dispatch_turn_action_unchecked, perform_skill_test,
@@ -4518,7 +4519,7 @@ mod tests {
             state,
             &TurnAction::ActivateAbility {
                 investigator: id,
-                instance_id,
+                source: AbilitySource::InPlay(instance_id),
                 ability_index: 0,
             },
         );
@@ -4536,7 +4537,7 @@ mod tests {
             state,
             &TurnAction::ActivateAbility {
                 investigator: id,
-                instance_id,
+                source: AbilitySource::InPlay(instance_id),
                 ability_index: 0,
             },
         );
@@ -4554,7 +4555,7 @@ mod tests {
             state,
             &TurnAction::ActivateAbility {
                 investigator: id,
-                instance_id: CardInstanceId(9999),
+                source: AbilitySource::InPlay(CardInstanceId(9999)),
                 ability_index: 0,
             },
         );
@@ -4584,7 +4585,7 @@ mod tests {
             state,
             &TurnAction::ActivateAbility {
                 investigator: id,
-                instance_id,
+                source: AbilitySource::InPlay(instance_id),
                 ability_index: 0,
             },
         );

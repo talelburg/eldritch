@@ -140,6 +140,23 @@ impl Investigator {
             .chain(self.threat_area.iter())
     }
 
+    /// The controlled in-play instance with `instance_id`, mutably — the
+    /// write-side peer of [`controlled_card_instances`](Self::controlled_card_instances),
+    /// walking the same three collections in the same order.
+    ///
+    /// Addressing by identity rather than by position is the #706 contract: a
+    /// cost that removes the source mid-payment invalidates any position cached
+    /// earlier, and this returns `None` in exactly that case.
+    pub fn controlled_card_instance_mut(
+        &mut self,
+        instance_id: CardInstanceId,
+    ) -> Option<&mut CardInPlay> {
+        std::iter::once(&mut self.investigator_card)
+            .chain(self.cards_in_play.iter_mut())
+            .chain(self.threat_area.iter_mut())
+            .find(|card| card.instance_id == instance_id)
+    }
+
     /// Physical damage currently on the investigator — reads
     /// `investigator_card.accumulated_damage` (#448 cp2a).
     #[must_use]

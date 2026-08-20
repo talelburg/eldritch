@@ -21,7 +21,7 @@ use game_core::card_registry::{self, CardRegistry};
 use game_core::dsl::{activated, gain_resources, Ability, Cost, InvestigatorTarget};
 use game_core::engine::{EngineOutcome, TurnAction};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Phase, UseKind,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Phase, UseKind,
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
@@ -145,7 +145,7 @@ fn cost_after_the_source_leaves_play_rejects_rather_than_hitting_another_card() 
         state,
         &TurnAction::ActivateAbility {
             investigator: INV,
-            instance_id: DEPLETER_INST,
+            source: AbilitySource::InPlay(DEPLETER_INST),
             ability_index: 0,
         },
     );
@@ -197,7 +197,7 @@ fn costs_land_on_the_source_when_it_is_not_first_in_play() {
         state,
         &TurnAction::ActivateAbility {
             investigator: INV,
-            instance_id: DEPLETER_INST,
+            source: AbilitySource::InPlay(DEPLETER_INST),
             ability_index: 0,
         },
     );
