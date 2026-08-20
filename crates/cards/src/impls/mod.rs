@@ -181,10 +181,8 @@ pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEf
         .or_else(|| guard_dog::native_effect_for(tag))
         .or_else(|| mind_over_matter::native_effect_for(tag))
         .or_else(|| cover_up::native_effect_for(tag))
-        .or_else(|| ancient_evils::native_effect_for(tag))
         .or_else(|| crypt_chill::native_effect_for(tag))
         .or_else(|| obscuring_fog::native_effect_for(tag))
-        .or_else(|| silver_twilight_acolyte::native_effect_for(tag))
 }
 
 /// Dispatch a native eligibility-predicate tag to its card-local handler;
