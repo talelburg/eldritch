@@ -176,7 +176,9 @@ pub(super) fn resume_activate_ability(
 
 /// Pay the action cost and every payment cost of an activated
 /// ability. Mutates state in place and pushes the matching events.
-/// Caller has already validated that every cost is payable.
+/// Caller has already validated that every cost was payable *at validation
+/// time*; a cost can still fail here by outliving its own source, which is
+/// what the `Err` return carries.
 ///
 /// # Addressing the source
 ///
@@ -226,8 +228,7 @@ fn pay_activation_costs(
                 });
             }
             Cost::Exhaust => {
-                source_in_play_mut(cx, investigator, instance_id)
-                    .ok_or_else(|| source_gone(cost, source_code, instance_id))?
+                require_source_in_play(cx, investigator, instance_id, cost, source_code)?
                     .exhausted = true;
                 cx.events.push(Event::CardExhausted {
                     investigator,
@@ -236,8 +237,8 @@ fn pay_activation_costs(
                 });
             }
             Cost::SpendUses { kind, count } => {
-                let card = source_in_play_mut(cx, investigator, instance_id)
-                    .ok_or_else(|| source_gone(cost, source_code, instance_id))?;
+                let card =
+                    require_source_in_play(cx, investigator, instance_id, cost, source_code)?;
                 let remaining = card.uses.entry(*kind).or_insert(0);
                 *remaining = remaining.saturating_sub(*count);
                 let depleted = *remaining == 0;
@@ -270,9 +271,14 @@ fn pay_activation_costs(
                 }
             }
             Cost::DiscardSelf => {
-                if source_in_play_mut(cx, investigator, instance_id).is_none() {
-                    return Err(source_gone(cost, source_code, instance_id));
-                }
+                // Unreachable today: `reject_incompatible_costs` refuses
+                // `DiscardSelf` alongside `Exhaust`/`SpendUses` at validation, so
+                // nothing can have removed the source before this arm runs. Kept
+                // because the alternative on a missing source is
+                // `discard_card_from_play`'s `unreachable!` — if that validation
+                // rejection is ever lifted, this is the difference between a
+                // rejection and a panic reachable from player input.
+                require_source_in_play(cx, investigator, instance_id, cost, source_code)?;
                 super::cards::discard_card_from_play(cx, investigator, instance_id);
             }
             Cost::DiscardCardFromHand => {
@@ -284,12 +290,18 @@ fn pay_activation_costs(
 }
 
 /// The source card instance in `investigator`'s in-play collection, found by
-/// identity. `None` once an earlier cost in the same activation removed it.
-fn source_in_play_mut<'a>(
+/// identity, or the rejection reason for `cost` if an earlier cost in this same
+/// activation already removed it from play.
+///
+/// The single gate every source-referencing cost passes through, so "the source
+/// might be gone by now" has one answer rather than one per cost arm.
+fn require_source_in_play<'a>(
     cx: &'a mut Cx,
     investigator: InvestigatorId,
     instance_id: CardInstanceId,
-) -> Option<&'a mut CardInPlay> {
+    cost: &Cost,
+    source_code: &CardCode,
+) -> Result<&'a mut CardInPlay, Cow<'static, str>> {
     cx.state
         .investigators
         .get_mut(&investigator)
@@ -297,20 +309,27 @@ fn source_in_play_mut<'a>(
         .cards_in_play
         .iter_mut()
         .find(|c| c.instance_id == instance_id)
+        .ok_or_else(|| {
+            format!(
+                "ActivateAbility: the {} cost needs its source {source_code} \
+                 ({instance_id:?}), but an earlier cost on the same ability removed it \
+                 from play",
+                cost_label(cost),
+            )
+            .into()
+        })
 }
 
-/// Rejection reason for a cost whose source left play earlier in this
-/// activation's own cost payment.
-fn source_gone(
-    cost: &Cost,
-    source_code: &CardCode,
-    instance_id: CardInstanceId,
-) -> Cow<'static, str> {
-    format!(
-        "ActivateAbility: cost {cost:?} needs its source {source_code} ({instance_id:?}), but an \
-         earlier cost on the same ability removed it from play"
-    )
-    .into()
+/// Prose name for a [`Cost`] in a rejection reason. Reasons reach the client, so
+/// they read as sentences rather than as `Debug`-printed DSL variants.
+fn cost_label(cost: &Cost) -> &'static str {
+    match cost {
+        Cost::Resources(_) => "resource",
+        Cost::Exhaust => "exhaust",
+        Cost::SpendUses { .. } => "spend-uses",
+        Cost::DiscardSelf => "discard-self",
+        Cost::DiscardCardFromHand => "discard-a-card-from-hand",
+    }
 }
 
 /// Resolve the activated ability at `(code, ability_index)` from the

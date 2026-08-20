@@ -202,6 +202,14 @@ fn costs_land_on_the_source_when_it_is_not_first_in_play() {
         },
     );
 
+    // The drive loop carries on to the turn menu once the effect resolves, so
+    // the success signal here is "not rejected" rather than `Done`.
+    assert!(
+        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
+        "the activation should resolve, got {:?}",
+        result.outcome,
+    );
+
     let in_play = &result.state.investigators[&INV].cards_in_play;
     let bystander = in_play
         .iter()
