@@ -16,6 +16,16 @@
 //! Metadata gives Research Librarian `health: 1, sanity: 1` (ally soak, not a
 //! stat boost). Soak is engine-modeled from that metadata (#44/K5); this impl
 //! declares only the reaction — the soak half rides on metadata.
+//!
+//! # Cell
+//!
+//! **The `after` cell of the `EnteredPlay` condition.** The printed word is
+//! *"After"* — *"`[reaction]` After Research Librarian enters play: Search your
+//! deck for a Tome asset and add it to your hand. Shuffle your deck."* — and
+//! `glossary/After.md` puts that *"immediately after the specified timing point
+//! or triggering condition has fully resolved."* So the ally is in play, its
+//! soak already available, before the search runs. The card has no rulings
+//! (recorded in `data/arkhamdb-faq/no-rulings.txt`).
 
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{

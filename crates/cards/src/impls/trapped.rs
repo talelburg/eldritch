@@ -20,6 +20,19 @@
 //! The board build is board-dependent, single-use scenario logic, so it
 //! lives card-locally as a [`card_dsl::dsl::Effect::Native`] handler
 //! (the `board_build` fn) rather than as shared `Effect` variants (#276).
+//!
+//! **Cell: the `after` cell of the `ActAdvanced` condition.** The reverse prints
+//! no trigger word, because it is not a triggered ability: it is step 2 of the
+//! Rules Reference's advance procedure — *"Flip the advancing card over and
+//! follow the instructions on the reverse ("b") side."*
+//! (`glossary/Act_Deck_and_Agenda_Deck.md`). Declaring it in the `after` cell of
+//! the flip is what puts it where the procedure puts it: after step 1's token
+//! removal and the flip itself, and before step 3's *"the next card in the deck
+//! becomes the current act/agenda"* — the `AdvanceReverse` frame holds the deck
+//! cursor at `Finalize` until the board build has drained, which is the
+//! "before the next act becomes current" noted above. With no printed word to
+//! read against, nothing contests the cell. The card has no rulings (recorded
+//! in `data/arkhamdb-faq/no-rulings.txt`).
 
 use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
 use game_core::card_registry::NativeEffectFn;

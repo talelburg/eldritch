@@ -17,6 +17,17 @@
 //! `ModifierAudience::AttachedCard` audience, and `investigate` reads it
 //! via `modified_value`; the forced discard runs `Effect::DiscardSelf`,
 //! which finds this attachment by the firing instance.
+//!
+//! **Cell: the `after` cell of the `SkillTestResolved` condition.** The printed
+//! word is *"After"* — *"**Forced** - After attached location is successfully
+//! investigated: Discard Obscuring Fog."* — and `glossary/After.md` puts that
+//! *"immediately after the specified timing point or triggering condition has
+//! fully resolved."* So the investigation resolves in full against the +2
+//! shroud this card is still supplying, and only then does the fog discard: it
+//! never fails to tax the very test that clears it. The ruling is about the
+//! Revelation's limit, not the cell: *"If you draw Obscuring Fog while there's
+//! another copy already attached to your location, discard the copy that you
+//! just drew."* (<https://arkhamdb.com/card/01168>).
 
 use card_dsl::dsl::{
     constant, discard_self, forced_on_event, modify_for, native, revelation, Ability, EventPattern,

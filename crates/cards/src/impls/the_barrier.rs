@@ -42,6 +42,33 @@
 //! combat would suspend (`AwaitingInput`) — unreachable through the
 //! single-trigger forced-advance path until #213/#212; consistent with
 //! the rest of Slice 1's solo-first scope.
+//!
+//! **Cell: the `when` cell of the `RoundEnded` condition**, for the front
+//! objective. The printed word is *"When"* — *"**Objective** - When the round
+//! ends, investigators in the hallway may, as a group, spend the requisite
+//! number of clues to advance."* — and `glossary/When.md` puts that
+//! *"immediately after the specified timing point or triggering condition
+//! initiates, but before its impact upon the game state resolves."* The round's
+//! ending is a **bare milestone** — expiring "until the end of the round"
+//! effects and the Upkeep → Mythos handoff run after the whole sequence, on the
+//! Upkeep anchor's resume — so this is the first cell of a sequence that changes
+//! nothing as it resolves, and the clue-spend happens with the board exactly as
+//! the round's end found it. Agenda 01107's `at`-cell round-end doom follows it,
+//! in that card's own ruling: *""At the end of the round" effects trigger after
+//! "When the round ends" effects (e.g. The Barrier)"*
+//! (<https://arkhamdb.com/card/01107>).
+//!
+//! **Cell: the `after` cell of the `ActAdvanced` condition**, for the reverse.
+//! The reverse prints no trigger word, because it is not a triggered ability: it
+//! is step 2 of the advance procedure — *"Flip the advancing card over and
+//! follow the instructions on the reverse ("b") side."*
+//! (`glossary/Act_Deck_and_Agenda_Deck.md`). Declaring it in the `after` cell of
+//! the flip is what puts it where the procedure puts it: after step 1's token
+//! removal and the flip itself, and before step 3's *"the next card in the deck
+//! becomes the current act/agenda"* — the `AdvanceReverse` frame holds the deck
+//! cursor at `Finalize` until the Parlor reveal and the Priest spawn have
+//! drained. With no printed word to read against, nothing contests the cell.
+//! This act has no rulings (recorded in `data/arkhamdb-faq/no-rulings.txt`).
 
 use card_dsl::dsl::{
     forced_on_event, native, reaction_on_event, Ability, EventPattern, EventTiming,
