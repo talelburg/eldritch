@@ -7,7 +7,8 @@ use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase, Zone,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId,
+    Phase, Zone,
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, take_turn_action, test_enemy, test_investigator, test_location,
@@ -51,7 +52,7 @@ fn board(enemy_present: bool) -> game_core::GameState {
 
 const ACTIVATE_ABILITY: TurnAction = TurnAction::ActivateAbility {
     investigator: INV,
-    instance_id: COP_INST,
+    source: AbilitySource::InPlay(COP_INST),
     ability_index: 1, // index 1 = the [fast] discard-damage ability
 };
 

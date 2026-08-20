@@ -20,7 +20,7 @@ use crate::engine::TimingEvent;
 use crate::event::{Event, LapseReason};
 use crate::state::TimingMode;
 use crate::state::{
-    CandidateSource, CardCode, CardInstanceId, Continuation, FastActorScope, FastWindowKind,
+    AbilitySource, CandidateSource, CardCode, Continuation, FastActorScope, FastWindowKind,
     GameState, InvestigatorId, Phase, ResolutionCandidate, Status,
 };
 
@@ -1988,11 +1988,11 @@ fn check_effect_target_available(
 fn check_activation_changes_state(
     state: &GameState,
     investigator: InvestigatorId,
-    instance_id: CardInstanceId,
+    source: AbilitySource,
     code: &CardCode,
     effect: &crate::dsl::Effect,
 ) -> Result<(), Cow<'static, str>> {
-    let ctx = EvalContext::for_controller_with_source(investigator, instance_id);
+    let ctx = EvalContext::for_controller_with_optional_source(investigator, source.instance());
     if crate::engine::evaluator::effect_can_change_state(state, ctx, effect) {
         return Ok(());
     }
@@ -2033,7 +2033,7 @@ fn reject_incompatible_costs(costs: &[crate::dsl::Cost]) -> Result<(), Cow<'stat
 pub(crate) fn check_activate_ability(
     state: &GameState,
     investigator: InvestigatorId,
-    instance_id: CardInstanceId,
+    source: AbilitySource,
     ability_index: u8,
 ) -> Result<super::ActivateCheckResult, Cow<'static, str>> {
     let Some(inv) = state.investigators.get(&investigator) else {
@@ -2048,21 +2048,14 @@ pub(crate) fn check_activate_ability(
         )
         .into());
     }
-    // Addressed by identity, never by position: the position a validation
-    // computes is stale the moment a cost removes the source (#706).
-    let Some(source) = inv
-        .cards_in_play
-        .iter()
-        .find(|c| c.instance_id == instance_id)
-    else {
-        return Err(format!(
-            "ActivateAbility: {investigator:?} has no in-play instance {instance_id:?}",
-        )
-        .into());
-    };
-    let source_code = source.code.clone();
-    let source_exhausted = source.exhausted;
-    let source_uses = source.uses.clone();
+    // Which sources exist is the reachability predicate's answer, and it is the
+    // same one the turn-menu enumerator lists from (#707). Addressed by
+    // identity, never by position: the position a validation computes is stale
+    // the moment a cost removes the source (#706).
+    let source_card = crate::engine::ability_source::resolve(state, investigator, source)?;
+    let source_code = source_card.code.clone();
+    let source_exhausted = source_card.exhausted;
+    let source_uses = source_card.uses.clone();
 
     // Invariant: `resolve_activated_ability` currently returns only `Ok(...)`
     // (success) or `Err(EngineOutcome::Rejected { ... })` (validation failure).
@@ -2135,7 +2128,7 @@ pub(crate) fn check_activate_ability(
 
     reject_incompatible_costs(&costs)?;
     check_effect_target_available(state, investigator, &effect)?;
-    check_activation_changes_state(state, investigator, instance_id, &source_code, &effect)?;
+    check_activation_changes_state(state, investigator, source, &source_code, &effect)?;
 
     Ok(super::ActivateCheckResult {
         source_code,
@@ -2224,9 +2217,12 @@ pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
                 }
             }
         }
-        // 0-action Activated abilities on cards in play.
-        for card in &inv.cards_in_play {
-            let Some(abilities) = (reg.abilities_for)(&card.code) else {
+        // 0-action Activated abilities on every source this investigator can
+        // reach. The rules bullets are written once for `[free]`, `[reaction]`
+        // and `[action]` together, so the fast window consults the same
+        // reachability predicate the turn menu does (#707).
+        for (source, code) in crate::engine::ability_source::reachable_source_codes(state, inv_id) {
+            let Some(abilities) = (reg.abilities_for)(&code) else {
                 continue;
             };
             for (ab_idx, ability) in abilities.iter().enumerate() {
@@ -2236,10 +2232,10 @@ pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
                 let Ok(ability_index) = u8::try_from(ab_idx) else {
                     break;
                 };
-                if check_activate_ability(state, inv_id, card.instance_id, ability_index).is_ok() {
+                if check_activate_ability(state, inv_id, source, ability_index).is_ok() {
                     out.push(TurnAction::ActivateAbility {
                         investigator: inv_id,
-                        instance_id: card.instance_id,
+                        source,
                         ability_index,
                     });
                 }
@@ -2283,7 +2279,7 @@ mod check_play_card_tests {
 #[cfg(test)]
 mod trigger_matches_tests {
     use super::*;
-    use crate::state::{EnemyId, LocationId};
+    use crate::state::{CardInstanceId, EnemyId, LocationId};
 
     fn enemy_attacks(inv: InvestigatorId) -> TimingEvent {
         TimingEvent::EnemyAttacks {
@@ -2417,27 +2413,38 @@ mod trigger_matches_tests {
 #[cfg(test)]
 mod check_activate_ability_tests {
     use super::*;
+    use crate::state::CardInstanceId;
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
-    fn check_activate_ability_returns_err_for_missing_instance() {
+    fn check_activate_ability_returns_err_for_unreachable_source() {
         let state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
             .build();
-        let err = check_activate_ability(&state, InvestigatorId(1), CardInstanceId(999), 0)
-            .expect_err("missing instance should reject");
+        let err = check_activate_ability(
+            &state,
+            InvestigatorId(1),
+            AbilitySource::InPlay(CardInstanceId(999)),
+            0,
+        )
+        .expect_err("a source the investigator cannot reach should reject");
         assert!(
-            err.contains("no in-play instance"),
-            "error should say no in-play instance, got: {err}"
+            err.contains("cannot reach"),
+            "error should say the source is unreachable, got: {err}"
         );
     }
 
     #[test]
     fn check_activate_ability_returns_err_when_investigator_missing() {
         let state = GameStateBuilder::default().build();
-        let err = check_activate_ability(&state, InvestigatorId(99), CardInstanceId(1), 0)
-            .expect_err("missing investigator should reject");
+        let err = check_activate_ability(
+            &state,
+            InvestigatorId(99),
+            AbilitySource::InPlay(CardInstanceId(1)),
+            0,
+        )
+        .expect_err("missing investigator should reject");
         assert!(
             err.contains("not in state"),
             "error should say not in state, got: {err}"
@@ -2655,6 +2662,7 @@ mod open_fast_window_tests {
 #[cfg(test)]
 mod candidate_source_present_tests {
     use super::*;
+    use crate::state::CardInstanceId;
     use crate::state::{CardInPlay, LocationId};
     use crate::test_support::{test_investigator, test_location, GameStateBuilder};
 
@@ -2734,6 +2742,7 @@ mod candidate_source_present_tests {
 #[cfg(test)]
 mod withdraw_suppressed_candidates_tests {
     use super::*;
+    use crate::state::CardInstanceId;
     use crate::state::LocationId;
     use crate::test_support::{test_investigator, GameStateBuilder};
 

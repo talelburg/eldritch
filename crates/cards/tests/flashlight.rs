@@ -15,8 +15,8 @@ use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase,
-    SkillKind, TokenModifiers, UseKind,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId,
+    LocationId, Phase, SkillKind, TokenModifiers, UseKind,
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder, TestSession,
@@ -71,7 +71,7 @@ fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
     TestSession::new(state)
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
-            instance_id: TORCH_INST,
+            source: AbilitySource::InPlay(TORCH_INST),
             ability_index: 0,
         })
         .resolve_choices(|c| {
@@ -120,7 +120,7 @@ fn rejects_without_a_revealed_location_before_spending_a_supply() {
         board(2, 4, false),
         &TurnAction::ActivateAbility {
             investigator: INV,
-            instance_id: TORCH_INST,
+            source: AbilitySource::InPlay(TORCH_INST),
             ability_index: 0,
         },
     );

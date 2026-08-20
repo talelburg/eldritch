@@ -8,8 +8,8 @@ use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, InvestigatorId, Phase,
-    TokenModifiers, UseKind,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId,
+    InvestigatorId, Phase, TokenModifiers, UseKind,
 };
 use game_core::test_support::{test_enemy, test_investigator, GameStateBuilder, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -71,7 +71,7 @@ fn fire(state: game_core::GameState) -> game_core::engine::ApplyResult {
     TestSession::new(state)
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
-            instance_id: WEAPON_INST,
+            source: AbilitySource::InPlay(WEAPON_INST),
             ability_index: 0,
         })
         .resolve_choices(|c| {

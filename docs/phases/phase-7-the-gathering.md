@@ -162,8 +162,8 @@ triggered ability from, verbatim:
 > - The current act or current agenda card.
 > - Any card that explicitly allows the investigator to activate its ability.
 
-The engine honours the first. Activation resolves its source against the acting
-investigator's own `cards_in_play`, so a location's, an enemy's, the act's and the
+The engine honoured the first only in part until **#707** (below). Activation resolved
+its source against the acting investigator's own `cards_in_play`, so a location's, an enemy's, the act's and the
 agenda's abilities cannot be initiated and never reach the turn menu — the Parlor
 01115's Resign among them, though that card is separately deferred as optional content
 (#258) and has nowhere to resolve to until #644 gives Resign its semantics. The
@@ -194,6 +194,23 @@ contract licenses: `apply_via` snapshot-restores state, events and the RNG posit
 `Rejected` (#161). No ADR — the two readings a future author would want (why the guard
 on `Cost::DiscardSelf` is unreachable today yet kept, and why no source-descriptor type
 was minted early) are both `TODO`-adjacent comments at the sites that hold them.
+
+**#707 ✅ shipped (PR #733)** is the first of the four bullets and the vocabulary
+change the other three attach to. The activation action stops naming a bare
+`CardInstanceId` and names an **ability source** (`CONTEXT.md`), and
+`engine::ability_source` answers reachability once for the validator, the turn-menu
+enumerator and the fast-window enumerator alike — `resolve` is a lookup in
+`reachable_sources` rather than a second reading of the rules, so the menu and
+handler-acceptance cannot drift apart about which sources exist. The control bullet is
+now honoured in full: an ability on your own investigator card or on a card in your own
+threat area is offered and activatable, and another investigator's card is not.
+Widening what is *addressable* widened nothing else — the initiation sequence's checks
+run unchanged behind it. It is the deliberate wire break: persisted games are discarded,
+no version field is added (#581), `GameSession::load` fails loudly on a log it cannot
+replay, and `get_or_load_room` no longer reports an unreplayable game as a nonexistent
+one. Design and the three rejected alternatives:
+[ADR 0010](../adr/0010-an-activation-names-an-ability-source.md). #708 (co-location)
+and #709 (act and agenda) attach to the same predicate.
 
 **4. Browser capstone — the gate-closer.** Positioned last so it designs against
 the now-stable set of input shapes:

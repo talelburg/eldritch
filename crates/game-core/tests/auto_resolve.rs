@@ -55,8 +55,8 @@ use game_core::scenario::{
     ScenarioId, ScenarioModule, ScenarioRegistry, SymbolCtx, SymbolOutcome, TokenEffect,
 };
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId,
-    LocationId, Phase, SkillKind, TokenModifiers, TokenResolution, Zone,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState,
+    InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers, TokenResolution, Zone,
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, drive, drive_skill_test, metadata_for_test_inv,
@@ -508,7 +508,7 @@ fn latching_a_determination_outside_a_test_is_rejected() {
     let resources_before = state.investigators[&id].resources;
     let action = TurnAction::ActivateAbility {
         investigator: id,
-        instance_id,
+        source: AbilitySource::InPlay(instance_id),
         ability_index: 0,
     };
 
@@ -539,7 +539,7 @@ fn an_unrelated_activation_is_still_offered_outside_a_test() {
     assert!(
         legal_actions(&state).contains(&TurnAction::ActivateAbility {
             investigator: id,
-            instance_id,
+            source: AbilitySource::InPlay(instance_id),
             ability_index: 0,
         })
     );

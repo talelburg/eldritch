@@ -30,8 +30,8 @@
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Enemy, EnemyId, InvestigatorId,
-    LocationId, Phase, UseKind,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Enemy, EnemyId,
+    InvestigatorId, LocationId, Phase, UseKind,
 };
 use game_core::test_support::{
     take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
@@ -142,7 +142,7 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
         state,
         &TurnAction::ActivateAbility {
             investigator: inv_id,
-            instance_id: kit,
+            source: AbilitySource::InPlay(kit),
             ability_index: 0,
         },
     );
@@ -240,7 +240,7 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
         state,
         &TurnAction::ActivateAbility {
             investigator: inv_id,
-            instance_id: blade,
+            source: AbilitySource::InPlay(blade),
             ability_index: 0,
         },
     );
@@ -309,7 +309,7 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
         state,
         &TurnAction::ActivateAbility {
             investigator: inv_id,
-            instance_id: cop,
+            source: AbilitySource::InPlay(cop),
             ability_index: 1,
         },
     );
@@ -388,7 +388,7 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
         state,
         &TurnAction::ActivateAbility {
             investigator: inv_id,
-            instance_id: kit,
+            source: AbilitySource::InPlay(kit),
             ability_index: 0,
         },
     );
@@ -478,7 +478,7 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
         state,
         &TurnAction::ActivateAbility {
             investigator: inv_id,
-            instance_id: kit,
+            source: AbilitySource::InPlay(kit),
             ability_index: 0,
         },
     );

@@ -8,8 +8,8 @@
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, FastActorScope,
-    FastWindowKind, InvestigatorId, LocationId, Phase, PhaseStep,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId,
+    FastActorScope, FastWindowKind, InvestigatorId, LocationId, Phase, PhaseStep,
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, take_turn_action, test_enemy, test_investigator, test_location,
@@ -241,7 +241,7 @@ fn weapon_fight_substituting_uses_intellect_and_keeps_weapon_damage() {
         r.state,
         &TurnAction::ActivateAbility {
             investigator: INV,
-            instance_id: WEAPON_INST,
+            source: AbilitySource::InPlay(WEAPON_INST),
             ability_index: 0,
         },
     );

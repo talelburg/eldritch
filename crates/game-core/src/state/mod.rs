@@ -5,6 +5,7 @@
 //! These are pure data with no engine logic — they describe the world,
 //! they don't run the game.
 
+pub mod ability_source;
 pub mod builder;
 pub mod card;
 pub mod chaos_bag;
@@ -15,6 +16,7 @@ pub mod investigator;
 pub mod location;
 pub mod phase;
 
+pub use ability_source::AbilitySource;
 pub use builder::GameStateBuilder;
 pub use card::{AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, UseKind, Zone};
 pub use card_dsl::card_data::{SkillKind, Skills};

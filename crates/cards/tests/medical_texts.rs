@@ -18,8 +18,8 @@ use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase,
-    TokenModifiers,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId,
+    LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{test_investigator, test_location, GameStateBuilder, TestSession};
 
@@ -66,7 +66,7 @@ fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
     TestSession::new(state)
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
-            instance_id: BOOK_INST,
+            source: AbilitySource::InPlay(BOOK_INST),
             ability_index: 0,
         })
         .resolve_choices(|c| {

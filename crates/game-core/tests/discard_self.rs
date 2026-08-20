@@ -9,7 +9,7 @@ use game_core::dsl::{
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{
     apply_no_commits, dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location,
@@ -171,7 +171,7 @@ fn discard_self_removes_source_from_play_and_runs_the_effect() {
         .position(|a| {
             a == &TurnAction::ActivateAbility {
                 investigator: id,
-                instance_id: inst,
+                source: AbilitySource::InPlay(inst),
                 ability_index: 0,
             }
         })
@@ -229,7 +229,7 @@ fn discard_self_deal_damage_rejects_with_no_enemy_and_keeps_source_in_play() {
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
-            instance_id: inst,
+            source: AbilitySource::InPlay(inst),
             ability_index: 0,
         },
     );
@@ -258,7 +258,7 @@ fn discard_self_combined_with_exhaust_rejects_before_paying() {
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
-            instance_id: inst,
+            source: AbilitySource::InPlay(inst),
             ability_index: 0,
         },
     );
@@ -278,7 +278,7 @@ fn discard_self_deal_damage_discards_source_and_damages_the_enemy() {
         .position(|a| {
             a == &TurnAction::ActivateAbility {
                 investigator: id,
-                instance_id: inst,
+                source: AbilitySource::InPlay(inst),
                 ability_index: 0,
             }
         })
@@ -325,7 +325,7 @@ fn spending_last_use_discards_a_discard_when_empty_asset() {
         .position(|a| {
             a == &TurnAction::ActivateAbility {
                 investigator: id,
-                instance_id: inst,
+                source: AbilitySource::InPlay(inst),
                 ability_index: 0,
             }
         })
@@ -358,7 +358,7 @@ fn spending_last_use_keeps_a_non_discarding_asset_in_play() {
         .position(|a| {
             a == &TurnAction::ActivateAbility {
                 investigator: id,
-                instance_id: inst,
+                source: AbilitySource::InPlay(inst),
                 ability_index: 0,
             }
         })

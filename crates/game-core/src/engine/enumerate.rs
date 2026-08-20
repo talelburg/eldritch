@@ -3,7 +3,7 @@
 //! (2b) — this module shares the handlers' legality predicates so the
 //! enumeration matches handler-acceptance by construction.
 
-use crate::state::{CardInstanceId, Continuation, EnemyId, GameState, InvestigatorId, LocationId};
+use crate::state::{AbilitySource, Continuation, EnemyId, GameState, InvestigatorId, LocationId};
 
 /// The enumerated open-turn actions for the active investigator.
 ///
@@ -65,12 +65,15 @@ pub enum TurnAction {
         /// Zero-based position in the investigator's hand.
         hand_index: u8,
     },
-    /// Activate a `Trigger::Activated` ability on a specific in-play card instance.
+    /// Activate a `Trigger::Activated` ability on an ability source the
+    /// investigator can reach (#707).
     ActivateAbility {
         /// Investigator activating the ability.
         investigator: InvestigatorId,
-        /// Which copy of the in-play card is the source.
-        instance_id: CardInstanceId,
+        /// The ability source — what carries the ability, addressed
+        /// independently of which collection holds it. Reachability is
+        /// `engine::ability_source`'s answer, not the descriptor's.
+        source: AbilitySource,
         /// Zero-based index into the card's abilities vec.
         ability_index: u8,
     },
@@ -154,9 +157,12 @@ impl TurnAction {
                 investigator: *investigator,
                 hand_index: *hand_index,
             },
-            TurnAction::ActivateAbility { instance_id, .. } => {
-                OptionTarget::CardInstance(*instance_id)
-            }
+            // Exhaustive on purpose: #709's act / agenda kinds have no card
+            // instance to anchor to, and this should stop compiling then rather
+            // than quietly anchoring them somewhere wrong.
+            TurnAction::ActivateAbility { source, .. } => match source {
+                AbilitySource::InPlay(instance_id) => OptionTarget::CardInstance(*instance_id),
+            },
             TurnAction::AdvanceAct { .. } => OptionTarget::Act,
         }
     }
@@ -237,25 +243,28 @@ fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut 
         }
     }
 
-    // ActivateAbility: one option per activatable ability on each in-play card.
-    // `ability_index` indexes the card's full ability list; `check_activate_ability`
-    // filters to the activated, payable, window-eligible ones (so non-`Activated`
-    // indices are simply not offered).
-    for card in &inv.cards_in_play {
-        let ability_count = (reg.abilities_for)(&card.code).map_or(0, |a| a.len());
+    // ActivateAbility: one option per activatable ability on each ability source
+    // the investigator can reach (#707) — the same predicate the validator
+    // consults, so the menu and handler-acceptance cannot disagree about which
+    // sources exist. `ability_index` indexes the card's full ability list;
+    // `check_activate_ability` filters to the activated, payable,
+    // window-eligible ones (so non-`Activated` indices are simply not offered).
+    for (source, code) in crate::engine::ability_source::reachable_source_codes(state, investigator)
+    {
+        let ability_count = (reg.abilities_for)(&code).map_or(0, |a| a.len());
         for idx in 0..ability_count {
             let ability_index = u8::try_from(idx).unwrap_or(u8::MAX);
             if crate::engine::dispatch::reaction_windows::check_activate_ability(
                 state,
                 investigator,
-                card.instance_id,
+                source,
                 ability_index,
             )
             .is_ok()
             {
                 out.push(TurnAction::ActivateAbility {
                     investigator,
-                    instance_id: card.instance_id,
+                    source,
                     ability_index,
                 });
             }
@@ -379,7 +388,7 @@ fn push_basic_actions(state: &GameState, investigator: InvestigatorId, out: &mut
 #[cfg(test)]
 mod tests {
     use crate::engine::enumerate::{legal_actions, TurnAction};
-    use crate::state::{Continuation, InvestigationResume, InvestigatorId, Phase};
+    use crate::state::{AbilitySource, Continuation, InvestigationResume, InvestigatorId, Phase};
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     /// Build a single-investigator open-turn state (`InvestigatorTurn` frame on
@@ -964,7 +973,7 @@ mod tests {
         assert_eq!(
             TurnAction::ActivateAbility {
                 investigator: inv,
-                instance_id: CardInstanceId(5),
+                source: AbilitySource::InPlay(CardInstanceId(5)),
                 ability_index: 0,
             }
             .target(&state),
