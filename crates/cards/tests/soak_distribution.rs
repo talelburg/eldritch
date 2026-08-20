@@ -127,23 +127,38 @@ fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
     let r2 = resolve(r1.state, pick(&r1.outcome, "Asset"));
     let r3 = resolve(r2.state, pick(&r2.outcome, "Investigator"));
 
-    assert_eq!(
-        guard_dog_damage(&r3.state, inv, dog),
-        Some(1),
-        "1 damage soaked onto Guard Dog"
-    );
-    assert_eq!(
-        r3.state.investigators[&inv].damage(),
-        1,
-        "1 damage taken by the investigator"
-    );
-    // Guard Dog took damage and survived → its retaliate window opens (not a
-    // further distribution prompt).
+    // The distribution is complete but nothing is placed: Guard Dog is in the
+    // assignment, so its `when` cell opens between the two rules steps (#727),
+    // and that is the window here rather than a further distribution prompt.
     assert!(
         matches!(r3.outcome, EngineOutcome::AwaitingInput { .. })
             && !is_distribution_prompt(&r3.outcome),
-        "Guard Dog's retaliate window opens after the soak: {:?}",
+        "Guard Dog's when-cell window opens once distribution drains: {:?}",
         r3.outcome
+    );
+    assert_eq!(
+        guard_dog_damage(&r3.state, inv, dog),
+        Some(0),
+        "assigned to Guard Dog, not yet placed"
+    );
+    assert_eq!(
+        r3.state.investigators[&inv].damage(),
+        0,
+        "and none of it placed on the investigator yet either"
+    );
+
+    // Firing the retaliate lets the deal reach its placement — and the whole
+    // assignment lands at once (RR p.7 "simultaneously").
+    let r4 = resolve(r3.state, OptionId(0));
+    assert_eq!(
+        guard_dog_damage(&r4.state, inv, dog),
+        Some(1),
+        "1 damage placed on Guard Dog"
+    );
+    assert_eq!(
+        r4.state.investigators[&inv].damage(),
+        1,
+        "1 damage placed on the investigator, in the same moment"
     );
 }
 
@@ -187,20 +202,22 @@ fn a_full_soaker_drops_out_of_the_next_prompt() {
     let r2 = resolve(r1.state, pick(&r1.outcome, "Asset"));
 
     // Guard Dog is now full, so the second point is auto-assigned to the
-    // investigator with NO further distribution prompt — and Guard Dog, filled
-    // to its printed health, is defeated and discarded at placement.
+    // investigator with NO further distribution prompt. What is open instead is
+    // Guard Dog's `when` cell on the completed assignment (#727) — a lethal one,
+    // which it is still entitled to react to (`data/arkhamdb-faq/core/01021.md`).
     assert!(
         !is_distribution_prompt(&r2.outcome),
         "the full soaker drops out — no second distribution prompt: {:?}",
         r2.outcome
     );
+    let r3 = resolve(r2.state, OptionId(0));
     assert_eq!(
-        r2.state.investigators[&inv].damage(),
+        r3.state.investigators[&inv].damage(),
         1,
         "the overflow point went to the investigator"
     );
     assert!(
-        guard_dog_damage(&r2.state, inv, dog).is_none(),
+        guard_dog_damage(&r3.state, inv, dog).is_none(),
         "Guard Dog filled to capacity is defeated and discarded",
     );
 }

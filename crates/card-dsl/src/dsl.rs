@@ -390,16 +390,29 @@ pub enum EventPattern {
     /// 01007's "Forced - When the game ends, if there are any clues on
     /// Cover Up: You suffer 1 mental trauma." (C5a #236.)
     GameEnd,
-    /// An enemy attack dealt damage to the asset this ability is printed
-    /// on (the soaked ally). Bare — the engine binds *self* = the soaked
-    /// asset instance from the firing window context, the way
+    /// An enemy attack assigned damage to the asset this ability is printed on
+    /// (the soaked ally). Bare — the engine binds *self* = an asset the
+    /// assignment gives damage to, the way
     /// [`EnteredLocation`](Self::EnteredLocation) / [`EndOfTurn`](Self::EndOfTurn)
-    /// bind theirs. Matched **only** by
-    /// the after-enemy-attack-damaged-asset reaction window in the reaction
-    /// pipeline; `trigger_matches` binds the attacking enemy into the
-    /// `EvalContext`. First (and only) consumer: Guard Dog 01021's
-    /// "\[reaction\] When an enemy attack deals damage to Guard Dog: Deal 1
-    /// damage to the attacking enemy." (C5b #237.)
+    /// bind theirs, and binds the attacking enemy into the `EvalContext`.
+    ///
+    /// Pairs with the engine's `DamageAssigned` condition — Rules Reference step
+    /// 1 of dealing damage, before anything is on any card — narrowed by this
+    /// pattern to an enemy *attack* (non-attack `Effect::Deal` harm does not
+    /// match). The `when` cell is therefore the window the rules name *between*
+    /// assigning and placing, which is what its one consumer prints: Guard Dog
+    /// 01021's "\[reaction\] **When** an enemy attack deals damage to Guard Dog:
+    /// Deal 1 damage to the attacking enemy." So the retaliate resolves *before*
+    /// the damage lands on Guard Dog, and a Guard Dog killed by the attack still
+    /// bites back (`data/arkhamdb-faq/core/01021.md`). See
+    /// `docs/adr/0009-damage-is-assigned-then-placed.md`. (C5b #237.)
+    ///
+    /// **The name deliberately no longer mirrors its condition.** Mirroring it
+    /// would mean a general "damage was assigned to self" pattern carrying the
+    /// damage source, and that is a DSL primitive no second card wants yet — the
+    /// threshold CLAUDE.md sets for adding one. This name says what the *card*
+    /// declares, which is the narrower thing: an enemy **attack** dealing damage
+    /// to self. The generalization waits for the card that contests it.
     EnemyAttackDamagedSelf,
     /// An enemy attacks an investigator (RR p.25 step 3.3) — one triggering
     /// condition in all three cells since #704, so a card declares this pattern
@@ -414,7 +427,7 @@ pub enum EventPattern {
     ///   Acolyte attacks: Place 1 doom on the current agenda."*
     ///
     /// Bare — the "at your location" spatial scoping lives in the
-    /// reaction-window scan (which has board state), mirroring the soaked-asset
+    /// reaction-window scan (which has board state), mirroring the damaged-asset
     /// filter for [`EnemyAttackDamagedSelf`]; the forced scan reads the
     /// **attacking enemy's** own card.
     ///

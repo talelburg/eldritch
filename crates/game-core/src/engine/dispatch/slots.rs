@@ -212,7 +212,7 @@ fn prompt_slot_discard(
 /// Resume a slot make-room choice: discard the chosen occupier, then continue
 /// making room (re-prompt if still contested, auto-discard a forced last
 /// candidate, or enter the pending asset once the deficit clears). An invalid
-/// pick rejects and keeps the frame (the `DamageAssignment` / `HunterMove`
+/// pick rejects and keeps the frame (the `DealDamage` / `HunterMove`
 /// contract).
 pub(super) fn resume_slot_discard(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     let Some(Continuation::SlotDiscard { investigator, card }) =

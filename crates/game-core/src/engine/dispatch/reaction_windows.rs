@@ -4,8 +4,8 @@
 //! windows ([`scan_pending_triggers`],
 //! [`trigger_matches`], [`open_queued_reaction_window`],
 //! [`resume_reaction_window`], [`fire_pending_trigger`],
-//! [`bump_usage_counter`], [`close_reaction_window`],
-//! [`run_reaction_continuation`]) and the fast-window eligibility checks
+//! [`bump_usage_counter`], [`close_reaction_window`]) and the fast-window
+//! eligibility checks
 //! ([`check_play_card`], [`check_activate_ability`],
 //! [`any_fast_play_eligible`], [`open_fast_window`]).
 
@@ -252,13 +252,17 @@ fn scan_pending_triggers(
             }
         }
         for card in inv.controlled_card_instances() {
-            // Self-binding: for `EnemyAttackDamagedSelf` only the soaked asset
-            // instance may trigger. All other instances are skipped here — the
-            // pattern match in `trigger_matches` handles the pattern pairing;
-            // this filter enforces the "self = the soaked asset" scoping (Guard
-            // Dog 01021, C5b #237). Other events pass all instances through.
-            if let TimingEvent::EnemyAttackDamagedSelf { asset, .. } = event {
-                if card.instance_id != *asset {
+            // Self-binding: for `DamageAssigned` only an asset the assignment
+            // gives damage to may trigger. All other instances are skipped here
+            // — the pattern match in `trigger_matches` handles the pattern
+            // pairing and the "an enemy attack" narrowing; this filter enforces
+            // the "self = a card being dealt damage" scoping (Guard Dog 01021).
+            // It reads the *event's* assignment, not the frame's, which is what
+            // makes an edit in a `when` cell visible to the cells after it
+            // without a write-back protocol (ADR 0009). Other events pass all
+            // instances through.
+            if let TimingEvent::DamageAssigned { assignment, .. } = event {
+                if !assignment.asset_damage.contains_key(&card.instance_id) {
                     continue;
                 }
             }
@@ -543,13 +547,16 @@ fn trigger_matches(
         // - "When the round ends, investigators … may … advance" — act 01109's
         //   group advance (#434). Board-scoped; the contributor scoping lives in
         //   the native and in the round-end coordinator's `when` cell.
-        // - the soaked-asset self-binding — Guard Dog 01021's retaliate (C5b
-        //   #237) — is enforced by the instance filter in
-        //   `scan_pending_triggers`, so only the `asset` instance reaches here.
         (TimingEvent::EnemyAttacks { .. }, EventPattern::EnemyAttacks)
-        | (TimingEvent::RoundEnded, EventPattern::RoundEnded)
-        | (TimingEvent::EnemyAttackDamagedSelf { .. }, EventPattern::EnemyAttackDamagedSelf) => {
-            true
+        | (TimingEvent::RoundEnded, EventPattern::RoundEnded) => true,
+        // "**When an enemy attack** deals damage to Guard Dog" (01021). The
+        // self-binding half — that this card is one the assignment gives damage
+        // to — is the instance filter in `scan_pending_triggers`, so only such
+        // an instance reaches here; what is left is the card's own narrowing of
+        // the condition to an enemy attack, which `Effect::Deal` harm (Dynamite
+        // Blast, a treachery) does not satisfy.
+        (TimingEvent::DamageAssigned { source, .. }, EventPattern::EnemyAttackDamagedSelf) => {
+            matches!(source, crate::state::DamageSource::EnemyAttack { .. })
         }
         // "after you succeed/fail a skill test" — scoped to the controller's
         // own test ("after **you** …"), narrowed by outcome and (optionally)
@@ -1153,8 +1160,8 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         trigger.controller,
         trigger.source.instance(),
     );
-    // For `AfterEnemyAttackDamagedAsset` windows, bind the attacking
-    // enemy into the context so Guard Dog's native retaliate
+    // For a `DamageAssigned` window whose source is an enemy attack, bind the
+    // attacking enemy into the context so Guard Dog's native retaliate
     // (`Effect::Native("01021:retaliate")`) can name the attacker via
     // `eval_ctx.attacking_enemy`. Mirrors `failed_by` /
     // `clue_discovery_count`. `None` for all other window kinds. (C5b
@@ -1165,7 +1172,10 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         .last()
         .and_then(Continuation::window_timing_event)
     {
-        Some(crate::engine::TimingEvent::EnemyAttackDamagedSelf { enemy, .. }) => {
+        Some(crate::engine::TimingEvent::DamageAssigned {
+            source: crate::state::DamageSource::EnemyAttack { enemy },
+            ..
+        }) => {
             eval_ctx.set_attacking_enemy(*enemy);
         }
         // For `DiscoverClues`, bind the would-be discovery count so the
@@ -1435,26 +1445,20 @@ pub(super) fn close_reaction_window(cx: &mut Cx) -> EngineOutcome {
         .pop()
         .expect("close_reaction_window: a window frame is on top");
 
-    // A window runs its kind-specific continuation
-    // (e.g. MythosAfterDraws → mythos_phase_end). A framework window keys its
-    // continuation off its `FastWindowKind`; a `TimingPointWindow` reaction
-    // window keys off its `TimingEvent` (#433). The forced run (#213) carries no
-    // continuation (#434): it returns `Done` and the `drive` loop re-dispatches
-    // the exposed parent frame (the coordinator's `TimingPoint`, the
-    // `InvestigatorTurn { ending }` frame, …). A reaction continuation may itself
-    // suspend (e.g. an Enemy soak window), so propagate the outcome.
+    // A framework window runs its kind-specific continuation, keyed off its
+    // `FastWindowKind` (e.g. MythosAfterDraws → mythos_phase_end), and that
+    // continuation may itself suspend — so propagate the outcome.
+    //
+    // A **reaction** window runs nothing, because no triggering condition has a
+    // continuation of its own any more: since #727 the last two that did — the
+    // enemy attack and its soak window — walk the coordinator like everything
+    // else, so what used to be post-window work is now a resolve step or a
+    // parked frame (`DealDamage`, `AttackLoop`, the coordinator's own
+    // `TimingPoint`). It returns `Done` and the `drive` loop dispatches whatever
+    // frame the pop exposed. The forced run (#213/#434) never had one either,
+    // which is why the two share an arm.
     let continuation = match &removed {
-        Continuation::TimingPointWindow {
-            event,
-            mode: TimingMode::Reaction,
-            ..
-        } => {
-            let event = event.clone();
-            run_reaction_continuation(cx, &event)
-        }
         Continuation::FastWindow { kind, .. } => run_fast_continuation(cx, *kind),
-        // The forced run (`mode: Forced`): no continuation — the loop drives the
-        // exposed frame next.
         _ => EngineOutcome::Done,
     };
     if matches!(continuation, EngineOutcome::AwaitingInput { .. }) {
@@ -1472,45 +1476,6 @@ pub(super) fn close_reaction_window(cx: &mut Cx) -> EngineOutcome {
     // to dispose, a forced run, or idle. No reach-down into `skill_test::advance`
     // (Slice C-plumbing).
     EngineOutcome::Done
-}
-
-/// Continuation when a **reaction** window ([`Continuation::TimingPointWindow`])
-/// closes, keyed on its [`TimingEvent`]. Called from [`close_reaction_window`]'s
-/// pop path. Returns `Done`, or `AwaitingInput` when a body suspends (an Enemy
-/// soak window, …).
-fn run_reaction_continuation(_cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
-    match event {
-        // The enemy attack and its soak window walk the coordinator since #704,
-        // so neither has a continuation of its own any more: the `TimingPoint`
-        // beneath finishes its cell, the `EmitEvent` above the parked
-        // `AttackLoop` finishes the sequence, and the loop picks up from there.
-        TimingEvent::EnemyAttackDamagedSelf { .. } | TimingEvent::EnemyAttacks { .. } => {
-            EngineOutcome::Done
-        }
-        // After-defeat / after-investigate / entered-play / clue discovery: no
-        // continuation work
-        // here. Return `Done` so the `drive` loop dispatches the now-top frame —
-        // a mid-resolution `SkillTest` resumes by being re-dispatched, *not* by an
-        // inline `advance` call. (Contrast `run_fast_continuation`'s `SkillTest`
-        // arm, which *does* call `advance` inline: that window's continuation *is*
-        // the pre-advanced skill-test step, whereas a reaction window sits above a
-        // separate `SkillTest` frame the loop owns. The asymmetry is intentional —
-        // see `run_fast_continuation`.)
-        // No continuation work here — the `drive` loop dispatches the now-top
-        // frame. After-defeat / after-investigate / entered-play sit above a
-        // separate `SkillTest` the loop owns; the round-end `when` act-advance
-        // window (act 01109, #434) sits above the coordinator's `TimingPoint`,
-        // which advances to its `Done` sub when re-dispatched.
-        // The clue discovery is the worked case of the last sentence: its `when`
-        // window used to perform the deferred discovery here, and since #703 the
-        // coordinator's resolve step does it one frame later instead.
-        TimingEvent::EnemyDefeated { .. }
-        | TimingEvent::SkillTestResolved { .. }
-        | TimingEvent::EnteredPlay { .. }
-        | TimingEvent::DiscoverClues { .. }
-        | TimingEvent::RoundEnded => EngineOutcome::Done,
-        other => unreachable!("run_reaction_continuation: {other:?} opens no reaction window"),
-    }
 }
 
 /// Continuation when a framework **fast** window ([`Continuation::FastWindow`])
@@ -2383,22 +2348,44 @@ mod trigger_matches_tests {
         ));
     }
 
+    /// An [`Assignment`](crate::state::Assignment) giving 1 damage to `inst` —
+    /// the shape a `DamageAssigned` event carries when that card is a soaker.
+    fn assignment_damaging(inst: CardInstanceId) -> crate::state::Assignment {
+        let mut assignment = crate::state::Assignment::default();
+        assignment.asset_damage.insert(inst, 1);
+        assignment
+    }
+
     /// Direct `trigger_matches` coverage for the `EnemyAttackDamagedSelf` soak
-    /// pairing (Guard Dog 01021, C5b #237). The instance-level scoping (only the
-    /// soaked `asset` instance fires) is enforced one layer up in
+    /// pairing (Guard Dog 01021, C5b #237). The instance-level scoping (only an
+    /// asset the assignment gives damage to fires) is enforced one layer up in
     /// `scan_pending_triggers` and exercised end-to-end in
-    /// `crates/cards/tests/guard_dog_soak.rs` (which installs the real registry).
+    /// `crates/cards/tests/guard_dog_soak.rs` (which installs the real registry);
+    /// what *this* layer owns since #727 is the card's narrowing to an enemy
+    /// **attack**.
     #[test]
     fn soak_event_matches_only_the_self_soak_pattern() {
         let controller = InvestigatorId(1);
-        let soak = TimingEvent::EnemyAttackDamagedSelf {
-            asset: CardInstanceId(7),
-            enemy: EnemyId(1),
-            controller,
+        let soak = TimingEvent::DamageAssigned {
+            source: crate::state::DamageSource::EnemyAttack { enemy: EnemyId(1) },
+            investigator: controller,
+            assignment: assignment_damaging(CardInstanceId(7)),
         };
         // The soak-self pattern matches the soak event. (C5b #237.)
         assert!(trigger_matches(
             &soak,
+            &EventPattern::EnemyAttackDamagedSelf,
+            controller,
+        ));
+        // …but not the same condition from a non-attack source: Guard Dog
+        // retaliates to an enemy *attack*, not to treachery harm.
+        let effect_harm = TimingEvent::DamageAssigned {
+            source: crate::state::DamageSource::Effect,
+            investigator: controller,
+            assignment: assignment_damaging(CardInstanceId(7)),
+        };
+        assert!(!trigger_matches(
+            &effect_harm,
             &EventPattern::EnemyAttackDamagedSelf,
             controller,
         ));
@@ -2618,7 +2605,7 @@ mod resolution_option_anchor_tests {
 #[cfg(test)]
 mod open_fast_window_tests {
     use super::*;
-    use crate::state::{EnemyId, FastWindowKind, PhaseStep};
+    use crate::state::{FastWindowKind, PhaseStep};
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
@@ -2645,30 +2632,6 @@ mod open_fast_window_tests {
         assert!(
             state.open_windows().is_empty(),
             "auto-skip must not leave the window on the stack"
-        );
-    }
-
-    #[test]
-    fn run_reaction_continuation_for_no_continuation_kind_does_nothing() {
-        // EnemyDefeated's reaction window has no continuation work. Closing it
-        // must be a no-op (no events, no state change).
-        let mut state = GameStateBuilder::default().build();
-        let mut events = Vec::new();
-        let result = run_reaction_continuation(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            &TimingEvent::EnemyDefeated {
-                enemy: EnemyId(1),
-                by: None,
-                code: crate::state::CardCode::new("01000"),
-            },
-        );
-        assert_eq!(result, EngineOutcome::Done);
-        assert!(
-            events.is_empty(),
-            "EnemyDefeated continuation must be a no-op; events = {events:?}"
         );
     }
 
@@ -2902,21 +2865,22 @@ mod withdraw_suppressed_candidates_tests {
 
     /// A **caller-owned** condition is left alone: it has already mutated the
     /// board by the time any window opens, so a prevention signal in flight is
-    /// not its to consume. The enemy attack used to be this fixture; #704
-    /// migrated it, so the soak condition (Guard Dog 01021's, caller-owned until
-    /// #694 retags Guard Dog to the `when` it prints) stands in.
+    /// not its to consume. The enemy attack used to be this fixture and #704
+    /// migrated it; the soak condition stood in until #727 replaced it with the
+    /// coordinator-owned `DamageAssigned`/`DamagePlaced` pair, so `EnteredPlay`
+    /// (Research Librarian 01032's window) stands in now.
     #[test]
     fn a_caller_owned_conditions_window_is_untouched() {
-        let soak = TimingEvent::EnemyAttackDamagedSelf {
-            asset: crate::state::CardInstanceId(1),
-            enemy: crate::state::EnemyId(1),
+        let entered = TimingEvent::EnteredPlay {
+            instance: crate::state::CardInstanceId(1),
             controller: INV,
         };
         debug_assert!(matches!(
-            soak.condition_resolution(),
+            entered.condition_resolution(),
             super::super::emit::ConditionResolution::Caller
         ));
-        let mut state = state_with_window_of(soak, EventTiming::When, TimingMode::Reaction, true);
+        let mut state =
+            state_with_window_of(entered, EventTiming::When, TimingMode::Reaction, true);
         let (n, events) = withdraw(&mut state);
         assert_eq!(n, 0, "a caller-owned condition is not suppressed here");
         assert_eq!(remaining(&state), 1);

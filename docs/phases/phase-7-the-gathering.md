@@ -33,7 +33,7 @@ in **Architecture to build on**. In dependency order, the arcs that landed:
 3. **Keystone — mid-action park/resume** (K1–K5b, #293/#379/#361/#378/#143/#44) —
    AoO, retaliate, activated-ability & non-fast card-play AoO, player attack-order,
    and interactive damage/horror soak distribution all park their triggering action
-   on an `ActionResolution`/`AttackLoop`/`DamageAssignment` frame and resume under a
+   on an `ActionResolution`/`AttackLoop`/`DealDamage` frame and resume under a
    re-validation gate. PR #424 reified the **effect evaluator as continuation
    frames** (retiring suspend-and-replay + `DecisionCursor` + `Continuation::Choice`).
 4. **Skill-test player windows** — #374 (ST.1/ST.2 fast-play windows; Hyperawareness,
@@ -509,8 +509,8 @@ cell, and the three printing *"at"* or *"if"* — act 01110, Frozen in Fear 0116
 agenda 01107's enemy-phase-end move — retag to `At` with no engine change, since the
 `at` cell is walked whoever owns the resolve step. The other three print *"when"* on
 caller-owned conditions and ride their migrations (#720/#721/#722), which is why the
-retag ticket split from them — two of those three have since shipped, leaving Guard
-Dog 01021. The conventions that stop a seventh mis-tag landed
+retag ticket split from them — **all three have since shipped**, and the audit is
+closed. The conventions that stop a seventh mis-tag landed
 alongside: `CLAUDE.md` now requires the declared cell to match the trigger word in
 the module's own verbatim card-text block *and* the module's prose to name the cell
 and why, with the licensed exception spelled out (a *"when"* card on an unmigrated
@@ -563,14 +563,50 @@ whether Barricade discards before or after the departure lands, so unlike #720 t
 fixed a wrong tag rather than a live bug. It was done because a permanently-waived row
 is the rot a self-clearing list exists to prevent, and because ADR 0008's terminal
 condition — every arm flipped, the classification and the reject deleted together —
-only stays reachable if the arms actually flip. `CLAUDE.md`'s licensed mismatch now
-names Guard Dog 01021 alone.
+only stays reachable if the arms actually flip. `CLAUDE.md`'s licensed mismatch then
+named Guard Dog 01021 alone — and #727 retired it.
 The attacker's **exhaust** could not move to the resolve step — a cancelled attack
 still exhausts (Dodge 01023's ruling) and a cancel abandons the sequence before step
 2 — so it sits on the parked loop frame, after the `after` cell, where step 3.3 puts
 it. Silver Twilight Acolyte 01102 is the corpus proof: the first card to declare the
 attack condition, and the first forced point whose scan source is an enemy's own
 card. Dodging it places no doom.
+
+**#727 + #722 ✅ shipped (PR #729)** rode the third and last, and it cost a *model*
+rather than an arm. Guard Dog 01021's *"[reaction] **When** an enemy attack deals
+damage to Guard Dog: Deal 1 damage to the attacking enemy."* could not be served by
+flipping `EnemyAttackDamagedSelf` to coordinator-owned, because the condition itself
+was wrong: `glossary/Dealing_Damage_Horror.md` deals damage in **two** numbered steps
+with a named window between them — assign, *"Abilities that prevent, reduce, or
+reassign damage … are resolved between steps 1 and 2"*, then place — and one condition
+announced per damaged asset *after* a single collapsed place-and-announce call is
+neither of them. So it was replaced by **`DamageAssigned`** (a bare milestone, the
+class's fourth member: an assignment is a proposal, tokens sitting *"next to"* the
+cards, so nothing is on any card as it resolves) and **`DamagePlaced`**
+(coordinator-owned, its impact the unchanged `place_assignment` — simultaneous
+placement plus the defeat determination), sequenced by one `Continuation::DealDamage`
+frame walking `Distribute → Announce → Place → Finish`. Two emits with a live object
+between them is what ADR 0003 forbids doing synchronously, so the cursor is the only
+legal way to order them; the frame owns the live assignment and each emit snapshots
+it, which is what lets pattern matching keep reading the event instead of reaching
+down the stack. **[ADR 0009](../adr/0009-damage-is-assigned-then-placed.md)** records
+the model and the sweep of all 159 Chapter 1 packs behind it — Baron Samedi 05019 and
+Perseverance 04111 sit on opposite sides of the window and foreclose the
+single-condition reading, though neither is in the corpus.
+Unlike #721 this fixed a **live bug** as well as a tag: `place_assignment` returned
+only the damaged assets that *survived*, and only those were announced, so a Guard Dog
+killed by the attack that damaged it never retaliated — against its own ruling
+(*"You can use Guard Dog's ability when you assign lethal damage/horror to it."*).
+Announcing before anything is placed makes the survivor filter unnecessary and the
+ruling true. Two things stayed put: `take_damage` / `take_horror` still place
+synchronously and announce nothing, because their callers do synchronous post-call
+work (Dynamite Blast 01024's `for inv in investigators` loop wants #704's shape in
+miniature) — `TODO(#728)` at each site; and a full cancel in `DamageAssigned`'s `when`
+cell would abandon the coordinator's sequence but not the frame beneath it, which is
+**#366**'s to fix along with partial replacement, since the one `pending_cancellation`
+bool cannot say *whose*. `run_reaction_continuation` was deleted on the way out: with
+the last two conditions that had post-window work now walking the coordinator, every
+arm had collapsed to `Done`.
 
 **Choice & cancellation.** Interactive choice runs inside the **effect evaluator's
 `Continuation::Effect` frames** (#422 / PR #424): `resolve_choice_count` (0 ⇒
@@ -620,7 +656,7 @@ RR p.19 defaults (Ally/Body/Accessory 1, Hand/Arcane 2); a full slot does *not* 
 the play (`check_play_card` rejects only `need > cap`, unreachable in corpus) — instead
 occupying assets are discarded to make room: forced single-candidate auto-discards,
 2+ candidates suspend on a `Continuation::SlotDiscard` `PickSingle` (mirrors the soak
-`DamageAssignment` driver). A slot-modifying card (none in Core/Dunwich) turns
+distribution driver on `Continuation::DealDamage`). A slot-modifying card (none in Core/Dunwich) turns
 `default_slot_capacity` into a per-investigator query. The in-play-asset discard sequence
 is now one helper, `cards::discard_card_from_play` (#119, reused by soak-defeat,
 uses-depletion, `Cost::DiscardSelf`, make-room).

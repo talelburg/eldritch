@@ -141,7 +141,7 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
 
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "the AoO soak window must suspend the play: {:?}",
+        "the AoO's damage window must suspend the play: {:?}",
         result.outcome
     );
     let dog_in_play = state.investigators[&inv_id]
@@ -149,9 +149,12 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
         .iter()
         .find(|c| c.instance_id == dog)
         .expect("Guard Dog still in play");
+    // Assigned to Guard Dog, not yet placed: the open window is its own `when`
+    // cell, between the rules' two steps (#727). This test is about the AoO
+    // suspending the play, which it now does one step earlier.
     assert_eq!(
-        dog_in_play.accumulated_damage, 2,
-        "AoO damage from the play soaked onto Guard Dog"
+        dog_in_play.accumulated_damage, 0,
+        "AoO damage from the play is assigned to Guard Dog, not yet placed"
     );
     assert_eq!(
         state.investigators[&inv_id].damage(),

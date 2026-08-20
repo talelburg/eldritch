@@ -1705,7 +1705,7 @@ pub(super) fn peril_check(
 /// Build a single [`Effect`](crate::dsl::Effect) from a chaos symbol token's
 /// side-effect list (a [`Seq`](crate::dsl::Effect::Seq) of
 /// [`Deal`](crate::dsl::Effect::Deal) targeting the tester), or `None` if empty.
-/// `Effect::Deal` routes through the interactive `soak_and_distribute` path, so
+/// `Effect::Deal` routes through the interactive `begin_deal_damage` path, so
 /// these suspend when the tester controls a soak asset — RR-correct (the player
 /// assigns damage/horror to soak assets), unlike the old auto-assigning
 /// `take_damage`/`take_horror` shortcut.

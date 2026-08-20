@@ -345,9 +345,13 @@ pub(crate) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8)
     // Route through the shared soak entry (#44/K5a) so a controlled sanity-bearing
     // asset (Beat Cop, Holy Rosary) absorbs non-attack horror; `place_assignment`
     // applies investigator defeat (cause Horror) when the investigator's share is
-    // lethal, preserving this wrapper's prior behaviour. No soak reaction window
-    // (Effect source, not an enemy attack), so the survivor list is dropped.
-    let _ = super::combat::soak_and_place(cx, investigator, 0, amount);
+    // lethal, preserving this wrapper's prior behaviour.
+    //
+    // TODO(#728): this places synchronously, so it announces neither
+    // `DamageAssigned` nor `DamagePlaced` — an ability keyed to either does not
+    // see harm dealt this way. Migrating means parking this caller's tail on a
+    // frame first (see `combat::soak_and_place`).
+    super::combat::soak_and_place(cx, investigator, 0, amount);
 }
 
 /// Apply `amount` damage to `investigator` via the numeric helper,
@@ -362,8 +366,12 @@ pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
     // Route through the shared soak entry (#44/K5a) so a controlled health-bearing
     // asset (Guard Dog, Beat Cop) absorbs non-attack damage; `place_assignment`
     // applies investigator defeat (cause Damage) when the investigator's share is
-    // lethal, preserving this wrapper's prior behaviour. No soak reaction window.
-    let _ = super::combat::soak_and_place(cx, investigator, amount, 0);
+    // lethal, preserving this wrapper's prior behaviour.
+    //
+    // TODO(#728): announces neither condition — see the note on `take_horror`.
+    // Dynamite Blast 01024's `for inv in investigators` loop is the caller that
+    // makes this the harder of the two to migrate.
+    super::combat::soak_and_place(cx, investigator, amount, 0);
 }
 
 /// Emit [`Event::AllInvestigatorsDefeated`] when no `Active`

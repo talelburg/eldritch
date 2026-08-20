@@ -365,8 +365,10 @@ pub enum AttackLoopStage {
 /// versus each soak-bearing asset. Built by `assign_attack` (soak-first) or the
 /// interactive per-point distribution (#44/K5b); placed simultaneously by
 /// `place_assignment`, per Rules Reference page 7's "Apply Damage/Horror" clause.
-/// Lives here (not in `engine`) because an in-progress one is parked on a
-/// [`Continuation::DamageAssignment`] frame.
+/// Lives here (not in `engine`) because the live one is owned by the
+/// [`Continuation::DealDamage`] frame that walks the two steps, and each of the
+/// two triggering conditions snapshots it into its own event
+/// (`docs/adr/0009-damage-is-assigned-then-placed.md`).
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Assignment {
     /// Damage absorbed by the investigator.
@@ -379,21 +381,62 @@ pub struct Assignment {
     pub asset_horror: std::collections::BTreeMap<CardInstanceId, u8>,
 }
 
-/// How a [`Continuation::DamageAssignment`] resumes once the player has finished
-/// distributing the harm across soakers and themselves (#44/K5b).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// What is dealing the damage/horror a [`Continuation::DealDamage`] frame is
+/// walking — carried on the frame and snapshotted into both of its triggering
+/// conditions, and read at
+/// [`DealDamageStep::Finish`] to decide how the frame
+/// resumes its caller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DamageSource {
-    /// An enemy attack: after placement, emit the soak triggering condition for
-    /// each damaged survivor. The rest of the attack — the `at`/`after` cells,
-    /// and the exhaust the parked [`Continuation::AttackLoop`] owns — is driven
-    /// by the frames beneath, so this carries no attacker list (#704).
+    /// An enemy attack. Guard Dog 01021's *"When an enemy attack deals damage to
+    /// Guard Dog"* is scoped to this arm, and the reaction window binds `enemy`
+    /// as the attacker its retaliate names. The frame simply pops at `Finish`:
+    /// the rest of the attack — its `at`/`after` cells, and the exhaust the
+    /// parked [`Continuation::AttackLoop`] owns — is on the frames beneath
+    /// (#704).
     EnemyAttack {
-        /// The attacking enemy (binds the soak condition).
+        /// The attacking enemy (binds the retaliate's target).
         enemy: EnemyId,
     },
-    /// A card/treachery `Effect::Deal` (K5b-2): after placing the drained point,
-    /// resume the parked effect walk so any remaining iterations run.
+    /// A card/treachery `Effect::Deal` (K5b-2): at `Finish`, resume the parked
+    /// effect walk so any remaining iterations run.
     Effect,
+}
+
+/// Where a [`Continuation::DealDamage`] frame stands in the Rules Reference's
+/// two-step procedure for dealing damage/horror
+/// (`glossary/Dealing_Damage_Horror.md`), plus the bookends that get it there
+/// and hand back to the caller.
+///
+/// The two steps are two triggering conditions with a named window between
+/// them, and ADR 0003 forbids emitting both synchronously from one call — so the
+/// cursor is not organisation, it is the only legal way to sequence them. See
+/// `docs/adr/0009-damage-is-assigned-then-placed.md`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DealDamageStep {
+    /// Rules Reference step 1's determination: distribute the harm across
+    /// eligible soakers and the investigator, one point at a time (#44/K5b, RR
+    /// p.7). Drains immediately when no point is contested, so the cursor always
+    /// starts at the top; while a point *is* contested this frame is the top
+    /// frame and **is** the prompt, resumed by its `PickSingle`.
+    Distribute {
+        /// Damage points still to assign.
+        remaining_damage: u8,
+        /// Horror points still to assign.
+        remaining_horror: u8,
+    },
+    /// Emit [`DamageAssigned`](crate::engine::TimingEvent::DamageAssigned) — a
+    /// bare milestone, so its whole sequence is the three cells around a no-op
+    /// resolve step. Advances the cursor before emitting (tail position).
+    Announce,
+    /// Emit [`DamagePlaced`](crate::engine::TimingEvent::DamagePlaced), whose
+    /// resolve step is the simultaneous placement and the defeat sweep. Re-reads
+    /// the frame's assignment, so it carries whatever `DamageAssigned`'s cells
+    /// made of it. Advances the cursor before emitting (tail position).
+    Place,
+    /// Both conditions have run: pop and resume by
+    /// [`DamageSource`].
+    Finish,
 }
 
 /// An active "use X in place of Y" skill substitution (Mind over Matter
@@ -804,23 +847,32 @@ pub enum Continuation {
         /// Which primary effect to run when the `AoO` loop completes.
         resume: ActionResume,
     },
-    /// An in-progress player distribution of an attack's / effect's damage +
-    /// horror across eligible soakers and the investigator (#44/K5b, RR p.7).
-    /// Accumulates `assignment` via per-point `PickSingle` prompts; when both
-    /// `remaining_*` reach 0, the assignment is placed once (simultaneous) and
-    /// the loop resumes by `source`. The top frame while prompting (it *is* the
-    /// prompt); resumed via `ResolveInput` by `resume_damage_assignment`.
-    DamageAssignment {
-        /// The investigator taking the harm.
+    /// One deal of damage and/or horror, in progress — the Rules Reference's
+    /// two numbered steps and the window between them
+    /// (`glossary/Dealing_Damage_Horror.md`), walked by the
+    /// [`step`](DealDamageStep) cursor `Distribute → Announce → Place → Finish`.
+    ///
+    /// **This frame owns the live assignment**; each of the two emits snapshots
+    /// it into its own event, so both events are true when emitted and there is
+    /// no write-back protocol — `Place` simply re-reads the frame after
+    /// `DamageAssigned`'s cells have had their chance to edit it. See
+    /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
+    ///
+    /// Awaits input only at [`Distribute`](DealDamageStep::Distribute), where it
+    /// is the top frame and *is* the per-point prompt (resumed by
+    /// `resume_damage_distribution`); at every other step the `drive` loop
+    /// dispatches it the moment it is exposed.
+    DealDamage {
+        /// The investigator the harm is being dealt to.
         investigator: InvestigatorId,
-        /// Damage points still to assign.
-        remaining_damage: u8,
-        /// Horror points still to assign.
-        remaining_horror: u8,
-        /// Accumulating assignment (placed when both counters hit 0).
-        assignment: Assignment,
-        /// How to resume after placement.
+        /// What is dealing it — the scoping both conditions carry, and how this
+        /// frame resumes its caller at `Finish`.
         source: DamageSource,
+        /// The live assignment: accumulating at `Distribute`, settled from
+        /// `Announce` on.
+        assignment: Assignment,
+        /// Where in the two-step procedure this deal stands.
+        step: DealDamageStep,
     },
     /// A node of an in-progress card-effect walk (#422). The effect evaluator is
     /// frame-driven: each control-flow node parks here while its children
@@ -828,7 +880,7 @@ pub enum Continuation {
     /// single-pass replay (`DecisionCursor`). A node that needs a controller pick
     /// suspends *in place* (its `Leaf` step returns `AwaitingInput` and the frame
     /// stays on top — it *is* the prompt), so this variant can await input
-    /// (routed in `resolve_input`, like [`Self::DamageAssignment`]). Carries its
+    /// (routed in `resolve_input`, like [`Self::DealDamage`]). Carries its
     /// own [`EvalContext`](crate::engine::EvalContext) snapshot (#345's grouped
     /// bindings) so resume re-binds without replay.
     Effect(EffectFrame),
@@ -979,7 +1031,7 @@ pub enum EffectFrame {
     },
     /// A single effect node to evaluate. A terminal effect runs and pops;
     /// `ChooseOne` pushes its chosen branch; `Effect::Deal` may push a
-    /// `DamageAssignment` (K5b-2); `Effect::Native { tag }` runs the native fn.
+    /// `DealDamage` (K5b-2); `Effect::Native { tag }` runs the native fn.
     /// **Suspends in place** for a controller pick (`ChooseOne`, a `*::Chosen`
     /// target, a native choice): the step returns `AwaitingInput` and the frame
     /// stays on top — it *is* the prompt. Resume re-steps it with
@@ -1144,7 +1196,10 @@ impl Continuation {
             | Continuation::SkillTest(_)
             | Continuation::SubstitutionPrompt { .. }
             | Continuation::AdvanceReverse { .. }
-            | Continuation::DamageAssignment { .. }
+            // A deal of damage under way: half of it is the placement, and
+            // abandoning the frame between the two steps would leave an
+            // assignment that never lands.
+            | Continuation::DealDamage { .. }
             // An action already taken finishes (ADR 0004): half-resolving it is
             // harder to reason about than completing it, and the victory-display
             // scan reads final board state.
@@ -1198,7 +1253,17 @@ impl Continuation {
             // mandatory prompt. `ending: true` is the transient rotation-tail
             // sentinel (only ever momentarily on top inside `drive`'s resume
             // tail), not a prompt.
-            Continuation::InvestigatorTurn { ending: false, .. } => true,
+            //
+            // A `DealDamage` frame joins it for one step only: while distributing
+            // a contested point (#44/K5b) it *is* the prompt, and `resolve_input`
+            // routes it by step. Its other three steps are internal sequencing the
+            // `drive` loop dispatches on sight, so like a parked `AttackLoop` they
+            // never sit on top at a suspension boundary.
+            Continuation::InvestigatorTurn { ending: false, .. }
+            | Continuation::DealDamage {
+                step: DealDamageStep::Distribute { .. },
+                ..
+            } => true,
             // The parked attack loop is internal sequencing: the coordinator
             // above it owns any prompt the attack raises, and the `drive` loop
             // dispatches this frame the moment it is exposed, so it is never on
@@ -1217,6 +1282,7 @@ impl Continuation {
             Continuation::InvestigatorTurn { .. }
             | Continuation::AttackLoop { .. }
             | Continuation::ActionResolution { .. }
+            | Continuation::DealDamage { .. }
             | Continuation::Elimination { .. }
             | Continuation::ScenarioEnd { .. } => false,
             other => !other.is_phase_anchor(),
@@ -3144,15 +3210,17 @@ mod enemy_attack_loop_tests {
     }
 
     #[test]
-    fn damage_assignment_frame_round_trips_through_serde() {
-        use crate::state::{Assignment, Continuation, DamageSource, EnemyId};
+    fn deal_damage_frame_round_trips_through_serde() {
+        use crate::state::{Assignment, Continuation, DamageSource, DealDamageStep, EnemyId};
         let mut state = GameStateBuilder::new().build();
-        state.continuations.push(Continuation::DamageAssignment {
+        state.continuations.push(Continuation::DealDamage {
             investigator: InvestigatorId(1),
-            remaining_damage: 2,
-            remaining_horror: 0,
-            assignment: Assignment::default(),
             source: DamageSource::EnemyAttack { enemy: EnemyId(5) },
+            assignment: Assignment::default(),
+            step: DealDamageStep::Distribute {
+                remaining_damage: 2,
+                remaining_horror: 0,
+            },
         });
         let json = serde_json::to_string(&state).expect("serialize");
         let back: GameState = serde_json::from_str(&json).expect("deserialize");

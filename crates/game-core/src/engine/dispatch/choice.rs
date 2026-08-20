@@ -121,7 +121,7 @@ pub(crate) fn resume_effect_choice(cx: &mut Cx, response: &InputResponse) -> Eng
 
 /// Resume a parked effect walk after a player input by ceding to the global
 /// `drive` loop (Slice D #423). The caller ([`resume_effect_choice`] / the
-/// effect-path arm of `resume_damage_assignment`, K5b-2) has already recorded
+/// effect-path arm of the `DealDamage` frame's `Finish` step, K5b-2) has already recorded
 /// the input on the suspended top `Effect` leaf; returning `Done` hands the
 /// parked frames to `apply_player_action`'s `drive(cx, outcome)`, whose
 /// `Continuation::Effect` arm steps them via the same `step_effect_frame` the
