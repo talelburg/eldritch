@@ -153,7 +153,49 @@ candidate the scan had cleared. Scan-time filtering is now the optimisation;
 initiation is the binding check. The equivalent gap on the **forced** side, where
 `collect_forced_hits` applies the same gate at collect time, is #607.)*
 
-**3. Browser capstone — the gate-closer.** Positioned last so it designs against
+**3. #695 — an investigator can only activate abilities on cards they control.**
+`glossary/Triggered_Abilities.md` lists four sources an investigator may use a
+triggered ability from, verbatim:
+
+> - A card in play and under his or her control. This includes his or her investigator card.
+> - A scenario card that is in play and at the same location as the investigator. This includes the location itself, encounter cards placed at that location, and all encounter cards in the threat area of any investigator at that location.
+> - The current act or current agenda card.
+> - Any card that explicitly allows the investigator to activate its ability.
+
+The engine honours the first. Activation resolves its source against the acting
+investigator's own `cards_in_play`, so a location's, an enemy's, the act's and the
+agenda's abilities cannot be initiated and never reach the turn menu — the Parlor
+01115's Resign among them, though that card is separately deferred as optional content
+(#258) and has nowhere to resolve to until #644 gives Resign its semantics. The
+basic weaknesses Haunted 01098 / Psychosis 01099 / Hypochondria 01100 are the sharper
+case: each prints an `[action] [action]` discard as its *only* exit, so drawn into any
+scenario they are permanent. The forced and reaction scans already
+walk a wider source set, so the disagreement is between two paths inside the engine,
+not a missing capability. The fix promotes the source descriptor those paths use into
+the activation action and puts the four bullets into one reachability predicate that
+both the validator and the turn-menu enumerator consult; #695's spec comment is the
+definition of record, and it is a deliberate wire break with no migration.
+
+**#706 ✅ shipped (PR #732)** is the prefactor that arc needs first. Cost payment
+cached the source card's *position* in the controller's `cards_in_play` at validation
+and indexed back into the collection to exhaust it or spend its uses. The code
+documented the hazard in place: a cost that removes its own source mid-payment
+invalidates the index the next source-referencing cost would use, safe only because no
+shipped card pairs those two in that order and because `reject_incompatible_costs`
+doesn't know about uses-depletion. Costs now re-resolve the source by its
+`CardInstanceId` through a single `require_source_in_play` gate, and a source that has
+left play produces a rejection rather than silently addressing whichever card slid into
+the vacated slot — verified by a hand-rolled-registry test that, before the fix,
+exhausted the *neighbour*. Ordered first because every remaining ticket under #695 adds
+a source with no position in any collection (a location, an enemy, the act, the
+agenda), each of which would otherwise have to work around the index separately.
+The rejection lands after the earlier costs have already mutated, which the handler
+contract licenses: `apply_via` snapshot-restores state, events and the RNG position on
+`Rejected` (#161). No ADR — the two readings a future author would want (why the guard
+on `Cost::DiscardSelf` is unreachable today yet kept, and why no source-descriptor type
+was minted early) are both `TODO`-adjacent comments at the sites that hold them.
+
+**4. Browser capstone — the gate-closer.** Positioned last so it designs against
 the now-stable set of input shapes:
 - **#447 — 2b: typed `PlayerAction` elimination ✅ shipped (PR #460).** Open-turn
   gameplay now flows through `ResolveInput(PickSingle(OptionId))` against an
