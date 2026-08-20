@@ -406,6 +406,13 @@ pub enum EventPattern {
     /// the damage lands on Guard Dog, and a Guard Dog killed by the attack still
     /// bites back (`data/arkhamdb-faq/core/01021.md`). See
     /// `docs/adr/0009-damage-is-assigned-then-placed.md`. (C5b #237.)
+    ///
+    /// **The name deliberately no longer mirrors its condition.** Mirroring it
+    /// would mean a general "damage was assigned to self" pattern carrying the
+    /// damage source, and that is a DSL primitive no second card wants yet — the
+    /// threshold CLAUDE.md sets for adding one. This name says what the *card*
+    /// declares, which is the narrower thing: an enemy **attack** dealing damage
+    /// to self. The generalization waits for the card that contests it.
     EnemyAttackDamagedSelf,
     /// An enemy attacks an investigator (RR p.25 step 3.3) — one triggering
     /// condition in all three cells since #704, so a card declares this pattern

@@ -4,8 +4,8 @@
 //! windows ([`scan_pending_triggers`],
 //! [`trigger_matches`], [`open_queued_reaction_window`],
 //! [`resume_reaction_window`], [`fire_pending_trigger`],
-//! [`bump_usage_counter`], [`close_reaction_window`],
-//! [`run_reaction_continuation`]) and the fast-window eligibility checks
+//! [`bump_usage_counter`], [`close_reaction_window`]) and the fast-window
+//! eligibility checks
 //! ([`check_play_card`], [`check_activate_ability`],
 //! [`any_fast_play_eligible`], [`open_fast_window`]).
 
@@ -1445,26 +1445,20 @@ pub(super) fn close_reaction_window(cx: &mut Cx) -> EngineOutcome {
         .pop()
         .expect("close_reaction_window: a window frame is on top");
 
-    // A window runs its kind-specific continuation
-    // (e.g. MythosAfterDraws → mythos_phase_end). A framework window keys its
-    // continuation off its `FastWindowKind`; a `TimingPointWindow` reaction
-    // window keys off its `TimingEvent` (#433). The forced run (#213) carries no
-    // continuation (#434): it returns `Done` and the `drive` loop re-dispatches
-    // the exposed parent frame (the coordinator's `TimingPoint`, the
-    // `InvestigatorTurn { ending }` frame, …). A reaction continuation may itself
-    // suspend (e.g. an Enemy soak window), so propagate the outcome.
+    // A framework window runs its kind-specific continuation, keyed off its
+    // `FastWindowKind` (e.g. MythosAfterDraws → mythos_phase_end), and that
+    // continuation may itself suspend — so propagate the outcome.
+    //
+    // A **reaction** window runs nothing, because no triggering condition has a
+    // continuation of its own any more: since #727 the last two that did — the
+    // enemy attack and its soak window — walk the coordinator like everything
+    // else, so what used to be post-window work is now a resolve step or a
+    // parked frame (`DealDamage`, `AttackLoop`, the coordinator's own
+    // `TimingPoint`). It returns `Done` and the `drive` loop dispatches whatever
+    // frame the pop exposed. The forced run (#213/#434) never had one either,
+    // which is why the two share an arm.
     let continuation = match &removed {
-        Continuation::TimingPointWindow {
-            event,
-            mode: TimingMode::Reaction,
-            ..
-        } => {
-            let event = event.clone();
-            run_reaction_continuation(cx, &event)
-        }
         Continuation::FastWindow { kind, .. } => run_fast_continuation(cx, *kind),
-        // The forced run (`mode: Forced`): no continuation — the loop drives the
-        // exposed frame next.
         _ => EngineOutcome::Done,
     };
     if matches!(continuation, EngineOutcome::AwaitingInput { .. }) {
@@ -1482,47 +1476,6 @@ pub(super) fn close_reaction_window(cx: &mut Cx) -> EngineOutcome {
     // to dispose, a forced run, or idle. No reach-down into `skill_test::advance`
     // (Slice C-plumbing).
     EngineOutcome::Done
-}
-
-/// Continuation when a **reaction** window ([`Continuation::TimingPointWindow`])
-/// closes, keyed on its [`TimingEvent`]. Called from [`close_reaction_window`]'s
-/// pop path. Returns `Done`, or `AwaitingInput` when a body suspends (an Enemy
-/// soak window, …).
-fn run_reaction_continuation(_cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
-    match event {
-        // **No condition has a continuation of its own any more**, which is why
-        // this is one arm: since #727 the last two that did — the enemy attack
-        // and its soak window — walk the coordinator like everything else. So
-        // every arm returns `Done` and lets the `drive` loop dispatch the
-        // now-top frame:
-        //
-        // - the two halves of dealing damage and the attack around them: the
-        //   `TimingPoint` beneath finishes its cell, the `EmitEvent` above the
-        //   parked `DealDamage` / `AttackLoop` finishes the sequence, and the
-        //   loop picks up from there (#704/#727);
-        // - after-defeat / after-investigate / entered-play sit above a separate
-        //   `SkillTest` the loop owns, and a mid-resolution one resumes by being
-        //   re-dispatched, *not* by an inline `advance` call. (Contrast
-        //   `run_fast_continuation`'s `SkillTest` arm, which *does* call
-        //   `advance` inline: that window's continuation *is* the pre-advanced
-        //   skill-test step. The asymmetry is intentional — see
-        //   `run_fast_continuation`.)
-        // - the round-end `when` act-advance window (act 01109, #434) sits above
-        //   the coordinator's `TimingPoint`, which advances to its `Done` sub
-        //   when re-dispatched;
-        // - the clue discovery is the worked case of that last sentence: its
-        //   `when` window used to perform the deferred discovery here, and since
-        //   #703 the coordinator's resolve step does it one frame later instead.
-        TimingEvent::DamageAssigned { .. }
-        | TimingEvent::DamagePlaced { .. }
-        | TimingEvent::EnemyAttacks { .. }
-        | TimingEvent::EnemyDefeated { .. }
-        | TimingEvent::SkillTestResolved { .. }
-        | TimingEvent::EnteredPlay { .. }
-        | TimingEvent::DiscoverClues { .. }
-        | TimingEvent::RoundEnded => EngineOutcome::Done,
-        other => unreachable!("run_reaction_continuation: {other:?} opens no reaction window"),
-    }
 }
 
 /// Continuation when a framework **fast** window ([`Continuation::FastWindow`])
@@ -2652,7 +2605,7 @@ mod resolution_option_anchor_tests {
 #[cfg(test)]
 mod open_fast_window_tests {
     use super::*;
-    use crate::state::{EnemyId, FastWindowKind, PhaseStep};
+    use crate::state::{FastWindowKind, PhaseStep};
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
@@ -2679,30 +2632,6 @@ mod open_fast_window_tests {
         assert!(
             state.open_windows().is_empty(),
             "auto-skip must not leave the window on the stack"
-        );
-    }
-
-    #[test]
-    fn run_reaction_continuation_for_no_continuation_kind_does_nothing() {
-        // EnemyDefeated's reaction window has no continuation work. Closing it
-        // must be a no-op (no events, no state change).
-        let mut state = GameStateBuilder::default().build();
-        let mut events = Vec::new();
-        let result = run_reaction_continuation(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            &TimingEvent::EnemyDefeated {
-                enemy: EnemyId(1),
-                by: None,
-                code: crate::state::CardCode::new("01000"),
-            },
-        );
-        assert_eq!(result, EngineOutcome::Done);
-        assert!(
-            events.is_empty(),
-            "EnemyDefeated continuation must be a no-op; events = {events:?}"
         );
     }
 
