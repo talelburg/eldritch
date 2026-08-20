@@ -209,8 +209,35 @@ run unchanged behind it. It is the deliberate wire break: persisted games are di
 no version field is added (#581), `GameSession::load` fails loudly on a log it cannot
 replay, and `get_or_load_room` no longer reports an unreplayable game as a nonexistent
 one. Design and the three rejected alternatives:
-[ADR 0010](../adr/0010-an-activation-names-an-ability-source.md). #708 (co-location)
-and #709 (act and agenda) attach to the same predicate.
+[ADR 0010](../adr/0010-an-activation-names-an-ability-source.md). #709 (act and
+agenda) attaches to the same predicate.
+
+**#708 ✅ shipped (PR #734)** is the second bullet — *"a scenario card that is in
+play and at the same location as the investigator"* — and the one that unblocks the
+shipping scenario. `reachable_sources` walks co-location after control: the location
+itself, its attachments, each enemy standing on it (with its attachments), then the
+threat areas of the *other* investigators there. That last is not controller-scoped —
+the bullet says *"any investigator at that location"*, and Haunted 01098's ruling
+(<https://arkhamdb.com/card/01098>) says the same outright — so #707's own-threat-area
+half and this one are different rules, not the same rule twice. `AbilitySource` gains
+`Location(LocationId)` and `Enemy(EnemyId)`, the latter forced by the corpus: the
+Midnight Masks Parley cultists (Herman Collins 01138, Peter Warren 01139, Victoria
+Devereux 01140) and Mob Enforcer 01101 all print their `[action]` on an enemy. The
+Parlor 01115's Resign is now reachable in the engine's sense; it still has nowhere to
+resolve to until #644.
+
+Two rejections ship with it, both because addressing a source with no `CardInstanceId`
+is new. A **usage limit** on one has nowhere to record a use — usage state is
+`CardInPlay::ability_usage` — so it rejects naming **#699**, which builds the
+capability Base of the Hill 02282 and Ten-Acre Meadow 02246 will need; this is the
+change that first put `bump_usage_counter`'s `unreachable!` behind player input, and a
+panic reachable from player input must not ship. A **source-referencing cost**
+(`Exhaust` / `SpendUses` / `DiscardSelf`) on one rejects at validation for the same
+reason, so the menu never offers it; no corpus card prints one. `Event::AbilityActivated`
+now names the source rather than an instance — recorded as an amendment on
+[ADR 0010](../adr/0010-an-activation-names-an-ability-source.md), whose prediction that
+#709 would force the field to become optional was overtaken. Zero-action abilities on
+the new sources work through the shared predicate; **#710** owns their coverage.
 
 **4. Browser capstone — the gate-closer.** Positioned last so it designs against
 the now-stable set of input shapes:
