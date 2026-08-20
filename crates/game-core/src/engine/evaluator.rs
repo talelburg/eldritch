@@ -478,8 +478,8 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         Effect::ForEach { .. } => awaiting_input_stub("ForEach"),
         Effect::ChooseOne(branches) => step_choose_one(cx, branches, eval_ctx, effect),
         Effect::AdvanceCurrentAct => apply_advance_current_act(cx),
-        Effect::PlaceDoomOnCurrentAgenda { count } => {
-            apply_place_doom_on_current_agenda(cx, &eval_ctx, count)
+        Effect::PlaceDoomOnCurrentAgenda { count, may_advance } => {
+            apply_place_doom_on_current_agenda(cx, &eval_ctx, count, *may_advance)
         }
         Effect::Native { tag } => step_native(cx, tag, eval_ctx, effect),
         Effect::SkillTest {
@@ -1731,19 +1731,35 @@ fn apply_advance_current_act(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Resolve [`Effect::PlaceDoomOnCurrentAgenda`]: evaluate `count`, place that
-/// much doom on the current agenda, then run the doom-threshold check once
-/// (Ancient Evils 01166's *"This effect can cause the current agenda to
-/// advance."*).
+/// much doom on the current agenda, and run the doom-threshold check **only if
+/// the card printed the advance clause**.
 ///
-/// A `count` that evaluates negative places nothing — the clamp is the same one
-/// [`Effect::Deal`] applies to its own [`IntExpr`]. Unlike
-/// [`Effect::AdvanceCurrentAct`], an unmodeled agenda deck is **not** a
-/// rejection: the placement is a no-op there, which is what fixtures without an
-/// agenda need and what the Mythos step 1.2 helper already does.
+/// `data/rules-reference/rules/glossary/Doom.md`:
+///
+/// > Unless a card otherwise specifies that it can advance the agenda, this is
+/// > the only time at which the agenda can advance.
+///
+/// "This" being the Mythos phase's own check-doom-threshold step, which
+/// `phases.rs` runs at 1.3. So the branch here is the card-text distinction
+/// itself — Ancient Evils 01166's *"This effect can cause the current agenda to
+/// advance."* against Silver Twilight Acolyte 01102's bare placement — and it
+/// lives at the card-effect boundary rather than inside a shared helper for
+/// exactly that reason.
+///
+/// A `count` that evaluates to zero or negative is a **full no-op** — it
+/// returns before the threshold check, so it cannot advance an agenda already
+/// sitting at its threshold on the strength of doom it never placed. The
+/// negative clamp is the same one [`Effect::Deal`] applies to its own
+/// [`IntExpr`].
+///
+/// Unlike [`Effect::AdvanceCurrentAct`], an unmodeled agenda deck is **not** a
+/// rejection: the placement is a no-op there (both helpers guard), which is
+/// what fixtures without an agenda need.
 fn apply_place_doom_on_current_agenda(
     cx: &mut Cx,
     eval_ctx: &EvalContext,
     count: &IntExpr,
+    may_advance: bool,
 ) -> EngineOutcome {
     let n = match eval_int_expr(cx.state, eval_ctx, count) {
         Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
@@ -1753,7 +1769,13 @@ fn apply_place_doom_on_current_agenda(
             }
         }
     };
-    crate::engine::dispatch::act_agenda::place_doom_on_current_agenda(cx, n);
+    if n == 0 {
+        return EngineOutcome::Done;
+    }
+    crate::engine::dispatch::act_agenda::place_doom_on_agenda(cx, n);
+    if may_advance {
+        crate::engine::dispatch::act_agenda::check_doom_threshold(cx);
+    }
     EngineOutcome::Done
 }
 
@@ -5047,6 +5069,7 @@ mod tests {
             &mut cx,
             &Effect::PlaceDoomOnCurrentAgenda {
                 count: IntExpr::Lit(1),
+                may_advance: true,
             },
             EvalContext::for_controller(InvestigatorId(1)),
         );
@@ -5069,6 +5092,7 @@ mod tests {
             &mut cx,
             &Effect::PlaceDoomOnCurrentAgenda {
                 count: IntExpr::Lit(1),
+                may_advance: true,
             },
             EvalContext::for_controller(InvestigatorId(1)),
         );
@@ -5081,6 +5105,41 @@ mod tests {
             "Ancient Evils 01166: `This effect can cause the current agenda to advance`"
         );
         assert_eq!(state.agenda_doom, 0, "doom reset on advance");
+    }
+
+    /// The `may_advance: false` half — Silver Twilight Acolyte 01102's bare
+    /// *"Place 1 doom on the current agenda."*, which
+    /// `data/rules-reference/rules/glossary/Doom.md` leaves waiting for Mythos:
+    ///
+    /// > Unless a card otherwise specifies that it can advance the agenda, this
+    /// > is the only time at which the agenda can advance.
+    ///
+    /// So the doom lands and stays landed, even sitting on the threshold.
+    #[test]
+    fn place_doom_without_the_advance_clause_does_not_advance_at_threshold() {
+        use crate::dsl::IntExpr;
+        use crate::state::InvestigatorId;
+        let mut state = state_with_agenda(1);
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = run(
+            &mut cx,
+            &Effect::PlaceDoomOnCurrentAgenda {
+                count: IntExpr::Lit(1),
+                may_advance: false,
+            },
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        assert_eq!(
+            state.agenda_index, 0,
+            "no printed advance clause ⇒ the threshold check waits for Mythos 1.3"
+        );
+        assert_eq!(state.agenda_doom, 1, "the doom is placed, and stays");
     }
 
     /// Offer of Power 01178's *"place 2 doom"* is one placement of two, so the
@@ -5100,6 +5159,7 @@ mod tests {
             &mut cx,
             &Effect::PlaceDoomOnCurrentAgenda {
                 count: IntExpr::Lit(2),
+                may_advance: true,
             },
             EvalContext::for_controller(InvestigatorId(1)),
         );
@@ -5127,6 +5187,7 @@ mod tests {
             &mut cx,
             &Effect::PlaceDoomOnCurrentAgenda {
                 count: IntExpr::Count(crate::dsl::Quantity::SkillTestFailedBy),
+                may_advance: true,
             },
             eval_ctx,
         );
@@ -5135,8 +5196,9 @@ mod tests {
     }
 
     /// The point of the variant over a card-local `Native` tag (#716): it
-    /// nests. Saracenic Script 02240 places its doom as the last step of a
-    /// `Seq`; Offer of Power 01178 places 2 inside a `ChooseOne` branch.
+    /// nests. Saracenic Script 02240's act back places its doom as the last
+    /// step of a `Seq`; Offer of Power 01178 places 2 inside a `ChooseOne`
+    /// branch; Blood on the Altar 02195 places 1 under an `If`-on-failure.
     #[test]
     fn place_doom_composes_as_a_sub_effect() {
         use crate::dsl::IntExpr;
@@ -5152,9 +5214,11 @@ mod tests {
             &Effect::Seq(vec![
                 Effect::PlaceDoomOnCurrentAgenda {
                     count: IntExpr::Lit(1),
+                    may_advance: true,
                 },
                 Effect::PlaceDoomOnCurrentAgenda {
                     count: IntExpr::Lit(2),
+                    may_advance: true,
                 },
             ]),
             EvalContext::for_controller(InvestigatorId(1)),
@@ -5162,6 +5226,79 @@ mod tests {
         assert_eq!(out, EngineOutcome::Done);
         crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
         assert_eq!(state.agenda_doom, 3);
+    }
+
+    /// The `ChooseOne` and `If` halves of the nesting claim. `ChooseOne` with a
+    /// single branch auto-resolves, so this needs no input round-trip.
+    #[test]
+    fn place_doom_nests_in_choose_one_and_if() {
+        use crate::dsl::{CmpOp, Condition, IntExpr, Quantity};
+        use crate::state::InvestigatorId;
+        let mut state = state_with_agenda(9);
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        let place = |n| Effect::PlaceDoomOnCurrentAgenda {
+            count: IntExpr::Lit(n),
+            may_advance: true,
+        };
+        assert_eq!(
+            run(&mut cx, &Effect::ChooseOne(vec![place(1)]), ctx),
+            EngineOutcome::Done
+        );
+        assert_eq!(
+            run(
+                &mut cx,
+                &Effect::If {
+                    // No `Condition::Always`; a tautology stands in.
+                    condition: Condition::Compare {
+                        quantity: Quantity::CluesAtControllerLocation,
+                        op: CmpOp::Ge,
+                        value: 0,
+                    },
+                    then: Box::new(place(1)),
+                    else_: None,
+                },
+                ctx,
+            ),
+            EngineOutcome::Done
+        );
+        crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        assert_eq!(state.agenda_doom, 2, "both nestings placed their doom");
+    }
+
+    /// A zero count is a full no-op, threshold check included: it must not
+    /// advance an agenda already sitting at its threshold on the strength of
+    /// doom it never placed.
+    #[test]
+    fn place_doom_of_zero_does_not_run_the_threshold_check() {
+        use crate::dsl::IntExpr;
+        use crate::state::InvestigatorId;
+        let mut state = state_with_agenda(1);
+        state.agenda_doom = 1;
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let out = run(
+            &mut cx,
+            &Effect::PlaceDoomOnCurrentAgenda {
+                count: IntExpr::Lit(0),
+                may_advance: true,
+            },
+            EvalContext::for_controller(InvestigatorId(1)),
+        );
+        assert_eq!(out, EngineOutcome::Done);
+        crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        assert_eq!(
+            state.agenda_index, 0,
+            "no placement ⇒ no check ⇒ no advance"
+        );
+        assert_eq!(state.agenda_doom, 1);
     }
 
     #[test]
@@ -5182,6 +5319,7 @@ mod tests {
             &mut cx,
             &Effect::PlaceDoomOnCurrentAgenda {
                 count: IntExpr::Lit(1),
+                may_advance: true,
             },
             EvalContext::for_controller(InvestigatorId(1)),
         );

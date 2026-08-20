@@ -798,11 +798,17 @@ pub enum Effect {
     /// and the act's on-advance reverse fires. Used by act objectives
     /// like 01110 ("If the Ghoul Priest is Defeated, advance.").
     AdvanceCurrentAct,
-    /// Place `count` doom on the current agenda, then run the doom-threshold
-    /// check once — the *"This effect can cause the current agenda to
-    /// advance"* clause that six in-corpus cards print (Ancient Evils 01166,
-    /// Silver Twilight Acolyte 01102, Dark Memory 01013, Offer of Power 01178,
-    /// Saracenic Script 02240, Blood on the Altar 02195).
+    /// Place `count` doom on the current agenda, and — only if `may_advance` —
+    /// run the doom-threshold check.
+    ///
+    /// Six places in the corpus print *"place N doom on the current agenda"*:
+    /// Ancient Evils 01166, Silver Twilight Acolyte 01102, Dark Memory 01013,
+    /// Offer of Power 01178, the back of act Saracenic Script 02240, and Blood
+    /// on the Altar 02195's `[elder_thing]` token. **Only three of them also
+    /// print the advance clause** — 01166 and 01013 as *"This effect can cause
+    /// the current agenda to advance."*, 01178 parenthetically as *"(this
+    /// effect can cause the current agenda to advance)"*. 01102, 02240, and
+    /// 02195 print the placement alone, and that difference is `may_advance`.
     ///
     /// `data/rules-reference/rules/glossary/Doom.md`:
     ///
@@ -813,26 +819,37 @@ pub enum Effect {
     /// > specifies that it can advance the agenda, this is the only time at
     /// > which the agenda can advance.
     ///
-    /// The printed clause is that "otherwise specifies", which is why the
-    /// threshold check rides along with the placement rather than waiting for
-    /// Mythos. It runs **once, after all `count` doom is placed** — Offer of
-    /// Power 01178's *"place 2 doom"* is one placement of two, not two
-    /// placements of one, so a threshold reached by the first cannot advance
-    /// the agenda out from under the second.
+    /// The printed clause **is** that "otherwise specifies" — which is why the
+    /// three cards that carry it bother to print a sentence the other three
+    /// omit. So doom placed by 01102's attack sits on the agenda and waits for
+    /// Mythos step 1.3 even if it tips the threshold, while doom placed by
+    /// 01166's Revelation can advance the agenda then and there.
+    ///
+    /// When the check does run, it runs **once, after all `count` doom is
+    /// placed** — Offer of Power 01178's *"place 2 doom"* is one placement of
+    /// two, not two placements of one, so a threshold reached by the first
+    /// cannot advance the agenda out from under the second.
     ///
     /// `count` is an [`IntExpr`] rather than a `u8` because the clause is
     /// already printed with two different numbers in the corpus (01166's 1,
     /// 01178's 2) and out of corpus with a computed one (Jeremiah Pierce
-    /// 50044's *"for each point you fail by"*). A `count` that evaluates
-    /// negative places nothing.
+    /// 50044's *"for each point you fail by"*). A `count` that evaluates to
+    /// zero or negative is a **full no-op** — no placement and no threshold
+    /// check, so it cannot advance an already-at-threshold agenda.
     ///
     /// Typed rather than [`Native`](Self::Native) (graduated from two
     /// card-local tags in #716) so it can sit inside a [`Seq`](Self::Seq),
     /// [`ChooseOne`](Self::ChooseOne), or [`If`](Self::If) as a sub-effect —
-    /// which 01178, 02240, and 02195 each need.
+    /// which the three remaining corpus printings each need: 01178 inside a
+    /// `ChooseOne` branch, 02240 as the last step of a `Seq`, and 02195 under
+    /// an `If`-on-failure in a chaos-token effect.
     PlaceDoomOnCurrentAgenda {
         /// How much doom to place. Evaluated once, at resolution.
         count: IntExpr,
+        /// Whether the card prints *"this effect can cause the current agenda
+        /// to advance"*. Only then is the doom threshold checked here; without
+        /// it the placement waits for Mythos step 1.3, per `glossary/Doom.md`.
+        may_advance: bool,
     },
     /// A card-local Rust effect, resolved by tag through the host's
     /// `CardRegistry.native_effect_for`. The generic escape hatch for
@@ -1881,11 +1898,27 @@ pub fn advance_current_act() -> Effect {
     Effect::AdvanceCurrentAct
 }
 
-/// Build an [`Effect::PlaceDoomOnCurrentAgenda`] placing `count` doom.
+/// Build an [`Effect::PlaceDoomOnCurrentAgenda`] for a card that prints the
+/// placement **alone** — Silver Twilight Acolyte 01102, Saracenic Script
+/// 02240, Blood on the Altar 02195. The doom waits for the Mythos phase's
+/// threshold check.
 #[must_use]
 pub fn place_doom_on_current_agenda(count: impl Into<IntExpr>) -> Effect {
     Effect::PlaceDoomOnCurrentAgenda {
         count: count.into(),
+        may_advance: false,
+    }
+}
+
+/// Build an [`Effect::PlaceDoomOnCurrentAgenda`] for a card that also prints
+/// *"this effect can cause the current agenda to advance"* — Ancient Evils
+/// 01166, Dark Memory 01013, Offer of Power 01178. The threshold is checked as
+/// soon as the doom lands.
+#[must_use]
+pub fn place_doom_that_can_advance_the_agenda(count: impl Into<IntExpr>) -> Effect {
+    Effect::PlaceDoomOnCurrentAgenda {
+        count: count.into(),
+        may_advance: true,
     }
 }
 

@@ -16,8 +16,22 @@
 //! agenda"* from a card-local native tag to
 //! [`Effect::PlaceDoomOnCurrentAgenda`](card_dsl::dsl::Effect::PlaceDoomOnCurrentAgenda)
 //! in #716 — the repo's two-consumer bar (`CLAUDE.md`, Architecture), met
-//! against Ancient Evils 01166's byte-identical tag. The effect places the doom
-//! and runs the threshold check, so this attack can advance the agenda.
+//! against Ancient Evils 01166's byte-identical tag.
+//!
+//! **This card does not print the advance clause, so its doom cannot advance
+//! the agenda.** Ancient Evils 01166 and Dark Memory 01013 print *"This effect
+//! can cause the current agenda to advance."*; this card prints the placement
+//! alone, and `data/rules-reference/rules/glossary/Doom.md` makes the omission
+//! load-bearing:
+//!
+//! > Unless a card otherwise specifies that it can advance the agenda, this is
+//! > the only time at which the agenda can advance.
+//!
+//! *"This"* being the Mythos phase's check-doom-threshold step. So an attack
+//! that tips the agenda to its threshold leaves the doom sitting there until
+//! Mythos step 1.3 — which is why this card builds with the bare
+//! [`place_doom_on_current_agenda`] and 01166 with
+//! [`place_doom_that_can_advance_the_agenda`](card_dsl::dsl::place_doom_that_can_advance_the_agenda).
 //!
 //! **Cell: the `after` cell of the `EnemyAttacks` condition.** The printed word
 //! is *"After"* — *"**Forced** - After Silver Twilight Acolyte attacks: Place 1
@@ -75,9 +89,11 @@ mod tests {
         assert_eq!(
             abilities[0].effect,
             Effect::PlaceDoomOnCurrentAgenda {
-                count: IntExpr::Lit(1)
+                count: IntExpr::Lit(1),
+                may_advance: false,
             },
-            "the card prints `Place 1 doom on the current agenda`"
+            "the card prints `Place 1 doom on the current agenda` and stops \
+             there — no advance clause, so no threshold check"
         );
     }
 }

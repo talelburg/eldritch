@@ -40,7 +40,7 @@ fn act_advances_at_round_end(state: &GameState) -> bool {
 /// on the current agenda card." — passes `1`; a card effect passes whatever it
 /// prints. No-op when no agenda deck is modeled (tests/fixtures without an
 /// agenda).
-pub(super) fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
+pub(crate) fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
     if cx.state.agenda_deck.is_empty() {
         return;
     }
@@ -59,7 +59,7 @@ pub(super) fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
 /// it ends the scenario: set the resolution latch instead of moving the
 /// cursor. Otherwise emit [`Event::AgendaAdvanced`], reset doom, and make
 /// the next agenda current.
-pub(super) fn check_doom_threshold(cx: &mut Cx) {
+pub(crate) fn check_doom_threshold(cx: &mut Cx) {
     if cx.state.agenda_deck.is_empty() {
         return;
     }
@@ -71,22 +71,6 @@ pub(super) fn check_doom_threshold(cx: &mut Cx) {
         Some(resolution) => request_resolution(cx.state, resolution),
         None => advance_agenda(cx),
     }
-}
-
-/// Place `count` doom on the current agenda and run the doom-threshold check
-/// (which may advance the agenda or set its resolution). The card-facing
-/// combination of `place_doom_on_agenda` + `check_doom_threshold`, backing
-/// [`Effect::PlaceDoomOnCurrentAgenda`](crate::dsl::Effect::PlaceDoomOnCurrentAgenda)
-/// — Ancient Evils 01166's *"Place 1 doom on the current agenda. This effect
-/// can cause the current agenda to advance."* and the five other in-corpus
-/// cards printing that clause.
-///
-/// The check runs **once, after all `count` doom is placed**: a threshold met
-/// by the first doom of Offer of Power 01178's two does not advance the agenda
-/// mid-placement. No-op on an empty agenda deck — both helpers guard.
-pub(crate) fn place_doom_on_current_agenda(cx: &mut Cx, count: u8) {
-    place_doom_on_agenda(cx, count);
-    check_doom_threshold(cx);
 }
 
 /// Advance the agenda deck one step (#482): push an
@@ -437,7 +421,7 @@ mod doom_agenda_tests {
     }
 
     #[test]
-    fn place_doom_on_current_agenda_advances_at_threshold() {
+    fn placing_doom_then_checking_the_threshold_advances_the_agenda() {
         use crate::state::{Agenda, CardCode};
         let mut state = GameStateBuilder::new().build();
         state.agenda_deck = vec![
@@ -453,13 +437,17 @@ mod doom_agenda_tests {
             },
         ];
         let mut events = Vec::new();
-        place_doom_on_current_agenda(
+        place_doom_on_agenda(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
             1,
         );
+        check_doom_threshold(&mut Cx {
+            state: &mut state,
+            events: &mut events,
+        });
         // The advance is deferred to an AdvanceReverse frame (#482); drive it
         // (no registry ⇒ the reverse fires nothing ⇒ it drives straight through).
         crate::engine::dispatch::drive(
