@@ -2024,6 +2024,77 @@ fn reject_incompatible_costs(costs: &[crate::dsl::Cost]) -> Result<(), Cow<'stat
     Ok(())
 }
 
+/// Reject an ability whose *"Limit X per \[period\]"* sits on a source with no
+/// card instance to record the use against — a location today, the act and the
+/// agenda with #709.
+///
+/// Usage state is `CardInPlay::ability_usage`, a per-instance map, and a
+/// location has no instance (`bump_usage_counter`'s `unreachable!` says so for
+/// the reaction path). Making these sources activatable is what first puts that
+/// branch behind player input, and **a panic reachable from player input must
+/// not ship** — so the limit is refused, loudly, rather than silently ignored
+/// or crashed into.
+///
+/// No Core or Dunwich card in the corpus reaches this: the Parlor 01115's
+/// Resign is unlimited. Dunwich prints two that will — Base of the Hill 02282
+/// (*"\[action\]: **Investigate.** … (Limit once per round.)"*) and Ten-Acre
+/// Meadow 02246 (*"(Group limit once per game)"*) — and **#699** builds the
+/// capability they need. `glossary/Limits_and_Maximums.md` makes the key scoped
+/// rather than global there, verbatim: *"Unless stated otherwise, limits are
+/// player specific"*, while a group limit *"applies to the entire group of
+/// investigators"*.
+fn reject_untrackable_usage_limit(
+    source: AbilitySource,
+    code: &CardCode,
+    usage_limit: Option<crate::dsl::UsageLimit>,
+) -> Result<(), Cow<'static, str>> {
+    if usage_limit.is_none() || source.instance().is_some() {
+        return Ok(());
+    }
+    Err(format!(
+        "ActivateAbility: {code}'s ability carries a usage limit, but {source:?} has no card \
+         instance to record uses against (usage state lives on in-play instances); tracked as \
+         issue #699"
+    )
+    .into())
+}
+
+/// Reject a cost that has to be paid *by the source* when the source has no card
+/// instance to pay it with — `Exhaust`, `SpendUses` and `DiscardSelf` on a
+/// location or an enemy.
+///
+/// Refused at validation rather than at payment so the turn menu never offers
+/// it: `pay_activation_costs` addresses these costs through a `CardInPlay`
+/// (#706), and a location has none. No corpus card needs one — the Parley
+/// abilities cost cards, clues or resources (Herman Collins 01138 *"Choose and
+/// discard 4 cards from your hand"*, Peter Warren 01139 *"Spend 2 clues"*,
+/// Victoria Devereux 01140 and Mob Enforcer 01101 *"Spend … resources"*), all
+/// investigator-side. Deliberately unlifted with no tracking issue (YAGNI, as
+/// with [`reject_incompatible_costs`]); whoever prints such a card files one.
+fn reject_source_costs_without_an_instance(
+    source: AbilitySource,
+    code: &CardCode,
+    costs: &[crate::dsl::Cost],
+) -> Result<(), Cow<'static, str>> {
+    use crate::dsl::Cost;
+    if source.instance().is_some() {
+        return Ok(());
+    }
+    let Some(cost) = costs.iter().find(|c| {
+        matches!(
+            c,
+            Cost::Exhaust | Cost::SpendUses { .. } | Cost::DiscardSelf
+        )
+    }) else {
+        return Ok(());
+    };
+    Err(format!(
+        "ActivateAbility: {code}'s {cost:?} cost must be paid by the source, but {source:?} has \
+         no card instance to pay it with"
+    )
+    .into())
+}
+
 /// Pure-validation peer to [`activate_ability`]. Mirrors
 /// [`check_play_card`]: validation block lifted verbatim, no behavior
 /// change at the call site.
@@ -2053,9 +2124,9 @@ pub(crate) fn check_activate_ability(
     // identity, never by position: the position a validation computes is stale
     // the moment a cost removes the source (#706).
     let source_card = crate::engine::ability_source::resolve(state, investigator, source)?;
-    let source_code = source_card.code.clone();
-    let source_exhausted = source_card.exhausted;
-    let source_uses = source_card.uses.clone();
+    let source_code = source_card.code().clone();
+    let source_exhausted = source_card.exhausted();
+    let source_uses = source_card.uses();
 
     // Invariant: `resolve_activated_ability` currently returns only `Ok(...)`
     // (success) or `Err(EngineOutcome::Rejected { ... })` (validation failure).
@@ -2065,14 +2136,19 @@ pub(crate) fn check_activate_ability(
     // redesigned to thread the `AwaitingInput` outcome back through
     // `check_activate_ability`'s `Result` shape. Mirrors the same invariant
     // comment on `resolve_play_target` in `check_play_card`.
-    let (action_cost, costs, effect) =
-        match super::abilities::resolve_activated_ability(&source_code, ability_index) {
-            Ok(v) => v,
-            Err(EngineOutcome::Rejected { reason }) => return Err(reason),
-            Err(other) => {
-                unreachable!("resolve_activated_ability returned non-Rejected outcome: {other:?}")
-            }
-        };
+    let super::abilities::ActivatedAbility {
+        action_cost,
+        costs,
+        effect,
+        usage_limit,
+    } = match super::abilities::resolve_activated_ability(&source_code, ability_index) {
+        Ok(v) => v,
+        Err(EngineOutcome::Rejected { reason }) => return Err(reason),
+        Err(other) => {
+            unreachable!("resolve_activated_ability returned non-Rejected outcome: {other:?}")
+        }
+    };
+    reject_untrackable_usage_limit(source, &source_code, usage_limit)?;
 
     // Gate: branch on action_cost now that we have it.
     // Fast abilities (action_cost == 0) may be used at any player window.
@@ -2127,6 +2203,7 @@ pub(crate) fn check_activate_ability(
     }
 
     reject_incompatible_costs(&costs)?;
+    reject_source_costs_without_an_instance(source, &source_code, &costs)?;
     check_effect_target_available(state, investigator, &effect)?;
     check_activation_changes_state(state, investigator, source, &source_code, &effect)?;
 

@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::card::CardInstanceId;
+use super::enemy::EnemyId;
+use super::location::LocationId;
 
 /// The thing whose ability is being used — the descriptor an activation
 /// names instead of a bare card instance (#707).
@@ -32,8 +34,8 @@ use super::card::CardInstanceId;
 /// membership out of the addressing vocabulary is what stops the four bullets
 /// becoming a pile of special cases.
 ///
-/// The enum is `#[non_exhaustive]` and grows: a location and an enemy kind with
-/// #708, an act kind and an agenda kind with #709. It is the activation-side
+/// The enum is `#[non_exhaustive]` and grows: an act kind and an agenda kind
+/// with #709. It is the activation-side
 /// peer of [`CandidateSource`](crate::state::CandidateSource), which the forced
 /// and reaction scans use to say the same thing about an ability that fires on
 /// its own; the two converge when those kinds land. See
@@ -43,17 +45,32 @@ use super::card::CardInstanceId;
 pub enum AbilitySource {
     /// A card instance in play, wherever it sits.
     InPlay(CardInstanceId),
+    /// A location card itself — the second bullet's *"the location itself"*
+    /// (#708). Locations carry a [`LocationId`] and no
+    /// [`CardInstanceId`], which is why this
+    /// cannot fold into [`InPlay`](Self::InPlay).
+    Location(LocationId),
+    /// An enemy in play — an *"encounter card placed at that location"* (#708).
+    /// The Parley abilities the corpus prints sit here: Herman Collins 01138,
+    /// Peter Warren 01139, Victoria Devereux 01140, Mob Enforcer 01101.
+    Enemy(EnemyId),
 }
 
 impl AbilitySource {
-    /// The in-play instance this source names, if any. `Some` for every kind
-    /// today; the act and agenda kinds #709 adds have no instance, which is why
-    /// the accessor is already an `Option` (mirroring
-    /// [`CandidateSource::instance`](crate::state::CandidateSource::instance)).
+    /// The in-play instance this source names, if any. `None` for a location
+    /// or an enemy — neither carries a
+    /// [`CardInstanceId`] — and `None` again for
+    /// the act and agenda kinds #709 adds. Mirrors
+    /// [`CandidateSource::instance`](crate::state::CandidateSource::instance).
+    ///
+    /// Callers that need per-instance state (an exhaust or uses cost, a usage
+    /// counter) read this and reject when it is `None`, rather than assuming
+    /// every source has a card instance behind it.
     #[must_use]
     pub fn instance(self) -> Option<CardInstanceId> {
         match self {
             AbilitySource::InPlay(id) => Some(id),
+            AbilitySource::Location(_) | AbilitySource::Enemy(_) => None,
         }
     }
 }
@@ -98,5 +115,30 @@ mod tests {
             AbilitySource::InPlay(CardInstanceId(3)).instance(),
             Some(CardInstanceId(3)),
         );
+        assert_eq!(
+            AbilitySource::Location(crate::state::LocationId(1)).instance(),
+            None,
+            "a location has a LocationId and no card instance",
+        );
+        assert_eq!(
+            AbilitySource::Enemy(crate::state::EnemyId(1)).instance(),
+            None,
+            "an enemy has an EnemyId and no card instance",
+        );
+    }
+
+    /// Every kind rides the wire, not just the one #707 shipped.
+    #[test]
+    fn the_location_and_enemy_kinds_round_trip_through_serialization() {
+        for source in [
+            AbilitySource::Location(crate::state::LocationId(4)),
+            AbilitySource::Enemy(crate::state::EnemyId(5)),
+        ] {
+            let json = serde_json::to_string(&source).expect("serializes");
+            assert_eq!(
+                serde_json::from_str::<AbilitySource>(&json).expect("deserializes"),
+                source,
+            );
+        }
     }
 }

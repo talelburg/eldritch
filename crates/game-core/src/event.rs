@@ -517,8 +517,12 @@ pub enum Event {
     AbilityActivated {
         /// Who activated the ability.
         investigator: InvestigatorId,
-        /// The in-play source's instance.
-        instance_id: CardInstanceId,
+        /// What carried the ability — a card instance in play, a location, or
+        /// an enemy (#707, #708). Not every source has a
+        /// [`CardInstanceId`]; a consumer that
+        /// needs one reads
+        /// [`AbilitySource::instance`](crate::state::AbilitySource::instance).
+        source: crate::state::AbilitySource,
         /// The source card's code.
         code: CardCode,
         /// Which ability on the card fired.

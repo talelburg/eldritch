@@ -157,11 +157,13 @@ impl TurnAction {
                 investigator: *investigator,
                 hand_index: *hand_index,
             },
-            // Exhaustive on purpose: #709's act / agenda kinds have no card
-            // instance to anchor to, and this should stop compiling then rather
-            // than quietly anchoring them somewhere wrong.
+            // Exhaustive on purpose: #709's act / agenda kinds anchor to
+            // `OptionTarget::Act` / `Agenda`, and this should stop compiling
+            // then rather than quietly anchoring them somewhere wrong.
             TurnAction::ActivateAbility { source, .. } => match source {
                 AbilitySource::InPlay(instance_id) => OptionTarget::CardInstance(*instance_id),
+                AbilitySource::Location(location) => OptionTarget::Location(*location),
+                AbilitySource::Enemy(enemy) => OptionTarget::Enemy(*enemy),
             },
             TurnAction::AdvanceAct { .. } => OptionTarget::Act,
         }

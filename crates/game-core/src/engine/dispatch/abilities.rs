@@ -93,14 +93,13 @@ pub(super) fn activate_ability(
     {
         return EngineOutcome::Rejected { reason };
     }
-    // Irrefutable on purpose: `Event::AbilityActivated` carries a
-    // `CardInstanceId`, and #709's act / agenda kinds have none. This should stop
-    // compiling when they land — the event's field is what has to change then —
-    // rather than becoming a panic reachable from player input.
-    let AbilitySource::InPlay(instance_id) = source;
+    // The event names the **source**, not a card instance: #708's location and
+    // enemy kinds have no `CardInstanceId`, and neither will #709's act and
+    // agenda. Consumers that want the instance ask `source.instance()` and
+    // handle the `None`.
     cx.events.push(Event::AbilityActivated {
         investigator,
-        instance_id,
+        source,
         code: source_code,
         ability_index,
     });
@@ -373,9 +372,27 @@ fn cost_label(cost: &Cost) -> &'static str {
     }
 }
 
+/// The parts of an [`Ability`](crate::dsl::Ability) the activation path needs,
+/// lifted out of the registry entry.
+///
+/// `usage_limit` rides along because the validator has to answer *"can this
+/// source record a use at all"* before any cost is paid — a location cannot
+/// (#699), and the rejection for that is `reject_untrackable_usage_limit`.
+#[derive(Debug, Clone)]
+pub(super) struct ActivatedAbility {
+    /// Actions the activation costs; `0` for a `[free]` ability.
+    pub(super) action_cost: u8,
+    /// The ability's payment costs, in printed order.
+    pub(super) costs: Vec<Cost>,
+    /// The effect to resolve once every cost is paid.
+    pub(super) effect: crate::dsl::Effect,
+    /// The *"Limit X per \[period\]"* cap, if the card prints one.
+    pub(super) usage_limit: Option<crate::dsl::UsageLimit>,
+}
+
 /// Resolve the activated ability at `(code, ability_index)` from the
-/// installed [`card_registry`], returning its `(action_cost, costs,
-/// effect)` triple or the rejection reason.
+/// installed [`card_registry`], returning its [`ActivatedAbility`]
+/// or the rejection reason.
 ///
 /// Split out so [`activate_ability`] stays under the function-size
 /// lint, and to mirror [`resolve_play_target`]'s role for
@@ -383,7 +400,7 @@ fn cost_label(cost: &Cost) -> &'static str {
 pub(super) fn resolve_activated_ability(
     code: &CardCode,
     ability_index: u8,
-) -> Result<(u8, Vec<Cost>, crate::dsl::Effect), EngineOutcome> {
+) -> Result<ActivatedAbility, EngineOutcome> {
     let Some(registry) = card_registry::current() else {
         return Err(EngineOutcome::Rejected {
             reason: "ActivateAbility: no card registry installed; engine cannot resolve abilities."
@@ -416,7 +433,12 @@ pub(super) fn resolve_activated_ability(
             .into(),
         });
     };
-    Ok((action_cost, ability.costs.clone(), ability.effect.clone()))
+    Ok(ActivatedAbility {
+        action_cost,
+        costs: ability.costs.clone(),
+        effect: ability.effect.clone(),
+        usage_limit: ability.usage_limit,
+    })
 }
 
 /// Validate a single [`Cost`] is currently payable against `inv` /
