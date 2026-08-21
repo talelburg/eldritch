@@ -54,11 +54,12 @@ RUSTDOCFLAGS="-D warnings"  cargo doc --workspace --no-deps --all-features
 cargo test -p game-core <test_fn_name>
 cargo test -p cards --test play_card <test_fn_name>     # integration tests in crates/cards/tests/
 
+cargo run -p card-data-pipeline    # regenerate the corpus (only after bumping data/arkhamdb-snapshot)
+
 # Dev loop (two terminals) — hot-reload on :3000, proxying to the server
 cargo run -p server                                  # API + WS on :8000
 cd crates/web && trunk serve                         # WASM + hot-reload on :3000
 # then open http://localhost:3000 — proxy config is in crates/web/Trunk.toml
-#
 # Single-port alternative (no hot-reload; what production serves):
 #   cd crates/web && trunk build  &&  cargo run -p server   # open :8000
 ```
@@ -88,7 +89,7 @@ Work is tracked against GitHub milestones (`phase-0-foundations` → `phase-10-d
 
 Follow this order for every non-trivial PR — skipping steps has cost real iterations. The **gates** under Workflow interrupt this order wherever they fire: resolve the gate, then resume.
 
-1. **Run `scripts/ci-local.sh` before pushing** (see Commands, which says why `cargo test` alone isn't enough).
+1. **Run `scripts/ci-local.sh` before pushing** (see Commands, which says why `cargo test` alone isn't enough — the `doc` job in particular has caught broken intra-doc links local runs miss).
 2. **Commit and push** to a feature branch `<scope>/<short-slug>` (`<scope>` matches the commit scope; slug is a 2–4-word hyphenated descriptor, e.g. `engine/play-card`). One branch per issue. Commit body explains the *why* and ends with `Closes #NN.`
 3. **Open the PR** with `gh pr create` using the repo template; include a brief design-decisions paragraph for any non-obvious choice.
 4. **Watch CI** via `gh pr checks <PR#> --watch` (background). Code review for routine PRs happens **before push** — `/implement` closes out by running `code-review` — so skip the post-push `review-agent` then. Reserve a post-push review for: PRs prepared without a pre-push review, an explicit request for a second look, or escalation skills (`/security-review` for sensitive areas, `/ultrareview` at milestone exits) — all user-triggered.
@@ -102,8 +103,8 @@ Follow this order for every non-trivial PR — skipping steps has cost real iter
 
 **Every dispatch prompt for a write-capable subagent says the subagent does all the work itself and delegates to no subagent of its own.** The prompt is the only lever: the default `general-purpose` type carries the Agent tool, and the built-in types that exclude it (`Explore`, `Plan`) are read-only, so none can implement. Without the line, an implementer dispatch recursed roughly six levels deep in PR #460.
 
-- **`docs/agents/standards.md`** — how code is written here, and what `code-review`'s Standards axis reads. It carries the rules a card or engine PR is reviewed against, including ones no compiler checks.
+- **`docs/agents/standards.md`** — how code is written here, and what `code-review`'s Standards axis reads. Nothing in it is compiler-checked, so a PR that skips it fails review rather than the build.
 - **`docs/agents/writing.md`** — the house style for the docs an agent reads. Read it before **adding a rule to this file** (there is an admission bar, and the PR names which route the rule passes) or **writing an ADR** (this repo overrides the skill suite's `ADR-FORMAT.md` on size, and `writing.md` is the spec that wins).
 - **[`CONTEXT.md`](CONTEXT.md)** — the domain glossary, plus `docs/adr/` for decisions. **Read it before naming a domain concept**, in code, tests, issue titles, or chat: every term in it has already caused a mistake in PR review, and it is the single home for them. Check `docs/adr/` before working in an area it touches. See `docs/agents/domain.md`.
 - **[`docs/product-decisions.md`](docs/product-decisions.md)** — the standing product, legal, and hosting posture. Read it before proposing anything that changes what the project *is* to its players — its scope, how they get in, how decks arrive, or what it depends on from third parties.
-- **`docs/agents/issue-tracker.md`** (GitHub Issues on `talelburg/eldritch` via the `gh` CLI, and the repo's label taxonomy) and **`docs/agents/triage-labels.md`** (the five canonical triage roles, each label string equal to its name).
+- **`docs/agents/issue-tracker.md`** and **`docs/agents/triage-labels.md`** — GitHub Issues on `talelburg/eldritch` via the `gh` CLI, the repo's label taxonomy, and the five canonical triage roles. Guess a label string or a `gh` incantation and you'll file an issue the tracker's own queries don't find.

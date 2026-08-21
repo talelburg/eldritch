@@ -1,6 +1,6 @@
 # Architecture
 
-How this repo is put together: what each crate may depend on, how state changes, how a card becomes behaviour, and how the corpus is built. Orientation, not a coding standard — the rules an author follows are in [`standards.md`](standards.md).
+How this repo is put together: what each crate may depend on, how state changes, how a card becomes behavior, and how the corpus is built. Orientation, not a coding standard — the rules an author follows are in [`standards.md`](standards.md).
 
 ## Crate layering — strict kernel/content separation
 
@@ -16,8 +16,6 @@ card-dsl  ←  game-core   ←  cards          ←  scenarios
 - `cards` — **content**: pipeline-generated corpus + hand-written `Ability` declarations.
 
 Why the direction matters: editing the engine must not recompile 5600 lines of generated card data, and scenarios/tests must consume the engine without the corpus. If you want `game-core` to call into `cards`, you want the **card registry** below.
-
-The crates are **layers of one domain model**, not separate bounded contexts — which is why the repo is single-context ([`domain.md`](domain.md)).
 
 ## CardRegistry — the only cross-crate bridge
 
@@ -52,7 +50,7 @@ Cards are **Rust source** (typed, compiler-checked), not JSON: each is a module 
 
 A card is **playable** iff it has an `abilities()` impl (`cards::is_playable(code)`); unimplemented cards appear in deckbuilding but are refused by the deck-import gate (Phase 9). `PlayCard` on an unimplemented card rejects loudly. On play: assets land in `cards_in_play` and stay (their `Trigger::Constant` abilities contribute via the registry while in play); events run their `OnPlay` effects then move to `discard` (emit `CardDiscarded { from: Zone::Hand, … }`). Every other `CardType` rejects.
 
-**Horror soak isn't modelled by the DSL yet** — tracked in #44, and this paragraph goes when #44 lands.
+**Horror soak isn't modeled by the DSL yet** — tracked in #44, and this paragraph goes when #44 lands.
 
 ## Card-data pipeline
 
