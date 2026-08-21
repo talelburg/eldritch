@@ -292,6 +292,35 @@ pub fn fire_forced_on_enemy_defeat(
     crate::engine::drive(&mut cx, out)
 }
 
+/// Test helper: fire one timing cell's forced triggers for an enemy attack,
+/// returning the `EngineOutcome`. See `fire_forced_on_enter`, and
+/// `fire_forced_on_phase_end` for why the caller names the `cell`: Silver
+/// Twilight Acolyte 01102's *"**Forced** - After Silver Twilight Acolyte
+/// attacks: Place 1 doom on the current agenda."* is
+/// [`EventTiming::After`](crate::dsl::EventTiming::After).
+///
+/// Fires the point in isolation, without the attack that would carry it — which
+/// is what lets a test read the candidate the scan produced (its source, and the
+/// anchor of the interactive acknowledge) without staging a whole Enemy phase.
+pub fn fire_forced_on_enemy_attack(
+    state: &mut crate::state::GameState,
+    events: &mut Vec<crate::event::Event>,
+    enemy: crate::state::EnemyId,
+    investigator: crate::state::InvestigatorId,
+    cell: crate::dsl::EventTiming,
+) -> crate::engine::EngineOutcome {
+    let mut cx = crate::engine::Cx { state, events };
+    let out = crate::engine::queue_forced_triggers(
+        &mut cx,
+        &crate::engine::ForcedTriggerPoint::EnemyAttacks {
+            enemy,
+            investigator,
+        },
+        cell,
+    );
+    crate::engine::drive(&mut cx, out)
+}
+
 /// Test helper: fire one timing cell's forced triggers for `investigator`'s
 /// turn ending, returning the `EngineOutcome`. See `fire_forced_on_enter`, and
 /// `fire_forced_on_phase_end` for why the caller names the `cell`: Frozen in

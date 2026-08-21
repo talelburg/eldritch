@@ -180,6 +180,68 @@ pub(crate) fn reachable_sources(
     sources
 }
 
+/// The card `source` names right now, wherever it sits — **existence, not
+/// reachability** (#735). `None` once the source has left the board.
+///
+/// The deliberate contrast with [`reachable_sources`], which sits directly
+/// above: that predicate answers *"may **this investigator** use an ability
+/// from this source"*, and is gated on control and co-location. This one
+/// answers only *"what is the source now"*, because its caller is the forced /
+/// reaction path (`reaction_windows::candidate_source_present`, the
+/// [`LapseReason::SourceGone`](crate::engine::LapseReason::SourceGone) probe)
+/// and **a forced ability is not restricted to sources its controller could
+/// legally use**: Silver Twilight Acolyte 01102's *"Forced - After Silver
+/// Twilight Acolyte attacks: Place 1 doom on the current agenda."* resolves
+/// whether or not the investigator it just attacked may "use" that enemy.
+/// Routing the probe through reachability would report a still-present enemy as
+/// gone the moment the defender moved.
+///
+/// It returns the **card** rather than a bare `bool` so that a caller holding a
+/// candidate can ask the sharper question in one step — *is the source still
+/// there **and** still the card this candidate was minted from* — which is what
+/// [`Act`](AbilitySource::Act) and [`Agenda`](AbilitySource::Agenda) need:
+/// those two name *the current* one, so an advanced act is not "gone" but is no
+/// longer the card whose ability was scanned. Comparing
+/// [`SourceCard::code`] against the candidate's code answers that without any
+/// caller re-deriving which board card the source is.
+///
+/// [`InPlay`](AbilitySource::InPlay) is answered board-wide — any investigator's
+/// controlled collections, a location's attachments, or an enemy's — matching
+/// the collections [`reachable_sources`] reads, so a co-located threat-area card
+/// (#708) is not reported gone just because its controller is not the
+/// candidate's.
+pub(crate) fn source_card(state: &GameState, source: AbilitySource) -> Option<SourceCard<'_>> {
+    match source {
+        AbilitySource::InPlay(instance_id) => state
+            .investigators
+            .values()
+            .flat_map(Investigator::controlled_card_instances)
+            .chain(
+                state
+                    .locations
+                    .values()
+                    .flat_map(|location| location.attachments.iter()),
+            )
+            .chain(
+                state
+                    .enemies
+                    .values()
+                    .flat_map(|enemy| enemy.attachments.iter()),
+            )
+            .find(|card| card.instance_id == instance_id)
+            .map(SourceCard::Instance),
+        AbilitySource::Location(location_id) => {
+            state.locations.get(&location_id).map(SourceCard::Location)
+        }
+        AbilitySource::Enemy(enemy_id) => state.enemies.get(&enemy_id).map(SourceCard::Enemy),
+        AbilitySource::Act => state.act_deck.get(state.act_index).map(SourceCard::Act),
+        AbilitySource::Agenda => state
+            .agenda_deck
+            .get(state.agenda_index)
+            .map(SourceCard::Agenda),
+    }
+}
+
 /// The co-location bullet's sources for `inv` (#708) — empty for an
 /// investigator who is not standing at a location on the map.
 ///

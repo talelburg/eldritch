@@ -8,8 +8,8 @@
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
 use crate::state::{
-    CandidateSource, CardCode, EnemyId, InvestigatorId, LocationId, Phase, ResolutionCandidate,
-    Status,
+    AbilitySource, CandidateSource, CardCode, EnemyId, InvestigatorId, LocationId, Phase,
+    ResolutionCandidate, Status,
 };
 
 use super::super::evaluator::{push_effect, EvalContext};
@@ -230,7 +230,7 @@ pub(super) fn collect_forced_hits(
                 reg,
                 &loc.code,
                 *investigator,
-                CandidateSource::Location(*location),
+                CandidateSource::Ability(AbilitySource::Location(*location)),
                 &mut hits,
                 bucket,
                 |p| matches!(p, EventPattern::EnteredLocation),
@@ -248,7 +248,7 @@ pub(super) fn collect_forced_hits(
                     reg,
                     &act.code,
                     lead,
-                    CandidateSource::Board,
+                    CandidateSource::Ability(AbilitySource::Act),
                     &mut hits,
                     bucket,
                     |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
@@ -259,7 +259,7 @@ pub(super) fn collect_forced_hits(
                     reg,
                     &agenda.code,
                     lead,
-                    CandidateSource::Board,
+                    CandidateSource::Ability(AbilitySource::Agenda),
                     &mut hits,
                     bucket,
                     |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
@@ -274,7 +274,7 @@ pub(super) fn collect_forced_hits(
                 reg,
                 code,
                 lead,
-                CandidateSource::Board,
+                CandidateSource::Ability(AbilitySource::Act),
                 &mut hits,
                 bucket,
                 |p| matches!(p, EventPattern::ActAdvanced),
@@ -288,7 +288,7 @@ pub(super) fn collect_forced_hits(
                 reg,
                 code,
                 lead,
-                CandidateSource::Board,
+                CandidateSource::Ability(AbilitySource::Agenda),
                 &mut hits,
                 bucket,
                 |p| matches!(p, EventPattern::AgendaAdvanced),
@@ -303,7 +303,7 @@ pub(super) fn collect_forced_hits(
                     reg,
                     &act.code,
                     lead,
-                    CandidateSource::Board,
+                    CandidateSource::Ability(AbilitySource::Act),
                     &mut hits,
                     bucket,
                     |p| {
@@ -329,7 +329,7 @@ pub(super) fn collect_forced_hits(
                 reg,
                 &attacker.code,
                 *investigator,
-                CandidateSource::Board,
+                CandidateSource::Ability(AbilitySource::Enemy(*enemy)),
                 &mut hits,
                 bucket,
                 |p| matches!(p, EventPattern::EnemyAttacks),
@@ -344,7 +344,7 @@ pub(super) fn collect_forced_hits(
                     reg,
                     &act.code,
                     lead,
-                    CandidateSource::Board,
+                    CandidateSource::Ability(AbilitySource::Act),
                     &mut hits,
                     bucket,
                     |p| matches!(p, EventPattern::RoundEnded),
@@ -355,7 +355,7 @@ pub(super) fn collect_forced_hits(
                     reg,
                     &agenda.code,
                     lead,
-                    CandidateSource::Board,
+                    CandidateSource::Ability(AbilitySource::Agenda),
                     &mut hits,
                     bucket,
                     |p| matches!(p, EventPattern::RoundEnded),
@@ -383,7 +383,7 @@ pub(super) fn collect_forced_hits(
                         reg,
                         &card.code,
                         *inv_id,
-                        CandidateSource::InPlay(card.instance_id),
+                        CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
                         &mut hits,
                         bucket,
                         |p| matches!(p, EventPattern::RoundEnded),
@@ -404,7 +404,7 @@ pub(super) fn collect_forced_hits(
                     reg,
                     &card.code,
                     *investigator,
-                    CandidateSource::InPlay(card.instance_id),
+                    CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
                     &mut hits,
                     bucket,
                     |p| matches!(p, EventPattern::EndOfTurn),
@@ -439,7 +439,7 @@ pub(super) fn collect_forced_hits(
                     reg,
                     &card.code,
                     *investigator,
-                    CandidateSource::InPlay(card.instance_id),
+                    CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
                     &mut hits,
                     bucket,
                     want,
@@ -456,7 +456,7 @@ pub(super) fn collect_forced_hits(
                             reg,
                             &att.code,
                             *investigator,
-                            CandidateSource::InPlay(att.instance_id),
+                            CandidateSource::Ability(AbilitySource::InPlay(att.instance_id)),
                             &mut hits,
                             bucket,
                             want,
@@ -488,7 +488,7 @@ pub(super) fn collect_forced_hits(
                         reg,
                         &card.code,
                         *inv_id,
-                        CandidateSource::InPlay(card.instance_id),
+                        CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
                         &mut hits,
                         bucket,
                         |p| matches!(p, EventPattern::GameEnd),
@@ -530,7 +530,7 @@ pub(super) fn collect_forced_hits(
                     reg,
                     &card.code,
                     *investigator,
-                    CandidateSource::InPlay(card.instance_id),
+                    CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
                     &mut hits,
                     bucket,
                     |p| matches!(p, EventPattern::GameEnd),
@@ -549,7 +549,7 @@ pub(super) fn collect_forced_hits(
                         reg,
                         &att.code,
                         *investigator,
-                        CandidateSource::InPlay(att.instance_id),
+                        CandidateSource::Ability(AbilitySource::InPlay(att.instance_id)),
                         &mut hits,
                         bucket,
                         |p| matches!(p, EventPattern::LeftLocation),
@@ -675,10 +675,7 @@ pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
         };
     };
     let name = forced_source_name(&candidate.code);
-    let act = super::reaction_windows::current_act_code(cx.state);
-    let agenda = super::reaction_windows::current_agenda_code(cx.state);
-    let anchor =
-        super::reaction_windows::candidate_anchor(candidate, act.as_ref(), agenda.as_ref());
+    let anchor = super::reaction_windows::candidate_anchor(candidate);
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
             format!("Forced — {name}"),
@@ -731,7 +728,7 @@ mod tests {
                 CardCode::new("01113"),
                 InvestigatorId(1),
                 0,
-                CandidateSource::Board,
+                CandidateSource::Ability(AbilitySource::Location(LocationId(1))),
             ),
         });
         let mut events = Vec::new();
@@ -773,7 +770,7 @@ mod tests {
                 CardCode::new("01113"),
                 InvestigatorId(1),
                 0,
-                CandidateSource::Board,
+                CandidateSource::Ability(AbilitySource::Location(LocationId(1))),
             ),
         });
         let mut events = Vec::new();
@@ -806,7 +803,7 @@ mod tests {
                 CardCode::new("01020"),
                 InvestigatorId(1),
                 0,
-                CandidateSource::InPlay(CardInstanceId(5)),
+                CandidateSource::Ability(AbilitySource::InPlay(CardInstanceId(5))),
             ),
         });
         let mut events = Vec::new();
@@ -840,7 +837,7 @@ mod tests {
                 CardCode::new("01113"),
                 InvestigatorId(1),
                 0,
-                CandidateSource::Location(LocationId(3)),
+                CandidateSource::Ability(AbilitySource::Location(LocationId(3))),
             ),
         });
         let mut events = Vec::new();
@@ -880,7 +877,7 @@ mod tests {
                 CardCode::new("01105"),
                 InvestigatorId(1),
                 0,
-                CandidateSource::Board,
+                CandidateSource::Ability(AbilitySource::Agenda),
             ),
         });
         let mut events = Vec::new();

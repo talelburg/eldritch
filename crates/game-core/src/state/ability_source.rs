@@ -35,12 +35,14 @@ use super::location::LocationId;
 /// becoming a pile of special cases.
 ///
 /// The enum is `#[non_exhaustive]`, and #709 filled in the last two kinds the
-/// bullets name. It is the activation-side peer of
-/// [`CandidateSource`](crate::state::CandidateSource), which the forced and
-/// reaction scans use to say the same thing about an ability that fires on its
-/// own. The two have **not** converged: `CandidateSource::Board` still covers
-/// the act, the agenda *and* an attacking enemy's own ability with one kind, so
-/// splitting it needs an enemy kind that #709 does not own — #735. See
+/// bullets name. It is **not** the activation side's private vocabulary: since
+/// #735 the forced and reaction scans say where an ability comes from with the
+/// same descriptor, through
+/// [`CandidateSource::Ability`](crate::state::CandidateSource::Ability). The
+/// one thing that stayed outside it is a Fast event played from hand, which is
+/// not an ability source in the rules' sense — no bullet above names a card in
+/// hand — which is why `CandidateSource` wraps this enum rather than the two
+/// merging into one. See
 /// `docs/adr/0010-an-activation-names-an-ability-source.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -162,6 +164,29 @@ mod tests {
             None,
             "the current agenda is a scenario board card and has no card instance",
         );
+    }
+
+    /// The descriptor also rides the wire *inside* a
+    /// [`CandidateSource`](crate::state::CandidateSource), on a
+    /// `ResolutionCandidate` in an open window frame — the payload #735 broke,
+    /// deliberately and without a migration (same posture as #707/#709).
+    #[test]
+    fn a_candidate_source_round_trips_through_serialization() {
+        use crate::state::CandidateSource;
+        for source in [
+            CandidateSource::Ability(AbilitySource::InPlay(CardInstanceId(7))),
+            CandidateSource::Ability(AbilitySource::Location(crate::state::LocationId(4))),
+            CandidateSource::Ability(AbilitySource::Enemy(crate::state::EnemyId(5))),
+            CandidateSource::Ability(AbilitySource::Act),
+            CandidateSource::Ability(AbilitySource::Agenda),
+            CandidateSource::Hand,
+        ] {
+            let json = serde_json::to_string(&source).expect("serializes");
+            assert_eq!(
+                serde_json::from_str::<CandidateSource>(&json).expect("deserializes"),
+                source,
+            );
+        }
     }
 
     /// Every kind rides the wire, not just the one #707 shipped.

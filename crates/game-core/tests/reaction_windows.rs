@@ -275,7 +275,9 @@ fn matching_reaction_opens_window_and_suspends() {
     assert_eq!(window.pending_candidates().unwrap()[0].controller, inv_id);
     assert_eq!(
         window.pending_candidates().unwrap()[0].source,
-        game_core::state::CandidateSource::InPlay(CardInstanceId(1))
+        game_core::state::CandidateSource::Ability(game_core::state::AbilitySource::InPlay(
+            CardInstanceId(1)
+        ))
     );
     assert_eq!(window.pending_candidates().unwrap()[0].ability_index, 0);
 }
@@ -873,7 +875,9 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
     );
     assert_eq!(
         window.pending_candidates().unwrap()[0].source,
-        game_core::state::CandidateSource::InPlay(CardInstanceId(1))
+        game_core::state::CandidateSource::Ability(game_core::state::AbilitySource::InPlay(
+            CardInstanceId(1)
+        ))
     );
     assert_eq!(
         window.pending_candidates().unwrap()[1].controller,
@@ -882,7 +886,9 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
     );
     assert_eq!(
         window.pending_candidates().unwrap()[1].source,
-        game_core::state::CandidateSource::InPlay(CardInstanceId(2))
+        game_core::state::CandidateSource::Ability(game_core::state::AbilitySource::InPlay(
+            CardInstanceId(2)
+        ))
     );
 }
 
@@ -1007,7 +1013,9 @@ fn reaction_trigger_in_threat_area_opens_window() {
     assert_eq!(window.pending_candidates().unwrap()[0].controller, inv_id);
     assert_eq!(
         window.pending_candidates().unwrap()[0].source,
-        game_core::state::CandidateSource::InPlay(CardInstanceId(7))
+        game_core::state::CandidateSource::Ability(game_core::state::AbilitySource::InPlay(
+            CardInstanceId(7)
+        ))
     );
 }
 

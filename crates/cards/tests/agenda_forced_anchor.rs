@@ -29,8 +29,9 @@ fn agenda_01105_forced_ack_anchors_to_the_agenda_card() {
         .with_investigator(inv)
         .with_turn_order([lead])
         .build();
-    // The current agenda must be in the deck so `current_agenda_code` resolves to
-    // it and the `Board`-sourced forced anchors to `Agenda` (not `Global`).
+    // The current agenda must be in the deck for the scan to reach 01105's
+    // ability at all; the candidate it mints names `AbilitySource::Agenda`, and
+    // that is what the ack anchors to (#735).
     state.agenda_deck = vec![Agenda {
         code: CardCode::new("01105"),
         doom_threshold: 3,

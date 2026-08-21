@@ -157,17 +157,13 @@ impl TurnAction {
                 investigator: *investigator,
                 hand_index: *hand_index,
             },
-            // Exhaustive on purpose: a new `AbilitySource` kind should stop
-            // this compiling rather than quietly anchoring itself somewhere
-            // wrong. The act and agenda kinds (#709) anchor to the board cards
-            // themselves, which is what an act-advance option already uses.
-            TurnAction::ActivateAbility { source, .. } => match source {
-                AbilitySource::InPlay(instance_id) => OptionTarget::CardInstance(*instance_id),
-                AbilitySource::Location(location) => OptionTarget::Location(*location),
-                AbilitySource::Enemy(enemy) => OptionTarget::Enemy(*enemy),
-                AbilitySource::Act => OptionTarget::Act,
-                AbilitySource::Agenda => OptionTarget::Agenda,
-            },
+            // One map from a source to an anchor, shared with the forced /
+            // reaction candidates' `candidate_anchor` (#735): the two carried a
+            // copy each and the copies had drifted. The exhaustive `match` that
+            // used to live here — a new `AbilitySource` kind should stop the
+            // build rather than quietly anchor itself somewhere wrong — lives in
+            // the `From` impl now.
+            TurnAction::ActivateAbility { source, .. } => (*source).into(),
             TurnAction::AdvanceAct { .. } => OptionTarget::Act,
         }
     }
