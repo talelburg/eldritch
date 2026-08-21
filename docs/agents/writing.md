@@ -26,7 +26,7 @@ Naming it as an override matters because an agent that has loaded `/domain-model
 
 ## Fold, don't append; reverse by superseding
 
-**A refinement to a settled decision is folded into the ADR's present-tense prose**, with a one-line changelog footer recording which tickets were folded. ADR 0010 is the counter-example: a decision plus three chronologically-appended amendments, one of which reads *"that is the part of this ADR that was wrong"*, so a reader has to diff four sections in their head to learn what the project currently believes.
+**A refinement to a settled decision is folded into the ADR's present-tense prose**, with a one-line changelog footer recording which tickets were folded. ADR 0010 is the counter-example this rule was written from: until #745 folded it, it was a decision plus three chronologically-appended amendments, one of which read *"that is the part of this ADR that was wrong"*, so a reader had to diff four sections in their head to learn what the project currently believed.
 
 **A decision that genuinely reverses an earlier one becomes a new ADR**, and the old one gets the suite's optional `superseded by ADR-NNNN` status field. Folding a reversal erases that the project once believed the opposite — which is precisely the thing someone re-proposes.
 
