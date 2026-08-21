@@ -259,16 +259,29 @@ cards unchanged, and `TurnAction::target`'s deliberately-exhaustive match made
 the two new anchors a compile error rather than a silent `Global`, which is the
 property ADR 0010 wrote that match to hold open.
 
-**`CandidateSource::Board` is not split, which #709 anticipated it would be.**
-That kind turns out to carry more than the two board cards — the forced scan
-pushes an attacking enemy's own ability under it too, and `candidate_anchor`
-disambiguates the three by comparing card codes at read time, falling through to
-`OptionTarget::Global` for the enemy case. Splitting it properly needs a
-`CandidateSource::Enemy(EnemyId)`, a descriptor question #709 never mentions; all
-six of its acceptance criteria hold without it, since the descriptor an *action*
-names does distinguish act from agenda. **#735** owns the convergence, and
-whether the two enums then merge at all is the open question it should settle
-rather than assume.
+**#735 ✅ shipped (PR #739)** is the convergence #709 deferred: the forced and
+reaction scans now say where an ability comes from in the *same* vocabulary an
+activation does. `CandidateSource` was carrying a single `Board` kind for the act,
+the agenda **and** an attacking enemy's own ability, so `candidate_anchor` worked
+out which of the three a candidate was by comparing its code against the current
+act and agenda at read time — and fell through to `OptionTarget::Global` when
+neither matched, which is exactly the enemy case, leaving Silver Twilight Acolyte
+01102's forced-doom prompt anchored to nothing. The enum became
+`{ Ability(AbilitySource), Hand }`: a **wrapper, not a merge**, because a Fast
+event played from hand is not an ability source in the rules' sense — none of
+`glossary/Triggered_Abilities.md`'s four bullets names a card in hand — and
+folding it in would have put a permanently-unreachable kind into the enum
+`reachable_sources` enumerates. The two source→anchor maps the turn menu and the
+candidate path each carried collapsed into one `From<AbilitySource> for
+OptionTarget`, and `Global` stopped being any candidate's anchor. The
+`SourceGone` probe became `ability_source::source_card`, placed beside
+`reachable_sources` and documented as the question it deliberately is **not**:
+existence, not reachability, because a forced ability is not restricted to the
+sources its controller could legally *use*. Two lapse *attributions* changed with
+it (an attacking enemy's ability, and one minted from an attachment) and no
+resolution did — `withdraw_lapsed_candidates` decides what survives a re-scan,
+and it is untouched. Recorded as an amendment to
+[ADR 0010](../adr/0010-an-activation-names-an-ability-source.md).
 
 **#710 ✅ shipped (PR #737)** closes the cluster, and it is the one ticket that was
 **confirmation rather than construction** — no production behaviour changed. The
