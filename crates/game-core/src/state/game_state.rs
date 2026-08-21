@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, VecDeque};
 use serde::{Deserialize, Serialize};
 
 use super::{
+    ability_source::AbilitySource,
     card::{CardCode, CardInstanceId},
     chaos_bag::{ChaosBag, TokenModifiers},
     counter::Counter,
@@ -2224,42 +2225,51 @@ pub struct HandSizeDiscard {
 /// Where a [`ResolutionCandidate`] comes from — which decides how it
 /// *resolves* when picked.
 ///
-/// `InPlay` and `Board` candidates **fire an ability's effect**; a `Hand`
-/// candidate (Axis C, #335) is a Fast event **played** from hand (RR
-/// Appendix I — `CardPlayed`, run the matched ability's effect, discard),
-/// not fired in place. Replacing the former `source: Option<CardInstanceId>`
-/// with this enum lets one `pending_triggers` list carry hand events
-/// alongside in-play reactions: `None` (board) and "from hand" are distinct
-/// origins, so a bare `Option` could not tell them apart.
+/// An [`Ability`](Self::Ability) candidate **fires an ability's effect** in
+/// place, from the [`AbilitySource`] it names; a [`Hand`](Self::Hand) candidate
+/// (Axis C, #335) is a Fast event **played** from hand (RR Appendix I —
+/// `CardPlayed`, run the matched ability's effect, discard), not fired in
+/// place. That is the whole of the distinction, which is why the firing half is
+/// not a set of kinds of its own: **where an ability comes from is
+/// [`AbilitySource`]**, the same vocabulary an activation names (#735, ADR
+/// 0010).
+///
+/// The two descriptors used to be parallel enums that had drifted apart —
+/// `CandidateSource::Board` covered the act, the agenda *and* an attacking
+/// enemy's own ability with one kind, so every reader had to re-derive which
+/// board card it was by comparing the candidate's code against the current act
+/// and agenda. Wrapping instead of merging is what keeps `Hand` out of
+/// `AbilitySource`: a card played from hand is **not** an ability source in the
+/// rules' sense (`glossary/Triggered_Abilities.md` lists sources of *triggered
+/// abilities*), and `AbilitySource` is what the reachability predicate
+/// enumerates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CandidateSource {
-    /// An ability on an in-play / threat-area instance (reaction trigger,
-    /// weapon, …). The instance id drives `Effect::DiscardSelf`, usage-limit
-    /// bumping, and the soak self-binding.
-    InPlay(CardInstanceId),
-    /// A location's own ability (the Attic's forced horror). Anchors to the
-    /// location on the map. Locations have a [`LocationId`], not a
-    /// [`CardInstanceId`], so this can't fold into `InPlay` (#553).
-    Location(LocationId),
-    /// A scenario board card (act / agenda) — no instance; fires by `code`.
-    Board,
+    /// An ability fired in place, from the source that carries it: an in-play
+    /// instance (reaction trigger, weapon, the investigator card), a location
+    /// (the Attic's forced horror), an enemy (Silver Twilight Acolyte 01102's
+    /// forced doom), the current act or the current agenda.
+    Ability(AbilitySource),
     /// A Fast event in the controller's hand (Axis C) — *played* rather than
-    /// fired. No instance until it would enter play (events never do).
+    /// fired. No instance until it would enter play (events never do), and not
+    /// an ability source: no bullet of `glossary/Triggered_Abilities.md` names
+    /// a card in hand.
     Hand,
 }
 
 impl CandidateSource {
-    /// The firing in-play instance, if any — `Some` for [`InPlay`](Self::InPlay)
-    /// (a card in play, a threat-area card, or the investigator card, which is a
-    /// real `CardInPlay` since #448), `None` for [`Board`](Self::Board)
-    /// (scenario card), [`Hand`](Self::Hand) (event not yet in play), and
-    /// [`Location`](Self::Location) (a location, keyed by `LocationId`). Feeds
+    /// The firing in-play instance, if any — `Some` only for an
+    /// [`Ability`](Self::Ability) candidate whose source names one (a card in
+    /// play, a threat-area card, or the investigator card, which is a real
+    /// `CardInPlay` since #448). `None` for [`Hand`](Self::Hand) (event not yet
+    /// in play) and for a location / enemy / act / agenda source, none of which
+    /// carries a [`CardInstanceId`]. Feeds
     /// [`EvalContext::for_controller_with_optional_source`](crate::engine::EvalContext::for_controller_with_optional_source).
     #[must_use]
     pub fn instance(self) -> Option<CardInstanceId> {
         match self {
-            CandidateSource::InPlay(id) => Some(id),
-            CandidateSource::Board | CandidateSource::Hand | CandidateSource::Location(_) => None,
+            CandidateSource::Ability(source) => source.instance(),
+            CandidateSource::Hand => None,
         }
     }
 }

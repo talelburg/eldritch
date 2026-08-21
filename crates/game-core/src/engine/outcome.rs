@@ -90,6 +90,34 @@ pub enum OptionTarget {
     Agenda,
 }
 
+impl From<crate::state::AbilitySource> for OptionTarget {
+    /// The board surface an ability source is rendered on — **the one map from
+    /// a source to an anchor** (#735).
+    ///
+    /// Both paths that offer an ability go through it: the turn menu
+    /// (`TurnAction::target`) and the forced / reaction resolution options
+    /// (`reaction_windows::candidate_anchor`). They used to carry a copy each,
+    /// and the copies had already drifted — the candidate side re-derived which
+    /// board card it was by comparing card codes and fell through to
+    /// [`Global`](OptionTarget::Global) for an attacking enemy's own forced
+    /// ability, so Silver Twilight Acolyte 01102's doom prompt anchored to
+    /// nothing.
+    ///
+    /// The `match` is exhaustive on purpose: a sixth
+    /// [`AbilitySource`](crate::state::AbilitySource) kind should stop this
+    /// compiling rather than quietly anchor itself somewhere wrong.
+    fn from(source: crate::state::AbilitySource) -> Self {
+        use crate::state::AbilitySource;
+        match source {
+            AbilitySource::InPlay(instance_id) => OptionTarget::CardInstance(instance_id),
+            AbilitySource::Location(location) => OptionTarget::Location(location),
+            AbilitySource::Enemy(enemy) => OptionTarget::Enemy(enemy),
+            AbilitySource::Act => OptionTarget::Act,
+            AbilitySource::Agenda => OptionTarget::Agenda,
+        }
+    }
+}
+
 /// One selectable option in a structured choice prompt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChoiceOption {

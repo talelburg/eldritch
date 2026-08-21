@@ -310,7 +310,7 @@ fn scan_pending_triggers(
                 if !ability_eligible(
                     state,
                     ability,
-                    CandidateSource::InPlay(card.instance_id),
+                    CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
                     id,
                 ) {
                     continue;
@@ -324,7 +324,7 @@ fn scan_pending_triggers(
                     code: card.code.clone(),
                     controller: id,
                     ability_index,
-                    source: CandidateSource::InPlay(card.instance_id),
+                    source: CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
                 });
             }
         }
@@ -338,8 +338,9 @@ fn scan_pending_triggers(
 /// investigators … may … advance" group window (#434). The act/agenda are not
 /// in any `cards_in_play` zone, so [`scan_pending_triggers`] can't reach them in
 /// its per-investigator loop. Mirrors `collect_forced_hits`'s act/agenda scan:
-/// controller = the lead (board-wide effects ignore it), `CandidateSource::Board`,
-/// no per-instance usage cap (acts have none). Empty when the registry isn't
+/// controller = the lead (board-wide effects ignore it), the act's or the
+/// agenda's own [`AbilitySource`] kind, no per-instance usage cap (acts have
+/// none). Empty when the registry isn't
 /// installed or nothing matches.
 fn scan_act_agenda_reactions(
     state: &GameState,
@@ -353,9 +354,17 @@ fn scan_act_agenda_reactions(
         return Vec::new();
     };
     let mut hits = Vec::new();
-    for code in [
-        state.act_deck.get(state.act_index).map(|a| &a.code),
-        state.agenda_deck.get(state.agenda_index).map(|a| &a.code),
+    // Each slot carries the source kind it *is* — the candidate never has to be
+    // matched back to a board card by its code afterwards (#735).
+    for (code, source) in [
+        state
+            .act_deck
+            .get(state.act_index)
+            .map(|a| (&a.code, AbilitySource::Act)),
+        state
+            .agenda_deck
+            .get(state.agenda_index)
+            .map(|a| (&a.code, AbilitySource::Agenda)),
     ]
     .into_iter()
     .flatten()
@@ -381,7 +390,7 @@ fn scan_act_agenda_reactions(
             // Eligibility gate (RR p.2): suppress an act/agenda reaction whose
             // effect can't change state (e.g. The Barrier 01109's round-end
             // advance when the Hallway group can't afford the clue threshold).
-            if !ability_eligible(state, ability, CandidateSource::Board, lead) {
+            if !ability_eligible(state, ability, CandidateSource::Ability(source), lead) {
                 continue;
             }
             let ability_index = u8::try_from(idx)
@@ -390,7 +399,7 @@ fn scan_act_agenda_reactions(
                 code: code.clone(),
                 controller: lead,
                 ability_index,
-                source: CandidateSource::Board,
+                source: CandidateSource::Ability(source),
             });
         }
     }
@@ -599,55 +608,28 @@ fn trigger_matches(
     }
 }
 
-/// The current act's card code, if an act deck is loaded — used to anchor the
-/// round-end act-advance reaction (a [`CandidateSource::Board`] candidate whose
-/// code is the act) to the act card (S5, #540). `None` for fixtures with no act.
-pub(super) fn current_act_code(state: &GameState) -> Option<CardCode> {
-    state
-        .act_deck
-        .get(state.act_index)
-        .map(|act| act.code.clone())
-}
-
-/// The current agenda's printed code, if the agenda deck is non-empty. The mirror
-/// of [`current_act_code`]; anchors an agenda-sourced forced effect to the agenda
-/// card (#556). Correct at forced-ack time even for an `AgendaAdvanced` reverse:
-/// the forced fires at `FireReverse`, before `Finalize` bumps `agenda_index`.
-pub(super) fn current_agenda_code(state: &GameState) -> Option<CardCode> {
-    state
-        .agenda_deck
-        .get(state.agenda_index)
-        .map(|agenda| agenda.code.clone())
-}
-
-/// The board anchor for a resolution candidate's source: an in-play instance to
-/// its card (#539); a location's own forced ability to its map node (the Attic's
-/// horror, #553); a Fast hand event by code — every copy (#539); a board-wide
-/// effect to the act or agenda card when its code matches the current one, else no
-/// card home (#540/#553/#556). Shared by [`build_resolution_options`] and the
-/// forced-ack path.
-pub(super) fn candidate_anchor(
-    cand: &ResolutionCandidate,
-    current_act: Option<&CardCode>,
-    current_agenda: Option<&CardCode>,
-) -> crate::engine::OptionTarget {
+/// The board anchor for a resolution candidate's source: a Fast hand event by
+/// code — every copy (#539); everything else through the one
+/// [`AbilitySource`] → [`OptionTarget`] map, which the turn menu
+/// (`TurnAction::target`) shares (#735).
+///
+/// Before the split this arm had to work out *which* board card a
+/// `CandidateSource::Board` candidate was by comparing its code against the
+/// current act and agenda, and fell through to [`OptionTarget::Global`] when
+/// neither matched — which is what an attacking enemy's own forced ability hit
+/// (Silver Twilight Acolyte 01102). The source now says which it is, so there is
+/// nothing to derive and no fall-through: `Global` is no longer any candidate's
+/// anchor.
+///
+/// Shared by [`build_resolution_options`] and the forced-ack path.
+pub(super) fn candidate_anchor(cand: &ResolutionCandidate) -> crate::engine::OptionTarget {
     use crate::engine::OptionTarget;
     match cand.source {
         CandidateSource::Hand => OptionTarget::HandCardByCode {
             investigator: cand.controller,
             code: cand.code.clone(),
         },
-        CandidateSource::InPlay(instance_id) => OptionTarget::CardInstance(instance_id),
-        CandidateSource::Location(location_id) => OptionTarget::Location(location_id),
-        CandidateSource::Board => {
-            if current_act == Some(&cand.code) {
-                OptionTarget::Act
-            } else if current_agenda == Some(&cand.code) {
-                OptionTarget::Agenda
-            } else {
-                OptionTarget::Global
-            }
-        }
+        CandidateSource::Ability(source) => source.into(),
     }
 }
 
@@ -656,31 +638,19 @@ pub(super) fn candidate_anchor(
 /// `OptionId(i)` is the index into the returned list — the Axis-A convention
 /// shared with [`super::choice`]. The label distinguishes a hand Fast-event
 /// play ([`CandidateSource::Hand`]) from an in-play reaction.
-fn build_resolution_options(
-    candidates: &[ResolutionCandidate],
-    current_act: Option<&CardCode>,
-    current_agenda: Option<&CardCode>,
-) -> Vec<ChoiceOption> {
+fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOption> {
     candidates
         .iter()
         .enumerate()
         .map(|(i, cand)| {
             let id = OptionId(u32::try_from(i).expect("option count fits in u32"));
-            // Label distinguishes a hand Fast-event play from an in-play/board
-            // reaction; the board anchor is the shared `candidate_anchor` (#553).
+            // Label distinguishes a hand Fast-event play from an ability fired
+            // in place; the anchor is the shared `candidate_anchor` (#553).
             let label = match cand.source {
                 CandidateSource::Hand => format!("Play {} from hand", cand.code),
-                CandidateSource::InPlay(_)
-                | CandidateSource::Board
-                | CandidateSource::Location(_) => {
-                    format!("Resolve reaction: {}", cand.code)
-                }
+                CandidateSource::Ability(_) => format!("Resolve reaction: {}", cand.code),
             };
-            ChoiceOption::new(
-                id,
-                label,
-                candidate_anchor(cand, current_act, current_agenda),
-            )
+            ChoiceOption::new(id, label, candidate_anchor(cand))
         })
         .collect()
 }
@@ -901,31 +871,25 @@ fn lapse_reason(state: &GameState, candidate: &ResolutionCandidate) -> LapseReas
 }
 
 /// Whether a withdrawn candidate's card is still where the scan found it — the
-/// [`LapseReason::SourceGone`] probe. Mirrors the zone each scan walks: hand for
-/// a Fast play, the controller's card instances for an in-play reaction, the
-/// current act/agenda for a board reaction.
+/// [`LapseReason::SourceGone`] probe.
+///
+/// A hand candidate is present while its code is still in the controller's
+/// hand. Every other candidate names an [`AbilitySource`], and is present while
+/// that source still names **the same card** the scan minted the candidate from
+/// — `ability_source::source_card` walks the board, and the code comparison is
+/// what makes an *advanced* act's queued ability lapse: `AbilitySource::Act`
+/// names *the current* act, so the source has not vanished, it has become a
+/// different card.
 fn candidate_source_present(state: &GameState, candidate: &ResolutionCandidate) -> bool {
     match candidate.source {
         CandidateSource::Hand => state
             .investigators
             .get(&candidate.controller)
             .is_some_and(|inv| inv.hand.contains(&candidate.code)),
-        CandidateSource::InPlay(instance_id) => state
-            .investigators
-            .get(&candidate.controller)
-            .is_some_and(|inv| {
-                inv.controlled_card_instances()
-                    .any(|card| card.instance_id == instance_id)
-            }),
-        CandidateSource::Board => {
-            current_act_code(state).as_ref() == Some(&candidate.code)
-                || current_agenda_code(state).as_ref() == Some(&candidate.code)
+        CandidateSource::Ability(source) => {
+            crate::engine::ability_source::source_card(state, source)
+                .is_some_and(|card| *card.code() == candidate.code)
         }
-        // No reaction scan produces a location-sourced candidate today (those are
-        // forced location abilities — the Attic's horror, #553). Present iff the
-        // location is still on the map, so a future location reaction attributes
-        // sensibly rather than falling through to the residual.
-        CandidateSource::Location(location_id) => state.locations.contains_key(&location_id),
     }
 }
 
@@ -979,14 +943,10 @@ pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
     } else {
         ", or InputResponse::Skip to close"
     };
-    let current_act = current_act_code(cx.state);
-    let current_agenda = current_agenda_code(cx.state);
     let options = build_resolution_options(
         window
             .pending_candidates()
             .expect("open_queued_reaction_window: top window has candidates"),
-        current_act.as_ref(),
-        current_agenda.as_ref(),
     );
     let mut request = InputRequest::pick_single(
         format!(
@@ -1345,10 +1305,7 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
     } else {
         ", or InputResponse::Skip to close"
     };
-    let current_act = current_act_code(cx.state);
-    let current_agenda = current_agenda_code(cx.state);
-    let options =
-        build_resolution_options(candidates, current_act.as_ref(), current_agenda.as_ref());
+    let options = build_resolution_options(candidates);
     let mut request = InputRequest::pick_single(
         format!(
             "Resolution window: {} option(s). \
@@ -1378,6 +1335,14 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
 /// on `investigator_card.ability_usage`). `Board`, `Hand`, and `Location`
 /// candidates carry no per-instance usage limits and are `unreachable!` here.
 ///
+/// **A limit on a source with no card instance is refused before it can reach
+/// here.** Usage state is `CardInPlay::ability_usage`, per-instance, so a
+/// location / enemy / act / agenda source has nowhere to record a use;
+/// `reject_untrackable_usage_limit` rejects the activation-side case at
+/// validation, and no corpus card prints such a forced or reaction ability.
+/// **#699** builds the state-level counter the Dunwich locations will need,
+/// and is what lifts both.
+///
 /// **TODO (cancellation-counts-against-limit).** Rules Reference
 /// page 14: *"If the effects of a card or ability with a limit or
 /// maximum are canceled, it is still counted against the
@@ -1389,7 +1354,7 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
 fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
     let current_round = state.round;
     match trigger.source {
-        CandidateSource::InPlay(instance_id) => {
+        CandidateSource::Ability(AbilitySource::InPlay(instance_id)) => {
             let inv = state
                 .investigators
                 .get_mut(&trigger.controller)
@@ -1417,10 +1382,20 @@ fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
                 });
             card.bump_ability_usage(trigger.ability_index, current_round);
         }
-        CandidateSource::Board | CandidateSource::Hand | CandidateSource::Location(_) => {
+        // Listed kind by kind rather than wildcarded: a sixth `AbilitySource`
+        // kind *that carries an instance* must break this build rather than
+        // reach a panic at runtime.
+        CandidateSource::Ability(
+            AbilitySource::Location(_)
+            | AbilitySource::Enemy(_)
+            | AbilitySource::Act
+            | AbilitySource::Agenda,
+        )
+        | CandidateSource::Hand => {
             unreachable!(
                 "bump_usage_counter: a usage-limited candidate must be an in-play instance \
-                 (board / hand / location candidates carry no per-instance usage limits); \
+                 (a hand candidate, and an ability source with no card instance behind it — a \
+                 location, an enemy, the act, the agenda — have nowhere to record uses); \
                  candidate {trigger:?}"
             )
         }
@@ -2570,7 +2545,7 @@ mod resolution_option_anchor_tests {
                 code: CardCode::new("_inplay"),
                 controller: InvestigatorId(1),
                 ability_index: 0,
-                source: CandidateSource::InPlay(CardInstanceId(9)),
+                source: CandidateSource::Ability(AbilitySource::InPlay(CardInstanceId(9))),
             },
             ResolutionCandidate {
                 code: CardCode::new("01022"),
@@ -2579,13 +2554,13 @@ mod resolution_option_anchor_tests {
                 source: CandidateSource::Hand,
             },
             ResolutionCandidate {
-                code: CardCode::new("_board"),
+                code: CardCode::new("01109"),
                 controller: InvestigatorId(1),
                 ability_index: 0,
-                source: CandidateSource::Board,
+                source: CandidateSource::Ability(AbilitySource::Act),
             },
         ];
-        let opts = build_resolution_options(&cands, None, None);
+        let opts = build_resolution_options(&cands);
         assert_eq!(
             opts[0].target,
             OptionTarget::CardInstance(CardInstanceId(9))
@@ -2597,100 +2572,71 @@ mod resolution_option_anchor_tests {
                 code: CardCode::new("01022"),
             }
         );
-        assert_eq!(opts[2].target, OptionTarget::Global);
+        assert_eq!(
+            opts[2].target,
+            OptionTarget::Act,
+            "an act-sourced candidate anchors to the act card — no act deck is seeded here, \
+             because the source says which board card it is rather than the reader deriving it \
+             from the code (#735)",
+        );
     }
 
-    #[test]
-    fn board_candidate_matching_current_act_anchors_to_act() {
-        use crate::engine::OptionTarget;
-        use crate::state::{CardCode, InvestigatorId, ResolutionCandidate};
-        let act = CardCode::new("01109");
-        let cands = vec![
-            ResolutionCandidate {
-                code: act.clone(), // the round-end act-advance reaction
-                controller: InvestigatorId(1),
-                ability_index: 0,
-                source: CandidateSource::Board,
-            },
-            ResolutionCandidate {
-                code: CardCode::new("_other_board"), // some other board-wide reaction
-                controller: InvestigatorId(1),
-                ability_index: 0,
-                source: CandidateSource::Board,
-            },
-        ];
-        let opts = build_resolution_options(&cands, Some(&act), None);
-        assert_eq!(opts[0].target, OptionTarget::Act);
-        assert_eq!(opts[1].target, OptionTarget::Global);
-    }
-
+    /// Every source kind maps to its own anchor, and **none of them is
+    /// [`OptionTarget::Global`]** — a board candidate used to fall through to it
+    /// whenever the candidate's code matched neither the current act nor the
+    /// current agenda, which is exactly what an attacking enemy's own forced
+    /// ability did (#735).
     #[test]
     fn candidate_anchor_maps_each_source() {
         use crate::engine::OptionTarget;
         use crate::state::{
-            CardCode, CardInstanceId, InvestigatorId, LocationId, ResolutionCandidate,
+            CardCode, CardInstanceId, EnemyId, InvestigatorId, LocationId, ResolutionCandidate,
         };
-        let act = CardCode::new("01109");
-        let agenda = CardCode::new("01105");
-        let inplay = ResolutionCandidate::new(
-            CardCode::new("01020"),
-            InvestigatorId(1),
-            0,
-            CandidateSource::InPlay(CardInstanceId(5)),
+
+        let anchor_of = |source| {
+            candidate_anchor(&ResolutionCandidate::new(
+                CardCode::new("_code"),
+                InvestigatorId(2),
+                0,
+                source,
+            ))
+        };
+
+        assert_eq!(
+            anchor_of(CandidateSource::Ability(AbilitySource::InPlay(
+                CardInstanceId(5)
+            ))),
+            OptionTarget::CardInstance(CardInstanceId(5)),
         );
         // A location's own forced ability (the Attic, 01113) anchors to its map
-        // node, independent of the current act (#553).
-        let location = ResolutionCandidate::new(
-            CardCode::new("01113"),
-            InvestigatorId(1),
-            0,
-            CandidateSource::Location(LocationId(7)),
-        );
-        let hand = ResolutionCandidate::new(
-            CardCode::new("01022"),
-            InvestigatorId(2),
-            0,
-            CandidateSource::Hand,
-        );
-        let board_act =
-            ResolutionCandidate::new(act.clone(), InvestigatorId(1), 0, CandidateSource::Board);
-        let board_other = ResolutionCandidate::new(
-            CardCode::new("_other"),
-            InvestigatorId(1),
-            0,
-            CandidateSource::Board,
-        );
-        // A board candidate whose code is the current agenda anchors to the agenda
-        // card (What's Going On?! 01105's on-advance forced, #556).
-        let board_agenda =
-            ResolutionCandidate::new(agenda.clone(), InvestigatorId(1), 0, CandidateSource::Board);
+        // node (#553).
         assert_eq!(
-            candidate_anchor(&inplay, Some(&act), Some(&agenda)),
-            OptionTarget::CardInstance(CardInstanceId(5))
+            anchor_of(CandidateSource::Ability(AbilitySource::Location(
+                LocationId(7)
+            ))),
+            OptionTarget::Location(LocationId(7)),
+        );
+        // Silver Twilight Acolyte 01102's forced doom anchors to the attacking
+        // enemy, where it used to anchor to nothing (#735).
+        assert_eq!(
+            anchor_of(CandidateSource::Ability(AbilitySource::Enemy(EnemyId(3)))),
+            OptionTarget::Enemy(EnemyId(3)),
         );
         assert_eq!(
-            candidate_anchor(&hand, Some(&act), Some(&agenda)),
+            anchor_of(CandidateSource::Ability(AbilitySource::Act)),
+            OptionTarget::Act,
+        );
+        // What's Going On?! 01105's on-advance forced (#556).
+        assert_eq!(
+            anchor_of(CandidateSource::Ability(AbilitySource::Agenda)),
+            OptionTarget::Agenda,
+        );
+        assert_eq!(
+            anchor_of(CandidateSource::Hand),
             OptionTarget::HandCardByCode {
                 investigator: InvestigatorId(2),
-                code: CardCode::new("01022"),
-            }
-        );
-        // An act-coded board candidate still wins Act even with an agenda present.
-        assert_eq!(
-            candidate_anchor(&board_act, Some(&act), Some(&agenda)),
-            OptionTarget::Act
-        );
-        assert_eq!(
-            candidate_anchor(&board_other, Some(&act), Some(&agenda)),
-            OptionTarget::Global
-        );
-        assert_eq!(
-            candidate_anchor(&location, Some(&act), Some(&agenda)),
-            OptionTarget::Location(LocationId(7))
-        );
-        assert_eq!(
-            candidate_anchor(&board_agenda, Some(&act), Some(&agenda)),
-            OptionTarget::Agenda
+                code: CardCode::new("_code"),
+            },
         );
     }
 }
@@ -2785,41 +2731,152 @@ mod candidate_source_present_tests {
         let state = GameStateBuilder::default().with_investigator(inv).build();
         assert!(candidate_source_present(
             &state,
-            &candidate(CandidateSource::InPlay(instance))
+            &candidate(CandidateSource::Ability(AbilitySource::InPlay(instance)))
         ));
         // A different instance of the same code is a different candidate.
         assert!(!candidate_source_present(
             &state,
-            &candidate(CandidateSource::InPlay(CardInstanceId(8)))
+            &candidate(CandidateSource::Ability(AbilitySource::InPlay(
+                CardInstanceId(8)
+            )))
+        ));
+    }
+
+    /// A candidate minted from a **location attachment** — Barricade 01038's
+    /// `LeftLocation` self-discard, Obscuring Fog 01168's test forced — is
+    /// present while the attachment is on the board, not only while the
+    /// controller happens to hold it. The probe is board-wide because the
+    /// scans that mint these candidates are: the old controller-scoped arm
+    /// answered "gone" for every attachment-sourced candidate, which is a
+    /// mislabelled lapse reason rather than a wrong resolution (#735).
+    #[test]
+    fn an_attachment_candidate_is_present_though_no_investigator_controls_it() {
+        let instance = CardInstanceId(12);
+        let mut location = test_location(10, "Study");
+        location
+            .attachments
+            .push(CardInPlay::enter_play(CardCode::new(SOME_CODE), instance));
+        let state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .with_location(location)
+            .build();
+        assert!(candidate_source_present(
+            &state,
+            &candidate(CandidateSource::Ability(AbilitySource::InPlay(instance)))
         ));
     }
 
     #[test]
-    fn a_board_candidate_is_present_only_while_it_is_the_current_act_or_agenda() {
-        // No act/agenda deck seeded, so no board code can match.
-        let state = GameStateBuilder::default()
+    fn an_act_candidate_is_present_only_while_that_act_is_the_current_one() {
+        use crate::state::Act;
+        let act = |code: &str| Act {
+            code: CardCode::new(code),
+            clue_threshold: 0,
+            resolution: None,
+        };
+        let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
             .build();
-        assert!(!candidate_source_present(
-            &state,
-            &candidate(CandidateSource::Board)
-        ));
+        state.act_deck = vec![act(SOME_CODE), act("_next_act")];
+        state.act_index = 0;
+        let cand = ResolutionCandidate::new(
+            CardCode::new(SOME_CODE),
+            INV,
+            0,
+            CandidateSource::Ability(AbilitySource::Act),
+        );
+        assert!(candidate_source_present(&state, &cand));
+
+        // The act advanced: the source did not leave the board, it became a
+        // different card — and a candidate minted from the old one is gone all
+        // the same, which is the question the code comparison asks (#735).
+        let mut advanced = state.clone();
+        advanced.act_index = 1;
+        assert!(!candidate_source_present(&advanced, &cand));
+
+        // No act deck at all: nothing for `AbilitySource::Act` to name.
+        let empty = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .build();
+        assert!(!candidate_source_present(&empty, &cand));
+    }
+
+    #[test]
+    fn an_agenda_candidate_is_present_only_while_that_agenda_is_the_current_one() {
+        use crate::state::Agenda;
+        let mut state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .build();
+        state.agenda_deck = vec![Agenda {
+            code: CardCode::new(SOME_CODE),
+            doom_threshold: 3,
+            resolution: None,
+        }];
+        state.agenda_index = 0;
+        let cand = ResolutionCandidate::new(
+            CardCode::new(SOME_CODE),
+            INV,
+            0,
+            CandidateSource::Ability(AbilitySource::Agenda),
+        );
+        assert!(candidate_source_present(&state, &cand));
+
+        let mut past_the_end = state.clone();
+        past_the_end.agenda_index = 1;
+        assert!(!candidate_source_present(&past_the_end, &cand));
+    }
+
+    /// Silver Twilight Acolyte 01102's forced doom: the attacking enemy is the
+    /// source, so the probe asks whether that enemy is still on the board —
+    /// where a `Board` candidate used to compare its code against the current
+    /// act and agenda and always answer "gone" (#735).
+    #[test]
+    fn an_enemy_candidate_tracks_its_enemy() {
+        use crate::state::EnemyId;
+        use crate::test_support::test_enemy;
+        let mut enemy = test_enemy(4, "Silver Twilight Acolyte");
+        enemy.code = CardCode::new(SOME_CODE);
+        let state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .with_enemy(enemy)
+            .build();
+        let cand = |id| {
+            ResolutionCandidate::new(
+                CardCode::new(SOME_CODE),
+                INV,
+                0,
+                CandidateSource::Ability(AbilitySource::Enemy(id)),
+            )
+        };
+        assert!(candidate_source_present(&state, &cand(EnemyId(4))));
+        assert!(!candidate_source_present(&state, &cand(EnemyId(5))));
+
+        let mut defeated = state.clone();
+        defeated.enemies.remove(&EnemyId(4));
+        assert!(!candidate_source_present(&defeated, &cand(EnemyId(4))));
     }
 
     #[test]
     fn a_location_candidate_tracks_its_location() {
         let loc = LocationId(10);
+        // The candidate's code is the location's own printed code — the probe
+        // asks whether the source still names *the same card*, and a location's
+        // `LocationId` and code move together.
+        let mut location = test_location(10, "Study");
+        location.code = CardCode::new(SOME_CODE);
         let state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
-            .with_location(test_location(10, "Study"))
+            .with_location(location)
             .build();
         assert!(candidate_source_present(
             &state,
-            &candidate(CandidateSource::Location(loc))
+            &candidate(CandidateSource::Ability(AbilitySource::Location(loc)))
         ));
         assert!(!candidate_source_present(
             &state,
-            &candidate(CandidateSource::Location(LocationId(11)))
+            &candidate(CandidateSource::Ability(AbilitySource::Location(
+                LocationId(11)
+            )))
         ));
     }
 }
@@ -2869,7 +2926,7 @@ mod withdraw_suppressed_candidates_tests {
                 CardCode::new(CODE),
                 INV,
                 0,
-                CandidateSource::InPlay(CardInstanceId(1)),
+                CandidateSource::Ability(AbilitySource::InPlay(CardInstanceId(1))),
             )],
         });
         state
