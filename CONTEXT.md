@@ -89,15 +89,19 @@ _Avoid_: Bare "phase" anywhere a game phase could be meant — which is most of 
 
 **Snapshot**:
 Everything vendored under `data/arkhamdb-snapshot/` — all of Chapter 1's **card data**, pinned at one upstream commit. Most of it is **planning input**: it exists so decisions about the DSL and the engine can be made against the full set of cards we will eventually support, not just the ones we build against today. It is much larger than the corpus.
-_Avoid_: Calling it the corpus. Since #618 those are different sets, and conflating them makes "how many cards do we have?" unanswerable. Also avoid the bare word for the other two things we vendor from ArkhamDB — see **Rules text** and **Card FAQ** below. The snapshot is cards.
+_Avoid_: Calling it the corpus. Since #618 those are different sets, and conflating them makes "how many cards do we have?" unanswerable. Also avoid the bare word for the other things we vendor — see **Rules text**, **Card FAQ** and **Official FAQ** below. The snapshot is cards.
 
 **Rules text**:
 The Rules Reference ingested verbatim into `data/rules-reference/rules/`, one file per section and per glossary entry, filenames equal to ArkhamDB's anchor ids. It is the canonical source for how the game runs, and it covers all of Chapter 1 — the printed Rules Reference plus the rules deluxe expansions and the official FAQ added on top.
 _Avoid_: Reading the vendored PDF instead. That is the 2016 Core Set edition, retained only as the pinned publisher original; it predates `Bonded`, `Concealed X`, Bless/Curse and every FAQ amendment. Also avoid calling this "the snapshot" — it has no upstream commit to pin, so its provenance is a URL, a date and a hash.
 
 **Card FAQ**:
-The official per-card rulings ingested into `data/arkhamdb-faq/<pack>/<code>.md`, covering the whole snapshot. A card with no file has no rulings; `no-rulings.txt` says so explicitly, which is what makes absence an answer rather than a gap.
-_Avoid_: Treating a card's printed text as the whole story. Rulings routinely carry mechanics the text does not, which is why they are vendored alongside it.
+ArkhamDB's community-collated per-card rulings, ingested into `data/arkhamdb-faq/<pack>/<code>.md`, covering the whole snapshot. A card with no file has no rulings; `no-rulings.txt` says so explicitly, which is what makes absence an answer rather than a gap.
+_Avoid_: Treating a card's printed text as the whole story. Rulings routinely carry mechanics the text does not, which is why they are vendored alongside it. Also avoid confusing it with the **Official FAQ** below — that is the publisher's own document, and it outranks this one.
+
+**Official FAQ**:
+Fantasy Flight's *Notes, Errata, and Frequently Asked Questions*, converted from the pinned PDF into `data/official-faq/`, one file per section. Its unique content is the **Q&A section** — 145 pairs that appear in no other vendored source, and the reason #672 existed. Its numbered rules sections (Game Play 1.x, Card Ability Interpretation 2.x) are already in **Rules text**, folded in there by ArkhamDB; the duplication is deliberate, so that "not here" cannot mean "we didn't ingest that page".
+_Avoid_: Reaching for it first on a procedural rules question. **Rules text** is indexed per entry and answers most of them; the Official FAQ is a flat document you go to when it doesn't, and it wins on conflict — *"the text of this document takes precedence"*.
 
 **Corpus**:
 The subset of the snapshot that `PACK_FILES` ingests and the build actually compiles — Core + Dunwich, emitted as `crates/cards/src/generated/cards.rs`. A pack becomes part of the corpus by being moved into `PACK_FILES`; that promotion is deliberate, never automatic.
