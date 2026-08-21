@@ -27,9 +27,15 @@
 //!
 //! The third bullet lands here too (#709) — *"The current act or current agenda
 //! card."* It is the one bullet with **no gate at all**: not control, not
-//! co-location. An investigator reaches the current act and the current agenda
-//! from wherever they stand, which is why [`reachable_sources`] appends them
-//! after the co-location pass has had its chance to bail out.
+//! co-location. Disrupting the Ritual 01148's ruling says so about the printed
+//! card (<https://arkhamdb.com/card/01148>), verbatim:
+//!
+//! > Your investigator doesn't need to be at the Ritual Site in order to
+//! > activate the ability of this act card.
+//!
+//! An investigator therefore reaches the current act and the current agenda from
+//! wherever they stand, which is why [`reachable_sources`] appends them after
+//! the co-location pass has had its chance to bail out.
 //!
 //! Reachability says only *which sources are addressable*. It never widens what
 //! is **legal**: everything `Appendix_I_Initiation_Sequence.md` requires still
@@ -43,7 +49,7 @@ use std::collections::BTreeMap;
 
 use crate::state::{
     AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, GameState,
-    InvestigatorId, Location, UseKind,
+    Investigator, InvestigatorId, Location, UseKind,
 };
 
 /// What a reachable [`AbilitySource`] points at: the record carrying the
@@ -149,7 +155,7 @@ pub(crate) fn reachable_sources(
     // or her investigator card" — the forced and reaction scans walk it, and
     // this is what makes the activation path agree with them (#707).
     let mut sources: Vec<_> = inv.controlled_card_instances().map(as_instance).collect();
-    sources.extend(colocated_sources(state, investigator));
+    sources.extend(colocated_sources(state, inv));
     // *"The current act or current agenda card."* (#709) — appended after the
     // co-location pass rather than inside it, because this bullet has no gate:
     // an investigator between locations still reaches both. A deck that is empty
@@ -164,23 +170,20 @@ pub(crate) fn reachable_sources(
     sources
 }
 
-/// The co-location bullet's sources for `investigator` (#708) — empty for one
-/// who is not standing at a location on the map.
+/// The co-location bullet's sources for `inv` (#708) — empty for an
+/// investigator who is not standing at a location on the map.
 ///
 /// Split out of [`reachable_sources`] so that bailing out of *this* bullet
 /// cannot skip the act and agenda bullet that follows it: the two are
 /// independent, and an early `return` in one function body made them look
 /// sequential.
-fn colocated_sources(
-    state: &GameState,
-    investigator: InvestigatorId,
-) -> Vec<(AbilitySource, SourceCard<'_>)> {
+fn colocated_sources<'a>(
+    state: &'a GameState,
+    inv: &Investigator,
+) -> Vec<(AbilitySource, SourceCard<'a>)> {
     let mut sources = Vec::new();
     // Everything below is gated on standing in the same place, never on
     // controlling it.
-    let Some(inv) = state.investigators.get(&investigator) else {
-        return sources;
-    };
     let Some(location_id) = inv.current_location else {
         return sources;
     };
@@ -220,7 +223,7 @@ fn colocated_sources(
     for other in state
         .investigators
         .values()
-        .filter(|other| other.id != investigator && other.current_location == Some(location_id))
+        .filter(|other| other.id != inv.id && other.current_location == Some(location_id))
     {
         sources.extend(other.threat_area.iter().map(as_instance));
     }
@@ -645,10 +648,10 @@ mod tests {
     /// The Gathering's agenda 1, What's Going On?!
     const AGENDA: &str = "01105";
 
-    fn act(code: &str) -> Act {
+    fn act(code: &str, clue_threshold: u8) -> Act {
         Act {
             code: CardCode::new(code),
-            clue_threshold: 2,
+            clue_threshold,
             resolution: None,
         }
     }
@@ -665,7 +668,8 @@ mod tests {
     /// the front.
     fn board_with_scenario_decks() -> GameState {
         let mut state = board();
-        state.act_deck = vec![act(ACT_ONE), act(ACT_TWO)];
+        // Printed clue thresholds, from the snapshot: Trapped 2, The Barrier 3.
+        state.act_deck = vec![act(ACT_ONE, 2), act(ACT_TWO, 3)];
         state.act_index = 0;
         state.agenda_deck = vec![agenda(AGENDA)];
         state.agenda_index = 0;

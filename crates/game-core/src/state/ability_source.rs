@@ -62,8 +62,11 @@ pub enum AbilitySource {
     /// action address an act that is no longer current.
     ///
     /// Unlike [`Location`](Self::Location) and [`Enemy`](Self::Enemy), this is
-    /// **not** gated on where the investigator stands. Corpus consumers:
-    /// Uncovering the Conspiracy 01123 (*"\[action\] The investigators spend
+    /// **not** gated on where the investigator stands — Disrupting the Ritual
+    /// 01148's ruling says so outright (<https://arkhamdb.com/card/01148>):
+    /// *"Your investigator doesn't need to be at the Ritual Site in order to
+    /// activate the ability of this act card."* Corpus cards printing such an
+    /// ability: Uncovering the Conspiracy 01123 (*"\[action\] The investigators spend
     /// 2 clues per investigator, as a group: Draw the top card of the Cultist
     /// deck."*) and Disrupting the Ritual 01148 (*"\[action\] Spend 1 clue:
     /// Test \[willpower\] (3) or \[agility\] (3). If you succeed, place 1
@@ -71,8 +74,8 @@ pub enum AbilitySource {
     Act,
     /// The **current** agenda — *"… or current agenda card"* (#709). Carries no
     /// id, and is not location-gated, for the same reasons as
-    /// [`Act`](Self::Act). Corpus consumers: the Core resigns on Predator or
-    /// Prey? 01121a and Time Is Running Short 01122 (*"\[action\]:
+    /// [`Act`](Self::Act). Corpus cards printing such an ability: the Core
+    /// resigns on Predator or Prey? 01121a and Time Is Running Short 01122 (*"\[action\]:
     /// **Resign.** You don't want to risk taking too long, so you head to
     /// safety with the information you've gathered."*).
     Agenda,

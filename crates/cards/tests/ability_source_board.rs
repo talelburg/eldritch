@@ -7,7 +7,12 @@
 //!
 //! Unlike the second bullet, this one names no location — an investigator
 //! activates an act or agenda ability from wherever they stand, and from
-//! nowhere at all. And unlike the first, it names no controller.
+//! nowhere at all. And unlike the first, it names no controller. Disrupting the
+//! Ritual 01148's ruling says the same about the printed card
+//! (<https://arkhamdb.com/card/01148>), verbatim:
+//!
+//! > Your investigator doesn't need to be at the Ritual Site in order to
+//! > activate the ability of this act card.
 //!
 //! Both halves are asserted at both seams: an ability must be **offered** by
 //! the turn-menu enumerator *and* accepted by the apply entry point.
