@@ -2,6 +2,36 @@
 
 Fantasy Flight's *Notes, Errata, and Frequently Asked Questions*, converted from the pinned PDF. See [`SOURCE.md`](SOURCE.md) for provenance and for how the conversion works.
 
+## Card errata are already in the snapshot — but verify per card, not wholesale
+
+The Card Errata section of [`Notes_and_Errata.md`](Notes_and_Errata.md) was
+cross-checked against the pinned card snapshot in full on 2026-08-22 — all 103
+entries, 156 cards, the whole snapshot rather than the implemented corpus
+(#751). ArkhamDB applies card errata to its text, but **not reliably**: 12
+cards still carry pre-errata wording, and three of those are half-applied,
+where the quoted fragment landed and a leftover clause survived beside it.
+
+What that means when you look a card up:
+
+- **Read the card's rulings file, not just its text.** `../arkhamdb-faq/` is a
+  second, near-complete errata channel: 148 of the 156 errata'd cards carry the
+  erratum verbatim in their own file or on their sibling face, with the FAQ
+  version attached. That is why the project-level directive says to read both.
+- **Neither `errata_date` nor the rulings boilerplate proves anything was
+  applied.** The snapshot's `errata_date` is populated only for player-card
+  errata rounds, so 30 correctly-errata'd cards carry none at all, while 10 of
+  the 12 divergent ones do carry one. The rulings files claim *"the ArkhamDB
+  text has been edited to contain this erratum"* on every divergent card. Both
+  signals mark that an erratum exists; only the text says whether it landed.
+- **The pipeline deliberately has no errata-application step.** Reading both
+  sources already surfaces what matters, and patching the corpus would diverge
+  it from the vendored upstream that [`../arkhamdb-snapshot/SOURCE.md`](../arkhamdb-snapshot/SOURCE.md)
+  rests on.
+
+The per-card verdict table and the 12 divergences are in
+<https://github.com/talelburg/eldritch/issues/751>. A snapshot refresh
+invalidates the check.
+
 ## Sections
 
 - [Notes, Errata, and Frequently Asked Questions](Intro.md)
