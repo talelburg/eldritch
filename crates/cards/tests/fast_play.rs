@@ -26,22 +26,30 @@
 //! is enough to play under the active-investigator branch and would mask
 //! the actual rule being tested.
 //!
+//! The file grew a #710 section at the end: the same zero-action gate, asked of
+//! an **engine-opened** player window rather than a builder-seeded one, so that
+//! the corpus's existing `[fast]` abilities are checked for *being offered* and
+//! not only for being accepted.
+//!
 //! Why this file exists at the `cards/tests/` layer: it needs real card
 //! metadata + abilities from the `cards` corpus, which `game-core` itself
 //! cannot reach by crate-dependency direction. Each `tests/*.rs` is its
 //! own process so `install(cards::REGISTRY)` does not collide with the
 //! other integration test binaries.
 
-use game_core::engine::EngineOutcome;
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::engine::{EngineOutcome, InputKind, OptionTarget};
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, Continuation, EnemyId, FastActorScope,
-    FastWindowKind, InvestigatorId, LocationId, MythosResume, Phase, PhaseStep,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
+    EnemyId, FastActorScope, FastWindowKind, InvestigatorId, LocationId, MythosResume, Phase,
+    PhaseStep, SkillKind,
 };
 use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location, GameStateBuilder,
+    dispatch_turn_action_unchecked, perform_skill_test, test_enemy, test_investigator,
+    test_location, GameStateBuilder,
 };
 
-use game_core::TurnAction;
+use game_core::{apply, Action, TurnAction};
 
 /// Beat Cop 01018: *"You get +1 \[combat\]."* / *"\[fast\] Discard Beat Cop:
 /// Deal 1 damage to an enemy at your location."*
@@ -414,5 +422,85 @@ fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
             || reason.contains("Investigation")
             || reason.contains("window"),
         "expected gate-rejection wording; got: {reason}",
+    );
+}
+
+// ---- the corpus regression for #710 --------------------------------------
+//
+// #710 widened *which sources* a player window reaches, by making the window's
+// enumerator consult the one reachability predicate the turn menu consults
+// (`engine::ability_source`). The cards that already print a zero-action
+// ability all sit under the first rules bullet — *"a card in play and under his
+// or her control"* — so this is the half most at risk of a silent regression,
+// and the one the ticket asks be checked against the real corpus.
+//
+// Beat Cop 01018 (verbatim, <https://arkhamdb.com/card/01018>):
+//
+// > You get +1 [combat].
+// > [fast] Discard Beat Cop: Deal 1 damage to an enemy at your location.
+//
+// with the ruling that makes the window the load-bearing part, verbatim:
+//
+// > You cannot use Beat Cop's ability after you assign lethal damage/horror to
+// > him (there is no Player Window to use [fast]free abilities in between
+// > assigning and applying damage).
+//
+// The two tests above submit the activation directly against a builder-seeded
+// window. This one goes through an **engine-opened** window — a skill test's
+// ST.1 player window — and asserts the ability is *offered* there, which is
+// the seam #710 is about: the Parlor's Resign missing from the menu was as
+// much the defect as its being refused on submission, and the same is true of
+// a window's option list.
+
+/// Beat Cop's zero-action ability is offered by an engine-opened player window,
+/// anchored to the card instance carrying it, and resolves from the pick — the
+/// existing corpus behaviour, unchanged by the source widening.
+#[test]
+fn corpus_zero_action_ability_is_offered_by_an_engine_opened_player_window() {
+    // No seeded window: the skill test opens its own, so the option list under
+    // assertion is the one a real client would be shown. Mythos phase with
+    // investigator 1 active, so nothing but the window can permit the
+    // activation.
+    let mut state = board_with_beat_cop(false);
+    // The window opens before any token is revealed, but the test refuses to
+    // start against an empty bag.
+    state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
+    let result = perform_skill_test(state, InvestigatorId(2), SkillKind::Willpower, 4);
+    let EngineOutcome::AwaitingInput { ref request, .. } = result.outcome else {
+        panic!(
+            "the skill test should park at its ST.1 player window, got {:?}",
+            result.outcome,
+        );
+    };
+    assert_eq!(request.kind, InputKind::PickSingle, "{request:?}");
+    assert!(
+        request.skippable,
+        "a player window is skippable: {request:?}"
+    );
+    let targets: Vec<_> = request.options.iter().map(|o| o.target.clone()).collect();
+    assert_eq!(
+        targets,
+        vec![OptionTarget::CardInstance(CardInstanceId(1))],
+        "Beat Cop's [fast] ability is the one thing eligible on this board, anchored to \
+         the instance that carries it",
+    );
+
+    let option = request.options[0].id;
+    let picked = apply(
+        result.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(option),
+        }),
+    );
+    assert_eq!(
+        picked.state.enemies[&EnemyId(100)].damage,
+        1,
+        "picking the offered option resolved the ability",
+    );
+    assert!(
+        picked.state.investigators[&InvestigatorId(2)]
+            .cards_in_play
+            .is_empty(),
+        "Beat Cop paid its own discard as the cost",
     );
 }

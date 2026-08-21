@@ -4,9 +4,19 @@
 //! The Rules Reference answers this once for `[free]`, `[reaction]` and
 //! `[action]` abilities alike — `glossary/Triggered_Abilities.md`'s four
 //! bullets, quoted on [`AbilitySource`]. This module is the engine's single
-//! answer to them, so the validator and the turn-menu enumerator cannot drift
-//! apart: [`reachable_sources`] *is* the predicate, and [`resolve`] is a lookup
-//! in it rather than a second reading of the rules.
+//! answer to them, so its three consumers cannot drift apart:
+//! [`reachable_sources`] *is* the predicate, and [`resolve`] is a lookup in it
+//! rather than a second reading of the rules.
+//!
+//! The three are the activation validator (`check_activate_ability`), the
+//! turn-menu enumerator (`enumerate::push_card_actions`) and the player-window
+//! enumerator (`reaction_windows::enumerate_fast_plays`). The last is why the
+//! bullets being written once matters: a zero-action ability — the `[free]`
+//! icon, *"a free triggered ability that does not cost an action and may be
+//! used during any player window"* — on a location, an enemy, a co-located
+//! threat area, the act or the agenda reaches a player window on exactly the
+//! terms an action-costed one reaches the turn menu, because both ask this
+//! function (#710).
 //!
 //! Three bullets are implemented. The **control** bullet — *"A card in play and
 //! under his or her control. This includes his or her investigator card."* —
