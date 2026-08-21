@@ -79,7 +79,6 @@
 //! under test.
 
 use game_core::action::{InputResponse, PlayerAction};
-use game_core::assert_event;
 use game_core::card_registry::{self, CardRegistry};
 use game_core::dsl::{activated, gain_resources, Ability, InvestigatorTarget};
 use game_core::engine::{EngineOutcome, InputKind, OptionTarget, TurnAction};
@@ -93,6 +92,7 @@ use game_core::test_support::{
     test_investigator, test_location, GameStateBuilder,
 };
 use game_core::{apply, Action, ApplyResult};
+use game_core::{assert_event, assert_no_event};
 
 /// Synthetic **location** card, standing in for Ten-Acre Meadow 02246. Two
 /// locations on the board print it, so "offered here" and "not offered there"
@@ -128,10 +128,10 @@ const STRANGERS_WARD: CardInstanceId = CardInstanceId(31);
 
 /// Ability index of the zero-action ability — `Trigger::Activated
 /// { action_cost: 0 }`, the `[free]` icon.
-const ZERO: u8 = 0;
+const ZERO_ACTION_ABILITY: u8 = 0;
 /// Ability index of the action-costed ability on the same card — the `[action]`
 /// icon, which a player window does **not** open.
-const ACTIONED: u8 = 1;
+const ACTION_COSTED_ABILITY: u8 = 1;
 
 /// The starting action allowance, asserted unchanged after every zero-action
 /// activation: *"a free triggered ability that does not cost an action"*.
@@ -271,7 +271,7 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
 
 /// Submit `source`'s zero-action ability as `MINE` at the open player window.
 fn activate_at_window(state: GameState, source: AbilitySource) -> ApplyResult {
-    dispatch_turn_action_unchecked(state, &activation(source, ZERO))
+    dispatch_turn_action_unchecked(state, &activation(source, ZERO_ACTION_ABILITY))
 }
 
 /// The window offers this source's zero-action ability, and `MINE` can take it:
@@ -292,7 +292,7 @@ fn assert_offered_and_usable(source: AbilitySource, target: &OptionTarget, why: 
     );
     assert_event!(
         result.events,
-        Event::AbilityActivated { investigator, source: s, ability_index: ZERO, .. }
+        Event::AbilityActivated { investigator, source: s, ability_index: ZERO_ACTION_ABILITY, .. }
             if *investigator == MINE && *s == source
     );
     assert_eq!(
@@ -376,13 +376,19 @@ fn an_enemy_at_your_location_offers_its_zero_action_ability_in_a_window() {
     );
 }
 
+/// The offering seam's half of the same pair, split out to match the location
+/// pair above: nobody stands where this enemy is, so it reaches nobody.
 #[test]
-fn an_enemy_at_another_location_is_out_of_reach_even_in_a_window() {
+fn an_enemy_nobody_stands_with_offers_nothing_to_the_window() {
     let (_, targets) = at_player_window(board());
     assert!(
         !targets.contains(&OptionTarget::Enemy(CULTIST_THERE)),
         "no investigator stands where this enemy is; window offered {targets:?}",
     );
+}
+
+#[test]
+fn an_enemy_at_another_location_is_out_of_reach_even_in_a_window() {
     assert_out_of_reach(
         AbilitySource::Enemy(CULTIST_THERE),
         "this enemy is at another location",
@@ -477,8 +483,10 @@ fn the_act_and_agenda_stay_reachable_from_nowhere_at_all() {
 #[test]
 fn an_action_costed_ability_on_the_same_source_is_not_opened_by_the_window() {
     let (state, _) = at_player_window(board());
-    let result =
-        dispatch_turn_action_unchecked(state, &activation(AbilitySource::Location(HERE), ACTIONED));
+    let result = dispatch_turn_action_unchecked(
+        state,
+        &activation(AbilitySource::Location(HERE), ACTION_COSTED_ABILITY),
+    );
     let EngineOutcome::Rejected { reason } = &result.outcome else {
         panic!("an [action] ability is not a player-window ability; got {result:?}");
     };
@@ -491,29 +499,40 @@ fn an_action_costed_ability_on_the_same_source_is_not_opened_by_the_window() {
 /// *"a free triggered ability that does not cost an action"* — and RR p.5's
 /// attack of opportunity is provoked by **actions**, so a ready enemy engaged
 /// with the activating investigator does nothing at all.
+/// Asserted for **every** source, not just one: the criterion reads across
+/// them, and each kind reaches `activate_ability` by a different arm of the
+/// reachability predicate.
 #[test]
 fn a_zero_action_ability_on_a_new_source_provokes_no_attack_of_opportunity() {
-    let (state, _) = at_player_window(board());
-    assert!(
-        !state.enemies[&CULTIST_HERE].exhausted
-            && state.enemies[&CULTIST_HERE].engaged_with == Some(MINE),
-        "the AoO precondition — a ready enemy engaged with the activator — must hold",
-    );
+    for source in [
+        AbilitySource::Location(HERE),
+        AbilitySource::Enemy(CULTIST_HERE),
+        AbilitySource::InPlay(NEIGHBOURS_WARD),
+        AbilitySource::Act,
+        AbilitySource::Agenda,
+    ] {
+        let (state, _) = at_player_window(board());
+        assert!(
+            !state.enemies[&CULTIST_HERE].exhausted
+                && state.enemies[&CULTIST_HERE].engaged_with == Some(MINE),
+            "the AoO precondition — a ready enemy engaged with the activator — must hold",
+        );
 
-    let result = activate_at_window(state, AbilitySource::Location(HERE));
-    assert_event!(
-        result.events,
-        Event::AbilityActivated { source: AbilitySource::Location(l), .. } if *l == HERE
-    );
-    // An attack of opportunity lands as damage/horror on the activator and
-    // exhausts the attacker; none of the three appears.
-    game_core::assert_no_event!(result.events, Event::DamageTaken { .. });
-    game_core::assert_no_event!(result.events, Event::HorrorTaken { .. });
-    game_core::assert_no_event!(result.events, Event::EnemyExhausted { .. });
-    assert_eq!(
-        result.state.investigators[&MINE].actions_remaining, ACTIONS,
-        "no action was spent, so there was no action to provoke from",
-    );
+        let result = activate_at_window(state, source);
+        assert_event!(
+            result.events,
+            Event::AbilityActivated { source: s, .. } if *s == source
+        );
+        // An attack of opportunity lands as damage/horror on the activator and
+        // exhausts the attacker; none of the three appears.
+        assert_no_event!(result.events, Event::DamageTaken { .. });
+        assert_no_event!(result.events, Event::HorrorTaken { .. });
+        assert_no_event!(result.events, Event::EnemyExhausted { .. });
+        assert_eq!(
+            result.state.investigators[&MINE].actions_remaining, ACTIONS,
+            "no action was spent from {source:?}, so there was no action to provoke from",
+        );
+    }
 }
 
 // ---- the window's own contract -------------------------------------------

@@ -504,3 +504,68 @@ fn corpus_zero_action_ability_is_offered_by_an_engine_opened_player_window() {
         "Beat Cop paid its own discard as the cost",
     );
 }
+
+/// Hyperawareness 01034 (verbatim, <https://arkhamdb.com/card/01034>):
+///
+/// > [fast] Spend 1 resource: You get +1 [intellect] for this skill test.
+/// > [fast] Spend 1 resource: You get +1 [agility] for this skill test.
+///
+/// and Physical Training 01017 (verbatim, <https://arkhamdb.com/card/01017>):
+///
+/// > [fast] Spend 1 resource: You get +1 [willpower] for this skill test.
+/// > [fast] Spend 1 resource: You get +1 [combat] for this skill test.
+///
+/// — the corpus's other zero-action abilities, and the only ones that print
+/// two apiece. Both carry the same ruling, Hyperawareness's verbatim:
+///
+/// > You can use [fast]fast actions as many times as you want, as long as you
+/// > can pay the cost; there is no limit.
+///
+/// The window offers all four, each anchored to the instance that prints it —
+/// the control bullet, unchanged by #710's widening. Their `for this skill
+/// test` scope is why they can only be checked inside a test (#676), which is
+/// exactly what a ST.1 player window is.
+#[test]
+fn corpus_zero_action_abilities_are_offered_once_per_ability_not_once_per_card() {
+    const HYPERAWARENESS: CardInstanceId = CardInstanceId(2);
+    const PHYSICAL_TRAINING: CardInstanceId = CardInstanceId(3);
+
+    let mut inv = test_investigator(1);
+    inv.resources = 5;
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new("01034"),
+        HYPERAWARENESS,
+    ));
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new("01017"),
+        PHYSICAL_TRAINING,
+    ));
+    let mut state = GameStateBuilder::new()
+        .with_investigator(inv)
+        // Mythos, so the window is the only thing that can permit the
+        // activations (investigator 1 is not acting in an Investigation turn).
+        .with_phase(Phase::Mythos)
+        .with_active_investigator(InvestigatorId(1))
+        .build();
+    state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
+
+    let result = perform_skill_test(state, InvestigatorId(1), SkillKind::Willpower, 4);
+    let EngineOutcome::AwaitingInput { ref request, .. } = result.outcome else {
+        panic!(
+            "the skill test should park at its ST.1 player window, got {:?}",
+            result.outcome,
+        );
+    };
+    let targets: Vec<_> = request.options.iter().map(|o| o.target.clone()).collect();
+    assert_eq!(
+        targets,
+        vec![
+            OptionTarget::CardInstance(HYPERAWARENESS),
+            OptionTarget::CardInstance(HYPERAWARENESS),
+            OptionTarget::CardInstance(PHYSICAL_TRAINING),
+            OptionTarget::CardInstance(PHYSICAL_TRAINING),
+        ],
+        "each of the four zero-action abilities is its own option, anchored to the card \
+         that prints it",
+    );
+}
