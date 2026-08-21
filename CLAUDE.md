@@ -205,3 +205,7 @@ Single-context — [`CONTEXT.md`](CONTEXT.md) (the domain glossary) and `docs/ad
 ### Coding standards
 
 `docs/agents/standards.md` — the index of how code is written here. It points at the standards documented in this file and defines the ones with no other home. It is what `code-review`'s Standards axis reads.
+
+### Documentation standards
+
+`docs/agents/writing.md` — the house style for the docs an agent reads. Read it before **adding a rule to this file** (there is an admission bar, and the PR names which route the rule passes) or **writing an ADR** (this repo overrides the skill suite's `ADR-FORMAT.md` on size, and `writing.md` is the spec that wins).
