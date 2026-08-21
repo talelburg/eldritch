@@ -35,8 +35,8 @@ Naming it as an override matters because an agent that has loaded `/domain-model
 **There is deliberately no line cap on `CLAUDE.md`.** A hard ceiling makes a necessary rule pay for an unrelated one's bulk: the next rule to be rejected would be whichever one arrived after the budget ran out, not the weakest one. Three mechanisms instead.
 
 1. **A PR adding to `CLAUDE.md` names the admission route in its body** — route one or route two, in a sentence. Growth is argued, not assumed.
-2. **A rule written for a transitional state carries its terminal condition inline**, and is deleted when that condition is met — the same discipline [ADR 0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md) applies in code, where a reject, its classification and its match arm are deleted together when the last condition flips. The licensed-mismatch rule is what happens without this: it reached the point of stating outright that no card holds the licence any more, and then spent another eighty words explaining the mechanism.
-3. **A documentation sweep at each phase close**, alongside the existing review escalations, as the backstop for whatever the first two missed.
+2. **A rule written for a transitional state carries its terminal condition inline**, and names which parts go when that condition is met. [ADR 0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md) is the model: it says outright that its reject *"is scaffolding with a terminal condition"* and that *"the arm, the classification and the reject are deleted together"* when the last condition flips. `CLAUDE.md`'s licensed-mismatch rule is the same rule written without that clause — it now states that no card holds the licence any more while the mechanism stays live for the conditions that remain, and nobody can tell from the rule itself which half was supposed to go.
+3. **A documentation sweep at each phase close**, as the backstop for whatever the first two missed. The phase-close procedure owns that step — [`docs/phases/README.md`](../phases/README.md), "Maintaining these docs" — and this file is what the sweep reads.
 
 ## De-duplication direction
 
@@ -48,9 +48,9 @@ The escape hatch: a duplication that is genuinely both — a decision whose *sta
 
 A documentation PR is read against these.
 
-- **Does this rule carry its evidence?** The PR or `file:line` where its absence cost something, or the verbatim clause it implements. A bare imperative is the failure mode.
-- **Does a transitional rule name its terminal condition?** If it exists only until a migration completes, the sentence that deletes it is in the rule.
-- **Is this an amendment that should have been folded?** A new section appended to an existing ADR needs to be a genuine reversal, or it belongs folded into the prose with a changelog line.
-- **Does a new `CLAUDE.md` entry name its admission route?** Route one or route two, stated in the PR body.
-- **Does a pointer say what you would get wrong by skipping it?** Not just what it is about.
+- **Does this rule carry its evidence?** The PR or `file:line` where its absence cost something, or the verbatim clause it implements.
+- **Does a transitional rule name its terminal condition, and which parts go with it?**
+- **Is this an appended amendment that should have been folded?**
+- **Does a new `CLAUDE.md` entry name its admission route?**
+- **Does a pointer say what you would get wrong by skipping it?**
 - **Is anything here now history?** Per-PR narration, migration state whose migration finished, a decision restated in the doc that already owns it.

@@ -208,4 +208,4 @@ Single-context — [`CONTEXT.md`](CONTEXT.md) (the domain glossary) and `docs/ad
 
 ### Documentation standards
 
-`docs/agents/writing.md` — the house style for this file, `docs/agents/*`, and `docs/adr/*`. Read it before adding a rule here (it has an admission bar, and a PR that adds one names which route it passes) or writing an ADR (this repo overrides the skill suite's `ADR-FORMAT.md`, so following whichever spec you loaded last is wrong).
+`docs/agents/writing.md` — the house style for the docs an agent reads. Read it before **adding a rule to this file** (there is an admission bar, and the PR names which route the rule passes) or **writing an ADR** (this repo overrides the skill suite's `ADR-FORMAT.md` on size, and `writing.md` is the spec that wins).

@@ -17,7 +17,7 @@ Standards live in exactly one place each. Most already have a home in `CLAUDE.md
 | Card text and rules citation policy (read the vendored text locally, always read the FAQ, never fetch) | `CLAUDE.md` → Architecture → Domain knowledge |
 | Running local checks with CI's exact strict flags | `CLAUDE.md` → Commands |
 | Domain vocabulary — use the glossary's words in names and test titles | `CONTEXT.md` |
-| How the docs themselves are written — `CLAUDE.md`'s admission bar, the ADR shape, fold-don't-append, the doc-PR review checklist | [`docs/agents/writing.md`](writing.md) |
+| How the docs are written, not the code — the file to read before adding a rule to `CLAUDE.md` or writing an ADR, since both have a bar this file does not state | [`docs/agents/writing.md`](writing.md) |
 
 ## Defined here
 
