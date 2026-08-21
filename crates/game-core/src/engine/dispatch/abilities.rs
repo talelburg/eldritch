@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use crate::card_registry;
-use crate::dsl::{Cost, Trigger};
+use crate::dsl::{ActionDesignator, Cost, Trigger};
 use crate::event::Event;
 use crate::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, Investigator, InvestigatorId, UseKind,
@@ -23,11 +23,12 @@ use super::Cx;
 /// (emitting cost events per primitive), emits [`Event::AbilityActivated`],
 /// and dispatches the ability's effect through the DSL evaluator.
 ///
-/// An action-cost, non-fight ability provokes an attack of opportunity (RR
-/// p.5) from each engaged ready enemy, fired after costs and before the effect
-/// — see [`provokes_aoo`]; the effect is parked on an `ActionResolution` frame
-/// and run on resume ([`resume_activate_ability`]). Fight and fast abilities
-/// resolve their effect synchronously.
+/// An action-cost ability whose printed **action designator** is not on the
+/// attack-of-opportunity exempt list provokes one from each engaged ready
+/// enemy, fired after costs and before the effect — see [`provokes_aoo`]; the
+/// effect is parked on an `ActionResolution` frame and run on resume
+/// ([`resume_activate_ability`]). Exempt and fast abilities resolve their
+/// effect synchronously.
 ///
 /// # Timing gate
 ///
@@ -74,6 +75,7 @@ pub(super) fn activate_ability(
     let super::ActivateCheckResult {
         source_code,
         action_cost,
+        designator,
         costs,
         effect,
         source_exhausted: _,
@@ -105,12 +107,12 @@ pub(super) fn activate_ability(
     });
 
     // RR p.5 "Attack of Opportunity": activating an action-cost ability while
-    // engaged with a ready enemy provokes one AoO from each — *unless* it is a
-    // fight/evade/parley/resign ability. The action cost is already spent
+    // engaged with a ready enemy provokes one AoO from each — *unless* it prints
+    // a fight/evade/parley/resign action designator. The action cost is already spent
     // (`pay_activation_costs`), so we park the effect on an `ActionResolution`
     // frame and drive the AoO loop (which may open a Dodge cancel / Guard Dog
     // soak window), then run the effect on resume. (#361, K3.)
-    if provokes_aoo(action_cost, &effect) {
+    if provokes_aoo(action_cost, designator) {
         cx.state
             .continuations
             .push(crate::state::Continuation::ActionResolution {
@@ -120,7 +122,7 @@ pub(super) fn activate_ability(
         return super::combat::drive_aoo(cx, investigator);
     }
 
-    // Fast (not an action), or an AoO-exempt Fight ability: push the effect for
+    // Fast (not an action), or an AoO-exempt designator: push the effect for
     // the drive loop (Slice D, #423) — no enclosing frame, no post-logic.
     let eval_ctx =
         EvalContext::for_controller_with_optional_source(investigator, source.instance());
@@ -128,19 +130,40 @@ pub(super) fn activate_ability(
     EngineOutcome::Done
 }
 
-/// Whether activating an ability with this `action_cost` and `effect` provokes
-/// an attack of opportunity (RR p.5).
+/// Whether activating an ability with this `action_cost` and `designator`
+/// provokes an attack of opportunity. `glossary/Attack_of_Opportunity.md`,
+/// verbatim:
 ///
-/// True iff it is an **action** (`action_cost > 0`) that is **not** a
-/// fight/evade/parley/resign ability. In this engine weapons are activated
-/// `Effect::Fight` abilities (Machete 01020, .45 Automatic, Roland's .38
-/// Special, Knife), so those are exempt by an effect-root match. There is no
-/// `Effect::Evade` and no activated parley/resign card in scope, so Fight is
-/// the only exemptible activated kind — extend this (and add the variant) if a
-/// `Seq`-wrapped weapon ability or an activated evade lands. Fast abilities
-/// (`action_cost == 0`) are not actions and never provoke (RR p.11).
-fn provokes_aoo(action_cost: u8, effect: &crate::dsl::Effect) -> bool {
-    action_cost > 0 && !matches!(effect, crate::dsl::Effect::Fight { .. })
+/// > Each time an investigator is engaged with one or more ready enemies and
+/// > takes an action other than to **fight**, to **evade**, or to activate a
+/// > **parley** or **resign** ability, each of those enemies makes an attack of
+/// > opportunity against the investigator...
+///
+/// The exempt list is four **bold action designators**
+/// ([`ActionDesignator`]), so this reads the designator the ability
+/// *declares* (#696). It used to match the effect root instead — exempting
+/// `Effect::Fight` because every corpus weapon happens to be rooted in one —
+/// which answered the wrong question twice over: a `Seq`-wrapped Fight would
+/// have provoked, and Parley and Resign have no effect shape of their own, so
+/// the Parlor 01115's *"\[action\] **Resign.**"* would have provoked once
+/// #708 made a location's abilities reachable.
+///
+/// A designated **Move** or **Investigate** ability is not on the exempt list
+/// and provokes exactly as its basic action does (Flashlight 01087). Fast
+/// abilities (`action_cost == 0`) are not actions and never provoke — the same
+/// glossary entry, added in FAQ: *"\[free\] abilities with a bold action
+/// designator do not provoke attacks of opportunity."*
+fn provokes_aoo(action_cost: u8, designator: Option<ActionDesignator>) -> bool {
+    action_cost > 0
+        && !matches!(
+            designator,
+            Some(
+                ActionDesignator::Fight
+                    | ActionDesignator::Evade
+                    | ActionDesignator::Parley
+                    | ActionDesignator::Resign
+            )
+        )
 }
 
 /// Run a parked activated ability's `effect` after its `AoO` loop completes
@@ -382,6 +405,8 @@ fn cost_label(cost: &Cost) -> &'static str {
 pub(super) struct ActivatedAbility {
     /// Actions the activation costs; `0` for a `[free]` ability.
     pub(super) action_cost: u8,
+    /// The bold action designator the ability prints, if any.
+    pub(super) designator: Option<ActionDesignator>,
     /// The ability's payment costs, in printed order.
     pub(super) costs: Vec<Cost>,
     /// The effect to resolve once every cost is paid.
@@ -423,7 +448,11 @@ pub(super) fn resolve_activated_ability(
             .into(),
         });
     };
-    let Trigger::Activated { action_cost } = ability.trigger else {
+    let Trigger::Activated {
+        action_cost,
+        designator,
+    } = ability.trigger
+    else {
         return Err(EngineOutcome::Rejected {
             reason: format!(
                 "ActivateAbility: ability {ability_index} on {code} is not an Activated \
@@ -435,6 +464,7 @@ pub(super) fn resolve_activated_ability(
     };
     Ok(ActivatedAbility {
         action_cost,
+        designator,
         costs: ability.costs.clone(),
         effect: ability.effect.clone(),
         usage_limit: ability.usage_limit,
@@ -496,22 +526,39 @@ mod tests {
     use super::*;
     use crate::test_support::fixtures::test_investigator;
 
+    /// The attack-of-opportunity exemption is exactly the four designators
+    /// `glossary/Attack_of_Opportunity.md` names — **fight**, **evade**,
+    /// **parley**, **resign** — and nothing else. Exhaustive over the six
+    /// designators plus the undesignated case, in both action and `[free]`
+    /// flavours.
     #[test]
-    fn provokes_aoo_classifies_action_cost_and_fight_exemption() {
-        use crate::dsl::{Effect, IntExpr};
-        let fight = Effect::Fight {
-            combat_modifier: IntExpr::Lit(0),
-            extra_damage: IntExpr::Lit(0),
-        };
-        let non_fight = Effect::Native { tag: "heal".into() };
+    fn provokes_aoo_exempts_exactly_the_four_named_designators() {
+        use ActionDesignator::{Evade, Fight, Investigate, Move, Parley, Resign};
 
-        // Action-cost non-fight ability → provokes.
-        assert!(provokes_aoo(1, &non_fight));
-        // Action-cost Fight ability → exempt (RR p.5).
-        assert!(!provokes_aoo(1, &fight));
-        // Fast ability (action_cost 0) → not an action, never provokes.
-        assert!(!provokes_aoo(0, &non_fight));
-        assert!(!provokes_aoo(0, &fight));
+        for exempt in [Fight, Evade, Parley, Resign] {
+            assert!(
+                !provokes_aoo(1, Some(exempt)),
+                "{exempt:?} is on the exempt list"
+            );
+        }
+        for provoking in [Move, Investigate] {
+            assert!(
+                provokes_aoo(1, Some(provoking)),
+                "{provoking:?} is not on the exempt list"
+            );
+        }
+        // No designator at all → an ordinary activate action, which provokes.
+        assert!(provokes_aoo(1, None));
+        // A multi-action ability still provokes (once — the loop is the
+        // caller's), per "An ability that costs more than one action only
+        // provokes one attack of opportunity from each engaged enemy."
+        assert!(provokes_aoo(2, None));
+
+        // `[free]` (action_cost 0) is not an action and never provokes, "even"
+        // with a bold action designator (same entry, added in FAQ).
+        for designator in [None, Some(Fight), Some(Investigate), Some(Resign)] {
+            assert!(!provokes_aoo(0, designator), "{designator:?} at cost 0");
+        }
     }
 
     #[test]

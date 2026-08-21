@@ -11,7 +11,8 @@
 //! [`ModifierScope::ThisSkillTest`] scope. The DSL primitives that
 //! make this expressible:
 //!
-//! - `Trigger::Activated { action_cost: 0 }` (#53) — `[fast]` means no
+//! - `Trigger::Activated { action_cost: 0 }` with no action designator (#53)
+//!   — `[fast]` means no
 //!   action cost.
 //! - `Cost::Resources(1)` (#53) — the per-ability payment.
 //! - `ModifierScope::ThisSkillTest` evaluator push path (#102) —
@@ -64,7 +65,10 @@ mod tests {
         for (idx, ability) in abilities.iter().enumerate() {
             assert_eq!(
                 ability.trigger,
-                Trigger::Activated { action_cost: 0 },
+                Trigger::Activated {
+                    action_cost: 0,
+                    designator: None
+                },
                 "ability {idx} must be [fast] (action_cost = 0)",
             );
             assert_eq!(

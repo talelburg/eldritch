@@ -56,7 +56,10 @@ mod tests {
         for (idx, ability) in abilities.iter().enumerate() {
             assert_eq!(
                 ability.trigger,
-                Trigger::Activated { action_cost: 0 },
+                Trigger::Activated {
+                    action_cost: 0,
+                    designator: None
+                },
                 "ability {idx} must be [fast] (action_cost = 0)",
             );
             assert_eq!(

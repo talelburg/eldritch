@@ -49,7 +49,13 @@ mod tests {
     fn one_action_ability_spending_a_supply_to_choose_a_heal() {
         let abilities = abilities();
         assert_eq!(abilities.len(), 1);
-        assert_eq!(abilities[0].trigger, Trigger::Activated { action_cost: 1 });
+        assert_eq!(
+            abilities[0].trigger,
+            Trigger::Activated {
+                action_cost: 1,
+                designator: None
+            }
+        );
         assert_eq!(
             abilities[0].costs,
             vec![Cost::SpendUses {

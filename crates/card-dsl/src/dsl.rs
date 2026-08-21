@@ -70,6 +70,57 @@ use serde::{Deserialize, Serialize};
 
 // ---- triggers --------------------------------------------------
 
+/// The **bold action designator** an activated ability prints (`glossary/Ability.md`,
+/// "Action Designators"), verbatim:
+///
+/// > Some abilities have bold action designators (such as **Fight**, **Evade**,
+/// > **Investigate**, or **Move**). Activating such an ability performs the
+/// > designated action as described in the rules, but modified in the manner
+/// > described by the ability.
+///
+/// It is **declared on the trigger, not inferred from the effect**, because the
+/// rules quote the designator and not the effect the ability happens to have.
+/// `glossary/Attack_of_Opportunity.md`, verbatim:
+///
+/// > Each time an investigator is engaged with one or more ready enemies and
+/// > takes an action other than to **fight**, to **evade**, or to activate a
+/// > **parley** or **resign** ability, each of those enemies makes an attack of
+/// > opportunity against the investigator...
+///
+/// A second consumer quotes it independently — Frozen in Fear 01164's ruling
+/// (<https://arkhamdb.com/card/01164>): *"Also applies to \[action\] card
+/// abilities with action designators (**Move**, **Fight**, **Evade**)."* An
+/// effect-root match answers neither: Parley and Resign have no effect shape of
+/// their own, and a `Seq`-wrapped Fight has the wrong one.
+///
+/// The set is the four the rules name plus [`Parley`](Self::Parley) and
+/// [`Resign`](Self::Resign), which have their own glossary entries
+/// (`glossary/Parley.md`, `glossary/Resign.md`) and are named by the attack-of-
+/// opportunity clause above. Campaign-specific designators (`Explore`) land when
+/// their campaign does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ActionDesignator {
+    /// **Fight** — performs a fight action. Every weapon in the corpus
+    /// (Machete 01020, .45 Automatic 01016, Roland's .38 Special 01006,
+    /// Knife 01086's two abilities).
+    Fight,
+    /// **Evade** — performs an evade action. No corpus card yet.
+    Evade,
+    /// **Move** — performs a move action. No corpus card yet; named by
+    /// Frozen in Fear 01164's ruling.
+    Move,
+    /// **Investigate** — performs an investigate action. Flashlight 01087.
+    Investigate,
+    /// **Parley** — `glossary/Parley.md` in full: *"Some abilities are
+    /// identified with a **Parley** action designator. Such abilities are
+    /// initiated using the 'Activate' action."* The Midnight Masks cultists
+    /// (01138-01140) and Mob Enforcer 01101 print one.
+    Parley,
+    /// **Resign** — the Parlor 01115 and every resign location. The designator
+    /// only; resignation's own semantics are #644.
+    Resign,
+}
+
 /// When an [`Ability`] is active.
 ///
 /// Phase-3 set. Later phases add `AtPhaseStart`/`AtPhaseEnd`,
@@ -122,6 +173,12 @@ pub enum Trigger {
     Activated {
         /// Number of action points required to activate. `0` = Fast.
         action_cost: u8,
+        /// The **bold action designator** the card prints above the
+        /// effect, if any — `None` for an ability that prints none.
+        ///
+        /// This is what the rules key off, so it is declared rather than
+        /// inferred from the effect tree: see [`ActionDesignator`].
+        designator: Option<ActionDesignator>,
     },
     /// Fires during the resolution of a skill test the card is
     /// committed to, after the outcome is determined and gated on
@@ -1667,10 +1724,42 @@ pub fn revelation(effect: Effect) -> Ability {
 /// `costs`: the non-action payment (resources, exhaust, …). An empty
 /// vec is legal — some activated abilities have no payment besides
 /// the action cost itself.
+///
+/// The ability prints **no bold action designator**; one that does is built by
+/// [`activated_as`].
 #[must_use]
 pub fn activated(action_cost: u8, costs: Vec<Cost>, effect: Effect) -> Ability {
     Ability {
-        trigger: Trigger::Activated { action_cost },
+        trigger: Trigger::Activated {
+            action_cost,
+            designator: None,
+        },
+        costs,
+        effect,
+        usage_limit: None,
+        eligibility: None,
+    }
+}
+
+/// [`activated`], for an ability that prints a bold
+/// [`ActionDesignator`] — Machete 01020's *"\[action\]: **Fight.**"*,
+/// Flashlight 01087's *"\[action\] Spend 1 supply: **Investigate.**"*, the
+/// Parlor 01115's *"\[action\] **Resign.**"*.
+///
+/// The designator rides the trigger rather than being read back off `effect`
+/// because that is what the rules quote; see [`ActionDesignator`].
+#[must_use]
+pub fn activated_as(
+    designator: ActionDesignator,
+    action_cost: u8,
+    costs: Vec<Cost>,
+    effect: Effect,
+) -> Ability {
+    Ability {
+        trigger: Trigger::Activated {
+            action_cost,
+            designator: Some(designator),
+        },
         costs,
         effect,
         usage_limit: None,

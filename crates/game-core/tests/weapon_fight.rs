@@ -1,6 +1,9 @@
 //! End-to-end weapon flow with a mock `CardRegistry`: a firearm-shaped
 //! asset that carries `Uses (4 ammo)` and an `[action] Spend 1 ammo:
-//! Fight` activated ability whose effect is `Effect::Fight`.
+//! Fight` activated ability: an `ActionDesignator::Fight` on the trigger over
+//! an `Effect::Fight`. The designator is what makes it a fight action (#696) —
+//! it is what the attack-of-opportunity exemption and the pre-cost
+//! "needs a co-located enemy" check both read.
 //!
 //! Lives at `crates/game-core/tests/` (its own integration-test binary,
 //! hence its own process + `OnceLock<CardRegistry>`) so the mock
@@ -9,7 +12,7 @@
 //! then a mock card exercises the full path.
 
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
-use game_core::dsl::{activated, fight, Ability, Cost, IntExpr};
+use game_core::dsl::{activated_as, fight, Ability, ActionDesignator, Cost, IntExpr};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
@@ -69,7 +72,8 @@ fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
 fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     match code.as_str() {
         // [action] Spend 1 ammo: Fight. +1 [combat], +1 damage.
-        WEAPON => Some(vec![activated(
+        WEAPON => Some(vec![activated_as(
+            ActionDesignator::Fight,
             1,
             vec![Cost::SpendUses {
                 kind: UseKind::Ammo,

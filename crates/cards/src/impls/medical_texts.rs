@@ -71,7 +71,13 @@ mod tests {
     fn one_action_intellect_test_branching_heal_or_damage() {
         let abilities = abilities();
         assert_eq!(abilities.len(), 1);
-        assert_eq!(abilities[0].trigger, Trigger::Activated { action_cost: 1 });
+        assert_eq!(
+            abilities[0].trigger,
+            Trigger::Activated {
+                action_cost: 1,
+                designator: None
+            }
+        );
         assert!(
             abilities[0].costs.is_empty(),
             "Medical Texts' action has no exhaust/uses cost",

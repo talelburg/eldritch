@@ -18,13 +18,16 @@
 //! text has no depletion-discard clause, so it stays in play at 0 supplies,
 //! unlike First Aid). `abilities()` declares only the action.
 //!
-//! Activating this `[action]` while engaged with a ready enemy provokes an
-//! attack of opportunity (RR p.5 — not a fight/evade/parley/resign ability);
-//! shipped engine-wide in #361, exercised in
+//! **Designator: Investigate** (`ActionDesignator::Investigate`, #696) — the
+//! bold word above the effect. **Investigate** is not on the attack-of-
+//! opportunity exempt list (`glossary/Attack_of_Opportunity.md` names only
+//! **fight**, **evade**, **parley** and **resign**), so activating this
+//! `[action]` while engaged with a ready enemy provokes one — exactly as the
+//! basic investigate action does. Shipped engine-wide in #361, exercised in
 //! `crates/cards/tests/activate_ability_aoo.rs`.
 
 use card_dsl::card_data::UseKind;
-use card_dsl::dsl::{activated, investigate, Ability, Cost};
+use card_dsl::dsl::{activated_as, investigate, Ability, ActionDesignator, Cost};
 
 /// `ArkhamDB` code for Flashlight (original-Core printing).
 pub const CODE: &str = "01087";
@@ -32,7 +35,8 @@ pub const CODE: &str = "01087";
 /// Flashlight's `[action] Spend 1 supply: Investigate with -2 shroud` ability.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![activated(
+    vec![activated_as(
+        ActionDesignator::Investigate,
         1,
         vec![Cost::SpendUses {
             kind: UseKind::Supplies,
@@ -45,13 +49,19 @@ pub fn abilities() -> Vec<Ability> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::{Effect, IntExpr, Trigger};
+    use card_dsl::dsl::{ActionDesignator, Effect, IntExpr, Trigger};
 
     #[test]
     fn one_action_ability_spending_a_supply_to_investigate_minus_two_shroud() {
         let abilities = abilities();
         assert_eq!(abilities.len(), 1);
-        assert_eq!(abilities[0].trigger, Trigger::Activated { action_cost: 1 });
+        assert_eq!(
+            abilities[0].trigger,
+            Trigger::Activated {
+                action_cost: 1,
+                designator: Some(ActionDesignator::Investigate),
+            }
+        );
         assert_eq!(
             abilities[0].costs,
             vec![Cost::SpendUses {
