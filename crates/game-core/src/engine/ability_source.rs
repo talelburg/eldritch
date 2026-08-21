@@ -212,24 +212,9 @@ pub(crate) fn reachable_sources(
 /// candidate's.
 pub(crate) fn source_card(state: &GameState, source: AbilitySource) -> Option<SourceCard<'_>> {
     match source {
-        AbilitySource::InPlay(instance_id) => state
-            .investigators
-            .values()
-            .flat_map(Investigator::controlled_card_instances)
-            .chain(
-                state
-                    .locations
-                    .values()
-                    .flat_map(|location| location.attachments.iter()),
-            )
-            .chain(
-                state
-                    .enemies
-                    .values()
-                    .flat_map(|enemy| enemy.attachments.iter()),
-            )
-            .find(|card| card.instance_id == instance_id)
-            .map(SourceCard::Instance),
+        AbilitySource::InPlay(instance_id) => {
+            instance_in_play(state, instance_id).map(SourceCard::Instance)
+        }
         AbilitySource::Location(location_id) => {
             state.locations.get(&location_id).map(SourceCard::Location)
         }
@@ -379,11 +364,36 @@ pub(crate) fn resolve_mut(
 
 /// The in-play instance `instance_id` names, wherever on the board it sits:
 /// any investigator's controlled collections, a location's attachments, or an
+/// enemy's. The read side of [`instance_in_play_mut`], which walks the same
+/// collections — one walk each way, so the pair cannot drift into disagreeing
+/// about where a card can be.
+fn instance_in_play(state: &GameState, instance_id: CardInstanceId) -> Option<&CardInPlay> {
+    state
+        .investigators
+        .values()
+        .flat_map(Investigator::controlled_card_instances)
+        .chain(
+            state
+                .locations
+                .values()
+                .flat_map(|location| location.attachments.iter()),
+        )
+        .chain(
+            state
+                .enemies
+                .values()
+                .flat_map(|enemy| enemy.attachments.iter()),
+        )
+        .find(|card| card.instance_id == instance_id)
+}
+
+/// The in-play instance `instance_id` names, wherever on the board it sits:
+/// any investigator's controlled collections, a location's attachments, or an
 /// enemy's.
 ///
 /// The write-side mirror of the collections [`reachable_sources`] reads, kept as
 /// one walk so a source that became reachable through somebody else's
-/// collection is still payable against.
+/// collection is still payable against. [`instance_in_play`] is its read twin.
 fn instance_in_play_mut(
     state: &mut GameState,
     instance_id: CardInstanceId,

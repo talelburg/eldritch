@@ -43,8 +43,10 @@ pub fn PromptBanner() -> impl IntoView {
 
             // Option buttons — a skippable window's **un-anchored** (`Global`)
             // `PickSingle` options only; anchored options have board homes (S5,
-            // #540). This still homes a genuinely-`Global`/`Board` window option
-            // that lives nowhere else (the catch-all the bar retirement relies on).
+            // #540). This still homes a genuinely-`Global` window option that
+            // lives nowhere else (the catch-all the bar retirement relies on) —
+            // no longer any *candidate*, since #735 gave every ability source
+            // its own anchor, but evaluator prompts still produce them (#555).
             let option_btns: Vec<_> = request
                 .options
                 .iter()

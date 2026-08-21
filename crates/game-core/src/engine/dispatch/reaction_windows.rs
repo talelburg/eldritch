@@ -1335,6 +1335,14 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
 /// on `investigator_card.ability_usage`). `Board`, `Hand`, and `Location`
 /// candidates carry no per-instance usage limits and are `unreachable!` here.
 ///
+/// **A limit on a source with no card instance is refused before it can reach
+/// here.** Usage state is `CardInPlay::ability_usage`, per-instance, so a
+/// location / enemy / act / agenda source has nowhere to record a use;
+/// `reject_untrackable_usage_limit` rejects the activation-side case at
+/// validation, and no corpus card prints such a forced or reaction ability.
+/// **#699** builds the state-level counter the Dunwich locations will need,
+/// and is what lifts both.
+///
 /// **TODO (cancellation-counts-against-limit).** Rules Reference
 /// page 14: *"If the effects of a card or ability with a limit or
 /// maximum are canceled, it is still counted against the
@@ -1374,13 +1382,20 @@ fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
                 });
             card.bump_ability_usage(trigger.ability_index, current_round);
         }
-        CandidateSource::Ability(_) | CandidateSource::Hand => {
+        // Listed kind by kind rather than wildcarded: a sixth `AbilitySource`
+        // kind *that carries an instance* must break this build rather than
+        // reach a panic at runtime.
+        CandidateSource::Ability(
+            AbilitySource::Location(_)
+            | AbilitySource::Enemy(_)
+            | AbilitySource::Act
+            | AbilitySource::Agenda,
+        )
+        | CandidateSource::Hand => {
             unreachable!(
                 "bump_usage_counter: a usage-limited candidate must be an in-play instance \
                  (a hand candidate, and an ability source with no card instance behind it — a \
-                 location, an enemy, the act, the agenda — have nowhere to record uses; \
-                 TODO(#699): those need a state-level counter, which is also why \
-                 `reject_untrackable_usage_limit` refuses the activation-side case); \
+                 location, an enemy, the act, the agenda — have nowhere to record uses); \
                  candidate {trigger:?}"
             )
         }
@@ -2727,6 +2742,30 @@ mod candidate_source_present_tests {
         ));
     }
 
+    /// A candidate minted from a **location attachment** — Barricade 01038's
+    /// `LeftLocation` self-discard, Obscuring Fog 01168's test forced — is
+    /// present while the attachment is on the board, not only while the
+    /// controller happens to hold it. The probe is board-wide because the
+    /// scans that mint these candidates are: the old controller-scoped arm
+    /// answered "gone" for every attachment-sourced candidate, which is a
+    /// mislabelled lapse reason rather than a wrong resolution (#735).
+    #[test]
+    fn an_attachment_candidate_is_present_though_no_investigator_controls_it() {
+        let instance = CardInstanceId(12);
+        let mut location = test_location(10, "Study");
+        location
+            .attachments
+            .push(CardInPlay::enter_play(CardCode::new(SOME_CODE), instance));
+        let state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .with_location(location)
+            .build();
+        assert!(candidate_source_present(
+            &state,
+            &candidate(CandidateSource::Ability(AbilitySource::InPlay(instance)))
+        ));
+    }
+
     #[test]
     fn an_act_candidate_is_present_only_while_that_act_is_the_current_one() {
         use crate::state::Act;
@@ -2797,10 +2836,10 @@ mod candidate_source_present_tests {
         use crate::test_support::test_enemy;
         let mut enemy = test_enemy(4, "Silver Twilight Acolyte");
         enemy.code = CardCode::new(SOME_CODE);
-        let mut state = GameStateBuilder::default()
+        let state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
+            .with_enemy(enemy)
             .build();
-        state.enemies.insert(EnemyId(4), enemy);
         let cand = |id| {
             ResolutionCandidate::new(
                 CardCode::new(SOME_CODE),
