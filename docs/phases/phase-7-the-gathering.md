@@ -237,7 +237,8 @@ reason, so the menu never offers it; no corpus card prints one. `Event::AbilityA
 now names the source rather than an instance — recorded as an amendment on
 [ADR 0010](../adr/0010-an-activation-names-an-ability-source.md), whose prediction that
 #709 would force the field to become optional was overtaken. Zero-action abilities on
-the new sources work through the shared predicate; **#710** owns their coverage.
+the new sources work through the shared predicate; **#710 ✅ shipped (PR #737)** proved
+it.
 
 **#709 ✅ shipped (PR #736)** is the third bullet — *"The current act or current
 agenda card."* — and the one gated on **nothing**: not control, not co-location.
@@ -268,6 +269,40 @@ six of its acceptance criteria hold without it, since the descriptor an *action*
 names does distinguish act from agenda. **#735** owns the convergence, and
 whether the two enums then merge at all is the open question it should settle
 rather than assume.
+
+**#710 ✅ shipped (PR #737)** closes the cluster, and it is the one ticket that was
+**confirmation rather than construction** — no production behaviour changed. The
+rules bullets are written once for `[free]`, `[reaction]` and `[action]` together, so
+the widening #707/#708/#709 shipped reaches player windows by construction:
+`enumerate_fast_plays` already consults `engine::ability_source`, the same predicate
+`check_activate_ability` and the turn-menu enumerator consult. A zero-action ability
+— the `[free]` icon, *"a free triggered ability that does not cost an action and may
+be used during any player window"*, never *"fast ability"* (`CONTEXT.md`) — on a
+location, an enemy at your location, a co-located threat area, the act or the agenda
+is therefore offered in a player window on exactly the terms an action-costed one is
+offered in the turn menu.
+
+What shipped is the coverage that makes that inheritance a **checked property**
+rather than a reading of the call graph, at the two seams #695 named: a real
+engine-opened player window's own option list (whether an ability is *offered*) and
+the apply entry point (whether a named investigator's submission is accepted). It is
+verified by mutation rather than by passing — dropping the co-location bullet from
+`reachable_sources` fails five of the new tests, and narrowing the player-window
+enumerator to in-play instances alone fails five. The real-corpus half covers all
+three cards that print a zero-action ability today (Beat Cop 01018, Hyperawareness
+01034, Physical Training 01017), and the boards sit in the **Mythos** phase
+deliberately: `check_activate_ability`'s gate is *"active during Investigation **or**
+an open permissive window"*, so an Investigation-phase board would satisfy the first
+disjunct and mask the rule under test.
+
+**One negative stays at the apply seam, and that is a property of the option shape.**
+An option carries an `OptionTarget`, which names the *source* and not the investigator
+it was enumerated for, while `enumerate_fast_plays` walks every investigator — so
+"offered" is directly assertable at the option list and "not offered *to this
+investigator*" is not. Proving the per-investigator negatives there would mean making
+`enumerate_fast_plays` public for a test; they are asserted at the apply seam instead,
+where the submission names its actor. The day `OptionTarget` learns who an option is
+for — #381's eligibility half is the likely occasion — that split can close.
 
 **4. Browser capstone — the gate-closer.** Positioned last so it designs against
 the now-stable set of input shapes:
