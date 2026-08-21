@@ -908,7 +908,8 @@ fn apply_fight(
     // `apply_via`, costs included.
     let Some(enemy_id) = eval_ctx.chosen_enemy() else {
         return EngineOutcome::Rejected {
-            reason: "Effect::Fight: no co-located enemy chosen — the ability declares no                      Fight action designator, so the pre-cost target check did not run"
+            reason: "Effect::Fight: no co-located enemy chosen; the ability declares \
+                     no Fight action designator, so the pre-cost check did not run"
                 .into(),
         };
     };
