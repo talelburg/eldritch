@@ -25,7 +25,8 @@
 //! standing on the attached location. That cell only became declarable when
 //! #721 migrated `LeftLocation` to a coordinator-owned condition; until then the
 //! departure had already landed by the time the coordinator ran, and the tag
-//! read `After` under the licensed mismatch in `CLAUDE.md`.
+//! read `After` under the licensed mismatch this card was the second-to-last
+//! holder of. No card holds it now (`docs/agents/standards.md`).
 
 use card_dsl::dsl::{
     attach_self_to_location, constant, discard_self, forced_on_event, on_play, restrict, Ability,

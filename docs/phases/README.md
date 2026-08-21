@@ -84,7 +84,7 @@ This section is the authoritative spec for the phase-doc update step of the PR p
   - Flip the corresponding **Ordering / Arc** row to `✅ PR #N`.
   - Remove any **Open question** the PR settled.
   - **Do not add a "Decisions made" entry.** Design decisions live in `docs/adr/` now. If the PR made a choice that is (a) hard to reverse, (b) surprising without context, and (c) the result of a real trade-off, write it up as an ADR in the same commit. All three must hold — if a future PR-author would discover the same fact by grepping the code or reading a doc-comment / `TODO(#NNN)`, there's no ADR to write. Most PRs need none.
-  - Existing **Decisions made** sections in closed phase docs stay where they are; they are not retro-migrated.
+  - Existing **Decisions made** sections in closed phase docs stay where they are; they are not retro-migrated ([ADR 0001](../adr/0001-workflow-runs-on-mattpocock-skills.md) drew that scope line).
 - **Never put phase-doc edits in earlier commits** of the same branch (churn + drift), and don't batch them into unrelated PRs.
 - **When a phase milestone closes:** flip the phase's Status to ✅ (here and in the doc), trim Open Questions to closed-out items only, and the doc becomes a retrospective. Sweep the agent-facing docs in the same pass, against the checklist in [`docs/agents/writing.md`](../agents/writing.md) — a rule whose transitional state ended during the phase is deleted here or it outlives the thing it described.
 - **When the next phase starts:** flip its Status from ⏳/📐 to 🟡, add the ordered plan if not already there.

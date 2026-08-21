@@ -10,7 +10,7 @@ The server understands the game — phases, skill tests, card effects, scenario 
 
 Chosen with the cost in view: *"playing the game should be as smooth as possible, regardless of the size of the work for us."* That is a standing tie-breaker — **where player experience and implementation cost trade off, player experience wins.** The price is a forever-commitment to implementing each new card pack, a structured effect DSL rather than free text, and serious test infrastructure for rules edge cases. All three are visible in the codebase; only the reason for paying them lives here.
 
-The hard consequence is the playability bar: **a card is either fully implemented or unavailable.** There is no manual-resolution fallback, no "resolve this one yourselves" escape hatch. Unimplemented cards still exist in the corpus so deckbuilding can see them (`cards::is_playable`; see `CLAUDE.md` → Hybrid card-effect DSL).
+The hard consequence is the playability bar: **a card is either fully implemented or unavailable.** There is no manual-resolution fallback, no "resolve this one yourselves" escape hatch. Unimplemented cards still exist in the corpus so deckbuilding can see them (`cards::is_playable`; see [`docs/agents/architecture.md`](agents/architecture.md) → Hybrid card-effect DSL).
 
 ## Audience and scale
 

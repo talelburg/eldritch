@@ -7,7 +7,7 @@
 //!
 //! The clause is a DSL primitive as of #716
 //! ([`Effect::PlaceDoomOnCurrentAgenda`](card_dsl::dsl::Effect::PlaceDoomOnCurrentAgenda)).
-//! It reached the repo's two-consumer bar (`CLAUDE.md`, Architecture) against
+//! It reached the repo's two-consumer bar (`docs/agents/standards.md`) against
 //! Silver Twilight Acolyte 01102's byte-identical native tag, and the corpus
 //! prints a doom placement in four more places — three of them nested inside a
 //! `ChooseOne` (Offer of Power 01178), a `Seq` (Saracenic Script 02240's act
