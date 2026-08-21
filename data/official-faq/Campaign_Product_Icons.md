@@ -8,19 +8,19 @@ This section lists each campaign along with their associated icon so players can
 
 [dwl] The Dunwich Legacy
 
-[rtdwl] Return to the Dunwich Legacy
+[dwl] Return to the Dunwich Legacy
 
 [ptc] The Path to Carcosa
 
-[rtptc] Return to the Path to Carcosa
+[ptc] Return to the Path to Carcosa
 
 [tfa] The Forgotten Age
 
-[tfa] Return to the Forgotten Age
+[rttfa] Return to the Forgotten Age
 
 [tcu] The Circle Undone
 
-[tcu] Return to the Circle Undone
+[rttcu] Return to the Circle Undone
 
 [tde] The Dream-Eaters
 

@@ -124,8 +124,10 @@ reading order:
   (`Witch-Haunted`, `out-of-play`, `mini-cards`) and one does not
   (`repurchased`, which the document spells unhyphenated three times).
 - **Headings** are found by line height, which is quantised by design: body
-  text is 11.2–12.6pt, the page number 13.6pt, the running footer 10.5pt, and
-  headings 17.0pt and up. The page number and footer are dropped.
+  text is 11.2–12.6pt, the page number 13.6pt, the running footer 10.5pt, a
+  section heading 18.6pt and a part heading 20.9pt or more. The title page's
+  17.0pt version line falls between the two populations and is treated as body,
+  which it reads as. The page number and footer are dropped.
 
 ## Identifying the icons
 
@@ -164,8 +166,15 @@ text layer says which one was printed.
 
 What is left is the gap, and the gap is unambiguous: inter-word spacing in
 this document is sharply bimodal, 1.71–1.73pt for a real space against
-9.9–13.5pt where a glyph was dropped. There are 439 such sites. Each is named
-from the words around it:
+9.9–13.5pt where a glyph was dropped. There are 441 such sites — 439 measured
+between two words on a line, and two more where the reference wraps, with `(`
+ending one line and the symbol opening the next. Those two have no preceding
+word to be measured against, so they are found textually instead: poppler
+emits `(39)` as a single word when nothing sits between the bracket and the
+number, so a lone `(` followed by a number is a bracket something was dropped
+out of.
+
+Each site is named from the words around it:
 
 1. **From the card snapshot**, for the ~400 references that carry a number.
    The number the document prints is the card's position within its cycle,
@@ -177,7 +186,11 @@ from the words around it:
    errata apply to *"the original English product printing"*.
 2. **From the scenario named**, for the 33 Campaign Guide Errata entries that
    have no number at all — `(v1.1) Blood on the Altar, resolutions section (␣)`.
-3. **From a hand-read table** (`REFERENCE_OVERRIDES`), for the 27 the first
+   Restricted to the numberless case on purpose: a *card* reference that fails
+   to resolve must abort rather than fall through to here, which would scan a
+   whole paragraph for any scenario name and answer confidently with whichever
+   was mentioned last.
+3. **From a hand-read table** (`REFERENCE_OVERRIDES`), for the 29 the first
    two cannot settle: act and agenda cards the snapshot does not carry at that
    number, "Parallel Agnes" where the snapshot says Agnes Baker, and a handful
    where the number sits outside the bracket the symbol is in. Every entry was
@@ -203,9 +216,9 @@ you something.
 
 Preserved:
 
-- **Every word.** Verified by comparing the word multiset of the conversion
-  against a plain `pdftotext` extraction of the same PDF: 30,267 words, with
-  no word lost and none duplicated. The only differences are the eleven
+- **Every word.** `verify` counts them (see Verification below). Cross-checked
+  once against a plain `pdftotext` extraction of the same PDF as well: 30,267
+  words, none lost and none duplicated, the only differences being the eleven
   line-break hyphens, where the plain extraction is the one that is wrong.
 - **Icons**, as `[token]`s, including in the legend lists whose whole purpose
   is to say which symbol means which product.
@@ -241,6 +254,15 @@ correct — a converter that paired every answer with the wrong question would
 pass it perfectly. So the conversion itself asserts the invariants a
 mis-ordered read would break, and aborts rather than writing:
 
+- **Nothing is lost.** Every content character in the page geometry appears in
+  the conversion and vice versa — 138,672 of them — with only the things the
+  conversion is allowed to change discarded first: whitespace, the icon tokens
+  it inserts, the list markers it rewrites, and the hyphens it decides about at
+  a line break. Determinism and ordering checks would both pass while text
+  quietly went missing; this is the one that would not.
+- **No line crosses a column gutter**, which is the per-page consistency check
+  covering the errata pages, where a mis-split would quietly attach the wrong
+  errata to the wrong card and no other invariant would notice.
 - **Every question is followed by its answer** before the next question, across
   all 145 pairs. This is the check that catches the failure poppler's own
   reading order actually has.
@@ -250,9 +272,20 @@ mis-ordered read would break, and aborts rather than writing:
   different points 2.29 — its own error, not something to paper over here.
 - **Every dropped product symbol is named**, and every private-use codepoint is
   mapped.
+- **Nothing below the body text is anything but furniture.** The threshold that
+  drops the page number and the running footer has only 2.3pt of clearance over
+  the lowest body line in the document, so what it drops is checked rather than
+  assumed.
 
-Between them, every page of the document has an ordering guarantee. Nothing
-here runs in CI; this is the whole safety net.
+Between them, every page of the document has an ordering guarantee, and the
+completeness check spans all of them at once. Nothing here runs in CI; this is
+the whole safety net.
+
+Pages were also read against the rendered PDF while the converter was written:
+2–6, 11, 19, 22, and 26–30, which is where every icon and every hand-read
+product symbol was settled. The mechanical checks above are what cover the
+rest, and they are stronger than a read for content — a reader does not notice
+a missing character in 138,672 of them.
 
 ## Refreshing
 

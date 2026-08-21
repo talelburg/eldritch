@@ -18,6 +18,7 @@ before running anything in this file.
 from __future__ import annotations
 
 import argparse
+import collections
 import glob
 import hashlib
 import json
@@ -47,11 +48,13 @@ SnapshotCards = dict[int, list[tuple[str, str, int]]]
 
 # Running furniture (page number, footer) sits below this; no body text does.
 FURNITURE_Y = 745.0
+FOOTER = "FREQUENTLY ASKED QUESTIONS"
 
 # Inter-word gaps are sharply bimodal: a real space is 1.71-1.73pt, and a gap
-# left by a glyph poppler could not map is 9.9-13.5pt. Headings track wider
-# (4.4-5.9pt), hence a threshold above those rather than at the midpoint.
-GLYPH_GAP = 6.0
+# left by a glyph poppler could not map is 9.9-13.5pt. Headings track wider,
+# up to 5.9pt, so the threshold sits between the two populations rather than
+# just clear of the heading tracking.
+GLYPH_GAP = 8.0
 
 # Column gutters. The body grid is two columns; page 30 uses three.
 GUTTER_WIDTH = 9.0
@@ -63,7 +66,10 @@ GUTTER_WIDTH = 9.0
 SAME_LINE_Y = 2.0
 
 # Line heights are quantised by design: body text is 11.2-12.6pt, the page
-# number 13.6pt, the footer 10.5pt, and headings 17.0pt and up.
+# number 13.6pt and the footer 10.5pt. Headings are 18.6pt (a section) and
+# 20.9pt or more (a part). The title page's 17.0pt version line sits between
+# the two populations and is body, which is why the section threshold is 17.5
+# rather than 17.0.
 H1_HEIGHT = 20.0
 H2_HEIGHT = 17.5
 
@@ -72,6 +78,10 @@ H2_HEIGHT = 17.5
 # the same number never both clear it.
 NAME_MATCH = 0.82
 NAME_MATCH_SLACK = 0.02
+NAME_SLACK = 4
+
+# How far back an inline product name may sit from its symbol, in characters.
+INLINE_WINDOW = 60
 
 # Which product a symbol names, at the granularity the document's own icon
 # legend uses. Most products carry their own symbol -- each standalone, each
@@ -185,6 +195,8 @@ REFERENCE_OVERRIDES: dict[str, tuple[set[int], str]] = {
     "act 1b-palace of the old ones": ({329}, "[tcu]"),
     "act 2d-in shadowed talons": ({127}, "[tfa]"),
     "maniac": ({95}, "[ptc]"),
+    "the last king scenario reference card": ({61}, "[ptc]"),
+    "agenda 1b-the patients": ({160}, "[ptc]"),
     "young psychopath": ({96}, "[ptc]"),
     "mad patient": ({184}, "[ptc]"),
     "act 2b-nucleus of the universe": ({330}, "[tcu]"),
@@ -266,7 +278,8 @@ class Para:
         return min(line.y0 for line in self.lines)
 
     @property
-    def height(self) -> float:
+    def tallest_line(self) -> float:
+        """A paragraph's type size, which is its tallest line's height."""
         return max(line.height for line in self.lines)
 
 
@@ -297,9 +310,25 @@ def read_pages(xml_path: Path) -> list[list[Line]]:
     return pages
 
 
-def drop_furniture(lines: list[Line]) -> list[Line]:
-    """Remove the page number and the running footer."""
-    return [line for line in lines if line.y0 < FURNITURE_Y]
+def drop_furniture(lines: list[Line], page: int) -> list[Line]:
+    """Remove the page number and the running footer, and only those.
+
+    The threshold has 2.3pt of clearance over the lowest body line in the
+    document, which is not much to trust silently, so what it drops is checked
+    rather than assumed: anything below the line must be the footer or the
+    page number.
+    """
+    kept, dropped = [], []
+    for line in lines:
+        (dropped if line.y0 >= FURNITURE_Y else kept).append(line)
+    for line in dropped:
+        text = " ".join(word.text for word in line.words)
+        if text != FOOTER and not re.fullmatch(r"\d{1,2}", text):
+            raise ConversionError(
+                f"page {page}: {text!r} sits below the body text but is "
+                "neither the running footer nor a page number"
+            )
+    return kept
 
 
 def column_edges(lines: list[Line]) -> list[float]:
@@ -339,8 +368,17 @@ def columns(lines: list[Line]) -> list[list[Line]]:
     for line in lines:
         index = max(i for i, edge in enumerate(edges) if edge <= line.x0 + 0.5)
         buckets[index].append(line)
-    for bucket in buckets:
+    for index, bucket in enumerate(buckets):
         bucket.sort(key=lambda line: (line.y0, line.x0))
+        if index + 1 < len(edges):
+            for line in bucket:
+                if line.x1 > edges[index + 1]:
+                    raise ConversionError(
+                        f"a line runs from column {index} across the gutter at "
+                        f"x={edges[index + 1]:.0f}: "
+                        f"{' '.join(word.text for word in line.words)[:70]!r}. "
+                        "The columns were not split where the page splits them."
+                    )
     return [bucket for bucket in buckets if bucket]
 
 
@@ -501,7 +539,22 @@ def resolve_icons(text: str, cards: SnapshotCards, where: str) -> str:
             )
     for char, token in PUA_ICONS.items():
         text = text.replace(char, token)
-    return resolve_glyph_gaps(text, cards, where)
+    return resolve_glyph_gaps(mark_wrapped_symbols(text), cards, where)
+
+
+def mark_wrapped_symbols(text: str) -> str:
+    """Mark a dropped symbol that a line break hid from the gap detector.
+
+    A gap is only visible between two words on one line. Where a reference
+    wraps -- "(" ending one line, the symbol and number opening the next --
+    the symbol has no predecessor to be measured against, and three references
+    reached the output with their product silently missing.
+
+    Joining the lines makes it visible again: poppler emits "(39)" as a single
+    word when nothing sits between them, so an opening bracket that is its own
+    word, followed by a number, is a bracket something was dropped out of.
+    """
+    return re.sub(r"\(\s+(?=\d)", f"({GLYPH} ", text)
 
 
 def resolve_glyph_gaps(text: str, cards: SnapshotCards, where: str) -> str:
@@ -512,7 +565,7 @@ def resolve_glyph_gaps(text: str, cards: SnapshotCards, where: str) -> str:
         token = (
             override_reference(before, after)
             or card_reference(before, after, cards)
-            or scenario_reference(before)
+            or scenario_reference(before, after)
             or inline_product(before)
         )
         if token is None:
@@ -526,7 +579,9 @@ def resolve_glyph_gaps(text: str, cards: SnapshotCards, where: str) -> str:
                 "scenario)."
             )
         text = before + token + after
-    return text
+    # The sentinel is joined to its neighbours like a word, but the page
+    # prints the symbol tight against the bracket: "(&#x1f772; 17)", not "( &#x1f772; 17)".
+    return re.sub(r"\(\s+(?=\[)", "(", text)
 
 
 def reference_number(after: str) -> int | None:
@@ -617,31 +672,46 @@ def name_similarity(name: str, tail: str) -> float:
     candidate = normalise(name).lower()
     tail = tail.lower()
     best = 0.0
-    for length in range(max(1, len(candidate) - 4), len(candidate) + 5):
+    # Windows within four characters of the name's own length: enough slack for
+    # the punctuation and misspellings above, too little to reach a neighbouring
+    # word and score on that instead.
+    for length in range(max(1, len(candidate) - NAME_SLACK), len(candidate) + NAME_SLACK + 1):
         if length > len(tail):
             break
         best = max(best, SequenceMatcher(None, candidate, tail[-length:]).ratio())
     return best
 
 
-def scenario_reference(before: str) -> str | None:
-    """Resolve a Campaign Guide Errata entry from the scenario it names."""
-    haystack = normalise(before).lower()
-    matches = [
-        (haystack.rindex(normalise(scenario).lower()), token)
-        for scenario, token in SCENARIO_PRODUCTS.items()
-        if normalise(scenario).lower() in haystack
-    ]
-    return max(matches)[1] if matches else None
+def scenario_reference(before: str, after: str) -> str | None:
+    """Resolve a Campaign Guide Errata entry from the scenario it names.
+
+    Only the numberless case, which is what a campaign guide entry is. A card
+    reference that failed to resolve must not fall through to here: it would
+    scan a whole paragraph for any scenario name and answer confidently with
+    whichever was mentioned last.
+    """
+    if reference_number(after) is not None:
+        return None
+    return nearest_named(before, SCENARIO_PRODUCTS)
 
 
 def inline_product(before: str) -> str | None:
-    """Resolve a product or starter deck named inline in running text."""
-    haystack = normalise(before[-60:]).lower()
+    """Resolve a product or starter deck named inline in running text.
+
+    Windowed to the words just before the symbol, because these appear in
+    lists -- "Nathaniel Cho &#x2423;, Harvey Walters &#x2423;" -- where the name several
+    words back is a different product's, not this symbol's.
+    """
+    return nearest_named(before[-INLINE_WINDOW:], INLINE_PRODUCTS)
+
+
+def nearest_named(haystack: str, products: dict[str, str]) -> str | None:
+    """The product named closest to the end of the text before the symbol."""
+    text = normalise(haystack).lower()
     matches = [
-        (haystack.rindex(normalise(product).lower()), token)
-        for product, token in INLINE_PRODUCTS.items()
-        if normalise(product).lower() in haystack
+        (text.rindex(normalise(name).lower()), token)
+        for name, token in products.items()
+        if normalise(name).lower() in text
     ]
     return max(matches)[1] if matches else None
 
@@ -664,21 +734,31 @@ def new_section(title: str, first: bool) -> Section:
 
 
 def classify(para: Para) -> str:
-    if para.height >= H1_HEIGHT:
+    if para.tallest_line >= H1_HEIGHT:
         return "h1"
-    if para.height >= H2_HEIGHT:
+    if para.tallest_line >= H2_HEIGHT:
         return "h2"
     return "body"
 
 
-def render_body(text: str) -> str:
-    """Turn one paragraph of body text into markdown."""
+def render_body(text: str) -> list[str]:
+    """Turn one paragraph of body text into markdown blocks.
+
+    Usually one block out for one in. But where a whole list sits in a single
+    block -- the taboo list does -- its markers arrive inline, mid-paragraph,
+    and the list has to be cut back apart at them. The two ornaments are safe
+    to split on: neither is ever a letter in this document.
+    """
     text = re.sub(r"\s+", " ", text).strip()
-    if text.startswith(BULLET + " "):
-        return "- " + text[len(BULLET) + 1 :]
-    if text.startswith(SUB_BULLET + " "):
-        return "  - " + text[len(SUB_BULLET) + 1 :]
-    return text
+    blocks = []
+    for item in re.split(rf"\s*(?=[{BULLET}{SUB_BULLET}] )", text):
+        if item.startswith(BULLET + " "):
+            blocks.append("- " + item[len(BULLET) + 1 :])
+        elif item.startswith(SUB_BULLET + " "):
+            blocks.append("  - " + item[len(SUB_BULLET) + 1 :])
+        elif item:
+            blocks.append(item)
+    return blocks
 
 
 # Legend entries the snapshot's pack names do not cover: the two promo icons,
@@ -705,7 +785,9 @@ def legend_products() -> dict[str, str]:
     return products | LEGEND_OVERRIDES
 
 
-def legend_entry(section: Section, text: str, products: dict[str, str]) -> str:
+def legend_entry(
+    section: Section, text: str, products: dict[str, str]
+) -> list[str]:
     """Restore the icon a Product Icons entry leads with.
 
     These lists exist to say which symbol means which product, and the symbol
@@ -720,14 +802,15 @@ def legend_entry(section: Section, text: str, products: dict[str, str]) -> str:
     scored = [
         (name_similarity(name, entry), token) for name, token in products.items()
     ]
-    best, token = max(scored)
+    best = max(score for score, _ in scored)
+    token = min(token for score, token in scored if score == best)
     if best < NAME_MATCH:
         raise ConversionError(
             f"{section.title}: no product matches the legend entry {entry!r}. "
             "The legend lists a product the card snapshot does not; add it to "
             "LEGEND_OVERRIDES."
         )
-    return f"{token} {text}"
+    return [f"{token} {text}"]
 
 
 def add_body(section: Section, text: str) -> None:
@@ -765,17 +848,23 @@ def convert(xml_path: Path) -> dict[str, str]:
     vocabulary = document_vocabulary(pages)
 
     for number, lines in enumerate(pages, start=1):
-        for column in columns(drop_furniture(lines)):
+        for column in columns(drop_furniture(lines, number)):
             for para in paragraphs(column, number):
                 where = f"page {number}"
                 text = resolve_icons(para_text(para, vocabulary), cards, where)
                 kind = classify(para)
                 if kind == "h1":
                     sections.append(new_section(normalise(text), first=not sections))
+                elif not sections:
+                    raise ConversionError(
+                        f"page {number} opens with body text, before any "
+                        f"heading: {normalise(text)[:70]!r}"
+                    )
                 elif kind == "h2":
                     sections[-1].blocks.append("## " + normalise(text))
                 else:
-                    add_body(sections[-1], legend_entry(sections[-1], text, products))
+                    for block in legend_entry(sections[-1], text, products):
+                        add_body(sections[-1], block)
 
     check_structure(sections)
 
@@ -932,9 +1021,56 @@ def cmd_convert(args: argparse.Namespace) -> int:
     return 0
 
 
+def letters(text: str) -> list[str]:
+    """The document reduced to the characters that carry its content.
+
+    Everything the conversion is allowed to change is discarded: whitespace,
+    the icon tokens it inserts, the hyphens it decides about at a line break,
+    the list markers it rewrites. What is left is what must survive intact.
+    """
+    text = re.sub(r"\[[a-z_0-9]+\]", "", text).replace(BULLET, "")
+    return sorted(char for char in normalise(text).lower() if char.isalnum())
+
+
+def check_completeness(files: dict[str, str], pages: list[list[Line]]) -> str | None:
+    """Check that the conversion says everything the page geometry says.
+
+    Byte-comparing a re-conversion proves the converter is deterministic, and
+    the ordering invariants prove the columns were read in the right order.
+    Neither would notice text quietly going missing -- a line dropped as
+    furniture, a paragraph lost to a bad column split. This counts every
+    character on both sides.
+    """
+    source = "".join(
+        word.text
+        for number, lines in enumerate(pages, start=1)
+        for line in drop_furniture(lines, number)
+        for word in line.words
+    )
+    converted = "".join(
+        body for name, body in files.items() if name != "README.md"
+    )
+    expected, actual = letters(source), letters(converted)
+    if expected == actual:
+        return None
+
+    missing = collections.Counter(expected) - collections.Counter(actual)
+    extra = collections.Counter(actual) - collections.Counter(expected)
+    return (
+        f"the conversion has {len(actual)} content characters where the page "
+        f"geometry has {len(expected)}"
+        + (f"; missing {dict(missing.most_common(5))}" if missing else "")
+        + (f"; extra {dict(extra.most_common(5))}" if extra else "")
+    )
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     problems: list[str] = []
     files = convert(RAW_XML)
+
+    incomplete = check_completeness(files, read_pages(RAW_XML))
+    if incomplete:
+        problems.append(incomplete)
 
     for name, body in sorted(files.items()):
         path = FAQ_DIR / name
@@ -978,8 +1114,8 @@ def main(argv: list[str]) -> int:
     try:
         return args.func(args)
     except ConversionError as error:
-        print(f"error: {error}", file=sys.stderr)
-        return 1
+        print(f"aborted: {error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
