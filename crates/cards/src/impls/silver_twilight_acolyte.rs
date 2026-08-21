@@ -15,7 +15,7 @@
 //! Being that second consumer is what graduated *"place N doom on the current
 //! agenda"* from a card-local native tag to
 //! [`Effect::PlaceDoomOnCurrentAgenda`](card_dsl::dsl::Effect::PlaceDoomOnCurrentAgenda)
-//! in #716 — the repo's two-consumer bar (`CLAUDE.md`, Architecture), met
+//! in #716 — the repo's two-consumer bar (`docs/agents/standards.md`), met
 //! against Ancient Evils 01166's byte-identical tag.
 //!
 //! **This card does not print the advance clause, so its doom cannot advance

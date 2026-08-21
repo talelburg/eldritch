@@ -467,9 +467,10 @@ pub enum EventPattern {
     /// **The name deliberately no longer mirrors its condition.** Mirroring it
     /// would mean a general "damage was assigned to self" pattern carrying the
     /// damage source, and that is a DSL primitive no second card wants yet — the
-    /// threshold CLAUDE.md sets for adding one. This name says what the *card*
-    /// declares, which is the narrower thing: an enemy **attack** dealing damage
-    /// to self. The generalization waits for the card that contests it.
+    /// threshold `docs/agents/standards.md` sets for adding one. This name says
+    /// what the *card* declares, which is the narrower thing: an enemy
+    /// **attack** dealing damage to self. The generalization waits for the card
+    /// that contests it.
     EnemyAttackDamagedSelf,
     /// An enemy attacks an investigator (RR p.25 step 3.3) — one triggering
     /// condition in all three cells since #704, so a card declares this pattern
@@ -535,8 +536,8 @@ pub enum Phase {
 /// The declaration is checked against the trigger word in the card module's
 /// own verbatim card-text block, and the module's prose names the cell it
 /// resolves in — by reading, not by parsing. Both conventions, and why there
-/// is no automated check, are in `CLAUDE.md` → Architecture → Hybrid
-/// card-effect DSL.
+/// is no automated check, are in `docs/agents/standards.md` → Match a card's
+/// declared `EventTiming` to its quoted trigger word.
 ///
 /// - [`When`](Self::When) — interrupts the condition, resolving *before* its
 ///   impact lands. Dodge 01023's *"Fast. Play when an enemy attacks an
@@ -914,10 +915,10 @@ pub enum Effect {
     /// (see issue #276). The `cards` crate maps the tag to a Rust fn; the
     /// evaluator rejects loudly on an unknown tag or absent registry.
     ///
-    /// **A pattern a second card wants graduates to a variant** (`CLAUDE.md`,
-    /// Architecture). *"Place N doom on the current agenda"* was the first to
-    /// do so: Ancient Evils 01166 and Silver Twilight Acolyte 01102 each
-    /// carried a byte-identical `<code>:place-doom` tag until #716 replaced
+    /// **A pattern a second card wants graduates to a variant**
+    /// (`docs/agents/standards.md`). *"Place N doom on the current agenda"* was
+    /// the first to do so: Ancient Evils 01166 and Silver Twilight Acolyte 01102
+    /// each carried a byte-identical `<code>:place-doom` tag until #716 replaced
     /// both with [`PlaceDoomOnCurrentAgenda`](Self::PlaceDoomOnCurrentAgenda).
     /// Reach for that variant, not a fresh tag.
     Native { tag: String },

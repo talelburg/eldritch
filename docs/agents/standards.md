@@ -2,24 +2,51 @@
 
 What this repo expects of the code itself. The `code-review` skill's **Standards** axis reads this file; so should anything else asking "how is code written here?"
 
-Standards live in exactly one place each. Most already have a home in `CLAUDE.md` — this file points at those rather than restating them, because a standard copied twice is a standard that drifts. Only the rules with no other home are defined below.
+Standards live in exactly one place each. A few have a home elsewhere — this file points at those rather than restating them, because a standard copied twice is a standard that drifts. Everything else is defined below.
 
 ## Documented elsewhere
 
 | Standard | Where |
 |---|---|
-| Validate-first / mutate-second handler contract, and the `apply_via` rollback that backstops it | `CLAUDE.md` → Architecture → Event-sourced state |
-| Test layering, the `TestGame` builder, the event-assertion macros | `CLAUDE.md` → Architecture → Test layering |
-| Never hand-edit `crates/cards/src/generated/cards.rs` | `CLAUDE.md` → Architecture → Card-data pipeline |
-| Don't add DSL primitives speculatively — wait for two hand-written cards wanting the same pattern | `CLAUDE.md` → Architecture → Hybrid card-effect DSL |
-| The tag-vs-quoted-trigger-word check, and the module prose that names the ability's cell | `CLAUDE.md` → Architecture → Hybrid card-effect DSL |
-| A card declaring `EventTiming::When` needs its triggering condition migrated to coordinator-owned resolution first — the per-condition migration, its cost, and its terminal condition | `CLAUDE.md` → Architecture → Hybrid card-effect DSL, for the one-line rule; [ADR 0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md) and `ConditionResolution::Caller` (`crates/game-core/src/engine/dispatch/emit.rs`) for the detail |
-| Card text and rules citation policy (read the vendored text locally, always read the FAQ, never fetch) | `CLAUDE.md` → Architecture → Domain knowledge |
+| Validate-first / mutate-second handler contract, and the `apply_via` rollback that backstops it | [`architecture.md`](architecture.md) → Event-sourced state |
+| Card text and rules citation policy (read the vendored text locally, always read the FAQ, never fetch) | `CLAUDE.md` → Cite card text and rules from the vendored sources |
 | Running local checks with CI's exact strict flags | `CLAUDE.md` → Commands |
 | Domain vocabulary — use the glossary's words in names and test titles | `CONTEXT.md` |
 | How the docs are written, not the code — the file to read before adding a rule to `CLAUDE.md` or writing an ADR, since both have a bar this file does not state | [`docs/agents/writing.md`](writing.md) |
 
 ## Defined here
+
+### Match a card's declared `EventTiming` to its quoted trigger word
+
+Every card module opens with the printed text verbatim. That block is the evidence: **read the declared `EventTiming` against the trigger word the module itself quotes**, and which cell each word names is **Timing cell** in `CONTEXT.md`. A mismatch in the corpus is a bug.
+
+**Say in prose which cell the ability resolves in, and why.** Write *"the `at` cell of the `EnemyDefeated` condition"* in the paragraph under the quoted text — not a description of the engine window the ability happens to ride. The form is a **bold inline lead-in opening *"Cell: …"***, not a `# Cell` rustdoc heading, so the paragraph sits in the header's flow next to the quoted text rather than opening a section a reader can scroll past. A module declaring two cells writes two such paragraphs, each naming which ability it is for (`the_barrier`, `cover_up`).
+
+A card declaring `EventTiming::When` on a triggering condition whose resolve step has not been migrated to coordinator-owned resolution is **rejected**; migrating that condition is the fix, not retagging the card. See [ADR 0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md) and `ConditionResolution::Caller` (`crates/game-core/src/engine/dispatch/emit.rs`) for the per-condition migration and its cost. **No card is licensed to declare one cell and resolve in another**, and none can be.
+
+**Why, and why there is no automated check:** the trigger word is not mechanically derivable from the printed text — *"if … would …"* is when-tier while a bare *"if"* on a settled state is at-tier, a tiering `CONTEXT.md` argues from the rules rather than quoting. A parser would encode one reading and then be trusted as though it had checked. The six mis-tags #694 audited were not a gap in the evidence: every one of those modules quoted its own trigger word directly above the wrong enum. The failure was an unassigned reading, and this section is where it is assigned.
+
+### Don't add DSL primitives speculatively
+
+A new `Effect` (or `EventPattern`) variant waits until **two or more hand-written cards want the same pattern**. Until then the card gets a Rust impl or a card-local native tag. *"Place N doom on the current agenda"* is the worked case: Ancient Evils 01166 and Silver Twilight Acolyte 01102 each carried a byte-identical `<code>:place-doom` tag until #716 made the second consumer graduate it to `Effect::PlaceDoomOnCurrentAgenda`.
+
+**Why:** a variant added for one card fixes the DSL's shape around a sample of one, and the kernel then has to keep resolving it. One consumer is a card-local detail; two is a pattern.
+
+### Never hand-edit `crates/cards/src/generated/cards.rs`
+
+It is pipeline output and carries a header comment saying so. Change the impl, or the snapshot and `PACK_FILES`, then re-run `cargo run -p card-data-pipeline` — see [`architecture.md`](architecture.md) → Card-data pipeline.
+
+**Why:** the next pipeline run silently reverts the edit, and nothing between now and then tells you.
+
+### Test layering
+
+In order of importance:
+
+1. **Card tests** — per-card in `crates/cards/src/impls/<name>.rs`; **each card needs at least one.**
+2. **Engine unit tests** — `crates/game-core/src/engine/mod.rs` + per-module `#[cfg(test)]`. Use the `TestGame` builder (`.with_phase(…).with_investigator(…).with_active_investigator(…).build()`, with `test_investigator(id)` / `test_location(id, name)` / `test_enemy(id, name)` fixtures) and the **event-assertion macros** `assert_event!` / `assert_no_event!` / `assert_event_count!` / `assert_event_sequence!` (order-insensitive by default; `_sequence` for in-order subsequence). Use `assert_eq!` on the events slice only when you need exact contiguous order.
+3. **Integration tests** — `crates/cards/tests/`; each file is its own cargo binary/process, so it can `install(cards::REGISTRY)` without colliding. The right home for anything needing real card metadata + abilities, which `game-core` can't reach by crate direction. Pattern: `crates/cards/tests/play_card.rs`.
+
+`game-core::test_support` is unconditionally `pub` (no feature flag).
 
 ### Stub deferred functionality with a TODO that names the issue
 

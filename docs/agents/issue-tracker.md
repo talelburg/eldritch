@@ -54,8 +54,6 @@ Eldritch already has an issue workflow; these skills slot into it rather than re
 - **Category labels**: `engine` / `card` / `scenario` / `infra` / `test` (also in use: `ui`,
   `docs`, `feature`, `core-set`, `dunwich-legacy`).
 - **State labels** predating this setup: `ready`, `in-progress`, `blocked`, `needs-design`.
-  These are the repo's own axis and are *not* the triage roles in
-  `docs/agents/triage-labels.md` — `ready` in particular does not distinguish
-  agent-ready from human-ready.
+  How they relate to the triage roles is in `docs/agents/triage-labels.md`.
 - **PRs** squash-merge; subjects follow `scope: description`; the body ends with `Closes #NN.`
   Merging is gated on explicit user approval — see the PR procedure in `CLAUDE.md`.
