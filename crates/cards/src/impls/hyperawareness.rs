@@ -12,8 +12,7 @@
 //! make this expressible:
 //!
 //! - `Trigger::Activated { action_cost: 0 }` with no action designator (#53)
-//!   — `[fast]` means no
-//!   action cost.
+//!   — `[fast]` means no action cost.
 //! - `Cost::Resources(1)` (#53) — the per-ability payment.
 //! - `ModifierScope::ThisSkillTest` evaluator push path (#102) —
 //!   records the modifier into [`GameState::recorded_modifiers`]

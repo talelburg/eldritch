@@ -59,9 +59,8 @@ const SATCHEL: &str = "DESIGN_ASSET";
 /// **Resign.** 'This is too much for me!' You run out the front door, fleeing
 /// in panic."*
 const PARLOR: &str = "DESIGN_LOC";
-/// Synthetic **enemy**, standing in for Mob Enforcer 01101: *"[action] Spend 3
-/// resources: **Parley.** Mob Enforcer's engagement cost is 0 for the remainder
-/// of the round."*
+/// Synthetic **enemy**, standing in for Mob Enforcer 01101: *"[action] Spend 4
+/// resources: **Parley.** Discard Mob Enforcer."*
 const ENFORCER: &str = "DESIGN_ENEMY";
 
 const MINE: InvestigatorId = InvestigatorId(1);
@@ -103,8 +102,8 @@ fn probe_abilities(code: &CardCode) -> Option<Vec<Ability>> {
             vec![],
             gain_resources(InvestigatorTarget::Active, 1),
         )]),
-        // Mob Enforcer's Parley, with the same stand-in effect (engagement-cost
-        // modifiers are not modelled).
+        // Mob Enforcer's Parley, with the same stand-in effect (its printed
+        // effect discards the enemy, which is beside the point here).
         ENFORCER => Some(vec![activated_as(
             ActionDesignator::Parley,
             1,

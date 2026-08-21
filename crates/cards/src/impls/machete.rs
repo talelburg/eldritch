@@ -99,7 +99,7 @@ pub(crate) fn native_condition_for(tag: &str) -> Option<NativeConditionFn> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::{ActionDesignator, Effect, Trigger};
+    use card_dsl::dsl::{Effect, Trigger};
 
     #[test]
     fn one_costless_activated_fight_ability() {

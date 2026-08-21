@@ -49,7 +49,7 @@ pub fn abilities() -> Vec<Ability> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::{ActionDesignator, Effect, IntExpr, Trigger};
+    use card_dsl::dsl::{Effect, IntExpr, Trigger};
 
     #[test]
     fn one_action_ability_spending_a_supply_to_investigate_minus_two_shroud() {

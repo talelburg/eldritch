@@ -1898,6 +1898,16 @@ fn check_play_resource_cost_payable(
 /// `any_fast_play_eligible` and `Effect::Fight` / `DealDamageToEnemy` can treat
 /// a missing target as an invariant violation.
 ///
+/// The Fight branch covers every fight ability the corpus prints, because each
+/// declares the **Fight** designator. One shape escapes it: an ability rooted in
+/// `Effect::Fight` that declares *no* designator. Nothing in the corpus is in
+/// that shape (a fight ability is a fight ability by printing the bold word),
+/// and the evaluator rejects it rather than resolving a targetless attack —
+/// `apply_via` then rolls the costs back with it, so the escape costs
+/// correctness nothing and honesty only here. Deliberately unlifted with no
+/// tracking issue (YAGNI, as with [`reject_incompatible_costs`]); whoever wants
+/// the guard tightened files one.
+///
 /// - **Fight:** an ability printing the **Fight** designator needs ≥1 enemy *at
 ///   your location* (0 = no target, rejected pre-cost; 2+ suspends to a
 ///   `PickSingle` target-pick in the evaluator). Keyed off the declared

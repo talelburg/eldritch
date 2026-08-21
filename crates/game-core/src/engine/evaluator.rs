@@ -896,12 +896,20 @@ fn apply_fight(
             }
         }
     };
-    // The target is bound by `ground_chosen_targets` before this handler
-    // runs; `None` here means 0 co-located enemies slipped past the pre-cost
-    // gate — reject defensively.
+    // The target is bound by `ground_chosen_targets` before this handler runs;
+    // `None` here means 0 co-located enemies. The pre-cost gate
+    // (`check_effect_target_available`) catches that for an ability declaring
+    // the **Fight** action designator, which is every fight ability the corpus
+    // prints — but since #696 that gate keys off the designator, so an ability
+    // rooted in `Effect::Fight` that declares *no* designator reaches here
+    // instead. That is a malformed declaration rather than an engine bug (the
+    // designator is what makes an ability a fight action), and this is where it
+    // surfaces: the rejection rolls the whole activation back through
+    // `apply_via`, costs included.
     let Some(enemy_id) = eval_ctx.chosen_enemy() else {
         return EngineOutcome::Rejected {
-            reason: "Effect::Fight: no co-located enemy chosen (target check skipped?)".into(),
+            reason: "Effect::Fight: no co-located enemy chosen — the ability declares no                      Fight action designator, so the pre-cost target check did not run"
+                .into(),
         };
     };
     // `enemy_id` came from `enemies_in_scope` over this same map, so it is

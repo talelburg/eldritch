@@ -8,7 +8,7 @@
 //! skill test."*
 //!
 //! Demonstrates the composition of three mechanisms with a real card:
-//! - `Trigger::Activated { action_cost: 0 }`, no action designator, +
+//! - `Trigger::Activated { action_cost: 0 }` with no action designator, plus
 //!   `Cost::Resources(1)` (#53)
 //! - the `ModifierScope::ThisSkillTest` → `Lifetime::SkillTest` translation
 //!   and its expiry (#102, #676)

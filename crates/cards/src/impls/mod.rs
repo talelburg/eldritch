@@ -41,9 +41,10 @@
 //!   { action_cost: 0 }` abilities (`Cost::Resources(1)`, `ThisSkillTest`
 //!   `Modify`), willpower / combat (the Hyperawareness shape).
 //! - Machete (01020) — bare `Trigger::Activated { action_cost: 1 }` with the
-//!   **Fight** action designator + `Effect::Fight` (+1 combat; conditional +1 damage via `IntExpr::cond` over
-//!   a `Condition::Native` predicate that reads the *attacked* enemy, since the
-//!   fight scope is every co-located enemy — #451/#592).
+//!   **Fight** action designator + `Effect::Fight` (+1 combat; conditional +1
+//!   damage via `IntExpr::cond` over a `Condition::Native` predicate that
+//!   reads the *attacked* enemy, since the fight scope is every co-located
+//!   enemy — #451/#592).
 //! - Attic (01113) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
 //!   `deal_horror(You, 1)`.
 //! - Cellar (01114) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
