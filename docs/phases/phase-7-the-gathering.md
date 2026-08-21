@@ -210,7 +210,7 @@ no version field is added (#581), `GameSession::load` fails loudly on a log it c
 replay, and `get_or_load_room` no longer reports an unreplayable game as a nonexistent
 one. Design and the three rejected alternatives:
 [ADR 0010](../adr/0010-an-activation-names-an-ability-source.md). #709 (act and
-agenda) attaches to the same predicate.
+agenda) attached to the same predicate.
 
 **#708 ✅ shipped (PR #734)** is the second bullet — *"a scenario card that is in
 play and at the same location as the investigator"* — and the one that unblocks the
@@ -238,6 +238,36 @@ now names the source rather than an instance — recorded as an amendment on
 [ADR 0010](../adr/0010-an-activation-names-an-ability-source.md), whose prediction that
 #709 would force the field to become optional was overtaken. Zero-action abilities on
 the new sources work through the shared predicate; **#710** owns their coverage.
+
+**#709 ✅ shipped (PR #736)** is the third bullet — *"The current act or current
+agenda card."* — and the one gated on **nothing**: not control, not co-location.
+Disrupting the Ritual 01148's ruling (<https://arkhamdb.com/card/01148>) says so
+about a printed card, verbatim: *"Your investigator doesn't need to be at the
+Ritual Site in order to activate the ability of this act card."* `AbilitySource`
+gains `Act` and `Agenda`, and neither carries an id — there is exactly one
+current act, and it is `act_deck[act_index]`, so the descriptor names the
+**cursor** rather than a position. That is what makes "an act that is no longer
+current is unreachable" true by construction rather than by check, and what makes
+an empty deck or a cursor past its end simply reach nothing. `reachable_sources`
+appends both *after* the co-location pass, which moved into its own
+`colocated_sources`: #708's early return for an investigator at no location would
+otherwise have swallowed a bullet that does not depend on standing anywhere.
+Everything downstream was already written against the descriptor — both #708
+rejections key off `source.instance()` being `None`, so they cover the board
+cards unchanged, and `TurnAction::target`'s deliberately-exhaustive match made
+the two new anchors a compile error rather than a silent `Global`, which is the
+property ADR 0010 wrote that match to hold open.
+
+**`CandidateSource::Board` is not split, which #709 anticipated it would be.**
+That kind turns out to carry more than the two board cards — the forced scan
+pushes an attacking enemy's own ability under it too, and `candidate_anchor`
+disambiguates the three by comparing card codes at read time, falling through to
+`OptionTarget::Global` for the enemy case. Splitting it properly needs a
+`CandidateSource::Enemy(EnemyId)`, a descriptor question #709 never mentions; all
+six of its acceptance criteria hold without it, since the descriptor an *action*
+names does distinguish act from agenda. **#735** owns the convergence, and
+whether the two enums then merge at all is the open question it should settle
+rather than assume.
 
 **4. Browser capstone — the gate-closer.** Positioned last so it designs against
 the now-stable set of input shapes:

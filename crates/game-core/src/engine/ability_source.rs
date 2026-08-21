@@ -1,5 +1,5 @@
 //! Reachability: which [`AbilitySource`]s a given investigator may use an
-//! ability from (#707, #708).
+//! ability from (#707, #708, #709).
 //!
 //! The Rules Reference answers this once for `[free]`, `[reaction]` and
 //! `[action]` abilities alike — `glossary/Triggered_Abilities.md`'s four
@@ -8,7 +8,7 @@
 //! apart: [`reachable_sources`] *is* the predicate, and [`resolve`] is a lookup
 //! in it rather than a second reading of the rules.
 //!
-//! Two bullets are implemented. The **control** bullet — *"A card in play and
+//! Three bullets are implemented. The **control** bullet — *"A card in play and
 //! under his or her control. This includes his or her investigator card."* —
 //! and the **co-location** bullet, verbatim:
 //!
@@ -25,7 +25,17 @@
 //! > their threat area may trigger the \[action\]\[action\] to discard Haunted, as
 //! > per the FAQ \[V1.0, section 2.1\].
 //!
-//! The act/agenda bullet (#709) attaches here next.
+//! The third bullet lands here too (#709) — *"The current act or current agenda
+//! card."* It is the one bullet with **no gate at all**: not control, not
+//! co-location. Disrupting the Ritual 01148's ruling says so about the printed
+//! card (<https://arkhamdb.com/card/01148>), verbatim:
+//!
+//! > Your investigator doesn't need to be at the Ritual Site in order to
+//! > activate the ability of this act card.
+//!
+//! An investigator therefore reaches the current act and the current agenda from
+//! wherever they stand, which is why [`reachable_sources`] appends them after
+//! the co-location pass has had its chance to bail out.
 //!
 //! Reachability says only *which sources are addressable*. It never widens what
 //! is **legal**: everything `Appendix_I_Initiation_Sequence.md` requires still
@@ -38,8 +48,8 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use crate::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, Enemy, GameState, InvestigatorId,
-    Location, UseKind,
+    AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, GameState,
+    Investigator, InvestigatorId, Location, UseKind,
 };
 
 /// What a reachable [`AbilitySource`] points at: the record carrying the
@@ -62,6 +72,10 @@ pub(crate) enum SourceCard<'a> {
     Location(&'a Location),
     /// An enemy in play.
     Enemy(&'a Enemy),
+    /// The current act card.
+    Act(&'a Act),
+    /// The current agenda card.
+    Agenda(&'a Agenda),
 }
 
 impl SourceCard<'_> {
@@ -71,17 +85,24 @@ impl SourceCard<'_> {
             SourceCard::Instance(card) => &card.code,
             SourceCard::Location(location) => &location.code,
             SourceCard::Enemy(enemy) => &enemy.code,
+            SourceCard::Act(act) => &act.code,
+            SourceCard::Agenda(agenda) => &agenda.code,
         }
     }
 
     /// The card instance behind this source, if it has one. `None` for a
-    /// location (locations do not exhaust and carry no uses) and for an enemy —
-    /// an enemy readies and exhausts through its own `exhausted` field, which is
-    /// not the card-instance state an `Exhaust` cost pays against.
+    /// location (locations do not exhaust and carry no uses); for an enemy — an
+    /// enemy readies and exhausts through its own `exhausted` field, which is
+    /// not the card-instance state an `Exhaust` cost pays against; and for the
+    /// act and the agenda, which are `Act` / `Agenda` records in the scenario
+    /// decks and carry no per-instance state at all.
     pub(crate) fn instance(&self) -> Option<&CardInPlay> {
         match self {
             SourceCard::Instance(card) => Some(card),
-            SourceCard::Location(_) | SourceCard::Enemy(_) => None,
+            SourceCard::Location(_)
+            | SourceCard::Enemy(_)
+            | SourceCard::Act(_)
+            | SourceCard::Agenda(_) => None,
         }
     }
 
@@ -102,22 +123,23 @@ impl SourceCard<'_> {
 /// Every ability source `investigator` can reach, paired with the record that
 /// carries the abilities, in a stable order.
 ///
-/// The order is the two bullets in the order the Rules Reference prints them:
+/// The order is the three bullets in the order the Rules Reference prints them:
 /// the control bullet first (`Investigator::controlled_card_instances`': the
 /// investigator card, then cards in play, then the threat area), then the
 /// co-location bullet (the location itself, its attachments, each enemy at it
 /// with its attachments, then the threat areas of the *other* investigators
-/// there). It is what the turn menu is listed in, so it must stay deterministic
-/// — `investigators`, `locations` and `enemies` are all `BTreeMap`s, so
-/// iteration is by id.
+/// there), then the current act and the current agenda. It is what the turn menu
+/// is listed in, so it must stay deterministic — `investigators`, `locations`
+/// and `enemies` are all `BTreeMap`s, so iteration is by id.
 ///
 /// The acting investigator's own threat area is yielded once, under the control
 /// bullet: the co-location pass skips them, since a card cannot be in two
 /// collections.
 ///
-/// Empty for an investigator who is not in `state`, and stops after the control
-/// bullet for one who is not at a location (an investigator card in the setup
-/// phase, or one who has left the board).
+/// Empty for an investigator who is not in `state`. An investigator who is not
+/// at a location (one in the setup phase, or one who has left the board) skips
+/// the co-location bullet and **keeps** the act and the agenda: that bullet is
+/// gated on nothing.
 ///
 /// [`Investigator::controlled_card_instances`]: crate::state::Investigator::controlled_card_instances
 pub(crate) fn reachable_sources(
@@ -133,9 +155,35 @@ pub(crate) fn reachable_sources(
     // or her investigator card" — the forced and reaction scans walk it, and
     // this is what makes the activation path agree with them (#707).
     let mut sources: Vec<_> = inv.controlled_card_instances().map(as_instance).collect();
+    sources.extend(colocated_sources(state, inv));
+    // *"The current act or current agenda card."* (#709) — appended after the
+    // co-location pass rather than inside it, because this bullet has no gate:
+    // an investigator between locations still reaches both. A deck that is empty
+    // or whose cursor has run off the end (a fixture with no acts, a scenario
+    // past its last agenda) simply yields nothing.
+    if let Some(act) = state.act_deck.get(state.act_index) {
+        sources.push((AbilitySource::Act, SourceCard::Act(act)));
+    }
+    if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
+        sources.push((AbilitySource::Agenda, SourceCard::Agenda(agenda)));
+    }
+    sources
+}
 
-    // The co-location bullet (#708). Everything below is gated on standing in
-    // the same place, never on controlling it.
+/// The co-location bullet's sources for `inv` (#708) — empty for an
+/// investigator who is not standing at a location on the map.
+///
+/// Split out of [`reachable_sources`] so that bailing out of *this* bullet
+/// cannot skip the act and agenda bullet that follows it: the two are
+/// independent, and an early `return` in one function body made them look
+/// sequential.
+fn colocated_sources<'a>(
+    state: &'a GameState,
+    inv: &Investigator,
+) -> Vec<(AbilitySource, SourceCard<'a>)> {
+    let mut sources = Vec::new();
+    // Everything below is gated on standing in the same place, never on
+    // controlling it.
     let Some(location_id) = inv.current_location else {
         return sources;
     };
@@ -175,7 +223,7 @@ pub(crate) fn reachable_sources(
     for other in state
         .investigators
         .values()
-        .filter(|other| other.id != investigator && other.current_location == Some(location_id))
+        .filter(|other| other.id != inv.id && other.current_location == Some(location_id))
     {
         sources.extend(other.threat_area.iter().map(as_instance));
     }
@@ -229,9 +277,9 @@ pub(crate) fn resolve(
 
 /// The mutable peer of [`resolve`], for cost payment: the same instance,
 /// addressed by identity at the moment it is paid against (#706). `None` for a
-/// source with no card instance behind it — a location or an enemy — which is
-/// why `check_activate_ability` refuses a source-referencing cost on one before
-/// any payment starts.
+/// source with no card instance behind it — a location, an enemy, the act or the
+/// agenda — which is why `check_activate_ability` refuses a source-referencing
+/// cost on one before any payment starts.
 ///
 /// Reachability is re-checked, not assumed: a cost earlier in the same
 /// activation can remove the source from play, and the answer then is
@@ -293,8 +341,8 @@ fn instance_in_play_mut(
 fn unreachable_reason(investigator: InvestigatorId, source: AbilitySource) -> Cow<'static, str> {
     format!(
         "ActivateAbility: {investigator:?} cannot reach {source:?} — it is neither a card in \
-         play under their control nor a scenario card at their location (RR \"Triggered \
-         Abilities\")",
+         play under their control, nor a scenario card at their location, nor the current act \
+         or agenda (RR \"Triggered Abilities\")",
     )
     .into()
 }
@@ -302,7 +350,7 @@ fn unreachable_reason(investigator: InvestigatorId, source: AbilitySource) -> Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{CardCode, CardInstanceId, EnemyId, LocationId};
+    use crate::state::{Act, Agenda, CardCode, CardInstanceId, EnemyId, LocationId};
     use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 
     const STUDY: LocationId = LocationId(1);
@@ -518,7 +566,10 @@ mod tests {
 
     /// An investigator who is not on the board (setup, or eliminated) still
     /// reaches their own cards — the control bullet does not depend on standing
-    /// anywhere — and nothing else.
+    /// anywhere — and, on this board, nothing else: `board()` loads no act or
+    /// agenda deck, so the third bullet has nothing to offer either. The act and
+    /// agenda half of that is
+    /// [`an_investigator_at_no_location_still_reaches_the_act_and_agenda`].
     #[test]
     fn an_investigator_at_no_location_reaches_only_the_control_bullet() {
         let mut state = board();
@@ -584,5 +635,152 @@ mod tests {
             AbilitySource::Enemy(EnemyId(1))
         )
         .is_none());
+    }
+    // --- The act / agenda bullet (#709) ------------------------------------
+    //
+    // *"The current act or current agenda card."* — the one bullet gated on
+    // nothing at all.
+
+    /// The Gathering's act 1, Trapped.
+    const ACT_ONE: &str = "01108";
+    /// Its act 2, The Barrier — the act that supersedes [`ACT_ONE`].
+    const ACT_TWO: &str = "01109";
+    /// The Gathering's agenda 1, What's Going On?!
+    const AGENDA: &str = "01105";
+
+    fn act(code: &str, clue_threshold: u8) -> Act {
+        Act {
+            code: CardCode::new(code),
+            clue_threshold,
+            resolution: None,
+        }
+    }
+
+    fn agenda(code: &str) -> Agenda {
+        Agenda {
+            code: CardCode::new(code),
+            doom_threshold: 3,
+            resolution: None,
+        }
+    }
+
+    /// [`board`] with a two-act deck and a one-agenda deck loaded, cursors at
+    /// the front.
+    fn board_with_scenario_decks() -> GameState {
+        let mut state = board();
+        // Printed clue thresholds, from the snapshot: Trapped 2, The Barrier 3.
+        state.act_deck = vec![act(ACT_ONE, 2), act(ACT_TWO, 3)];
+        state.act_index = 0;
+        state.agenda_deck = vec![agenda(AGENDA)];
+        state.agenda_index = 0;
+        state
+    }
+
+    /// Not location-gated: the investigator in the Study and the one in the
+    /// Hallway reach the same two board cards.
+    #[test]
+    fn the_act_and_agenda_are_reachable_from_every_location() {
+        let state = board_with_scenario_decks();
+        for investigator in [InvestigatorId(1), InvestigatorId(3)] {
+            let sources = sources_for(&state, investigator);
+            assert!(
+                sources.contains(&AbilitySource::Act) && sources.contains(&AbilitySource::Agenda),
+                "{investigator:?} should reach both board cards wherever they stand; \
+                 sources were {sources:?}",
+            );
+        }
+    }
+
+    /// The co-location bullet bails out for an investigator who is nowhere on
+    /// the map; the act/agenda bullet must not bail out with it.
+    #[test]
+    fn an_investigator_at_no_location_still_reaches_the_act_and_agenda() {
+        let mut state = board_with_scenario_decks();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .expect("on the board")
+            .current_location = None;
+        let sources = sources_for(&state, InvestigatorId(1));
+        assert!(
+            sources.contains(&AbilitySource::Act) && sources.contains(&AbilitySource::Agenda),
+            "the third bullet is gated on nothing; sources were {sources:?}",
+        );
+        assert!(
+            !sources.contains(&AbilitySource::Location(STUDY)),
+            "the co-location bullet still bails out; sources were {sources:?}",
+        );
+    }
+
+    /// The descriptor names *the current* act, not an act by position, so
+    /// advancing the cursor silently re-points it — the superseded act's
+    /// abilities are simply not addressable any more.
+    #[test]
+    fn the_source_follows_the_cursor_to_the_current_act() {
+        let mut state = board_with_scenario_decks();
+        assert_eq!(
+            resolve(&state, InvestigatorId(1), AbilitySource::Act)
+                .expect("act one is current")
+                .code()
+                .as_str(),
+            ACT_ONE,
+        );
+
+        state.act_index = 1;
+        assert_eq!(
+            resolve(&state, InvestigatorId(1), AbilitySource::Act)
+                .expect("act two is now current")
+                .code()
+                .as_str(),
+            ACT_TWO,
+            "the superseded act is no longer what the source names",
+        );
+    }
+
+    /// A fixture with no acts, or a scenario whose cursor has run off the end
+    /// of its deck, has no board source to offer.
+    #[test]
+    fn an_absent_act_or_agenda_is_not_reachable() {
+        for (state, why) in [
+            (board(), "no act or agenda deck is loaded"),
+            (
+                {
+                    let mut state = board_with_scenario_decks();
+                    state.act_index = 2;
+                    state.agenda_index = 1;
+                    state
+                },
+                "both cursors have run off the end of their decks",
+            ),
+        ] {
+            let sources = sources_for(&state, InvestigatorId(1));
+            assert!(
+                !sources.contains(&AbilitySource::Act) && !sources.contains(&AbilitySource::Agenda),
+                "{why}, so neither board card is reachable; sources were {sources:?}",
+            );
+            assert!(
+                resolve(&state, InvestigatorId(1), AbilitySource::Act).is_err(),
+                "{why}, so resolving the act must fail",
+            );
+            assert!(
+                resolve(&state, InvestigatorId(1), AbilitySource::Agenda).is_err(),
+                "{why}, so resolving the agenda must fail",
+            );
+        }
+    }
+
+    /// Neither board card carries per-instance state, so neither can be the
+    /// target of an exhaust, uses or discard-self cost.
+    #[test]
+    fn neither_board_card_carries_per_instance_state() {
+        let mut state = board_with_scenario_decks();
+        for source in [AbilitySource::Act, AbilitySource::Agenda] {
+            let card = resolve(&state, InvestigatorId(1), source).expect("reachable");
+            assert!(
+                card.instance().is_none() && !card.exhausted() && card.uses().is_empty(),
+                "{source:?} should carry no per-instance state",
+            );
+            assert!(resolve_mut(&mut state, InvestigatorId(1), source).is_none());
+        }
     }
 }

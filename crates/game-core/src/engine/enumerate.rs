@@ -157,13 +157,16 @@ impl TurnAction {
                 investigator: *investigator,
                 hand_index: *hand_index,
             },
-            // Exhaustive on purpose: #709's act / agenda kinds anchor to
-            // `OptionTarget::Act` / `Agenda`, and this should stop compiling
-            // then rather than quietly anchoring them somewhere wrong.
+            // Exhaustive on purpose: a new `AbilitySource` kind should stop
+            // this compiling rather than quietly anchoring itself somewhere
+            // wrong. The act and agenda kinds (#709) anchor to the board cards
+            // themselves, which is what an act-advance option already uses.
             TurnAction::ActivateAbility { source, .. } => match source {
                 AbilitySource::InPlay(instance_id) => OptionTarget::CardInstance(*instance_id),
                 AbilitySource::Location(location) => OptionTarget::Location(*location),
                 AbilitySource::Enemy(enemy) => OptionTarget::Enemy(*enemy),
+                AbilitySource::Act => OptionTarget::Act,
+                AbilitySource::Agenda => OptionTarget::Agenda,
             },
             TurnAction::AdvanceAct { .. } => OptionTarget::Act,
         }
