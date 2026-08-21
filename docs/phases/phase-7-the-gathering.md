@@ -304,6 +304,34 @@ investigator*" is not. Proving the per-investigator negatives there would mean m
 where the submission names its actor. The day `OptionTarget` learns who an option is
 for — #381's eligibility half is the likely occasion — that split can close.
 
+**#696 ✅ shipped (PR #738)** is the bug the widening exposed, and the one place the
+arc changed a *rule* rather than what is addressable. The attack-of-opportunity
+exemption is written against the **bold action designator** a card prints — *"an
+action other than to **fight**, to **evade**, or to activate a **parley** or
+**resign** ability"* — and `provokes_aoo` inferred it from the effect root instead,
+exempting `Effect::Fight` because every corpus weapon happens to be rooted in one.
+Its own doc comment conceded the premise (*"There is no `Effect::Evade` and no
+activated parley/resign card in scope"*), which the Parlor 01115's `[action]
+**Resign.**` falsifies in the shipping scenario the moment #708 makes a location's
+abilities reachable. `Trigger::Activated` now carries an `ActionDesignator`
+(`CONTEXT.md`), and the corpus declares what it prints: the four weapons are
+**Fight**, Flashlight 01087 is **Investigate** — a designator the exempt list does
+*not* name, so it provokes exactly as the basic investigate action does. Declared
+rather than derived because the rules quote the designator and Frozen in Fear
+01164's ruling quotes it independently; **Parley** and **Resign** have no effect
+shape for an effect-root match to find, and a `Seq`-wrapped Fight has the wrong one.
+The same declaration retires the second effect-root sniff — the pre-cost *"a Fight
+ability needs a co-located enemy"* check — which widens it to a `Seq`-wrapped weapon
+and narrows it away from an undesignated one, a shape no corpus card is in and which
+now rejects in the evaluator with a message that says so. No ADR: the choice is
+reversible and `ActionDesignator`'s own rustdoc carries the reasoning. **Scope was
+the designator, not the semantics** — Resign's elimination-by-resignation is still
+#644, so the Parlor stays unimplemented (an ability whose effect cannot change the
+game state is refused at initiation, so there is nothing to give it yet) and the
+acceptance case rides a synthetic Resign-designated location through the real
+`AbilitySource::Location` path. Nothing forces #644 to tag 01115 when it lands;
+that guard is its reviewer's.
+
 **4. Browser capstone — the gate-closer.** Positioned last so it designs against
 the now-stable set of input shapes:
 - **#447 — 2b: typed `PlayerAction` elimination ✅ shipped (PR #460).** Open-turn

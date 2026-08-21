@@ -5,6 +5,12 @@
 //! enemy is the only enemy engaged with you, this attack deals +1 damage.
 //! ```
 //!
+//! **Designator: Fight** — the bold word above the effect, declared on the
+//! trigger (`ActionDesignator::Fight`, #696). It is what exempts the
+//! activation from attacks of opportunity, and the exemption is the rule's
+//! own wording (`glossary/Attack_of_Opportunity.md`: *"an action other than
+//! to **fight**"*), not a property of the `Effect::Fight` below it.
+//!
 //! A bare `[action]` Fight (no exhaust, no uses) with a flat `+1` combat
 //! modifier. The bonus damage is conditional on the **attacked** enemy, not on
 //! the controller's engaged count alone: `Effect::Fight`'s candidate scope is
@@ -31,7 +37,7 @@
 //! and the picked enemy may be engaged with you, with another investigator, or
 //! with nobody.
 
-use card_dsl::dsl::{activated, fight, native_condition, Ability, IntExpr};
+use card_dsl::dsl::{activated_as, fight, native_condition, Ability, ActionDesignator, IntExpr};
 use game_core::card_registry::NativeConditionFn;
 use game_core::state::GameState;
 use game_core::EvalContext;
@@ -44,7 +50,8 @@ const SOLE_ENGAGED_TAG: &str = "01020:sole_engaged_target";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![activated(
+    vec![activated_as(
+        ActionDesignator::Fight,
         1,
         vec![],
         fight(1u8, IntExpr::cond(native_condition(SOLE_ENGAGED_TAG), 1, 0)),
@@ -98,7 +105,13 @@ mod tests {
     fn one_costless_activated_fight_ability() {
         let abilities = abilities();
         assert_eq!(abilities.len(), 1);
-        assert_eq!(abilities[0].trigger, Trigger::Activated { action_cost: 1 });
+        assert_eq!(
+            abilities[0].trigger,
+            Trigger::Activated {
+                action_cost: 1,
+                designator: Some(ActionDesignator::Fight),
+            }
+        );
         assert!(
             abilities[0].costs.is_empty(),
             "Machete's Fight has no exhaust/uses cost — just the action",

@@ -25,6 +25,17 @@
 //!
 //! **Machete (01020):** "[action]: Fight. You get +1 [combat] for this attack.
 //! …" A Fight ability → `AoO`-exempt (RR p.5).
+//!
+//! **Flashlight (01087):** "Uses (3 supplies). [action] Spend 1 supply:
+//! Investigate. Your location gets -2 shroud for this investigation." A bold
+//! **Investigate** designator — which the exempt list does *not* name — so it
+//! provokes, exactly as the basic investigate action does.
+//!
+//! Since #696 the exemption reads the ability's declared **action designator**
+//! rather than its effect root. The shapes only a designator can distinguish —
+//! a `Seq`-wrapped Fight, and the **Parley** / **Resign** abilities that have no
+//! effect of their own — have no corpus card to exercise them and are covered by
+//! `crates/game-core/tests/action_designator_aoo.rs`.
 #![allow(clippy::too_many_lines)]
 
 use game_core::engine::{apply, EngineOutcome, OptionId};
@@ -45,6 +56,10 @@ const FIRST_AID: &str = "01019";
 const MACHETE: &str = "01020";
 /// Guard Dog (01021): Guardian Ally, health 3 / sanity 1, damage-retaliate soak.
 const GUARD_DOG: &str = "01021";
+/// Flashlight (01087): neutral Tool, `[action] Spend 1 supply: **Investigate.**`
+/// **Investigate** is a bold action designator, but not one on the
+/// attack-of-opportunity exempt list — so it provokes (#696).
+const FLASHLIGHT: &str = "01087";
 /// Beat Cop (01018): Guardian Ally; ability 1 is `[fast] Discard Beat Cop: Deal
 /// 1 damage to an enemy at your location` — fast, so never provokes.
 const BEAT_COP: &str = "01018";
@@ -341,6 +356,78 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
         )),
         "Beat Cop's fast ability dealt its 1 damage to the engaged enemy: {:?}",
         result.events
+    );
+}
+
+// -----------------------------------------------------------------------
+// A designator the exempt list does not name still provokes.
+// -----------------------------------------------------------------------
+
+/// Flashlight's `[action] Spend 1 supply: **Investigate.**` while engaged with
+/// a ready enemy **provokes**. It prints a bold action designator, but
+/// `glossary/Attack_of_Opportunity.md` names only *"to **fight**, to **evade**,
+/// or to activate a **parley** or **resign** ability"* — so an
+/// **Investigate** ability provokes exactly as the basic investigate action
+/// does. The corpus half of the designator rule (#696): a declared designator
+/// is not by itself an exemption.
+#[test]
+fn activating_an_investigate_designated_ability_while_engaged_provokes_an_aoo() {
+    let torch = CardInstanceId(1);
+    let inv_id = InvestigatorId(1);
+    let loc = LocationId(101);
+
+    let mut investigator = test_investigator(1);
+    investigator.current_location = Some(loc);
+    // A real investigator card: the parked investigation reads its intellect
+    // out of the corpus once the AoO has resolved.
+    investigator.investigator_card.code = CardCode::new("01003");
+    let mut flashlight = CardInPlay::enter_play(CardCode::new(FLASHLIGHT), torch);
+    flashlight.uses.insert(UseKind::Supplies, 3);
+    investigator.cards_in_play = vec![flashlight];
+
+    let attacker = engaged_attacker(7, inv_id, loc, 2, 5);
+
+    let state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_location(test_location(101, "Study"))
+        .with_investigator(investigator)
+        .with_active_investigator(inv_id)
+        .with_turn_order([inv_id])
+        .with_investigator_turn(inv_id)
+        .with_enemy(attacker)
+        // Only so the investigation has a bag to draw from once the AoO has
+        // resolved and the parked effect runs.
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .build();
+
+    let result = take_turn_action(
+        state,
+        &TurnAction::ActivateAbility {
+            investigator: inv_id,
+            source: AbilitySource::InPlay(torch),
+            ability_index: 0,
+        },
+    );
+
+    // No soaker is in play, so the AoO's 2 damage lands on the investigator
+    // directly — before the investigation the ability parked behind it.
+    assert_eq!(
+        result.state.investigators[&inv_id].damage(),
+        2,
+        "the **Investigate** ability provoked an AoO: {:?}",
+        result.events
+    );
+    // The supply was spent first: an AoO is made "immediately after all costs of
+    // initiating the action that provoked the attack have been paid".
+    let torch_in_play = result.state.investigators[&inv_id]
+        .cards_in_play
+        .iter()
+        .find(|c| c.instance_id == torch)
+        .expect("Flashlight still in play");
+    assert_eq!(
+        torch_in_play.uses.get(&UseKind::Supplies).copied(),
+        Some(2),
+        "Flashlight spent 1 supply as the activation cost, before the AoO"
     );
 }
 

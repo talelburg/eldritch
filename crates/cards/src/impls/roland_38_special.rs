@@ -8,6 +8,10 @@
 //! instead). This attack deals +1 damage.
 //! ```
 //!
+//! **Designator: Fight** (`ActionDesignator::Fight`, #696) — the bold word
+//! above the effect, which is what exempts the activation from attacks of
+//! opportunity.
+//!
 //! Ammo (4) comes from the corpus (`CardKind::Asset.uses`, pipeline-
 //! parsed); the ability spends 1 per use via `Cost::SpendUses` and fights
 //! through `Effect::Fight`, whose combat modifier is `+3` when the
@@ -16,14 +20,17 @@
 //! dealing `1 + 1` damage on success.
 
 use card_dsl::card_data::UseKind;
-use card_dsl::dsl::{activated, fight, Ability, CmpOp, Condition, Cost, IntExpr, Quantity};
+use card_dsl::dsl::{
+    activated_as, fight, Ability, ActionDesignator, CmpOp, Condition, Cost, IntExpr, Quantity,
+};
 
 /// `ArkhamDB` code for Roland's .38 Special.
 pub const CODE: &str = "01006";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![activated(
+    vec![activated_as(
+        ActionDesignator::Fight,
         1,
         vec![Cost::SpendUses {
             kind: UseKind::Ammo,
@@ -53,7 +60,13 @@ mod tests {
     fn one_activated_fight_ability_spending_ammo() {
         let abilities = abilities();
         assert_eq!(abilities.len(), 1);
-        assert_eq!(abilities[0].trigger, Trigger::Activated { action_cost: 1 });
+        assert_eq!(
+            abilities[0].trigger,
+            Trigger::Activated {
+                action_cost: 1,
+                designator: Some(ActionDesignator::Fight),
+            }
+        );
         assert_eq!(
             abilities[0].costs,
             vec![Cost::SpendUses {

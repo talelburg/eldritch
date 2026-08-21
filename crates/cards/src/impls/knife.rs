@@ -6,6 +6,10 @@
 //!   This attack deals +1 damage.
 //! ```
 //!
+//! **Designator: Fight**, on both abilities (`ActionDesignator::Fight`, #696)
+//! — the bold word above each effect, which is what exempts either
+//! activation from attacks of opportunity.
+//!
 //! Two `[action]` Fight abilities, both pure compositions of existing
 //! primitives:
 //!
@@ -24,7 +28,7 @@
 //! (`resolve_activated_ability` indexes the raw abilities vec and rejects
 //! any non-`Activated` trigger).
 
-use card_dsl::dsl::{activated, fight, Ability, Cost};
+use card_dsl::dsl::{activated_as, fight, Ability, ActionDesignator, Cost};
 
 /// `ArkhamDB` code for Knife (original-Core printing).
 pub const CODE: &str = "01086";
@@ -35,10 +39,15 @@ pub const CODE: &str = "01086";
 pub fn abilities() -> Vec<Ability> {
     vec![
         // [action]: Fight. You get +1 [combat] for this attack.
-        activated(1, vec![], fight(1u8, 0u8)),
+        activated_as(ActionDesignator::Fight, 1, vec![], fight(1u8, 0u8)),
         // [action] Discard Knife: Fight. You get +2 [combat] for this attack.
         // This attack deals +1 damage.
-        activated(1, vec![Cost::DiscardSelf], fight(2u8, 1u8)),
+        activated_as(
+            ActionDesignator::Fight,
+            1,
+            vec![Cost::DiscardSelf],
+            fight(2u8, 1u8),
+        ),
     ]
 }
 
@@ -53,7 +62,13 @@ mod tests {
         assert_eq!(abilities.len(), 2);
 
         // Index 0: bare [action] Fight, +1 combat, base damage.
-        assert_eq!(abilities[0].trigger, Trigger::Activated { action_cost: 1 });
+        assert_eq!(
+            abilities[0].trigger,
+            Trigger::Activated {
+                action_cost: 1,
+                designator: Some(ActionDesignator::Fight),
+            }
+        );
         assert!(
             abilities[0].costs.is_empty(),
             "the basic Fight has no cost beyond the action",
@@ -69,7 +84,13 @@ mod tests {
         assert_eq!(*extra_damage, IntExpr::Lit(0));
 
         // Index 1: [action] Discard Knife Fight, +2 combat, +1 damage.
-        assert_eq!(abilities[1].trigger, Trigger::Activated { action_cost: 1 });
+        assert_eq!(
+            abilities[1].trigger,
+            Trigger::Activated {
+                action_cost: 1,
+                designator: Some(ActionDesignator::Fight),
+            }
+        );
         assert_eq!(abilities[1].costs, vec![Cost::DiscardSelf]);
         let Effect::Fight {
             combat_modifier,

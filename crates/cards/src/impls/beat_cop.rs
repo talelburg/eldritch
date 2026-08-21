@@ -64,7 +64,13 @@ mod tests {
 
         // Index 1: [fast] (action_cost 0), DiscardSelf cost, deal 1 to a chosen
         // enemy at your location.
-        assert_eq!(abilities[1].trigger, Trigger::Activated { action_cost: 0 });
+        assert_eq!(
+            abilities[1].trigger,
+            Trigger::Activated {
+                action_cost: 0,
+                designator: None
+            }
+        );
         assert_eq!(abilities[1].costs, vec![Cost::DiscardSelf]);
         assert!(matches!(
             abilities[1].effect,

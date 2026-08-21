@@ -42,7 +42,13 @@ mod tests {
     fn abilities_are_action_exhaust_search_top_3() {
         let abilities = super::abilities();
         assert_eq!(abilities.len(), 1);
-        assert_eq!(abilities[0].trigger, Trigger::Activated { action_cost: 1 });
+        assert_eq!(
+            abilities[0].trigger,
+            Trigger::Activated {
+                action_cost: 1,
+                designator: None
+            }
+        );
         assert_eq!(abilities[0].costs, vec![Cost::Exhaust]);
         assert!(matches!(
             abilities[0].effect,

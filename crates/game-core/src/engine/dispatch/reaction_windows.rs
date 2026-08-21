@@ -14,7 +14,7 @@ use std::borrow::Cow;
 use crate::action::InputResponse;
 use crate::card_data::{CardMetadata, CardType};
 use crate::card_registry;
-use crate::dsl::{Ability, EventPattern, EventTiming, Trigger, TriggerKind};
+use crate::dsl::{Ability, ActionDesignator, EventPattern, EventTiming, Trigger, TriggerKind};
 use crate::engine::enumerate::TurnAction;
 use crate::engine::TimingEvent;
 use crate::event::{Event, LapseReason};
@@ -1893,22 +1893,27 @@ fn check_play_resource_cost_payable(
     }
 }
 
-/// True if `effect` initiates a Fight at its top level.
-///
-/// Top-level only: no card yet fights in just one branch of a `Seq`/`If`
-/// (.38 Special's `IntExpr` branches both fight, so the Fight node is
-/// unconditionally top-level). Recurse here when such a card lands.
-fn effect_initiates_fight(effect: &crate::dsl::Effect) -> bool {
-    matches!(effect, crate::dsl::Effect::Fight { .. })
-}
-
 /// Reject an activation whose effect needs a target it cannot get, at the check
 /// layer (before any cost is paid) so the rejection is honest for
 /// `any_fast_play_eligible` and `Effect::Fight` / `DealDamageToEnemy` can treat
 /// a missing target as an invariant violation.
 ///
-/// - **Fight:** needs ≥1 enemy *at your location* (0 = no target, rejected
-///   pre-cost; 2+ suspends to a `PickSingle` target-pick in the evaluator).
+/// The Fight branch covers every fight ability the corpus prints, because each
+/// declares the **Fight** designator. One shape escapes it: an ability rooted in
+/// `Effect::Fight` that declares *no* designator. Nothing in the corpus is in
+/// that shape (a fight ability is a fight ability by printing the bold word),
+/// and the evaluator rejects it rather than resolving a targetless attack —
+/// `apply_via` then rolls the costs back with it, so the escape costs
+/// correctness nothing and honesty only here. Deliberately unlifted with no
+/// tracking issue (YAGNI, as with [`reject_incompatible_costs`]); whoever wants
+/// the guard tightened files one.
+///
+/// - **Fight:** an ability printing the **Fight** designator needs ≥1 enemy *at
+///   your location* (0 = no target, rejected pre-cost; 2+ suspends to a
+///   `PickSingle` target-pick in the evaluator). Keyed off the declared
+///   designator rather than an `Effect::Fight` at the effect root (#696): the
+///   designator is what makes the ability a fight action, and an effect-root
+///   match misses a `Seq`-wrapped one.
 ///   Scope is co-located, not engaged-only: per RR you choose an enemy at your
 ///   location to attack and need not already be engaged (matches the basic
 ///   Fight action — an Aloof enemy, or one engaged with another investigator
@@ -1924,9 +1929,10 @@ fn effect_initiates_fight(effect: &crate::dsl::Effect) -> bool {
 fn check_effect_target_available(
     state: &GameState,
     investigator: InvestigatorId,
+    designator: Option<ActionDesignator>,
     effect: &crate::dsl::Effect,
 ) -> Result<(), Cow<'static, str>> {
-    if effect_initiates_fight(effect)
+    if designator == Some(ActionDesignator::Fight)
         && super::combat::enemies_in_scope(state, investigator, super::combat::fight_target_scope())
             .is_empty()
     {
@@ -2138,6 +2144,7 @@ pub(crate) fn check_activate_ability(
     // comment on `resolve_play_target` in `check_play_card`.
     let super::abilities::ActivatedAbility {
         action_cost,
+        designator,
         costs,
         effect,
         usage_limit,
@@ -2204,12 +2211,13 @@ pub(crate) fn check_activate_ability(
 
     reject_incompatible_costs(&costs)?;
     reject_source_costs_without_an_instance(source, &source_code, &costs)?;
-    check_effect_target_available(state, investigator, &effect)?;
+    check_effect_target_available(state, investigator, designator, &effect)?;
     check_activation_changes_state(state, investigator, source, &source_code, &effect)?;
 
     Ok(super::ActivateCheckResult {
         source_code,
         action_cost,
+        designator,
         costs,
         effect,
         source_exhausted,
@@ -2303,7 +2311,7 @@ pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
                 continue;
             };
             for (ab_idx, ability) in abilities.iter().enumerate() {
-                let Trigger::Activated { action_cost: 0 } = ability.trigger else {
+                let Trigger::Activated { action_cost: 0, .. } = ability.trigger else {
                     continue;
                 };
                 let Ok(ability_index) = u8::try_from(ab_idx) else {

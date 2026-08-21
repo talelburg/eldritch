@@ -644,6 +644,9 @@ pub(super) struct ActivateCheckResult {
     pub source_code: CardCode,
     /// Action cost from the ability's `Trigger::Activated`.
     pub action_cost: u8,
+    /// The bold action designator the ability prints, if any — what the
+    /// attack-of-opportunity exemption reads (#696).
+    pub designator: Option<crate::dsl::ActionDesignator>,
     /// Payment costs (beyond the action cost).
     pub costs: Vec<crate::dsl::Cost>,
     /// The effect to dispatch after paying costs.

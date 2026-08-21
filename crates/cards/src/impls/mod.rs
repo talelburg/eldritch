@@ -31,18 +31,20 @@
 //! - Working a Hunch (01037) — `Trigger::OnPlay` + `DiscoverClue`.
 //! - Magnifying Glass (01030) — `Trigger::Constant` +
 //!   `WhileInPlayDuring(SkillTestKind::Investigate)`.
-//! - Hyperawareness (01034) — two `Trigger::Activated { action_cost: 0 }`
-//!   abilities with `Cost::Resources(1)` and `ThisSkillTest`-scoped
-//!   `Modify`.
-//! - .45 Automatic (01016) — `Trigger::Activated { action_cost: 1 }`,
-//!   `Cost::SpendUses(Ammo)` + `Effect::Fight` (flat +1 combat, +1 damage).
-//! - Physical Training (01017) — two `Trigger::Activated { action_cost: 0 }`
-//!   abilities (`Cost::Resources(1)`, `ThisSkillTest` `Modify`), willpower
-//!   / combat (the Hyperawareness shape).
-//! - Machete (01020) — bare `Trigger::Activated { action_cost: 1 }` +
-//!   `Effect::Fight` (+1 combat; conditional +1 damage via `IntExpr::cond` over
-//!   a `Condition::Native` predicate that reads the *attacked* enemy, since the
-//!   fight scope is every co-located enemy — #451/#592).
+//! - Hyperawareness (01034) — two undesignated `Trigger::Activated
+//!   { action_cost: 0 }` abilities with `Cost::Resources(1)` and
+//!   `ThisSkillTest`-scoped `Modify`.
+//! - .45 Automatic (01016) — `Trigger::Activated { action_cost: 1 }` with the
+//!   **Fight** action designator, `Cost::SpendUses(Ammo)` + `Effect::Fight`
+//!   (flat +1 combat, +1 damage).
+//! - Physical Training (01017) — two undesignated `Trigger::Activated
+//!   { action_cost: 0 }` abilities (`Cost::Resources(1)`, `ThisSkillTest`
+//!   `Modify`), willpower / combat (the Hyperawareness shape).
+//! - Machete (01020) — bare `Trigger::Activated { action_cost: 1 }` with the
+//!   **Fight** action designator + `Effect::Fight` (+1 combat; conditional +1
+//!   damage via `IntExpr::cond` over a `Condition::Native` predicate that
+//!   reads the *attacked* enemy, since the fight scope is every co-located
+//!   enemy — #451/#592).
 //! - Attic (01113) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
 //!   `deal_horror(You, 1)`.
 //! - Cellar (01114) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
