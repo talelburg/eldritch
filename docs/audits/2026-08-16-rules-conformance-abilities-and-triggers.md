@@ -642,19 +642,30 @@ Several were candidate findings that did not survive.
 
 Things the vendored sources do not settle, and what would settle them.
 
-- **When exactly does "after you successfully investigate" trigger?** The engine
-  fires `TimingEvent::SkillTestResolved` at the ST.6→ST.7 boundary, explicitly
-  *"before any ST.7 consequence"* (`state/game_state.rs:1551-1562`), so Obscuring
-  Fog 01168's forced discard and Dr. Milan 01033's reaction both resolve **before**
-  the clue is discovered. The rules give ST.6 (determine success/failure) and
-  ST.7 (apply results) as separate steps, which supports the engine; but
-  `glossary/After.md` defines "after" as *"immediately after the specified timing
-  point or triggering condition has fully resolved"*, and it is arguable that
-  "successfully investigating" is not fully resolved until the clue moves. Neither
-  card's ruling file addresses it (`data/arkhamdb-faq/core/01033.md`,
-  `.../01168.md` — both carry unrelated rulings only). **What would settle it:** a
-  ruling on a card whose "after you successfully investigate" effect interacts
-  with the discovered clue.
+- ~~**When exactly does "after you successfully investigate" trigger?**~~
+  **Settled (#750, #756).** `data/official-faq/Rulings_and_Clarifications.md`,
+  section 1.7 ("Skill Test Results and Advanced Timing"):
+
+  > [reaction] or Forced abilities with a triggering condition dependent upon
+  > the skill test being successful or unsuccessful (such as "After you
+  > successfully investigate," or "After you fail a skill test by 2 or more") do
+  > not trigger at this time. These abilities are triggered during Step 6,
+  > "Determine success/failure of skill test."
+
+  "At this time" is Step 7. So the trigger is Step 6, before the clue moves —
+  which is exactly what the engine does, and Obscuring Fog 01168 and Dr. Milan
+  Christopher 01033 resolving before the discovery are correct and now citable.
+
+  What the entry asked, and why it was open: the engine fires
+  `TimingEvent::SkillTestResolved` at the ST.6→ST.7 boundary, explicitly *"before
+  any ST.7 consequence"* (`state/game_state.rs:1551-1562`). The rules give ST.6
+  (determine success/failure) and ST.7 (apply results) as separate steps, which
+  supported the engine; but `glossary/After.md` defines "after" as *"immediately
+  after the specified timing point or triggering condition has fully resolved"*,
+  and it was arguable that "successfully investigating" is not fully resolved
+  until the clue moves. Neither card's ruling file addresses it
+  (`data/arkhamdb-faq/core/01033.md`, `.../01168.md` — both carry unrelated
+  rulings only), which is why it took the FAQ's own section 1.7 to close.
 - **ST.7's "order of his or her choice" over multiple results.** The rule is
   quoted in finding 6; the engine applies ST.7 in a fixed cursor order
   (`FireOnCommit → ApplyFollowUp → ApplyResultEffect → …`,

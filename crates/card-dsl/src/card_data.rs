@@ -581,10 +581,16 @@ impl CardMetadata {
     }
 
     /// The printed resource cost to play this card from hand (Rules Reference
-    /// p.7, "Costs"). `Some(n)` is a fixed cost; `None` means either an X-cost
-    /// card or a card type that is never played for a cost (Skill, encounter
-    /// cards, …). Callers in the play path reach this only for Asset/Event (the
-    /// only playable types), where `None` therefore denotes an X-cost.
+    /// p.7, "Costs"). `Some(n)` with `n >= 0` is a fixed cost.
+    ///
+    /// The two other shapes are distinguishable, and the play path relies on
+    /// it: a printed **X** cost arrives as `Some(-2)` — `ArkhamDB`'s sentinel,
+    /// carried through the pipeline unchanged — while a printed **`"–"`**
+    /// cost (which includes every permanent) arrives as `None`, as does any
+    /// card type that is never played for a cost (Skill, encounter cards, …).
+    /// The distinction matters because the rules treat them differently: a
+    /// `"–"` card *cannot be played at all*, whereas an X cost is a real cost
+    /// with a player-chosen amount. See `check_play_resource_cost_payable`.
     #[must_use]
     pub fn play_cost(&self) -> Option<i8> {
         match self.kind {

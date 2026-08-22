@@ -18,7 +18,24 @@ use super::Cx;
 /// clue from the location to the investigator. The discover-clue
 /// evaluator handles the location-empty edge case as a silent no-op,
 /// so an investigation at a 0-clue location costs the action and runs
-/// the test but yields nothing — consistent with the rules.
+/// the test but yields nothing. That is the printed rule, and in
+/// particular **a clueless location is not an illegal target** — no
+/// gate here counts clues, deliberately.
+/// `data/official-faq/Frequently_Asked_Questions.md`:
+///
+/// > Q: Can I investigate a location with no clues on it? If I do, what
+/// > happens?
+/// >
+/// > A: Yes. You can investigate a location even if there are no clues on
+/// > it. However, you won't be able to discover any clues there, because
+/// > there are no clues on the location to discover. Investigating a
+/// > location with no clues might still be useful to trigger card
+/// > abilities such as Burglary (\[core\] 45) or Scavenging (\[core\] 73).
+///
+/// The last sentence is why the "no potential to change the game state"
+/// initiation gate (`glossary/Ability.md`) must not be read as a clue
+/// check on the basic action: the test itself is the state change other
+/// cards key off.
 ///
 /// Card-derived investigate variants (Rite of Seeking's "Action:
 /// Investigate using willpower instead of intellect", Working a

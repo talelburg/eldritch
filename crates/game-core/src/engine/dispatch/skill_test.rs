@@ -716,13 +716,14 @@ fn determine_outcome_step(
     // comparison. At every difficulty of 1 or more it agrees with it — skill
     // value 0 loses — but a difficulty of **0** is reachable (a printed
     // `Fixed(0)`, or Flashlight 01087's *"-2 shroud"* on a shroud-2
-    // location), and there 0 against 0 compares as a success. The glossary
-    // states the substitution and not the verdict, but *"Some card or token
-    // abilities may cause a skill test to automatically fail"* is
-    // unconditional, so the substitution is how the **margin** comes out
-    // right (0 against difficulty 3 fails by 3) rather than how the outcome
-    // is decided. `perform_skill_test_autofail_at_difficulty_zero_still_fails`
-    // is the guard.
+    // location), and there 0 against 0 compares as a success. The official
+    // FAQ states the verdict directly, so the substitution is how the
+    // **margin** comes out right rather than how the outcome is decided:
+    // *"No. No matter what, if you automatically fail a test, you have
+    // failed the test, regardless of how your skill value and the difficulty
+    // compare."* (`data/official-faq/Frequently_Asked_Questions.md`.)
+    // `perform_skill_test_autofail_at_difficulty_zero_still_fails` is the
+    // guard.
     //
     // The success arm *is* a restatement — the difficulty is substituted to
     // 0 and a total is clamped at 0, so the comparison already passes — and
@@ -1109,6 +1110,17 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 fire_on_resolution_step(cx, investigator, &committed, next);
             }
             SkillTestStep::PostRetaliate => {
+                // Retaliate fires here — after ST.7, before the ST.8 teardown
+                // below. `glossary/Retaliate.md` says only *"after applying
+                // all results for that skill test"*; the official FAQ places
+                // it inside the test rather than after it, enumerating
+                // retaliate among the effects that *"trigger during Steps 6 &
+                // 7 of a failed skill test"*
+                // (`data/official-faq/Frequently_Asked_Questions.md`, on
+                // Neither Rain nor Snow). So the committed-card discard and
+                // the token's return to the bag — both at PostOnResolution —
+                // must not precede the retaliate attack.
+                //
                 // Advance the cursor first: a retaliate that suspends on its
                 // cancel/soak window resumes here at PostOnResolution (the retaliate
                 // already happened; only its window is being resolved).
@@ -1481,6 +1493,13 @@ fn apply_skill_test_follow_up(
             // only if the investigator moves mid-test — no in-corpus path does
             // today, but the snapshot is what "at that location" means for
             // every card that reads it.
+            //
+            // A mid-test move is not a reason to abandon the test, which is
+            // what makes the snapshot the right thing to keep rather than a
+            // case to reject. `data/official-faq/Frequently_Asked_Questions.md`:
+            // *"Once you initiate a skill test or ability, you'll resolve that
+            // test or ability as completely as possible, regardless of your
+            // location (unless another effect cancels or interrupts it)."*
             let bonus = cx
                 .state
                 .current_skill_test()

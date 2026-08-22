@@ -451,6 +451,15 @@ fn difficulty(
 
 /// Stage 1: the printed value. Base replacement (Duke 02014) lands with
 /// that card; until then the base is always what the card prints.
+///
+/// A replaced base is still only stage 1 — stages 2–4 stack on top of it,
+/// they do not fall away. `data/official-faq/Frequently_Asked_Questions.md`,
+/// on George Barnaby 11017's ability setting a base maximum hand size: *"While
+/// George Barnaby's ability sets his **base** maximum hand size to be equal to
+/// the number of facedown cards beneath him (rather than the default value of
+/// 8), **this value can then be modified by other abilities**."* So a stage-1
+/// replacement must return here rather than short-circuit the fold — which is
+/// what #673 will build Duke against.
 fn base_value(state: &GameState, target: ModifierTarget, quantity: ModifiedQuantity) -> i32 {
     match (target, quantity) {
         (ModifierTarget::Investigator(id), ModifiedQuantity::Skill(skill)) => state

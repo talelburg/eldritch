@@ -781,6 +781,9 @@ mod tests {
         // Edge case: difficulty 0 would normally succeed at margin 0,
         // but AutoFail forces total = 0 AND tags the result as a
         // failure regardless. by = 0 here, reason = AutoFail.
+        // `data/official-faq/Frequently_Asked_Questions.md`: *"No matter
+        // what, if you automatically fail a test, you have failed the test,
+        // regardless of how your skill value and the difficulty compare."*
         let id = InvestigatorId(1);
         let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
