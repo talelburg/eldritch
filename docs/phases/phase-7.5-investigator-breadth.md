@@ -4,10 +4,6 @@
 
 ⏳ **planned** (opened 2026-08-23). No issues started; every one is filed.
 
-Numbered 7.5 rather than inserted as a new phase 8 because renumbering three
-milestones and every cross-reference in this directory costs more than a decimal
-does. It reads as what it is — an insertion between a closed gate and multiplayer.
-
 This milestone was **Slice 2** in `phase-7-the-gathering.md`'s Future slices, an
 unfiled intent. It became a milestone on 2026-08-23 (`/grill-with-docs`) when
 measuring the gap turned it into a body of work rather than a bullet.
@@ -35,8 +31,12 @@ Level-0 core player cards, against `crates/cards/src/impls/`:
 | Mystic | 10 | 9 |
 | Rogue | 10 | 10 |
 | Survivor | 10 | 10 |
-| Neutral (signatures + weaknesses) | 27 | 16 |
+| Neutral (signatures + weaknesses) | 26 | 15 |
 | Investigator cards | 5 | 4 |
+
+Counting real titles: `01000 "Random Basic Weakness"` is a deckbuilder placeholder
+meaning *"draw one of the seven"*, not a card, so it is excluded from the neutral row
+and lives in #781.
 
 Roland's two classes are already complete, which is exactly why breadth costs what
 it costs: every card the gate needed was a Guardian, a Seeker or a neutral skill.

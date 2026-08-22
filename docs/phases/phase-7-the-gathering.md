@@ -97,20 +97,18 @@ discovery lands after the gate was thought closed.
 | #562 | 01110's forced act-advance double-prompts (advance-flip slice 4) |
 
 **#697 lands before #670.** #670 makes Wizard of the Order 01170 drawable; its
-printed *"**Forced** - At the end of the mythos phase: Place 1 doom"* stays inert
+printed *"**Forced** - At the end of the mythos phase: Place 1 doom on Wizard of the Order."* stays inert
 until #697 routes `mythos_phase_end` through `queue_event`, so #670's own
 acceptance criterion cannot be asserted alone.
 
-**#682 was decided in the recharter, and the decision is that the sources do not
-decide it.** The Official FAQ is vendored now (#672), and it was searched: the
-nearest passage answers a question about the *investigator* moving mid-test, not
-about the target leaving play, and the variable-difficulty pin in
-`Rulings_and_Clarifications.md` is scoped to ST.6 onward. So the engine takes
-reading 1 — **the test is abandoned** — recorded as a doc-comment on
-`DifficultyBasis` that says outright it is an engine decision rather than a
-citation. Reading 2 (pin the difficulty at its last read) is what a table would
-improvise and is rejected because it keeps a *result*, and every `"If you succeed"`
-rider attached to it, on a test whose subject is gone.
+**#682's blocker is gone and its answer is not in the sources.** It waited on the
+Official FAQ, which is vendored now (#672) and was searched: the nearest passage
+answers a question about the *investigator* moving mid-test, not about the target
+leaving play. The engine therefore takes reading 1 — **the test is abandoned** — and
+the reasoning, including why reading 2 was rejected, is on the issue. The
+implementing PR records it on `DifficultyBasis`, or as an ADR if the teardown turns
+out to be load-bearing; it must say outright that this is an engine decision rather
+than a citation.
 
 **#562 is in for placement, not severity.** It is terminal and once-per-scenario,
 but it fires on the Ghoul Priest's defeat — the last interaction before every win.
@@ -120,7 +118,8 @@ but it fires on the Ghoul Priest's defeat — the last interaction before every 
 - **#541 — S6: global-action homes, then delete `.action-bar`.** The closer of the
   interactivity pass; closes **#206**.
 - **#770 — an unknown `InputKind` renders a prompt with no controls.** Split from
-  #586 (which keeps the `max_health()` render panic and stays phase-8). In for the
+  #586, which keeps the `max_health()` render panic and stays out of the gate as
+  stale-client hardening. In for the
   *run*, not the release: with matched binaries it never fires, but #769 is
   exercised against a live `trunk serve` loop where skew is the known hazard, and a
   control-less prompt is **indistinguishable from an engine stall** — the risk is
@@ -134,7 +133,7 @@ Ordered: **#644 → #772 → #771 → #773 → #774 → #775**.
   #696 already gave the engine `ActionDesignator::Resign` and its AoO exemption. What
   is left is elimination **by resignation** — `Status::Resigned` / `DefeatCause::
   Resigned` exist, are wired through elimination, and have never been constructed —
-  plus `glossary/Winning_and_Losing.md`'s "no resolution reached" ending. #696's
+  plus `glossary/Winning_and_Losing.md`'s *"no resolution being reached"* ending. #696's
   reviewer note stands: tagging the Parlor 01115 is this issue's job.
 - **#772 — an uncontrolled asset is an unreachable ability source, and *"she gains"*
   has no DSL.** Two gaps on one card pair. `glossary/Triggered_Abilities.md` bullet 2
@@ -165,7 +164,7 @@ Ordered: **#644 → #772 → #771 → #773 → #774 → #775**.
   the **consequences** (trauma, campaign log, earning the Lita Chantler card) stay
   phase 9, so `apply_resolution` grows a match arm per id and nothing more.
 
-`[action] **Parley.**` needs no new action type — #696 shipped the designator.
+`[action]: **Parley.**` needs no new action type — #696 shipped the designator.
 #231 and #257, named in #258 as neighbours, are both closed.
 
 ### Wave 4 — the gate-closer

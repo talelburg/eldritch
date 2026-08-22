@@ -25,9 +25,9 @@ When starting work on a new issue, read the relevant phase doc first. It's faste
 | 9 | Campaign + Night of the Zealot | ⏳ planned | [phase-9-campaign-and-night-of-the-zealot.md](phase-9-campaign-and-night-of-the-zealot.md) |
 | 10 | Dunwich + iteration | ⏳ planned | [phase-10-dunwich-and-iteration.md](phase-10-dunwich-and-iteration.md) |
 
-**7.5 is a decimal on purpose.** It was inserted on 2026-08-23, and renumbering 8, 9
-and 10 — plus every cross-reference in this directory, in `CLAUDE.md`, and in the
-milestone names on GitHub — costs more than the decimal does.
+**7.5 is a decimal on purpose.** Renumbering 8, 9 and 10 — plus every
+cross-reference in this directory and the milestone names on GitHub — costs more
+than the decimal does.
 
 **Status legend:**
 - ✅ **closed** — milestone closed; docs are retrospective.
