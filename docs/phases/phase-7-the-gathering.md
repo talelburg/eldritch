@@ -611,10 +611,21 @@ the now-stable set of input shapes:
       location display are gone. Built on S4's `InPlayCardView` (reused untouched).
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
-Forbidden Knowledge / Grotesque Statue), #294 (multi-soak-window drain —
-unconstructible in scope, `debug_assert` guards it), #427/#429 (native-loop soak
-residue — rare in 1p), #119/#26 (behaviour-preserving cleanups — fold in
-opportunistically).
+Forbidden Knowledge / Grotesque Statue), #427/#429 (native-loop soak
+residue — rare in 1p; both now wait on #728), #119/#26 (behaviour-preserving cleanups — fold in
+opportunistically). #294 (multi-soak-window drain) was dissolved by PR #717 —
+the attack loop now parks unconditionally, so the strand it described is
+unreachable and its `debug_assert` is gone.
+
+**Pulled into the gate by the 2026-08-22 triage sweep** — each is a solo
+rules defect reachable in The Gathering today: #651 (hunter pathfinding routes
+around a Barricade instead of being stopped by it), #664 (First Aid 01019 offers
+a mode with no eligible target and burns a supply), #670 (Acolyte 01169 / Wizard
+of the Order 01170 hard-reject on draw — non-Specific spawn shapes), #682 (an
+attack whose target leaves play mid-test resolves against difficulty 0), #763
+(zero-icon commits accepted) and #764 (a defeated active investigator's turn
+does not end). The same sweep moved #353, #366, #367 and #555 *out* of the
+milestone: each one's own body or ADR (0008/0009) defers it until a card wants it.
 
 ## Frame-model end-states (#393)
 

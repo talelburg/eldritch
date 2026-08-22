@@ -409,7 +409,7 @@ fn investigation_phase_end(cx: &mut Cx) -> EngineOutcome {
 
 /// Entered by [`step_phase`] on the Upkeep→Mythos transition. Lays
 /// out the Rules Reference p.24 sub-steps as discrete named call
-/// sites so the rule structure is grep-able and #73 / future-peril-PR
+/// sites so the rule structure is grep-able and #73 / #139
 /// fills in TODO bodies without changing the driver shape.
 fn mythos_phase(cx: &mut Cx) -> EngineOutcome {
     // 1.1 Round begins. Mythos phase begins.
