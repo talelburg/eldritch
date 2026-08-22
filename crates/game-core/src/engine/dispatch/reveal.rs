@@ -1,9 +1,15 @@
 //! Location reveal-on-entry (Rules Reference p.14): the first time an
 //! investigator enters a location it is revealed and clues are placed
-//! (`PerInvestigator(n) → n × #investigators`, or `Fixed(n)`). Enemy
-//! movement does not reveal — only the investigator-entry call sites
+//! (`PerInvestigator(n) → n × #investigators`, or `Fixed(n)`), *added* to
+//! any clues already sitting on the location rather than replacing them.
+//! Enemy movement does not reveal — only the investigator-entry call sites
 //! (seating, `move_action`, and act-1's board-build native effect) call
 //! this.
+//!
+//! A two-sided location that flips without leaving play must **not** be
+//! modelled as `revealed = false` plus a re-reveal: the glossary is
+//! explicit that such a flip does not replenish clues, and routing it
+//! through here would place them again.
 
 use crate::card_data::ClueValue;
 use crate::event::Event;
@@ -32,7 +38,13 @@ pub fn reveal_location(cx: &mut Cx, location_id: LocationId) {
         ClueValue::PerInvestigator(n) => n.saturating_mul(count),
         ClueValue::Fixed(n) => n,
     };
-    loc.clues = clues;
+    // Additive, not assignment: the Official FAQ holds that "[c]lues that
+    // are placed on the newly revealed location from its clue value are
+    // simply added to the clues that were already on that location when it
+    // was revealed" (`data/official-faq/Frequently_Asked_Questions.md`).
+    // Nothing in the current corpus places clues on an unrevealed location,
+    // so this is latent — but the alternative silently destroys them.
+    loc.clues = loc.clues.saturating_add(clues);
     cx.events.push(Event::LocationRevealed {
         location: location_id,
         clues,
@@ -93,6 +105,41 @@ mod tests {
             LocationId(5),
         );
         assert_eq!(state.locations[&LocationId(5)].clues, 3);
+    }
+
+    /// Official FAQ: "Any clues or cards at an unrevealed location remain
+    /// where they are when the location is revealed. [...] Clues that are
+    /// placed on the newly revealed location from its clue value are simply
+    /// added to the clues that were already on that location when it was
+    /// revealed."
+    #[test]
+    fn reveal_adds_to_clues_already_on_the_unrevealed_location() {
+        let mut loc = unrevealed(5, "x", ClueValue::PerInvestigator(1));
+        loc.clues = 2;
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_location(loc)
+            .build();
+        let mut events = Vec::new();
+        reveal_location(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            LocationId(5),
+        );
+        assert_eq!(
+            state.locations[&LocationId(5)].clues,
+            4,
+            "2 pre-existing + (1 per-investigator × 2 investigators)"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::LocationRevealed { clues, .. } if *clues == 2)),
+            "the event reports the clues placed from the clue value, not the total"
+        );
     }
 
     #[test]
