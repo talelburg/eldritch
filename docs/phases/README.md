@@ -1,6 +1,6 @@
 # Phase plans
 
-Eldritch is broken into 11 phases, milestone-tracked on GitHub. Each one's plan, status, decisions, and open questions lives in its own file in this directory. Closed phases get short retrospectives; the active phase has full detail; future phases capture what's been decided and what's still open.
+Eldritch is broken into 12 phases, milestone-tracked on GitHub. Each one's plan, status, decisions, and open questions lives in its own file in this directory. Closed phases get short retrospectives; the active phase has full detail; future phases capture what's been decided and what's still open.
 
 ## Why this exists
 
@@ -8,7 +8,7 @@ The plan-of-record for the project is GitHub (milestones, issues, labels). These
 
 When starting work on a new issue, read the relevant phase doc first. It's faster than re-deriving the context from chat history or git log.
 
-## The 11 phases
+## The 12 phases
 
 | Phase | Title | Status | Doc |
 |---|---|---|---|
@@ -20,9 +20,14 @@ When starting work on a new issue, read the relevant phase doc first. It's faste
 | 5 | Server + persistence | ✅ closed | [phase-5-server-and-persistence.md](phase-5-server-and-persistence.md) |
 | 6 | Web client v0 | ✅ closed | [phase-6-web-client-v0.md](phase-6-web-client-v0.md) |
 | 7 | The Gathering | 🟡 in progress | [phase-7-the-gathering.md](phase-7-the-gathering.md) |
+| 7.5 | Investigator breadth | ⏳ planned | [phase-7.5-investigator-breadth.md](phase-7.5-investigator-breadth.md) |
 | 8 | Multiplayer + auth | ⏳ planned | [phase-8-multiplayer-and-auth.md](phase-8-multiplayer-and-auth.md) |
 | 9 | Campaign + Night of the Zealot | ⏳ planned | [phase-9-campaign-and-night-of-the-zealot.md](phase-9-campaign-and-night-of-the-zealot.md) |
 | 10 | Dunwich + iteration | ⏳ planned | [phase-10-dunwich-and-iteration.md](phase-10-dunwich-and-iteration.md) |
+
+**7.5 is a decimal on purpose.** It was inserted on 2026-08-23, and renumbering 8, 9
+and 10 — plus every cross-reference in this directory, in `CLAUDE.md`, and in the
+milestone names on GitHub — costs more than the decimal does.
 
 **Status legend:**
 - ✅ **closed** — milestone closed; docs are retrospective.
