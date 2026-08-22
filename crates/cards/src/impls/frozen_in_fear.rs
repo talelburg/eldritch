@@ -13,7 +13,13 @@
 //! `resolve_encounter_card` does not auto-discard it. The Revelation uses
 //! the shared `Effect::PutIntoThreatArea`. The surcharge is
 //! `Restriction::ExtraActionCost { first_each_round: true }` over
-//! move/fight/evade, read by those handlers via `pending_action_surcharge`.
+//! move/fight/evade, read via `pending_action_surcharge` by **both** ways of
+//! taking one of those actions: the basic move/fight/evade handlers, and an
+//! activated ability whose bold designator names the class (#754) — a weapon's
+//! *"\[action\] … **Fight**"* is a Fight action, so the first one each round
+//! costs 2 exactly as punching does. The three actions share one
+//! `first_each_round` budget, whichever kind spends it.
+//!
 //! The forced ability runs a willpower(3) `Effect::SkillTest` that
 //! discards the card on **success** (`on_success = DiscardSelf`) and has no
 //! failure-side effect.
@@ -24,6 +30,27 @@
 //! "after..." abilities with the same triggering condition."* So the turn's
 //! end lands first and the willpower test runs before anything reacting to
 //! the finished turn.
+//!
+//! # Module gap
+//!
+//! The surcharge reaches basic actions and action-cost abilities with a bold
+//! designator, but **not fast ones**. The rulings
+//! (<https://arkhamdb.com/card/01164>) go further than we implement:
+//!
+//! > Frozen in Fear requires 1 additional action to be spent when performing
+//! > basic actions, granted actions, or Free Triggered Ability actions of the
+//! > specified types.
+//!
+//! and, on granted movement:
+//!
+//! > **Follow-up Q:** To be completely clear, does Frozen in Fear make the move granted
+//! > from Shortcut cost an action or not? **A:** Yes, the move on Shortcut (2)
+//! > would then cost an action.
+//!
+//! Neither is reachable in the current corpus — every implemented ability with
+//! a Move/Fight/Evade designator prints an action cost, and no granted-action
+//! effect exists — and taxing a fast ability needs a decision about an actor
+//! spending actions outside their own turn. Tracked as #759.
 
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{
