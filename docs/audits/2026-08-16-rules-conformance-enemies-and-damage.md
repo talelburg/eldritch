@@ -240,8 +240,20 @@ the corpus, so this is live, not latent.
 > If a hunter enemy would be compelled to a location to which the move is blocked by a
 > card ability, the enemy does not move.
 
-Together: a block never changes *who is nearest* or *what the shortest path is*; it only
-turns the compelled step into a non-move.
+And the publisher says it a third time, in its own voice, for the case where the block is
+total rather than partial — `data/official-faq/Frequently_Asked_Questions.md`, asked
+whether an enemy with *no valid path at all* can still be "nearest":
+
+> Even if it has no valid path to an investigator, an enemy can still qualify as the
+> "nearest" enemy if there are no other enemies in play that are nearer. That said, an
+> effect that require an enemy to track a path to an investigator (such as Dance of the
+> Yellow King) would not cause an enemy to move if there is no valid path.
+
+Together, all three: a block never changes *who is nearest* or *what the shortest path
+is*; it only turns the compelled step into a non-move. The FAQ pair is the strongest of
+the three for this finding because it takes the case to its limit — unreachable entirely,
+and still nearest — which is precisely what deleting a location from the graph before
+measuring cannot produce.
 
 `crates/game-core/src/engine/dispatch/hunters.rs:183-240` does the opposite. It builds a
 passability predicate from `enemy_can_enter_location` (`:191`) and threads it through
@@ -257,6 +269,14 @@ is precisely what `Nearest.md` forbids.
 nearest investigator and the hunter moves one step toward the Cellar. Rules: A is nearest
 (one connection, block notwithstanding), the hunter is compelled toward the Attic, the
 move is blocked, and the hunter does not move at all.
+
+**The wrong behaviour is also written down as an acceptance criterion, and the fix must
+retract it.** `docs/superpowers/specs/2026-06-18-barricade-design.md:74-87` specifies the
+graph-level treatment on purpose, spelling out that a barricade affects *"`bfs_distance` /
+reachability — so an investigator only reachable through a barricaded location is farther
+(or unreachable), changing **which investigator is nearest** (prey selection)"*. That
+sentence is the divergence, stated as a requirement. Whoever fixes `hunters.rs` has to
+correct the spec in the same change, or the next reader will restore the bug from it.
 
 The same graph-level treatment is copied into agenda 01107's Ghoul movement
 (`crates/cards/src/impls/theyre_getting_out.rs:93-95`). That case is less clear-cut —

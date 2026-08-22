@@ -535,15 +535,17 @@ Each of these was a live suspicion that the code answered correctly.
   of finding 2 to be fixed first. **Settled by:** a ruling on variable chaos-token
   modifiers, or an FFG FAQ entry on the scenario reference card; neither is in
   the vendored set.
-- **Whether retaliate falls before or after ST.8.** `glossary/Retaliate.md` (read
-  in full) says only *"after applying all results for that skill test"*.
-  "Applying results" is ST.7's own title, so the engine's placement — after ST.7,
-  before the ST.8 teardown — is the better reading and I did not file it. The
-  residual doubt is whether the committed-card discard and the token's return to
-  the bag should precede the retaliate attack; the vendored text does not say,
-  and it becomes observable only once a card keys off a committed card being in
-  the discard pile. **Settled by:** a timing ruling on retaliate versus ST.8, or
-  the first card that reads the discard pile mid-attack.
+- ~~**Whether retaliate falls before or after ST.8.**~~ **Settled (#750, #756).**
+  `glossary/Retaliate.md` says only *"after applying all results for that skill
+  test"*, which left open whether the ST.8 teardown — the committed-card discard
+  and the token's return to the bag — precedes the retaliate attack. The official
+  FAQ answers it: retaliate is among the effects that *"trigger during Steps 6 &
+  7 of a failed skill test"* (`data/official-faq/Frequently_Asked_Questions.md`,
+  on Neither Rain nor Snow). That places retaliate **inside** the test, before the
+  ST.8 teardown, which is where `dispatch/skill_test.rs`'s `PostRetaliate` step
+  already puts it — ahead of the `PostOnResolution` step that discards the
+  committed cards. The engine was right; the entry is struck and the clause is
+  now quoted at `PostRetaliate`.
 - **Whether the ST.2→ST.3 window should offer plays at all while a peril
   encounter is resolving**, and whether a *committed* card's Fast play should be
   filtered by the commit or by the peril rule. Finding 1 removes the corruption

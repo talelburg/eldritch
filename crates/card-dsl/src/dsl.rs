@@ -93,6 +93,22 @@ use serde::{Deserialize, Serialize};
 /// effect-root match answers neither: Parley and Resign have no effect shape of
 /// their own, and a `Seq`-wrapped Fight has the wrong one.
 ///
+/// **The designated action costs nothing beyond the ability's own cost, and it
+/// counts as that action everywhere.** Both halves are the official FAQ's
+/// (`data/official-faq/Frequently_Asked_Questions.md`). On the cost: *"Paying
+/// the cost of the ability is enough to initiate the action designated. There
+/// is no need to spend an additional action."* — so `action_cost` on the
+/// trigger is the whole price, and nothing may add a second action for the
+/// designated action itself. On the counting: *"Abilities with a bold action
+/// designator (like Fight, Evade or Investigate) count as an action of that
+/// type"*, which is what #760 routed through the surcharge path. So an event
+/// that prints one (Backstab 01051) is as much a Fight as a weapon's
+/// `[action]` ability is — and the FAQ takes the same view of how the ability
+/// was reached, answering for Ursula Downs 04002's *"take an investigate
+/// action"* reaction that *"Ursula's reaction allows you to take any
+/// investigate action, including those performed via the activate action or
+/// via the play action."*
+///
 /// The set is the four the rules name plus [`Parley`](Self::Parley) and
 /// [`Resign`](Self::Resign), which have their own glossary entries
 /// (`glossary/Parley.md`, `glossary/Resign.md`) and are named by the attack-of-
@@ -813,6 +829,23 @@ pub enum Effect {
     /// investigator — the inverse of [`Effect::Deal`] (no defeat
     /// interaction). Heals at most the current amount (saturating at 0).
     /// `count == 0`, or a target with nothing to heal, is a no-op.
+    ///
+    /// **A bare "Heal X" is not a choice.** When a card says only *"Heal 1
+    /// damage"*, `target` is the controller — [`InvestigatorTarget::You`] —
+    /// and never `chosen_anywhere()`. The official FAQ:
+    ///
+    /// > "Heal X damage/horror" is shorthand for "Heal X damage/ horror from
+    /// > your investigator." If a card simply reads "Heal X horror" or "Heal
+    /// > X damage," you can only use it to heal horror or damage from your
+    /// > investigator. Cards that allow you to heal other investigators or
+    /// > assets will specify that.
+    ///
+    /// (`data/official-faq/Frequently_Asked_Questions.md`.) A wider target is
+    /// legitimate only where the card prints the wider wording — First Aid
+    /// 01019's *"Heal 1 damage or horror from an investigator at your
+    /// location."* Smoking Pipe 02116 (*"Spend 1 supply, exhaust Smoking Pipe,
+    /// and take 1 damage: Heal 1 horror."*) and Painkillers 02117 (*"…take 1
+    /// horror: Heal 1 damage."*) print the bare form, so both encode `You`.
     Heal {
         kind: HarmKind,
         target: InvestigatorTarget,
@@ -961,6 +994,18 @@ pub enum Effect {
     /// runs after the test resolves **on failure**, with the failure
     /// margin available via the evaluator context's `failed_by` (success
     /// is a no-op for the cards in scope). See issue #286.
+    ///
+    /// **This variant is one of the two ways a card prompts a test, and the
+    /// rules draw the same line.** The official FAQ, defining *"a skill test on
+    /// a card"*: *"any ability that directly prompts a skill test, either
+    /// through the template 'test skill (X),' or by initiating an action that
+    /// is, in itself, a skill test (for example, any card with Fight, Evade, or
+    /// Investigate action designators)."*
+    /// (`data/official-faq/Frequently_Asked_Questions.md`.) The first clause is
+    /// this variant; the second is [`ActionDesignator`], where the test comes
+    /// from the action rather than from an explicit instruction. Anything that
+    /// eventually needs to ask *which card a test is on* — no Core or Dunwich
+    /// card does — must accept both, not just this one.
     SkillTest {
         skill: crate::card_data::SkillKind,
         difficulty: u8,
@@ -1451,6 +1496,20 @@ pub enum InvestigatorTargetSet {
 }
 
 /// Single-location target spec.
+///
+/// **There is no "at" versus "in" distinction to encode.** Card text uses both
+/// prepositions and the official FAQ says they are the same:
+///
+/// > Q: Is there any difference between "at a location" and "in a location?"
+/// >
+/// > A: No. Both terms have the same meaning and are used interchangeably.
+///
+/// (`data/official-faq/Frequently_Asked_Questions.md`.) So *"an enemy at your
+/// location"* and *"each investigator in that location"* both ground through
+/// the same variants here, and a card author must not reach for a new one on
+/// the strength of the preposition alone. What *does* differ is whether a thing
+/// is at a location at all — see the note on `Quantity::CluesAtControllerLocation`
+/// in the evaluator, where clues on a card are not clues at the location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum LocationTarget {
     /// The location "you" are currently at — the location of the

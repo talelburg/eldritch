@@ -160,10 +160,21 @@ pub(crate) fn reachable_sources(
         return Vec::new();
     };
 
-    // The control bullet, in full: `controlled_card_instances` is already the
-    // definition of "a card in play and under his or her control, including his
-    // or her investigator card" — the forced and reaction scans walk it, and
-    // this is what makes the activation path agree with them (#707).
+    // The control bullet: `controlled_card_instances` is what the forced and
+    // reaction scans walk, and using it here is what makes the activation path
+    // agree with them (#707).
+    //
+    // It is a slightly *wider* set than "a card in play and under his or her
+    // control", and deliberately so for this use: the threat area also holds
+    // **encounter** cards, which the scenario owns and controls. Frozen in Fear
+    // 01164 is not one of your cards — per the official FAQ, *"In general, 'your cards'
+    // are the cards you currently control. If you own a card but do not control it,
+    // it is not 'yours' for the purposes of abilities."*
+    // (`data/official-faq/Frequently_Asked_Questions.md`.) Reaching such a
+    // card's ability from this seat is still right, because a threat-area
+    // encounter card's Forced abilities are the acting investigator's to
+    // resolve; what the widening rules out is reusing this iterator as the
+    // answer to "which cards do you control?". See its doc-comment.
     let mut sources: Vec<_> = inv.controlled_card_instances().map(as_instance).collect();
     sources.extend(colocated_sources(state, inv));
     // *"The current act or current agenda card."* (#709) — appended after the

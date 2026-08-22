@@ -1729,6 +1729,18 @@ pub(crate) fn check_play_card(
     // investigator's Investigation turn — never an out-of-turn permissive Fast
     // window (the Mythos `MythosAfterDraws` window). FAQ: "'your turn' is within
     // the Investigation phase."
+    //
+    // The companion clause bounds the *other* end of the turn, and the gate
+    // above is deliberately inclusive of it: the end of your turn has not left
+    // your turn. `data/official-faq/Frequently_Asked_Questions.md`, on Agatha
+    // Crane's end-of-turn reaction — *"You resolve Agatha Crane's ability at
+    // the end of your turn, which is still during your turn. So you could play
+    // an event such as Cryptic Research ([core] 43) with the text 'Fast. Play
+    // only during your turn.'"* The engine already agrees by construction:
+    // `resume_end_turn` clears `active_investigator` only *after* the
+    // `EndOfTurn` forced/reaction run has resolved (`phases.rs`), so a Fast
+    // play made from inside that run still sees itself as the active
+    // investigator and passes this gate.
     let only_during_turn = card_registry::current()
         .and_then(|reg| (reg.metadata_for)(&code))
         .is_some_and(CardMetadata::play_only_during_turn);
@@ -1823,13 +1835,27 @@ fn check_play_action_available(
 /// when `investigator` cannot pay `code`'s printed cost. A 0-cost card is always
 /// affordable.
 ///
-/// Cards with no fixed printed cost (`play_cost()` is `None` — an X-cost card,
-/// or a permanent) are **not yet modeled** — rejected loudly rather than
-/// silently played for free. No implemented card hits this: such cards are
-/// unplayable stubs refused earlier by `resolve_play_target`, and permanents
-/// enter play at setup rather than via `PlayCard`. The branch is currently
-/// unreachable in the corpus; it guards a future implemented X-cost card
-/// (deferral split from #501).
+/// The two costs that are not a number reject for **different reasons**, and
+/// [`CardMetadata::play_cost`](crate::card_data::CardMetadata::play_cost) —
+/// which owns the description of how each one is encoded — is what tells them
+/// apart.
+///
+/// - **`None` — a `"–"` cost, which includes every permanent.** Rejected
+///   **permanently**, not pending a model: per the official FAQ, *"Cards with
+///   a cost of '–' have no cost that can be paid, and therefore cannot be
+///   played. … (Cards that put it directly into play bypassing its cost would
+///   be able to put it into play, however.)"*
+///   (`data/official-faq/Frequently_Asked_Questions.md`.) This is live in the
+///   corpus — The Necronomicon 01009 and every Dunwich permanent — and the
+///   rejection is the final behaviour. Putting such a card into play without
+///   playing it is a different path and does not come through here.
+/// - **`Some(n)` with `n < 0` — an X cost.** Genuinely **not yet modeled**
+///   (deferral split from #501): X needs a player-chosen amount the play path
+///   has no channel for. Rejected loudly, because the alternative is worse
+///   than a reject — `u8::try_from(-2).unwrap_or(0)` would make the card
+///   *free*, both here and at `pay_play_cost`. Jenny's Twin .45s 02010 is
+///   in the compiled corpus, so this arm is reachable the moment an X-cost
+///   card gets an implementation.
 ///
 /// Short-circuits to `Ok` when the registry isn't installed — the metadata-free
 /// validation paths the engine's own unit tests exercise; the real play path
@@ -1846,23 +1872,34 @@ fn check_play_resource_cost_payable(
         .investigators
         .get(&investigator)
         .map_or(0, |inv| inv.resources);
-    match meta.play_cost() {
-        // Printed costs are non-negative; `try_from` clamps a (nonexistent)
-        // negative cost to 0 = free, never a panic.
-        Some(cost) => {
-            let cost = u8::try_from(cost).unwrap_or(0);
-            if resources < cost {
-                return Err(format!(
-                    "PlayCard: playing {code} costs {cost} resource(s); \
-                     {investigator:?} has {resources}"
-                )
-                .into());
-            }
-            Ok(())
-        }
+    let cost = payable_play_cost(meta.play_cost(), code)?;
+    if resources < cost {
+        return Err(format!(
+            "PlayCard: playing {code} costs {cost} resource(s); \
+             {investigator:?} has {resources}"
+        )
+        .into());
+    }
+    Ok(())
+}
+
+/// Classify a printed play cost into a payable number of resources, or the
+/// reason it has none. The three shapes and why they differ are spelled out on
+/// [`check_play_resource_cost_payable`]; this is the arm split on its own so it
+/// can be tested without a registry.
+fn payable_play_cost(play_cost: Option<i8>, code: &CardCode) -> Result<u8, Cow<'static, str>> {
+    match play_cost {
+        // A negative cost is ArkhamDB's X sentinel, never a real price;
+        // `u8::try_from` would silently make it free, so it rejects here.
+        Some(cost) => u8::try_from(cost).map_err(|_| {
+            Cow::from(format!(
+                "PlayCard: {code} has an X cost, which is not yet modeled \
+                 (TODO(#501): X needs a player-chosen amount)."
+            ))
+        }),
         None => Err(format!(
-            "PlayCard: {code} has no fixed printed cost (X-cost or permanent), \
-             which is not yet modeled — deferred from #501."
+            "PlayCard: {code} has a printed cost of \"–\", so it has no cost \
+             that can be paid and cannot be played."
         )
         .into()),
     }
@@ -2358,6 +2395,44 @@ mod check_play_card_tests {
         assert!(
             err.contains("not in state"),
             "error should say not in state, got: {err}"
+        );
+    }
+
+    #[test]
+    fn payable_play_cost_reads_a_printed_number() {
+        let code = CardCode::new("01018");
+        assert_eq!(payable_play_cost(Some(0), &code), Ok(0));
+        assert_eq!(payable_play_cost(Some(4), &code), Ok(4));
+    }
+
+    /// A `"–"` cost is not an unmodelled case: per the official FAQ, *"Cards
+    /// with a cost of '–' have no cost that can be paid, and therefore cannot
+    /// be played."* (`data/official-faq/Frequently_Asked_Questions.md`.) The
+    /// Necronomicon 01009 and every Dunwich permanent print it.
+    #[test]
+    fn payable_play_cost_rejects_a_dash_cost_permanently() {
+        let err = payable_play_cost(None, &CardCode::new("01009"))
+            .expect_err("a \"–\" cost cannot be paid");
+        assert!(
+            err.contains("cannot be played"),
+            "the reject should state the rule, not a deferral: {err}"
+        );
+        assert!(
+            !err.contains("#501"),
+            "a \"–\" cost is final behaviour, not deferred work: {err}"
+        );
+    }
+
+    /// X ingests as `Some(-2)`, so without this arm `u8::try_from(-2)
+    /// .unwrap_or(0)` would make an X-cost card **free**. Jenny's Twin .45s
+    /// 02010 is in the compiled corpus.
+    #[test]
+    fn payable_play_cost_rejects_an_x_cost_as_unmodelled() {
+        let err = payable_play_cost(Some(-2), &CardCode::new("02010"))
+            .expect_err("an X cost is not yet modeled");
+        assert!(
+            err.contains("X cost") && err.contains("TODO(#501)"),
+            "the reject should name X and the deferral: {err}"
         );
     }
 }

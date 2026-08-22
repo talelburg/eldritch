@@ -1187,6 +1187,17 @@ fn eval_condition(
 fn eval_quantity(state: &GameState, eval_ctx: &EvalContext, q: Quantity) -> i8 {
     let controller = eval_ctx.controller;
     let n: usize = match q {
+        // Only the location's own `clues` count. Clues sitting on a *card* at
+        // the location — Cover Up 01007's three, in the owner's threat area —
+        // are not clues "at" that location, so they must not be swept in here.
+        // `data/official-faq/Frequently_Asked_Questions.md`, asked about
+        // exactly this pair (Cover Up under Roland's elder sign): *"No.
+        // Generally speaking, cards (such as investigators, assets under your
+        // control, enemies in your threat area, etc) are 'at' a location.
+        // Clues are only 'at' a location if they are physically on that
+        // location."* Guarded end-to-end by
+        // `clues_on_a_threat_area_card_are_not_clues_at_the_location` in
+        // `crates/cards/tests/roland_elder_sign.rs`.
         Quantity::CluesAtControllerLocation => state
             .investigators
             .get(&controller)
@@ -2355,6 +2366,19 @@ pub fn play_is_prohibited(
 /// commits (so cost-peek stays read-only for validate-first). Always-on
 /// (`first_each_round == false`) surcharges always contribute and are not
 /// returned for marking.
+///
+/// **"Actions performed" and "actions paid for" are the same number here, and
+/// the rules say they need not be.** One activation is charged one surcharge
+/// because every corpus ability that designates an action performs exactly one
+/// of it. The official FAQ: *"When resolving an ability, the investigator is
+/// considered to have performed as many actions as specified by the effect.
+/// \[…\] Regardless of the cost paid to initiate the ability, you have
+/// performed 3 actions (assuming you took each available action). Conversely,
+/// an investigator activating the second ability on Sledgehammer has only
+/// performed one action, although they spent two actions to do so."* (`data/official-faq/Frequently_Asked_Questions.md`.) Nothing in
+/// Core or Dunwich prints such an ability, so the count is not modelled —
+/// whoever adds one must give the surcharge a *performed* count to read rather
+/// than inferring it from the action cost paid.
 #[must_use]
 pub fn pending_action_surcharge(
     state: &GameState,

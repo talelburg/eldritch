@@ -133,6 +133,17 @@ fn turn_menu(state: &crate::state::GameState) -> crate::engine::InputRequest {
 /// removed in #459: with only `ResolveInput` existing the condition was always
 /// false (dead code). Pending-prompt protection is now structural —
 /// `resolve_input` validates the response against the live frame.
+///
+/// That structure also carries a rule rather than merely an action model: a
+/// *player* acts only where the game offers a window, and with `ResolveInput`
+/// the only wire variant, an interjection with no live frame to answer has no
+/// representation at all. The official FAQ is consistent with the shape — asked
+/// about a Fast ability used mid-resolution of another, it answers *"As long as
+/// it is during a [fast] player window, yes."*
+/// (`data/official-faq/Frequently_Asked_Questions.md`), conditioning the
+/// permission on a window rather than granting it by the moment. A **Forced**
+/// ability is the exception the same FAQ states and the forced path implements:
+/// it needs no window and nests where it fires.
 pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome {
     let outcome = match action {
         PlayerAction::ResolveInput { response } => resolve_input(cx, response),

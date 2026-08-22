@@ -130,6 +130,25 @@ impl Investigator {
     /// this iterator, retiring the bespoke `scan_investigator_card_reactions`
     /// source). This is the shared scan source #212 later absorbs.
     ///
+    /// **This is "cards at your seat with live abilities", not "cards you
+    /// control", and the two are not the same set.** The threat area holds
+    /// both: a *player* card there is the investigator's own (Cover Up 01007
+    /// entered play from Roland's deck, so per
+    /// `glossary/Ownership_and_Control.md` — *"Cards by default enter play
+    /// under their owner's control"* — he controls it), but an *encounter*
+    /// card there is owned and controlled by the scenario. Frozen in Fear
+    /// 01164 sits in your threat area and is not one of your cards. The
+    /// official FAQ draws the line the abilities need: *"In general, 'your
+    /// cards' are the cards you currently control. If you own a card but do
+    /// not control it, it is not 'yours' for the purposes of abilities."*
+    /// (`data/official-faq/Frequently_Asked_Questions.md`.)
+    ///
+    /// Harmless today — no implemented ability reads "cards you control" as a
+    /// *set* — but the first one that does must not reach for this helper
+    /// unfiltered. The same conflation shows from the other end in
+    /// `engine::ability_source::reachable_sources`, which called this iterator
+    /// "the definition of 'a card in play and under his or her control'".
+    ///
     /// The investigator card is deliberately *not* in `cards_in_play`, so
     /// loops over "cards the player played" (asset queries, elimination
     /// drain, discard-all, soak `build_soakers`) keep iterating

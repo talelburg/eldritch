@@ -10,7 +10,8 @@
 
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase,
+    SkillKind, TokenModifiers,
 };
 use game_core::test_support::{
     drive_skill_test, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
@@ -18,6 +19,7 @@ use game_core::test_support::{
 use game_core::EngineOutcome;
 
 const ROLAND: &str = "01001";
+const COVER_UP: &str = "01007";
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
@@ -28,6 +30,12 @@ fn install_registry() {
 /// seated (`card_code` set, NOT in `cards_in_play`) at a location holding
 /// `clues`. Returns the resolved events for outcome assertions.
 fn run_elder_sign_test(clues: u8) -> Vec<Event> {
+    run_elder_sign_test_with_threat_area(clues, Vec::new())
+}
+
+/// As [`run_elder_sign_test`], with `threat_area` pre-placed in Roland's threat
+/// area — the fixture for "clues on a card are not clues at the location".
+fn run_elder_sign_test_with_threat_area(clues: u8, threat_area: Vec<CardInPlay>) -> Vec<Event> {
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(10);
 
@@ -41,6 +49,7 @@ fn run_elder_sign_test(clues: u8) -> Vec<Event> {
         "the bonus must come from the investigator-card elder-sign bridge (investigator_card.code), \
          not a played card — guard against a fixture change pre-populating cards_in_play",
     );
+    inv.threat_area = threat_area;
 
     let mut loc = test_location(10, "Study");
     loc.clues = clues;
@@ -97,5 +106,38 @@ fn elder_sign_adds_two_clues() {
             Event::SkillTestSucceeded { margin, .. } if *margin == 2
         )),
         "2 clues → +2 → succeed by 2: {events:?}",
+    );
+}
+
+/// Clues sitting on a *card* in the threat area are not clues "at" the
+/// location, so the elder sign counts none of them.
+///
+/// The assertion is the same one `elder_sign_adds_zero_clues` makes; only the
+/// fixture differs, and the fixture is the point. This is a regression guard
+/// against a future `CluesAtControllerLocation` that sweeps threat-area or
+/// in-play cards for clues alongside the location's own.
+///
+/// `data/official-faq/Frequently_Asked_Questions.md` asks exactly this pair —
+/// Cover Up 01007 under Roland's `[elder_sign]`:
+///
+/// > Q: Are clues on Cover Up ([core] 7) considered to be "at my location" for
+/// > the purposes of Roland's [elder_sign] ability?
+/// >
+/// > A: No. Generally speaking, cards (such as investigators, assets under your
+/// > control, enemies in your threat area, etc) are "at" a location. Clues are
+/// > only "at" a location if they are physically on that location ("Clues,"
+/// > Rules Reference, page 7).
+#[test]
+fn clues_on_a_threat_area_card_are_not_clues_at_the_location() {
+    let mut cover_up = CardInPlay::enter_play(CardCode::new(COVER_UP), CardInstanceId(1));
+    cover_up.clues = 3; // Cover Up's Revelation places 3 clues on itself.
+
+    let events = run_elder_sign_test_with_threat_area(0, vec![cover_up]);
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            Event::SkillTestSucceeded { margin, .. } if *margin == 0
+        )),
+        "3 clues on Cover Up in the threat area, 0 on the location → +0: {events:?}",
     );
 }

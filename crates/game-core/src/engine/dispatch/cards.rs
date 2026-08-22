@@ -131,6 +131,24 @@ pub(super) fn replace_opening_hand_weaknesses(cx: &mut Cx, investigator: Investi
 /// hand untouched** — deferred to #514 (none reachable in the corpus draw path).
 /// No-op without an installed registry (registry-free engine unit tests).
 ///
+/// **The shape — draw everything, then resolve every Revelation — is the rule,
+/// not a convenience.** This function is called once the whole draw has landed
+/// in hand, and it collects *all* matching cards before resolving any.
+/// `data/official-faq/Frequently_Asked_Questions.md`:
+///
+/// > Anytime you draw one or more cards, the card draw occurs simultaneously
+/// > unless the effect uses the phrase "one at a time." Then, once all of the
+/// > cards have been drawn, you must resolve all Revelation abilities on those
+/// > cards (in an order of your choosing).
+///
+/// Resolving each card's Revelation as it was drawn would be wrong for a draw
+/// of two, because the second card is already in hand when the first one's
+/// Revelation resolves. One narrowing is deliberate and recorded: the FAQ gives
+/// the player *"an order of your choosing"* over the Revelations, and this
+/// resolves them in draw order instead. Unobservable while at most one weakness
+/// is reachable per draw in the corpus; the choice belongs with #514, which
+/// widens which weaknesses resolve here at all.
+///
 /// MUST NOT be called from the setup opening-hand / mulligan path — those *set
 /// aside* weaknesses (#508), they do not resolve them.
 pub(in crate::engine) fn resolve_drawn_weaknesses(cx: &mut Cx, investigator: InvestigatorId) {
@@ -407,7 +425,10 @@ pub(crate) fn grant_resources(cx: &mut Cx, investigator: InvestigatorId, amount:
 ///
 /// The caller has already validated affordability
 /// (`check_play_resource_cost_payable`), so the `saturating_sub` never silently
-/// underflows a real shortfall — it's belt-and-suspenders.
+/// underflows a real shortfall — it's belt-and-suspenders. That check is also
+/// what keeps the `u8::try_from(...).unwrap_or(0)` below honest: the two
+/// non-numeric costs — a `"–"` (`None`) and an X (`Some(-2)`) — are both
+/// rejected there, so neither reaches this function to be charged as free.
 ///
 /// Caller guarantees `investigator` exists in `state.investigators`.
 pub(super) fn pay_play_cost(cx: &mut Cx, investigator: InvestigatorId, code: &CardCode) {
@@ -1091,6 +1112,17 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
 /// disposes of the card via `dispose_play_from_hand` (event → discard; asset →
 /// enter play). (Slice D #423 — replaces the synchronous `apply_effect` + asset
 /// tail + manual window open.)
+///
+/// **Disposal strictly after the whole `OnPlay` effect is the rule for an
+/// attaching event, not just tidiness.** Barricade 01038's `OnPlay` is
+/// `Effect::AttachSelfToLocation`, and the official FAQ fixes when such an
+/// event finishes: *"An event that attaches to another card is considered
+/// 'resolved' when all abilities and effects triggered by it entering play
+/// resolve, including its attachment effect."*
+/// (`data/official-faq/Frequently_Asked_Questions.md`.) So the attachment is
+/// part of resolution rather than something that happens to a card already
+/// resolved — which is why the frame holds the played card across the effect
+/// walk and only then disposes of it.
 ///
 /// TODO(#417) (richer mid-action invalidation, shared with
 /// `resume_activate_ability`, #361): a resumed `OnPlay` effect that returns

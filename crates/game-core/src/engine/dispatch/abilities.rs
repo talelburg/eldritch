@@ -44,6 +44,20 @@ use super::Cx;
 ///   permits the acting investigator. The `open_windows` stack is pushed by
 ///   callers (scenario/server) when a player window opens.
 ///
+/// The negative half — a moment *inside* another ability's resolution is not
+/// itself a window, so a Fast ability needs one open at it — is not printed as
+/// a rule, but the official FAQ is consistent with it. Asked whether Lola Hayes
+/// may switch roles mid-resolution of another ability, it answers *"As long as
+/// it is during a [fast] player window, yes."*
+/// (`data/official-faq/Frequently_Asked_Questions.md`) — the permission is
+/// conditioned on a window rather than granted by the moment. So an empty
+/// `open_windows` with a resolution in flight is a considered refusal, not a
+/// missing case. It binds **`[fast]` player abilities only**: a Forced ability
+/// nests without one, which the same FAQ says outright (*"it can create a
+/// nested sequence if used during another ability or a skill test, and it does
+/// not need to be during a player window in order for it to occur"*) and which
+/// the forced path implements separately.
+///
 /// # Cost coverage
 ///
 /// - [`Cost::Resources`](crate::dsl::Cost::Resources): validates

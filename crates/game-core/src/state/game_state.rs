@@ -1894,6 +1894,26 @@ pub enum SkillTestStep {
     /// an empty forced/reaction candidate set opens no window. Reads the outcome
     /// off [`InFlightSkillTest::resolved`]; pre-advances to
     /// [`FireOnCommit`](Self::FireOnCommit). (Slice D #423.)
+    ///
+    /// **Firing here rather than at ST.7 is the published rule, twice over.**
+    /// `data/official-faq/Rulings_and_Clarifications.md`, section 1.7:
+    ///
+    /// > \[reaction\] or Forced abilities with a triggering condition dependent
+    /// > upon the skill test being successful or unsuccessful (such as "After
+    /// > you successfully investigate," or "After you fail a skill test by 2 or
+    /// > more") do not trigger at this time. These abilities are triggered
+    /// > during Step 6, "Determine success/failure of skill test."
+    ///
+    /// ("At this time" is Step 7.) The FAQ's Q&A works the same case in the
+    /// other direction, separating what belongs to this step from what belongs
+    /// to ST.7: *"The effects of a successful skill test are applied during
+    /// step 7 \[…\] Dr. Milan Christopher's ability is a reaction to
+    /// succeeding at a skill test, and therefore is triggered and resolved
+    /// during step 6, after success is determined."*
+    /// (`data/official-faq/Frequently_Asked_Questions.md`.) So Obscuring Fog
+    /// 01168 and Dr. Milan 01033 resolve **before** the clue moves, and it is
+    /// the ST.7 half — the discovery itself, and any *"if this test is
+    /// successful"* clause — that a doubling effect would double.
     DetermineOutcome,
     /// Cosmetic acknowledgment pause (#478). The result events
     /// (`ChaosTokenRevealed`, `SkillTestSucceeded`/`Failed`) are already emitted
@@ -2503,6 +2523,21 @@ pub enum RecordedModifierKind {
 /// One **recorded** modifier: a contribution whose lifetime is decoupled
 /// from any card's zone, so the modified-value sweep over the board cannot
 /// find it.
+///
+/// The decoupling is the printed rule, not an engine design choice.
+/// `glossary/Lasting_Effects.md`: *"A lasting effect persists beyond the
+/// resolution of the ability that created it, for the duration specified by
+/// the effect. The effect continues to affect the game state for the
+/// specified duration **regardless of whether the card that created the
+/// lasting effect is or remains in play**."* The official FAQ says the same
+/// on a worked case — Daring committed and then returned to hand mid-test:
+/// *"The lasting effect … would continue for the duration of the skill
+/// test, since it is a lasting effect, and lasting effects persist for the
+/// specified duration regardless of whether the card that created the
+/// lasting effect is or remains in play."*
+/// (`data/official-faq/Frequently_Asked_Questions.md`.) A row that a
+/// board sweep could find would be wrong for exactly that case, which is
+/// why the two populations exist.
 ///
 /// Pushed by the evaluator's `Modify` arm when an activated or triggered
 /// ability resolves a `Modify` with a non-constant
