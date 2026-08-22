@@ -1714,7 +1714,7 @@ pub(super) fn peril_check(
     _investigator: InvestigatorId,
     _is_peril: bool,
 ) {
-    // TODO(future-peril-PR): if `is_peril`, install a temporary
+    // TODO(#139): if `is_peril`, install a temporary
     //   restriction on `_cx.state` such that other investigators cannot
     //   (a) play cards, (b) trigger abilities, or (c) commit to the
     //   drawing investigator's skill tests until this card's

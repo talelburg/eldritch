@@ -2,7 +2,18 @@
 
 ## Status
 
-📐 Architecture only. No issues filed.
+📐 Architecture only; not yet ordered. Issues milestoned here are deferrals
+whose first consumer is Midnight Masks / Devourer content or the deck-import gate
+(the [milestone query](https://github.com/talelburg/eldritch/milestone/10) is
+authoritative): #75 (campaign log), #138/#139 (Surge / Peril), #514 (drawn
+weakness reveal beyond persistent treacheries), #575/#578 (spawn-clause and
+location-index pipeline bugs, p1 — Ruth Turner 01141 is refused on a parser
+bug), #576/#577 (`is_fast`, play-cost representation), #579 (ingestion-gaps
+umbrella), #679 (conditional constant modifiers — Screeching Byakhee 01175),
+#765 (`is_unique` / `permanent` / `restrictions` ingestion, p1 — deck import
+cannot validate without them), #766 (The Gathering's resolution fidelity: agenda
+01107's act-conditional back, act 01110's R1/R2 choice). Scoping proper happens
+when Phase 8 closes.
 
 ## Goal
 

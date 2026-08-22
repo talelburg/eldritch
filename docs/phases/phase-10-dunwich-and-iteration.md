@@ -15,6 +15,13 @@ Full Core + Dunwich coverage; ongoing polish.
 | Order | Issue | State |
 |---|---|---|
 | — | [#716](https://github.com/talelburg/eldritch/issues/716) — "place N doom on the current agenda" earns a DSL primitive | ✅ [PR #731](https://github.com/talelburg/eldritch/pull/731) |
+| — | [#363](https://github.com/talelburg/eldritch/issues/363) — general fan-out abstraction (ForEach / EntityTarget) | ⏳ deferred until Dunwich consumers land |
+| — | [#574](https://github.com/talelburg/eldritch/issues/574) — enemy fight/evade `—` ingested as 0 (Yog-Sothoth 02323 auto-evadable) | ⏳ |
+| — | [#609](https://github.com/talelburg/eldritch/issues/609) — promote `Condition::Native` to declarative vocab on the second consumer | ⏳ blocked on the trigger |
+| — | [#652](https://github.com/talelburg/eldritch/issues/652) — Massive cannot be represented (`engaged_with` is a single `Option`) | ⏳ needs-design |
+| — | [#653](https://github.com/talelburg/eldritch/issues/653) — Aloof is unmodelled (Whippoorwill 02090) | ⏳ |
+| — | [#673](https://github.com/talelburg/eldritch/issues/673) — base-value replacement (Duke 02014, Strange Solution 02263/02264) | ⏳ unblocked by ADR 0005 |
+| — | [#699](https://github.com/talelburg/eldritch/issues/699) — usage limits on a location / act / agenda ability | ⏳ |
 
 ## Decisions made
 
