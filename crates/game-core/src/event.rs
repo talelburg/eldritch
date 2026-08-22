@@ -605,7 +605,9 @@ pub enum Event {
     LocationRevealed {
         /// The revealed location.
         location: LocationId,
-        /// Clues placed at reveal.
+        /// Clues placed at reveal, from the location's clue value. These
+        /// are *added* to any clues already on the location, so this is
+        /// not necessarily the location's resulting clue count.
         clues: u8,
     },
 }
