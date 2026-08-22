@@ -5,12 +5,21 @@
 **The engine foundation for the solo gate is complete.** Slice 1 (solo Roland
 playing The Gathering end-to-end to Won + Lost, kickoff #216 / gate #245 /
 PR #326) shipped, and so did every architectural arc the gate needed (see
-**What shipped** below). What remains is a small **rules-correctness cluster**
-plus the **browser capstone** — the detail is in **Remaining gate work**.
+**What shipped** below). What remains is a **rules-correctness cluster**, the
+**browser capstone**, and the scenario's **optional content** — ordered into four
+waves under **Remaining gate work**.
 
 **Phase 7 is the 1-player solo rules-correctness gate.** Scope is deliberately
-narrow — **1 player, 1 investigator, Standard**. Investigator breadth,
-difficulty, solo-2, and optional content are **Future slices**.
+narrow — **1 player, 1 investigator, Standard**. Difficulty selection and solo-2
+are **Future slices**; investigator breadth is its own milestone,
+[phase 7.5](phase-7.5-investigator-breadth.md).
+
+**Rechartered 2026-08-23** (`/grill-with-docs`), which changed three things this
+doc previously said. The scenario's **optional content is now in the gate** —
+Lita Chantler, the Parlor barrier and Resign were filed under *Future slices* and
+are now #258's six children. The **playthrough is now an issue** (#769) and runs
+twice, once as reconnaissance before the fixes and once as the run of record.
+**Investigator breadth left**, to `phase-7.5-investigator-breadth`.
 
 ## Goal
 
@@ -63,7 +72,115 @@ in **Architecture to build on**. In dependency order, the arcs that landed:
 
 ## Remaining gate work
 
-In dependency-friendly order.
+Four waves. Within a wave the issues are independent unless an arrow says
+otherwise; the waves themselves are ordered.
+
+### Wave 0 — reconnaissance
+
+**#769, first half.** A rough browser playthrough *before* any of the remaining
+fixes. The 2026-08-22 sweep found six solo-reachable defects by reading code; a
+real run is a different instrument and finds a different class of thing — stalls,
+prompts with no usable control, states a player cannot read. Whatever it turns up
+gets an issue and joins wave 1. Doing this once at the end would mean every
+discovery lands after the gate was thought closed.
+
+### Wave 1 — rules correctness
+
+| Issue | Defect |
+|---|---|
+| #763 | A zero-icon commit is accepted — commit is a free discard outlet |
+| #764 | A defeated active investigator's turn does not end |
+| #697 → #670 | Two of four phase-ends never emit, and there is no phase-start point at all → the non-`Specific` spawn shapes |
+| #664 | A `ChooseOne` mode with no eligible target is still offered |
+| #651 | Hunter pathfinding routes *around* a movement block instead of being stopped by it |
+| #682 | An attack whose target leaves play mid-test resolves against difficulty 0 |
+| #562 | 01110's forced act-advance double-prompts (advance-flip slice 4) |
+
+**#697 lands before #670.** #670 makes Wizard of the Order 01170 drawable; its
+printed *"**Forced** - At the end of the mythos phase: Place 1 doom on Wizard of the Order."* stays inert
+until #697 routes `mythos_phase_end` through `queue_event`, so #670's own
+acceptance criterion cannot be asserted alone.
+
+**#682's blocker is gone and its answer is not in the sources.** It waited on the
+Official FAQ, which is vendored now (#672) and was searched: the nearest passage
+answers a question about the *investigator* moving mid-test, not about the target
+leaving play. The engine therefore takes reading 1 — **the test is abandoned** — and
+the reasoning, including why reading 2 was rejected, is on the issue. The
+implementing PR records it on `DifficultyBasis`, or as an ADR if the teardown turns
+out to be load-bearing; it must say outright that this is an engine decision rather
+than a citation.
+
+**#562 is in for placement, not severity.** It is terminal and once-per-scenario,
+but it fires on the Ghoul Priest's defeat — the last interaction before every win.
+
+### Wave 2 — the input surface
+
+- **#541 — S6: global-action homes, then delete `.action-bar`.** The closer of the
+  interactivity pass; closes **#206**.
+- **#770 — an unknown `InputKind` renders a prompt with no controls.** Split from
+  #586, which keeps the `max_health()` render panic and stays out of the gate as
+  stale-client hardening. In for the
+  *run*, not the release: with matched binaries it never fires, but #769 is
+  exercised against a live `trunk serve` loop where skew is the known hazard, and a
+  control-less prompt is **indistinguishable from an engine stall** — the risk is
+  that it gets filed as an engine bug and corrupts the run's findings.
+
+### Wave 3 — optional content (#258's children)
+
+Ordered: **#644 → #772 → #771 → #773 → #774 → #775**.
+
+- **#644 — Resign semantics.** Unblocked: #695 shipped as #707/#708/#709/#735, and
+  #696 already gave the engine `ActionDesignator::Resign` and its AoO exemption. What
+  is left is elimination **by resignation** — `Status::Resigned` / `DefeatCause::
+  Resigned` exist, are wired through elimination, and have never been constructed —
+  plus `glossary/Winning_and_Losing.md`'s *"no resolution being reached"* ending. #696's
+  reviewer note stands: tagging the Parlor 01115 is this issue's job.
+- **#772 — an uncontrolled asset is an unreachable ability source, and *"she gains"*
+  has no DSL.** Two gaps on one card pair. `glossary/Triggered_Abilities.md` bullet 2
+  reaches Lita 01117; #708's implementation of that bullet walks the location, its
+  attachments, co-located enemies and *other investigators'* threat areas, and she is
+  none of those. She is also the **first source with a `CardInstanceId` that nobody
+  controls**, so #708's `instance().is_none()` rejections do not cover her. Separately,
+  neither 01115's Parley nor 01117's buffs are *printed* on the card that has them —
+  each is granted under a mutually exclusive `While` predicate, and `card-dsl` has no
+  conditional granting. Taken as a native hook on #368's precedent, with one caveat
+  worth watching: #368's natives return `bool`, and a grant returns `Vec<Ability>` and
+  must be consulted wherever abilities are enumerated. If that spreads further than a
+  hook threads cleanly it is an **ADR**, not a `TODO`.
+- **#771 — set-aside assets.** Set-aside is enemies-only (`set_aside_enemies` +
+  `spawn_set_aside_enemy`), so act 01109b's *"Put the set-aside Lita Chantler into play
+  in the Parlor"* has nowhere to go while its neighbour *"Spawn the set-aside Ghoul
+  Priest in the Hallway"* works (#231).
+- **#773 — Lita 01117's controlled-side grants.** A location-scoped `+1 [combat]` for
+  *each* investigator there and a `+1` damage reaction on another investigator's
+  successful `[[Monster]]` attack. Both collapse to one investigator in 1p; implement
+  the printed predicate, not its degenerate case, or the test asserts nothing.
+- **#774 — the Parlor movement barrier**, split out of #258 because it is **mandatory
+  printed behaviour** that was inheriting optional content's deferral. Lands after
+  #651 and inherits its reading of where a block applies rather than inventing a second.
+- **#775 — act 3's R1/R2 choice.** 01110b asks the lead investigator to choose the
+  ending, and `the_gathering.rs:235` hardcodes `Resolution::Won { id: "R1" }`, so R2
+  is unreachable. Not a new finding: the 2026-08-22 sweep had already split it into
+  **#766** as phase-9 campaign work, and it moves here on the reading #766 itself
+  offered — *"the 01110 choice can land earlier as a plain prompt if #75 is not yet
+  there."* The **prompt** is in the gate because it is what makes both printed endings
+  reachable; the **consequences** (trauma, campaign log, earning the Lita Chantler
+  card) stay in #766, so `apply_resolution` grows a match arm per id and nothing more.
+
+`[action]: **Parley.**` needs no new action type — #696 shipped the designator.
+#231 and #257, named in #258 as neighbours, are both closed.
+
+### Wave 4 — the gate-closer
+
+**#769, second half.** The run of record: **Won** (R1 or R2), **Lost**, and
+**Resigned**. Then the phase-doc commit and the milestone.
+
+### The arcs behind it (retrospective)
+
+The four numbered items below are the record of how the remaining work got its
+shape — the shipped arcs, their rejected alternatives, and the `TODO(#NNN)`
+promotion triggers they left behind. They are not a queue; the queue is the waves
+above.
 
 **1. `IntExpr` correctness cluster.** **DSL core + #300 + #426 ✅ shipped (PR #450).**
 A shared `Quantity` vocabulary (`CluesAtControllerLocation`, `EngagedEnemies`,
@@ -383,8 +500,9 @@ the now-stable set of input shapes:
   deleted. **#224** folded in: a non-empty roster is mandatory (single seating path),
   and the ~37 `StartScenario` test sites migrated to `seat_and_open` (game-core's own
   tests seat synthetic `TEST_INV` via the test registry, preserving crate layering).
-- **End-to-end browser playthrough** of The Gathering to a resolution — the sole
-  remaining gate item. The Mythos-encounter-draw stall is **resolved** by #205's
+- **End-to-end browser playthrough** of The Gathering to a resolution — now **#769**,
+  and now bracketing the rest of the gate rather than trailing it (waves 0 and 4).
+  The Mythos-encounter-draw stall is **resolved** by #205's
   `InputKind` discriminator (PR #462): the draw now renders a Confirm button and resolves,
   and skippable windows render a Skip control. The picker → seating → mulligan →
   investigation → Mythos flow all works in-browser (PR #461). What remains is *exercising*
@@ -611,11 +729,19 @@ the now-stable set of input shapes:
       location display are gone. Built on S4's `InPlayCardView` (reused untouched).
 
 **Deferred past the gate:** #353 (uses-depletion — no Gathering card; gated on
-Forbidden Knowledge / Grotesque Statue), #427/#429 (native-loop soak
-residue — rare in 1p; both now wait on #728), #119/#26 (behaviour-preserving cleanups — fold in
-opportunistically). #294 (multi-soak-window drain) was dissolved by PR #717 —
-the attack loop now parks unconditionally, so the strand it described is
-unreachable and its `debug_assert` is gone.
+Forbidden Knowledge / Grotesque Statue, which arrive with
+[phase 7.5](phase-7.5-investigator-breadth.md)'s Mystic pool), #427/#429
+(native-loop soak residue; both wait on #728), #119/#26 (behaviour-preserving
+cleanups — fold in opportunistically). #294 (multi-soak-window drain) was dissolved
+by PR #717 — the attack loop now parks unconditionally, so the strand it described
+is unreachable and its `debug_assert` is gone.
+
+**#427/#429's deferral was justified here as "rare in 1p", and that was wrong.**
+Dynamite Blast 01024 is in `ROLAND_DEFAULT_DECK` (`crates/web/src/picker.rs`), so
+#769 will play it. The deferral holds for a different reason: in 1 player,
+`for inv in investigators` is a loop of **one**, so #728's frame-shaped restructure
+buys nothing the gate can observe — the soak is a single investigator's, which
+already works. #728's real driver is multiplayer.
 
 **Pulled into the gate by the 2026-08-22 triage sweep** — each is a solo
 rules defect reachable in The Gathering today: #651 (hunter pathfinding routes
@@ -626,6 +752,15 @@ attack whose target leaves play mid-test resolves against difficulty 0), #763
 (zero-icon commits accepted) and #764 (a defeated active investigator's turn
 does not end). The same sweep moved #353, #366, #367 and #555 *out* of the
 milestone: each one's own body or ADR (0008/0009) defers it until a card wants it.
+
+**Pulled into the gate by the 2026-08-23 recharter:** the whole of #258 — the
+optional content this doc had filed under *Future slices* — plus #769 (the
+playthrough, which had never had an issue), #770 (split from #586), and #775
+(found while mapping #258). **Moved out:** #458 and #588 (the resume-token chain →
+phase 8; a single player double-clicking Confirm in one tab is a real bug but not
+a rules one), and investigator breadth in its entirety →
+[phase 7.5](phase-7.5-investigator-breadth.md), which also took #366, since
+Wendy Adams 01005 is its first real consumer.
 
 ## Frame-model end-states (#393)
 
@@ -907,21 +1042,16 @@ seating).
 
 Captured but **unfiled** (no issues yet) — filed when the gate closes.
 
-- **Slice 2 — investigator breadth.** Daisy Walker, "Skids" O'Toole, Agnes Baker,
-  Wendy Adams — each with their signature asset/weakness pair + starter deck. Goal:
-  all five picker-eligible.
 - **Difficulty selection.** Add Easy / Hard / Expert chaos bags + a picker (Slice 1
   is Standard only).
 - **Solo-with-2 UX.** One client driving two investigators (picker, whose-turn, two
   boards vs. tabbed). Open design question; the Tier-2 correctness issues (#65, #381,
   #359, #153, #371) land here.
-- **Deferred Gathering content (#258).** Lita Chantler's parley/take-control + the
-  Parlor (01115) Resign action — those parts are optional content. **The Parlor
-  movement barrier (01115 unrevealed: "You cannot move into the Parlor.") is also
-  in #258's scope and is mandatory printed behavior, currently unenforced** — don't
-  drop it when picking up the parley/resign half. #258 is also the home for the
-  **Parley/Resign action-type mechanisms** (not basic actions — RR p.5; both
-  AoO-exempt), landing with their first granting card.
+
+**Investigator breadth left this section** on 2026-08-23 and is now
+[phase 7.5](phase-7.5-investigator-breadth.md), a filed milestone rather than a
+captured intent. **The deferred Gathering content left too**, in the other
+direction: #258 is in the gate, under **Wave 3** above.
 
 Campaign sequencing (The Midnight Masks, The Devourer Below, campaign log + `Fact`
 enum) is **Phase 9** — including the first real Peril/Surge cards (Hunting Shadow
@@ -929,17 +1059,12 @@ enum) is **Phase 9** — including the first real Peril/Surge cards (Hunting Sha
 
 ## Open questions
 
-- **Roland elder-sign DSL surface (#118).** Mostly answered: the `IntExpr` AST
-  exists (.38 Special is the live consumer) and the design spec is settled (see
-  `docs/superpowers/specs/2026-06-24-intexpr-dynamic-value-cluster-design.md`
-  Section 2). The remaining work is the clue-*count* `IntExpr` term
-  (`IntExpr::Count(Quantity::CluesAtControllerLocation)`), the `Trigger::ElderSign`
-  / ST.4 firing path, and the `Investigator.card_code` bridge. The elder-sign bonus
-  flows through the existing chaos-token `Modifier` total path (sourced from the
-  investigator card) — **not** through `Effect::Modify` or a new
-  `Effect::ModifySkillTestTotal`; `Effect::Modify.delta` stays `i8` and is not
-  touched by #118.
 - **Solo-with-2 UX** — how one client presents two investigators. See Future slices.
+
+*(The Roland elder-sign DSL question was retired on 2026-08-23: #118, #448 and #453
+all shipped, so it is fully answered rather than "mostly". Its successor — three of
+the five elder signs need an on-success **effect**, which `Trigger::ElderSign` has no
+field for — is #776, in [phase 7.5](phase-7.5-investigator-breadth.md).)*
 
 ## Dependencies
 
@@ -951,5 +1076,13 @@ Phase 3's Roland Banks (#55) shipped.
 A solo human, in the browser, plays The Gathering to a resolution with **1-player
 Standard rules correctness**: every basic action available, attacks of opportunity /
 retaliate / soak resolving with proper player agency, skill-test windows open, and
-Roland's signature firing. Investigator breadth, difficulty, and solo-2 are Future
-slices.
+Roland's signature firing.
+
+Since the 2026-08-23 recharter, **"a resolution" means all three** — #769 runs to
+**Won** (R1 *or* R2, once #775 offers the choice), to **Lost**, and to **Resigned**
+(once #644 gives resignation semantics and Wave 3 makes the Parlor's `[action]`
+resolve). Two of those three are currently unreachable, which is why the optional
+content came into the gate.
+
+Difficulty and solo-2 are Future slices. Investigator breadth is
+[phase 7.5](phase-7.5-investigator-breadth.md).

@@ -11,8 +11,8 @@
 //! Faithful where it can be (agenda doom 3/7/10; the verified Standard
 //! chaos bag; Study shroud/clues); structural stand-in where the rest of
 //! Group C owns fidelity (act 01110 advances via its Forced `EnemyDefeated`
-//! objective (01116; in `cards`) — its R1/R2 resolution choice is Phase-9
-//! — TODO; symbol-token effects on reference card 01104 are C2). C1a does
+//! objective (01116; in `cards`) — its R1/R2 resolution choice is #775;
+//! symbol-token effects on reference card 01104 are C2). C1a does
 //! not claim faithful win/lose semantics — only structural reachability,
 //! proven by `tests/the_gathering.rs`.
 
@@ -213,8 +213,10 @@ pub fn setup() -> GameState {
     // Agenda reverses (01105 discard/horror, 01106 dig-until-Ghoul) ship as
     // the agendas' own `AgendaAdvanced` forced abilities (cards::whats_going_on,
     // cards::rise_of_the_ghouls); #281.
-    // TODO(#593): act-3 (01110) reverse is the lead's R1/R2 resolution choice
-    // (Phase 9 campaign-log work; R2 is unreachable until then).
+    // TODO(#775): act-3 (01110) reverse is the lead's R1/R2 resolution choice,
+    // and the hardcoded `Won { id: "R1" }` below makes R2 unreachable. The
+    // *prompt* is phase-7 gate work; its consequences (trauma, campaign log,
+    // earning Lita Chantler) stay phase 9 with #766.
     state.act_deck = vec![
         Act {
             code: CardCode("01108".into()),
