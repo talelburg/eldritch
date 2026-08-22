@@ -121,6 +121,38 @@ pub enum ActionDesignator {
     Resign,
 }
 
+impl ActionDesignator {
+    /// The [`ActionClass`] this designator performs, for the rules keyed on
+    /// action *kind* rather than on the basic action. `None` for the three
+    /// designators no `ActionClass` variant names.
+    ///
+    /// Official FAQ, `Frequently_Asked_Questions.md`:
+    ///
+    /// > Abilities with a bold action designator (like Fight, Evade or
+    /// > Investigate) **count as an action of that type**.
+    ///
+    /// The clause is broader than the attack-of-opportunity exemption it
+    /// answers there: a designated ability *is* an action of that type for
+    /// every rule that keys on one. The consumer today is
+    /// [`Restriction::ExtraActionCost`], whose `actions` list is
+    /// `ActionClass` — Frozen in Fear 01164 surcharges a designated Fight
+    /// exactly as it surcharges a basic one (#754).
+    ///
+    /// The `None` arm is structural rather than a gap: `ActionClass` exists
+    /// to name what `ExtraActionCost` can surcharge, and no card surcharges
+    /// investigating, parleying or resigning. A new consumer wanting those
+    /// grows `ActionClass` first.
+    #[must_use]
+    pub fn action_class(self) -> Option<ActionClass> {
+        match self {
+            Self::Fight => Some(ActionClass::Fight),
+            Self::Evade => Some(ActionClass::Evade),
+            Self::Move => Some(ActionClass::Move),
+            Self::Investigate | Self::Parley | Self::Resign => None,
+        }
+    }
+}
+
 /// When an [`Ability`] is active.
 ///
 /// Phase-3 set. Later phases add `AtPhaseStart`/`AtPhaseEnd`,
@@ -2103,6 +2135,31 @@ pub fn skill_test(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The three designators `ActionClass` names map onto it; the three it
+    /// doesn't name map to `None` (#754).
+    #[test]
+    fn a_designator_maps_onto_the_action_class_it_performs() {
+        assert_eq!(
+            ActionDesignator::Fight.action_class(),
+            Some(ActionClass::Fight)
+        );
+        assert_eq!(
+            ActionDesignator::Evade.action_class(),
+            Some(ActionClass::Evade)
+        );
+        assert_eq!(
+            ActionDesignator::Move.action_class(),
+            Some(ActionClass::Move)
+        );
+        for d in [
+            ActionDesignator::Investigate,
+            ActionDesignator::Parley,
+            ActionDesignator::Resign,
+        ] {
+            assert_eq!(d.action_class(), None, "{d:?} names no ActionClass");
+        }
+    }
 
     #[test]
     fn with_eligibility_sets_the_tag_and_default_is_none() {
