@@ -158,11 +158,14 @@ Ordered: **#644 → #772 → #771 → #773 → #774 → #775**.
 - **#774 — the Parlor movement barrier**, split out of #258 because it is **mandatory
   printed behaviour** that was inheriting optional content's deferral. Lands after
   #651 and inherits its reading of where a block applies rather than inventing a second.
-- **#775 — act 3's R1/R2 choice**, found while mapping this cluster: 01110b asks the
-  lead investigator to choose the ending, and `the_gathering.rs:235` hardcodes
-  `Resolution::Won { id: "R1" }`, so R2 is unreachable. The **prompt** is in the gate;
-  the **consequences** (trauma, campaign log, earning the Lita Chantler card) stay
-  phase 9, so `apply_resolution` grows a match arm per id and nothing more.
+- **#775 — act 3's R1/R2 choice.** 01110b asks the lead investigator to choose the
+  ending, and `the_gathering.rs:235` hardcodes `Resolution::Won { id: "R1" }`, so R2
+  is unreachable. Not a new finding: the 2026-08-22 sweep had already split it into
+  **#766** as phase-9 campaign work, and it moves here on the reading #766 itself
+  offered — *"the 01110 choice can land earlier as a plain prompt if #75 is not yet
+  there."* The **prompt** is in the gate because it is what makes both printed endings
+  reachable; the **consequences** (trauma, campaign log, earning the Lita Chantler
+  card) stay in #766, so `apply_resolution` grows a match arm per id and nothing more.
 
 `[action]: **Parley.**` needs no new action type — #696 shipped the designator.
 #231 and #257, named in #258 as neighbours, are both closed.
