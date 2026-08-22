@@ -642,10 +642,20 @@ pub(crate) struct PlayCheckResult {
 pub(super) struct ActivateCheckResult {
     /// The card code of the source card.
     pub source_code: CardCode,
-    /// Action cost from the ability's `Trigger::Activated`.
+    /// Action points this activation costs: the ability's
+    /// `Trigger::Activated` cost **plus** any `ExtraActionCost` surcharge on
+    /// the action class its designator names (#754). What the affordability
+    /// check compares and what payment spends — the printed cost alone is not
+    /// what the investigator pays.
     pub action_cost: u8,
+    /// The `first_each_round` surcharge sources that `action_cost` charged
+    /// for, to mark spent once the activation commits. Empty unless the
+    /// surcharge applied. Kept beside the cost so the peek stays read-only
+    /// for validate-first.
+    pub surcharge_sources: Vec<crate::state::CardInstanceId>,
     /// The bold action designator the ability prints, if any — what the
-    /// attack-of-opportunity exemption reads (#696).
+    /// attack-of-opportunity exemption reads (#696) and what names the action
+    /// class the surcharge keys on (#754).
     pub designator: Option<crate::dsl::ActionDesignator>,
     /// Payment costs (beyond the action cost).
     pub costs: Vec<crate::dsl::Cost>,

@@ -2161,6 +2161,31 @@ pub(crate) fn check_activate_ability(
         }
     }
 
+    // A bold action designator makes this an action of that type, so an
+    // `ExtraActionCost` surcharge on that class applies here exactly as it does
+    // to the basic action (#754). Official FAQ: *"Abilities with a bold action
+    // designator (like Fight, Evade or Investigate) count as an action of that
+    // type."* Frozen in Fear 01164's ruling names the case directly: *"Also
+    // applies to [action] card abilities with action designators (Move, Fight,
+    // Evade)."* Read through the same `action_surcharge` the basic-action
+    // handlers use, so the two can't drift apart.
+    //
+    // Scoped to action-cost abilities: the same ruling taxes *fast* designated
+    // abilities too, which no corpus card can reach and which needs a decision
+    // this change doesn't make (#759, and the `# Module gap` on Frozen in Fear's
+    // own module).
+    let (surcharge, surcharge_sources) = if action_cost > 0 {
+        match designator.and_then(crate::dsl::ActionDesignator::action_class) {
+            Some(class) => {
+                crate::engine::dispatch::actions::action_surcharge(state, investigator, class)
+            }
+            None => (0, Vec::new()),
+        }
+    } else {
+        (0, Vec::new())
+    };
+    let action_cost = action_cost.saturating_add(surcharge);
+
     // Re-borrow inv after state borrows above.
     let inv = state.investigators.get(&investigator).expect("checked");
 
@@ -2192,6 +2217,7 @@ pub(crate) fn check_activate_ability(
     Ok(super::ActivateCheckResult {
         source_code,
         action_cost,
+        surcharge_sources,
         designator,
         costs,
         effect,

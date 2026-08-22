@@ -7,8 +7,9 @@
 use game_core::action::{EngineRecord, InputResponse, PlayerAction};
 use game_core::engine::OptionId;
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, EnemyId,
-    InvestigatorId, Location, LocationId, Phase, TokenModifiers, UpkeepResume,
+    AbilitySource, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    Continuation, EnemyId, InvestigatorId, Location, LocationId, Phase, TokenModifiers,
+    UpkeepResume, UseKind,
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, drive, fire_forced_on_round_end, run_upkeep_round_end,
@@ -511,5 +512,150 @@ fn obscuring_fog_limit_one_per_location_discards_the_second_copy() {
             .encounter_discard
             .contains(&CardCode::new("01168")),
         "the over-limit copy is discarded",
+    );
+}
+
+// ---- Frozen in Fear (01164) × a bold action designator (#754) -------
+
+/// Board: investigator 1 at location 20, Frozen in Fear 01164 in the threat
+/// area, a .45 Automatic 01016 (4 ammo) in play, and a co-located enemy to
+/// shoot. Rigged `Numeric(0)` bag so the attack resolves deterministically.
+///
+/// The weapon's `[action] Spend 1 ammo: **Fight**.` prints a bold **Fight**
+/// designator, so per the Official FAQ it *counts as a Fight action* — and
+/// Frozen in Fear surcharges *"the first time you perform one of the following
+/// actions (move, fight, or evade) each round"*, one budget across the three.
+fn frozen_in_fear_with_weapon_board() -> game_core::GameState {
+    let mut inv = test_investigator(1);
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode::new("01164"),
+        CardInstanceId(0),
+    ));
+    let mut weapon = CardInPlay::enter_play(CardCode::new("01016"), CardInstanceId(1));
+    weapon.uses.insert(UseKind::Ammo, 4);
+    inv.cards_in_play.push(weapon);
+
+    let mut enemy = test_enemy(100, "Ghoul");
+    enemy.fight = 3;
+    enemy.max_health = 9;
+    enemy.engaged_with = Some(InvestigatorId(1));
+    enemy.current_location = Some(LocationId(20));
+
+    GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator_at(inv, LocationId(20))
+        .with_location(test_location(20, "Here"))
+        .with_enemy(enemy)
+        .with_active_investigator(InvestigatorId(1))
+        .with_turn_order([InvestigatorId(1)])
+        .with_investigator_turn(InvestigatorId(1))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .build()
+}
+
+/// Fire the .45 Automatic, committing nothing to the attack's skill test.
+fn fire_weapon(state: game_core::GameState) -> game_core::ApplyResult {
+    TestSession::new(state)
+        .take(&TurnAction::ActivateAbility {
+            investigator: InvestigatorId(1),
+            source: AbilitySource::InPlay(CardInstanceId(1)),
+            ability_index: 0,
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .run()
+}
+
+/// Official FAQ, `Frequently_Asked_Questions.md`:
+///
+/// > Abilities with a bold action designator (like Fight, Evade or
+/// > Investigate) **count as an action of that type**.
+///
+/// and Frozen in Fear's own ruling (<https://arkhamdb.com/card/01164>):
+///
+/// > Also applies to \[action\] card abilities with action designators
+/// > (**Move**, **Fight**, **Evade**).
+///
+/// So shooting the .45 Automatic *is* a Fight action, and the first one each
+/// round costs 2 — the same as punching. Before #754 it cost 1, making the
+/// weapon a way to duck the treachery entirely.
+#[test]
+fn frozen_in_fear_surcharges_a_fight_designated_ability() {
+    let r = fire_weapon(frozen_in_fear_with_weapon_board());
+    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
+    assert_eq!(
+        r.state.investigators[&InvestigatorId(1)].actions_remaining,
+        1,
+        "first Fight each round costs base 1 + surcharge 1, whether basic or designated",
+    );
+}
+
+/// The surcharge's `first_each_round` budget is one *shared* budget: a
+/// designated Fight consumes it, so the basic Fight that follows pays the
+/// plain 1. Before #754 the activation path never marked the source spent,
+/// so the treachery could surcharge twice in a round.
+#[test]
+fn a_designated_fight_consumes_the_once_each_round_surcharge() {
+    let r = fire_weapon(frozen_in_fear_with_weapon_board());
+    assert_eq!(
+        r.state.investigators[&InvestigatorId(1)].actions_remaining,
+        1,
+    );
+    assert!(
+        r.state.investigators[&InvestigatorId(1)]
+            .action_surcharge_spent_this_round
+            .contains(&CardInstanceId(0)),
+        "the designated Fight marks Frozen in Fear's once-each-round surcharge spent",
+    );
+
+    // The follow-up basic Fight pays the plain 1: 1 → 0.
+    let r = TestSession::new(r.state)
+        .take(&TurnAction::Fight {
+            investigator: InvestigatorId(1),
+            enemy: EnemyId(100),
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .run();
+    assert_eq!(
+        r.state.investigators[&InvestigatorId(1)].actions_remaining,
+        0,
+        "surcharge already spent this round, so the basic Fight costs the normal 1",
+    );
+}
+
+/// The action menu and the validator agree about the surcharged cost. With a
+/// single action left the .45 Automatic's Fight costs 2, so it must not be
+/// offered — an enumerator reading the printed cost would list an activation
+/// the handler then rejects.
+///
+/// `legal_actions` gets this for free by delegating to
+/// `check_activate_ability`; the test pins that delegation, since the
+/// alternative (a parallel affordability check in the enumerator) is exactly
+/// how the basic-action and ability paths drifted apart in the first place.
+#[test]
+fn the_action_menu_hides_a_designated_fight_the_surcharge_makes_unaffordable() {
+    let mut state = frozen_in_fear_with_weapon_board();
+    let activation = TurnAction::ActivateAbility {
+        investigator: InvestigatorId(1),
+        source: AbilitySource::InPlay(CardInstanceId(1)),
+        ability_index: 0,
+    };
+    assert!(
+        game_core::engine::enumerate::legal_actions(&state).contains(&activation),
+        "with 3 actions the surcharged Fight (cost 2) is affordable",
+    );
+
+    state
+        .investigators
+        .get_mut(&InvestigatorId(1))
+        .expect("investigator 1")
+        .actions_remaining = 1;
+    assert!(
+        !game_core::engine::enumerate::legal_actions(&state).contains(&activation),
+        "1 action left cannot pay the surcharged cost of 2, so the menu omits it",
     );
 }

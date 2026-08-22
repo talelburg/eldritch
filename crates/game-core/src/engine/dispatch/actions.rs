@@ -825,29 +825,56 @@ pub(super) fn spend_actions(cx: &mut Cx, investigator: InvestigatorId, n: u8) {
     });
 }
 
-/// The action-point cost of `action_class` for `investigator`: base 1 plus any
-/// Frozen-in-Fear `ExtraActionCost` surcharge (Rules Reference; #164). Pure —
-/// reads `card_registry::current()` for the surcharge, falling back to 1 with no
-/// registry installed (bare unit tests). The enumerator uses this for Move/Fight/
-/// Evade affordability; [`charge_action`] uses it then spends.
+/// What one basic action costs before any surcharge. Named so the surcharge's
+/// two consumers — [`action_cost`] and [`charge_action`] — state the formula
+/// once between them.
+const BASIC_ACTION_COST: u8 = 1;
+
+/// The `ExtraActionCost` surcharge on `action_class` for `investigator`, plus
+/// the `first_each_round` sources to mark spent once the action commits.
+///
+/// The registry-optional wrapper around
+/// [`pending_action_surcharge`](crate::engine::evaluator::pending_action_surcharge):
+/// no registry (bare unit tests) means no card data, so no surcharge. Pure, so
+/// a caller can peek at the cost before deciding to pay it — which is what
+/// validate-first requires of both consumers.
+///
+/// **Both ways of taking an action of a class read this**: the basic-action
+/// handlers via [`action_cost`] / [`charge_action`], and an activated ability
+/// whose bold designator names the class via
+/// [`ActionDesignator::action_class`](crate::dsl::ActionDesignator::action_class)
+/// (#754). Sharing it is the point — a surcharge only one of the two applies is
+/// the bug that made shooting a weapon cheaper than punching.
+pub(crate) fn action_surcharge(
+    state: &GameState,
+    investigator: InvestigatorId,
+    action_class: crate::dsl::ActionClass,
+) -> (u8, Vec<crate::state::CardInstanceId>) {
+    match crate::card_registry::current() {
+        Some(reg) => crate::engine::evaluator::pending_action_surcharge(
+            state,
+            reg,
+            investigator,
+            action_class,
+        ),
+        None => (0, Vec::new()),
+    }
+}
+
+/// The action-point cost of a **basic** `action_class` for `investigator`: base
+/// 1 plus any Frozen-in-Fear `ExtraActionCost` surcharge (Rules Reference;
+/// #164). Pure. The enumerator uses this for Move/Fight/Evade affordability;
+/// [`charge_action`] uses it then spends.
+///
+/// An activated ability pays its *printed* action cost plus the same surcharge
+/// rather than this, since the printed cost need not be 1 — see
+/// `check_activate_ability`.
 pub(crate) fn action_cost(
     state: &GameState,
     investigator: InvestigatorId,
     action_class: crate::dsl::ActionClass,
 ) -> u8 {
-    let extra = match crate::card_registry::current() {
-        Some(reg) => {
-            crate::engine::evaluator::pending_action_surcharge(
-                state,
-                reg,
-                investigator,
-                action_class,
-            )
-            .0
-        }
-        None => 0,
-    };
-    1u8.saturating_add(extra)
+    BASIC_ACTION_COST.saturating_add(action_surcharge(state, investigator, action_class).0)
 }
 
 /// Charge the action cost for `action_class` (base 1 + any Frozen-in-Fear
@@ -863,19 +890,8 @@ fn charge_action(
     action_class: crate::dsl::ActionClass,
     action_name: &str,
 ) -> Result<(), EngineOutcome> {
-    let to_mark = match crate::card_registry::current() {
-        Some(reg) => {
-            crate::engine::evaluator::pending_action_surcharge(
-                cx.state,
-                reg,
-                investigator,
-                action_class,
-            )
-            .1
-        }
-        None => Vec::new(),
-    };
-    let cost = action_cost(cx.state, investigator, action_class);
+    let (extra, to_mark) = action_surcharge(cx.state, investigator, action_class);
+    let cost = BASIC_ACTION_COST.saturating_add(extra);
     let remaining = cx
         .state
         .investigators

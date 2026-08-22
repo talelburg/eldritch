@@ -75,6 +75,7 @@ pub(super) fn activate_ability(
     let super::ActivateCheckResult {
         source_code,
         action_cost,
+        surcharge_sources,
         designator,
         costs,
         effect,
@@ -90,9 +91,15 @@ pub(super) fn activate_ability(
     };
 
     // Mutate.
-    if let Err(reason) =
-        pay_activation_costs(cx, investigator, source, &source_code, action_cost, &costs)
-    {
+    if let Err(reason) = pay_activation_costs(
+        cx,
+        investigator,
+        source,
+        &source_code,
+        action_cost,
+        &surcharge_sources,
+        &costs,
+    ) {
         return EngineOutcome::Rejected { reason };
     }
     // The event names the **source**, not a card instance: the location and
@@ -223,6 +230,7 @@ fn pay_activation_costs(
     source: AbilitySource,
     source_code: &CardCode,
     action_cost: u8,
+    surcharge_sources: &[CardInstanceId],
     costs: &[Cost],
 ) -> Result<(), Cow<'static, str>> {
     if action_cost > 0 {
@@ -232,6 +240,13 @@ fn pay_activation_costs(
             .get_mut(&investigator)
             .expect("validated above");
         inv_mut.actions_remaining = inv_mut.actions_remaining.saturating_sub(action_cost);
+        // The surcharge is spent, so its `first_each_round` sources are done
+        // for the round — the same commit-time marking `charge_action` does for
+        // a basic action (#754). Without it Frozen in Fear 01164 would surcharge
+        // a designated Fight *and* the basic Fight that follows.
+        inv_mut
+            .action_surcharge_spent_this_round
+            .extend(surcharge_sources.iter().copied());
         let new_count = inv_mut.actions_remaining;
         cx.events.push(Event::ActionsRemainingChanged {
             investigator,
