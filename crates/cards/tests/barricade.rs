@@ -462,3 +462,223 @@ fn map_leaving_barricaded_a(enemy: Option<Enemy>) -> game_core::GameState {
         .push(CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST));
     state
 }
+
+// ---------------------------------------------------------------------------
+// #651: a movement block never changes *who is nearest* or *what the shortest
+// path is* — it only turns the compelled step into a non-move.
+//
+// `data/rules-reference/rules/glossary/Nearest.md`: *"Nearest refers to the
+// entity of the specified kind at a location that can be reached in the fewest
+// number of connections, **even if one or more of those connections are blocked
+// by another card ability**. The path to the nearest entity is the 'shortest'
+// path to that entity."*
+//
+// `data/rules-reference/rules/glossary/Hunter.md`: *"If a hunter enemy would be
+// compelled to a location to which the move is blocked by a card ability, the
+// enemy does not move."*
+// ---------------------------------------------------------------------------
+
+const INV2: InvestigatorId = InvestigatorId(2);
+
+/// An investigator at `at` with a real card code, so `max_health()` /
+/// `max_sanity()` read from the installed registry (see
+/// `map_with_barricade_at_b`).
+fn inv_at(id: u32, at: LocationId) -> game_core::state::Investigator {
+    let mut inv = test_investigator(id);
+    inv.investigator_card.code = CardCode::new("01003");
+    inv.current_location = Some(at);
+    inv
+}
+
+/// A location with the given id, name and connections.
+fn linked(id: u32, name: &str, connections: &[LocationId]) -> game_core::state::Location {
+    let mut loc = test_location(id, name);
+    loc.connections = connections.to_vec();
+    loc
+}
+
+/// A ready, unengaged, non-Elite hunter at `at` — the mover every scenario
+/// below shares, since it is the non-Elite case the barricade actually stops.
+fn hunter_at(at: LocationId) -> Enemy {
+    let mut enemy = ghoul(100, GHOUL_MINION, at);
+    enemy.hunter = true;
+    enemy
+}
+
+/// Assemble a board out of ready-made locations / investigators / one hunter,
+/// staging the mid-Investigation invariants the `EndTurn` cascade expects, and
+/// attaching a Barricade at each of `barricaded`.
+fn board(
+    locations: Vec<game_core::state::Location>,
+    investigators: Vec<game_core::state::Investigator>,
+    hunter: Enemy,
+    barricaded: &[LocationId],
+) -> game_core::GameState {
+    let turn_order: Vec<InvestigatorId> = investigators.iter().map(|i| i.id).collect();
+    let mut builder = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_enemy(hunter)
+        .with_active_investigator(turn_order[0])
+        .with_turn_order(turn_order.clone())
+        .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
+            resume: game_core::state::InvestigationResume::TurnBegins,
+        })
+        .with_investigator_turn(turn_order[0]);
+    for loc in locations {
+        builder = builder.with_location(loc);
+    }
+    for inv in investigators {
+        builder = builder.with_investigator(inv);
+    }
+    let mut state = builder.build();
+    for (i, loc) in barricaded.iter().enumerate() {
+        state
+            .locations
+            .get_mut(loc)
+            .unwrap()
+            .attachments
+            .push(CardInPlay::enter_play(
+                CardCode::new(BARRICADE),
+                CardInstanceId(900 + u32::try_from(i).unwrap()),
+            ));
+    }
+    state
+}
+
+/// Run `EndTurn` once per investigator in turn order, which cascades the
+/// Investigation phase into the Enemy phase and its step-3.2 hunter movement.
+fn end_the_investigation_phase(
+    mut state: game_core::GameState,
+    turns: usize,
+) -> game_core::GameState {
+    for _ in 0..turns {
+        state = take_turn_action(state, &TurnAction::EndTurn).state;
+    }
+    state
+}
+
+/// The issue's divergence scenario. The Gathering's own map is a star around
+/// the Hallway, which cannot express "two connections away", so this is a
+/// synthetic board: Hub(1) — Blocked(2, barricaded), and Hub — Mid(3) — Far(4).
+/// Investigator 1 is at Blocked, one connection away; investigator 2 is at
+/// Far, two connections away past an unblocked route.
+fn hallway_attic_cellar() -> game_core::GameState {
+    board(
+        vec![
+            linked(1, "Hub", &[LocationId(2), LocationId(3)]),
+            linked(2, "Blocked", &[LocationId(1)]),
+            linked(3, "Mid", &[LocationId(1), LocationId(4)]),
+            linked(4, "Far", &[LocationId(3)]),
+        ],
+        vec![inv_at(1, LocationId(2)), inv_at(2, LocationId(4))],
+        hunter_at(LocationId(1)),
+        &[LocationId(2)],
+    )
+}
+
+#[test]
+fn a_blocked_nearest_investigator_is_still_the_nearest_and_the_hunter_does_not_move() {
+    let state = end_the_investigation_phase(hallway_attic_cellar(), 2);
+    assert_eq!(
+        state.enemies[&EnemyId(100)].current_location,
+        Some(LocationId(1)),
+        "the barricaded location is still one connection away, so its investigator is \
+         nearest; the compelled step is blocked, so the hunter does not move — it \
+         must not reroute toward the farther investigator",
+    );
+    assert_eq!(
+        state.investigators[&INV2].current_location,
+        Some(LocationId(4)),
+        "sanity: the far investigator never moved",
+    );
+}
+
+#[test]
+fn an_unblocked_board_moves_the_hunter_toward_the_nearest_investigator() {
+    let mut state = hallway_attic_cellar();
+    state
+        .locations
+        .get_mut(&LocationId(2))
+        .unwrap()
+        .attachments
+        .clear();
+    let state = end_the_investigation_phase(state, 2);
+    assert_eq!(
+        state.enemies[&EnemyId(100)].current_location,
+        Some(LocationId(2)),
+        "with no barricade the hunter steps to the nearest investigator's location",
+    );
+}
+
+#[test]
+fn a_block_off_the_shortest_path_leaves_hunter_movement_alone() {
+    // Hub(1) — Target(2) [investigator], and a longer detour
+    // Hub — Side(3, barricaded) — Target. The block sits on that detour.
+    let state = board(
+        vec![
+            linked(1, "Hub", &[LocationId(2), LocationId(3)]),
+            linked(2, "Target", &[LocationId(1), LocationId(3)]),
+            linked(3, "Side", &[LocationId(1), LocationId(2)]),
+        ],
+        vec![inv_at(1, LocationId(2))],
+        hunter_at(LocationId(1)),
+        &[LocationId(3)],
+    );
+    let state = end_the_investigation_phase(state, 1);
+    assert_eq!(
+        state.enemies[&EnemyId(100)].current_location,
+        Some(LocationId(2)),
+        "the barricade is not on the shortest path, so the hunter takes it as usual",
+    );
+}
+
+#[test]
+fn a_blocked_step_on_the_only_shortest_path_is_not_rerouted_around() {
+    // Hub(1) — Blocked(2, barricaded) — Target(3) [investigator] is the
+    // shortest path (2 connections). A longer unblocked detour exists:
+    // Hub — Detour1(4) — Detour2(5) — Target. `Nearest.md` measures the
+    // shortest path *through* the block, so the compelled first step is
+    // Blocked; `Hunter.md` then makes that a non-move.
+    let state = board(
+        vec![
+            linked(1, "Hub", &[LocationId(2), LocationId(4)]),
+            linked(2, "Blocked", &[LocationId(1), LocationId(3)]),
+            linked(3, "Target", &[LocationId(2), LocationId(5)]),
+            linked(4, "Detour1", &[LocationId(1), LocationId(5)]),
+            linked(5, "Detour2", &[LocationId(4), LocationId(3)]),
+        ],
+        vec![inv_at(1, LocationId(3))],
+        hunter_at(LocationId(1)),
+        &[LocationId(2)],
+    );
+    let state = end_the_investigation_phase(state, 1);
+    assert_eq!(
+        state.enemies[&EnemyId(100)].current_location,
+        Some(LocationId(1)),
+        "the hunter does not take the longer unblocked detour",
+    );
+}
+
+#[test]
+fn one_blocked_shortest_step_of_two_leaves_the_other_open() {
+    // Diamond: Hub(1) — Blocked(2, barricaded) — Target(4) [investigator]
+    // and Hub — Open(3) — Target. Both first steps are shortest; only the
+    // unblocked one survives as an offered destination.
+    let state = board(
+        vec![
+            linked(1, "Hub", &[LocationId(2), LocationId(3)]),
+            linked(2, "Blocked", &[LocationId(1), LocationId(4)]),
+            linked(3, "Open", &[LocationId(1), LocationId(4)]),
+            linked(4, "Target", &[LocationId(2), LocationId(3)]),
+        ],
+        vec![inv_at(1, LocationId(4))],
+        hunter_at(LocationId(1)),
+        &[LocationId(2)],
+    );
+    let state = end_the_investigation_phase(state, 1);
+    assert_eq!(
+        state.enemies[&EnemyId(100)].current_location,
+        Some(LocationId(3)),
+        "the blocked step is dropped from the destination set, not the graph",
+    );
+}

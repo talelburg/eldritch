@@ -100,7 +100,15 @@ fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
             continue;
         };
         // A non-Elite Ghoul cannot move into a barricaded location (Barricade
-        // 01038); the block is graph-level, mirroring Hunter movement.
+        // 01038). Here the block is graph-level — deliberately *unlike* Hunter
+        // movement since #651, which applies it to the compelled step alone.
+        // 01107 names a fixed destination rather than a "nearest" target, so
+        // `Nearest.md` does not reach it, and #651 left this reading alone on
+        // the grounds that the vendored text did not settle it. It probably
+        // does: `glossary/Patrol.md` puts the same "compelled step is blocked
+        // => the enemy does not move" rule on a *fixed*-destination mover,
+        // which is what 01107 is. TODO(#797): apply the block at the step here
+        // too, as Hunter movement now does.
         let mut steps = shortest_first_steps_with(cx.state, from, parlor, |loc| {
             enemy_can_enter_location(cx.state, e, loc)
         });
@@ -249,9 +257,10 @@ mod tests {
     #[test]
     fn non_elite_ghoul_does_not_move_into_a_barricaded_parlor() {
         // A Barricade (01038) on the Parlor blocks the non-Elite Ghoul's
-        // forced move — same graph-level block as Hunter movement. Needs the
-        // real registry so the attachment's `EnemyMovementBlocked` restriction
-        // is read.
+        // forced move, graph-level (see `move_ghouls_toward_parlor` for why
+        // that differs from Hunter movement since #651). Needs the real
+        // registry so the attachment's `EnemyMovementBlocked` restriction is
+        // read.
         let _ = game_core::card_registry::install(crate::REGISTRY);
         let mut state = star_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway

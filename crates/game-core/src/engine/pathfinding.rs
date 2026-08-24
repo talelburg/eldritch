@@ -12,11 +12,11 @@ use crate::state::{GameState, LocationId};
 /// `Location.connections` (the engine maintains them bidirectionally,
 /// but BFS does not assume that).
 ///
-/// The unconstrained convenience over [`bfs_distance_with`]; every production
-/// caller now passes a passability predicate (hunter movement excludes
-/// barricaded locations), so this thin wrapper currently has only test
-/// consumers.
-#[cfg_attr(not(test), allow(dead_code))]
+/// The unconstrained convenience over [`bfs_distance_with`], and what Hunter
+/// movement measures with: a movement block never changes which investigator
+/// is nearest (#651, `data/rules-reference/rules/glossary/Nearest.md`), so
+/// distances are taken on the full connection graph and the block is applied
+/// to the compelled step instead.
 pub(crate) fn bfs_distance(state: &GameState, from: LocationId, to: LocationId) -> Option<u32> {
     bfs_distance_with(state, from, to, |_| true)
 }

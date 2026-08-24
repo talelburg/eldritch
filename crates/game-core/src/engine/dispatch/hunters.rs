@@ -6,7 +6,7 @@ use crate::dsl::{Effect, Restriction, Trigger};
 use crate::engine::modified_value::{
     modified_value, ModifiedQuantity, ModifierTarget, ReadContext,
 };
-use crate::engine::pathfinding::{bfs_distance_with, shortest_first_steps_with};
+use crate::engine::pathfinding::{bfs_distance, shortest_first_steps};
 use crate::event::Event;
 use crate::state::{
     Enemy, EnemyId, GameState, HunterChoice, Investigator, InvestigatorId, LocationId,
@@ -178,17 +178,42 @@ fn location_blocks_enemy_movement(state: &GameState, loc: LocationId) -> bool {
 
 /// Compute the prey-legal destination set for a hunter at `from`:
 /// the union of shortest-path first-steps toward each
-/// equidistant-nearest, prey-filtered investigator. Empty when no
-/// investigator is reachable. Deterministic order (sorted `LocationId`).
+/// equidistant-nearest, prey-filtered investigator. Deterministic order
+/// (sorted `LocationId`). Empty means the hunter does not move — either no
+/// investigator is reachable, or every compelled step is blocked.
+///
+/// A movement block is applied to the *step*, never to the graph (#651).
+/// `data/rules-reference/rules/glossary/Nearest.md`: *"Nearest refers to the
+/// entity of the specified kind at a location that can be reached in the
+/// fewest number of connections, even if one or more of those connections
+/// are blocked by another card ability. The path to the nearest entity is
+/// the 'shortest' path to that entity."* So distances and shortest paths are
+/// measured on the full connection graph — a barricade never changes who
+/// is nearest or which way is shortest — and only the resulting first steps
+/// are filtered through [`enemy_can_enter_location`], per
+/// `data/rules-reference/rules/glossary/Hunter.md`: *"If a hunter enemy would
+/// be compelled to a location to which the move is blocked by a card ability,
+/// the enemy does not move."*
+///
+/// Where several shortest first steps tie, dropping the blocked ones is the
+/// reading taken here: the enemy is compelled to the *set*, and a step is only
+/// "the" compelled one once it has been chosen, so an unblocked tied step
+/// stays available. This is filtering, not rerouting — every surviving step is
+/// still a shortest first step on the true graph, and when every tied step is
+/// blocked the set empties and the enemy does not move.
+///
+/// The filter runs over the union across prey-tied investigators, so a blocked
+/// step toward one tied investigator can still leave an unblocked step toward
+/// another. Under a stricter reading the lead's choice is over *investigators*
+/// first — pick the blocked one and the hunter stays put — but this engine
+/// offers the lead destinations rather than investigators (#128), so that
+/// reading has nowhere to live until the choice is remodelled (#795).
 fn hunter_destinations(
     state: &GameState,
     from: LocationId,
     prey: Prey,
     enemy: &Enemy,
 ) -> Vec<LocationId> {
-    // A barricaded location is impassable to a non-Elite enemy — graph-level,
-    // so it shifts which investigator is nearest, not just the final step.
-    let is_passable = |loc: LocationId| enemy_can_enter_location(state, enemy, loc);
     let mut reachable: Vec<(InvestigatorId, u32)> = Vec::new();
     let mut min_dist: Option<u32> = None;
     for id in &state.turn_order {
@@ -201,7 +226,7 @@ fn hunter_destinations(
         let Some(loc) = inv.current_location else {
             continue;
         };
-        let Some(d) = bfs_distance_with(state, from, loc, is_passable) else {
+        let Some(d) = bfs_distance(state, from, loc) else {
             continue;
         };
         min_dist = Some(min_dist.map_or(d, |m| m.min(d)));
@@ -229,8 +254,11 @@ fn hunter_destinations(
         else {
             continue;
         };
-        for step in shortest_first_steps_with(state, from, loc, is_passable) {
-            if !dests.contains(&step) {
+        for step in shortest_first_steps(state, from, loc) {
+            // The block bites here and only here: a barricaded step is one the
+            // enemy cannot be compelled into, so it drops out of the offered
+            // set rather than out of the graph the distances were measured on.
+            if enemy_can_enter_location(state, enemy, step) && !dests.contains(&step) {
                 dests.push(step);
             }
         }
