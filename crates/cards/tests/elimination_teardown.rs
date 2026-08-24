@@ -15,9 +15,11 @@
 //!
 //! **Grasping Hands (01162):** "<b>Revelation</b> - Test [agility] (3). If you
 //! fail, take 1 damage for each point you failed by."
-//! **Overpower (01091):** a plain skill card — two [combat] icons, no triggered
-//! ability. Contributes 0 to an agility test, so committing it leaves the fail
-//! margin intact while still exercising the committed-index path.
+//! **Survival Instinct (01081):** "If this skill test is successful during an
+//! evasion attempt, the evading investigator may move to a connecting
+//! location." One [agility] icon, so it is legally committable to Grasping
+//! Hands' agility test (RR ST.2, #763) while its ability stays inert — the
+//! test fails, and this is a revelation rather than an evasion attempt.
 //! **Cover Up (01007):** "<b>Revelation</b> - Put Cover Up into play in your
 //! threat area, with 3 clues on it. […] <b>Forced</b> - When the game ends, if
 //! there are any clues on Cover Up: You suffer 1 mental trauma."
@@ -38,7 +40,7 @@ use game_core::{assert_event, assert_event_count, assert_no_event, Action, Engin
 /// Roland Banks — health 9, sanity 5.
 const ROLAND: &str = "01001";
 const GRASPING_HANDS: &str = "01162";
-const OVERPOWER: &str = "01091";
+const SURVIVAL_INSTINCT: &str = "01081";
 const COVER_UP: &str = "01007";
 const DISSONANT_VOICES: &str = "01165";
 
@@ -50,7 +52,8 @@ fn install_registry() {
 /// Roland at a location with `damage` already on him, `hand` in hand, and
 /// `threat` (code, clues) in his threat area (instance ids 1, 2, …). Grasping
 /// Hands sits on top of the encounter deck with a rigged `Numeric(-2)` token, so
-/// `reveal_committing` puts him through an Agility(3) test he fails by 2.
+/// `reveal_committing` puts him through an Agility(3) test he fails by 2 — or by
+/// 1 when Survival Instinct's single [agility] icon is committed.
 fn board_at_lethal_range(damage: u8, hand: &[&str], threat: &[(&str, u8)]) -> game_core::GameState {
     let mut inv = test_investigator(1);
     // Real investigator code so max_health() reads from the installed cards
@@ -116,10 +119,13 @@ fn reveal_committing(state: game_core::GameState, commit: &[&str]) -> game_core:
 
 #[test]
 fn tester_eliminated_mid_test_abandons_the_test_without_panicking() {
-    // Agility 3 + Numeric(-2) = 1 vs difficulty 3 → fail by 2 → 2 damage.
-    // Roland at 8/9 damage → lethal → elimination drains the hand while the
+    // Agility 3 + Numeric(-2) + 1 committed [agility] icon = 2 vs difficulty 3 →
+    // fail by 1 → 1 damage. Roland at 8/9 damage → lethal → elimination drains the hand while the
     // SkillTest frame is still live at FireOnResolution / the teardown discard.
-    let r = reveal_committing(board_at_lethal_range(8, &[OVERPOWER], &[]), &[OVERPOWER]);
+    let r = reveal_committing(
+        board_at_lethal_range(8, &[SURVIVAL_INSTINCT], &[]),
+        &[SURVIVAL_INSTINCT],
+    );
 
     assert_eq!(r.outcome, EngineOutcome::Done, "test abandoned cleanly");
 
@@ -143,7 +149,7 @@ fn tester_eliminated_mid_test_abandons_the_test_without_panicking() {
     assert!(
         inv.removed_from_game
             .iter()
-            .any(|c| c.as_str() == OVERPOWER),
+            .any(|c| c.as_str() == SURVIVAL_INSTINCT),
         "committed card removed from game; removed = {:?}",
         inv.removed_from_game
     );
@@ -158,14 +164,17 @@ fn tester_eliminated_mid_test_abandons_the_test_without_panicking() {
 
 #[test]
 fn surviving_tester_still_discards_committed_cards() {
-    // Control: same board, no preloaded damage → 2 damage is survivable → the
+    // Control: same board, no preloaded damage → 1 damage is survivable → the
     // normal teardown runs and the committed card goes to the discard.
-    let r = reveal_committing(board_at_lethal_range(0, &[OVERPOWER], &[]), &[OVERPOWER]);
+    let r = reveal_committing(
+        board_at_lethal_range(0, &[SURVIVAL_INSTINCT], &[]),
+        &[SURVIVAL_INSTINCT],
+    );
 
     let inv = &r.state.investigators[&InvestigatorId(1)];
-    assert_eq!(inv.status, Status::Active, "2 damage is not lethal at 0/9");
+    assert_eq!(inv.status, Status::Active, "1 damage is not lethal at 0/9");
     assert!(
-        inv.discard.iter().any(|c| c.as_str() == OVERPOWER),
+        inv.discard.iter().any(|c| c.as_str() == SURVIVAL_INSTINCT),
         "surviving tester discards committed cards; discard = {:?}",
         inv.discard
     );
@@ -385,12 +394,12 @@ fn the_elimination_interleaving_replays_bit_for_bit() {
     // runs compared — rather than re-applying a recorded `Vec<Action>`; with the
     // single rigged chaos token no RNG divergence is possible either way.)
     let first = reveal_committing(
-        board_at_lethal_range(8, &[OVERPOWER], &[(COVER_UP, 3)]),
-        &[OVERPOWER],
+        board_at_lethal_range(8, &[SURVIVAL_INSTINCT], &[(COVER_UP, 3)]),
+        &[SURVIVAL_INSTINCT],
     );
     let second = reveal_committing(
-        board_at_lethal_range(8, &[OVERPOWER], &[(COVER_UP, 3)]),
-        &[OVERPOWER],
+        board_at_lethal_range(8, &[SURVIVAL_INSTINCT], &[(COVER_UP, 3)]),
+        &[SURVIVAL_INSTINCT],
     );
 
     assert_eq!(first.outcome, EngineOutcome::Done);

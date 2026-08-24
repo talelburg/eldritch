@@ -300,11 +300,15 @@ pub(super) fn finish_skill_test(cx: &mut Cx, indices: &[u32]) -> EngineOutcome {
         };
     }
     let investigator = in_flight.investigator;
+    // The skill as the commit window sees it: a substitution (Mind over Matter
+    // 01036) has already rewritten it by now, and ST.2's icon check matches
+    // against the skill actually being tested.
+    let skill = in_flight.skill;
 
     // Validate the commit indices against the resolving
     // investigator's hand. On Err, state is untouched and the engine
     // stays paused so the client can retry.
-    let indices_u8 = match validate_commit_indices(cx.state, investigator, indices) {
+    let indices_u8 = match validate_commit_indices(cx.state, investigator, skill, indices) {
         Ok(v) => v,
         Err(rejected) => return rejected,
     };
@@ -1227,11 +1231,13 @@ fn abandon_test(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
 }
 
 /// Validate that every entry in `indices` is a unique in-bounds hand
-/// index for `investigator`, and return them downcast to `u8` (the
-/// width hand indices use elsewhere in state).
+/// index for `investigator` whose card may legally be committed to a test of
+/// `skill`, and return them downcast to `u8` (the width hand indices use
+/// elsewhere in state).
 fn validate_commit_indices(
     state: &GameState,
     investigator: InvestigatorId,
+    skill: SkillKind,
     indices: &[u32],
 ) -> Result<Vec<u8>, EngineOutcome> {
     let inv = state.investigators.get(&investigator).unwrap_or_else(|| {
@@ -1274,6 +1280,42 @@ fn validate_commit_indices(
     // installed registry — engine-only tests that don't touch card data
     // never commit real cards, mirroring `sum_skill_value`.
     if let Some(reg) = card_registry::current() {
+        // RR Appendix II ST.2: *"An appropriate skill icon is either one that
+        // matches the skill being tested, or a wild icon. […] Cards that lack
+        // an appropriate skill icon may not be committed to a skill test."*
+        // Without this, commit is a free discard outlet for any card in hand
+        // — a weakness included (#763, cf. #646).
+        //
+        // `skill` is the test's skill *as it stands at the commit window*, so
+        // a substitution that already rewrote it (Mind over Matter 01036 makes
+        // the test an Intellect test) is what the icons are matched against.
+        //
+        // A card with no registry entry is unconstrained, matching the cap
+        // check below and `push_committed_icons`: engine-only tests that
+        // install no registry never commit real cards.
+        for &i in &indices_u8 {
+            let code = &inv.hand[usize::from(i)];
+            let Some(meta) = (reg.metadata_for)(code) else {
+                continue;
+            };
+            let icons = meta.skill_icons();
+            let matching = match skill {
+                SkillKind::Willpower => icons.willpower,
+                SkillKind::Intellect => icons.intellect,
+                SkillKind::Combat => icons.combat,
+                SkillKind::Agility => icons.agility,
+            };
+            if matching == 0 && icons.wild == 0 {
+                return Err(EngineOutcome::Rejected {
+                    reason: format!(
+                        "skill-test commit: {code} prints no {skill:?} icon and no wild icon, \
+                         so it may not be committed to this {skill:?} test (RR ST.2)"
+                    )
+                    .into(),
+                });
+            }
+        }
+
         let mut counts: BTreeMap<&CardCode, u8> = BTreeMap::new();
         for &i in &indices_u8 {
             *counts.entry(&inv.hand[usize::from(i)]).or_insert(0) += 1;
