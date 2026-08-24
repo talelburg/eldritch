@@ -84,12 +84,23 @@ prompts with no usable control, states a player cannot read. Whatever it turns u
 gets an issue and joins wave 1. Doing this once at the end would mean every
 discovery lands after the gate was thought closed.
 
+**The run happened, and it paid.** It turned up **#786** (a Forced ability with an
+unmet condition initiates anyway, so Cover Up 01007 prompts for its game-end trauma
+with 0 clues on it) and **#787** (the skill-test result panel renders the chaos token
+as `—` whenever a symbol token's ST.4 effect suspends and splits the event batch).
+They join by kind rather than wholesale into wave 1: #786 is a rules defect and sits
+in wave 1, #787 is a read-the-state defect and sits in wave 2. Both are the class the
+2026-08-22 sweep's code-reading could not reach — one needed a *game* to end with the
+clues already spent, the other needed a Ghoul standing next to the investigator when
+the Tablet came out.
+
 ### Wave 1 — rules correctness
 
 | Issue | Defect |
 |---|---|
-| #763 | A zero-icon commit is accepted — commit is a free discard outlet |
+| #763 ✅ PR #789 | A zero-icon commit is accepted — commit is a free discard outlet |
 | #764 | A defeated active investigator's turn does not end |
+| #786 | The forced-trigger scan ignores eligibility, so a Forced ability with an unmet condition initiates and prompts |
 | #697 → #670 | Two of four phase-ends never emit, and there is no phase-start point at all → the non-`Specific` spawn shapes |
 | #664 | A `ChooseOne` mode with no eligible target is still offered |
 | #651 | Hunter pathfinding routes *around* a movement block instead of being stopped by it |
@@ -110,6 +121,15 @@ implementing PR records it on `DifficultyBasis`, or as an ADR if the teardown tu
 out to be load-bearing; it must say outright that this is an engine decision rather
 than a citation.
 
+**#786 is a scan fix, not a Cover Up fix.** `push_matching` collects on
+`(TriggerKind::Forced, timing, pattern)` and never reads `ability.eligibility`, so
+*every* forced ability whose condition lives inside its effect rather than in a gate
+will initiate when that condition is false. Cover Up 01007 is only the one the wave-0
+run stood in front of. It also lands on this branch's neighbour: `#763`'s PR reworked
+`elimination_teardown.rs`, and #786's fix has to rewrite that file's
+`eliminated_investigator_with_a_clueless_cover_up_suffers_no_trauma`, which asserts
+the right end state for the wrong reason.
+
 **#562 is in for placement, not severity.** It is terminal and once-per-scenario,
 but it fires on the Ghoul Priest's defeat — the last interaction before every win.
 
@@ -117,6 +137,14 @@ but it fires on the Ghoul Priest's defeat — the last interaction before every 
 
 - **#541 — S6: global-action homes, then delete `.action-bar`.** The closer of the
   interactivity pass; closes **#206**.
+- **#787 — the skill-test result panel loses the chaos token across a batch split.**
+  The store overwrites `last_events` wholesale on every `Applied`, so when a symbol
+  token's ST.4 effect suspends for an interactive window the reveal lands in one batch
+  and the outcome in the next, and the panel falls back to `—`. The store already
+  latches the test's *difficulty* across batches for exactly this reason; the token
+  needs the same treatment. In the gate on the same reading as #770 — a run whose
+  result panel cannot name the token that decided the test produces findings nobody
+  can check afterwards.
 - **#770 — an unknown `InputKind` renders a prompt with no controls.** Split from
   #586, which keeps the `max_health()` render panic and stays out of the gate as
   stale-client hardening. In for the
@@ -752,6 +780,17 @@ attack whose target leaves play mid-test resolves against difficulty 0), #763
 (zero-icon commits accepted) and #764 (a defeated active investigator's turn
 does not end). The same sweep moved #353, #366, #367 and #555 *out* of the
 milestone: each one's own body or ADR (0008/0009) defers it until a card wants it.
+
+**Pulled into the gate by #769's wave-0 reconnaissance run (2026-08-24):** #786 and
+#787, placed in waves 1 and 2 above. **Filed and left out:** #788 — the web commit
+control offers the whole hand at the commit window, so now that #763 rejects an
+ineligible commit a player can be offered a move the rules forbid and get a rejection
+back. It is a wart, not a stall: the engine is the authority and is correct, the run
+can complete around it, and doing it properly needs a design call (client-side filter
+vs. eligible indices on the `InputRequest`) that has to leave room for the
+conditional-eligibility cards `skill_icons` cannot express — Opportunist 01053's
+*"Commit only to a skill test you are performing"*, Take Heart 04201's *"You may
+commit Take Heart to any type of test"*. None of those are implemented yet.
 
 **Pulled into the gate by the 2026-08-23 recharter:** the whole of #258 — the
 optional content this doc had filed under *Future slices* — plus #769 (the

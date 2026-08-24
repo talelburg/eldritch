@@ -148,13 +148,12 @@ fn fight_declining_substitution_fails_on_combat() {
 }
 
 #[test]
-fn substituted_intellect_test_ignores_committed_combat_icons() {
-    // FAQ: a substituted test is an Intellect test, so only Intellect/Wild
-    // icons count. intellect 2 < fight 3 fails; committing Overpower (two
-    // [combat] icons) does NOT help — combat icons don't count for an Intellect
-    // test, so the total stays 2 and the test fails. (The engine sums only
-    // matching icons; it does not *reject* an off-icon commit — RR ST.2
-    // eligibility enforcement is a separate, pre-existing gap.)
+fn substituted_intellect_test_rejects_a_committed_combat_icon() {
+    // FAQ: a substituted test *is* an Intellect test, so ST.2's icon
+    // eligibility is judged against Intellect — Overpower's two [combat] icons
+    // are not appropriate and the commit is rejected outright (#763). This is
+    // the substitution's sharpest observable consequence at the commit window:
+    // the same commit is legal on the un-substituted Combat test.
     // Hand: [MoM, Overpower]. Play MoM (idx 0) → hand becomes [Overpower] (idx 0).
     let r = play_card(
         board(4, 2, vec![CardCode::new(MOM), CardCode::new(OVERPOWER)]),
@@ -166,12 +165,25 @@ fn substituted_intellect_test_ignores_committed_combat_icons() {
         matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
         "commit window"
     );
-    let r = commit(r.state, vec![0]); // commit Overpower (combat icons)
+    let rejected = commit(r.state, vec![0]); // commit Overpower (combat icons)
+    assert!(
+        matches!(rejected.outcome, EngineOutcome::Rejected { .. }),
+        "expected Rejected, got {:?}",
+        rejected.outcome,
+    );
+    // Validate-first: the card is still in hand and the test still paused.
+    assert_eq!(
+        rejected.state.investigators[&INV].hand,
+        vec![CardCode::new(OVERPOWER)],
+    );
+
+    // Retrying with an empty commit resolves the test: intellect 2 < fight 3.
+    let r = commit(rejected.state, vec![]);
     assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::SkillTestFailed { .. });
     assert_eq!(
         r.state.enemies[&ENEMY].damage, 0,
-        "combat icons don't count toward the substituted Intellect test",
+        "intellect 2 < fight 3, and no icons were admitted",
     );
 }
 

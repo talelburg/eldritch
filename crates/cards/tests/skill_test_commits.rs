@@ -25,8 +25,9 @@ use game_core::{assert_event, assert_event_count, assert_no_event};
 
 const PERCEPTION: &str = "01090";
 const UNEXPECTED_COURAGE: &str = "01093";
-/// Overpower — `01091`, two combat icons. Used as a "non-matching
-/// icons contribute 0" control.
+/// Overpower — `01091`, two combat icons and no wild. Used as the
+/// "no appropriate icon for this test" control: ST.2 rejects it outright
+/// on an intellect test (#763).
 const OVERPOWER: &str = "01091";
 
 #[ctor::ctor(unsafe)]
@@ -162,51 +163,47 @@ fn committing_two_cards_sums_both_contributions_and_discards_both() {
 }
 
 #[test]
-fn mixing_matching_and_non_matching_commits_only_counts_the_matching_card() {
-    // Commit Perception (intellect 2) + Overpower (combat 2, no
-    // wild) together against an intellect test. Only Perception's
-    // icons contribute: 3 + 0 + 2 + 0 = 5 vs difficulty 5 → success
-    // with margin 0. Both cards still discard regardless of
-    // contribution.
+fn mixing_matching_and_non_matching_commits_is_rejected() {
+    // Perception (intellect 2) + Overpower (combat 2, no wild) against an
+    // intellect test. ST.2 admits cards one at a time, and Overpower prints
+    // no appropriate icon for this test, so the batch is rejected — the
+    // matching card does not carry the non-matching one in with it (#763).
+    // The icon *arithmetic* that used to live here is covered by
+    // `committing_perception_contributes_two_intellect_icons`.
     let (state, id) = state_with_hand(&[PERCEPTION, OVERPOWER]);
     let result = drive_with_commits(state, id, &[PERCEPTION, OVERPOWER]);
-    assert_eq!(result.outcome, EngineOutcome::Done);
-    assert_event!(
-        result.events,
-        Event::SkillTestSucceeded { investigator, skill: SkillKind::Intellect, margin: 0 }
-            if *investigator == id
+    assert!(
+        matches!(result.outcome, EngineOutcome::Rejected { .. }),
+        "expected Rejected, got {:?}",
+        result.outcome,
     );
     let inv = &result.state.investigators[&id];
     assert_eq!(
         inv.hand,
-        vec![CardCode::new("spare-1"), CardCode::new("spare-2")],
-        "both cards removed from hand; each drew 1 on the successful test",
-    );
-    assert_eq!(
-        inv.discard,
         vec![CardCode::new(PERCEPTION), CardCode::new(OVERPOWER)],
+        "a rejected commit leaves the hand untouched",
     );
+    assert!(inv.discard.is_empty());
 }
 
 #[test]
-fn committing_overpower_to_an_intellect_test_contributes_zero_icons() {
-    // Non-matching skill icons + no wild = 0 contribution. Overpower
-    // has two combat icons; committing it to an intellect test adds
-    // nothing, so 3 + 0 + 0 = 3 < 5 still fails by 2.
+fn committing_overpower_to_an_intellect_test_is_rejected() {
+    // RR Appendix II ST.2: *"Cards that lack an appropriate skill icon may
+    // not be committed to a skill test."* Overpower's two combat icons are
+    // not appropriate for an intellect test and it prints no wild, so the
+    // commit never happens — previously it was accepted as a zero-icon
+    // commit, which made the commit window a free discard outlet (#763).
     let (state, id) = state_with_hand(&[OVERPOWER]);
     let result = drive_with_commits(state, id, &[OVERPOWER]);
-    assert_eq!(result.outcome, EngineOutcome::Done);
-    assert_event!(
-        result.events,
-        Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 2, .. }
-            if *investigator == id
+    assert!(
+        matches!(result.outcome, EngineOutcome::Rejected { .. }),
+        "expected Rejected, got {:?}",
+        result.outcome,
     );
-    // The committed card still discards even though it contributed
-    // nothing — commit-then-discard is the rule, regardless of
-    // outcome or contribution.
+    // Nothing moved: the card is still in hand rather than in the discard.
     let inv = &result.state.investigators[&id];
-    assert!(inv.hand.is_empty());
-    assert_eq!(inv.discard, vec![CardCode::new(OVERPOWER)]);
+    assert_eq!(inv.hand, vec![CardCode::new(OVERPOWER)]);
+    assert!(inv.discard.is_empty());
 }
 
 #[test]
