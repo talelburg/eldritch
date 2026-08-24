@@ -1392,8 +1392,7 @@ pub enum Restriction {
     /// non-Elite enemy may enter. *Where* it is applied is per-mover: Hunter
     /// movement applies it to the compelled step only, leaving distances and
     /// shortest paths on the full connection graph (#651), while agenda
-    /// 01107's forced move still prunes the graph, pending a decision on the
-    /// fixed-destination case (see `theyre_getting_out`). The Elite exemption
+    /// 01107's forced move still prunes the graph (#797). The Elite exemption
     /// (RR: most movement-blockers exempt Elite) is applied at the read site,
     /// which has the moving enemy's traits.
     EnemyMovementBlocked,

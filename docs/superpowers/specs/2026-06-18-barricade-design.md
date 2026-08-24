@@ -79,8 +79,8 @@ not executed** (like the other restrictions).
 > resulting first steps. Agenda 01107's forced Ghoul move still prunes the
 > graph as described here — it names a fixed destination rather than a
 > "nearest" target, so `Nearest.md` does not reach it. `glossary/Patrol.md`
-> puts the same rule on a fixed-destination mover and so probably settles 01107
-> the same way; evidence filed on #774, pending its own issue.
+> puts the same rule on a fixed-destination mover and so settles 01107 the same
+> way; that is #797.
 
 Hunter pathfinding in `hunters.rs` treats a location impassable to the
 moving enemy as **absent from the graph** — graph-level, not a

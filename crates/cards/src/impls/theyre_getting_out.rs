@@ -107,8 +107,8 @@ fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
         // the grounds that the vendored text did not settle it. It probably
         // does: `glossary/Patrol.md` puts the same "compelled step is blocked
         // => the enemy does not move" rule on a *fixed*-destination mover,
-        // which is what 01107 is. Evidence filed on #774; no issue of its own
-        // yet, so this stays graph-level until one lands.
+        // which is what 01107 is. TODO(#797): apply the block at the step here
+        // too, as Hunter movement now does.
         let mut steps = shortest_first_steps_with(cx.state, from, parlor, |loc| {
             enemy_can_enter_location(cx.state, e, loc)
         });
