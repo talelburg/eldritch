@@ -94,25 +94,6 @@ the Tablet came out.
 | #682 ✅ PR #799 | An attack whose target leaves play mid-test resolves against difficulty 0 |
 | #562 | 01110's forced act-advance double-prompts (advance-flip slice 4) |
 
-**#682 shipped the abandonment, and the defect was worse than filed.** Its blocker
-was the Official FAQ, which is vendored now (#672) and was searched: the nearest
-passage answers a question about the *investigator* moving mid-test, not about the
-target leaving play. So the engine took reading 1 — **the test is abandoned** —
-recorded on `DifficultyBasis` (not an ADR: one gate in `advance`'s preamble plus one
-parameter on a private helper), and the comment says outright that this is an engine
-decision rather than a citation. What the red test found on top of the report: the
-difficulty-0 auto-success then drove the ST.7 Fight follow-up against the absent
-enemy and tripped `damage_enemy`'s state-corruption `unreachable!`, so this was a
-**panic**, not only a silent wrong answer.
-
-Two residues the PR documented rather than closed. The gate covers `Shroud` as well
-as `Fight`/`Evade` — same rule, same reason — but **untested**, because no corpus
-card removes a location from inside a skill test. And the `resolved.is_none()` bound
-leaves an enemy removed *after* ST.6, in the `SkillTestResolved` run, still reaching
-that panic; no corpus card can do it today (the fast hand events are Dodge, Working
-a Hunch, Evidence and Mind over Matter, none enemy-removing), so the gate was not
-widened speculatively. Both want an issue if a later card makes them reachable.
-
 **#562 is in for placement, not severity.** It is terminal and once-per-scenario,
 but it fires on the Ghoul Priest's defeat — the last interaction before every win.
 
