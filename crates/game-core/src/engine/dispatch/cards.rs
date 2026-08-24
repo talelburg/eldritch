@@ -834,8 +834,7 @@ pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOu
         // still return `Done`, so this is one of the few paths where `Done`
         // accompanies a non-empty continuation stack — hosts present
         // `ResolveInput::Skip` to close it, as for any phase-transition window.
-        super::phases::investigation_phase(cx);
-        EngineOutcome::Done
+        super::phases::investigation_phase(cx)
     } else {
         prompt_mulligan(cx, remaining)
     }

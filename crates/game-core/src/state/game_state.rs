@@ -1458,6 +1458,11 @@ pub enum MythosResume {
     /// (round bump, `PhaseStarted`, steps 1.1–1.4) and replaces this with the
     /// running anchor.
     Entry,
+    /// Step 1.1's `PhaseStarted { Mythos }` forced abilities are *queued* above
+    /// this anchor (#697). On re-exposure, run steps 1.2/1.3 (place doom, check
+    /// the threshold) and re-park at [`Draws`](Self::Draws). Set by
+    /// `mythos_phase` before it emits, per ADR 0003.
+    AfterPhaseStartForced,
     /// After step 1.2/1.3 (doom + agenda advance, incl. a suspending reverse)
     /// have resolved: run the step-1.4 encounter draws. `mythos_phase` parks the
     /// anchor here and the 1.4 draws run from `anchor_on_child_pop` once any
@@ -1465,6 +1470,11 @@ pub enum MythosResume {
     Draws,
     /// Post-step-1.4 (encounter draws done) window closed; run `mythos_phase_end`.
     AfterDraws,
+    /// Step 1.5's `PhaseEnded { Mythos }` forced abilities are *queued* above
+    /// this anchor (#697) — Wizard of the Order 01170 prints one. On
+    /// re-exposure, run the Mythos → Investigation transition. Set by
+    /// `mythos_phase_end` before it emits, per ADR 0003.
+    AfterPhaseEndForced,
 }
 
 /// The Investigation-phase child-pop boundary (slice 1a, #393).
@@ -1472,11 +1482,21 @@ pub enum MythosResume {
 pub enum InvestigationResume {
     /// Just entered (slice 1b, #393): the loop's `advance` runs the phase opening.
     Entry,
+    /// Step 2.1's `PhaseStarted { Investigation }` forced abilities are *queued*
+    /// above this anchor (#697). On re-exposure, open the post-2.1 player
+    /// window and re-park at [`Begins`](Self::Begins). Set by
+    /// `investigation_phase` before it emits, per ADR 0003.
+    AfterPhaseStartForced,
     /// Post-2.1 window closed; begin the first investigator's turn.
     Begins,
     /// Post-2.2 turn-begins window closed; the investigator now acts (no
     /// continuation work — slice 2 makes this an `InvestigatorTurn` frame).
     TurnBegins,
+    /// Step 2.3's `PhaseEnded { Investigation }` forced abilities are *queued*
+    /// above this anchor (#697). On re-exposure, run the Investigation → Enemy
+    /// transition. Set by `investigation_phase_end` before it emits, per ADR
+    /// 0003.
+    AfterPhaseEndForced,
 }
 
 /// The Enemy-phase child-pop boundary (slice 1a, #393).
@@ -1484,6 +1504,12 @@ pub enum InvestigationResume {
 pub enum EnemyResume {
     /// Just entered (slice 1b, #393): the loop's `advance` runs the phase opening.
     Entry,
+    /// Step 3.1's `PhaseStarted { Enemy }` forced abilities are *queued* above
+    /// this anchor (#697) — Dunwich's Hunting Horror 02141, Peter Clover 02079
+    /// and agenda 02065 all print one. On re-exposure, run step 3.2 (hunter
+    /// movement) and the step-3.3 attack-loop kickoff. Set by `enemy_phase`
+    /// before it emits, per ADR 0003.
+    AfterPhaseStartForced,
     /// Before-investigator-attacked window closed; resolve this investigator's
     /// attacks (step 3.3).
     BeforeInvestigatorAttacked,
@@ -1502,6 +1528,11 @@ pub enum EnemyResume {
 pub enum UpkeepResume {
     /// Just entered (slice 1b, #393): the loop's `advance` runs the phase opening.
     Entry,
+    /// Step 4.1's `PhaseStarted { Upkeep }` forced abilities are *queued* above
+    /// this anchor (#697). On re-exposure, open the post-4.1 player window and
+    /// re-park at [`Begins`](Self::Begins). Set by `upkeep_phase` before it
+    /// emits, per ADR 0003.
+    AfterPhaseStartForced,
     /// Post-4.1 window closed; run `upkeep_resume` (steps 4.2–4.6).
     Begins,
     /// Steps 4.2–4.4 ran and the 4.4 draw pushed a drawn-weakness Revelation

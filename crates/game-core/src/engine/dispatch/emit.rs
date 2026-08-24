@@ -62,6 +62,11 @@ pub enum TimingEvent {
         investigator: InvestigatorId,
         location: LocationId,
     },
+    /// A phase began, `Appendix_II_Timing_and_Gameplay.md` steps 1.1 / 2.1 /
+    /// 3.1 / 4.1 (forced only). A **bare milestone**: the phase's own opening
+    /// work belongs to the driver frame that emitted this, and runs on its
+    /// resume once the whole sequence has.
+    PhaseStarted { phase: Phase },
     /// A phase ended (forced only).
     PhaseEnded { phase: Phase },
     /// An act advanced — its reverse resolves (forced only).
@@ -240,6 +245,9 @@ impl TimingEvent {
                 investigator: *investigator,
                 location: *location,
             }),
+            TimingEvent::PhaseStarted { phase } => {
+                Some(ForcedTriggerPoint::PhaseStarted { phase: *phase })
+            }
             TimingEvent::PhaseEnded { phase } => {
                 Some(ForcedTriggerPoint::PhaseEnded { phase: *phase })
             }
@@ -340,7 +348,15 @@ impl TimingEvent {
             //   member whose teardown is a second *condition* rather than a
             //   resume, which is what the named window between the two rules
             //   steps requires (ADR 0009).
-            TimingEvent::RoundEnded
+            // - `PhaseStarted` — born coordinator-owned (#697), as
+            //   `ConditionResolution::Caller` requires of a new event: there is
+            //   no legacy emit site to invert. A phase beginning changes nothing
+            //   by itself; the phase's opening work (the Mythos round bump and
+            //   doom, the Enemy phase's hunter movement, each phase's first
+            //   player window) belongs to the driver frame that emitted it and
+            //   runs on that frame's resume, after the whole sequence.
+            TimingEvent::PhaseStarted { .. }
+            | TimingEvent::RoundEnded
             | TimingEvent::GameEnd
             | TimingEvent::EliminationGameEnd { .. }
             | TimingEvent::DamageAssigned { .. } => {
