@@ -983,7 +983,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             return EngineOutcome::Done;
         }
 
-        let (continuation, investigator, committed) = {
+        let (continuation, investigator, committed, difficulty_basis, past_st6) = {
             let in_flight = cx.state.current_skill_test().unwrap_or_else(|| {
                 unreachable!(
                     "advance: the SkillTest frame must exist while driver is active; \
@@ -994,6 +994,8 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                 in_flight.continuation,
                 in_flight.investigator,
                 in_flight.committed_by_active.clone(),
+                in_flight.difficulty_basis,
+                in_flight.resolved.is_some(),
             )
         };
 
@@ -1011,7 +1013,22 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
             .get(&investigator)
             .is_some_and(|inv| inv.status != Status::Active)
         {
-            return abandon_test(cx, investigator);
+            return abandon_test(cx, investigator, None);
+        }
+
+        // #682: the test's difficulty *is* a quantity of some entity on the
+        // board ([`DifficultyBasis`]), and that entity has left play — a
+        // 1-health enemy killed by Beat Cop 01018 at the ST.2 player window
+        // while the attack against it is in flight. There is no test left to
+        // resolve, so abandon it. See `DifficultyBasis`, which records the
+        // decision and says plainly that the vendored sources do not settle it.
+        //
+        // Bounded by `past_st6`: past ST.6 the verdict is already set, and the
+        // entity leaving play is ordinary — the Fight follow-up's own damage is
+        // what defeats the enemy. Only a test that has not yet been compared
+        // can still be abandoned.
+        if !past_st6 && difficulty_target_left_play(cx.state, difficulty_basis) {
+            return abandon_test(cx, investigator, Some(&committed));
         }
 
         match continuation {
@@ -1202,20 +1219,52 @@ fn expire_this_tests_modifiers(cx: &mut Cx) {
     }
 }
 
-/// Tear down an in-flight skill test whose tester was eliminated mid-resolution
-/// (#564), and pop its frame.
+/// Whether the entity whose quantity `basis` reads has left play, so the test
+/// resting on it has nothing left to be a test *of* (#682).
 ///
-/// Mirrors the [`PostOnResolution`](SkillTestStep::PostOnResolution) teardown
-/// **minus the committed-card discard**: Rules Reference p.10 Elimination step 1
-/// ("The cards he or she controls in play and all of the cards in his or her
-/// out-of-play areas (such as hand, deck, discard pile) are removed from the
-/// game") removes every card the eliminated investigator owns, and the cards
-/// this test holds in limbo (#631) are dropped along with the frame below.
-/// Discarding here would instead resurrect them into a pile.
+/// [`Fixed`](crate::state::DifficultyBasis::Fixed) reads a number printed on a
+/// card rather than a board entity, so it can never go absent.
+fn difficulty_target_left_play(
+    state: &crate::state::GameState,
+    basis: crate::state::DifficultyBasis,
+) -> bool {
+    use crate::state::DifficultyBasis;
+    match basis {
+        DifficultyBasis::Fixed(_) => false,
+        DifficultyBasis::Shroud(id) => !state.locations.contains_key(&id),
+        DifficultyBasis::Fight(id) | DifficultyBasis::Evade(id) => !state.enemies.contains_key(&id),
+    }
+}
+
+/// Tear down an in-flight skill test that cannot be resolved, and pop its
+/// frame. Two callers, both in [`advance`]'s loop preamble: the tester was
+/// eliminated mid-resolution (#564), or the test's difficulty target left play
+/// (#682).
 ///
-/// [`Event::SkillTestEnded`] still fires: the test *is* over, and it is the
-/// documented "test is fully over" signal downstream listeners key on.
-fn abandon_test(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
+/// Mirrors the [`PostOnResolution`](SkillTestStep::PostOnResolution) teardown,
+/// and `committed` is where the two callers part company — it names the cards
+/// to discard out of limbo (#631), or `None` to drop them with the frame:
+///
+/// - **Eliminated tester** passes `None`. Rules Reference p.10 Elimination
+///   step 1 ("The cards he or she controls in play and all of the cards in his
+///   or her out-of-play areas (such as hand, deck, discard pile) are removed
+///   from the game") removes every card that investigator owns, so discarding
+///   here would instead resurrect them into a pile.
+/// - **Target left play** passes `Some`. The investigator is still in the
+///   scenario and the cards are still theirs; dropping them silently would
+///   delete cards off the board, so they go to the discard pile exactly as an
+///   ST.8 teardown would send them.
+///
+/// [`Event::SkillTestEnded`] still fires either way: the test *is* over, and it
+/// is the documented "test is fully over" signal downstream listeners key on.
+fn abandon_test(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    committed: Option<&[CardCode]>,
+) -> EngineOutcome {
+    if let Some(cards) = committed {
+        discard_committed_cards(cx, investigator, cards);
+    }
     cx.events.push(Event::SkillTestEnded { investigator });
     // ModifierScope::ThisSkillTest contributions expire with the test, however
     // it ended — the abandoned case is exactly the one where a leak would be
