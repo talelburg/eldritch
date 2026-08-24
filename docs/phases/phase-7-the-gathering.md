@@ -101,16 +101,37 @@ the Tablet came out.
 | #763 ✅ PR #789 | A zero-icon commit is accepted — commit is a free discard outlet |
 | #764 ✅ PR #790 | A defeated active investigator's turn does not end |
 | #786 ✅ PR #791 | The forced-trigger scan ignores eligibility, so a Forced ability with an unmet condition initiates and prompts |
-| #697 → #670 | Two of four phase-ends never emit, and there is no phase-start point at all → the non-`Specific` spawn shapes |
+| #697 ✅ PR #793 → #670 | Two of four phase-ends never emit, and there is no phase-start point at all → the non-`Specific` spawn shapes |
 | #664 | A `ChooseOne` mode with no eligible target is still offered |
 | #651 | Hunter pathfinding routes *around* a movement block instead of being stopped by it |
 | #682 | An attack whose target leaves play mid-test resolves against difficulty 0 |
 | #562 | 01110's forced act-advance double-prompts (advance-flip slice 4) |
 
-**#697 lands before #670.** #670 makes Wizard of the Order 01170 drawable; its
-printed *"**Forced** - At the end of the mythos phase: Place 1 doom on Wizard of the Order."* stays inert
-until #697 routes `mythos_phase_end` through `queue_event`, so #670's own
-acceptance criterion cannot be asserted alone.
+**#697 landed the wiring and split off what sat beneath it (#792).** All eight
+boundaries route through `queue_event` now, each emitting in tail position — the
+anchor re-parks at a new `AfterPhaseStartForced` / `AfterPhaseEndForced` resume
+*before* the emit, so the driver's own tail (the transition, the phase's opening
+steps, the first player window) can never be pushed above the frames the emit just
+queued. `enemy_phase_end` and `upkeep_phase_end` were the two that already had that
+shape; the other six were rebuilt to match, which is why a six-emit change came out
+at 400 lines of `phases.rs`.
+
+What it could **not** assert was its own third acceptance box, Wizard of the Order
+01170 accruing doom. Three things sit under that box and none of them existed:
+there is no doom-on-a-card model (`agenda_doom: u8` is the only doom in the state),
+the phase-boundary forced scan reaches the current act and the current agenda and
+stops, and 01170 has no impl. #792 carries all three together, plus the step-1.3
+sum a doom-bearing card forces — `Appendix_II_Timing_and_Gameplay.md`: *"Compare
+the total number of doom in play (on the current agenda **and on each other card in
+play**) with the doom threshold of the current agenda."* — which is the standing
+`TODO(#572)` in `act_agenda.rs`. Acolyte 01169's *"**Forced** - After Acolyte enters
+play: Place 1 doom on it."* is the second consumer, so the model clears the
+two-consumer bar on its own.
+
+**#670 still wants #697's wiring, and now #792's too.** #670 makes 01170 drawable;
+its printed *"**Forced** - At the end of the mythos phase: Place 1 doom on Wizard of
+the Order."* has a trigger point to fire at as of #793, but nowhere to put the doom
+until #792.
 
 **#682's blocker is gone and its answer is not in the sources.** It waited on the
 Official FAQ, which is vendored now (#672) and was searched: the nearest passage
