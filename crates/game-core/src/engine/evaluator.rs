@@ -548,6 +548,30 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
 /// The [`Effect::ChooseOne`] step: auto-resolve / pick the branch (re-stepped
 /// with `ctx.chosen_option` after a resume), or **suspend in place** by
 /// re-pushing `node` as a `Leaf` and returning the prompt. No replay.
+///
+/// The offered branches are the **live** ones — those
+/// [`effect_can_change_state`] cannot prove inert (#664). RR "Ability" reads
+/// per mode: *"A triggered ability can only be initiated if its effect has the
+/// potential to change the game state"*, and RR "Target" makes a target with
+/// nothing to change ineligible, so First Aid 01019's *"Heal 1 damage or horror
+/// from an investigator at your location"* offers only the damage mode to a
+/// party carrying no horror. Without the filter the controller could pick the
+/// dead mode and spend the action and the supply on a sub-effect that skips.
+/// The ability-level gate `effect_can_change_state` applies to a `ChooseOne`
+/// with *any-branch* semantics, which is why the ability initiates while one of
+/// its modes is dead.
+///
+/// `OptionId` is an index into the **filtered** list, and resume re-derives it
+/// from the same pure-over-`&GameState` predicate before the branch mutates
+/// anything, so replay is unaffected.
+///
+/// **Filtered-to-empty is a skip, not a reject** — the convention
+/// [`ground_investigator_choice`] established for the same reason. An
+/// activation cannot reach here with every mode dead (the initiation gate
+/// proved one live), but a `ChooseOne` nested under a `SkillTest` can: the test
+/// has already resolved, and rejecting would unwind it, chaos draw included. A
+/// `ChooseOne` with **no branches at all** still rejects — that is a malformed
+/// effect, not a board state.
 fn step_choose_one(
     cx: &mut Cx,
     branches: &[Effect],
@@ -557,6 +581,15 @@ fn step_choose_one(
     use crate::engine::dispatch::choice::{
         awaiting_choice, resolve_choice_count, ChoiceResolution,
     };
+    let live: Vec<usize> = branches
+        .iter()
+        .enumerate()
+        .filter(|(_, branch)| effect_can_change_state(cx.state, eval_ctx, branch))
+        .map(|(i, _)| i)
+        .collect();
+    if live.is_empty() && !branches.is_empty() {
+        return EngineOutcome::Done;
+    }
     let push_branch = |cx: &mut Cx, i: usize| {
         cx.state
             .continuations
@@ -570,23 +603,22 @@ fn step_choose_one(
             )));
         EngineOutcome::Done
     };
-    match resolve_choice_count(branches.len(), cx.state.interactive_acknowledge) {
+    match resolve_choice_count(live.len(), cx.state.interactive_acknowledge) {
         ChoiceResolution::Empty => EngineOutcome::Rejected {
             reason: "Effect::ChooseOne with no branches".into(),
         },
-        ChoiceResolution::Auto(i) => push_branch(cx, i),
+        ChoiceResolution::Auto(i) => push_branch(cx, live[i]),
         ChoiceResolution::Suspend => {
             if let Some(crate::engine::OptionId(i)) = eval_ctx.chosen_option() {
-                let i = i as usize;
-                if i >= branches.len() {
+                let Some(&branch) = live.get(i as usize) else {
                     return EngineOutcome::Rejected {
-                        reason: format!("ChooseOne pick {i} out of range (0..{})", branches.len())
+                        reason: format!("ChooseOne pick {i} out of range (0..{})", live.len())
                             .into(),
                     };
-                }
-                push_branch(cx, i)
+                };
+                push_branch(cx, branch)
             } else {
-                let labels = branches.iter().map(branch_label).collect();
+                let labels = live.iter().map(|&i| branch_label(&branches[i])).collect();
                 suspend_leaf_in_place(cx, node, eval_ctx);
                 awaiting_choice("Choose one", labels)
             }
@@ -3906,6 +3938,79 @@ mod tests {
         assert_eq!(outcome, EngineOutcome::Done);
         assert_eq!(state.investigators[&id].resources, before + 2);
         assert!(state.continuations.is_empty(), "no choice frame for auto");
+    }
+
+    #[test]
+    fn choose_one_offers_only_its_live_branches() {
+        // #664: the dead branch (discover at a 0-clue location) is filtered out,
+        // leaving one live branch — which auto-resolves rather than prompting.
+        let id = InvestigatorId(1);
+        let mut state = state_with_clues_at_location(0);
+        let before = state.investigators[&id].resources;
+        let mut events = Vec::new();
+        let outcome = run(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &Effect::ChooseOne(vec![
+                discover_clue(LocationTarget::YourLocation, 1),
+                gain_resources(InvestigatorTarget::You, 2),
+            ]),
+            ctx(1),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(
+            state.investigators[&id].resources,
+            before + 2,
+            "the sole live branch resolved",
+        );
+        assert!(
+            state.continuations.is_empty(),
+            "no prompt for one live branch"
+        );
+    }
+
+    #[test]
+    fn choose_one_with_every_branch_dead_skips() {
+        // #664 / #639: filtered-to-empty is a skip, not a reject — rejecting
+        // would unwind whatever already resolved above it (a skill test's draw).
+        let mut state = state_with_clues_at_location(0);
+        let mut events = Vec::new();
+        let outcome = run(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &Effect::ChooseOne(vec![
+                discover_clue(LocationTarget::YourLocation, 1),
+                discover_clue(LocationTarget::YourLocation, 1),
+            ]),
+            ctx(1),
+        );
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert!(state.continuations.is_empty(), "nothing pushed by a skip");
+        assert!(events.is_empty(), "a skipped choice changes nothing");
+    }
+
+    #[test]
+    fn choose_one_with_no_branches_still_rejects() {
+        // A branchless ChooseOne is a malformed effect, not a board state — the
+        // #664 skip is for a list the *filter* emptied.
+        let mut state = state_with_clues_at_location(0);
+        let mut events = Vec::new();
+        let outcome = run(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            &Effect::ChooseOne(vec![]),
+            ctx(1),
+        );
+        assert!(
+            matches!(outcome, EngineOutcome::Rejected { .. }),
+            "expected Rejected, got {outcome:?}",
+        );
     }
 
     #[test]

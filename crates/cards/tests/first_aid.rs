@@ -248,11 +248,15 @@ fn two_investigators(healer_damage: u8, patient_damage: u8) -> game_core::GameSt
 /// rather than prompting, and the undamaged investigator is untouched. The
 /// control below (both damaged) shows the same board *does* prompt when both
 /// are eligible, which is what makes the auto-bind evidence of the filter.
+///
+/// Neither board carries horror, so #664's mode filter drops First Aid's horror
+/// branch and the damage-or-horror choice auto-resolves: the *first* suspension
+/// on these boards is the target grounding, not the mode pick.
 #[test]
 fn only_a_damaged_investigator_is_offered_as_a_heal_target() {
     // Control: both damaged ⇒ 2 eligible targets ⇒ the pick suspends, and
     // neither is healed until it is answered.
-    let r = pick(activate(two_investigators(2, 2)).state, 0);
+    let r = activate(two_investigators(2, 2));
     let request = match &r.outcome {
         EngineOutcome::AwaitingInput { request, .. } => request,
         other => panic!("two eligible targets must prompt: {other:?}"),
@@ -263,11 +267,14 @@ fn only_a_damaged_investigator_is_offered_as_a_heal_target() {
         "both co-located investigators offered as heal targets: {:?}",
         request.options,
     );
+    assert_eq!(
+        r.state.investigators[&INV].damage(),
+        2,
+        "nobody healed until the target pick is answered",
+    );
 
     // Only investigator 2 damaged ⇒ 1 eligible target ⇒ auto-binds, no prompt.
     let r = activate(two_investigators(0, 2));
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    let r = pick(r.state, 0);
 
     assert_eq!(
         r.state.investigators[&InvestigatorId(2)].damage(),
@@ -284,6 +291,100 @@ fn only_a_damaged_investigator_is_offered_as_a_heal_target() {
         Event::Healed {
             investigator: InvestigatorId(2),
             kind: HarmKind::Damage,
+            amount: 1,
+            ..
+        }
+    );
+}
+
+// -----------------------------------------------------------------------
+// #664 — the same gate, applied per *mode* rather than per ability.
+// -----------------------------------------------------------------------
+
+/// RR "Ability": *"A triggered ability can only be initiated if its effect has
+/// the potential to change the game state…"* — read per branch. A damaged,
+/// unhorrored solo investigator leaves First Aid's horror mode with nothing to
+/// remove, so only the damage mode is live; one live branch auto-resolves, so
+/// the damage-or-horror prompt never appears and the supply cannot be burned on
+/// a dead mode.
+#[test]
+fn a_dead_mode_is_not_offered() {
+    let r = activate(board_with_harm(3, 2, 0));
+    assert_eq!(supplies(&r.state), Some(2), "1 supply spent on activation");
+    assert_eq!(
+        r.state.investigators[&INV].damage(),
+        1,
+        "the sole live mode auto-resolved and healed 1 damage",
+    );
+    assert_event!(
+        r.events,
+        Event::Healed {
+            kind: HarmKind::Damage,
+            amount: 1,
+            ..
+        }
+    );
+}
+
+/// The control for [`a_dead_mode_is_not_offered`]: with both harms present both
+/// modes are live, so the damage-or-horror choice still prompts with two
+/// options. Without this the filter could offer *nothing* and the sibling test
+/// would not notice.
+#[test]
+fn both_modes_are_offered_when_both_harms_are_present() {
+    let r = activate(board_with_harm(3, 2, 2));
+    let request = match &r.outcome {
+        EngineOutcome::AwaitingInput { request, .. } => request,
+        other => panic!("two live modes must prompt: {other:?}"),
+    };
+    assert_eq!(
+        request.options.len(),
+        2,
+        "damage and horror both offered: {:?}",
+        request.options,
+    );
+    assert_eq!(
+        r.state.investigators[&INV].damage(),
+        2,
+        "no branch resolves until the mode is picked",
+    );
+}
+
+/// `OptionId` indexes the **filtered** list, so a filtered-out mode shifts the
+/// ones behind it: with only horror to heal, offered option 0 is the *horror*
+/// branch (branch 1 of the printed `ChooseOne`), not the damage branch. Driven
+/// with `interactive_acknowledge` on so the single live mode surfaces as a
+/// one-option prompt (#466) rather than auto-binding.
+#[test]
+fn the_offered_index_names_the_live_mode_not_the_printed_one() {
+    let mut state = board_with_harm(3, 0, 2);
+    state.interactive_acknowledge = true;
+    let r = activate(state);
+    let request = match &r.outcome {
+        EngineOutcome::AwaitingInput { request, .. } => request,
+        other => panic!("the live mode surfaces as a one-option prompt: {other:?}"),
+    };
+    assert_eq!(
+        request.options.len(),
+        1,
+        "only the horror mode is live: {:?}",
+        request.options,
+    );
+
+    // Option 0 = the horror mode; the heal's target grounding then raises its
+    // own one-option prompt (the sole co-located investigator) under
+    // `interactive_acknowledge`.
+    let r = pick(r.state, 0);
+    let r = pick(r.state, 0);
+    assert_eq!(
+        r.state.investigators[&INV].horror(),
+        1,
+        "offered option 0 resolved the horror branch",
+    );
+    assert_event!(
+        r.events,
+        Event::Healed {
+            kind: HarmKind::Horror,
             amount: 1,
             ..
         }

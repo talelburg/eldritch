@@ -188,8 +188,14 @@ mod tests {
         let mut ctx = EvalContext::for_controller(InvestigatorId(1));
         ctx.set_failed_by(2);
 
-        let effect = Effect::ChooseOne(vec![Effect::Seq(vec![]), Effect::Seq(vec![])]);
-        let mut state = GameStateBuilder::default().build();
+        // Two *live* branches — #664 filters provably-inert ones (an empty `Seq`
+        // among them) out of the offer, and a filtered-empty ChooseOne skips
+        // instead of suspending.
+        let branch = || crate::dsl::gain_resources(crate::dsl::InvestigatorTarget::You, 1);
+        let effect = Effect::ChooseOne(vec![branch(), branch()]);
+        let mut state = GameStateBuilder::default()
+            .with_investigator(crate::test_support::test_investigator(1))
+            .build();
         let mut events = Vec::new();
         // Push the effect root + drive it through the real global loop (the
         // deleted `apply_effect` bounded entry's test-only successor); a
@@ -225,11 +231,18 @@ mod tests {
         use crate::test_support::GameStateBuilder;
 
         // One ChooseOne branch: today it auto-binds. With interactive_acknowledge
-        // on it must surface as a one-option pick (#466).
-        let effect = Effect::ChooseOne(vec![Effect::Seq(vec![])]);
+        // on it must surface as a one-option pick (#466). The branch has to be a
+        // *live* one — #664 filters provably-inert branches out of the offer, and
+        // an empty `Seq` is provably inert.
+        let effect = Effect::ChooseOne(vec![crate::dsl::gain_resources(
+            crate::dsl::InvestigatorTarget::You,
+            1,
+        )]);
         let ctx = EvalContext::for_controller(InvestigatorId(1));
 
-        let mut state = GameStateBuilder::default().build();
+        let mut state = GameStateBuilder::default()
+            .with_investigator(crate::test_support::test_investigator(1))
+            .build();
         state.interactive_acknowledge = true;
         let mut events = Vec::new();
         let out = {
@@ -257,9 +270,15 @@ mod tests {
         use crate::state::InvestigatorId;
         use crate::test_support::GameStateBuilder;
 
-        let effect = Effect::ChooseOne(vec![Effect::Seq(vec![])]);
+        // A live branch, for the same #664 reason as the sibling test.
+        let effect = Effect::ChooseOne(vec![crate::dsl::gain_resources(
+            crate::dsl::InvestigatorTarget::You,
+            1,
+        )]);
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let mut state = GameStateBuilder::default().build(); // flag defaults false
+        let mut state = GameStateBuilder::default()
+            .with_investigator(crate::test_support::test_investigator(1))
+            .build(); // flag defaults false
         let mut events = Vec::new();
         let out = {
             let mut cx = Cx {
