@@ -89,7 +89,7 @@ the Tablet came out.
 | #786 ✅ PR #791 | The forced-trigger scan ignores eligibility, so a Forced ability with an unmet condition initiates and prompts |
 | #697 ✅ PR #793 | Two of four phase-ends never emit, and there is no phase-start point at all |
 | #664 ✅ PR #794 | A `ChooseOne` mode with no eligible target is still offered |
-| #651 | Hunter pathfinding routes *around* a movement block instead of being stopped by it |
+| #651 ✅ PR #796 | Hunter pathfinding routes *around* a movement block instead of being stopped by it |
 | #682 | An attack whose target leaves play mid-test resolves against difficulty 0 |
 | #562 | 01110's forced act-advance double-prompts (advance-flip slice 4) |
 
@@ -158,6 +158,17 @@ Ordered: **#644 → #772 → #771 → #773 → #774 → #775**.
 - **#774 — the Parlor movement barrier**, split out of #258 because it is **mandatory
   printed behaviour** that was inheriting optional content's deferral. Lands after
   #651 and inherits its reading of where a block applies rather than inventing a second.
+  #651 has shipped, so that reading is now fixed: **the block is checked against the
+  compelled step, never baked into the graph** — distances and shortest paths run on
+  the full connection graph (`glossary/Nearest.md`: *"even if one or more of those
+  connections are blocked by another card ability"*) and a blocked step is a non-move
+  (`glossary/Hunter.md`). Two notes from that PR for whoever picks this up: the same
+  clause appears on a **fixed**-destination mover in `glossary/Patrol.md`, so it does
+  not depend on the target being a "nearest" one — which is why agenda 01107's forced
+  Ghoul move is still graph-level on borrowed time (evidence filed on #774; no issue
+  of its own yet). And the enemy-side predicate is `enemy_can_enter_location`, applied
+  at the step in `hunter_destinations` and at the graph in `move_ghouls_toward_parlor`,
+  so "one predicate or two" is really "one predicate, how many application sites".
 - **#775 — act 3's R1/R2 choice.** 01110b asks the lead investigator to choose the
   ending, and `the_gathering.rs:235` hardcodes `Resolution::Won { id: "R1" }`, so R2
   is unreachable. Not a new finding: the 2026-08-22 sweep had already split it into
@@ -744,7 +755,7 @@ buys nothing the gate can observe — the soak is a single investigator's, which
 already works. #728's real driver is multiplayer.
 
 **Pulled into the gate by the 2026-08-22 triage sweep** — each a rules defect
-reachable in The Gathering today: #651 (hunter pathfinding routes
+reachable in The Gathering today: #651 ✅ (hunter pathfinding routes
 around a Barricade instead of being stopped by it), #664 (First Aid 01019 offers
 a mode with no eligible target and burns a supply), #682 (an
 attack whose target leaves play mid-test resolves against difficulty 0), #763
