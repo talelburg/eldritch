@@ -87,7 +87,7 @@ the Tablet came out.
 | #763 ✅ PR #789 | A zero-icon commit is accepted — commit is a free discard outlet |
 | #764 ✅ PR #790 | A defeated active investigator's turn does not end |
 | #786 ✅ PR #791 | The forced-trigger scan ignores eligibility, so a Forced ability with an unmet condition initiates and prompts |
-| #697 ✅ PR #793 → #670 | Two of four phase-ends never emit, and there is no phase-start point at all → the non-`Specific` spawn shapes |
+| #697 ✅ PR #793 | Two of four phase-ends never emit, and there is no phase-start point at all |
 | #664 | A `ChooseOne` mode with no eligible target is still offered |
 | #651 | Hunter pathfinding routes *around* a movement block instead of being stopped by it |
 | #682 | An attack whose target leaves play mid-test resolves against difficulty 0 |
@@ -746,12 +746,17 @@ already works. #728's real driver is multiplayer.
 **Pulled into the gate by the 2026-08-22 triage sweep** — each a rules defect
 reachable in The Gathering today: #651 (hunter pathfinding routes
 around a Barricade instead of being stopped by it), #664 (First Aid 01019 offers
-a mode with no eligible target and burns a supply), #670 (Acolyte 01169 / Wizard
-of the Order 01170 hard-reject on draw — non-Specific spawn shapes), #682 (an
+a mode with no eligible target and burns a supply), #682 (an
 attack whose target leaves play mid-test resolves against difficulty 0), #763
 (zero-icon commits accepted) and #764 (a defeated active investigator's turn
 does not end). The same sweep moved #353, #366, #367 and #555 *out* of the
 milestone: each one's own body or ADR (0008/0009) defers it until a card wants it.
+
+The sweep also pulled in **#670**, wrongly: it read *"reachable today"* off the
+cards' presence in the core **pack** rather than in this scenario's encounter
+sets. Every instance is Pentagram, Arkham or Dunwich, and The Gathering's only two
+enemies printing a Spawn clause print `Specific` ones (Flesh-Eater 01118's Attic,
+Icy Ghoul 01119's Cellar). #670 → phase 9, and #792 with it.
 
 **#764 was not solo-reachable, and the sweep called it solo.** It shipped inside
 the gate anyway because PR #790 was already written and green — not because the
