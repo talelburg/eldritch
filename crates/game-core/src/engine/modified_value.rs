@@ -426,12 +426,13 @@ fn substitution(
 /// With no test in flight there is no difficulty to read: base 0, no
 /// contributions.
 ///
-/// **TODO(#682):** the same is true if the basis names an entity that has
-/// left play — an enemy defeated between ST.1 and ST.6 — and there the
-/// answer is wrong rather than merely absent: difficulty 0 makes the attack
-/// automatically succeed. The vendored rules do not say what becomes of a
-/// test whose target leaves play, so #677 declined to invent an answer;
-/// #682 owns the ruling.
+/// A basis naming an entity that has **left play** reads the same way — the
+/// delegate finds nothing and answers a base of 0 — but no verdict is ever
+/// taken against that 0: `skill_test::advance` abandons a test whose
+/// difficulty target has left play before it reaches ST.6 ([`DifficultyBasis`]
+/// records the decision and why the vendored sources do not settle it, #682).
+/// So the absent-target read survives only as a display value for a client
+/// asking about a test that is on its way out.
 fn difficulty(
     state: &GameState,
     registry: Option<&CardRegistry>,

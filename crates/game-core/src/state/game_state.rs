@@ -2453,6 +2453,65 @@ pub enum ModifierTarget {
 /// ST.6 read stores its verdict on
 /// [`InFlightSkillTest::resolved`](InFlightSkillTest::resolved), and every
 /// later step reads the verdict rather than re-comparing.
+///
+/// # When the basis names an entity that has left play
+///
+/// **A test whose difficulty target leaves play before ST.6 is abandoned**:
+/// its frame is torn down, its committed cards are discarded, its test-scoped
+/// modifier rows expire, [`SkillTestEnded`](crate::Event::SkillTestEnded)
+/// fires, and no success or failure is ever declared. The gate is in
+/// `skill_test::advance`'s loop preamble, beside the eliminated-tester one it
+/// mirrors (#564). Reachable solo: Beat Cop 01018's *"\[fast\] Discard Beat
+/// Cop: Deal 1 damage to an enemy at your location"* can defeat a 1-health
+/// enemy at the ST.2 player window while the attack against it is in flight
+/// (#682).
+///
+/// **This is an engine decision, not a citation.** The vendored sources do not
+/// settle what becomes of a skill test whose target leaves play:
+/// `glossary/Fight_Action.md` and `glossary/Evade_Action.md` describe the
+/// attack against a present enemy, `glossary/Leaves_Play.md` says what leaving
+/// play means but not what happens to a test already resolving against the
+/// departed card, and the Official FAQ's nearest question is about the
+/// *investigator* moving rather than the target vanishing
+/// (`data/official-faq/Frequently_Asked_Questions.md`):
+///
+/// > Q: If I initiate a skill test at a given location, then trigger an effect
+/// > that causes me to move before that test finishes resolving, what happens
+/// > to that skill test?
+/// >
+/// > A: Once you initiate a skill test or ability, you’ll resolve that test
+/// > or ability as completely as possible, regardless of your location (unless
+/// > another effect cancels or interrupts it). For example, if you attacked an
+/// > elusive enemy with One-Two Punch (\[nat\] 17, 32), you could attack that
+/// > same enemy with the card’s second fight, even though it has moved to a
+/// > connecting location.
+///
+/// The example is quoted because it is the closest the FAQ comes to this case
+/// and it cuts the *other* way — an attack continuing against an enemy that
+/// moved. It does not decide the question: One-Two Punch’s elusive enemy is
+/// still **in play**, and a target that is in play is exactly the case the
+/// engine already handles. The word that decided it is *possible*: resolving
+/// a Fight or an Evade against an enemy that is not in play at all is not.
+///
+/// The rejected alternative was to pin the difficulty at its last read —
+/// closer to what a table would improvise, but it keeps a *result*, and
+/// therefore every `"If you succeed"` rider on every committed card, attached
+/// to a test whose whole subject is gone. Doing nothing is not among the
+/// options: with no presence check the modified-value query finds no entity,
+/// answers a base of 0, and the attack automatically succeeds against a
+/// difficulty of 0.
+///
+/// The gate covers all three board-reading bases, not only the two the defect
+/// was reported against: an investigation whose location has been removed
+/// ([`Shroud`](Self::Shroud)) reads a difficulty of 0 for the same reason and
+/// wants the same answer. No corpus card removes a location from inside a
+/// skill test today — 01108’s removal of the Study 01111 happens at act
+/// advancement — so that arm ships on the argument rather than on a test.
+///
+/// The gate is bounded to tests that have not yet been compared
+/// (`resolved.is_none()`). Past ST.6 the verdict is set and the target leaving
+/// play is *ordinary* — a successful Fight's own follow-up damage is what
+/// defeats the enemy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum DifficultyBasis {
