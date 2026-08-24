@@ -60,6 +60,9 @@ pub(super) fn apply_investigator_defeat(
         cause,
     });
 
+    // If it was their turn, that turn is over (#764).
+    end_turn_on_elimination(cx, investigator);
+
     // Rules Reference p.10 Elimination step 0 (#638). The rule, why the steps
     // have to ride a frame to honour it, and what that costs are all documented
     // once on `Continuation::Elimination`; this is the fork it describes.
@@ -77,6 +80,84 @@ pub(super) fn apply_investigator_defeat(
     run_elimination_steps(cx, investigator);
 
     check_all_defeated(cx);
+}
+
+/// End the active investigator's turn when elimination takes them out of it
+/// (#764): announce [`Event::TurnEnded`] and arm their
+/// [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame's `ending`
+/// flag so the `drive` loop runs the rotation tail
+/// ([`resume_end_turn`](super::phases::resume_end_turn)) once every frame above
+/// it has unwound. The lookup
+/// ([`turn_frame_ending_mut`](super::cursor::turn_frame_ending_mut)) is keyed by
+/// investigator, so this is a no-op when it is not their turn: a defeat in the
+/// Mythos or Enemy phase finds no turn frame at all, and one dealt to a bystander
+/// by Dynamite Blast 01024 leaves the *active* investigator's frame alone rather
+/// than ending someone else's turn.
+///
+/// # The rule
+///
+/// **Not** the Elimination entry, which says nothing about turns: the basis is
+/// Rules Reference Appendix II step 2.2.1, *"If the investigator does not or
+/// cannot take an action, proceed to 2.2.2."* An eliminated investigator cannot
+/// take one — every action's validation gate rejects a non-`Active` actor — so
+/// 2.2.2 is where the turn goes. Step 2.2.2 is then the rotation this arms:
+/// *"If there is an investigator who has not yet taken a turn this round, return
+/// to 2.2. If each investigator has taken a turn this round, proceed to 2.3."*
+///
+/// # Why the flag rather than [`super::phases::end_turn`]
+///
+/// `end_turn` emits the `EndOfTurn` timing point, and this function runs deep
+/// inside the defeat sequence (an attack of opportunity's damage placement, a
+/// treachery's revelation test) rather than in tail position — so emitting here
+/// would queue ability frames beneath everything still unwinding, the ADR 0003
+/// defect class. It would also be wrong on its own terms: Elimination step 1
+/// removes the investigator's cards from the game, so there is nothing left for
+/// an *"at the end of your turn"* ability to hang on.
+///
+/// Arming the flag is inert by comparison — the frame is already on the stack,
+/// and the loop reaches it in its own time. That also makes this safe on the
+/// step-0 weakness path, where [`apply_investigator_defeat`] returns before
+/// steps 1–6 have run: the frame waits for [`drive_elimination`] to finish
+/// either way.
+///
+/// # `actions_remaining` is deliberately not drained
+///
+/// [`super::phases::end_turn`] drains it; this does not. The count is the record
+/// that the action which killed them was charged — a Move into a lethal attack
+/// of opportunity spends its action and *then* has its relocation suppressed,
+/// which `move_with_lethal_aoo_suppresses_relocation_but_keeps_spent_action`
+/// pins. Zeroing here would erase that. The count is inert either way: an armed
+/// frame never enumerates, and every action's validation gate rejects a
+/// non-`Active` actor.
+///
+/// # Where [`Event::TurnEnded`] lands
+///
+/// Before the elimination steps' own events, and before the step-0 weakness fork
+/// returns. That is deliberate: the fork means steps 1–6 run either inline or
+/// later from [`drive_elimination`], so announcing here is the one position that
+/// fires exactly once on both paths without duplicating the push into the frame
+/// driver. The turn is over the moment the status flips, so the log reads
+/// `InvestigatorDefeated` → `TurnEnded` → the teardown that follows.
+///
+/// # All investigators defeated
+///
+/// The armed frame is never resumed: `check_all_defeated` latches
+/// `Resolution::Lost`, and an `InvestigatorTurn` is
+/// [cancelled by a latched resolution](Continuation::cancelled_by_scenario_end),
+/// so `drive` pops it rather than rotating (ADR 0004). Solo defeat therefore
+/// ends the scenario, and this arming is what keeps a *surviving* table moving.
+fn end_turn_on_elimination(cx: &mut Cx, investigator: InvestigatorId) {
+    let Some(ending) = super::cursor::turn_frame_ending_mut(cx.state, investigator) else {
+        return;
+    };
+    // Already armed: the player submitted `EndTurn` and a suspending `EndOfTurn`
+    // forced ability killed them (Frozen in Fear 01164's willpower test). The
+    // turn is ending exactly once, and `end_turn` already announced it.
+    if *ending {
+        return;
+    }
+    *ending = true;
+    cx.events.push(Event::TurnEnded { investigator });
 }
 
 /// Whether `investigator` owns an in-play weakness carrying a *"when the game
@@ -804,5 +885,175 @@ mod elimination_tests {
             "no registry ⇒ routed to the encounter discard"
         );
         assert!(state.investigators[&id].removed_from_game.is_empty());
+    }
+
+    // -------------------------------------------------------------------
+    // #764: a defeated active investigator's turn ends (RR Appendix II
+    // 2.2.1 → 2.2.2). These cover the arming; `crates/cards/tests/
+    // elimination_ends_turn.rs` drives the rotation the flag triggers
+    // through the real `apply` loop.
+    // -------------------------------------------------------------------
+
+    /// Two investigators mid-`Investigation`, with `whose` holding the open
+    /// turn. `dying` is the one about to be defeated.
+    fn two_investigator_open_turn(whose: InvestigatorId) -> crate::state::GameState {
+        let (a, b) = (InvestigatorId(1), InvestigatorId(2));
+        let mut first = test_investigator(1);
+        first.actions_remaining = 2;
+        let mut second = test_investigator(2);
+        second.actions_remaining = 2;
+        GameStateBuilder::new()
+            .with_phase(Phase::Investigation)
+            .with_investigator(first)
+            .with_investigator(second)
+            .with_active_investigator(whose)
+            .with_turn_order([a, b])
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: crate::state::InvestigationResume::TurnBegins,
+            })
+            .with_investigator_turn(whose)
+            .build()
+    }
+
+    fn turn_frame(state: &crate::state::GameState) -> Option<(InvestigatorId, bool)> {
+        state.continuations.iter().rev().find_map(|c| match c {
+            Continuation::InvestigatorTurn {
+                investigator,
+                ending,
+            } => Some((*investigator, *ending)),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn defeat_during_your_own_turn_arms_the_turn_frame_and_announces_the_end() {
+        let dead = InvestigatorId(1);
+        let mut state = two_investigator_open_turn(dead);
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            dead,
+            DefeatCause::Damage,
+        );
+
+        assert_eq!(
+            turn_frame(&state),
+            Some((dead, true)),
+            "RR 2.2.1: an eliminated investigator cannot take an action, so the turn goes to 2.2.2"
+        );
+        assert_event!(events, Event::TurnEnded { investigator } if *investigator == dead);
+        assert_eq!(
+            state.investigators[&dead].actions_remaining, 2,
+            "the action that killed them stays charged — unlike `end_turn`, this does not drain"
+        );
+    }
+
+    #[test]
+    fn defeat_outside_your_turn_leaves_the_active_investigators_frame_alone() {
+        // Dynamite Blast 01024 catching a co-located investigator, or an Enemy
+        // phase attack: the turn frame belongs to someone else and must not be
+        // armed — arming it would end the *survivor's* turn.
+        let (active, dead) = (InvestigatorId(1), InvestigatorId(2));
+        let mut state = two_investigator_open_turn(active);
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            dead,
+            DefeatCause::Damage,
+        );
+
+        assert_eq!(
+            turn_frame(&state),
+            Some((active, false)),
+            "the active investigator's turn is untouched by someone else's defeat"
+        );
+        assert_no_event!(events, Event::TurnEnded { .. });
+    }
+
+    #[test]
+    fn defeat_with_no_turn_frame_at_all_is_a_no_op() {
+        // The Mythos phase (Rotting Remains 01163) and the Enemy phase: no
+        // `InvestigatorTurn` frame exists, so there is nothing to end.
+        let dead = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_phase(Phase::Mythos)
+            .with_investigator(test_investigator(1))
+            .with_turn_order([dead])
+            .build();
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            dead,
+            DefeatCause::Horror,
+        );
+
+        assert_eq!(turn_frame(&state), None);
+        assert_no_event!(events, Event::TurnEnded { .. });
+    }
+
+    #[test]
+    fn defeat_while_the_turn_is_already_ending_does_not_re_announce_it() {
+        // The player submitted `EndTurn` and a suspending `EndOfTurn` forced
+        // ability (Frozen in Fear 01164's willpower test) killed them. `end_turn`
+        // already emitted `TurnEnded`; the frame stays armed exactly once and the
+        // end is announced exactly once.
+        let dead = InvestigatorId(1);
+        let mut state = two_investigator_open_turn(dead);
+        for c in &mut state.continuations {
+            if let Continuation::InvestigatorTurn { ending, .. } = c {
+                *ending = true;
+            }
+        }
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            dead,
+            DefeatCause::Damage,
+        );
+
+        assert_eq!(turn_frame(&state), Some((dead, true)));
+        assert_no_event!(events, Event::TurnEnded { .. });
+    }
+
+    #[test]
+    fn resigning_during_your_own_turn_ends_it_too() {
+        // RR "Resign": an investigator who resigns "is eliminated by
+        // resignation" and "is not considered to have been defeated" — but
+        // eliminated all the same, so 2.2.1 sends the turn to 2.2.2 either way.
+        //
+        // Forward-looking: no Resign action exists yet (`DefeatCause::Resigned`
+        // is still "a placeholder slot until the Resign action lands"), so this
+        // pins the behaviour for when one does rather than covering live code.
+        let dead = InvestigatorId(1);
+        let mut state = two_investigator_open_turn(dead);
+        let mut events = Vec::new();
+
+        apply_investigator_defeat(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            dead,
+            DefeatCause::Resigned,
+        );
+
+        assert_eq!(state.investigators[&dead].status, Status::Resigned);
+        assert_eq!(turn_frame(&state), Some((dead, true)));
     }
 }

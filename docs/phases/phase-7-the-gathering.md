@@ -99,7 +99,7 @@ the Tablet came out.
 | Issue | Defect |
 |---|---|
 | #763 ✅ PR #789 | A zero-icon commit is accepted — commit is a free discard outlet |
-| #764 | A defeated active investigator's turn does not end |
+| #764 ✅ PR #790 | A defeated active investigator's turn does not end |
 | #786 | The forced-trigger scan ignores eligibility, so a Forced ability with an unmet condition initiates and prompts |
 | #697 → #670 | Two of four phase-ends never emit, and there is no phase-start point at all → the non-`Specific` spawn shapes |
 | #664 | A `ChooseOne` mode with no eligible target is still offered |
@@ -771,8 +771,8 @@ Dynamite Blast 01024 is in `ROLAND_DEFAULT_DECK` (`crates/web/src/picker.rs`), s
 buys nothing the gate can observe — the soak is a single investigator's, which
 already works. #728's real driver is multiplayer.
 
-**Pulled into the gate by the 2026-08-22 triage sweep** — each is a solo
-rules defect reachable in The Gathering today: #651 (hunter pathfinding routes
+**Pulled into the gate by the 2026-08-22 triage sweep** — each a rules defect
+reachable in The Gathering today: #651 (hunter pathfinding routes
 around a Barricade instead of being stopped by it), #664 (First Aid 01019 offers
 a mode with no eligible target and burns a supply), #670 (Acolyte 01169 / Wizard
 of the Order 01170 hard-reject on draw — non-Specific spawn shapes), #682 (an
@@ -780,6 +780,31 @@ attack whose target leaves play mid-test resolves against difficulty 0), #763
 (zero-icon commits accepted) and #764 (a defeated active investigator's turn
 does not end). The same sweep moved #353, #366, #367 and #555 *out* of the
 milestone: each one's own body or ADR (0008/0009) defers it until a card wants it.
+
+**#764 was not solo-reachable, and the sweep called it solo.** It shipped inside
+the gate anyway because PR #790 was already written and green — not because the
+gate needed it. What the sweep's code-reading missed is an interaction one file
+away: `apply_investigator_defeat` visibly fails to rotate the turn frame, and
+nothing at that call site mentions that `InvestigatorTurn` is also in
+`cancelled_by_scenario_end`. With one investigator, defeat *is* all-defeated, so
+`check_all_defeated` latches `Resolution::Lost` and ADR 0004 pops the frame
+before `drive` can re-prompt it. The stale prompt needs a **surviving**
+investigator, so the defect bites at 2+ players — which also made the issue's own
+acceptance criterion ("Solo: the game proceeds to the Enemy phase") unsatisfiable
+as written. Carry forward to the next sweep: a *solo-reachable* claim about a
+defeat path has to be checked against the all-defeated latch, not just the
+handler that looks wrong.
+
+**The same issue's body quoted a rule that does not exist.** It cited Elimination
+as *"if it is that investigator's turn, the turn ends"*; that clause is in no
+vendored source — not `rules/glossary/Elimination.md`, `Defeat.md` or
+`Resign.md`, not `Appendix_II_Timing_and_Gameplay.md`, and nowhere in
+`data/official-faq/`. The real basis is Appendix II step 2.2.1, *"If the
+investigator does not or cannot take an action, proceed to 2.2.2."* Both this and
+the solo claim are the sweep's AI-generated triage text, and both survived
+untouched to the point of implementation — so a triage-authored citation is worth
+re-deriving from the vendored files before building on it, exactly as CLAUDE.md's
+citation mandate already requires of a card's text.
 
 **Pulled into the gate by #769's wave-0 reconnaissance run (2026-08-24):** #786 and
 #787, placed in waves 1 and 2 above. **Filed and left out:** #788 — the web commit
