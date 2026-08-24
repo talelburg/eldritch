@@ -410,16 +410,33 @@ pub enum EventPattern {
     /// The forced dispatch path matches this pattern and fires it from
     /// `move_action` on entry (`engine::dispatch::forced_triggers`).
     EnteredLocation,
+    /// A game phase began — `Appendix_II_Timing_and_Gameplay.md` steps 1.1,
+    /// 2.1, 3.1 and 4.1, each of which is *"an important game milestone that
+    /// may be referenced in card text, either as a point at which an ability
+    /// may or must resolve, or as a point at which a delayed effect resolves or
+    /// a lasting effect expires."*
+    ///
+    /// The mirror of [`PhaseEnded`](Self::PhaseEnded), and wired at all four
+    /// starts (#697). Dunwich supplies the first consumers — Hunting Horror
+    /// 02141 and Peter Clover 02079 print *"**Forced** - At the start of the
+    /// enemy phase: …"*, as does agenda 02065.
+    ///
+    /// Matched only by the forced dispatch path
+    /// (`engine::dispatch::forced_triggers`), never by player reaction
+    /// windows — `trigger_matches` returns `false` for it.
+    PhaseStarted { phase: Phase },
     /// A game phase ended. Forced agenda/act effects keyed to a phase
     /// boundary listen here: agenda `01107` moves Ghouls at
     /// `PhaseEnded { phase: Enemy }`. (Its end-of-round doom keys off
     /// [`RoundEnded`](Self::RoundEnded), not `PhaseEnded { Upkeep }`.)
     ///
+    /// Wired at all four phase-ends (#697); `Appendix_II_Timing_and_Gameplay.md`
+    /// step 1.5 gives the end of a phase the same milestone sentence its step
+    /// 1.1 gives the beginning.
+    ///
     /// Matched only by the forced dispatch path
     /// (`engine::dispatch::forced_triggers`), never by player reaction
-    /// windows — `trigger_matches` returns `false` for it. Currently
-    /// wired for Enemy and Upkeep phase-ends only; Mythos and
-    /// Investigation are not wired (see #212).
+    /// windows — `trigger_matches` returns `false` for it.
     PhaseEnded { phase: Phase },
     /// The act this ability is printed on advanced (its reverse side
     /// resolves). Fired forced via `ForcedTriggerPoint::ActAdvanced`;

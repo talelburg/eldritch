@@ -567,7 +567,7 @@ fn trigger_matches(
             EventPattern::EnteredPlay,
         ) => *window_controller == controller,
         // Every other (event, pattern) pairing opens no reaction: the
-        // forced-only conditions (PhaseEnded / ActAdvanced / AgendaAdvanced /
+        // forced-only conditions (PhaseStarted / PhaseEnded / ActAdvanced / AgendaAdvanced /
         // EndOfTurn / GameEnd / EliminationGameEnd / EnteredLocation /
         // LeftLocation) never open a reaction window.
         _ => false,

@@ -51,24 +51,10 @@ in **Architecture to build on**. In dependency order, the arcs that landed:
    emission, windows, and the `when/at/after × forced/reaction` matrix are all
    `drive`-loop-dispatched frames. Final slice PR #446 deleted `apply_effect` /
    `drive_effect_to_base`; every effect site is now top-frame dispatched.
-   *(The arc left its central consequence unstated, at the cost of a live bug:
-   an emit **queues** its abilities and returns `Done`, so four call sites ran
-   their tails above the frames they had just queued. `enemy_phase_end` pushed
-   the Upkeep anchor over agenda 01107's forced Ghoul movement, which therefore
-   never fired in a real game. **#569 ✅ shipped (PR #613)** — each site emits in
-   tail position and resumes on a frame, `emit_event` is renamed `queue_event`,
-   and a `drive`-loop assert backstops the class; ADR 0003 records the contract.
-   The deferred `ActionResolution` generalisation is #612.)*
-   *(**#566 ✅ shipped (PR #614)** — the `GameEnd` instance, which turned out to
-   be the smaller half of its own bug. The swallowed suspension lost Cover Up
-   01007's mental trauma and wedged the 2-hit case outright, but the reason it
-   could was that a latched resolution ended nothing: `apply_resolution` ran
-   while the continuation stack still held live work, and play carried on over a
-   finished scenario. The latch now arms a `ScenarioEnd` frame at the bottom of
-   the stack and the `drive` loop winds down against it, cancelling
-   opportunities and framework steps while mandatory resolution completes; the
-   apply boundary pops the frame and finalises once. ADR 0004 records the rule
-   and the Ghoul Priest trace that shapes it.)*
+   The arc's two follow-on corrections shipped as **#569** (an emit queues its
+   abilities rather than resolving them — [ADR 0003](../adr/0003-emitting-a-timing-point-queues-abilities.md))
+   and **#566** (a latched resolution ends the scenario —
+   [ADR 0004](../adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md)).
 
 ## Remaining gate work
 
@@ -101,16 +87,11 @@ the Tablet came out.
 | #763 ✅ PR #789 | A zero-icon commit is accepted — commit is a free discard outlet |
 | #764 ✅ PR #790 | A defeated active investigator's turn does not end |
 | #786 ✅ PR #791 | The forced-trigger scan ignores eligibility, so a Forced ability with an unmet condition initiates and prompts |
-| #697 → #670 | Two of four phase-ends never emit, and there is no phase-start point at all → the non-`Specific` spawn shapes |
+| #697 ✅ PR #793 | Two of four phase-ends never emit, and there is no phase-start point at all |
 | #664 | A `ChooseOne` mode with no eligible target is still offered |
 | #651 | Hunter pathfinding routes *around* a movement block instead of being stopped by it |
 | #682 | An attack whose target leaves play mid-test resolves against difficulty 0 |
 | #562 | 01110's forced act-advance double-prompts (advance-flip slice 4) |
-
-**#697 lands before #670.** #670 makes Wizard of the Order 01170 drawable; its
-printed *"**Forced** - At the end of the mythos phase: Place 1 doom on Wizard of the Order."* stays inert
-until #697 routes `mythos_phase_end` through `queue_event`, so #670's own
-acceptance criterion cannot be asserted alone.
 
 **#682's blocker is gone and its answer is not in the sources.** It waited on the
 Official FAQ, which is vendored now (#672) and was searched: the nearest passage
@@ -120,28 +101,6 @@ the reasoning, including why reading 2 was rejected, is on the issue. The
 implementing PR records it on `DifficultyBasis`, or as an ADR if the teardown turns
 out to be load-bearing; it must say outright that this is an engine decision rather
 than a citation.
-
-**#786 shipped as a scan fix, not a Cover Up fix.** The forced scan gated its
-candidates on the generic `effect_can_change_state` check alone, which cannot
-introspect an opaque `Effect::Native` — so *every* forced ability whose condition
-lives inside its effect rather than in a gate initiated when that condition was
-false. Cover Up 01007 was only the one the wave-0 run stood in front of.
-
-The reaction side had encoded RR p.2 correctly since #368, via the
-`Ability::eligibility` tag; the forced scan simply never asked. PR #791 extracted
-that predicate to `evaluator::ability_can_initiate` and called it from
-`collect_forced_hits`'s retain — the single chokepoint every `push_matching` call
-site feeds, and the one both the lone-hit acknowledge and the ordered
-simultaneous run read — so one predicate now serves both scans and neither can
-drift from the rule. The mock-tag tests land on `EnteredLocation` rather than
-`GameEnd`, which is what pins "every trigger point" instead of the two the bug
-report named.
-
-It also landed on this branch's neighbour: `#763`'s PR had reworked
-`elimination_teardown.rs`, and #791 rewrote that file's
-`eliminated_investigator_with_a_clueless_cover_up_suffers_no_trauma` — which
-asserted the right end state for the wrong reason, and now says the ability does
-not initiate.
 
 **#562 is in for placement, not severity.** It is terminal and once-per-scenario,
 but it fires on the Ghoul Priest's defeat — the last interaction before every win.
@@ -787,12 +746,17 @@ already works. #728's real driver is multiplayer.
 **Pulled into the gate by the 2026-08-22 triage sweep** — each a rules defect
 reachable in The Gathering today: #651 (hunter pathfinding routes
 around a Barricade instead of being stopped by it), #664 (First Aid 01019 offers
-a mode with no eligible target and burns a supply), #670 (Acolyte 01169 / Wizard
-of the Order 01170 hard-reject on draw — non-Specific spawn shapes), #682 (an
+a mode with no eligible target and burns a supply), #682 (an
 attack whose target leaves play mid-test resolves against difficulty 0), #763
 (zero-icon commits accepted) and #764 (a defeated active investigator's turn
 does not end). The same sweep moved #353, #366, #367 and #555 *out* of the
 milestone: each one's own body or ADR (0008/0009) defers it until a card wants it.
+
+The sweep also pulled in **#670**, wrongly: it read *"reachable today"* off the
+cards' presence in the core **pack** rather than in this scenario's encounter
+sets. Every instance is Pentagram, Arkham or Dunwich, and The Gathering's only two
+enemies printing a Spawn clause print `Specific` ones (Flesh-Eater 01118's Attic,
+Icy Ghoul 01119's Cellar). #670 → phase 9, and #792 with it.
 
 **#764 was not solo-reachable, and the sweep called it solo.** It shipped inside
 the gate anyway because PR #790 was already written and green — not because the

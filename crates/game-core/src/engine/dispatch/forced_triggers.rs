@@ -2,8 +2,8 @@
 //! on scenario-structure cards (locations, acts, agendas) at framework
 //! timing points, via an immediate path separate from the player
 //! reaction-window machinery. Multiple simultaneous triggers resolve in
-//! a fixed deterministic order (see [`queue_forced_triggers`]); #213 adds
-//! player-chosen ordering, #212 the universal `queue_event` chokepoint.
+//! a fixed deterministic order (see [`queue_forced_triggers`]), beneath the
+//! universal [`queue_event`](super::emit::queue_event) chokepoint.
 
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
@@ -23,8 +23,8 @@ use super::Cx;
 /// `pub(crate)` — not part of the public API. [`crate::test_support`]
 /// constructs it internally via `fire_forced_on_enter` (a primitive-arg
 /// helper), so integration tests never need to name this type directly.
-/// Wired into `move_action` (`EnteredLocation`) and
-/// `enemy_phase_end`/`upkeep_phase_end` (`PhaseEnded`).
+/// Wired into `move_action` (`EnteredLocation`) and all eight phase boundaries
+/// (`PhaseStarted` / `PhaseEnded`, #697).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ForcedTriggerPoint {
     /// An investigator entered a location. Scans that location's card
@@ -36,6 +36,12 @@ pub(crate) enum ForcedTriggerPoint {
         /// The location that was entered.
         location: LocationId,
     },
+    /// A phase began (`Appendix_II_Timing_and_Gameplay.md` steps 1.1 / 2.1 /
+    /// 3.1 / 4.1). Scans the current act and agenda for
+    /// `EventPattern::PhaseStarted { phase }` forced abilities; binds
+    /// controller = the lead investigator (board-wide effects ignore it).
+    /// The mirror of [`PhaseEnded`](Self::PhaseEnded), sharing its scan.
+    PhaseStarted { phase: Phase },
     /// A phase ended. Scans the current act and agenda for
     /// `EventPattern::PhaseEnded { phase }` forced abilities; binds
     /// controller = the lead investigator (board-wide effects ignore it).
@@ -236,35 +242,25 @@ pub(super) fn collect_forced_hits(
                 |p| matches!(p, EventPattern::EnteredLocation),
             );
         }
+        ForcedTriggerPoint::PhaseStarted { phase } => {
+            let want_phase = dsl_phase(*phase);
+            push_scenario_structure_matching(
+                reg,
+                state,
+                &mut hits,
+                bucket,
+                |p| matches!(p, EventPattern::PhaseStarted { phase } if *phase == want_phase),
+            );
+        }
         ForcedTriggerPoint::PhaseEnded { phase } => {
             let want_phase = dsl_phase(*phase);
-            // Lead investigator binds the controller for board-wide effects
-            // (which ignore it). First of turn_order is the lead.
-            let Some(lead) = state.turn_order.first().copied() else {
-                return hits;
-            };
-            if let Some(act) = state.act_deck.get(state.act_index) {
-                push_matching(
-                    reg,
-                    &act.code,
-                    lead,
-                    CandidateSource::Ability(AbilitySource::Act),
-                    &mut hits,
-                    bucket,
-                    |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
-                );
-            }
-            if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
-                push_matching(
-                    reg,
-                    &agenda.code,
-                    lead,
-                    CandidateSource::Ability(AbilitySource::Agenda),
-                    &mut hits,
-                    bucket,
-                    |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
-                );
-            }
+            push_scenario_structure_matching(
+                reg,
+                state,
+                &mut hits,
+                bucket,
+                |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
+            );
         }
         ForcedTriggerPoint::ActAdvanced { code } => {
             let Some(lead) = state.turn_order.first().copied() else {
@@ -579,8 +575,57 @@ pub(super) fn collect_forced_hits(
     hits
 }
 
+/// Scan the current act and the current agenda for forced abilities matching
+/// `want`, binding controller = the lead investigator.
+///
+/// The scan both phase-boundary points share: the milestone is board-wide, so
+/// the controller it binds is the lead (first of `turn_order`) and the
+/// board-wide effects that key off a phase boundary ignore it. An empty
+/// `turn_order` finds nothing rather than panicking — a scenario with no seated
+/// investigator has no lead to bind.
+///
+/// **Act and agenda only.** An enemy or asset in play printing a phase-boundary
+/// Forced — Wizard of the Order 01170, Hunting Horror 02141, Peter Clover
+/// 02079 — is not reached, because there is no doom-on-a-card model for the
+/// first of them to place onto and no Dunwich corpus for the other two. #792
+/// carries the doom model, this scan's in-play arm, and 01170 together, since
+/// none of the three is assertable without the other two.
+fn push_scenario_structure_matching(
+    reg: &card_registry::CardRegistry,
+    state: &crate::state::GameState,
+    hits: &mut Vec<ResolutionCandidate>,
+    bucket: EventTiming,
+    want: impl Fn(&EventPattern) -> bool + Copy,
+) {
+    let Some(lead) = state.turn_order.first().copied() else {
+        return;
+    };
+    if let Some(act) = state.act_deck.get(state.act_index) {
+        push_matching(
+            reg,
+            &act.code,
+            lead,
+            CandidateSource::Ability(AbilitySource::Act),
+            hits,
+            bucket,
+            want,
+        );
+    }
+    if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
+        push_matching(
+            reg,
+            &agenda.code,
+            lead,
+            CandidateSource::Ability(AbilitySource::Agenda),
+            hits,
+            bucket,
+            want,
+        );
+    }
+}
+
 /// Map the engine's `state::Phase` to the `card-dsl` mirror so a
-/// `PhaseEnded` pattern can be compared.
+/// `PhaseStarted` / `PhaseEnded` pattern can be compared.
 fn dsl_phase(phase: Phase) -> crate::dsl::Phase {
     match phase {
         Phase::Mythos => crate::dsl::Phase::Mythos,
