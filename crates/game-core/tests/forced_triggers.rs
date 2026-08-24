@@ -88,11 +88,45 @@ const DOUBLE_WHEN_LEFT_LOCATION: &str = "test-double-when-left-location";
 /// Obscuring-Fog-shape (C4c), minus the location attachment.
 const AFTER_INVESTIGATE_CARD: &str = "test-after-investigate";
 
+/// Mock locations exercising the forced scan's **eligibility gate** (#786): the
+/// `EnteredLocation` horror ability of [`HORROR_ATTIC`], carrying an
+/// `Ability::eligibility` tag that respectively passes, fails, and has no
+/// registered predicate at all. RR p.2: an ability with no potential to change
+/// the game state does not initiate — so the last two must fire nothing, the
+/// unresolvable one because a host that cannot evaluate its own gate must not
+/// guess in the ability's favour.
+const GATED_ELIGIBLE: &str = "test-gated-eligible";
+const GATED_INELIGIBLE: &str = "test-gated-ineligible";
+const GATED_UNKNOWN_TAG: &str = "test-gated-unknown-tag";
+
+/// Tags resolved by [`mock_native_eligibility_for`]. `UNKNOWN_TAG` is
+/// deliberately absent from it.
+const ALWAYS_TAG: &str = "test:always";
+const NEVER_TAG: &str = "test:never";
+const UNKNOWN_TAG: &str = "test:unregistered";
+
 /// Returns metadata for `TEST_INV` (used by `test_investigator`) so that
 /// capacity reads (`max_health()` / `max_sanity()`) work when this registry
 /// is installed. All other codes return `None`.
 fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
     game_core::test_support::metadata_for_test_inv(code)
+}
+
+/// The eligibility-gated half of [`mock_abilities_for`] (#786): the
+/// [`HORROR_ATTIC`] on-enter ability carrying one of the three tags.
+fn gated_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
+    let tag = match code.as_str() {
+        GATED_ELIGIBLE => ALWAYS_TAG,
+        GATED_INELIGIBLE => NEVER_TAG,
+        GATED_UNKNOWN_TAG => UNKNOWN_TAG,
+        _ => return None,
+    };
+    Some(vec![forced_on_event(
+        EventPattern::EnteredLocation,
+        EventTiming::After,
+        deal_horror(InvestigatorTarget::You, 1u8),
+    )
+    .with_eligibility(tag)])
 }
 
 fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
@@ -177,6 +211,8 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             EventTiming::After,
             deal_horror(InvestigatorTarget::You, 1u8),
         )])
+    } else if let Some(abilities) = gated_abilities_for(code) {
+        Some(abilities)
     } else if code.as_str() == AFTER_INVESTIGATE_CARD {
         Some(vec![forced_on_event(
             EventPattern::SkillTestResolved {
@@ -191,13 +227,27 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     }
 }
 
+fn mock_native_eligibility_for(tag: &str) -> Option<game_core::card_registry::EligibilityFn> {
+    fn always(_: &game_core::GameState, _: &game_core::engine::EvalContext) -> bool {
+        true
+    }
+    fn never(_: &game_core::GameState, _: &game_core::engine::EvalContext) -> bool {
+        false
+    }
+    match tag {
+        ALWAYS_TAG => Some(always as game_core::card_registry::EligibilityFn),
+        NEVER_TAG => Some(never as game_core::card_registry::EligibilityFn),
+        _ => None,
+    }
+}
+
 #[ctor::ctor(unsafe)]
 fn install_mock_registry() {
     let _ = game_core::card_registry::install(CardRegistry {
         metadata_for: mock_metadata_for,
         abilities_for: mock_abilities_for,
         native_effect_for: |_| None,
-        native_eligibility_for: |_| None,
+        native_eligibility_for: mock_native_eligibility_for,
         native_condition_for: |_| None,
     });
 }
@@ -1319,3 +1369,55 @@ fn resolve_pick(state: game_core::state::GameState, option: u32) -> game_core::A
 // simultaneous forced is the lead-ordered run, covered by
 // `two_simultaneous_forced_triggers_present_a_choice` +
 // `two_simultaneous_forced_triggers_resolved_in_lead_chosen_order` through `apply`.)
+
+// #786: the forced scan asks the same eligibility question the reaction-offer
+// scan does, so a forced ability's `eligibility` tag gates *initiation*. Rules
+// Reference, "Ability" -> "Forced Abilities" (p.2):
+//
+//   "If a forced ability does not have the potential to change the game state,
+//    the ability does not initiate."
+//
+// Three tags, one per outcome: a passing predicate fires, a failing one does
+// not, and one with no registered predicate is suppressed rather than resolved
+// — the reaction side's posture, so a half-installed host never fires a gate it
+// cannot evaluate.
+
+/// Enter `code`'s location and return the entering investigator's horror, so a
+/// gated `EnteredLocation` forced is measured by whether its 1 horror landed.
+fn horror_after_entering(code: &str) -> u8 {
+    let mut loc = test_location(10, "Attic");
+    loc.code = CardCode(code.into());
+    let mut state = GameStateBuilder::new()
+        .with_investigator_at(test_investigator(1), LocationId(10))
+        .with_location(loc)
+        .with_active_investigator(InvestigatorId(1))
+        .build();
+
+    let mut events = Vec::new();
+    let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(10));
+    assert_eq!(outcome, EngineOutcome::Done);
+    state.investigators[&InvestigatorId(1)].horror()
+}
+
+#[test]
+fn a_forced_with_a_satisfied_eligibility_tag_still_fires() {
+    assert_eq!(horror_after_entering(GATED_ELIGIBLE), 1);
+}
+
+#[test]
+fn a_forced_with_an_unmet_eligibility_tag_does_not_initiate() {
+    assert_eq!(
+        horror_after_entering(GATED_INELIGIBLE),
+        0,
+        "a false eligibility predicate keeps the forced out of the candidate list",
+    );
+}
+
+#[test]
+fn a_forced_whose_eligibility_tag_has_no_predicate_is_suppressed() {
+    assert_eq!(
+        horror_after_entering(GATED_UNKNOWN_TAG),
+        0,
+        "an unresolvable gate suppresses rather than guessing in the ability's favour",
+    );
+}

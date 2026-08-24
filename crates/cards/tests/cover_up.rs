@@ -10,8 +10,8 @@ use game_core::action::EngineRecord;
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{Resolution, ScenarioId};
 use game_core::state::{
-    Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId,
-    LocationId, Phase,
+    Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
+    InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{
     drive, take_turn_action, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
@@ -384,6 +384,49 @@ fn interactive_game_end_trauma_surfaces_an_acknowledge_before_resolving() {
         done.state.continuations.is_empty(),
         "no stranded frames after the ending finishes: {:?}",
         done.state.continuations,
+    );
+}
+
+/// #786: the mirror of the test above at zero clues. "if there are any clues on
+/// Cover Up" is an *initiation* condition — RR p.2, "Forced Abilities": *"If a
+/// forced ability does not have the potential to change the game state, the
+/// ability does not initiate."* So the forced scan collects nothing, the #466
+/// acknowledge never surfaces, and the scenario resolves in one uninterrupted
+/// batch. Before the fix this raised a `"Forced — Cover Up"` prompt whose only
+/// option resolved to no events at all.
+#[test]
+fn interactive_game_end_with_a_clueless_cover_up_neither_prompts_nor_resolves_it() {
+    let mut state = resolving_state(0);
+    state.interactive_acknowledge = true;
+
+    let r = take_turn_action(state, &TurnAction::AdvanceAct { investigator: INV });
+
+    assert!(
+        !matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
+        "a clueless Cover Up must not initiate, so nothing is there to acknowledge; got {:?}",
+        r.outcome,
+    );
+    assert!(
+        !r.state
+            .continuations
+            .iter()
+            .any(|c| matches!(c, Continuation::AcknowledgeForced { .. })),
+        "no acknowledge frame is pushed; stack = {:?}",
+        r.state.continuations,
+    );
+    assert!(
+        !r.events
+            .iter()
+            .any(|e| matches!(e, Event::TraumaSuffered { .. })),
+        "no trauma; events = {:?}",
+        r.events,
+    );
+    assert!(
+        r.events
+            .iter()
+            .any(|e| matches!(e, Event::ScenarioResolved { .. })),
+        "the scenario resolves in the same batch; events = {:?}",
+        r.events,
     );
 }
 

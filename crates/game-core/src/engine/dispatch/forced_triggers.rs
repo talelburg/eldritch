@@ -563,14 +563,18 @@ pub(super) fn collect_forced_hits(
     // the lone-hit path (`queue_forced_triggers`) and the 2+ ordered run
     // (`open_forced_resolution`) — so a no-op forced neither resolves nor (post-
     // #466) prompts. Conservative: only provable no-ops are dropped (#495).
+    //
+    // The gate is the same predicate the reaction side offers on, so a forced
+    // ability's `eligibility` tag counts here too (#786): Cover Up 01007's
+    // "if there are any clues on Cover Up" lives in an opaque native effect the
+    // generic check can't introspect, and without the tag layer a clueless Cover
+    // Up initiated — and prompted — at game end.
     hits.retain(|hit| {
         let Some(abilities) = (reg.abilities_for)(&hit.code) else {
             return false;
         };
-        let effect = &abilities[hit.ability_index as usize].effect;
-        let ctx =
-            EvalContext::for_controller_with_optional_source(hit.controller, hit.source.instance());
-        crate::engine::evaluator::effect_can_change_state(state, ctx, effect)
+        let ability = &abilities[hit.ability_index as usize];
+        crate::engine::evaluator::ability_can_initiate(state, ability, hit.source, hit.controller)
     });
     hits
 }

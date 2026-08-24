@@ -145,38 +145,18 @@ fn same_location(state: &GameState, a: InvestigatorId, b: InvestigatorId) -> boo
     loc(a).is_some_and(|la| loc(b) == Some(la))
 }
 
-/// Whether a reaction `ability` may be offered, per its
-/// [`Ability::eligibility`] tag (RR p.2: an ability can't initiate if its
-/// effect won't change game state). Pure over `&GameState`, which is what lets
-/// [`withdraw_lapsed_candidates`] re-ask it once a sibling option has resolved
-/// (#568). No tag → eligible. A tag with no
-/// resolvable predicate (registry absent / unknown tag) → suppressed, so a
-/// half-installed host never offers a gated reaction it can't evaluate.
+/// Whether a reaction `ability` may be offered, per the shared RR p.2/p.3
+/// initiation gate. Thin alias for
+/// [`ability_can_initiate`](crate::engine::evaluator::ability_can_initiate),
+/// which the forced-trigger scan calls too (#786) so both sides ask one
+/// question — see it for the citation and for the tag layer's semantics.
 fn ability_eligible(
     state: &GameState,
     ability: &Ability,
     source: CandidateSource,
     controller: InvestigatorId,
 ) -> bool {
-    let ctx = EvalContext::for_controller_with_optional_source(controller, source.instance());
-    // Generic RR p.2/p.3 initiation gate: the effect must have the potential to
-    // change the game state (Roland 01001's clue discovery at a 0-clue location,
-    // #495). Conservative — only provable no-ops are suppressed.
-    if !crate::engine::evaluator::effect_can_change_state(state, ctx, &ability.effect) {
-        return false;
-    }
-    // The native eligibility tag refines opaque `Native` effects the generic gate
-    // can't introspect (#368: Cover Up 01007, act 01109). No tag → eligible.
-    let Some(tag) = ability.eligibility.as_deref() else {
-        return true;
-    };
-    let Some(reg) = card_registry::current() else {
-        return false;
-    };
-    let Some(pred) = (reg.native_eligibility_for)(tag) else {
-        return false;
-    };
-    pred(state, &ctx)
+    crate::engine::evaluator::ability_can_initiate(state, ability, source, controller)
 }
 
 /// Scan every investigator's `cards_in_play` **and the current act/agenda** for

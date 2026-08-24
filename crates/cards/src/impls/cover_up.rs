@@ -74,7 +74,14 @@ pub fn abilities() -> Vec<Ability> {
             Effect::Seq(vec![native(DISCARD_TAG), Effect::Cancel]),
         )
         .with_eligibility(HAS_CLUES_TAG),
-        forced_on_event(EventPattern::GameEnd, EventTiming::When, native(TRAUMA_TAG)),
+        // "if there are any clues on Cover Up" is an initiation condition, not
+        // part of the effect: RR p.2 ("Forced Abilities") — *"If a forced
+        // ability does not have the potential to change the game state, the
+        // ability does not initiate."* With no clues the trauma cannot happen,
+        // so the same tag the reaction gates on keeps the forced scan from
+        // collecting it — and from prompting to resolve it (#786).
+        forced_on_event(EventPattern::GameEnd, EventTiming::When, native(TRAUMA_TAG))
+            .with_eligibility(HAS_CLUES_TAG),
     ]
 }
 
