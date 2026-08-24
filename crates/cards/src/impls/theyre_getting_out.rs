@@ -35,7 +35,7 @@ use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming,
 use game_core::card_registry::NativeEffectFn;
 use game_core::state::{EnemyId, LocationId};
 use game_core::{
-    enemy_can_enter_location, location_id_by_code, relocate_enemy, shortest_first_steps_with, Cx,
+    enemy_can_enter_location, location_id_by_code, relocate_enemy, shortest_first_steps, Cx,
     EngineOutcome, EvalContext,
 };
 
@@ -100,18 +100,19 @@ fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
             continue;
         };
         // A non-Elite Ghoul cannot move into a barricaded location (Barricade
-        // 01038). Here the block is graph-level — deliberately *unlike* Hunter
-        // movement since #651, which applies it to the compelled step alone.
-        // 01107 names a fixed destination rather than a "nearest" target, so
-        // `Nearest.md` does not reach it, and #651 left this reading alone on
-        // the grounds that the vendored text did not settle it. It probably
-        // does: `glossary/Patrol.md` puts the same "compelled step is blocked
-        // => the enemy does not move" rule on a *fixed*-destination mover,
-        // which is what 01107 is. TODO(#797): apply the block at the step here
-        // too, as Hunter movement now does.
-        let mut steps = shortest_first_steps_with(cx.state, from, parlor, |loc| {
-            enemy_can_enter_location(cx.state, e, loc)
-        });
+        // 01038), and the block bites at the *compelled step*, not on the
+        // graph the path is measured over — as Hunter movement does since
+        // #651. 01107 names a fixed destination rather than a "nearest"
+        // target, so `glossary/Nearest.md` does not reach it, but
+        // `glossary/Patrol.md` carries the same rule on a fixed-destination,
+        // shortest-path mover, which is structurally what 01107 is: *"If an
+        // enemy with patrol would be compelled to move to a location which is
+        // blocked by a card ability, the enemy does not move."* So a
+        // barricaded first step is a non-move, never a detour (#797).
+        let mut steps: Vec<LocationId> = shortest_first_steps(cx.state, from, parlor)
+            .into_iter()
+            .filter(|&loc| enemy_can_enter_location(cx.state, e, loc))
+            .collect();
         steps.sort_unstable();
         if let Some(&to) = steps.first() {
             movers.push((*id, to));
@@ -257,10 +258,8 @@ mod tests {
     #[test]
     fn non_elite_ghoul_does_not_move_into_a_barricaded_parlor() {
         // A Barricade (01038) on the Parlor blocks the non-Elite Ghoul's
-        // forced move, graph-level (see `move_ghouls_toward_parlor` for why
-        // that differs from Hunter movement since #651). Needs the real
-        // registry so the attachment's `EnemyMovementBlocked` restriction is
-        // read.
+        // compelled step, so it does not move. Needs the real registry so the
+        // attachment's `EnemyMovementBlocked` restriction is read.
         let _ = game_core::card_registry::install(crate::REGISTRY);
         let mut state = star_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway
@@ -278,6 +277,82 @@ mod tests {
             state.enemies[&EnemyId(1)].current_location,
             Some(LocationId(2)),
             "Ghoul stayed in the Hallway — the only step toward the Parlor is blocked",
+        );
+    }
+
+    /// A detour board: Attic -> Hallway -> Parlor is the shortest route
+    /// (2 steps); Attic -> Study -> Cellar -> Parlor is the long way (3).
+    fn detour_board() -> game_core::state::GameState {
+        let loc =
+            |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
+        let mut state = GameStateBuilder::new()
+            .with_location(loc(2, "01112", "Hallway"))
+            .with_location(loc(3, "01113", "Attic"))
+            .with_location(loc(4, "01114", "Cellar"))
+            .with_location(loc(5, "01115", "Parlor"))
+            .with_location(loc(6, "01111", "Study"))
+            .build();
+        state.connect(LocationId(3), LocationId(2));
+        state.connect(LocationId(2), LocationId(5));
+        state.connect(LocationId(3), LocationId(6));
+        state.connect(LocationId(6), LocationId(4));
+        state.connect(LocationId(4), LocationId(5));
+        state
+    }
+
+    fn barricade(state: &mut game_core::state::GameState, at: LocationId) {
+        state.locations.get_mut(&at).unwrap().attachments.push(
+            game_core::state::CardInPlay::enter_play(
+                CardCode::new("01038"),
+                game_core::state::CardInstanceId(900),
+            ),
+        );
+    }
+
+    /// `glossary/Patrol.md`: *"If an enemy with patrol would be compelled to
+    /// move to a location which is blocked by a card ability, the enemy does
+    /// not move."* 01107 is structurally the same fixed-destination,
+    /// shortest-path mover, so a barricaded compelled step is a non-move,
+    /// not a detour (#797).
+    #[test]
+    fn ghoul_does_not_reroute_around_a_barricaded_shortest_step() {
+        let _ = game_core::card_registry::install(crate::REGISTRY);
+        let mut state = detour_board();
+        state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
+        barricade(&mut state, LocationId(2)); // Hallway — the only shortest step
+
+        let events = cx_apply(&mut state, move_ghouls_toward_parlor);
+
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(3)),
+            "the Ghoul stays put rather than taking the long way through the Study",
+        );
+        assert!(!events.iter().any(|e| matches!(e, Event::EnemyMoved { .. })));
+    }
+
+    #[test]
+    fn ghoul_takes_the_shortest_step_when_nothing_is_barricaded() {
+        let _ = game_core::card_registry::install(crate::REGISTRY);
+        let mut state = detour_board();
+        state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
+        cx_apply(&mut state, move_ghouls_toward_parlor);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(2)),
+        );
+    }
+
+    #[test]
+    fn a_barricade_off_the_shortest_path_does_not_affect_the_move() {
+        let _ = game_core::card_registry::install(crate::REGISTRY);
+        let mut state = detour_board();
+        state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
+        barricade(&mut state, LocationId(6)); // Study — on the long route only
+        cx_apply(&mut state, move_ghouls_toward_parlor);
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(2)),
         );
     }
 
