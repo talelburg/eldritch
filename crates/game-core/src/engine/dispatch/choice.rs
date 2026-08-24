@@ -135,8 +135,25 @@ pub(crate) fn resume_effect_walk(_cx: &mut Cx) -> EngineOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dsl::Effect;
+    use crate::dsl::{gain_resources, Effect, InvestigatorTarget};
     use crate::engine::evaluator::{push_effect, EvalContext};
+    use crate::state::InvestigatorId;
+    use crate::test_support::{test_investigator, GameStateBuilder};
+
+    /// A `ChooseOne` branch that is **live** — one `effect_can_change_state`
+    /// cannot prove inert, so #664's mode filter keeps it in the offer. (An
+    /// empty `Seq`, the old placeholder here, is provably inert and would be
+    /// filtered out.)
+    fn live_branch() -> Effect {
+        gain_resources(InvestigatorTarget::You, 1)
+    }
+
+    /// A state holding the investigator [`live_branch`] pays out to.
+    fn state_with_investigator() -> crate::state::GameState {
+        GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .build()
+    }
 
     #[test]
     fn resolve_zero_options_is_reject() {
@@ -181,15 +198,14 @@ mod tests {
 
     #[test]
     fn suspended_leaf_snapshots_active_skill_test_binding() {
-        use crate::state::InvestigatorId;
-        use crate::test_support::GameStateBuilder;
-
         // A context carrying an active on_fail margin when a ChooseOne suspends.
         let mut ctx = EvalContext::for_controller(InvestigatorId(1));
         ctx.set_failed_by(2);
 
-        let effect = Effect::ChooseOne(vec![Effect::Seq(vec![]), Effect::Seq(vec![])]);
-        let mut state = GameStateBuilder::default().build();
+        // Two live branches — a filtered-empty ChooseOne skips instead of
+        // suspending (#664), which is not the behaviour under test here.
+        let effect = Effect::ChooseOne(vec![live_branch(), live_branch()]);
+        let mut state = state_with_investigator();
         let mut events = Vec::new();
         // Push the effect root + drive it through the real global loop (the
         // deleted `apply_effect` bounded entry's test-only successor); a
@@ -221,15 +237,12 @@ mod tests {
 
     #[test]
     fn single_branch_choose_one_surfaces_under_interactive_flag() {
-        use crate::state::InvestigatorId;
-        use crate::test_support::GameStateBuilder;
-
         // One ChooseOne branch: today it auto-binds. With interactive_acknowledge
         // on it must surface as a one-option pick (#466).
-        let effect = Effect::ChooseOne(vec![Effect::Seq(vec![])]);
+        let effect = Effect::ChooseOne(vec![live_branch()]);
         let ctx = EvalContext::for_controller(InvestigatorId(1));
 
-        let mut state = GameStateBuilder::default().build();
+        let mut state = state_with_investigator();
         state.interactive_acknowledge = true;
         let mut events = Vec::new();
         let out = {
@@ -254,12 +267,9 @@ mod tests {
 
     #[test]
     fn single_branch_choose_one_auto_binds_when_flag_off() {
-        use crate::state::InvestigatorId;
-        use crate::test_support::GameStateBuilder;
-
-        let effect = Effect::ChooseOne(vec![Effect::Seq(vec![])]);
+        let effect = Effect::ChooseOne(vec![live_branch()]);
         let ctx = EvalContext::for_controller(InvestigatorId(1));
-        let mut state = GameStateBuilder::default().build(); // flag defaults false
+        let mut state = state_with_investigator(); // flag defaults false
         let mut events = Vec::new();
         let out = {
             let mut cx = Cx {

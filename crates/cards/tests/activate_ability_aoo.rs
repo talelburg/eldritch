@@ -451,7 +451,13 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
     // the installed cards registry (test_investigator uses TEST_INV which only
     // the game-core test registry knows about, #448 cp2a).
     investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
-    investigator.investigator_card.accumulated_damage = 2; // something for First Aid to heal
+
+    // Something for First Aid to heal — *both* harms, so both of its modes stay
+    // live and the damage-or-horror choice still prompts: #664 filters a mode
+    // with nothing to heal out of the offer, and a lone live mode would
+    // auto-resolve before this test could see it.
+    investigator.investigator_card.accumulated_damage = 2;
+    investigator.investigator_card.accumulated_horror = 2;
     investigator.hand = vec![CardCode::new(DODGE)];
     let mut first_aid = CardInPlay::enter_play(CardCode::new(FIRST_AID), kit);
     first_aid.uses.insert(UseKind::Supplies, 3);
