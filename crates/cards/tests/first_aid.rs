@@ -76,6 +76,18 @@ fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
     )
 }
 
+/// The offered options of a prompt, or a panic naming the outcome that wasn't
+/// one. `why` says what the caller expected to be asked.
+fn offered<'a>(
+    result: &'a game_core::engine::ApplyResult,
+    why: &str,
+) -> &'a [game_core::engine::ChoiceOption] {
+    match &result.outcome {
+        EngineOutcome::AwaitingInput { request, .. } => &request.options,
+        other => panic!("{why}: {other:?}"),
+    }
+}
+
 fn pick(state: game_core::GameState, branch: u32) -> game_core::engine::ApplyResult {
     apply(
         state,
@@ -257,15 +269,11 @@ fn only_a_damaged_investigator_is_offered_as_a_heal_target() {
     // Control: both damaged ⇒ 2 eligible targets ⇒ the pick suspends, and
     // neither is healed until it is answered.
     let r = activate(two_investigators(2, 2));
-    let request = match &r.outcome {
-        EngineOutcome::AwaitingInput { request, .. } => request,
-        other => panic!("two eligible targets must prompt: {other:?}"),
-    };
+    let options = offered(&r, "two eligible targets must prompt");
     assert_eq!(
-        request.options.len(),
+        options.len(),
         2,
-        "both co-located investigators offered as heal targets: {:?}",
-        request.options,
+        "both co-located investigators offered as heal targets: {options:?}",
     );
     assert_eq!(
         r.state.investigators[&INV].damage(),
@@ -326,6 +334,41 @@ fn a_dead_mode_is_not_offered() {
     );
 }
 
+/// The offer itself, for the damaged-and-unhorrored board: with
+/// `interactive_acknowledge` on, the lone live mode surfaces as a one-option
+/// prompt (#466) — and answering it heals damage, so the option offered is the
+/// damage mode and the horror mode is absent from the list.
+#[test]
+fn only_the_damage_mode_is_offered_with_no_horror_to_heal() {
+    let mut state = board_with_harm(3, 2, 0);
+    state.interactive_acknowledge = true;
+    let r = activate(state);
+    let options = offered(&r, "the live mode surfaces as a one-option prompt");
+    assert_eq!(
+        options.len(),
+        1,
+        "only the damage mode is offered: {options:?}",
+    );
+
+    // Option 0 = the damage mode; the heal's target grounding then raises its
+    // own one-option prompt (the sole co-located investigator).
+    let r = pick(r.state, 0);
+    let r = pick(r.state, 0);
+    assert_eq!(
+        r.state.investigators[&INV].damage(),
+        1,
+        "the offered option resolved the damage branch",
+    );
+    assert_event!(
+        r.events,
+        Event::Healed {
+            kind: HarmKind::Damage,
+            amount: 1,
+            ..
+        }
+    );
+}
+
 /// The control for [`a_dead_mode_is_not_offered`]: with both harms present both
 /// modes are live, so the damage-or-horror choice still prompts with two
 /// options. Without this the filter could offer *nothing* and the sibling test
@@ -333,15 +376,11 @@ fn a_dead_mode_is_not_offered() {
 #[test]
 fn both_modes_are_offered_when_both_harms_are_present() {
     let r = activate(board_with_harm(3, 2, 2));
-    let request = match &r.outcome {
-        EngineOutcome::AwaitingInput { request, .. } => request,
-        other => panic!("two live modes must prompt: {other:?}"),
-    };
+    let options = offered(&r, "two live modes must prompt");
     assert_eq!(
-        request.options.len(),
+        options.len(),
         2,
-        "damage and horror both offered: {:?}",
-        request.options,
+        "damage and horror both offered: {options:?}",
     );
     assert_eq!(
         r.state.investigators[&INV].damage(),
@@ -360,15 +399,11 @@ fn the_offered_index_names_the_live_mode_not_the_printed_one() {
     let mut state = board_with_harm(3, 0, 2);
     state.interactive_acknowledge = true;
     let r = activate(state);
-    let request = match &r.outcome {
-        EngineOutcome::AwaitingInput { request, .. } => request,
-        other => panic!("the live mode surfaces as a one-option prompt: {other:?}"),
-    };
+    let options = offered(&r, "the live mode surfaces as a one-option prompt");
     assert_eq!(
-        request.options.len(),
+        options.len(),
         1,
-        "only the horror mode is live: {:?}",
-        request.options,
+        "only the horror mode is live: {options:?}",
     );
 
     // Option 0 = the horror mode; the heal's target grounding then raises its
