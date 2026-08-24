@@ -33,6 +33,14 @@
 //! eliminated Roland suffers it too: *"If Roland is eliminated (by being
 //! defeated or taking a **resign** action) while Cover Up is in play, Cover Up's
 //! **Forced** effect triggers"* (<https://arkhamdb.com/card/01007>).
+//!
+//! **The Forced's *"if there are any clues"* is an initiation condition, not
+//! part of its effect** (#786). RR p.2: *"If a forced ability does not have the
+//! potential to change the game state, the ability does not initiate."* So it
+//! carries `HAS_CLUES_TAG` — the same gate the reaction declares — and a
+//! clueless Cover Up is collected by neither scan. Without the tag the opaque
+//! native effect is uninspectable, the forced scan collected it anyway, and
+//! interactive play prompted the player to resolve an ability that did nothing.
 
 use card_dsl::dsl::{
     forced_on_event, native, put_into_threat_area_with_clues, reaction_on_event, revelation,
@@ -50,9 +58,11 @@ pub const CODE: &str = "01007";
 const DISCARD_TAG: &str = "01007:discard_clues";
 /// Native tag: suffer 1 mental trauma at game end if clues remain.
 const TRAUMA_TAG: &str = "01007:trauma";
-/// Eligibility tag: the discover-replacement reaction may be offered only while
-/// Cover Up still holds clues to discard (RR p.2 potential gate). Replaces the
-/// former hardcoded `card.clues == 0` stand-in in `scan_pending_triggers`.
+/// Eligibility tag: both of Cover Up's clue-conditional abilities gate on it —
+/// the discover-replacement reaction is offered only while Cover Up still holds
+/// clues to discard, and the game-end Forced only initiates while it does
+/// (RR p.2 potential gate, #786). Replaces the former hardcoded
+/// `card.clues == 0` stand-in in `scan_pending_triggers`.
 const HAS_CLUES_TAG: &str = "01007:has_clues";
 
 #[must_use]
@@ -147,6 +157,13 @@ fn discard_clues(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 
 /// "When the game ends, if there are any clues on Cover Up: You suffer 1
 /// mental trauma."
+///
+/// The clue check is duplicated deliberately. [`HAS_CLUES_TAG`] keeps a clueless
+/// instance from *initiating* (#786), which is the rules-correct home for the
+/// condition; this inner check guards the window the gate cannot, since the
+/// forced scan evaluates eligibility once at collect time. Two simultaneous
+/// game-end hits resolve in a chosen order (#213), so a sibling could strip the
+/// clues between this one's collection and its resolution.
 fn trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     let Some(source) = ctx.source else {
         return EngineOutcome::Rejected {
@@ -221,12 +238,18 @@ mod tests {
     fn has_clues_predicate_gates_on_source_instance_clues() {
         use game_core::state::{CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId};
 
-        // The DiscoverClues reaction now carries the eligibility tag.
+        // Both clue-conditional abilities carry the eligibility tag.
         let abilities = super::abilities();
         assert_eq!(
             abilities[1].eligibility.as_deref(),
             Some("01007:has_clues"),
             "the discover-replacement reaction declares the potential gate"
+        );
+        assert_eq!(
+            abilities[2].eligibility.as_deref(),
+            Some("01007:has_clues"),
+            "the game-end Forced declares it too, so a clueless Cover Up never \
+             initiates (#786)"
         );
 
         // Predicate: true while the source instance holds clues, false at 0.

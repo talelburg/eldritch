@@ -28,15 +28,21 @@
 //! play in your threat area. You cannot play assets or events. <b>Forced</b> -
 //! At the end of the round: Discard Dissonant Voices."
 
-use game_core::action::EngineRecord;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use game_core::action::{EngineRecord, InputResponse};
+use game_core::engine::{InputKind, InputRequest, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosToken, InvestigatorId, LocationId, Status, Zone,
 };
 use game_core::test_support::{
-    drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
+    drive, test_investigator, test_location, ChoiceResolver, GameStateBuilder, ScriptedResolver,
 };
-use game_core::{assert_event, assert_event_count, assert_no_event, Action, EngineOutcome};
+use game_core::{
+    assert_event, assert_event_count, assert_no_event, Action, EngineOutcome, GameState,
+};
 
 /// Roland Banks — health 9, sanity 5.
 const ROLAND: &str = "01001";
@@ -344,26 +350,27 @@ fn eliminated_investigator_with_a_clueless_cover_up_suffers_no_trauma() {
     assert_no_event!(r.events, Event::TraumaSuffered { .. });
 }
 
-/// A [`ChoiceResolver`](game_core::test_support::ChoiceResolver) that records
-/// every prompt and answers it generically — the first option, an empty commit,
-/// a confirm. Lets a test assert a prompt was *never* raised without scripting
-/// the unrelated windows a lethal revelation opens on the way there.
+/// A [`ChoiceResolver`] that records every prompt and answers it generically, so
+/// a test can assert a prompt was *never* raised without scripting the unrelated
+/// windows a lethal revelation opens on the way there.
+///
+/// A skippable window is **skipped**, not taken: this resolver exists to observe
+/// prompts, and buying the first option of an optional window would have it
+/// change the board it is meant to watch. (`TakeOneFastPlay` branches on
+/// `skippable` for the same reason.)
 #[derive(Default)]
 struct RecordingResolver {
-    prompts: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    prompts: Rc<RefCell<Vec<String>>>,
 }
 
-impl game_core::test_support::ChoiceResolver for RecordingResolver {
-    fn next(
-        &mut self,
-        request: &game_core::engine::InputRequest,
-        _state: &game_core::GameState,
-    ) -> game_core::action::InputResponse {
-        use game_core::action::InputResponse;
-        use game_core::engine::InputKind;
+impl ChoiceResolver for RecordingResolver {
+    fn next(&mut self, request: &InputRequest, _state: &GameState) -> InputResponse {
         self.prompts.borrow_mut().push(request.prompt.clone());
+        if request.skippable {
+            return InputResponse::Skip;
+        }
         match request.kind {
-            InputKind::PickSingle => InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            InputKind::PickSingle => InputResponse::PickSingle(OptionId(0)),
             InputKind::PickMultiple => InputResponse::PickMultiple {
                 selected: Vec::new(),
             },
@@ -381,9 +388,9 @@ fn interactive_elimination_with_a_clueless_cover_up_raises_no_acknowledge() {
     let mut state = board_at_lethal_range(8, &[], &[(COVER_UP, 0)]);
     state.interactive_acknowledge = true;
 
-    let prompts = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let prompts = Rc::new(RefCell::new(Vec::new()));
     let resolver = RecordingResolver {
-        prompts: std::rc::Rc::clone(&prompts),
+        prompts: Rc::clone(&prompts),
     };
     let r = drive(
         state,

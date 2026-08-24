@@ -366,7 +366,13 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
                 // exercise a sequence position no real card occupies.
                 EventTiming::When,
                 native(SYNTH_COVER_UP_TRAUMA_TAG),
-            ),
+            )
+            // The initiation gate the real card carries (#786): "if there are
+            // any clues on Cover Up" is a condition on initiating, not part of
+            // the effect. RR p.2 — *"If a forced ability does not have the
+            // potential to change the game state, the ability does not
+            // initiate."*
+            .with_eligibility(SYNTH_COVER_UP_HAS_CLUES_TAG),
         ]),
         // SYNTH_ENEMY_CODE intentionally returns None — the synthetic
         // enemy has no Revelation effect; the spawn handler is the

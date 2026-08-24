@@ -2148,10 +2148,15 @@ fn resolve_investigator_target(
 ///
 /// RR p.2 ("Ability" → "Forced Abilities"): *"If a forced ability does not have
 /// the potential to change the game state, the ability does not initiate."* RR
-/// p.3 says the same of triggered abilities, so this one predicate gates both
-/// the reaction/fast-window offer scan and the forced-trigger scan (#786) — a
-/// forced ability whose condition is false must neither resolve nor raise the
-/// #466 acknowledge prompt.
+/// p.3 states the analogous gate for triggered abilities, so this one predicate
+/// serves both the reaction/fast-window offer scan and the forced-trigger scan
+/// (#786) — a forced ability whose condition is false must neither resolve nor
+/// raise the #466 acknowledge prompt.
+///
+/// The triggered-ability clause is strictly the stronger of the two — *"and its
+/// cost (if any) has the potential to be paid in full, taking active cost
+/// modifiers into account"* — and that cost half is **not** modelled here;
+/// affordability is checked where a cost is paid, not by this predicate.
 ///
 /// Pure over `&GameState`, which is what lets the reaction side's
 /// `withdraw_lapsed_candidates` re-ask it once a sibling option has resolved

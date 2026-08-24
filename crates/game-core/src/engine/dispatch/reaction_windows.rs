@@ -24,7 +24,7 @@ use crate::state::{
     GameState, InvestigatorId, Phase, ResolutionCandidate, Status,
 };
 
-use super::super::evaluator::{push_effect, EvalContext};
+use super::super::evaluator::{ability_can_initiate, push_effect, EvalContext};
 use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use super::Cx;
 
@@ -143,20 +143,6 @@ fn same_location(state: &GameState, a: InvestigatorId, b: InvestigatorId) -> boo
             .and_then(|i| i.current_location)
     };
     loc(a).is_some_and(|la| loc(b) == Some(la))
-}
-
-/// Whether a reaction `ability` may be offered, per the shared RR p.2/p.3
-/// initiation gate. Thin alias for
-/// [`ability_can_initiate`](crate::engine::evaluator::ability_can_initiate),
-/// which the forced-trigger scan calls too (#786) so both sides ask one
-/// question — see it for the citation and for the tag layer's semantics.
-fn ability_eligible(
-    state: &GameState,
-    ability: &Ability,
-    source: CandidateSource,
-    controller: InvestigatorId,
-) -> bool {
-    crate::engine::evaluator::ability_can_initiate(state, ability, source, controller)
 }
 
 /// Scan every investigator's `cards_in_play` **and the current act/agenda** for
@@ -287,7 +273,7 @@ fn scan_pending_triggers(
                 }
                 // Eligibility gate (RR p.2): suppress a reaction whose effect
                 // can't change state (e.g. an emptied Cover Up 01007).
-                if !ability_eligible(
+                if !ability_can_initiate(
                     state,
                     ability,
                     CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
@@ -370,7 +356,7 @@ fn scan_act_agenda_reactions(
             // Eligibility gate (RR p.2): suppress an act/agenda reaction whose
             // effect can't change state (e.g. The Barrier 01109's round-end
             // advance when the Hallway group can't afford the clue threshold).
-            if !ability_eligible(state, ability, CandidateSource::Ability(source), lead) {
+            if !ability_can_initiate(state, ability, CandidateSource::Ability(source), lead) {
                 continue;
             }
             let ability_index = u8::try_from(idx)
@@ -460,7 +446,7 @@ fn scan_hand_fast_events(
                 // can't change game state — same rule as the in-play reaction scan
                 // (#495). Covers Evidence! 01022 (Roland's reaction sourced from
                 // hand: discover 1 clue at your location) at a 0-clue location.
-                if !ability_eligible(state, ability, CandidateSource::Hand, id) {
+                if !ability_can_initiate(state, ability, CandidateSource::Hand, id) {
                     continue;
                 }
                 // RR p.22 affordability: don't offer a Fast event whose resource
@@ -841,7 +827,7 @@ fn lapse_reason(state: &GameState, candidate: &ResolutionCandidate) -> LapseReas
         .and_then(|reg| (reg.abilities_for)(&candidate.code))
         .and_then(|abilities| abilities.get(usize::from(candidate.ability_index)).cloned())
         .is_some_and(|ability| {
-            ability_eligible(state, &ability, candidate.source, candidate.controller)
+            ability_can_initiate(state, &ability, candidate.source, candidate.controller)
         });
     if still_eligible {
         LapseReason::NoLongerEligible
