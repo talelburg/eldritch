@@ -88,7 +88,7 @@ the Tablet came out.
 | #764 ✅ PR #790 | A defeated active investigator's turn does not end |
 | #786 ✅ PR #791 | The forced-trigger scan ignores eligibility, so a Forced ability with an unmet condition initiates and prompts |
 | #697 ✅ PR #793 | Two of four phase-ends never emit, and there is no phase-start point at all |
-| #664 | A `ChooseOne` mode with no eligible target is still offered |
+| #664 ✅ PR #794 | A `ChooseOne` mode with no eligible target is still offered |
 | #651 | Hunter pathfinding routes *around* a movement block instead of being stopped by it |
 | #682 | An attack whose target leaves play mid-test resolves against difficulty 0 |
 | #562 | 01110's forced act-advance double-prompts (advance-flip slice 4) |
