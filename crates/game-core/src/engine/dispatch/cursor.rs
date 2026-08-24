@@ -97,6 +97,38 @@ pub(super) fn next_active_investigator_after(
         })
 }
 
+/// Mutable access to the `ending` flag on `investigator`'s open
+/// [`InvestigatorTurn`](crate::state::Continuation::InvestigatorTurn) frame, or
+/// `None` when they hold no open turn.
+///
+/// Setting the flag is how a turn is brought to Rules Reference Appendix II step
+/// 2.2.2 without running the rotation inline: `drive`'s `ending: true` arm picks
+/// the frame up once everything above it has unwound and runs
+/// [`resume_end_turn`](super::phases::resume_end_turn). Two callers arm it, and
+/// they differ only in whether a missing frame is possible —
+/// [`end_turn`](super::phases::end_turn) is dispatched *from* the open turn so
+/// its absence is state corruption, while
+/// [`end_turn_on_elimination`](super::elimination) fires from anywhere a defeat
+/// can happen and treats `None` as "not their turn, nothing to end". Keyed by
+/// investigator rather than by "the topmost turn frame" so a bystander's defeat
+/// cannot end the *active* investigator's turn.
+///
+/// Searched from the top down: only one `InvestigatorTurn` is ever on the stack
+/// (2.2's "that investigator must complete the turn before another investigator
+/// may take his or her turn"), so the direction is a formality.
+pub(super) fn turn_frame_ending_mut(
+    state: &mut GameState,
+    investigator: InvestigatorId,
+) -> Option<&mut bool> {
+    state.continuations.iter_mut().rev().find_map(|c| match c {
+        crate::state::Continuation::InvestigatorTurn {
+            investigator: whose,
+            ending,
+        } if *whose == investigator => Some(ending),
+        _ => None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

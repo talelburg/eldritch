@@ -223,21 +223,9 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     // empty, completes immediately, or suspends — there is no inline-resume branch.
     // A `Rejected` from `queue_event` rolls back the armed flag with the rest of
     // the apply (transactional snapshot).
-    let ending = cx
-        .state
-        .continuations
-        .iter_mut()
-        .rev()
-        .find_map(|c| match c {
-            crate::state::Continuation::InvestigatorTurn {
-                investigator,
-                ending,
-            } if *investigator == active_id => Some(ending),
-            _ => None,
-        })
-        .unwrap_or_else(|| {
-            unreachable!("end_turn: no InvestigatorTurn({active_id:?}) on the stack")
-        });
+    let ending = super::cursor::turn_frame_ending_mut(cx.state, active_id).unwrap_or_else(|| {
+        unreachable!("end_turn: no InvestigatorTurn({active_id:?}) on the stack")
+    });
     *ending = true;
     super::emit::queue_event(
         cx,
