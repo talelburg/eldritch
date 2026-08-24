@@ -28,15 +28,21 @@
 //! play in your threat area. You cannot play assets or events. <b>Forced</b> -
 //! At the end of the round: Discard Dissonant Voices."
 
-use game_core::action::EngineRecord;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use game_core::action::{EngineRecord, InputResponse};
+use game_core::engine::{InputKind, InputRequest, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosToken, InvestigatorId, LocationId, Status, Zone,
 };
 use game_core::test_support::{
-    drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
+    drive, test_investigator, test_location, ChoiceResolver, GameStateBuilder, ScriptedResolver,
 };
-use game_core::{assert_event, assert_event_count, assert_no_event, Action, EngineOutcome};
+use game_core::{
+    assert_event, assert_event_count, assert_no_event, Action, EngineOutcome, GameState,
+};
 
 /// Roland Banks — health 9, sanity 5.
 const ROLAND: &str = "01001";
@@ -328,9 +334,12 @@ fn cover_ups_trauma_fires_on_elimination_while_the_scenario_continues() {
 
 #[test]
 fn eliminated_investigator_with_a_clueless_cover_up_suffers_no_trauma() {
-    // The Forced's own condition: "if there are any clues on Cover Up". Step 0
-    // fires the ability either way; with no clues it resolves to nothing. The
-    // control that keeps the test above honest about *why* the trauma landed.
+    // The Forced's own condition: "if there are any clues on Cover Up". With no
+    // clues the ability does not *initiate* at all (#786) — RR p.2, "Forced
+    // Abilities": *"If a forced ability does not have the potential to change
+    // the game state, the ability does not initiate."* Step 0 scans it and
+    // collects nothing. The control that keeps the test above honest about
+    // *why* the trauma landed.
     let r = reveal_committing(board_at_lethal_range(8, &[], &[(COVER_UP, 0)]), &[]);
 
     assert_eq!(
@@ -339,6 +348,69 @@ fn eliminated_investigator_with_a_clueless_cover_up_suffers_no_trauma() {
         "the elimination still happened",
     );
     assert_no_event!(r.events, Event::TraumaSuffered { .. });
+}
+
+/// A [`ChoiceResolver`] that records every prompt and answers it generically, so
+/// a test can assert a prompt was *never* raised without scripting the unrelated
+/// windows a lethal revelation opens on the way there.
+///
+/// A skippable window is **skipped**, not taken: this resolver exists to observe
+/// prompts, and buying the first option of an optional window would have it
+/// change the board it is meant to watch. (`TakeOneFastPlay` branches on
+/// `skippable` for the same reason.)
+#[derive(Default)]
+struct RecordingResolver {
+    prompts: Rc<RefCell<Vec<String>>>,
+}
+
+impl ChoiceResolver for RecordingResolver {
+    fn next(&mut self, request: &InputRequest, _state: &GameState) -> InputResponse {
+        self.prompts.borrow_mut().push(request.prompt.clone());
+        if request.skippable {
+            return InputResponse::Skip;
+        }
+        match request.kind {
+            InputKind::PickSingle => InputResponse::PickSingle(OptionId(0)),
+            InputKind::PickMultiple => InputResponse::PickMultiple {
+                selected: Vec::new(),
+            },
+            _ => InputResponse::Confirm,
+        }
+    }
+}
+
+#[test]
+fn interactive_elimination_with_a_clueless_cover_up_raises_no_acknowledge() {
+    // The elimination half of #786. RR p.10 Elimination step 0 scans the same
+    // `EventPattern::GameEnd` declaration, so the initiation gate must hold
+    // there too: with no clues the Forced does not initiate, and the #466
+    // acknowledge `interactive_acknowledge` would otherwise raise never appears.
+    let mut state = board_at_lethal_range(8, &[], &[(COVER_UP, 0)]);
+    state.interactive_acknowledge = true;
+
+    let prompts = Rc::new(RefCell::new(Vec::new()));
+    let resolver = RecordingResolver {
+        prompts: Rc::clone(&prompts),
+    };
+    let r = drive(
+        state,
+        Action::Engine(EngineRecord::EncounterCardRevealed {
+            investigator: InvestigatorId(1),
+        }),
+        resolver,
+    );
+
+    assert_eq!(
+        r.state.investigators[&InvestigatorId(1)].status,
+        Status::Killed,
+        "the elimination still happened",
+    );
+    assert_no_event!(r.events, Event::TraumaSuffered { .. });
+    let seen = prompts.borrow();
+    assert!(
+        !seen.iter().any(|p| p.contains("Cover Up")),
+        "no forced acknowledge for a clueless Cover Up; prompts = {seen:?}",
+    );
 }
 
 #[test]

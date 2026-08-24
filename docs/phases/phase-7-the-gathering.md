@@ -100,7 +100,7 @@ the Tablet came out.
 |---|---|
 | #763 ✅ PR #789 | A zero-icon commit is accepted — commit is a free discard outlet |
 | #764 ✅ PR #790 | A defeated active investigator's turn does not end |
-| #786 | The forced-trigger scan ignores eligibility, so a Forced ability with an unmet condition initiates and prompts |
+| #786 ✅ PR #791 | The forced-trigger scan ignores eligibility, so a Forced ability with an unmet condition initiates and prompts |
 | #697 → #670 | Two of four phase-ends never emit, and there is no phase-start point at all → the non-`Specific` spawn shapes |
 | #664 | A `ChooseOne` mode with no eligible target is still offered |
 | #651 | Hunter pathfinding routes *around* a movement block instead of being stopped by it |
@@ -121,14 +121,27 @@ implementing PR records it on `DifficultyBasis`, or as an ADR if the teardown tu
 out to be load-bearing; it must say outright that this is an engine decision rather
 than a citation.
 
-**#786 is a scan fix, not a Cover Up fix.** `push_matching` collects on
-`(TriggerKind::Forced, timing, pattern)` and never reads `ability.eligibility`, so
-*every* forced ability whose condition lives inside its effect rather than in a gate
-will initiate when that condition is false. Cover Up 01007 is only the one the wave-0
-run stood in front of. It also lands on this branch's neighbour: `#763`'s PR reworked
-`elimination_teardown.rs`, and #786's fix has to rewrite that file's
-`eliminated_investigator_with_a_clueless_cover_up_suffers_no_trauma`, which asserts
-the right end state for the wrong reason.
+**#786 shipped as a scan fix, not a Cover Up fix.** The forced scan gated its
+candidates on the generic `effect_can_change_state` check alone, which cannot
+introspect an opaque `Effect::Native` — so *every* forced ability whose condition
+lives inside its effect rather than in a gate initiated when that condition was
+false. Cover Up 01007 was only the one the wave-0 run stood in front of.
+
+The reaction side had encoded RR p.2 correctly since #368, via the
+`Ability::eligibility` tag; the forced scan simply never asked. PR #791 extracted
+that predicate to `evaluator::ability_can_initiate` and called it from
+`collect_forced_hits`'s retain — the single chokepoint every `push_matching` call
+site feeds, and the one both the lone-hit acknowledge and the ordered
+simultaneous run read — so one predicate now serves both scans and neither can
+drift from the rule. The mock-tag tests land on `EnteredLocation` rather than
+`GameEnd`, which is what pins "every trigger point" instead of the two the bug
+report named.
+
+It also landed on this branch's neighbour: `#763`'s PR had reworked
+`elimination_teardown.rs`, and #791 rewrote that file's
+`eliminated_investigator_with_a_clueless_cover_up_suffers_no_trauma` — which
+asserted the right end state for the wrong reason, and now says the ability does
+not initiate.
 
 **#562 is in for placement, not severity.** It is terminal and once-per-scenario,
 but it fires on the Ghoul Priest's defeat — the last interaction before every win.
