@@ -263,15 +263,7 @@ mod tests {
         let _ = game_core::card_registry::install(crate::REGISTRY);
         let mut state = star_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway
-        state
-            .locations
-            .get_mut(&LocationId(5))
-            .unwrap()
-            .attachments
-            .push(game_core::state::CardInPlay::enter_play(
-                CardCode::new("01038"),
-                game_core::state::CardInstanceId(900),
-            ));
+        barricade(&mut state, LocationId(5));
         cx_apply(&mut state, move_ghouls_toward_parlor);
         assert_eq!(
             state.enemies[&EnemyId(1)].current_location,
@@ -282,6 +274,8 @@ mod tests {
 
     /// A detour board: Attic -> Hallway -> Parlor is the shortest route
     /// (2 steps); Attic -> Study -> Cellar -> Parlor is the long way (3).
+    /// Synthetic topology on real Gathering codes — the printed map is the
+    /// star in [`star_board`], which has no detour to test against.
     fn detour_board() -> game_core::state::GameState {
         let loc =
             |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
@@ -333,7 +327,6 @@ mod tests {
 
     #[test]
     fn ghoul_takes_the_shortest_step_when_nothing_is_barricaded() {
-        let _ = game_core::card_registry::install(crate::REGISTRY);
         let mut state = detour_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
         cx_apply(&mut state, move_ghouls_toward_parlor);

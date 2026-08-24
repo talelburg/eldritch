@@ -40,7 +40,7 @@ pub use modified_value::{
 pub use outcome::{
     ChoiceOption, EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
-pub use pathfinding::{shortest_first_steps, shortest_first_steps_with};
+pub use pathfinding::shortest_first_steps;
 
 // Crate-internal re-exports for `test_support::fire_forced_on_enter`.
 // Neither is public API: `ForcedTriggerPoint` stays internal; the
