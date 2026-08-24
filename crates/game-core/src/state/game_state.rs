@@ -2479,18 +2479,34 @@ pub enum ModifierTarget {
 /// > that causes me to move before that test finishes resolving, what happens
 /// > to that skill test?
 /// >
-/// > A: Once you initiate a skill test or ability, you'll resolve that test or
-/// > ability as completely as possible, regardless of your location (unless
-/// > another effect cancels or interrupts it).
+/// > A: Once you initiate a skill test or ability, you’ll resolve that test
+/// > or ability as completely as possible, regardless of your location (unless
+/// > another effect cancels or interrupts it). For example, if you attacked an
+/// > elusive enemy with One-Two Punch (\[nat\] 17, 32), you could attack that
+/// > same enemy with the card’s second fight, even though it has moved to a
+/// > connecting location.
 ///
-/// The word that decided it is *possible*: resolving a Fight or an Evade
-/// against an enemy that is not in play is not. The rejected alternative was
-/// to pin the difficulty at its last read — closer to what a table would
-/// improvise, but it keeps a *result*, and therefore every `"If you
-/// succeed"` rider on every committed card, attached to a test whose whole
-/// subject is gone. Doing nothing is not among the options: with no presence
-/// check the modified-value query finds no entity, answers a base of 0, and
-/// the attack automatically succeeds against a difficulty of 0.
+/// The example is quoted because it is the closest the FAQ comes to this case
+/// and it cuts the *other* way — an attack continuing against an enemy that
+/// moved. It does not decide the question: One-Two Punch’s elusive enemy is
+/// still **in play**, and a target that is in play is exactly the case the
+/// engine already handles. The word that decided it is *possible*: resolving
+/// a Fight or an Evade against an enemy that is not in play at all is not.
+///
+/// The rejected alternative was to pin the difficulty at its last read —
+/// closer to what a table would improvise, but it keeps a *result*, and
+/// therefore every `"If you succeed"` rider on every committed card, attached
+/// to a test whose whole subject is gone. Doing nothing is not among the
+/// options: with no presence check the modified-value query finds no entity,
+/// answers a base of 0, and the attack automatically succeeds against a
+/// difficulty of 0.
+///
+/// The gate covers all three board-reading bases, not only the two the defect
+/// was reported against: an investigation whose location has been removed
+/// ([`Shroud`](Self::Shroud)) reads a difficulty of 0 for the same reason and
+/// wants the same answer. No corpus card removes a location from inside a
+/// skill test today — 01108’s removal of the Study 01111 happens at act
+/// advancement — so that arm ships on the argument rather than on a test.
 ///
 /// The gate is bounded to tests that have not yet been compared
 /// (`resolved.is_none()`). Past ST.6 the verdict is set and the target leaving

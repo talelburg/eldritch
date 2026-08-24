@@ -16,12 +16,17 @@
 //! > that causes me to move before that test finishes resolving, what happens
 //! > to that skill test?
 //! >
-//! > A: Once you initiate a skill test or ability, you'll resolve that test or
-//! > ability as completely as possible, regardless of your location (unless
-//! > another effect cancels or interrupts it).
+//! > A: Once you initiate a skill test or ability, you’ll resolve that test
+//! > or ability as completely as possible, regardless of your location (unless
+//! > another effect cancels or interrupts it). For example, if you attacked an
+//! > elusive enemy with One-Two Punch (\[nat\] 17, 32), you could attack that
+//! > same enemy with the card’s second fight, even though it has moved to a
+//! > connecting location.
 //!
 //! The word the decision leans on is *possible*: resolving an attack against
-//! an enemy that is not in play is not.
+//! an enemy that is not in play is not. The example cuts the other way and
+//! still does not decide it — One-Two Punch’s elusive enemy has *moved*, and
+//! a moved enemy is in play.
 //!
 //! The instrument is Beat Cop 01018 (`data/arkhamdb-snapshot/pack/core/core.json`):
 //!
@@ -66,9 +71,11 @@ fn install_cards_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
-/// Skip the ST.1 window, commit `commit`, then — when `kill_at_st2` — take the
-/// one offered fast ability at the **ST.2** window: Beat Cop's discard, which
-/// defeats the 1-health enemy the in-flight attack is against.
+/// Commit `commit` at the commit window, skip the ST.1 window, and — when
+/// `kill_at_st2` — take the one offered fast ability at the **ST.2** window:
+/// Beat Cop's discard, which defeats the 1-health enemy the in-flight attack
+/// is against. With `kill_at_st2` false both windows are skipped, which is how
+/// the ordinary un-abandoned attack is driven.
 ///
 /// Fast player windows arrive as skippable `PickSingle` prompts and the commit
 /// window as a non-skippable `PickMultiple`, so the resolver can tell them
@@ -76,7 +83,7 @@ fn install_cards_registry() {
 /// two windows a skill test opens are ST.1 (before the commit window) and ST.2
 /// (after it, before the token), in that order — hence the count.
 #[derive(Default)]
-struct KillTargetAtStTwo {
+struct StTwoWindow {
     /// Whether to buy Beat Cop's ability at the second window.
     kill_at_st2: bool,
     /// Hand indices to submit at the commit window (empty for no commits).
@@ -84,7 +91,7 @@ struct KillTargetAtStTwo {
     windows_seen: u32,
 }
 
-impl ChoiceResolver for KillTargetAtStTwo {
+impl ChoiceResolver for StTwoWindow {
     fn next(&mut self, request: &InputRequest, _state: &GameState) -> InputResponse {
         if request.skippable && request.kind == InputKind::PickSingle {
             self.windows_seen += 1;
@@ -138,12 +145,12 @@ fn board() -> GameState {
     board_with_hand(&[])
 }
 
-/// Take `action` on `state`, committing `commit` (hand indices) and then
-/// killing the attacked enemy at the test's ST.2 window.
-fn attack_then_kill_the_target_on(
+/// Take `action` on `state` through `resolver`, resolving the enumerated turn
+/// action by its index exactly as a client would.
+fn take(
     state: GameState,
     action: &TurnAction,
-    commit: Vec<OptionId>,
+    resolver: StTwoWindow,
 ) -> game_core::engine::ApplyResult {
     let idx = legal_actions(&state)
         .iter()
@@ -156,7 +163,21 @@ fn attack_then_kill_the_target_on(
                 u32::try_from(idx).expect("action index fits u32"),
             )),
         }),
-        KillTargetAtStTwo {
+        resolver,
+    )
+}
+
+/// [`take`] with the ST.2 kill armed and `commit` submitted at the commit
+/// window.
+fn attack_then_kill_the_target_on(
+    state: GameState,
+    action: &TurnAction,
+    commit: Vec<OptionId>,
+) -> game_core::engine::ApplyResult {
+    take(
+        state,
+        action,
+        StTwoWindow {
             kill_at_st2: true,
             commit,
             windows_seen: 0,
@@ -264,7 +285,7 @@ fn abandoning_the_test_does_not_refund_the_action() {
 ///
 /// > While the effects of an event or treachery card are being resolved, or
 /// > while a skill is committed to a skill test, it is neither in play, in the
-/// > discard pile, nor is it in an investigator's hand.
+/// > discard pile, nor is it in an investigator’s hand.
 #[test]
 fn a_card_committed_to_the_abandoned_test_is_discarded_not_deleted() {
     let result = attack_then_kill_the_target_on(
@@ -303,23 +324,13 @@ fn a_card_committed_to_the_abandoned_test_is_discarded_not_deleted() {
 /// same board, nothing bought at ST.2.
 #[test]
 fn a_fight_that_defeats_its_own_target_at_st7_still_resolves() {
-    let state = board();
-    let action = TurnAction::Fight {
-        investigator: INV,
-        enemy: ENEMY,
-    };
-    let idx = legal_actions(&state)
-        .iter()
-        .position(|a| a == &action)
-        .expect("Fight is legal on this board");
-    let result = drive(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(
-                u32::try_from(idx).expect("action index fits u32"),
-            )),
-        }),
-        KillTargetAtStTwo::default(),
+    let result = take(
+        board(),
+        &TurnAction::Fight {
+            investigator: INV,
+            enemy: ENEMY,
+        },
+        StTwoWindow::default(),
     );
 
     // Combat 3 (Beat Cop's constant +1 on a base 2) + Numeric(0) vs the Ghoul's

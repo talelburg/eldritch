@@ -11,9 +11,9 @@ use crate::card_registry;
 use crate::dsl::{discover_clue, Determination, IntExpr, LocationTarget, SkillTestKind, Trigger};
 use crate::event::{Event, FailureReason};
 use crate::state::{
-    resolve_token, CardCode, ChaosToken, Continuation, GameState, InFlightSkillTest,
-    InvestigatorId, Lifetime, RecordedModifier, SkillKind, SkillTestFollowUp, SkillTestStep,
-    Status, TokenResolution, Zone,
+    resolve_token, CardCode, ChaosToken, Continuation, DifficultyBasis, GameState,
+    InFlightSkillTest, InvestigatorId, Lifetime, RecordedModifier, SkillKind, SkillTestFollowUp,
+    SkillTestStep, Status, TokenResolution, Zone,
 };
 
 use super::super::evaluator::{push_effect, EvalContext};
@@ -1222,13 +1222,9 @@ fn expire_this_tests_modifiers(cx: &mut Cx) {
 /// Whether the entity whose quantity `basis` reads has left play, so the test
 /// resting on it has nothing left to be a test *of* (#682).
 ///
-/// [`Fixed`](crate::state::DifficultyBasis::Fixed) reads a number printed on a
-/// card rather than a board entity, so it can never go absent.
-fn difficulty_target_left_play(
-    state: &crate::state::GameState,
-    basis: crate::state::DifficultyBasis,
-) -> bool {
-    use crate::state::DifficultyBasis;
+/// [`Fixed`](DifficultyBasis::Fixed) reads a number printed on a card rather
+/// than a board entity, so it can never go absent.
+fn difficulty_target_left_play(state: &GameState, basis: DifficultyBasis) -> bool {
     match basis {
         DifficultyBasis::Fixed(_) => false,
         DifficultyBasis::Shroud(id) => !state.locations.contains_key(&id),
@@ -1590,9 +1586,15 @@ fn apply_skill_test_follow_up(
             enemy,
             extra_damage,
         } => {
-            // Mid-test enemy disappearance isn't possible in Phase 3
-            // (no commit-window effects mutate enemies), so
-            // damage_enemy's enemy-missing panic stays loud. A weapon's
+            // The attacked enemy is still here. An enemy that left play
+            // *before* ST.6 abandons the test outright (#682,
+            // `advance`'s preamble), which is what keeps damage_enemy's
+            // enemy-missing panic loud rather than reachable. The residue
+            // it does not cover — an enemy removed by something firing in
+            // the post-ST.6 `SkillTestResolved` run, before this step —
+            // has no corpus card that can do it: the fast hand events are
+            // Dodge, Working a Hunch, Evidence and Mind over Matter, none
+            // of which removes an enemy. A weapon's
             // bonus damage (.38 Special's +1) rides on `extra_damage`; a
             // committed skill's bonus (Vicious Blow's +1) accumulates on
             // the in-flight record at commit time (#307). The in-flight
