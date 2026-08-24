@@ -1298,14 +1298,7 @@ fn validate_commit_indices(
             let Some(meta) = (reg.metadata_for)(code) else {
                 continue;
             };
-            let icons = meta.skill_icons();
-            let matching = match skill {
-                SkillKind::Willpower => icons.willpower,
-                SkillKind::Intellect => icons.intellect,
-                SkillKind::Combat => icons.combat,
-                SkillKind::Agility => icons.agility,
-            };
-            if matching == 0 && icons.wild == 0 {
+            if !meta.skill_icons().appropriate_for(skill) {
                 return Err(EngineOutcome::Rejected {
                     reason: format!(
                         "skill-test commit: {code} prints no {skill:?} icon and no wild icon, \
@@ -1434,13 +1427,8 @@ fn push_committed_icons(out: &mut ModifierBreakdown, committed: &[CardCode], ski
             continue;
         };
         let icons = meta.skill_icons();
-        let matching = match skill {
-            SkillKind::Willpower => icons.willpower,
-            SkillKind::Intellect => icons.intellect,
-            SkillKind::Combat => icons.combat,
-            SkillKind::Agility => icons.agility,
-        };
-        let delta = i8::try_from(matching.saturating_add(icons.wild)).unwrap_or(i8::MAX);
+        let delta =
+            i8::try_from(icons.matching(skill).saturating_add(icons.wild)).unwrap_or(i8::MAX);
         out.push(
             ContributionSource::Card {
                 code: code.clone(),
