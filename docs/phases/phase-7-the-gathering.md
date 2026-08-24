@@ -90,7 +90,7 @@ the Tablet came out.
 | #697 ✅ PR #793 | Two of four phase-ends never emit, and there is no phase-start point at all |
 | #664 ✅ PR #794 | A `ChooseOne` mode with no eligible target is still offered |
 | #651 ✅ PR #796 | Hunter pathfinding routes *around* a movement block instead of being stopped by it |
-| #797 | Agenda 01107's Ghoul move reroutes around a movement block instead of being stopped by it |
+| #797 ✅ PR #798 | Agenda 01107's Ghoul move reroutes around a movement block instead of being stopped by it |
 | #682 | An attack whose target leaves play mid-test resolves against difficulty 0 |
 | #562 | 01110's forced act-advance double-prompts (advance-flip slice 4) |
 
@@ -166,10 +166,12 @@ Ordered: **#644 → #772 → #771 → #773 → #774 → #775**.
   (`glossary/Hunter.md`). Two notes from that PR for whoever picks this up: the same
   clause appears on a **fixed**-destination mover in `glossary/Patrol.md`, so it does
   not depend on the target being a "nearest" one — which is why agenda 01107's forced
-  Ghoul move, still graph-level, is now **#797** in wave 1. And the enemy-side
-  predicate is `enemy_can_enter_location`, applied
-  at the step in `hunter_destinations` and at the graph in `move_ghouls_toward_parlor`,
-  so "one predicate or two" is really "one predicate, how many application sites".
+  Ghoul move became **#797**, shipped in PR #798. So there is now exactly one
+  application site to inherit, not two: the enemy-side predicate is
+  `enemy_can_enter_location`, and both `hunter_destinations` and
+  `move_ghouls_toward_parlor` apply it to the compelled step. The graph-pruning
+  pathfinding variants (`bfs_distance_with`, `shortest_first_steps_with`) are gone
+  with the reading they served, so a new mover cannot reach for them by accident.
 - **#775 — act 3's R1/R2 choice.** 01110b asks the lead investigator to choose the
   ending, and `the_gathering.rs:235` hardcodes `Resolution::Won { id: "R1" }`, so R2
   is unreachable. Not a new finding: the 2026-08-22 sweep had already split it into
@@ -771,7 +773,7 @@ text looked silent. `glossary/Patrol.md` is the source that answers it: patrol i
 fixed-destination shortest-path mover and carries the same *"would be compelled to move
 to a location which is blocked by a card ability, the enemy does not move"* clause. So
 the audit's Uncertain is resolved and 01107 is a rules defect like its siblings, not a
-deferred judgement call.
+deferred judgement call. **PR #798 shipped it** on that reading.
 
 The sweep also pulled in **#670**, wrongly: it read *"reachable today"* off the
 cards' presence in the core **pack** rather than in this scenario's encounter

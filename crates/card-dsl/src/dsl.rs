@@ -1389,10 +1389,11 @@ pub enum Restriction {
     /// Non-Elite enemies cannot move into the location this restriction's
     /// source is attached to (Barricade 01038). **Inspected, not executed** —
     /// the movers (`engine::dispatch::hunters`) read it to decide whether a
-    /// non-Elite enemy may enter. *Where* it is applied is per-mover: Hunter
-    /// movement applies it to the compelled step only, leaving distances and
-    /// shortest paths on the full connection graph (#651), while agenda
-    /// 01107's forced move still prunes the graph (#797). The Elite exemption
+    /// non-Elite enemy may enter. It applies to the **compelled step alone**,
+    /// leaving distances and shortest paths on the full connection graph —
+    /// Hunter movement (#651) and agenda 01107's forced Ghoul move (#797)
+    /// both read it that way, so a blocked step is a non-move rather than a
+    /// detour. The Elite exemption
     /// (RR: most movement-blockers exempt Elite) is applied at the read site,
     /// which has the moving enemy's traits.
     EnemyMovementBlocked,

@@ -71,16 +71,17 @@ A new inspectable `Restriction` variant (joining `CannotPlay` /
 `constant(restrict(Restriction::EnemyMovementBlocked))` and **inspected,
 not executed** (like the other restrictions).
 
-> **Superseded for Hunter movement (#651, 2026-08-24).** The graph-level
-> reading below was wrong: `Nearest.md` measures distance *through* a block
-> (*"even if one or more of those connections are blocked by another card
-> ability"*), and `Hunter.md` turns only the compelled step into a non-move.
-> Hunter movement now measures on the full connection graph and filters the
-> resulting first steps. Agenda 01107's forced Ghoul move still prunes the
-> graph as described here — it names a fixed destination rather than a
-> "nearest" target, so `Nearest.md` does not reach it. `glossary/Patrol.md`
-> puts the same rule on a fixed-destination mover and so settles 01107 the same
-> way; that is #797.
+> **Superseded for every mover (#651, 2026-08-24; #797, 2026-08-25).** The
+> graph-level reading below was wrong: `Nearest.md` measures distance *through*
+> a block (*"even if one or more of those connections are blocked by another
+> card ability"*), and `Hunter.md` turns only the compelled step into a
+> non-move. Hunter movement measures on the full connection graph and filters
+> the resulting first steps (#651). Agenda 01107's forced Ghoul move does the
+> same since #797: it names a fixed destination rather than a "nearest" target,
+> so `Nearest.md` does not reach it, but `glossary/Patrol.md` carries the
+> identical rule on a fixed-destination, shortest-path mover — *"If an enemy
+> with patrol would be compelled to move to a location which is blocked by a
+> card ability, the enemy does not move."* No mover prunes the graph any more.
 
 Hunter pathfinding in `hunters.rs` treats a location impassable to the
 moving enemy as **absent from the graph** — graph-level, not a
