@@ -2,8 +2,8 @@
 //! on scenario-structure cards (locations, acts, agendas) at framework
 //! timing points, via an immediate path separate from the player
 //! reaction-window machinery. Multiple simultaneous triggers resolve in
-//! a fixed deterministic order (see [`queue_forced_triggers`]); #213 adds
-//! player-chosen ordering, #212 the universal `queue_event` chokepoint.
+//! a fixed deterministic order (see [`queue_forced_triggers`]), beneath the
+//! universal [`queue_event`](super::emit::queue_event) chokepoint.
 
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
@@ -587,8 +587,9 @@ pub(super) fn collect_forced_hits(
 /// **Act and agenda only.** An enemy or asset in play printing a phase-boundary
 /// Forced — Wizard of the Order 01170, Hunting Horror 02141, Peter Clover
 /// 02079 — is not reached, because there is no doom-on-a-card model for the
-/// first of them to place onto and no Dunwich corpus for the other two. See
-/// `docs/phases/phase-7-the-gathering.md`.
+/// first of them to place onto and no Dunwich corpus for the other two. #792
+/// carries the doom model, this scan's in-play arm, and 01170 together, since
+/// none of the three is assertable without the other two.
 fn push_scenario_structure_matching(
     reg: &card_registry::CardRegistry,
     state: &crate::state::GameState,

@@ -700,11 +700,11 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
 /// deferred to [`resume_hunter_choice`], which runs it once the last hunter
 /// resolves.
 fn enemy_after_phase_start(cx: &mut Cx) -> EngineOutcome {
-    // `enemy_attack_kickoff` / `after_enemy_phase_attacks` set the anchor's
-    // `resume` and `attacking` cursor before opening each attack window. The
-    // placeholder resume + `None` cursor are overwritten before the first window
-    // opens (kickoff runs after hunter movement, which is why `attacking` stays
-    // `None` here — no investigator is selected yet).
+    // Advance the anchor off `AfterPhaseStartForced` onto the phase's running
+    // cursor. `attacking` stays `None`: the kickoff runs after hunter movement,
+    // so no investigator is selected yet. `enemy_attack_kickoff` /
+    // `after_enemy_phase_attacks` set both fields again before opening each
+    // attack window.
     set_enemy_anchor(
         cx,
         crate::state::EnemyResume::BeforeInvestigatorAttacked,

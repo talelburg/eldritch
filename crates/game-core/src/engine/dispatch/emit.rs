@@ -351,10 +351,14 @@ impl TimingEvent {
             // - `PhaseStarted` — born coordinator-owned (#697), as
             //   `ConditionResolution::Caller` requires of a new event: there is
             //   no legacy emit site to invert. A phase beginning changes nothing
-            //   by itself; the phase's opening work (the Mythos round bump and
-            //   doom, the Enemy phase's hunter movement, each phase's first
-            //   player window) belongs to the driver frame that emitted it and
-            //   runs on that frame's resume, after the whole sequence.
+            //   by itself; the phase's opening *work* (the Mythos doom, the
+            //   Enemy phase's hunter movement, each phase's first player window)
+            //   belongs to the driver frame that emitted it and runs on that
+            //   frame's resume, after the whole sequence. The one thing that
+            //   does precede the emit is Mythos's round-counter bump — step 1.1
+            //   *"also formalizes the beginning of a new game round"*
+            //   (`Appendix_II_Timing_and_Gameplay.md`), so an ability firing at
+            //   this milestone must already read the new round.
             TimingEvent::PhaseStarted { .. }
             | TimingEvent::RoundEnded
             | TimingEvent::GameEnd
