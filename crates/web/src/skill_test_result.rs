@@ -1,7 +1,8 @@
 //! Skill-test result panel (#478): renders the just-resolved test — chaos token
 //! drawn, final total vs difficulty, pass/fail by N — from the events the store
-//! retained ([`crate::store::ClientState::last_events`] +
-//! [`last_skill_test_difficulty`](crate::store::ClientState::last_skill_test_difficulty)).
+//! retained ([`crate::store::ClientState::last_events`] plus the latched
+//! [`last_skill_test_difficulty`](crate::store::ClientState::last_skill_test_difficulty)
+//! and [`last_revealed_token`](crate::store::ClientState::last_revealed_token)).
 //! Since #541 it is a centred modal carrying **its own** Confirm — the
 //! acknowledge pause's only one — rather than a panel beside a button in the
 //! retired action bar.
@@ -22,20 +23,29 @@ pub struct SkillTestSummary {
     pub outcome: String,
 }
 
-/// Build a [`SkillTestSummary`] from a resolution event batch and the test's
-/// difficulty, or `None` if the batch carries no skill-test result or the
-/// difficulty is unknown. Pure — no DOM, unit-tested on native.
+/// Build a [`SkillTestSummary`] from a resolution event batch, the test's
+/// difficulty and the token it drew, or `None` if the batch carries no
+/// skill-test result or the difficulty is unknown. Pure — no DOM, unit-tested
+/// on native.
 ///
 /// `total` is reconstructed from the logged margin: `difficulty + margin` on a
 /// success, `difficulty - by` on a failure (an `AutoFail` reports `by =
 /// difficulty`, so the total clamps to 0).
+///
+/// Both `difficulty` and `token` come from the store's latches rather than from
+/// `events`, because a resolution can span several apply batches: any ST.4
+/// effect that suspends for input — The Gathering's Tablet dealing damage with a
+/// soak target in play (#787) — leaves the reveal in the batch *before* the one
+/// carrying the outcome. `None` for `token` means no token was drawn at all, and
+/// renders the em dash.
 #[must_use]
-pub fn summarize(events: &[Event], difficulty: Option<i8>) -> Option<SkillTestSummary> {
+pub fn summarize(
+    events: &[Event],
+    difficulty: Option<i8>,
+    token: Option<(ChaosToken, TokenResolution)>,
+) -> Option<SkillTestSummary> {
     let difficulty = difficulty?;
-    let token = events.iter().find_map(|e| match e {
-        Event::ChaosTokenRevealed { token, resolution } => Some(token_display(*token, *resolution)),
-        _ => None,
-    });
+    let token = token.map(|(token, resolution)| token_display(token, resolution));
     for e in events {
         match e {
             Event::SkillTestSucceeded { margin, .. } => {
@@ -91,7 +101,12 @@ fn token_display(token: ChaosToken, resolution: TokenResolution) -> String {
 /// with the view it governs, rather than being re-derived by the banner. Pure.
 #[must_use]
 pub fn modal_is_live(state: &crate::store::ClientState) -> bool {
-    summarize(&state.last_events, state.last_skill_test_difficulty).is_some()
+    summarize(
+        &state.last_events,
+        state.last_skill_test_difficulty,
+        state.last_revealed_token,
+    )
+    .is_some()
         && matches!(
             &state.outcome,
             Some(game_core::EngineOutcome::AwaitingInput { request, .. })
@@ -118,7 +133,11 @@ pub fn SkillTestResultView() -> impl IntoView {
             if !modal_is_live(&st) {
                 return ().into_any();
             }
-            let Some(s) = summarize(&st.last_events, st.last_skill_test_difficulty) else {
+            let Some(s) = summarize(
+                &st.last_events,
+                st.last_skill_test_difficulty,
+                st.last_revealed_token,
+            ) else {
                 return ().into_any();
             };
             view! {
@@ -168,6 +187,14 @@ mod tests {
         }
     }
 
+    /// The store's latch for a numeric token of `modifier`.
+    fn latched(modifier: i8) -> (ChaosToken, TokenResolution) {
+        (
+            ChaosToken::Numeric(modifier),
+            TokenResolution::Modifier(modifier),
+        )
+    }
+
     #[test]
     fn summarizes_a_success() {
         let events = vec![
@@ -178,7 +205,7 @@ mod tests {
                 margin: 2,
             },
         ];
-        let s = summarize(&events, Some(3)).expect("a success summary");
+        let s = summarize(&events, Some(3), Some(latched(1))).expect("a success summary");
         assert_eq!(s.difficulty, 3);
         assert_eq!(s.total, 5, "total = difficulty + margin");
         assert!(s.outcome.contains("Succeeded by 2"), "{}", s.outcome);
@@ -195,7 +222,7 @@ mod tests {
                 by: 2,
             },
         ];
-        let s = summarize(&events, Some(4)).expect("a failure summary");
+        let s = summarize(&events, Some(4), Some(latched(-1))).expect("a failure summary");
         assert_eq!(s.total, 2, "total = difficulty - by");
         assert!(s.outcome.contains("Failed by 2"), "{}", s.outcome);
     }
@@ -214,7 +241,12 @@ mod tests {
                 by: 3,
             },
         ];
-        let s = summarize(&events, Some(3)).expect("an autofail summary");
+        let s = summarize(
+            &events,
+            Some(3),
+            Some((ChaosToken::AutoFail, TokenResolution::AutoFail)),
+        )
+        .expect("an autofail summary");
         assert_eq!(s.total, 0, "auto-fail clamps total to 0");
         assert!(
             s.outcome.contains("auto-fail"),
@@ -225,7 +257,7 @@ mod tests {
 
     #[test]
     fn no_summary_without_resolution_events() {
-        assert!(summarize(&[], Some(3)).is_none());
+        assert!(summarize(&[], Some(3), Some(latched(1))).is_none());
     }
 
     #[test]
@@ -235,6 +267,37 @@ mod tests {
             skill: SkillKind::Willpower,
             margin: 0,
         }];
-        assert!(summarize(&events, None).is_none());
+        assert!(summarize(&events, None, Some(latched(1))).is_none());
+    }
+
+    /// The #787 case: a symbol token whose ST.4 effect suspends strands the
+    /// reveal in an earlier batch, so the resolution batch carries only the
+    /// outcome. The latch is what names the token.
+    #[test]
+    fn names_a_token_revealed_in_an_earlier_batch() {
+        let events = vec![Event::SkillTestFailed {
+            investigator: InvestigatorId(1),
+            skill: SkillKind::Combat,
+            reason: FailureReason::Total,
+            by: 1,
+        }];
+        let s = summarize(
+            &events,
+            Some(3),
+            Some((ChaosToken::Tablet, TokenResolution::Modifier(-2))),
+        )
+        .expect("a failure summary");
+        assert_eq!(s.token, "Tablet (-2)", "names the latched token");
+    }
+
+    #[test]
+    fn falls_back_to_the_em_dash_when_no_token_was_drawn() {
+        let events = vec![Event::SkillTestSucceeded {
+            investigator: InvestigatorId(1),
+            skill: SkillKind::Willpower,
+            margin: 1,
+        }];
+        let s = summarize(&events, Some(3), None).expect("a success summary");
+        assert_eq!(s.token, "—", "no token drawn at all keeps the fallback");
     }
 }
