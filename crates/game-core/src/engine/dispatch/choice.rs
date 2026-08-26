@@ -45,17 +45,20 @@ pub fn resolve_choice_count(n: usize, interactive: bool) -> ChoiceResolution {
 /// indexing.
 pub(crate) fn awaiting_choice_anchored(
     prompt: impl Into<String>,
-    options: Vec<(String, OptionTarget)>,
+    options: Vec<(String, Option<OptionTarget>)>,
 ) -> EngineOutcome {
     let options: Vec<ChoiceOption> = options
         .into_iter()
         .enumerate()
         .map(|(i, (label, target))| {
-            ChoiceOption::new(
+            let opt = ChoiceOption::new(
                 OptionId(u32::try_from(i).expect("offered option count fits in u32")),
                 label,
-                target,
-            )
+            );
+            match target {
+                Some(target) => opt.at(target),
+                None => opt,
+            }
         })
         .collect();
     EngineOutcome::AwaitingInput {
@@ -65,17 +68,12 @@ pub(crate) fn awaiting_choice_anchored(
 }
 
 /// Build the `AwaitingInput` for a controller choice from one render label per
-/// offered option, each anchored `Global` (no board home). Delegates to
-/// [`awaiting_choice_anchored`]. Used by native-leaf choices and the effect-branch
-/// `ChooseOne`, whose options are not board entities.
+/// offered option, each **un-anchored** (no board home, so the host renders it in
+/// the prompt banner). Delegates to [`awaiting_choice_anchored`]. Used by
+/// native-leaf choices and the effect-branch `ChooseOne`, whose options are not
+/// board entities.
 pub(crate) fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) -> EngineOutcome {
-    awaiting_choice_anchored(
-        prompt,
-        labels
-            .into_iter()
-            .map(|l| (l, OptionTarget::Global))
-            .collect(),
-    )
+    awaiting_choice_anchored(prompt, labels.into_iter().map(|l| (l, None)).collect())
 }
 
 /// Suspend a card-local native leaf for a controller pick (#422): build the
@@ -292,28 +290,27 @@ mod tests {
         let out = awaiting_choice_anchored(
             "Choose an enemy",
             vec![
-                ("Ghoul".into(), OptionTarget::Enemy(EnemyId(1))),
-                ("Nobody".into(), OptionTarget::Global),
+                ("Ghoul".into(), Some(OptionTarget::Enemy(EnemyId(1)))),
+                ("Nobody".into(), None),
             ],
         );
         let EngineOutcome::AwaitingInput { request, .. } = out else {
             panic!("expected AwaitingInput");
         };
         assert_eq!(request.options[0].id, OptionId(0));
-        assert_eq!(request.options[0].target, OptionTarget::Enemy(EnemyId(1)));
-        assert_eq!(request.options[1].target, OptionTarget::Global);
+        assert_eq!(
+            request.options[0].target,
+            Some(OptionTarget::Enemy(EnemyId(1)))
+        );
+        assert_eq!(request.options[1].target, None);
     }
 
     #[test]
-    fn awaiting_choice_defaults_every_option_to_global() {
-        use crate::engine::OptionTarget;
+    fn awaiting_choice_leaves_every_option_unanchored() {
         let out = awaiting_choice("Pick", vec!["x".into(), "y".into()]);
         let EngineOutcome::AwaitingInput { request, .. } = out else {
             panic!("expected AwaitingInput");
         };
-        assert!(request
-            .options
-            .iter()
-            .all(|o| o.target == OptionTarget::Global));
+        assert!(request.options.iter().all(|o| o.target.is_none()));
     }
 }

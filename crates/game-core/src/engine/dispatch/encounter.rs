@@ -641,9 +641,13 @@ pub(super) fn prompt_encounter_draw(cx: &Cx) -> EngineOutcome {
         .current_encounter_drawer()
         .expect("prompt_encounter_draw: no EncounterDraw frame on the stack");
     EngineOutcome::AwaitingInput {
+        // Anchored to the encounter deck, which is what distinguishes this prompt
+        // from the cosmetic skill-test acknowledge on the wire — both are
+        // option-less `Confirm`s otherwise (ADR 0011, #541).
         request: InputRequest::confirm(format!(
             "Mythos step 1.4: {drawer:?} draws an encounter card; submit InputResponse::Confirm.",
-        )),
+        ))
+        .at(crate::engine::OptionTarget::EncounterDeck),
         resume_token: ResumeToken(0),
     }
 }
@@ -2086,5 +2090,33 @@ mod resume_encounter_draw_tests {
             "the EncounterDraw frame must survive a rejected response for retry",
         );
         assert!(events.is_empty(), "a rejected response emits no events");
+    }
+
+    #[test]
+    fn the_draw_prompt_is_anchored_to_the_encounter_deck() {
+        // The prompt anchor is the only thing distinguishing this prompt from the
+        // cosmetic skill-test acknowledge on the wire — both are option-less
+        // `Confirm`s (ADR 0011). A rewritten builder that drops the `.at(…)`
+        // relocates the Draw button to the banner, and this is what catches it.
+        let mut state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Mythos)
+            .with_turn_order([InvestigatorId(1)])
+            .with_mythos_draw_remaining([InvestigatorId(1)])
+            .build();
+        let mut events = Vec::new();
+        let outcome = prompt_encounter_draw(&Cx {
+            state: &mut state,
+            events: &mut events,
+        });
+        let EngineOutcome::AwaitingInput { request, .. } = outcome else {
+            panic!("the encounter draw suspends for a Confirm");
+        };
+        assert_eq!(request.kind, crate::engine::InputKind::Confirm);
+        assert!(request.options.is_empty(), "a Confirm carries no options");
+        assert_eq!(
+            request.target,
+            Some(crate::engine::OptionTarget::EncounterDeck)
+        );
     }
 }

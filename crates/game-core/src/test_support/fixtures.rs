@@ -211,8 +211,8 @@ pub fn awaiting_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
         request: InputRequest::pick_single(
             prompt,
             vec![
-                ChoiceOption::global(OptionId(0), "End turn"),
-                ChoiceOption::global(OptionId(1), "Investigate"),
+                ChoiceOption::new(OptionId(0), "End turn"),
+                ChoiceOption::new(OptionId(1), "Investigate"),
             ],
         ),
         resume_token: ResumeToken(0),
@@ -222,7 +222,7 @@ pub fn awaiting_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
 /// An [`AwaitingInput`](EngineOutcome::AwaitingInput) `PickSingle` outcome over
 /// caller-supplied `options` — for host/UI tests that need a specific
 /// [`OptionTarget`](crate::OptionTarget) anchor (the no-arg
-/// [`awaiting_pick_single_input`] fixture is `Global`-only). `ResumeToken(0)`
+/// [`awaiting_pick_single_input`] fixture is un-anchored only). `ResumeToken(0)`
 /// matches the other fixtures (the UI never inspects it).
 #[must_use]
 pub fn awaiting_pick_single_with(
@@ -253,18 +253,15 @@ pub fn awaiting_confirm_input(prompt: impl Into<String>) -> EngineOutcome {
 #[must_use]
 pub fn awaiting_skippable_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(
-            prompt,
-            vec![ChoiceOption::global(OptionId(0), "Resolve")],
-        )
-        .skippable(),
+        request: InputRequest::pick_single(prompt, vec![ChoiceOption::new(OptionId(0), "Resolve")])
+            .skippable(),
         resume_token: ResumeToken(0),
     }
 }
 
 /// A skippable [`PickSingle`](crate::InputKind::PickSingle)
 /// [`AwaitingInput`](EngineOutcome::AwaitingInput) over caller-supplied `options`
-/// (so a test can mix anchored and `Global` targets). Like
+/// (so a test can mix anchored and un-anchored options). Like
 /// [`awaiting_pick_single_with`] but with the Skip affordance a window carries.
 #[must_use]
 pub fn awaiting_skippable_pick_single_with(

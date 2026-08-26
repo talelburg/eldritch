@@ -1916,7 +1916,7 @@ fn resolve_grounded_choice<Id: Copy>(
     empty_reason: &'static str,
     prompt: &'static str,
     label: impl Fn(&Id) -> String,
-    target: impl Fn(&Id) -> crate::engine::OptionTarget,
+    target: impl Fn(&Id) -> Option<crate::engine::OptionTarget>,
     bind: impl Fn(Id) -> EvalContext,
     interactive: bool,
 ) -> Result<EvalContext, EngineOutcome> {
@@ -1994,7 +1994,7 @@ fn ground_investigator_choice(
         "Chosen investigator: no candidate in scope",
         "Choose an investigator",
         |id| format!("{id:?}"),
-        |_id| crate::engine::OptionTarget::Global, // investigator-choice anchoring is out of S5 scope
+        |_id| None, // investigator-choice anchoring is out of S5 scope
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_investigator(id);
@@ -2020,7 +2020,7 @@ fn ground_location_choice(
         "Chosen location: no candidate in scope",
         "Choose a location",
         |id| format!("{id:?}"),
-        |id| crate::engine::OptionTarget::Location(*id),
+        |id| Some(crate::engine::OptionTarget::Location(*id)),
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_location(id);
@@ -2046,7 +2046,7 @@ fn ground_enemy_choice(
         "Chosen enemy: no candidate in scope",
         "Choose an enemy",
         |id| format!("{id:?}"),
-        |id| crate::engine::OptionTarget::Enemy(*id),
+        |id| Some(crate::engine::OptionTarget::Enemy(*id)),
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_enemy(id);
@@ -2087,7 +2087,7 @@ fn ground_fight_target_choice(
         "Fight: no enemy at your location",
         "Choose an enemy to attack",
         |id| format!("{id:?}"),
-        |id| crate::engine::OptionTarget::Enemy(*id),
+        |id| Some(crate::engine::OptionTarget::Enemy(*id)),
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_enemy(id);
@@ -5523,22 +5523,28 @@ mod tests {
             "empty",
             "Choose an enemy",
             |id| format!("{id:?}"),
-            |id| OptionTarget::Enemy(*id),
+            |id| Some(OptionTarget::Enemy(*id)),
             |_id| ctx,
             false, // 2 candidates → suspend regardless of the flag
         );
         match out {
             Err(EngineOutcome::AwaitingInput { request, .. }) => {
-                assert_eq!(request.options[0].target, OptionTarget::Enemy(EnemyId(4)));
-                assert_eq!(request.options[1].target, OptionTarget::Enemy(EnemyId(9)));
+                assert_eq!(
+                    request.options[0].target,
+                    Some(OptionTarget::Enemy(EnemyId(4)))
+                );
+                assert_eq!(
+                    request.options[1].target,
+                    Some(OptionTarget::Enemy(EnemyId(9)))
+                );
             }
             other => panic!("2 candidates suspend for a pick, got {other:?}"),
         }
     }
 
     #[test]
-    fn grounded_choice_investigator_stays_global() {
-        use crate::engine::{EngineOutcome, OptionTarget};
+    fn grounded_choice_investigator_stays_unanchored() {
+        use crate::engine::EngineOutcome;
         let ctx = super::EvalContext::for_controller(InvestigatorId(1));
         let cands = [InvestigatorId(1), InvestigatorId(2)];
         let out = super::resolve_grounded_choice(
@@ -5547,16 +5553,13 @@ mod tests {
             "empty",
             "Choose an investigator",
             |id| format!("{id:?}"),
-            |_id| OptionTarget::Global, // out of scope for S5
+            |_id| None, // out of scope for S5
             |_id| ctx,
             false,
         );
         match out {
             Err(EngineOutcome::AwaitingInput { request, .. }) => {
-                assert!(request
-                    .options
-                    .iter()
-                    .all(|o| o.target == OptionTarget::Global));
+                assert!(request.options.iter().all(|o| o.target.is_none()));
             }
             other => panic!("2 candidates suspend, got {other:?}"),
         }

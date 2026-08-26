@@ -93,7 +93,7 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
                 return EngineOutcome::AwaitingInput {
                     request: InputRequest::pick_single(
                         ack_prompt(deck, from),
-                        vec![ChoiceOption::new(OptionId(0), "Advance", anchor)],
+                        vec![ChoiceOption::new(OptionId(0), "Advance").at(anchor)],
                     ),
                     resume_token: ResumeToken(0),
                 };
@@ -282,7 +282,7 @@ mod tests {
         assert_eq!(request.options.len(), 1, "a single 'Advance' option");
         assert_eq!(
             request.options[0].target,
-            OptionTarget::Agenda,
+            Some(OptionTarget::Agenda),
             "the flip pick anchors to the agenda card"
         );
         assert_eq!(
@@ -309,7 +309,7 @@ mod tests {
         assert_eq!(request.options.len(), 1, "a single 'Advance' option");
         assert_eq!(
             request.options[0].target,
-            OptionTarget::Act,
+            Some(OptionTarget::Act),
             "the flip pick anchors to the act card"
         );
         assert_eq!(state.act_index, 0, "cursor must NOT bump yet");

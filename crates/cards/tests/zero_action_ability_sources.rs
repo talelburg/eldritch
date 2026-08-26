@@ -257,7 +257,11 @@ fn at_player_window(state: GameState) -> (GameState, Vec<OptionTarget>) {
         "a player window is skippable — nobody is obliged to use a zero-action ability: \
          {request:?}",
     );
-    let targets = request.options.iter().map(|o| o.target.clone()).collect();
+    let targets = request
+        .options
+        .iter()
+        .map(|o| o.target.clone().expect("every option here is anchored"))
+        .collect();
     (result.state, targets)
 }
 

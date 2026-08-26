@@ -50,11 +50,8 @@ async fn mount(outcome: game_core::EngineOutcome) -> mpsc::UnboundedReceiver<Cli
 async fn activatable_in_play_card_opens_a_menu_and_submits() {
     let outcome = awaiting_pick_single_with(
         "Choose an action",
-        vec![ChoiceOption::new(
-            OptionId(0),
-            "Activate",
-            OptionTarget::CardInstance(CardInstanceId(3)),
-        )],
+        vec![ChoiceOption::new(OptionId(0), "Activate")
+            .at(OptionTarget::CardInstance(CardInstanceId(3)))],
     );
     let mut rx = mount(outcome).await;
     let slot = last_slot();
@@ -87,11 +84,8 @@ async fn inert_in_play_card_has_no_glow() {
     // Option anchors to a different instance → this card stays inert.
     let outcome = awaiting_pick_single_with(
         "Choose an action",
-        vec![ChoiceOption::new(
-            OptionId(0),
-            "Activate",
-            OptionTarget::CardInstance(CardInstanceId(99)),
-        )],
+        vec![ChoiceOption::new(OptionId(0), "Activate")
+            .at(OptionTarget::CardInstance(CardInstanceId(99)))],
     );
     let _ = mount(outcome).await;
     assert!(!last_slot().class_name().contains("actionable"));

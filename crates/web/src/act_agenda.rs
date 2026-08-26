@@ -184,5 +184,9 @@ pub fn act_agenda_view(game: &GameState) -> impl IntoView {
         .get(game.agenda_index)
         .cloned()
         .map(|ag| view! { <AgendaCard agenda=ag doom=doom face=agenda_face/> });
-    view! { <section class="act-agenda">{act}{agenda}</section> }
+    // The encounter deck sits beside the act and agenda: it is scenario-level,
+    // not per-investigator, and the Mythos draw is an act on the board rather
+    // than a "Confirm" with no referent (#541).
+    let encounter = crate::controls::encounter_deck_view(game);
+    view! { <section class="act-agenda">{act}{agenda}{encounter}</section> }
 }

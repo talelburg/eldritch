@@ -2,9 +2,9 @@
 //! drawn, final total vs difficulty, pass/fail by N — from the events the store
 //! retained ([`crate::store::ClientState::last_events`] +
 //! [`last_skill_test_difficulty`](crate::store::ClientState::last_skill_test_difficulty)).
-//! Pairs with the Confirm button rendered by `AwaitingInputView` (the
-//! wasm-only `crate::input` module, so not linked here — the host `cargo doc`
-//! build excludes it).
+//! Since #541 it is a centred modal carrying **its own** Confirm — the
+//! acknowledge pause's only one — rather than a panel beside a button in the
+//! retired action bar.
 
 use game_core::state::{ChaosToken, TokenResolution};
 use game_core::{Event, FailureReason};
@@ -83,26 +83,75 @@ fn token_display(token: ChaosToken, resolution: TokenResolution) -> String {
     }
 }
 
-/// Result panel for the just-resolved skill test. Renders nothing unless the
-/// store's retained batch carries a skill-test result and a known difficulty
-/// (i.e. exactly while the #478 acknowledge pause is live). Reads the store
-/// reactively.
+/// Result modal for the just-resolved skill test (#478, made a modal by #541).
+/// Renders nothing unless the store's retained batch carries a skill-test result
+/// *and* the live prompt is the un-anchored `Confirm` acknowledge pause — that
+/// pairing is what guarantees the modal always has a way out, since the modal
+/// carries the pause's only Confirm.
+///
+/// **Dismissible only by that button.** Clicking Confirm submits real engine
+/// input, so a backdrop click or an Escape key would advance the game on the
+/// player's behalf; neither is wired, deliberately. The backdrop is inert —
+/// it exists to stop the player scrolling past the token that decided the test.
 #[component]
 pub fn SkillTestResultView() -> impl IntoView {
     let store = use_store();
+    #[cfg(target_arch = "wasm32")]
+    let tx = use_context::<crate::transport::OutboundTx>();
     view! {
         {move || {
             let st = store.get();
             let Some(s) = summarize(&st.last_events, st.last_skill_test_difficulty) else {
                 return ().into_any();
             };
+            // The acknowledge pause is un-anchored (ADR 0011). Without a live
+            // Confirm to submit, the modal would trap the player.
+            let awaiting_ack = matches!(
+                &st.outcome,
+                Some(game_core::EngineOutcome::AwaitingInput { request, .. })
+                    if request.kind == game_core::InputKind::Confirm && request.target.is_none()
+            );
+            if !awaiting_ack {
+                return ().into_any();
+            }
+            #[cfg(target_arch = "wasm32")]
+            let tx = tx.clone();
             view! {
+                // No `on:click` on the backdrop: dismissal is engine input.
+                <div class="str-backdrop"></div>
                 <section class="skill-test-result">
                     <p class="str-token">"Chaos token: " {s.token}</p>
                     <p class="str-total">
                         "Total " {s.total} " vs difficulty " {s.difficulty}
                     </p>
                     <p class="str-outcome">{s.outcome}</p>
+                    <button
+                        class="str-confirm"
+                        on:click={
+                            #[cfg(target_arch = "wasm32")]
+                            {
+                                move |_| {
+                                    use game_core::{InputResponse, PlayerAction};
+                                    if let Some(tx) = tx.clone() {
+                                        store.update(|s| {
+                                            s.pending_label = Some("Confirm".to_string());
+                                        });
+                                        let _ = tx.unbounded_send(
+                                            protocol::ClientMessage::Submit {
+                                                action: PlayerAction::ResolveInput {
+                                                    response: InputResponse::Confirm,
+                                                },
+                                            },
+                                        );
+                                    }
+                                }
+                            }
+                            #[cfg(not(target_arch = "wasm32"))]
+                            { |_| () }
+                        }
+                    >
+                        "Confirm"
+                    </button>
                 </section>
             }
             .into_any()

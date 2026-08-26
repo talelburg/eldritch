@@ -1,9 +1,19 @@
-//! Bottom-fixed prompt banner (interactivity S3/S4, #538/#539). Renders its text
-//! plus the relevant controls for a live `PickMultiple` commit (Confirm, submitting
-//! the `MultiSelect` selection) or any **skippable** window (Pass, submitting Skip)
-//! — a `PickMultiple` that is also skippable gets both. wasm-only — submits via
-//! `OutboundTx`. Other prompts (open-turn `PickSingle`, encounter `Confirm`) stay
-//! in the flat bar until later slices.
+//! The prompt banner (interactivity S3–S6, #538/#539/#541) — **the floor** now
+//! that the flat `.action-bar` is gone.
+//!
+//! It renders whenever an `AwaitingInput` is live, with one exception: the
+//! open-turn menu, which the engine anchors to
+//! [`TurnControl`](game_core::OptionTarget::TurnControl) so the banner can
+//! suppress its "Choose an action" noise **structurally** rather than by matching
+//! the prompt string (ADR 0011). Every other prompt gets at least its text here,
+//! so a prompt the client does not specifically home still says the engine is
+//! waiting (#770 stays open; this is a non-regression floor, not its fix).
+//!
+//! It stays the home for the controls that belong nowhere on the board: a live
+//! prompt's **un-anchored** options, a `PickMultiple` commit's Confirm (submitting
+//! the `MultiSelect` selection), any skippable window's Pass, and a fallback
+//! Confirm for an un-anchored `Confirm` the skill-test result modal is not already
+//! carrying. wasm-only — submits via `OutboundTx`.
 
 use std::collections::BTreeSet;
 
@@ -17,11 +27,11 @@ use crate::interaction::MultiSelect;
 use crate::store::use_store;
 use crate::transport::OutboundTx;
 
-/// The bottom-fixed prompt banner. Renders nothing unless the live prompt is a
-/// `PickMultiple` commit or a skippable window; for a skippable window it also
-/// renders the window's **un-anchored** (`Global`) `PickSingle` options as buttons
-/// (#549/#540), so an option reachable nowhere else has a home (anchored options
-/// live on their board cards).
+/// The bottom-fixed prompt banner. See the module docs for what it renders and
+/// what it deliberately does not.
+// The per-control `view!` arms; the length is inherent to the control dispatch,
+// not extractable without fighting leptos's closure captures.
+#[allow(clippy::too_many_lines)]
 #[component]
 pub fn PromptBanner() -> impl IntoView {
     let store = use_store();
@@ -34,23 +44,24 @@ pub fn PromptBanner() -> impl IntoView {
                 return ().into_any();
             };
             let is_multi = request.kind == InputKind::PickMultiple;
-            // Rendered for a multi-select commit or any skippable window (#539);
-            // other prompts (open-turn PickSingle, encounter Confirm) stay in the bar.
-            if !is_multi && !request.skippable {
+            // The one prompt the banner stays silent about: the open-turn menu,
+            // identified by its anchor rather than by its text (ADR 0011). Its
+            // options all live on board surfaces, and "Choose an action" every
+            // turn would spend the one persistent surface on noise (#541).
+            if matches!(request.target, Some(OptionTarget::TurnControl(_))) {
                 return ().into_any();
             }
             let prompt = request.prompt.clone();
 
-            // Option buttons — a skippable window's **un-anchored** (`Global`)
-            // `PickSingle` options only; anchored options have board homes (S5,
-            // #540). This still homes a genuinely-`Global` window option that
-            // lives nowhere else (the catch-all the bar retirement relies on) —
-            // no longer any *candidate*, since #735 gave every ability source
-            // its own anchor, but evaluator prompts still produce them (#555).
+            // Option buttons — the live prompt's **un-anchored** options only;
+            // an anchored option renders on its board card and must not render
+            // twice (#541). With the flat bar gone this is the only home an
+            // un-anchored option has: evaluator `ChooseOne` branches, the
+            // skill-substitution pick, a soak point taken by the investigator.
             let option_btns: Vec<_> = request
                 .options
                 .iter()
-                .filter(|opt| opt.target == OptionTarget::Global)
+                .filter(|opt| opt.target.is_none())
                 .cloned()
                 .map(|opt: ChoiceOption| {
                     let ChoiceOption { id, label, .. } = opt;
@@ -92,6 +103,34 @@ pub fn PromptBanner() -> impl IntoView {
                 view! { <button class="confirm" on:click=confirm>"Confirm"</button> }
             });
 
+            // Confirm — a fallback for an un-anchored `Confirm` the skill-test
+            // result modal is not already carrying its own button for. The
+            // acknowledge pause renders on the modal (which is what makes it
+            // un-dismissible except by that button); anything *else* un-anchored
+            // and option-less would otherwise be unreachable.
+            let modal_live = crate::skill_test_result::summarize(
+                &state.last_events,
+                state.last_skill_test_difficulty,
+            )
+            .is_some();
+            let confirm_fallback = (request.kind == InputKind::Confirm
+                && request.target.is_none()
+                && !modal_live)
+                .then(|| {
+                    let tx = tx.clone();
+                    let confirm = move |_| {
+                        if let Some(tx) = tx.clone() {
+                            store.update(|s| s.pending_label = Some("Confirm".to_string()));
+                            let _ = tx.unbounded_send(ClientMessage::Submit {
+                                action: PlayerAction::ResolveInput {
+                                    response: InputResponse::Confirm,
+                                },
+                            });
+                        }
+                    };
+                    view! { <button class="confirm" on:click=confirm>"Confirm"</button> }
+                });
+
             // Pass — whenever the request is skippable.
             let pass_btn = request.skippable.then(|| {
                 let tx = tx.clone();
@@ -113,6 +152,7 @@ pub fn PromptBanner() -> impl IntoView {
                     <span class="prompt">{prompt}</span>
                     {option_btns}
                     {confirm_btn}
+                    {confirm_fallback}
                     {pass_btn}
                 </div>
             }

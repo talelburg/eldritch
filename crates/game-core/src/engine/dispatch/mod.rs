@@ -110,14 +110,26 @@ fn turn_menu(state: &crate::state::GameState) -> crate::engine::InputRequest {
         .iter()
         .enumerate()
         .map(|(i, a)| {
-            crate::engine::ChoiceOption::new(
+            let opt = crate::engine::ChoiceOption::new(
                 crate::engine::OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
                 a.label(state),
-                a.target(state),
-            )
+            );
+            match a.target(state) {
+                Some(target) => opt.at(target),
+                None => opt,
+            }
         })
         .collect();
-    crate::engine::InputRequest::pick_single("Choose an action", options)
+    let request = crate::engine::InputRequest::pick_single("Choose an action", options);
+    // The prompt itself is anchored to the acting investigator's turn control, so
+    // a host can suppress its "Choose an action" text structurally rather than by
+    // matching the string (ADR 0011).
+    match state.continuations.last() {
+        Some(crate::state::Continuation::InvestigatorTurn { investigator, .. }) => {
+            request.at(crate::engine::OptionTarget::TurnControl(*investigator))
+        }
+        _ => request,
+    }
 }
 
 /// Apply a [`PlayerAction`] to the state, pushing events.
@@ -1001,12 +1013,20 @@ mod turn_menu_tests {
         assert!(
             menu.options
                 .iter()
-                .any(|o| matches!(o.target, OptionTarget::Enemy(_))),
+                .any(|o| matches!(o.target, Some(OptionTarget::Enemy(_)))),
             "expected at least one Enemy-anchored option, got {:?}",
             menu.options
                 .iter()
                 .map(|o| o.target.clone())
                 .collect::<Vec<_>>()
+        );
+        // The prompt itself is anchored, so the banner can suppress its
+        // "Choose an action" text structurally rather than by matching the
+        // string (ADR 0011, #541).
+        assert_eq!(
+            menu.target,
+            Some(OptionTarget::TurnControl(InvestigatorId(1))),
+            "the open-turn menu anchors to the acting investigator's turn control"
         );
     }
 }

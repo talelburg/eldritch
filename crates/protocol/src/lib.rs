@@ -186,14 +186,12 @@ mod tests {
 
     #[test]
     fn applied_round_trips_awaiting_input_option_target() {
-        use game_core::OptionTarget;
-
         let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
-        // The fixture's options are Global-anchored; this proves the new
+        // The fixture's options are un-anchored; this proves the
         // ChoiceOption.target field survives the ServerMessage envelope
-        // (game-core covers a non-Global value directly). See the interactivity
+        // (game-core covers an anchored value directly). See the interactivity
         // S0 plan.
         let outcome =
             game_core::test_support::fixtures::awaiting_pick_single_input("Choose an action");
@@ -213,10 +211,7 @@ mod tests {
             panic!("expected AwaitingInput outcome");
         };
         assert!(
-            request
-                .options
-                .iter()
-                .all(|o| o.target == OptionTarget::Global),
+            request.options.iter().all(|o| o.target.is_none()),
             "option targets survive the envelope"
         );
     }

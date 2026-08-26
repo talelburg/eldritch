@@ -61,7 +61,7 @@ fn attic_forced_acknowledges_before_horror_when_interactive() {
             assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
             assert_eq!(
                 request.options[0].target,
-                OptionTarget::Location(LOC),
+                Some(OptionTarget::Location(LOC)),
                 "the forced-on-enter option anchors to the location on the map (#553), not the flat bar"
             );
         }
@@ -116,7 +116,7 @@ fn cellar_forced_acknowledges_before_damage_when_interactive() {
             assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
             assert_eq!(
                 request.options[0].target,
-                OptionTarget::Location(LOC),
+                Some(OptionTarget::Location(LOC)),
                 "the forced-on-enter option anchors to the location on the map (#553)"
             );
         }

@@ -14,6 +14,12 @@ pub fn App() -> impl IntoView {
     let pending = Signal::derive(move || store.with(crate::interaction::pending_options));
     provide_context(crate::interaction::PendingOptions(pending));
 
+    // The option-less counterpart: an anchored `Confirm` (the Mythos encounter
+    // draw) has no option to route, so the encounter deck reads the *request*
+    // anchor instead (ADR 0011).
+    let confirm_anchor = Signal::derive(move || store.with(crate::interaction::confirm_anchor));
+    provide_context(crate::interaction::ConfirmAnchor(confirm_anchor));
+
     // Multi-select (PickMultiple) selection state, shared by the hand cards and
     // the prompt banner; cleared whenever a PickMultiple isn't live (#538).
     let selected = RwSignal::new(std::collections::BTreeSet::<u32>::new());
@@ -45,25 +51,34 @@ pub fn App() -> impl IntoView {
                 <crate::event_log::EventLogView/>
                 <div class="main-column">
                     <BoardView/>
-                    {
-                        #[cfg(target_arch = "wasm32")]
-                        { view! {
-                            // Sticky action bar: pinned to the viewport bottom so the
-                            // controls stay reachable however far the (tall) board is
-                            // scrolled. Invisible when nothing is pending.
-                            <div class="action-bar">
-                                <crate::picker::PickerView/>
-                                <crate::skill_test_result::SkillTestResultView/>
-                                <crate::input::AwaitingInputView/>
-                            </div>
-                            <crate::prompt_banner::PromptBanner/>
-                        }.into_any() }
-                        #[cfg(not(target_arch = "wasm32"))]
-                        { ().into_any() }
-                    }
+                    <Overlays/>
                 </div>
                 <crate::turn_tracker::TurnTrackerView/>
             </div>
         </main>
+    }
+}
+
+/// Everything the app layers over the board: the pre-game picker, the skill-test
+/// result modal and the prompt banner.
+///
+/// A component rather than three inline tags so a headless test can mount the
+/// exact set the app does — which is how "`.action-bar` is absent from the DOM"
+/// is asserted against the real composition rather than against a copy of it
+/// (#541). The sticky bar that used to hold these is gone; each of the three is
+/// now its own viewport-fixed overlay, and the picker only renders pre-game.
+#[component]
+pub fn Overlays() -> impl IntoView {
+    view! {
+        {
+            #[cfg(target_arch = "wasm32")]
+            { view! {
+                <crate::picker::PickerView/>
+                <crate::skill_test_result::SkillTestResultView/>
+                <crate::prompt_banner::PromptBanner/>
+            }.into_any() }
+            #[cfg(not(target_arch = "wasm32"))]
+            { ().into_any() }
+        }
     }
 }
