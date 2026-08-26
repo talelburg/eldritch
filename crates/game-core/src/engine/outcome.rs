@@ -157,6 +157,19 @@ impl ChoiceOption {
         self.target = Some(target);
         self
     }
+
+    /// Anchor this option to `target` when there is one. For the callers that
+    /// build options from an anchor that is *already* optional — every site that
+    /// maps a [`TurnAction::target`](crate::TurnAction::target) or an
+    /// evaluator-supplied anchor — so none of them re-writes the same
+    /// `match … { Some(t) => opt.at(t), None => opt }` by hand.
+    #[must_use]
+    pub fn maybe_at(self, target: Option<OptionTarget>) -> Self {
+        match target {
+            Some(target) => self.at(target),
+            None => self,
+        }
+    }
 }
 
 /// Which [`InputResponse`](crate::action::InputResponse) variant the host must
@@ -356,6 +369,16 @@ mod tests {
         assert_eq!(
             anchored.target,
             Some(OptionTarget::TurnControl(InvestigatorId(1)))
+        );
+    }
+
+    #[test]
+    fn maybe_at_anchors_only_when_there_is_an_anchor() {
+        let opt = ChoiceOption::new(OptionId(0), "x");
+        assert_eq!(opt.clone().maybe_at(None).target, None);
+        assert_eq!(
+            opt.maybe_at(Some(OptionTarget::EncounterDeck)).target,
+            Some(OptionTarget::EncounterDeck)
         );
     }
 

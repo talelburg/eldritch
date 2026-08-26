@@ -17,15 +17,11 @@
 
 use std::collections::BTreeSet;
 
-use game_core::{
-    ChoiceOption, EngineOutcome, InputKind, InputResponse, OptionId, OptionTarget, PlayerAction,
-};
+use game_core::{ChoiceOption, EngineOutcome, InputKind, InputResponse, OptionId, OptionTarget};
 use leptos::prelude::*;
-use protocol::ClientMessage;
 
 use crate::interaction::MultiSelect;
 use crate::store::use_store;
-use crate::transport::OutboundTx;
 
 /// The bottom-fixed prompt banner. See the module docs for what it renders and
 /// what it deliberately does not.
@@ -35,23 +31,29 @@ use crate::transport::OutboundTx;
 #[component]
 pub fn PromptBanner() -> impl IntoView {
     let store = use_store();
-    let tx = use_context::<OutboundTx>();
     let ms = use_context::<MultiSelect>();
     view! {
         {move || {
             let state = store.get();
-            let Some(EngineOutcome::AwaitingInput { request, .. }) = state.outcome else {
+            let Some(EngineOutcome::AwaitingInput { request, .. }) = state.outcome.clone() else {
                 return ().into_any();
             };
             let is_multi = request.kind == InputKind::PickMultiple;
-            // The one prompt the banner stays silent about: the open-turn menu,
-            // identified by its anchor rather than by its text (ADR 0011). Its
-            // options all live on board surfaces, and "Choose an action" every
-            // turn would spend the one persistent surface on noise (#541).
-            if matches!(request.target, Some(OptionTarget::TurnControl(_))) {
-                return ().into_any();
-            }
-            let prompt = request.prompt.clone();
+            // The open-turn menu is the one prompt whose *text* the banner
+            // swallows — identified by its anchor rather than by its string (ADR
+            // 0011), because "Choose an action" every turn would spend the one
+            // persistent surface on noise (#541).
+            //
+            // Only the text. The banner is the floor, so its controls stay: a
+            // turn action whose anchor is `None` — Investigate with no current
+            // location, EndTurn off-frame — has no board home, and suppressing
+            // the whole banner would make it unreachable rather than merely
+            // misplaced.
+            let suppress_text = matches!(
+                crate::interaction::prompt_anchor(&state),
+                Some(OptionTarget::TurnControl(_))
+            );
+            let prompt = (!suppress_text).then(|| request.prompt.clone());
 
             // Option buttons — the live prompt's **un-anchored** options only;
             // an anchored option renders on its board card and must not render
@@ -65,40 +67,23 @@ pub fn PromptBanner() -> impl IntoView {
                 .cloned()
                 .map(|opt: ChoiceOption| {
                     let ChoiceOption { id, label, .. } = opt;
-                    let tx = tx.clone();
                     let header = label.clone();
-                    let submit = move |_| {
-                        if let Some(tx) = tx.clone() {
-                            store.update(|s| s.pending_label = Some(header.clone()));
-                            let _ = tx.unbounded_send(ClientMessage::Submit {
-                                action: PlayerAction::ResolveInput {
-                                    response: InputResponse::PickSingle(id),
-                                },
-                            });
-                        }
+                    let pick = move |_| {
+                        crate::controls::submit(InputResponse::PickSingle(id), header.clone());
                     };
-                    view! { <button class="banner-option" on:click=submit>{label}</button> }
+                    view! { <button class="banner-option" on:click=pick>{label}</button> }
                 })
                 .collect();
 
             // Confirm — PickMultiple only (submits the MultiSelect selection).
             let confirm_btn = is_multi.then(|| ms.clone()).flatten().map(|ms| {
                 let selected = ms.selected;
-                let tx = tx.clone();
                 let confirm = move |_| {
-                    if let Some(tx) = tx.clone() {
-                        let sel: Vec<OptionId> =
-                            selected.get_untracked().into_iter().map(OptionId).collect();
-                        store.update(|s| {
-                            s.pending_label = Some(format!("Commit {} card(s)", sel.len()));
-                        });
-                        let _ = tx.unbounded_send(ClientMessage::Submit {
-                            action: PlayerAction::ResolveInput {
-                                response: InputResponse::PickMultiple { selected: sel },
-                            },
-                        });
-                        selected.set(BTreeSet::new());
-                    }
+                    let sel: Vec<OptionId> =
+                        selected.get_untracked().into_iter().map(OptionId).collect();
+                    let label = format!("Commit {} card(s)", sel.len());
+                    crate::controls::submit(InputResponse::PickMultiple { selected: sel }, label);
+                    selected.set(BTreeSet::new());
                 };
                 view! { <button class="confirm" on:click=confirm>"Confirm"</button> }
             });
@@ -108,48 +93,36 @@ pub fn PromptBanner() -> impl IntoView {
             // acknowledge pause renders on the modal (which is what makes it
             // un-dismissible except by that button); anything *else* un-anchored
             // and option-less would otherwise be unreachable.
-            let modal_live = crate::skill_test_result::summarize(
-                &state.last_events,
-                state.last_skill_test_difficulty,
-            )
-            .is_some();
             let confirm_fallback = (request.kind == InputKind::Confirm
                 && request.target.is_none()
-                && !modal_live)
-                .then(|| {
-                    let tx = tx.clone();
-                    let confirm = move |_| {
-                        if let Some(tx) = tx.clone() {
-                            store.update(|s| s.pending_label = Some("Confirm".to_string()));
-                            let _ = tx.unbounded_send(ClientMessage::Submit {
-                                action: PlayerAction::ResolveInput {
-                                    response: InputResponse::Confirm,
-                                },
-                            });
-                        }
-                    };
-                    view! { <button class="confirm" on:click=confirm>"Confirm"</button> }
-                });
+                && !crate::skill_test_result::modal_is_live(&state))
+            .then(|| {
+                let confirm =
+                    move |_| crate::controls::submit(InputResponse::Confirm, "Confirm");
+                view! { <button class="confirm" on:click=confirm>"Confirm"</button> }
+            });
 
             // Pass — whenever the request is skippable.
             let pass_btn = request.skippable.then(|| {
-                let tx = tx.clone();
-                let pass = move |_| {
-                    if let Some(tx) = tx.clone() {
-                        store.update(|s| s.pending_label = Some("Skip".to_string()));
-                        let _ = tx.unbounded_send(ClientMessage::Submit {
-                            action: PlayerAction::ResolveInput {
-                                response: InputResponse::Skip,
-                            },
-                        });
-                    }
-                };
+                let pass = move |_| crate::controls::submit(InputResponse::Skip, "Skip");
                 view! { <button class="pass" on:click=pass>"Pass"</button> }
             });
 
+            // Nothing to say and nothing to offer — the ordinary open turn, where
+            // every option sits on a board surface. Render no bar at all rather
+            // than an empty one (#541).
+            if prompt.is_none()
+                && option_btns.is_empty()
+                && confirm_btn.is_none()
+                && confirm_fallback.is_none()
+                && pass_btn.is_none()
+            {
+                return ().into_any();
+            }
+
             view! {
                 <div class="prompt-banner">
-                    <span class="prompt">{prompt}</span>
+                    {prompt.map(|p| view! { <span class="prompt">{p}</span> })}
                     {option_btns}
                     {confirm_btn}
                     {confirm_fallback}

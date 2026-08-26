@@ -51,14 +51,11 @@ pub(crate) fn awaiting_choice_anchored(
         .into_iter()
         .enumerate()
         .map(|(i, (label, target))| {
-            let opt = ChoiceOption::new(
+            ChoiceOption::new(
                 OptionId(u32::try_from(i).expect("offered option count fits in u32")),
                 label,
-            );
-            match target {
-                Some(target) => opt.at(target),
-                None => opt,
-            }
+            )
+            .maybe_at(target)
         })
         .collect();
     EngineOutcome::AwaitingInput {

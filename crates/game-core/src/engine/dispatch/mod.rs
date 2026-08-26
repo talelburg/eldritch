@@ -110,14 +110,11 @@ fn turn_menu(state: &crate::state::GameState) -> crate::engine::InputRequest {
         .iter()
         .enumerate()
         .map(|(i, a)| {
-            let opt = crate::engine::ChoiceOption::new(
+            crate::engine::ChoiceOption::new(
                 crate::engine::OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
                 a.label(state),
-            );
-            match a.target(state) {
-                Some(target) => opt.at(target),
-                None => opt,
-            }
+            )
+            .maybe_at(a.target(state))
         })
         .collect();
     let request = crate::engine::InputRequest::pick_single("Choose an action", options);

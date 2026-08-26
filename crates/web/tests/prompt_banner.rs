@@ -205,9 +205,14 @@ async fn the_open_turn_menu_is_suppressed_by_its_anchor() {
     // action" — the string coupling ADR 0011 exists to prevent. Reserving the one
     // persistent surface means not spending it on every ordinary turn.
     use game_core::state::InvestigatorId;
+    use game_core::test_support::fixtures::awaiting_pick_single_with;
+    use game_core::ChoiceOption;
     use game_core::{EngineOutcome, OptionTarget};
-    let mut outcome =
-        game_core::test_support::fixtures::awaiting_pick_single_input("Choose an action");
+    let mut outcome = awaiting_pick_single_with(
+        "Choose an action",
+        vec![ChoiceOption::new(OptionId(0), "End turn")
+            .at(OptionTarget::TurnControl(InvestigatorId(1)))],
+    );
     if let EngineOutcome::AwaitingInput { request, .. } = &mut outcome {
         request.target = Some(OptionTarget::TurnControl(InvestigatorId(1)));
     }
@@ -217,8 +222,50 @@ async fn the_open_turn_menu_is_suppressed_by_its_anchor() {
             .query_selector(".prompt-banner")
             .expect("query")
             .is_none(),
-        "no banner for the open-turn menu"
+        "an ordinary turn — every option on a board surface — renders no bar at all"
     );
+}
+
+#[wasm_bindgen_test]
+async fn the_open_turn_menu_suppresses_its_text_but_not_its_controls() {
+    // Only the text. An open-turn action whose own anchor is `None` — Investigate
+    // with no current location, EndTurn off-frame, both pinned by engine tests —
+    // has no board home, so suppressing the whole banner would make it
+    // unreachable rather than merely misplaced (ADR 0011's floor).
+    use game_core::state::InvestigatorId;
+    use game_core::test_support::fixtures::awaiting_pick_single_with;
+    use game_core::{ChoiceOption, EngineOutcome, OptionTarget};
+    let mut outcome = awaiting_pick_single_with(
+        "Choose an action",
+        vec![
+            ChoiceOption::new(OptionId(0), "End turn")
+                .at(OptionTarget::TurnControl(InvestigatorId(1))),
+            ChoiceOption::new(OptionId(1), "Investigate"),
+        ],
+    );
+    if let EngineOutcome::AwaitingInput { request, .. } = &mut outcome {
+        request.target = Some(OptionTarget::TurnControl(InvestigatorId(1)));
+    }
+    let mut rx = mount(outcome, &[]).await;
+    let banner = last_banner();
+    assert!(
+        banner.query_selector(".prompt").expect("query").is_none(),
+        "no 'Choose an action' noise on an ordinary turn"
+    );
+    let btns = banner.query_selector_all(".banner-option").expect("query");
+    assert_eq!(
+        btns.length(),
+        1,
+        "the un-anchored option keeps its only home; the anchored one is on its surface"
+    );
+    click(".banner-option");
+    leptos::task::tick().await;
+    match rx.try_recv().expect("a frame after tick") {
+        ClientMessage::Submit {
+            action: PlayerAction::ResolveInput { response },
+        } => assert_eq!(response, InputResponse::PickSingle(OptionId(1))),
+        other @ ClientMessage::Submit { .. } => panic!("expected PickSingle, got {other:?}"),
+    }
 }
 
 #[wasm_bindgen_test]

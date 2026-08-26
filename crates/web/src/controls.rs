@@ -31,38 +31,25 @@ fn live_option(target: OptionTarget) -> Option<ChoiceOption> {
         .next()
 }
 
-/// Submit `ResolveInput(PickSingle(id))` for a directly-submitting control,
-/// recording `label` as the next batch's event-log header. wasm-only — the
-/// `OutboundTx` is.
+/// Submit one [`InputResponse`](game_core::InputResponse) to the engine,
+/// recording `label` as the next `Applied` batch's event-log header.
+///
+/// **The one place the client sends player input.** Every surface that submits —
+/// these controls, the prompt banner's buttons, the skill-test modal's Confirm —
+/// goes through it, so the store update and the frame can't drift apart at one
+/// call site. wasm-only, because the `OutboundTx` it needs is; the `tx` is read
+/// from context and absent in render-only mounts, so a missing one is a no-op
+/// rather than a panic.
 #[cfg(target_arch = "wasm32")]
-fn submit_pick(id: game_core::OptionId, label: String) {
-    use game_core::{InputResponse, PlayerAction};
+pub fn submit(response: game_core::InputResponse, label: impl Into<String>) {
+    use game_core::PlayerAction;
     use protocol::ClientMessage;
 
     let store = crate::store::use_store();
     if let Some(tx) = use_context::<crate::transport::OutboundTx>() {
-        store.update(|s| s.pending_label = Some(label));
+        store.update(|s| s.pending_label = Some(label.into()));
         let _ = tx.unbounded_send(ClientMessage::Submit {
-            action: PlayerAction::ResolveInput {
-                response: InputResponse::PickSingle(id),
-            },
-        });
-    }
-}
-
-/// Submit `ResolveInput(Confirm)` — the encounter deck's Draw. wasm-only.
-#[cfg(target_arch = "wasm32")]
-fn submit_confirm(label: String) {
-    use game_core::{InputResponse, PlayerAction};
-    use protocol::ClientMessage;
-
-    let store = crate::store::use_store();
-    if let Some(tx) = use_context::<crate::transport::OutboundTx>() {
-        store.update(|s| s.pending_label = Some(label));
-        let _ = tx.unbounded_send(ClientMessage::Submit {
-            action: PlayerAction::ResolveInput {
-                response: InputResponse::Confirm,
-            },
+            action: PlayerAction::ResolveInput { response },
         });
     }
 }
@@ -90,7 +77,7 @@ pub fn AnchoredControl(
         let label = label.clone();
         move |_| {
             if let Some(opt) = option.clone() {
-                submit_pick(opt.id, label.clone());
+                submit(game_core::InputResponse::PickSingle(opt.id), label.clone());
             }
         }
     };
@@ -159,7 +146,13 @@ pub fn encounter_deck_view(game: &GameState) -> impl IntoView {
                 disabled=!live
                 on:click={
                     #[cfg(target_arch = "wasm32")]
-                    { move |_| if live { submit_confirm("Draw encounter card".to_string()) } }
+                    {
+                        move |_| {
+                            if live {
+                                submit(game_core::InputResponse::Confirm, "Draw encounter card");
+                            }
+                        }
+                    }
                     #[cfg(not(target_arch = "wasm32"))]
                     { |_| () }
                 }

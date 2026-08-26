@@ -83,6 +83,22 @@ fn token_display(token: ChaosToken, resolution: TokenResolution) -> String {
     }
 }
 
+/// True iff the skill-test result modal is up: the store's retained batch carries
+/// a result *and* the live prompt is the un-anchored `Confirm` acknowledge pause.
+///
+/// Public because the prompt banner needs it — the modal carries that pause's only
+/// Confirm, so the banner must not render a second one (#541). The rule lives here,
+/// with the view it governs, rather than being re-derived by the banner. Pure.
+#[must_use]
+pub fn modal_is_live(state: &crate::store::ClientState) -> bool {
+    summarize(&state.last_events, state.last_skill_test_difficulty).is_some()
+        && matches!(
+            &state.outcome,
+            Some(game_core::EngineOutcome::AwaitingInput { request, .. })
+                if request.kind == game_core::InputKind::Confirm && request.target.is_none()
+        )
+}
+
 /// Result modal for the just-resolved skill test (#478, made a modal by #541).
 /// Renders nothing unless the store's retained batch carries a skill-test result
 /// *and* the live prompt is the un-anchored `Confirm` acknowledge pause — that
@@ -96,26 +112,15 @@ fn token_display(token: ChaosToken, resolution: TokenResolution) -> String {
 #[component]
 pub fn SkillTestResultView() -> impl IntoView {
     let store = use_store();
-    #[cfg(target_arch = "wasm32")]
-    let tx = use_context::<crate::transport::OutboundTx>();
     view! {
         {move || {
             let st = store.get();
+            if !modal_is_live(&st) {
+                return ().into_any();
+            }
             let Some(s) = summarize(&st.last_events, st.last_skill_test_difficulty) else {
                 return ().into_any();
             };
-            // The acknowledge pause is un-anchored (ADR 0011). Without a live
-            // Confirm to submit, the modal would trap the player.
-            let awaiting_ack = matches!(
-                &st.outcome,
-                Some(game_core::EngineOutcome::AwaitingInput { request, .. })
-                    if request.kind == game_core::InputKind::Confirm && request.target.is_none()
-            );
-            if !awaiting_ack {
-                return ().into_any();
-            }
-            #[cfg(target_arch = "wasm32")]
-            let tx = tx.clone();
             view! {
                 // No `on:click` on the backdrop: dismissal is engine input.
                 <div class="str-backdrop"></div>
@@ -131,19 +136,10 @@ pub fn SkillTestResultView() -> impl IntoView {
                             #[cfg(target_arch = "wasm32")]
                             {
                                 move |_| {
-                                    use game_core::{InputResponse, PlayerAction};
-                                    if let Some(tx) = tx.clone() {
-                                        store.update(|s| {
-                                            s.pending_label = Some("Confirm".to_string());
-                                        });
-                                        let _ = tx.unbounded_send(
-                                            protocol::ClientMessage::Submit {
-                                                action: PlayerAction::ResolveInput {
-                                                    response: InputResponse::Confirm,
-                                                },
-                                            },
-                                        );
-                                    }
+                                    crate::controls::submit(
+                                        game_core::InputResponse::Confirm,
+                                        "Confirm",
+                                    );
                                 }
                             }
                             #[cfg(not(target_arch = "wasm32"))]

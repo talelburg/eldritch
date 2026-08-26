@@ -35,9 +35,10 @@ pub fn options_for(options: &[ChoiceOption], target: OptionTarget) -> Vec<Choice
 
 /// The board surface the **live prompt itself** renders on, else `None` — either
 /// because no prompt is live or because the prompt is un-anchored (ADR 0011).
-/// Read by the banner (to suppress the open-turn menu's text) and by the
-/// encounter deck (to tell the Mythos draw from the skill-test acknowledge,
-/// which are otherwise identical option-less `Confirm`s). Pure.
+/// Read by the prompt banner, which suppresses the open-turn menu's *text* when
+/// this is a [`TurnControl`](OptionTarget::TurnControl) — structurally, rather
+/// than by matching the `"Choose an action"` string. The option-less counterpart
+/// the encounter deck reads is [`confirm_anchor`]. Pure.
 #[must_use]
 pub fn prompt_anchor(state: &ClientState) -> Option<OptionTarget> {
     match &state.outcome {

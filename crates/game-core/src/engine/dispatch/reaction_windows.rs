@@ -2261,14 +2261,11 @@ pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
         .iter()
         .enumerate()
         .map(|(i, a)| {
-            let opt = ChoiceOption::new(
+            ChoiceOption::new(
                 OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
                 a.label(cx.state),
-            );
-            match a.target(cx.state) {
-                Some(target) => opt.at(target),
-                None => opt,
-            }
+            )
+            .maybe_at(a.target(cx.state))
         })
         .collect::<Vec<_>>();
     EngineOutcome::AwaitingInput {
