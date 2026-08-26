@@ -102,18 +102,6 @@ the Tablet came out.
 | #787 | The skill-test result panel renders the chaos token as `—` whenever a symbol token's ST.4 effect suspends and splits the event batch |
 | #770 | An unknown `InputKind` renders a prompt with no controls |
 
-**#541 is shipped.** The two blockers it had to clear first were invisible until the
-bar was scheduled for deletion, and both were on the **wire**, not in the client:
-`EndTurn`/`Resource`/`Draw` all derived `OptionTarget::Global`, so a client could tell
-them apart only by matching label strings — the coupling S0 (#535) rejected; and the
-Mythos encounter draw and the cosmetic skill-test acknowledge pause are *byte-identical*
-option-less `Confirm`s, which is why the bar rendering both as one "Confirm" button went
-unnoticed. So the fix was `engine` + `ui`, not `ui` alone:
-[ADR 0011](../adr/0011-the-engine-names-the-surface-a-prompt-renders-on.md) records the
-three linked decisions — the engine names the surface, un-anchored is `None`
-(`OptionTarget::Global` is **gone**), and a surface named by role submits directly while a
-board entity opens a menu.
-
 **Why #787 and #770 are in the gate**, given that neither is a rules defect: both
 corrupt **#769's findings**, which is the wave-4 deliverable. A result panel that
 cannot name the token that decided a test produces a run nobody can check afterwards
@@ -735,28 +723,14 @@ the now-stable set of input shapes:
       resolution instead of building an `AdvanceReverse` frame, and there is no second prompt to
       suppress. The advance pick double-rendered on-card *and* in the flat input bar (every anchored
       `PickSingle` did), which S6/#541 reconciled by deleting the bar.
-    - **S6 — global-action homes + bar retirement (#541, PR #801), the closer; closes #206.**
-      The three "global" actions turned out not to be global but **unnamed**: `EndTurn`/`Resource`/
-      `Draw` all derived `OptionTarget::Global`, so a client could separate them only by matching
-      label strings — the coupling S0 rejected. They are anchored to surfaces the board did not yet
-      render, so the vocabulary grew to name them: `TurnControl`, `ResourcePool`, `PlayerDeck`,
-      `EncounterDeck`. And because a `Confirm` carries no options, the Mythos draw and the #478
-      acknowledge pause were **byte-identical on the wire** — telling them apart to home one on the
-      encounter deck meant **`InputRequest` carrying an anchor of its own**, beside `ChoiceOption`'s.
-      `OptionTarget::Global` is **removed** rather than deprecated (un-anchored is `None`), which made
-      the 40-site migration compiler-verified; both types anchor via one `.at(…)` idiom.
-      Client-side: three always-present panel controls that **submit directly** (no one-item menu —
-      the deliberate exception to the pass's uniform-menu rule) and grey out off-turn so the panel
-      never reflows; a player deck per investigator and an encounter deck beside act/agenda, both
-      rendering at zero without glowing; the picker becomes a pre-game overlay and the skill-test
-      result a modal carrying its own Confirm, dismissible **only** by it. `PromptBanner` becomes the
-      **floor** — it names any live prompt and homes whatever has no board surface, suppressing only
-      the open-turn menu's *text*, keyed on that prompt's `TurnControl` anchor rather than on its
-      string. Then `.action-bar` and `AwaitingInputView` are deleted; the map-band `z-index`
-      workaround is **kept** (no test shows it inert). The anchors are load-bearing but not
-      type-enforced, so tests carry them: one per new anchor, one per prompt producer, and one
-      headless flow driving an open turn through the encounter draw into the acknowledge modal from
-      board surfaces alone. [ADR 0011](../adr/0011-the-engine-names-the-surface-a-prompt-renders-on.md).
+    - **S6 — globals + bar retirement (#541, PR #801), the closer; closes #206.** Homes for the
+      three open-turn actions + an encounter-deck element for the draw `Confirm`, then
+      **delete `.action-bar`** (folding picker + skill-test-result into their own surfaces).
+      Scope grew to `engine` + `ui` during grilling: the three actions were not global but
+      **unnamed**, and the draw `Confirm` was byte-identical to the #478 acknowledge pause, so
+      neither could be homed client-side without label-sniffing. `OptionTarget::Global` is
+      **removed** (un-anchored is `None`) and `InputRequest` carries an anchor of its own.
+      [ADR 0011](../adr/0011-the-engine-names-the-surface-a-prompt-renders-on.md).
     - **Investigator panel rework (#547, PR #548) — display-only.** The investigator card is the home
       for the character's live state: skills (W/I/C/A) + hp/san folded onto the card, actions (pips)/
       resources/clues/status beside it, next to the hand; the loose stats line + the map-redundant
