@@ -116,15 +116,6 @@ stays out of the gate as stale-client hardening.) **S6 did not fix #770**, but i
 prompt banner is now the floor for any live prompt, so the fallback it deletes is not
 regressed.
 
-**#787's latch is not quite the difficulty's** (PR #802). Both are cleared by `Hello`,
-but the difficulty latch is self-refreshing — every test re-announces its own — while
-the token's is not: a test whose determination is known before the draw skips ST.3 and
-ST.4 entirely, so it emits no `ChaosTokenRevealed` and would have inherited the
-previous test's token where the em dash belongs. The token latch is therefore also
-cleared on `SkillTestStarted`, scanned before the reveal so a batch carrying both still
-latches. Both review axes caught this independently; the fix is written against the
-general condition (any suspension between reveal and outcome), not against the Tablet.
-
 ### Wave 3 — optional content (#258's children)
 
 Ordered: **#644 → #772 → #771 → #773 → #774 → #775**.
