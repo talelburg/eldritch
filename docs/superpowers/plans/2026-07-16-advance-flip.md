@@ -495,7 +495,7 @@ Run the 7-job gauntlet; push `web/advance-flip-render`; open the PR — this one
 
 # Slice 4 (deferred, #562) — 01110 `#466` suppression
 
-Never planned in detail, and **not shipped** — #562 closed unfixed. The premise does not hold: 01110 carries a terminal resolution, so `apply_advance_current_act` latches the scenario end instead of calling `advance_act`, and no `AdvanceReverse`/`AwaitAck` frame is ever built for the `#466` ack to stack over. The Ghoul-Priest defeat already surfaces exactly one prompt; suppressing the `#466` on effect shape alone would take it to zero. See `docs/phases/phase-7-the-gathering.md`, Wave 1.
+Never planned in detail, and **not shipped** — #562 closed unfixed (not a defect: 01110 is terminal, so it prompts once). Reasoning in #562 / PR #800.
 
 ---
 

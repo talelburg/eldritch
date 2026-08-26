@@ -92,21 +92,7 @@ the Tablet came out.
 | #651 ✅ PR #796 | Hunter pathfinding routes *around* a movement block instead of being stopped by it |
 | #797 ✅ PR #798 | Agenda 01107's Ghoul move reroutes around a movement block instead of being stopped by it |
 | #682 ✅ PR #799 | An attack whose target leaves play mid-test resolves against difficulty 0 |
-| #562 ❌ not a defect | 01110's forced act-advance double-prompts (advance-flip slice 4) |
-
-**#562 closed unfixed: the double-prompt is unreachable as 01110 ships.** Act 3
-carries a terminal resolution (`resolution: Some(Won { id: "R1" })`,
-`crates/scenarios/src/the_gathering.rs`), so `apply_advance_current_act` takes the
-`request_resolution` branch and never calls `advance_act`
-(`crates/game-core/src/engine/evaluator.rs`) — no `AdvanceReverse` frame is created,
-so there is no `AwaitAck` flip pick for the `#466` ack to stack over. Verified by
-driving the Ghoul-Priest defeat with `interactive_acknowledge` on: **one** prompt
-(`Forced — What Have You Done?`), which resolves straight to Won. The stacking the
-issue describes appears only if 01110 is made non-terminal, which no Core or Dunwich
-act is. Slice 4's suppression, applied on effect shape alone, would take the
-Ghoul Priest's defeat from one click to **zero** — the last interaction before every
-win would latch Won silently. Revisit under #775, which turns 01110's reverse into a
-real R1/R2 prompt.
+| #562 ❌ PR #800 | 01110's forced act-advance double-prompts (advance-flip slice 4) — not a defect; 01110 is terminal, so it prompts once |
 
 ### Wave 2 — the input surface
 
@@ -730,9 +716,9 @@ the now-stable set of input shapes:
       unchanged. **Advance-flip is shipped (slices 1–3):** a forced advance flips the card on-screen to its
       1b face showing the effect, then resolves there. Slice 4 (01110 `#466` suppression — a forced
       ability whose sole effect is an advance stacks a redundant `#466` ack over the flip's `AwaitAck`)
-      was deferred to #562 and **closed unfixed**: 01110 is terminal, so its advance latches the
+      was deferred to #562 and **closed unfixed** — 01110 is terminal, so its advance latches the
       resolution instead of building an `AdvanceReverse` frame, and there is no second prompt to
-      suppress (see Wave 1 above). The advance pick still double-renders
+      suppress. The advance pick still double-renders
       on-card *and* in the flat input bar (every anchored `PickSingle` does today); reconciled by S6/#541,
       not here.
     - **S6 — globals + bar retirement (#541), the closer, queued.** Homes for the genuinely-global
