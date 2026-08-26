@@ -101,6 +101,79 @@ async fn renders_token_total_and_outcome_after_resolution() {
     assert!(text.contains("Succeeded by 2"), "shows outcome: {text}");
 }
 
+/// #787: a symbol token whose ST.4 effect suspends for input (The Gathering's
+/// Tablet dealing damage with a soak target in play) puts the reveal in an
+/// earlier batch than the outcome. The modal must still name it, not show the
+/// em-dash fallback.
+#[wasm_bindgen_test]
+async fn names_a_token_revealed_in_an_earlier_batch() {
+    let (store, _rx) = mount_modal();
+
+    store.update(|s| {
+        // Batch 1: the test starts at difficulty 3.
+        reduce(
+            s,
+            ServerMessage::Applied {
+                state: Box::new(base_game()),
+                events: vec![Event::SkillTestStarted {
+                    investigator: InvestigatorId(1),
+                    skill: SkillKind::Willpower,
+                    difficulty: 3,
+                }],
+                outcome: EngineOutcome::Done,
+            },
+        );
+        // Batch 2: the Tablet is revealed and its ST.4 damage suspends for the
+        // soak prompt — no outcome yet.
+        reduce(
+            s,
+            ServerMessage::Applied {
+                state: Box::new(base_game()),
+                events: vec![Event::ChaosTokenRevealed {
+                    token: ChaosToken::Tablet,
+                    resolution: TokenResolution::Modifier(-2),
+                }],
+                outcome: game_core::test_support::fixtures::awaiting_confirm_input(
+                    "Assign the damage.",
+                ),
+            },
+        );
+        // Batch 3: the resumed test resolves. No reveal in this batch.
+        reduce(
+            s,
+            ServerMessage::Applied {
+                state: Box::new(base_game()),
+                events: vec![Event::SkillTestFailed {
+                    investigator: InvestigatorId(1),
+                    skill: SkillKind::Willpower,
+                    reason: game_core::FailureReason::Total,
+                    by: 2,
+                }],
+                outcome: acknowledge_pause(),
+            },
+        );
+    });
+    leptos::task::tick().await;
+
+    let section = last_section().expect("the result modal renders after resolution");
+    let token_line = section
+        .query_selector(".str-token")
+        .expect("query")
+        .expect("the modal has a token line")
+        .text_content()
+        .unwrap_or_default();
+    assert!(
+        token_line.contains("Tablet (-2)"),
+        "names the token revealed two batches earlier: {token_line}"
+    );
+    assert!(
+        !token_line.contains('—'),
+        "no em-dash fallback: {token_line}"
+    );
+    let text = section.text_content().unwrap_or_default();
+    assert!(text.contains("Failed by 2"), "shows outcome: {text}");
+}
+
 #[wasm_bindgen_test]
 async fn renders_nothing_before_any_resolution() {
     // Other tests on the same page accumulate panels in the DOM, so assert on the

@@ -99,7 +99,7 @@ the Tablet came out.
 | Issue | Defect |
 |---|---|
 | #541 ✅ PR #801 | End turn, Gain resource, Draw and the Mythos draw live in a sticky `.action-bar`, so the board is not the input surface and every anchored `PickSingle` renders twice — closes **#206** |
-| #787 | The skill-test result panel renders the chaos token as `—` whenever a symbol token's ST.4 effect suspends and splits the event batch |
+| #787 ✅ PR #802 | The skill-test result panel renders the chaos token as `—` whenever a symbol token's ST.4 effect suspends and splits the event batch |
 | #770 | An unknown `InputKind` renders a prompt with no controls |
 
 **Why #787 and #770 are in the gate**, given that neither is a rules defect: both

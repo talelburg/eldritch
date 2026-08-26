@@ -1,6 +1,6 @@
 //! Reactive client store: `ClientState` + the pure `ServerMessage` reducer.
 
-use game_core::state::GameState;
+use game_core::state::{ChaosToken, GameState, TokenResolution};
 use game_core::EngineOutcome;
 use leptos::prelude::*;
 use protocol::ServerMessage;
@@ -47,6 +47,13 @@ pub struct ClientState {
     /// `SkillTestSucceeded`/`Failed` margin to show total-vs-difficulty.
     /// Cleared by `Hello`.
     pub last_skill_test_difficulty: Option<i8>,
+    /// The chaos token drawn by the most recent reveal, captured from
+    /// `Event::ChaosTokenRevealed` with how it resolved. Latched for the same
+    /// reason as the difficulty: a symbol token whose ST.4 effect suspends for
+    /// input puts the reveal in an earlier batch than the outcome, and the
+    /// result panel renders against the outcome's batch (#787). Cleared by
+    /// `Hello`.
+    pub last_revealed_token: Option<(ChaosToken, TokenResolution)>,
     /// Full accumulated event history, grouped per applied submit, oldest
     /// first. Cleared by `Hello`. The event-log panel (#505) renders this.
     pub log: Vec<LogBatch>,
@@ -71,6 +78,7 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             state.last_rejection = None;
             state.last_events = Vec::new();
             state.last_skill_test_difficulty = None;
+            state.last_revealed_token = None;
             state.log = Vec::new();
             state.pending_label = None;
             if !events.is_empty() {
@@ -102,6 +110,24 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
                 _ => None,
             }) {
                 state.last_skill_test_difficulty = Some(difficulty);
+                // A new test invalidates the previous test's token. The difficulty
+                // needs no such clear — every test re-announces its own — but a
+                // test whose determination is already known draws no token at all
+                // (ST.3 and ST.4 do not happen), so without this the panel would
+                // name the *previous* test's token instead of the em dash (#787).
+                state.last_revealed_token = None;
+            }
+            // Latch the reveal for the same cross-batch reason (#787): the panel
+            // renders against the batch holding the outcome, which need not be the
+            // one holding the reveal. Scanned after the clear above, so a batch
+            // carrying both the start and the reveal still latches.
+            if let Some(revealed) = events.iter().find_map(|e| match e {
+                game_core::Event::ChaosTokenRevealed { token, resolution } => {
+                    Some((*token, *resolution))
+                }
+                _ => None,
+            }) {
+                state.last_revealed_token = Some(revealed);
             }
             let header = state
                 .pending_label
@@ -214,10 +240,116 @@ mod tests {
         assert_eq!(s.last_events.len(), 1);
     }
 
+    /// #787: the reveal and the outcome can land in different batches when an
+    /// ST.4 effect suspends for input. The latch is what carries the token over.
+    #[test]
+    fn applied_latches_the_revealed_token_across_batches() {
+        use game_core::state::{InvestigatorId, SkillKind};
+        use game_core::{Event, FailureReason};
+
+        let mut s = ClientState::default();
+        reduce(
+            &mut s,
+            ServerMessage::Applied {
+                state: Box::new(sample_state()),
+                events: vec![Event::ChaosTokenRevealed {
+                    token: ChaosToken::Tablet,
+                    resolution: TokenResolution::Modifier(-2),
+                }],
+                outcome: EngineOutcome::Done,
+            },
+        );
+        assert_eq!(
+            s.last_revealed_token,
+            Some((ChaosToken::Tablet, TokenResolution::Modifier(-2)))
+        );
+        // The next batch carries the outcome and no reveal; the latch survives.
+        reduce(
+            &mut s,
+            ServerMessage::Applied {
+                state: Box::new(sample_state()),
+                events: vec![Event::SkillTestFailed {
+                    investigator: InvestigatorId(1),
+                    skill: SkillKind::Combat,
+                    reason: FailureReason::Total,
+                    by: 1,
+                }],
+                outcome: EngineOutcome::Done,
+            },
+        );
+        assert_eq!(
+            s.last_revealed_token,
+            Some((ChaosToken::Tablet, TokenResolution::Modifier(-2))),
+            "a batch without a reveal leaves the latch alone"
+        );
+    }
+
+    /// A test whose determination is already known draws no token at all, so the
+    /// previous test's token must not survive into it (#787).
+    #[test]
+    fn a_new_test_clears_the_previous_tests_token() {
+        use game_core::state::{InvestigatorId, SkillKind};
+        use game_core::Event;
+
+        let mut s = ClientState {
+            last_revealed_token: Some((ChaosToken::Tablet, TokenResolution::Modifier(-2))),
+            ..Default::default()
+        };
+        reduce(
+            &mut s,
+            ServerMessage::Applied {
+                state: Box::new(sample_state()),
+                events: vec![Event::SkillTestStarted {
+                    investigator: InvestigatorId(1),
+                    skill: SkillKind::Willpower,
+                    difficulty: 3,
+                }],
+                outcome: EngineOutcome::Done,
+            },
+        );
+        assert_eq!(
+            s.last_revealed_token, None,
+            "a started test clears the token the previous one drew"
+        );
+    }
+
+    /// A batch carrying the start *and* the reveal — the common, non-suspending
+    /// case — still ends with the token latched.
+    #[test]
+    fn a_start_and_reveal_in_one_batch_latches_the_token() {
+        use game_core::state::{InvestigatorId, SkillKind};
+        use game_core::Event;
+
+        let mut s = ClientState::default();
+        reduce(
+            &mut s,
+            ServerMessage::Applied {
+                state: Box::new(sample_state()),
+                events: vec![
+                    Event::SkillTestStarted {
+                        investigator: InvestigatorId(1),
+                        skill: SkillKind::Willpower,
+                        difficulty: 3,
+                    },
+                    Event::ChaosTokenRevealed {
+                        token: ChaosToken::Numeric(1),
+                        resolution: TokenResolution::Modifier(1),
+                    },
+                ],
+                outcome: EngineOutcome::Done,
+            },
+        );
+        assert_eq!(
+            s.last_revealed_token,
+            Some((ChaosToken::Numeric(1), TokenResolution::Modifier(1)))
+        );
+    }
+
     #[test]
     fn hello_clears_retained_events_and_difficulty() {
         let mut s = ClientState {
             last_skill_test_difficulty: Some(3),
+            last_revealed_token: Some((ChaosToken::Tablet, TokenResolution::Modifier(-2))),
             ..Default::default()
         };
         // seed a non-empty last_events too
@@ -237,6 +369,10 @@ mod tests {
         assert_eq!(
             s.last_skill_test_difficulty, None,
             "Hello clears the retained difficulty"
+        );
+        assert_eq!(
+            s.last_revealed_token, None,
+            "Hello clears the retained token, so a reconnect mid-pause shows no stale draw"
         );
     }
 
