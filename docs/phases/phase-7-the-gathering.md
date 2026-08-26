@@ -92,10 +92,7 @@ the Tablet came out.
 | #651 ✅ PR #796 | Hunter pathfinding routes *around* a movement block instead of being stopped by it |
 | #797 ✅ PR #798 | Agenda 01107's Ghoul move reroutes around a movement block instead of being stopped by it |
 | #682 ✅ PR #799 | An attack whose target leaves play mid-test resolves against difficulty 0 |
-| #562 | 01110's forced act-advance double-prompts (advance-flip slice 4) |
-
-**#562 is in for placement, not severity.** It is terminal and once-per-scenario,
-but it fires on the Ghoul Priest's defeat — the last interaction before every win.
+| #562 ❌ PR #800 | 01110's forced act-advance double-prompts (advance-flip slice 4) — not a defect; 01110 is terminal, so it prompts once |
 
 ### Wave 2 — the input surface
 
@@ -719,7 +716,9 @@ the now-stable set of input shapes:
       unchanged. **Advance-flip is shipped (slices 1–3):** a forced advance flips the card on-screen to its
       1b face showing the effect, then resolves there. Slice 4 (01110 `#466` suppression — a forced
       ability whose sole effect is an advance stacks a redundant `#466` ack over the flip's `AwaitAck`)
-      **deferred** to its own terminal once-per-scenario issue, #562. The advance pick still double-renders
+      was deferred to #562 and **closed unfixed** — 01110 is terminal, so its advance latches the
+      resolution instead of building an `AdvanceReverse` frame, and there is no second prompt to
+      suppress. The advance pick still double-renders
       on-card *and* in the flat input bar (every anchored `PickSingle` does today); reconciled by S6/#541,
       not here.
     - **S6 — globals + bar retirement (#541), the closer, queued.** Homes for the genuinely-global
