@@ -155,15 +155,22 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
     });
     leptos::task::tick().await;
 
-    let text = last_section()
-        .expect("the result modal renders after resolution")
+    let section = last_section().expect("the result modal renders after resolution");
+    let token_line = section
+        .query_selector(".str-token")
+        .expect("query")
+        .expect("the modal has a token line")
         .text_content()
         .unwrap_or_default();
     assert!(
-        text.contains("Tablet (-2)"),
-        "names the token revealed two batches earlier: {text}"
+        token_line.contains("Tablet (-2)"),
+        "names the token revealed two batches earlier: {token_line}"
     );
-    assert!(!text.contains('—'), "no em-dash fallback: {text}");
+    assert!(
+        !token_line.contains('—'),
+        "no em-dash fallback: {token_line}"
+    );
+    let text = section.text_content().unwrap_or_default();
     assert!(text.contains("Failed by 2"), "shows outcome: {text}");
 }
 
