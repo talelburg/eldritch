@@ -29,11 +29,9 @@ async fn mount(
     let open = RwSignal::new(if open_initial { Some((0, 0)) } else { None });
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
-    let options = vec![ChoiceOption::new(
-        OptionId(0),
-        "Investigate",
-        OptionTarget::Location(LocationId(10)),
-    )];
+    let options =
+        vec![ChoiceOption::new(OptionId(0), "Investigate")
+            .at(OptionTarget::Location(LocationId(10)))];
     leptos::mount::mount_to_body(move || {
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());

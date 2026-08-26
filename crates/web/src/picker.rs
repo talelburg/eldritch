@@ -49,7 +49,8 @@ pub fn roland_roster() -> Vec<RosterEntry> {
     }]
 }
 
-/// Pre-game picker. Renders only while `status == AwaitingRoster`. Submits a
+/// Pre-game picker, rendered as a **full-viewport overlay**. Renders only while
+/// `status == AwaitingRoster` — i.e. only before there is a board — and submits a
 /// `CreateGameRequest` (The Gathering + Roland) on click.
 #[component]
 pub fn PickerView() -> impl IntoView {
@@ -63,7 +64,10 @@ pub fn PickerView() -> impl IntoView {
             }
             let tx = create_tx.clone();
             view! {
-                <section class="picker">
+                // A full pre-game overlay: it only renders at `AwaitingRoster`,
+                // when there is no board behind it, so it no longer shares a
+                // container with in-game controls it has nothing to do with (#541).
+                <section class="picker picker-overlay">
                     <h2>"New Game"</h2>
                     <label>"Scenario: " <select><option>"The Gathering"</option></select></label>
                     <fieldset>

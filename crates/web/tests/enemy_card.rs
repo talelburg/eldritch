@@ -109,11 +109,7 @@ async fn actionable_enemy_glows_opens_menu_and_submits() {
     let e = test_enemy(7, "Ghoul");
     let outcome = awaiting_pick_single_with(
         "Choose an action",
-        vec![ChoiceOption::new(
-            OptionId(0),
-            "Fight",
-            OptionTarget::Enemy(EnemyId(7)),
-        )],
+        vec![ChoiceOption::new(OptionId(0), "Fight").at(OptionTarget::Enemy(EnemyId(7)))],
     );
     let mut rx = mount_enemy(e, outcome).await;
 
@@ -151,11 +147,7 @@ async fn enemy_without_a_matching_option_is_inert() {
     // Option anchors to a different enemy → this card stays inert.
     let outcome = awaiting_pick_single_with(
         "Choose an action",
-        vec![ChoiceOption::new(
-            OptionId(0),
-            "Fight",
-            OptionTarget::Enemy(EnemyId(8)),
-        )],
+        vec![ChoiceOption::new(OptionId(0), "Fight").at(OptionTarget::Enemy(EnemyId(8)))],
     );
     let _ = mount_enemy(e, outcome).await;
     assert!(!last_card().class_name().contains("actionable"));

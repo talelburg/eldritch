@@ -28,10 +28,49 @@ pub fn pending_options(state: &ClientState) -> Vec<ChoiceOption> {
 pub fn options_for(options: &[ChoiceOption], target: OptionTarget) -> Vec<ChoiceOption> {
     options
         .iter()
-        .filter(|o| o.target == target)
+        .filter(|o| o.target.as_ref() == Some(&target))
         .cloned()
         .collect()
 }
+
+/// The board surface the **live prompt itself** renders on, else `None` — either
+/// because no prompt is live or because the prompt is un-anchored (ADR 0011).
+/// Read by the prompt banner, which suppresses the open-turn menu's *text* when
+/// this is a [`TurnControl`](OptionTarget::TurnControl) — structurally, rather
+/// than by matching the `"Choose an action"` string. The option-less counterpart
+/// the encounter deck reads is [`confirm_anchor`]. Pure.
+#[must_use]
+pub fn prompt_anchor(state: &ClientState) -> Option<OptionTarget> {
+    match &state.outcome {
+        Some(EngineOutcome::AwaitingInput { request, .. }) => request.target.clone(),
+        _ => None,
+    }
+}
+
+/// The anchor of a live **option-less** prompt — a
+/// [`Confirm`](game_core::InputKind::Confirm) — else `None`.
+///
+/// The request anchor is read only for option-less prompts (ADR 0011): a
+/// `PickSingle`/`PickMultiple` routes per-option. This is what tells the Mythos
+/// encounter draw from the skill-test acknowledge pause, which are the same shape
+/// on the wire but for this field. Pure.
+#[must_use]
+pub fn confirm_anchor(state: &ClientState) -> Option<OptionTarget> {
+    match &state.outcome {
+        Some(EngineOutcome::AwaitingInput { request, .. })
+            if request.kind == game_core::InputKind::Confirm =>
+        {
+            request.target.clone()
+        }
+        _ => None,
+    }
+}
+
+/// Context newtype carrying [`confirm_anchor`] as a signal, so a board surface
+/// (the encounter deck) reads it without prop-drilling — the option-less mirror
+/// of [`PendingOptions`].
+#[derive(Clone)]
+pub struct ConfirmAnchor(pub Signal<Option<OptionTarget>>);
 
 /// The options actionable for a specific hand card: those anchored to its exact
 /// slot (`HandCard { investigator, hand_index }`, the Play menu) or to its code
@@ -47,14 +86,14 @@ pub fn options_for_hand_card(
     options
         .iter()
         .filter(|o| match &o.target {
-            OptionTarget::HandCard {
+            Some(OptionTarget::HandCard {
                 investigator: i,
                 hand_index,
-            } => *i == investigator && *hand_index == index,
-            OptionTarget::HandCardByCode {
+            }) => *i == investigator && *hand_index == index,
+            Some(OptionTarget::HandCardByCode {
                 investigator: i,
                 code: c,
-            } => *i == investigator && c == code,
+            }) => *i == investigator && c == code,
             _ => false,
         })
         .cloned()
@@ -191,7 +230,13 @@ mod tests {
     use game_core::OptionId;
 
     fn opt(id: u32, target: OptionTarget) -> ChoiceOption {
-        ChoiceOption::new(OptionId(id), format!("opt{id}"), target)
+        ChoiceOption::new(OptionId(id), format!("opt{id}")).at(target)
+    }
+
+    /// An un-anchored option — the `None` spelling that replaced
+    /// `OptionTarget::Global` (ADR 0011).
+    fn loose(id: u32) -> ChoiceOption {
+        ChoiceOption::new(OptionId(id), format!("opt{id}"))
     }
 
     #[test]
@@ -218,12 +263,91 @@ mod tests {
         let opts = vec![
             opt(0, OptionTarget::Location(LocationId(10))),
             opt(1, OptionTarget::Enemy(EnemyId(7))),
-            opt(2, OptionTarget::Global),
+            loose(2),
             opt(3, OptionTarget::Location(LocationId(11))),
         ];
         let got = options_for(&opts, OptionTarget::Location(LocationId(10)));
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].id, OptionId(0));
+    }
+
+    #[test]
+    fn options_route_to_the_four_new_anchors() {
+        use game_core::state::InvestigatorId;
+        let inv = InvestigatorId(1);
+        let opts = vec![
+            opt(0, OptionTarget::TurnControl(inv)),
+            opt(1, OptionTarget::ResourcePool(inv)),
+            opt(2, OptionTarget::PlayerDeck(inv)),
+            opt(3, OptionTarget::EncounterDeck),
+            opt(4, OptionTarget::PlayerDeck(InvestigatorId(2))),
+        ];
+        let ids = |t| -> Vec<u32> { options_for(&opts, t).iter().map(|o| o.id.0).collect() };
+        assert_eq!(ids(OptionTarget::TurnControl(inv)), vec![0]);
+        assert_eq!(ids(OptionTarget::ResourcePool(inv)), vec![1]);
+        assert_eq!(
+            ids(OptionTarget::PlayerDeck(inv)),
+            vec![2],
+            "one investigator's deck does not pick up another's Draw"
+        );
+        assert_eq!(ids(OptionTarget::EncounterDeck), vec![3]);
+    }
+
+    #[test]
+    fn prompt_anchor_reads_the_request_not_the_options() {
+        use game_core::state::InvestigatorId;
+        assert_eq!(prompt_anchor(&ClientState::default()), None);
+
+        let mut state = ClientState {
+            outcome: Some(
+                game_core::test_support::fixtures::awaiting_pick_single_with("x", vec![loose(0)]),
+            ),
+            ..Default::default()
+        };
+        assert_eq!(prompt_anchor(&state), None, "un-anchored request");
+
+        if let Some(game_core::EngineOutcome::AwaitingInput { request, .. }) = &mut state.outcome {
+            request.target = Some(OptionTarget::TurnControl(InvestigatorId(1)));
+        }
+        assert_eq!(
+            prompt_anchor(&state),
+            Some(OptionTarget::TurnControl(InvestigatorId(1)))
+        );
+    }
+
+    #[test]
+    fn confirm_anchor_tells_the_two_confirms_apart() {
+        // The Mythos draw and the skill-test acknowledge are both option-less
+        // `Confirm`s; only the request anchor separates them (ADR 0011).
+        let mut ack = ClientState {
+            outcome: Some(game_core::test_support::fixtures::awaiting_confirm_input(
+                "Acknowledge the skill-test result.",
+            )),
+            ..Default::default()
+        };
+        assert_eq!(
+            confirm_anchor(&ack),
+            None,
+            "the acknowledge pause is un-anchored"
+        );
+
+        if let Some(game_core::EngineOutcome::AwaitingInput { request, .. }) = &mut ack.outcome {
+            request.target = Some(OptionTarget::EncounterDeck);
+        }
+        assert_eq!(confirm_anchor(&ack), Some(OptionTarget::EncounterDeck));
+
+        // A PickSingle anchored there is not option-less, so its anchor is not
+        // read at the request level — the Draw button stays dark.
+        let pick = ClientState {
+            outcome: Some(
+                game_core::test_support::fixtures::awaiting_pick_single_with(
+                    "x",
+                    vec![opt(0, OptionTarget::EncounterDeck)],
+                ),
+            ),
+            ..Default::default()
+        };
+        assert_eq!(confirm_anchor(&pick), None);
     }
 
     #[test]
@@ -239,12 +363,8 @@ mod tests {
         ));
         assert!(is_multi_select(&state));
 
-        state.outcome = Some(
-            game_core::test_support::fixtures::awaiting_pick_single_with(
-                "x",
-                vec![opt(0, OptionTarget::Global)],
-            ),
-        );
+        state.outcome =
+            Some(game_core::test_support::fixtures::awaiting_pick_single_with("x", vec![loose(0)]));
         assert!(!is_multi_select(&state));
     }
 
@@ -254,38 +374,22 @@ mod tests {
         let inv = InvestigatorId(1);
         let code = CardCode::new("01022");
         let opts = vec![
-            ChoiceOption::new(
-                OptionId(0),
-                "Play",
-                OptionTarget::HandCard {
-                    investigator: inv,
-                    hand_index: 0,
-                },
-            ),
-            ChoiceOption::new(
-                OptionId(1),
-                "Trigger",
-                OptionTarget::HandCardByCode {
-                    investigator: inv,
-                    code: code.clone(),
-                },
-            ),
-            ChoiceOption::new(
-                OptionId(2),
-                "Other",
-                OptionTarget::HandCard {
-                    investigator: inv,
-                    hand_index: 5,
-                },
-            ),
-            ChoiceOption::new(
-                OptionId(3),
-                "OtherCode",
-                OptionTarget::HandCardByCode {
-                    investigator: inv,
-                    code: CardCode::new("zzz"),
-                },
-            ),
+            ChoiceOption::new(OptionId(0), "Play").at(OptionTarget::HandCard {
+                investigator: inv,
+                hand_index: 0,
+            }),
+            ChoiceOption::new(OptionId(1), "Trigger").at(OptionTarget::HandCardByCode {
+                investigator: inv,
+                code: code.clone(),
+            }),
+            ChoiceOption::new(OptionId(2), "Other").at(OptionTarget::HandCard {
+                investigator: inv,
+                hand_index: 5,
+            }),
+            ChoiceOption::new(OptionId(3), "OtherCode").at(OptionTarget::HandCardByCode {
+                investigator: inv,
+                code: CardCode::new("zzz"),
+            }),
         ];
         let got = options_for_hand_card(&opts, inv, 0, &code);
         let ids: Vec<u32> = got.iter().map(|o| o.id.0).collect();

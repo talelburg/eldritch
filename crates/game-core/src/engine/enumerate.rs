@@ -135,18 +135,20 @@ impl TurnAction {
     /// anchors are implicit — Investigate acts at the investigator's current
     /// location, which is not a field on the variant.
     #[must_use]
-    pub fn target(&self, state: &GameState) -> crate::engine::OptionTarget {
+    pub fn target(&self, state: &GameState) -> Option<crate::engine::OptionTarget> {
         use crate::engine::OptionTarget;
-        match self {
-            TurnAction::EndTurn | TurnAction::Resource { .. } | TurnAction::Draw { .. } => {
-                OptionTarget::Global
-            }
+        Some(match self {
+            // The three open-turn "global" actions are not un-anchored — they are
+            // anchored to surfaces the board renders per investigator (ADR 0011).
+            TurnAction::EndTurn => OptionTarget::TurnControl(active_investigator(state)?),
+            TurnAction::Resource { investigator } => OptionTarget::ResourcePool(*investigator),
+            TurnAction::Draw { investigator } => OptionTarget::PlayerDeck(*investigator),
             TurnAction::Move { destination, .. } => OptionTarget::Location(*destination),
             TurnAction::Investigate { investigator } => state
                 .investigators
                 .get(investigator)
                 .and_then(|inv| inv.current_location)
-                .map_or(OptionTarget::Global, OptionTarget::Location),
+                .map(OptionTarget::Location)?,
             TurnAction::Fight { enemy, .. }
             | TurnAction::Evade { enemy, .. }
             | TurnAction::Engage { enemy, .. } => OptionTarget::Enemy(*enemy),
@@ -165,7 +167,18 @@ impl TurnAction {
             // the `From` impl now.
             TurnAction::ActivateAbility { source, .. } => (*source).into(),
             TurnAction::AdvanceAct { .. } => OptionTarget::Act,
-        }
+        })
+    }
+}
+
+/// The investigator whose turn is open, or `None` when no
+/// [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame is on top —
+/// [`TurnAction::EndTurn`] carries no investigator field, so its `TurnControl`
+/// anchor has to come from the frame.
+fn active_investigator(state: &GameState) -> Option<crate::state::InvestigatorId> {
+    match state.continuations.last() {
+        Some(Continuation::InvestigatorTurn { investigator, .. }) => Some(*investigator),
+        _ => None,
     }
 }
 
@@ -915,14 +928,19 @@ mod tests {
             .current_location = Some(loc_id);
         let inv = InvestigatorId(1);
 
-        assert_eq!(TurnAction::EndTurn.target(&state), OptionTarget::Global);
+        // The three former `Global` actions now name their own surfaces (#541).
+        assert_eq!(
+            TurnAction::EndTurn.target(&state),
+            Some(OptionTarget::TurnControl(inv)),
+            "EndTurn anchors to the active investigator's turn control"
+        );
         assert_eq!(
             TurnAction::Resource { investigator: inv }.target(&state),
-            OptionTarget::Global
+            Some(OptionTarget::ResourcePool(inv))
         );
         assert_eq!(
             TurnAction::Draw { investigator: inv }.target(&state),
-            OptionTarget::Global
+            Some(OptionTarget::PlayerDeck(inv))
         );
         assert_eq!(
             TurnAction::Move {
@@ -930,11 +948,11 @@ mod tests {
                 destination: LocationId(11)
             }
             .target(&state),
-            OptionTarget::Location(LocationId(11))
+            Some(OptionTarget::Location(LocationId(11)))
         );
         assert_eq!(
             TurnAction::Investigate { investigator: inv }.target(&state),
-            OptionTarget::Location(loc_id)
+            Some(OptionTarget::Location(loc_id))
         );
         assert_eq!(
             TurnAction::Fight {
@@ -942,7 +960,7 @@ mod tests {
                 enemy: EnemyId(7)
             }
             .target(&state),
-            OptionTarget::Enemy(EnemyId(7))
+            Some(OptionTarget::Enemy(EnemyId(7)))
         );
         assert_eq!(
             TurnAction::Evade {
@@ -950,7 +968,7 @@ mod tests {
                 enemy: EnemyId(7)
             }
             .target(&state),
-            OptionTarget::Enemy(EnemyId(7))
+            Some(OptionTarget::Enemy(EnemyId(7)))
         );
         assert_eq!(
             TurnAction::Engage {
@@ -958,7 +976,7 @@ mod tests {
                 enemy: EnemyId(7)
             }
             .target(&state),
-            OptionTarget::Enemy(EnemyId(7))
+            Some(OptionTarget::Enemy(EnemyId(7)))
         );
         assert_eq!(
             TurnAction::PlayCard {
@@ -966,10 +984,10 @@ mod tests {
                 hand_index: 2
             }
             .target(&state),
-            OptionTarget::HandCard {
+            Some(OptionTarget::HandCard {
                 investigator: inv,
                 hand_index: 2
-            }
+            })
         );
         assert_eq!(
             TurnAction::ActivateAbility {
@@ -978,11 +996,37 @@ mod tests {
                 ability_index: 0,
             }
             .target(&state),
-            OptionTarget::CardInstance(CardInstanceId(5))
+            Some(OptionTarget::CardInstance(CardInstanceId(5)))
         );
         assert_eq!(
             TurnAction::AdvanceAct { investigator: inv }.target(&state),
-            OptionTarget::Act
+            Some(OptionTarget::Act)
+        );
+    }
+
+    #[test]
+    fn end_turn_target_is_none_without_an_open_turn() {
+        // `EndTurn` carries no investigator field, so its anchor comes from the
+        // turn frame; off-turn there is nothing to anchor to.
+        let mut state = open_turn_state();
+        state.continuations.clear();
+        assert_eq!(TurnAction::EndTurn.target(&state), None);
+    }
+
+    #[test]
+    fn investigate_target_is_none_without_a_location() {
+        let mut state = open_turn_state();
+        state
+            .investigators
+            .get_mut(&InvestigatorId(1))
+            .unwrap()
+            .current_location = None;
+        assert_eq!(
+            TurnAction::Investigate {
+                investigator: InvestigatorId(1)
+            }
+            .target(&state),
+            None
         );
     }
 }

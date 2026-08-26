@@ -329,11 +329,8 @@ fn node_class(loc_name: &str) -> String {
 async fn actionable_location_glows_opens_menu_and_submits() {
     let outcome = awaiting_pick_single_with(
         "Choose an action",
-        vec![ChoiceOption::new(
-            OptionId(0),
-            "Investigate",
-            OptionTarget::Location(LocationId(10)),
-        )],
+        vec![ChoiceOption::new(OptionId(0), "Investigate")
+            .at(OptionTarget::Location(LocationId(10)))],
     );
     let mut rx = mount_interactive(study_game(), outcome).await;
 
@@ -380,11 +377,8 @@ async fn location_without_a_matching_option_is_not_actionable() {
     // The only option anchors to a DIFFERENT location — the Study node stays inert.
     let outcome = awaiting_pick_single_with(
         "Choose an action",
-        vec![ChoiceOption::new(
-            OptionId(0),
-            "Investigate",
-            OptionTarget::Location(LocationId(11)),
-        )],
+        vec![ChoiceOption::new(OptionId(0), "Investigate")
+            .at(OptionTarget::Location(LocationId(11)))],
     );
     let _ = mount_interactive(study_game(), outcome).await;
     assert!(!node_class("Study").contains("actionable"));
@@ -405,11 +399,7 @@ async fn investigator_card_glows_for_a_reaction_anchored_to_it() {
         .instance_id;
     let outcome = awaiting_pick_single_with(
         "You may trigger",
-        vec![ChoiceOption::new(
-            OptionId(0),
-            "Trigger",
-            OptionTarget::CardInstance(iid),
-        )],
+        vec![ChoiceOption::new(OptionId(0), "Trigger").at(OptionTarget::CardInstance(iid))],
     );
     let _ = mount_interactive(game, outcome).await;
     let slots = document()

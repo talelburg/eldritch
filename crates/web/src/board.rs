@@ -46,6 +46,7 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
         .values()
         .map(|inv| {
             let inv_id = inv.id;
+            let deck_remaining = inv.deck.len();
             let hand: Vec<_> = inv
                 .hand
                 .iter()
@@ -105,11 +106,34 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                             </div>
                             <div class="inv-meta">
                                 <span class="inv-actions">"actions " {pips}</span>
-                                <span class="inv-resources">"resources " {inv.resources}</span>
+                                <span class="inv-resources">
+                                    "resources " {inv.resources}
+                                    // The Gain-resource affordance sits with the
+                                    // number it changes (#541).
+                                    <crate::controls::AnchoredControl
+                                        label="Gain resource".to_string()
+                                        class="resource-control"
+                                        target=game_core::OptionTarget::ResourcePool(inv_id)
+                                    />
+                                </span>
                                 <span class="inv-clues">"clues " {inv.clues}</span>
                                 <span class="inv-status">{format!("{:?}", inv.status)}</span>
                             </div>
+                            // End turn lives on the investigator's own panel, in
+                            // the same place all game — greyed out off-turn rather
+                            // than vanishing (#541).
+                            <crate::controls::AnchoredControl
+                                label="End turn".to_string()
+                                class="turn-control"
+                                target=game_core::OptionTarget::TurnControl(inv_id)
+                            />
                         </div>
+                        // Each investigator shows their *own* deck, so a
+                        // multiplayer board never leaves a count ambiguous.
+                        <crate::controls::PlayerDeckView
+                            investigator=inv_id
+                            remaining=deck_remaining
+                        />
                         <div class="hand"><h4>"Hand"</h4><div class="card-row">{hand}</div></div>
                     </div>
                 </article>

@@ -2,9 +2,9 @@
 //! drawn, final total vs difficulty, pass/fail by N — from the events the store
 //! retained ([`crate::store::ClientState::last_events`] +
 //! [`last_skill_test_difficulty`](crate::store::ClientState::last_skill_test_difficulty)).
-//! Pairs with the Confirm button rendered by `AwaitingInputView` (the
-//! wasm-only `crate::input` module, so not linked here — the host `cargo doc`
-//! build excludes it).
+//! Since #541 it is a centred modal carrying **its own** Confirm — the
+//! acknowledge pause's only one — rather than a panel beside a button in the
+//! retired action bar.
 
 use game_core::state::{ChaosToken, TokenResolution};
 use game_core::{Event, FailureReason};
@@ -83,26 +83,71 @@ fn token_display(token: ChaosToken, resolution: TokenResolution) -> String {
     }
 }
 
-/// Result panel for the just-resolved skill test. Renders nothing unless the
-/// store's retained batch carries a skill-test result and a known difficulty
-/// (i.e. exactly while the #478 acknowledge pause is live). Reads the store
-/// reactively.
+/// True iff the skill-test result modal is up: the store's retained batch carries
+/// a result *and* the live prompt is the un-anchored `Confirm` acknowledge pause.
+///
+/// Public because the prompt banner needs it — the modal carries that pause's only
+/// Confirm, so the banner must not render a second one (#541). The rule lives here,
+/// with the view it governs, rather than being re-derived by the banner. Pure.
+#[must_use]
+pub fn modal_is_live(state: &crate::store::ClientState) -> bool {
+    summarize(&state.last_events, state.last_skill_test_difficulty).is_some()
+        && matches!(
+            &state.outcome,
+            Some(game_core::EngineOutcome::AwaitingInput { request, .. })
+                if request.kind == game_core::InputKind::Confirm && request.target.is_none()
+        )
+}
+
+/// Result modal for the just-resolved skill test (#478, made a modal by #541).
+/// Renders nothing unless the store's retained batch carries a skill-test result
+/// *and* the live prompt is the un-anchored `Confirm` acknowledge pause — that
+/// pairing is what guarantees the modal always has a way out, since the modal
+/// carries the pause's only Confirm.
+///
+/// **Dismissible only by that button.** Clicking Confirm submits real engine
+/// input, so a backdrop click or an Escape key would advance the game on the
+/// player's behalf; neither is wired, deliberately. The backdrop is inert —
+/// it exists to stop the player scrolling past the token that decided the test.
 #[component]
 pub fn SkillTestResultView() -> impl IntoView {
     let store = use_store();
     view! {
         {move || {
             let st = store.get();
+            if !modal_is_live(&st) {
+                return ().into_any();
+            }
             let Some(s) = summarize(&st.last_events, st.last_skill_test_difficulty) else {
                 return ().into_any();
             };
             view! {
+                // No `on:click` on the backdrop: dismissal is engine input.
+                <div class="str-backdrop"></div>
                 <section class="skill-test-result">
                     <p class="str-token">"Chaos token: " {s.token}</p>
                     <p class="str-total">
                         "Total " {s.total} " vs difficulty " {s.difficulty}
                     </p>
                     <p class="str-outcome">{s.outcome}</p>
+                    <button
+                        class="str-confirm"
+                        on:click={
+                            #[cfg(target_arch = "wasm32")]
+                            {
+                                move |_| {
+                                    crate::controls::submit(
+                                        game_core::InputResponse::Confirm,
+                                        "Confirm",
+                                    );
+                                }
+                            }
+                            #[cfg(not(target_arch = "wasm32"))]
+                            { |_| () }
+                        }
+                    >
+                        "Confirm"
+                    </button>
                 </section>
             }
             .into_any()

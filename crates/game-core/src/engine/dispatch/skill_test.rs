@@ -204,8 +204,8 @@ pub(in crate::engine) fn start_skill_test(
                      (PickSingle(0) = use {use_skill:?}, PickSingle(1) = keep {skill:?})",
                 ),
                 vec![
-                    ChoiceOption::global(OptionId(0), format!("Use {use_skill:?}")),
-                    ChoiceOption::global(OptionId(1), format!("Keep {skill:?}")),
+                    ChoiceOption::new(OptionId(0), format!("Use {use_skill:?}")),
+                    ChoiceOption::new(OptionId(1), format!("Keep {skill:?}")),
                 ],
             ),
             resume_token: ResumeToken(0),
@@ -2275,6 +2275,14 @@ mod tests {
             request.kind,
             InputKind::Confirm,
             "acknowledge is a Confirm prompt"
+        );
+        // The acknowledge pause is deliberately **un-anchored**: it renders on the
+        // skill-test result modal, not on a board surface. This is the half of the
+        // ADR-0011 pair that tells it apart from the encounter draw, which is
+        // `.at(EncounterDeck)`; the two are otherwise byte-identical on the wire.
+        assert_eq!(
+            request.target, None,
+            "the acknowledge pause carries no board anchor (ADR 0011)"
         );
         // The result is already logged when the player is asked to acknowledge.
         // Read through `cx.events` here: `cx` is still borrowed mutably for the

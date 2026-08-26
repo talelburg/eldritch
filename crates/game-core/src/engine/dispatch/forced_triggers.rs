@@ -728,7 +728,7 @@ pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
             format!("Forced — {name}"),
-            vec![ChoiceOption::new(OptionId(0), "Resolve", anchor)],
+            vec![ChoiceOption::new(OptionId(0), "Resolve").at(anchor)],
         ),
         resume_token: ResumeToken(0),
     }
@@ -865,7 +865,7 @@ mod tests {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
                 assert_eq!(
                     request.options[0].target,
-                    OptionTarget::CardInstance(CardInstanceId(5)),
+                    Some(OptionTarget::CardInstance(CardInstanceId(5))),
                 );
             }
             other => panic!("expected one-option suspend, got {other:?}"),
@@ -899,7 +899,7 @@ mod tests {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
                 assert_eq!(
                     request.options[0].target,
-                    OptionTarget::Location(LocationId(3)),
+                    Some(OptionTarget::Location(LocationId(3))),
                 );
             }
             other => panic!("expected one-option suspend, got {other:?}"),
@@ -937,7 +937,7 @@ mod tests {
         match super::drive_acknowledge_forced(&mut cx) {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
-                assert_eq!(request.options[0].target, OptionTarget::Agenda);
+                assert_eq!(request.options[0].target, Some(OptionTarget::Agenda));
             }
             other => panic!("expected one-option suspend, got {other:?}"),
         }

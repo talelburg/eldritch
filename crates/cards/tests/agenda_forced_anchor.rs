@@ -52,7 +52,7 @@ fn agenda_01105_forced_ack_anchors_to_the_agenda_card() {
             );
             assert_eq!(
                 request.options[0].target,
-                OptionTarget::Agenda,
+                Some(OptionTarget::Agenda),
                 "an agenda forced-on-advance ack anchors to the agenda card (#556)",
             );
         }

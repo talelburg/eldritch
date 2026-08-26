@@ -14,7 +14,7 @@
 //! `Board` covered the act, the agenda *and* an attacking enemy's own ability,
 //! and the anchor was worked out by comparing the candidate's code against the
 //! current act and agenda — which for an enemy matches neither, so the prompt
-//! fell through to `OptionTarget::Global`. The source now names the enemy.
+//! fell through to an un-anchored option. The source now names the enemy.
 //!
 //! Driven with `interactive_acknowledge` on, so the one-option "Resolve"
 //! acknowledge surfaces *before* the effect (the #466 confirm-before-effect
@@ -76,7 +76,7 @@ fn enemy_01102_forced_ack_anchors_to_the_attacking_enemy() {
             );
             assert_eq!(
                 request.options[0].target,
-                OptionTarget::Enemy(attacker_id),
+                Some(OptionTarget::Enemy(attacker_id)),
                 "an attacking enemy's own forced ability anchors to that enemy, where \
                  it used to anchor to nothing (#735)",
             );

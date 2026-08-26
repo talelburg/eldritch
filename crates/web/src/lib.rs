@@ -8,6 +8,7 @@ pub mod act_agenda;
 pub mod app;
 pub mod board;
 pub mod card;
+pub mod controls;
 pub mod enemy_card;
 pub mod event_log;
 pub mod interaction;
@@ -21,9 +22,6 @@ pub mod url;
 
 #[cfg(target_arch = "wasm32")]
 pub mod transport;
-
-#[cfg(target_arch = "wasm32")]
-pub mod input;
 
 #[cfg(target_arch = "wasm32")]
 pub mod prompt_banner;

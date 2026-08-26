@@ -52,16 +52,15 @@ pub enum EngineOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct OptionId(pub u32);
 
-/// The board surface an offered [`ChoiceOption`] acts on, letting a host render
-/// the option on the entity it targets rather than in a flat list. `Global`
-/// means no board anchor (e.g. End turn, a Confirm). Anchors are derived from
-/// the engine's own action / candidate targets, so a host never re-computes
-/// legality (#535, #206).
+/// The board surface a prompt or an offered [`ChoiceOption`] acts on, letting a
+/// host render it on the entity it targets rather than in a flat list. Anchors
+/// are derived from the engine's own action / candidate targets, so a host never
+/// re-computes legality (#535, #206). **Un-anchored is spelled `None` at the
+/// [`Option`] wrapping this enum**, not a variant here — see ADR 0011; a host
+/// that reads a `None` anchor falls back to the prompt banner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum OptionTarget {
-    /// No board anchor — a global / contextual control.
-    Global,
     /// A location on the map.
     Location(LocationId),
     /// An enemy.
@@ -88,6 +87,15 @@ pub enum OptionTarget {
     Act,
     /// The current agenda.
     Agenda,
+    /// An investigator's turn control (End turn) — the panel affordance that is
+    /// always present and disabled when nothing anchors to it (#541).
+    TurnControl(InvestigatorId),
+    /// An investigator's resource pool (Gain resource).
+    ResourcePool(InvestigatorId),
+    /// An investigator's own player deck (Draw).
+    PlayerDeck(InvestigatorId),
+    /// The scenario's encounter deck (the Mythos step-1.4 draw).
+    EncounterDeck,
 }
 
 impl From<crate::state::AbilitySource> for OptionTarget {
@@ -98,10 +106,9 @@ impl From<crate::state::AbilitySource> for OptionTarget {
     /// (`TurnAction::target`) and the forced / reaction resolution options
     /// (`reaction_windows::candidate_anchor`). They used to carry a copy each,
     /// and the copies had already drifted — the candidate side re-derived which
-    /// board card it was by comparing card codes and fell through to
-    /// [`Global`](OptionTarget::Global) for an attacking enemy's own forced
-    /// ability, so Silver Twilight Acolyte 01102's doom prompt anchored to
-    /// nothing.
+    /// board card it was by comparing card codes and fell through to the
+    /// then-`Global` variant for an attacking enemy's own forced ability, so
+    /// Silver Twilight Acolyte 01102's doom prompt anchored to nothing.
     ///
     /// The `match` is exhaustive on purpose: a sixth
     /// [`AbilitySource`](crate::state::AbilitySource) kind should stop this
@@ -127,25 +134,41 @@ pub struct ChoiceOption {
     /// Human-readable label for the host to render (full and unambiguous,
     /// e.g. `"Fight Ghoul"`; a host may shorten it for display).
     pub label: String,
-    /// The board surface this option acts on (`Global` if none).
-    pub target: OptionTarget,
+    /// The board surface this option acts on; `None` is un-anchored — the host
+    /// renders it in the prompt banner (ADR 0011).
+    pub target: Option<OptionTarget>,
 }
 
 impl ChoiceOption {
-    /// An option anchored to `target`.
+    /// An **un-anchored** option. Anchor it with [`at`](Self::at).
     #[must_use]
-    pub fn new(id: OptionId, label: impl Into<String>, target: OptionTarget) -> Self {
+    pub fn new(id: OptionId, label: impl Into<String>) -> Self {
         Self {
             id,
             label: label.into(),
-            target,
+            target: None,
         }
     }
 
-    /// An option with no board anchor ([`OptionTarget::Global`]).
+    /// Anchor this option to `target` — the same `.at(…)` idiom
+    /// [`InputRequest::at`] uses, so a prompt and its options read alike.
     #[must_use]
-    pub fn global(id: OptionId, label: impl Into<String>) -> Self {
-        Self::new(id, label, OptionTarget::Global)
+    pub fn at(mut self, target: OptionTarget) -> Self {
+        self.target = Some(target);
+        self
+    }
+
+    /// Anchor this option to `target` when there is one. For the callers that
+    /// build options from an anchor that is *already* optional — every site that
+    /// maps a [`TurnAction::target`](crate::TurnAction::target) or an
+    /// evaluator-supplied anchor — so none of them re-writes the same
+    /// `match … { Some(t) => opt.at(t), None => opt }` by hand.
+    #[must_use]
+    pub fn maybe_at(self, target: Option<OptionTarget>) -> Self {
+        match target {
+            Some(target) => self.at(target),
+            None => self,
+        }
     }
 }
 
@@ -172,8 +195,9 @@ pub enum InputKind {
 /// Carries free-form [`prompt`](Self::prompt) text, a [`kind`](Self::kind)
 /// discriminator naming the [`InputResponse`](crate::action::InputResponse) the
 /// host must send back, an optional structured [`options`](Self::options) list
-/// (for [`PickSingle`](InputKind::PickSingle)), and a
-/// [`skippable`](Self::skippable) flag for windows that may also be passed.
+/// (for [`PickSingle`](InputKind::PickSingle)), a
+/// [`skippable`](Self::skippable) flag for windows that may also be passed, and
+/// the board [`target`](Self::target) the prompt itself renders on.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct InputRequest {
@@ -189,6 +213,15 @@ pub struct InputRequest {
     /// [`InputResponse::Skip`](crate::action::InputResponse::Skip). Orthogonal
     /// to `kind` (e.g. a `PickSingle` reaction window that may also be passed).
     pub skippable: bool,
+    /// The board surface this **prompt** renders on; `None` is un-anchored.
+    ///
+    /// A [`Confirm`](InputKind::Confirm) prompt has no options by construction,
+    /// so without this the Mythos encounter draw and the cosmetic skill-test
+    /// acknowledge pause are byte-identical on the wire (ADR 0011). A host reads
+    /// this anchor for option-less prompts; a `PickSingle`/`PickMultiple` routes
+    /// per-option, except that the banner reads it to suppress the open-turn
+    /// menu's text.
+    pub target: Option<OptionTarget>,
 }
 
 impl InputRequest {
@@ -201,6 +234,7 @@ impl InputRequest {
             options,
             kind: InputKind::PickSingle,
             skippable: false,
+            target: None,
         }
     }
 
@@ -222,6 +256,7 @@ impl InputRequest {
             options: Vec::new(),
             kind: InputKind::PickMultiple,
             skippable: false,
+            target: None,
         }
     }
 
@@ -234,6 +269,7 @@ impl InputRequest {
             options: Vec::new(),
             kind: InputKind::Confirm,
             skippable: false,
+            target: None,
         }
     }
 
@@ -242,6 +278,15 @@ impl InputRequest {
     #[must_use]
     pub fn skippable(mut self) -> Self {
         self.skippable = true;
+        self
+    }
+
+    /// Anchor this prompt to `target` — the board surface it renders on. The
+    /// same `.at(…)` idiom as [`ChoiceOption::at`]. Un-anchored (the default)
+    /// means the prompt banner.
+    #[must_use]
+    pub fn at(mut self, target: OptionTarget) -> Self {
+        self.target = Some(target);
         self
     }
 }
@@ -264,7 +309,7 @@ mod tests {
     #[test]
     fn pick_single_sets_kind_and_not_skippable() {
         let req =
-            InputRequest::pick_single("Choose one", vec![ChoiceOption::global(OptionId(0), "A")]);
+            InputRequest::pick_single("Choose one", vec![ChoiceOption::new(OptionId(0), "A")]);
         assert_eq!(req.kind, InputKind::PickSingle);
         assert!(!req.skippable);
         assert_eq!(req.options.len(), 1);
@@ -300,8 +345,8 @@ mod tests {
         let req = InputRequest::pick_single(
             "Choose one",
             vec![
-                ChoiceOption::global(OptionId(0), "Take 2 horror"),
-                ChoiceOption::global(OptionId(1), "Each discards 1"),
+                ChoiceOption::new(OptionId(0), "Take 2 horror"),
+                ChoiceOption::new(OptionId(1), "Each discards 1"),
             ],
         )
         .skippable();
@@ -313,11 +358,50 @@ mod tests {
     }
 
     #[test]
-    fn global_constructor_sets_global_target() {
-        let opt = ChoiceOption::global(OptionId(3), "End turn");
+    fn new_is_unanchored_and_at_anchors() {
+        let opt = ChoiceOption::new(OptionId(3), "End turn");
         assert_eq!(opt.id, OptionId(3));
         assert_eq!(opt.label, "End turn");
-        assert_eq!(opt.target, OptionTarget::Global);
+        assert_eq!(opt.target, None, "`new` is un-anchored (ADR 0011)");
+
+        let anchored = ChoiceOption::new(OptionId(3), "End turn")
+            .at(OptionTarget::TurnControl(InvestigatorId(1)));
+        assert_eq!(
+            anchored.target,
+            Some(OptionTarget::TurnControl(InvestigatorId(1)))
+        );
+    }
+
+    #[test]
+    fn maybe_at_anchors_only_when_there_is_an_anchor() {
+        let opt = ChoiceOption::new(OptionId(0), "x");
+        assert_eq!(opt.clone().maybe_at(None).target, None);
+        assert_eq!(
+            opt.maybe_at(Some(OptionTarget::EncounterDeck)).target,
+            Some(OptionTarget::EncounterDeck)
+        );
+    }
+
+    #[test]
+    fn request_constructors_are_unanchored_and_at_anchors() {
+        assert_eq!(InputRequest::confirm("Draw").target, None);
+        assert_eq!(InputRequest::pick_multiple("Commit").target, None);
+        assert_eq!(InputRequest::pick_single("Choose", vec![]).target, None);
+
+        let req = InputRequest::confirm("Draw").at(OptionTarget::EncounterDeck);
+        assert_eq!(req.target, Some(OptionTarget::EncounterDeck));
+        assert_eq!(req.kind, InputKind::Confirm);
+    }
+
+    #[test]
+    fn request_anchor_round_trips_on_the_wire() {
+        // The two option-less `Confirm` prompts differ only by this field
+        // (ADR 0011), so it has to survive serialization.
+        let req = InputRequest::confirm("Draw an encounter card").at(OptionTarget::EncounterDeck);
+        let json = serde_json::to_string(&req).expect("serialize");
+        let back: InputRequest = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.target, Some(OptionTarget::EncounterDeck));
+        assert_eq!(back, req);
     }
 
     #[test]
@@ -327,8 +411,9 @@ mod tests {
             request: InputRequest::pick_single(
                 "Choose an action",
                 vec![
-                    ChoiceOption::global(OptionId(0), "End turn"),
-                    ChoiceOption::new(OptionId(1), "Fight Ghoul", OptionTarget::Enemy(EnemyId(7))),
+                    ChoiceOption::new(OptionId(0), "End turn"),
+                    ChoiceOption::new(OptionId(1), "Fight Ghoul")
+                        .at(OptionTarget::Enemy(EnemyId(7))),
                 ],
             ),
             resume_token: ResumeToken(0),
@@ -338,7 +423,10 @@ mod tests {
         let EngineOutcome::AwaitingInput { request, .. } = back else {
             panic!("expected AwaitingInput, got {back:?}");
         };
-        assert_eq!(request.options[0].target, OptionTarget::Global);
-        assert_eq!(request.options[1].target, OptionTarget::Enemy(EnemyId(7)));
+        assert_eq!(request.options[0].target, None);
+        assert_eq!(
+            request.options[1].target,
+            Some(OptionTarget::Enemy(EnemyId(7)))
+        );
     }
 }

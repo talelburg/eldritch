@@ -113,11 +113,7 @@ async fn mount_with_prompt(
 async fn act_card_glows_and_advances_via_menu() {
     let outcome = awaiting_pick_single_with(
         "Choose an action",
-        vec![ChoiceOption::new(
-            OptionId(0),
-            "Advance act",
-            OptionTarget::Act,
-        )],
+        vec![ChoiceOption::new(OptionId(0), "Advance act").at(OptionTarget::Act)],
     );
     let mut rx = mount_with_prompt(outcome).await;
     let card = act_card();
@@ -150,11 +146,7 @@ async fn act_card_inert_without_an_act_anchored_option() {
     // Option anchors Global (not Act) → the act card stays inert.
     let outcome = awaiting_pick_single_with(
         "Choose an action",
-        vec![ChoiceOption::new(
-            OptionId(0),
-            "End turn",
-            OptionTarget::Global,
-        )],
+        vec![ChoiceOption::new(OptionId(0), "End turn")],
     );
     let _rx = mount_with_prompt(outcome).await;
     assert!(!act_card().class_name().contains("actionable"));
@@ -177,11 +169,7 @@ async fn agenda_card_glows_and_resolves_via_menu() {
     // An agenda-sourced forced effect anchors its "Resolve" to the agenda card (#556).
     let outcome = awaiting_pick_single_with(
         "Forced — They're Getting Out!",
-        vec![ChoiceOption::new(
-            OptionId(0),
-            "Resolve",
-            OptionTarget::Agenda,
-        )],
+        vec![ChoiceOption::new(OptionId(0), "Resolve").at(OptionTarget::Agenda)],
     );
     let mut rx = mount_with_prompt(outcome).await;
     let card = agenda_card();
@@ -217,11 +205,7 @@ async fn agenda_card_inert_without_an_agenda_anchored_option() {
     // Option anchors Global (not Agenda) → the agenda card stays inert.
     let outcome = awaiting_pick_single_with(
         "Choose an action",
-        vec![ChoiceOption::new(
-            OptionId(0),
-            "End turn",
-            OptionTarget::Global,
-        )],
+        vec![ChoiceOption::new(OptionId(0), "End turn")],
     );
     let _rx = mount_with_prompt(outcome).await;
     assert!(!agenda_card().class_name().contains("actionable"));

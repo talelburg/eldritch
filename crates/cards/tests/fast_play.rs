@@ -477,7 +477,11 @@ fn corpus_zero_action_ability_is_offered_by_an_engine_opened_player_window() {
         request.skippable,
         "a player window is skippable: {request:?}"
     );
-    let targets: Vec<_> = request.options.iter().map(|o| o.target.clone()).collect();
+    let targets: Vec<_> = request
+        .options
+        .iter()
+        .map(|o| o.target.clone().expect("every option here is anchored"))
+        .collect();
     assert_eq!(
         targets,
         vec![OptionTarget::CardInstance(CardInstanceId(1))],
@@ -556,7 +560,11 @@ fn corpus_zero_action_abilities_are_offered_once_per_ability_not_once_per_card()
             result.outcome,
         );
     };
-    let targets: Vec<_> = request.options.iter().map(|o| o.target.clone()).collect();
+    let targets: Vec<_> = request
+        .options
+        .iter()
+        .map(|o| o.target.clone().expect("every option here is anchored"))
+        .collect();
     assert_eq!(
         targets,
         vec![

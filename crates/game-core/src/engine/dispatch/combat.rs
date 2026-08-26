@@ -833,11 +833,15 @@ fn soak_options(targets: &[DistributionTarget]) -> Vec<crate::engine::ChoiceOpti
         .enumerate()
         .map(|(i, t)| {
             let id = OptionId(u32::try_from(i).expect("soak target count fits u32"));
-            let target = match t {
-                DistributionTarget::Asset(instance) => OptionTarget::CardInstance(*instance),
-                DistributionTarget::Investigator => OptionTarget::Global,
-            };
-            ChoiceOption::new(id, format!("{t:?}"), target)
+            let opt = ChoiceOption::new(id, format!("{t:?}"));
+            match t {
+                DistributionTarget::Asset(instance) => {
+                    opt.at(OptionTarget::CardInstance(*instance))
+                }
+                // The investigator themself is not yet a board anchor; the option
+                // lands in the prompt banner.
+                DistributionTarget::Investigator => opt,
+            }
         })
         .collect()
 }
@@ -2178,10 +2182,13 @@ mod combat_tests {
         ];
         let opts = super::soak_options(&targets);
         // Anchors: the investigator has no card home; a soaker asset points at its card.
-        assert_eq!(opts[0].target, OptionTarget::Global);
+        assert_eq!(
+            opts[0].target, None,
+            "the investigator is not a board anchor"
+        );
         assert_eq!(
             opts[1].target,
-            OptionTarget::CardInstance(CardInstanceId(7))
+            Some(OptionTarget::CardInstance(CardInstanceId(7)))
         );
         // Labels unchanged from the former `hunters::candidate_options` debug repr.
         assert_eq!(opts[0].label, "Investigator");

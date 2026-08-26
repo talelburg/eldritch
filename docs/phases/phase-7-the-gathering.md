@@ -96,23 +96,25 @@ the Tablet came out.
 
 ### Wave 2 — the input surface
 
-- **#541 — S6: global-action homes, then delete `.action-bar`.** The closer of the
-  interactivity pass; closes **#206**.
-- **#787 — the skill-test result panel loses the chaos token across a batch split.**
-  The store overwrites `last_events` wholesale on every `Applied`, so when a symbol
-  token's ST.4 effect suspends for an interactive window the reveal lands in one batch
-  and the outcome in the next, and the panel falls back to `—`. The store already
-  latches the test's *difficulty* across batches for exactly this reason; the token
-  needs the same treatment. In the gate on the same reading as #770 — a run whose
-  result panel cannot name the token that decided the test produces findings nobody
-  can check afterwards.
-- **#770 — an unknown `InputKind` renders a prompt with no controls.** Split from
-  #586, which keeps the `max_health()` render panic and stays out of the gate as
-  stale-client hardening. In for the
-  *run*, not the release: with matched binaries it never fires, but #769 is
-  exercised against a live `trunk serve` loop where skew is the known hazard, and a
-  control-less prompt is **indistinguishable from an engine stall** — the risk is
-  that it gets filed as an engine bug and corrupts the run's findings.
+| Issue | Defect |
+|---|---|
+| #541 ✅ PR #801 | End turn, Gain resource, Draw and the Mythos draw live in a sticky `.action-bar`, so the board is not the input surface and every anchored `PickSingle` renders twice — closes **#206** |
+| #787 | The skill-test result panel renders the chaos token as `—` whenever a symbol token's ST.4 effect suspends and splits the event batch |
+| #770 | An unknown `InputKind` renders a prompt with no controls |
+
+**Why #787 and #770 are in the gate**, given that neither is a rules defect: both
+corrupt **#769's findings**, which is the wave-4 deliverable. A result panel that
+cannot name the token that decided a test produces a run nobody can check afterwards
+— and #787's fix is the treatment the store already gives the test's *difficulty*,
+which it latches across batches for exactly this reason, where `last_events` is
+overwritten wholesale on every `Applied`. #770 is in for the *run*, not the release:
+with matched binaries it never fires, but #769 is exercised against a live
+`trunk serve` loop where skew is the known hazard, and a control-less prompt is
+**indistinguishable from an engine stall** — the risk is that it gets filed as an
+engine bug. (It was split from #586, which keeps the `max_health()` render panic and
+stays out of the gate as stale-client hardening.) **S6 did not fix #770**, but its
+prompt banner is now the floor for any live prompt, so the fallback it deletes is not
+regressed.
 
 ### Wave 3 — optional content (#258's children)
 
@@ -590,8 +592,8 @@ the now-stable set of input shapes:
     **interactivity pass** (next bullet). Spec/plan:
     `docs/superpowers/specs/2026-06-30-act-agenda-and-sidebars-design.md`,
     `docs/superpowers/plans/2026-06-30-act-agenda-and-sidebars.md`.
-  - **Interactivity pass (#206 umbrella; slices S0–S6 = #535–#541).** Retires the flat
-    `.action-bar`: actionable board entities glow and open a **context menu** of their legal
+  - **Interactivity pass (#206 umbrella; slices S0–S6 = #535–#541) — complete, closed by S6/PR #801.**
+    Retires the flat `.action-bar`: actionable board entities glow and open a **context menu** of their legal
     actions; multi-select (mulligan/commit/discard) is click-to-select on the hand; windows /
     soak / effect choices resolve on their source cards; a slim prompt banner carries prompt
     text + Confirm/Pass. Engine-authoritative — each option the board offers *is* an option the
@@ -601,7 +603,8 @@ the now-stable set of input shapes:
     - **S0 — `OptionTarget` anchor on `ChoiceOption` (#535, PR #542).** Each wire `ChoiceOption`
       gains a structured `OptionTarget` (`Global` / `Location` / `Enemy` / `HandCard` /
       `CardInstance` / `Act`); `turn_menu` derives real anchors from a new `TurnAction::target`,
-      every other option-builder emits `Global` for now. `label` stays the full engine-authored
+      every other option-builder emits `Global` for now. (**`Global` was removed by S6** — see
+      that entry: un-anchored became `None`, and the field became `Option<OptionTarget>`.) `label` stays the full engine-authored
       string. Required wire field (#453 precedent). Engine + protocol only — no web behavior
       change (the bar still reads `label`). Plan:
       `docs/superpowers/plans/2026-07-01-interactivity-s0-optiontarget.md`.
@@ -718,15 +721,16 @@ the now-stable set of input shapes:
       ability whose sole effect is an advance stacks a redundant `#466` ack over the flip's `AwaitAck`)
       was deferred to #562 and **closed unfixed** — 01110 is terminal, so its advance latches the
       resolution instead of building an `AdvanceReverse` frame, and there is no second prompt to
-      suppress. The advance pick still double-renders
-      on-card *and* in the flat input bar (every anchored `PickSingle` does today); reconciled by S6/#541,
-      not here.
-    - **S6 — globals + bar retirement (#541), the closer, queued.** Homes for the genuinely-global
-      End turn / Gain resource / Draw + an encounter-deck element for the draw `Confirm`, then
-      **delete `.action-bar`** (folding picker + skill-test-result into their own surfaces). The
-      shared `menu_layer` / fixed-at-cursor + `PromptBanner` (now `Global`-only options) are the seams
-      it extends; the banner is the catch-all for any remaining un-anchored option. New anchors inside
-      a `z-index`ed ancestor must float their menu like the map node.
+      suppress. The advance pick double-rendered on-card *and* in the flat input bar (every anchored
+      `PickSingle` did), which S6/#541 reconciled by deleting the bar.
+    - **S6 — globals + bar retirement (#541, PR #801), the closer; closes #206.** Homes for the
+      three open-turn actions + an encounter-deck element for the draw `Confirm`, then
+      **delete `.action-bar`** (folding picker + skill-test-result into their own surfaces).
+      Scope grew to `engine` + `ui` during grilling: the three actions were not global but
+      **unnamed**, and the draw `Confirm` was byte-identical to the #478 acknowledge pause, so
+      neither could be homed client-side without label-sniffing. `OptionTarget::Global` is
+      **removed** (un-anchored is `None`) and `InputRequest` carries an anchor of its own.
+      [ADR 0011](../adr/0011-the-engine-names-the-surface-a-prompt-renders-on.md).
     - **Investigator panel rework (#547, PR #548) — display-only.** The investigator card is the home
       for the character's live state: skills (W/I/C/A) + hp/san folded onto the card, actions (pips)/
       resources/clues/status beside it, next to the hand; the loose stats line + the map-redundant

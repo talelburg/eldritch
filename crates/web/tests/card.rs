@@ -212,14 +212,12 @@ async fn mount_hand(
 async fn playable_hand_card_opens_a_play_menu_and_submits() {
     let outcome = awaiting_pick_single_with(
         "Choose an action",
-        vec![ChoiceOption::new(
-            OptionId(0),
-            "Play Machete",
-            OptionTarget::HandCard {
+        vec![
+            ChoiceOption::new(OptionId(0), "Play Machete").at(OptionTarget::HandCard {
                 investigator: InvestigatorId(1),
                 hand_index: 0,
-            },
-        )],
+            }),
+        ],
     );
     let (_selected, mut rx) = mount_hand(outcome).await;
 
@@ -277,9 +275,7 @@ async fn hand_card_glows_for_a_reaction_anchored_by_code() {
     // card of that code (Machete 01020 as a stand-in) and opens its menu.
     let outcome = awaiting_pick_single_with(
         "You may play a card",
-        vec![ChoiceOption::new(
-            OptionId(0),
-            "Play Machete from hand",
+        vec![ChoiceOption::new(OptionId(0), "Play Machete from hand").at(
             OptionTarget::HandCardByCode {
                 investigator: InvestigatorId(1),
                 code: CardCode::new("01020"),

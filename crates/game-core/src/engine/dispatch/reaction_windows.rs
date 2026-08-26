@@ -581,11 +581,10 @@ fn trigger_matches(
 ///
 /// Before the split this arm had to work out *which* board card a
 /// `CandidateSource::Board` candidate was by comparing its code against the
-/// current act and agenda, and fell through to [`OptionTarget::Global`] when
+/// current act and agenda, and fell through to an un-anchored option when
 /// neither matched — which is what an attacking enemy's own forced ability hit
 /// (Silver Twilight Acolyte 01102). The source now says which it is, so there is
-/// nothing to derive and no fall-through: `Global` is no longer any candidate's
-/// anchor.
+/// nothing to derive and no fall-through: every candidate is anchored.
 ///
 /// Shared by [`build_resolution_options`] and the forced-ack path.
 pub(super) fn candidate_anchor(cand: &ResolutionCandidate) -> crate::engine::OptionTarget {
@@ -616,7 +615,7 @@ fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOpt
                 CandidateSource::Hand => format!("Play {} from hand", cand.code),
                 CandidateSource::Ability(_) => format!("Resolve reaction: {}", cand.code),
             };
-            ChoiceOption::new(id, label, candidate_anchor(cand))
+            ChoiceOption::new(id, label).at(candidate_anchor(cand))
         })
         .collect()
 }
@@ -2265,8 +2264,8 @@ pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
             ChoiceOption::new(
                 OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
                 a.label(cx.state),
-                a.target(cx.state),
             )
+            .maybe_at(a.target(cx.state))
         })
         .collect::<Vec<_>>();
     EngineOutcome::AwaitingInput {
@@ -2630,18 +2629,18 @@ mod resolution_option_anchor_tests {
         let opts = build_resolution_options(&cands);
         assert_eq!(
             opts[0].target,
-            OptionTarget::CardInstance(CardInstanceId(9))
+            Some(OptionTarget::CardInstance(CardInstanceId(9)))
         );
         assert_eq!(
             opts[1].target,
-            OptionTarget::HandCardByCode {
+            Some(OptionTarget::HandCardByCode {
                 investigator: InvestigatorId(1),
                 code: CardCode::new("01022"),
-            }
+            })
         );
         assert_eq!(
             opts[2].target,
-            OptionTarget::Act,
+            Some(OptionTarget::Act),
             "an act-sourced candidate anchors to the act card — no act deck is seeded here, \
              because the source says which board card it is rather than the reader deriving it \
              from the code (#735)",
@@ -2649,10 +2648,10 @@ mod resolution_option_anchor_tests {
     }
 
     /// Every source kind maps to its own anchor, and **none of them is
-    /// [`OptionTarget::Global`]** — a board candidate used to fall through to it
-    /// whenever the candidate's code matched neither the current act nor the
-    /// current agenda, which is exactly what an attacking enemy's own forced
-    /// ability did (#735).
+    /// un-anchored** — a board candidate used to fall through to the then-`Global`
+    /// variant whenever its code matched neither the current act nor the current
+    /// agenda, which is exactly what an attacking enemy's own forced ability did
+    /// (#735).
     #[test]
     fn candidate_anchor_maps_each_source() {
         use crate::engine::OptionTarget;

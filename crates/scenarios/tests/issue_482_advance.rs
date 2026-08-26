@@ -103,7 +103,7 @@ fn mythos_agenda_advance_acknowledge_precedes_the_choice() {
     assert_eq!(request.options.len(), 1, "a single 'Advance' option");
     assert_eq!(
         request.options[0].target,
-        OptionTarget::Agenda,
+        Some(OptionTarget::Agenda),
         "the flip pick anchors to the agenda card"
     );
     // Click the flip → the ChooseOne becomes the live prompt.
