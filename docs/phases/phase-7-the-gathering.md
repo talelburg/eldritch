@@ -99,7 +99,7 @@ the Tablet came out.
 | Issue | Defect |
 |---|---|
 | #541 ✅ PR #801 | End turn, Gain resource, Draw and the Mythos draw live in a sticky `.action-bar`, so the board is not the input surface and every anchored `PickSingle` renders twice — closes **#206** |
-| #787 | The skill-test result panel renders the chaos token as `—` whenever a symbol token's ST.4 effect suspends and splits the event batch |
+| #787 ✅ PR #802 | The skill-test result panel renders the chaos token as `—` whenever a symbol token's ST.4 effect suspends and splits the event batch |
 | #770 | An unknown `InputKind` renders a prompt with no controls |
 
 **Why #787 and #770 are in the gate**, given that neither is a rules defect: both
@@ -115,6 +115,15 @@ engine bug. (It was split from #586, which keeps the `max_health()` render panic
 stays out of the gate as stale-client hardening.) **S6 did not fix #770**, but its
 prompt banner is now the floor for any live prompt, so the fallback it deletes is not
 regressed.
+
+**#787's latch is not quite the difficulty's** (PR #802). Both are cleared by `Hello`,
+but the difficulty latch is self-refreshing — every test re-announces its own — while
+the token's is not: a test whose determination is known before the draw skips ST.3 and
+ST.4 entirely, so it emits no `ChaosTokenRevealed` and would have inherited the
+previous test's token where the em dash belongs. The token latch is therefore also
+cleared on `SkillTestStarted`, scanned before the reveal so a batch carrying both still
+latches. Both review axes caught this independently; the fix is written against the
+general condition (any suspension between reveal and outcome), not against the Tablet.
 
 ### Wave 3 — optional content (#258's children)
 
