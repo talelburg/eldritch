@@ -82,7 +82,7 @@ fn upkeep_round_end_state(clues: u8) -> GameState {
         Act {
             code: CardCode("01110".into()),
             clue_threshold: 0,
-            resolution: Some(game_core::scenario::Resolution::Won { id: "R1".into() }),
+            resolution: Some(game_core::scenario::ResolutionId::new(1)),
         },
     ];
     state.act_index = 0;

@@ -201,7 +201,7 @@ fn solo_defeat_ends_the_scenario_instead_of_rotating() {
     assert!(
         matches!(
             result.state.resolution,
-            Some(game_core::scenario::Resolution::Lost { .. })
+            Some(game_core::scenario::ScenarioEnding::NoResolution)
         ),
         "RR p.10 step 6: no remaining players ⇒ the scenario ends"
     );

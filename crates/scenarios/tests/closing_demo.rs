@@ -11,7 +11,7 @@
 use game_core::action::RosterEntry;
 use game_core::engine::{apply, EngineOutcome};
 use game_core::event::Event;
-use game_core::scenario::Resolution;
+use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::seat_and_open;
 use game_core::state::{CardCode, GameState, InvestigatorId, Phase};
 use game_core::test_support::TEST_INV;
@@ -212,11 +212,12 @@ fn won_walk_full_cycle_replays_identically() {
     assert_event!(events, Event::ActAdvanced { from } if *from == 0);
     assert_event!(
         events,
-        Event::ScenarioResolved { resolution: Resolution::Won { id } } if id == "demo"
+        Event::ScenarioResolved { ending: ScenarioEnding::Resolution(id) }
+            if *id == ResolutionId::new(1)
     );
     assert!(matches!(
         final_state.resolution,
-        Some(Resolution::Won { .. })
+        Some(ScenarioEnding::Resolution(_))
     ));
 
     let replayed = replay_with_roundtrip(make_initial, &log);
@@ -291,10 +292,13 @@ fn lost_walk_spawn_attack_doom_replays_identically() {
     assert_event!(
         events,
         Event::ScenarioResolved {
-            resolution: Resolution::Lost { .. }
+            ending: ScenarioEnding::Resolution(_)
         }
     );
-    assert!(matches!(state.resolution, Some(Resolution::Lost { .. })));
+    assert!(matches!(
+        state.resolution,
+        Some(ScenarioEnding::Resolution(_))
+    ));
 
     let replayed = replay_with_roundtrip(make_initial, &log);
     assert_eq!(

@@ -6,7 +6,7 @@
 
 use card_dsl::dsl::EventTiming;
 use game_core::engine::{EngineOutcome, TurnAction};
-use game_core::scenario::Resolution;
+use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{Act, CardCode, InvestigatorId, Phase};
 use game_core::test_support::{
     dispatch_turn_action_unchecked, test_investigator, GameStateBuilder,
@@ -24,7 +24,7 @@ fn act3_state() -> game_core::state::GameState {
     state.act_deck = vec![Act {
         code: CardCode("01110".into()),
         clue_threshold: 0,
-        resolution: Some(Resolution::Won { id: "R1".into() }),
+        resolution: Some(ResolutionId::new(1)),
     }];
     state
 }
@@ -42,7 +42,7 @@ fn defeating_ghoul_priest_advances_act_3_to_won() {
     );
     assert_eq!(out, EngineOutcome::Done);
     assert!(
-        matches!(state.resolution, Some(Resolution::Won { .. })),
+        matches!(state.resolution, Some(ScenarioEnding::Resolution(_))),
         "Ghoul Priest defeat should set resolution to Won"
     );
 }
@@ -86,7 +86,7 @@ fn advance_act_action_rejected_for_act_3_objective() {
     state.act_deck = vec![Act {
         code: CardCode("01110".into()),
         clue_threshold: 0,
-        resolution: Some(Resolution::Won { id: "R1".into() }),
+        resolution: Some(ResolutionId::new(1)),
     }];
 
     let result =

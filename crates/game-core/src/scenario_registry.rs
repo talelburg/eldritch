@@ -66,7 +66,7 @@ pub fn current() -> Option<&'static ScenarioRegistry> {
 mod tests {
     use super::{ScenarioRegistry, REGISTRY};
     use crate::event::Event;
-    use crate::scenario::{Resolution, ScenarioId, ScenarioModule};
+    use crate::scenario::{ScenarioEnding, ScenarioId, ScenarioModule};
     use crate::state::GameState;
     use crate::test_support::GameStateBuilder;
 
@@ -74,7 +74,7 @@ mod tests {
         GameStateBuilder::new().build()
     }
 
-    fn no_op_apply(_res: &Resolution, _state: &mut GameState, _events: &mut Vec<Event>) {}
+    fn no_op_apply(_ending: ScenarioEnding, _state: &mut GameState, _events: &mut Vec<Event>) {}
 
     static FAKE_MODULE: ScenarioModule = ScenarioModule {
         resolve_symbol: None,

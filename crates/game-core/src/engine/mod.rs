@@ -263,17 +263,15 @@ fn finalize_scenario_end(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
         return;
     }
     cx.state.continuations.pop();
-    let Some(resolution) = cx.state.resolution.clone() else {
+    let Some(ending) = cx.state.resolution else {
         debug_assert!(
             false,
-            "a ScenarioEnd frame exists without a latched resolution; \
+            "a ScenarioEnd frame exists without a latched scenario ending; \
              `request_resolution` pushes the two together"
         );
         return;
     };
-    cx.events.push(Event::ScenarioResolved {
-        resolution: resolution.clone(),
-    });
+    cx.events.push(Event::ScenarioResolved { ending });
 
     // Place victory-point locations in the victory display. Runs BEFORE
     // `(module.apply_resolution)(...)` so the scan captures board state
@@ -315,7 +313,7 @@ fn finalize_scenario_end(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
     let Some(module) = (reg.module_for)(id) else {
         return;
     };
-    (module.apply_resolution)(&resolution, cx.state, cx.events);
+    (module.apply_resolution)(ending, cx.state, cx.events);
 }
 
 #[cfg(test)]
@@ -4904,14 +4902,16 @@ mod tests {
         );
     }
 
-    use crate::scenario::{Resolution, ScenarioId, ScenarioModule, ScenarioRegistry};
+    use crate::scenario::{
+        ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry,
+    };
     use crate::state::Act;
 
     /// `apply_resolution` that records it ran by stamping the acting
     /// investigator's resources to a sentinel value, so tests can assert
     /// the module hook (not just the event) fired.
     fn stamp_apply(
-        _res: &Resolution,
+        _ending: ScenarioEnding,
         state: &mut crate::state::GameState,
         _events: &mut Vec<Event>,
     ) {
@@ -4964,7 +4964,7 @@ mod tests {
         state.act_deck = vec![Act {
             code: CardCode("_test_act".into()),
             clue_threshold: 1,
-            resolution: Some(Resolution::Won { id: "test".into() }),
+            resolution: Some(ResolutionId::new(1)),
         }];
         state
     }
@@ -5010,7 +5010,9 @@ mod tests {
         assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
-            Event::ScenarioResolved { resolution: Resolution::Won { id } } if id == "test"
+            Event::ScenarioResolved {
+                ending: ScenarioEnding::Resolution(id)
+            } if *id == ResolutionId::new(1)
         );
         assert_eq!(
             result.state.investigators[&InvestigatorId(1)].resources,

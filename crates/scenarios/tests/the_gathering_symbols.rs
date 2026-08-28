@@ -4,7 +4,7 @@
 
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::scenario::{Resolution, ScenarioId};
+use game_core::scenario::{ResolutionId, ScenarioId};
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId,
     Phase, SkillKind, TokenResolution,
@@ -403,7 +403,7 @@ fn resolvable_state_with_attic(revealed: bool, clues: u8) -> game_core::state::G
     state.act_deck = vec![Act {
         code: CardCode("_test_act".into()),
         clue_threshold: 1,
-        resolution: Some(Resolution::Won { id: "R1".into() }),
+        resolution: Some(ResolutionId::new(1)),
     }];
     state
 }
@@ -475,7 +475,7 @@ fn two_cleared_victory_locations_both_enter_display() {
     state.act_deck = vec![Act {
         code: CardCode("_test_act".into()),
         clue_threshold: 1,
-        resolution: Some(Resolution::Won { id: "R1".into() }),
+        resolution: Some(ResolutionId::new(1)),
     }];
     let r = advance_to_resolution(state);
     assert!(

@@ -9,7 +9,7 @@ use futures_util::{SinkExt, StreamExt};
 use game_core::scenario::{ScenarioId, ScenarioModule, ScenarioRegistry};
 use game_core::state::GameStateBuilder;
 use game_core::state::{ChaosBag, ChaosToken, GameState};
-use game_core::{Event, Resolution};
+use game_core::{Event, ScenarioEnding};
 use protocol::{ClientMessage, ServerMessage};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
@@ -28,7 +28,7 @@ fn test_setup() -> GameState {
         .build()
 }
 
-fn noop_resolution(_: &Resolution, _: &mut GameState, _: &mut Vec<Event>) {}
+fn noop_resolution(_: ScenarioEnding, _: &mut GameState, _: &mut Vec<Event>) {}
 
 static TEST_MODULE: ScenarioModule = ScenarioModule {
     resolve_symbol: None,

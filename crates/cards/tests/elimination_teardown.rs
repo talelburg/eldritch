@@ -287,7 +287,7 @@ fn eliminated_investigator_fires_cover_ups_game_end_trauma() {
     assert_event!(r.events, Event::TraumaSuffered {
         investigator, kind: game_core::event::TraumaKind::Mental, amount: 1
     } if *investigator == InvestigatorId(1));
-    // Exactly once. Solo, so the death also latches Resolution::Lost and the
+    // Exactly once. Solo, so the death also latches NoResolution and the
     // ordinary scenario-end `GameEnd` scan runs — it must not fire this a second
     // time (Cover Up has left play by then, and that scan skips non-Active
     // investigators anyway, #567).

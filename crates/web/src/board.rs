@@ -3,7 +3,7 @@
 //! their names via `crate::names` (the client installs `cards::REGISTRY`).
 
 use game_core::state::GameState;
-use game_core::Resolution;
+use game_core::ScenarioEnding;
 use leptos::prelude::*;
 
 use crate::store::use_store;
@@ -148,17 +148,27 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
     }
 }
 
-/// Win/loss banner — rendered only once `GameState.resolution` latches.
+/// Scenario-ending banner — rendered only once `GameState.resolution` latches.
 /// Read-only display of state, matching the pure-fn display pattern; keeps
 /// `board.rs` read-only (no new interactivity).
+///
+/// It names the ending rather than declaring a win or a loss. A scenario ends
+/// at a resolution point or at none, and that is what the player carries to the
+/// campaign guide's "do not read until end of game" section. Win and loss are a
+/// standalone-mode projection — *"they win if they complete a resolution on an
+/// act card"* — and which resolutions are favorable is scenario-local knowledge
+/// the campaign guide owns, not something this pure function can compute. See
+/// `docs/adr/0012-a-scenario-ends-at-a-resolution-point-or-at-none.md`.
 fn resolution_banner(game: &GameState) -> impl IntoView {
-    game.resolution.as_ref().map(|r| {
-        let text = match r {
-            Resolution::Won { id } => format!("Scenario won — {id}"),
-            Resolution::Lost { reason } => format!("Scenario lost — {reason}"),
-            // `Resolution` is #[non_exhaustive]; a future variant gets a
+    game.resolution.map(|ending| {
+        let text = match ending {
+            // `ResolutionId` renders as the campaign guide titles it,
+            // e.g. "Resolution 3".
+            ScenarioEnding::Resolution(id) => format!("Scenario ended — {id}"),
+            ScenarioEnding::NoResolution => "Scenario ended — no resolution reached".to_string(),
+            // `ScenarioEnding` is #[non_exhaustive]; a future variant gets a
             // generic banner until the client learns its shape.
-            _ => "Scenario resolved".to_string(),
+            _ => "Scenario ended".to_string(),
         };
         view! { <section class="resolution">{text}</section> }
     })

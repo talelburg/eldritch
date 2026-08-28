@@ -3,6 +3,7 @@
 
 use std::borrow::Cow;
 
+use crate::scenario::ScenarioEnding;
 use crate::state::{GameState, InvestigatorId, LocationId, Phase};
 
 use super::super::outcome::EngineOutcome;
@@ -67,8 +68,8 @@ pub(crate) fn check_doom_threshold(cx: &mut Cx) {
     if cx.state.agenda_doom < agenda.doom_threshold {
         return;
     }
-    match agenda.resolution.clone() {
-        Some(resolution) => request_resolution(cx.state, resolution),
+    match agenda.resolution {
+        Some(id) => request_resolution(cx.state, ScenarioEnding::Resolution(id)),
         None => advance_agenda(cx),
     }
 }
@@ -187,8 +188,8 @@ pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> E
 
     // All validations passed — mutate.
     spend_clues(cx.state, investigator, threshold);
-    match cx.state.act_deck[cx.state.act_index].resolution.clone() {
-        Some(resolution) => request_resolution(cx.state, resolution),
+    match cx.state.act_deck[cx.state.act_index].resolution {
+        Some(id) => request_resolution(cx.state, ScenarioEnding::Resolution(id)),
         // The `AdvanceAct` action *is* the player's flip — a deliberate advance.
         None => advance_act(cx, crate::state::AdvanceTrigger::Deliberate),
     }
@@ -345,7 +346,7 @@ pub(crate) fn advance_act(cx: &mut Cx, trigger: crate::state::AdvanceTrigger) {
         });
 }
 
-/// Set the scenario-resolution latch and arm the scenario's ending.
+/// Set the scenario-ending latch and arm the scenario's ending.
 /// First-writer-wins: a resolution already latched this scenario is
 /// authoritative and a later request is ignored.
 ///
@@ -373,9 +374,9 @@ pub(crate) fn advance_act(cx: &mut Cx, trigger: crate::state::AdvanceTrigger) {
 /// outcome `apply` clears events but does not roll back `state`, so a
 /// latch set on a doomed path would persist. All current callers latch
 /// only on their success branches.
-pub(crate) fn request_resolution(state: &mut GameState, resolution: crate::scenario::Resolution) {
+pub(crate) fn request_resolution(state: &mut GameState, ending: ScenarioEnding) {
     if state.resolution.is_none() {
-        state.resolution = Some(resolution);
+        state.resolution = Some(ending);
         state.continuations.insert(
             0,
             crate::state::Continuation::ScenarioEnd {
@@ -464,7 +465,6 @@ mod doom_agenda_tests {
 
     #[test]
     fn doom_threshold_advances_non_terminal_agenda() {
-        use crate::scenario::Resolution;
         use crate::state::{Agenda, CardCode};
         let mut state = GameStateBuilder::new().build();
         state.agenda_deck = vec![
@@ -476,9 +476,7 @@ mod doom_agenda_tests {
             Agenda {
                 code: CardCode("_test_agenda_2".into()),
                 doom_threshold: 2,
-                resolution: Some(Resolution::Lost {
-                    reason: "agenda".into(),
-                }),
+                resolution: Some(crate::scenario::ResolutionId::new(3)),
             },
         ];
         state.agenda_doom = 2;
@@ -506,15 +504,13 @@ mod doom_agenda_tests {
 
     #[test]
     fn doom_threshold_on_terminal_agenda_sets_resolution_latch() {
-        use crate::scenario::Resolution;
+        use crate::scenario::ResolutionId;
         use crate::state::{Agenda, CardCode};
         let mut state = GameStateBuilder::new().build();
         state.agenda_deck = vec![Agenda {
             code: CardCode("_test_agenda".into()),
             doom_threshold: 2,
-            resolution: Some(Resolution::Lost {
-                reason: "doom".into(),
-            }),
+            resolution: Some(ResolutionId::new(3)),
         }];
         state.agenda_doom = 2;
         let mut events = Vec::new();
@@ -526,7 +522,15 @@ mod doom_agenda_tests {
             state.agenda_index, 0,
             "cursor does not move on a terminal agenda"
         );
-        assert!(matches!(state.resolution, Some(Resolution::Lost { .. })));
+        // An agenda-invoked ending is a resolution point like any other; the
+        // agenda's printed (→R#) survives into the latch rather than being
+        // flattened to "lost".
+        assert_eq!(
+            state.resolution,
+            Some(crate::scenario::ScenarioEnding::Resolution(
+                ResolutionId::new(3)
+            ))
+        );
         assert_no_event!(events, Event::AgendaAdvanced { .. });
     }
 
@@ -552,23 +556,12 @@ mod doom_agenda_tests {
 
     #[test]
     fn request_resolution_is_first_writer_wins() {
-        use crate::scenario::Resolution;
+        use crate::scenario::{ResolutionId, ScenarioEnding};
         let mut state = GameStateBuilder::new().build();
-        request_resolution(
-            &mut state,
-            Resolution::Lost {
-                reason: "first".into(),
-            },
-        );
-        request_resolution(
-            &mut state,
-            Resolution::Won {
-                id: "second".into(),
-            },
-        );
-        assert!(
-            matches!(state.resolution, Some(Resolution::Lost { ref reason }) if reason == "first")
-        );
+        // The elimination step-6 ending wins over a later resolution point.
+        request_resolution(&mut state, ScenarioEnding::NoResolution);
+        request_resolution(&mut state, ScenarioEnding::Resolution(ResolutionId::new(2)));
+        assert_eq!(state.resolution, Some(ScenarioEnding::NoResolution));
     }
 }
 
@@ -679,7 +672,7 @@ mod advance_act_tests {
         state.act_deck = vec![Act {
             code: CardCode("01110".into()),
             clue_threshold: 0,
-            resolution: Some(crate::scenario::Resolution::Won { id: "R1".into() }),
+            resolution: Some(crate::scenario::ResolutionId::new(1)),
         }];
 
         assert!(
@@ -716,7 +709,7 @@ mod advance_act_tests {
 
     #[test]
     fn advance_act_spends_clues_and_advances_non_terminal() {
-        use crate::scenario::Resolution;
+        use crate::scenario::ResolutionId;
         use crate::state::{Act, CardCode};
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
@@ -740,7 +733,7 @@ mod advance_act_tests {
             Act {
                 code: CardCode("_test_act_2".into()),
                 clue_threshold: 2,
-                resolution: Some(Resolution::Won { id: "demo".into() }),
+                resolution: Some(ResolutionId::new(1)),
             },
         ];
 
@@ -757,7 +750,7 @@ mod advance_act_tests {
 
     #[test]
     fn advance_act_on_terminal_act_sets_resolution_latch() {
-        use crate::scenario::Resolution;
+        use crate::scenario::ResolutionId;
         use crate::state::{Act, CardCode};
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
@@ -775,7 +768,7 @@ mod advance_act_tests {
         state.act_deck = vec![Act {
             code: CardCode("_test_act".into()),
             clue_threshold: 2,
-            resolution: Some(Resolution::Won { id: "demo".into() }),
+            resolution: Some(ResolutionId::new(1)),
         }];
 
         let result = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });
@@ -786,7 +779,7 @@ mod advance_act_tests {
         );
         assert!(matches!(
             result.state.resolution,
-            Some(Resolution::Won { .. })
+            Some(crate::scenario::ScenarioEnding::Resolution(_))
         ));
         assert_no_event!(result.events, Event::ActAdvanced { .. });
         assert_eq!(result.state.investigators[&inv].clues, 0);
@@ -794,7 +787,7 @@ mod advance_act_tests {
 
     #[test]
     fn advance_act_without_registry_still_advances() {
-        use crate::scenario::Resolution;
+        use crate::scenario::ResolutionId;
         use crate::state::{Act, CardCode, InvestigatorId, Phase};
         use crate::test_support::{take_turn_action, test_investigator, GameStateBuilder};
         let inv = InvestigatorId(1);
@@ -819,7 +812,7 @@ mod advance_act_tests {
             Act {
                 code: CardCode("01109".into()),
                 clue_threshold: 3,
-                resolution: Some(Resolution::Won { id: "R1".into() }),
+                resolution: Some(ResolutionId::new(1)),
             },
         ];
         let result = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });

@@ -18,7 +18,7 @@
 use game_core::action::RosterEntry;
 use game_core::engine::apply;
 use game_core::event::Event;
-use game_core::scenario::Resolution;
+use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::seat_and_open;
 use game_core::state::{CardCode, GameState, InvestigatorId, Phase};
 use game_core::test_support::{take_turn_action, TEST_INV};
@@ -79,7 +79,8 @@ fn synthetic_scenario_resolves_won_via_act_advance() {
 
     assert_event!(
         events,
-        Event::ScenarioResolved { resolution: Resolution::Won { id } } if id == "demo"
+        Event::ScenarioResolved { ending: ScenarioEnding::Resolution(id) }
+            if *id == ResolutionId::new(1)
     );
     assert!(state.resolution.is_some());
 }
@@ -159,8 +160,11 @@ fn synthetic_scenario_resolves_lost_via_doom() {
     assert_event!(
         all_events,
         Event::ScenarioResolved {
-            resolution: Resolution::Lost { .. }
+            ending: ScenarioEnding::Resolution(_)
         }
     );
-    assert!(matches!(state.resolution, Some(Resolution::Lost { .. })));
+    assert!(matches!(
+        state.resolution,
+        Some(ScenarioEnding::Resolution(_))
+    ));
 }

@@ -54,7 +54,7 @@ pub use engine::{
 };
 pub use event::{Event, FailureReason, TraumaKind};
 pub use rng::RngState;
-pub use scenario::{Resolution, ScenarioId, ScenarioModule, ScenarioRegistry};
+pub use scenario::{ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry};
 pub use state::{
     resolve_token, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     DefeatCause, DifficultyBasis, Enemy, EnemyId, GameState, Investigator, InvestigatorId,

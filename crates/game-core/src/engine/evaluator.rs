@@ -1772,8 +1772,8 @@ fn apply_advance_current_act(cx: &mut Cx) -> EngineOutcome {
             reason: "AdvanceCurrentAct: no act deck is modeled".into(),
         };
     }
-    match cx.state.act_deck[cx.state.act_index].resolution.clone() {
-        Some(resolution) => request_resolution(cx.state, resolution),
+    match cx.state.act_deck[cx.state.act_index].resolution {
+        Some(id) => request_resolution(cx.state, crate::scenario::ScenarioEnding::Resolution(id)),
         // AdvanceCurrentAct is only reached from a Forced ability (01110's
         // Ghoul-Priest-defeat advance) — a game-forced advance, so it prompts
         // the on-card flip (#558).
@@ -5154,7 +5154,7 @@ mod tests {
 
     #[test]
     fn advance_current_act_non_terminal_bumps_cursor() {
-        use crate::scenario::Resolution;
+        use crate::scenario::ResolutionId;
         use crate::state::{Act, CardCode, InvestigatorId};
         use crate::test_support::GameStateBuilder;
         let mut state = GameStateBuilder::new()
@@ -5169,7 +5169,7 @@ mod tests {
             Act {
                 code: CardCode("a2".into()),
                 clue_threshold: 0,
-                resolution: Some(Resolution::Won { id: "R1".into() }),
+                resolution: Some(ResolutionId::new(1)),
             },
         ];
         let mut events = Vec::new();
@@ -5192,7 +5192,7 @@ mod tests {
 
     #[test]
     fn advance_current_act_terminal_latches_resolution() {
-        use crate::scenario::Resolution;
+        use crate::scenario::ResolutionId;
         use crate::state::{Act, CardCode, InvestigatorId};
         use crate::test_support::GameStateBuilder;
         let mut state = GameStateBuilder::new()
@@ -5201,7 +5201,7 @@ mod tests {
         state.act_deck = vec![Act {
             code: CardCode("a1".into()),
             clue_threshold: 0,
-            resolution: Some(Resolution::Won { id: "R1".into() }),
+            resolution: Some(ResolutionId::new(1)),
         }];
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -5215,7 +5215,10 @@ mod tests {
         );
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(state.act_index, 0, "terminal act does not move the cursor");
-        assert!(matches!(state.resolution, Some(Resolution::Won { .. })));
+        assert!(matches!(
+            state.resolution,
+            Some(crate::scenario::ScenarioEnding::Resolution(_))
+        ));
     }
 
     /// A two-agenda fixture with the given doom threshold on the current one.

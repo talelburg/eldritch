@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use card_dsl::card_data::CardType;
 
 use crate::dsl::Determination;
-use crate::scenario::Resolution;
+use crate::scenario::ScenarioEnding;
 use crate::state::{
     CardCode, CardInstanceId, ChaosToken, DefeatCause, EnemyId, InvestigatorId, LocationId, Phase,
     SkillKind, TokenResolution, UseKind, Zone,
@@ -528,7 +528,7 @@ pub enum Event {
         /// Which ability on the card fired.
         ability_index: u8,
     },
-    /// A scenario resolved (won or lost). Emitted by
+    /// A scenario ended — at a resolution point, or at none. Emitted by
     /// [`apply`](crate::engine::apply) when the scenario's *ending* finishes —
     /// not when the resolution latches. A dispatch site latches at a discrete
     /// trigger (act/agenda resolution point, or last-investigator elimination),
@@ -548,8 +548,10 @@ pub enum Event {
     /// frame with it, and the apply boundary pops that frame as it finalizes —
     /// so this event fires exactly once per scenario.
     ScenarioResolved {
-        /// The resolution returned by the scenario module.
-        resolution: Resolution,
+        /// How the scenario ended. Carries no win/loss verdict: that is a
+        /// standalone-mode projection for the client to compute, not
+        /// engine state.
+        ending: ScenarioEnding,
     },
     /// A card was placed in the victory display (Rules Reference p.21).
     /// Emitted for each victory-point location at scenario resolution.

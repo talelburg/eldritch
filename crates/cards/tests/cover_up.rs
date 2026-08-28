@@ -8,7 +8,7 @@
 
 use game_core::action::EngineRecord;
 use game_core::event::{Event, TraumaKind};
-use game_core::scenario::{Resolution, ScenarioId};
+use game_core::scenario::{ResolutionId, ScenarioId};
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
     InvestigatorId, LocationId, Phase,
@@ -266,7 +266,7 @@ fn resolving_state(cover_up_clues: u8) -> GameState {
     state.act_deck = vec![Act {
         code: CardCode("_test_act".into()),
         clue_threshold: 1,
-        resolution: Some(Resolution::Won { id: "test".into() }),
+        resolution: Some(ResolutionId::new(1)),
     }];
     state
 }
@@ -459,7 +459,7 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
     state.act_deck = vec![Act {
         code: CardCode("_test_act".into()),
         clue_threshold: 1,
-        resolution: Some(Resolution::Won { id: "test".into() }),
+        resolution: Some(ResolutionId::new(1)),
     }];
 
     let mut result = take_turn_action(state, &TurnAction::AdvanceAct { investigator: INV });
