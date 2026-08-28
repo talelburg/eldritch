@@ -216,7 +216,7 @@ fn won_walk_full_cycle_replays_identically() {
             if *id == ResolutionId::new(1)
     );
     assert!(matches!(
-        final_state.resolution,
+        final_state.ending,
         Some(ScenarioEnding::Resolution(_))
     ));
 
@@ -265,7 +265,7 @@ fn lost_walk_spawn_attack_doom_replays_identically() {
         let (next, ev) = take_checked(state, &TurnAction::EndTurn, &mut log);
         state = next;
         events.extend(ev);
-        if state.resolution.is_some() {
+        if state.ending.is_some() {
             break;
         }
         if state.current_encounter_drawer().is_some() {
@@ -276,7 +276,7 @@ fn lost_walk_spawn_attack_doom_replays_identically() {
             log.push(act);
             state = next;
             events.extend(ev);
-            if state.resolution.is_some() {
+            if state.ending.is_some() {
                 break;
             }
         }
@@ -295,10 +295,7 @@ fn lost_walk_spawn_attack_doom_replays_identically() {
             ending: ScenarioEnding::Resolution(_)
         }
     );
-    assert!(matches!(
-        state.resolution,
-        Some(ScenarioEnding::Resolution(_))
-    ));
+    assert!(matches!(state.ending, Some(ScenarioEnding::Resolution(_))));
 
     let replayed = replay_with_roundtrip(make_initial, &log);
     assert_eq!(

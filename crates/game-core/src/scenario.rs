@@ -7,7 +7,7 @@
 //! [`ScenarioRegistry`] of function pointers, and the host installs it
 //! once at startup via
 //! [`scenario_registry::install`](crate::scenario_registry::install).
-//! The engine watches `GameState.resolution` for a `None`->`Some`
+//! The engine watches `GameState.ending` for a `None`->`Some`
 //! transition during an apply (a push-model latch set at discrete
 //! trigger sites); on that transition it looks up the active
 //! scenario's module and runs its `apply_resolution`.
@@ -64,7 +64,7 @@ impl ScenarioId {
 /// [`ScenarioEnding`] [`Copy`], which is why the act/agenda dispatch
 /// sites can read a terminal card's resolution point without cloning it
 /// out from under the `&mut GameState` they are about to hand to
-/// `request_resolution`.
+/// `end_scenario`.
 ///
 /// The meaning of a given number is scenario-local: the campaign guide's
 /// "do not read until end of game" section is what interprets it, and
@@ -81,7 +81,7 @@ impl ResolutionId {
 
     /// The printed number, i.e. the `#` in `(→R#)`.
     #[must_use]
-    pub const fn get(self) -> u8 {
+    pub const fn number(self) -> u8 {
         self.0
     }
 }
@@ -216,7 +216,7 @@ pub struct ScenarioModule {
     pub setup: fn() -> GameState,
     /// Apply the resolution's effects (XP, trauma, scenario-end cleanup).
     /// Called by [`apply`](crate::engine::apply) exactly once, when the
-    /// engine observes `GameState.resolution` transition from `None` to
+    /// engine observes `GameState.ending` transition from `None` to
     /// `Some` during an apply. Receives the events buffer so changes are
     /// observable to clients.
     ///

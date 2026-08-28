@@ -471,7 +471,7 @@ pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
 /// Idempotent on subsequent defeats: the predicate becomes true at the
 /// first all-defeated transition and stays true. Callers only invoke it
 /// after a status flip, so the event fires exactly once per scenario in
-/// practice; the resolution latch is likewise transition-bounded
+/// practice; the scenario-ending latch is likewise transition-bounded
 /// (first-writer-wins).
 ///
 /// Mutates `state` via the scenario-ending latch (below): on the no-active-
@@ -500,10 +500,7 @@ pub(super) fn check_all_defeated(cx: &mut Cx) {
         // who got here by resigning is "not considered to have been
         // defeated" (glossary/Resign). First-writer-wins, so an
         // already-fired act/agenda resolution point stays authoritative.
-        super::act_agenda::request_resolution(
-            cx.state,
-            crate::scenario::ScenarioEnding::NoResolution,
-        );
+        super::act_agenda::end_scenario(cx.state, crate::scenario::ScenarioEnding::NoResolution);
     }
 }
 
@@ -696,7 +693,7 @@ mod elimination_tests {
     #[test]
     fn last_investigator_defeated_latches_lost_resolution() {
         // Single investigator; defeat them and assert the no-remaining-players
-        // resolution latch is set (Rules Reference p.10 step 6).
+        // scenario-ending latch is set (Rules Reference p.10 step 6).
         crate::test_support::install_test_registry();
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
@@ -726,7 +723,7 @@ mod elimination_tests {
         // scenario ended without a resolution point being reached, and the
         // campaign guide answers it under "If no resolution was reached".
         assert_eq!(
-            state.resolution,
+            state.ending,
             Some(crate::scenario::ScenarioEnding::NoResolution),
             "no-remaining-players must latch NoResolution, not a resolution point"
         );

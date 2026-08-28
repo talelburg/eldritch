@@ -42,7 +42,7 @@ fn defeating_ghoul_priest_advances_act_3_to_won() {
     );
     assert_eq!(out, EngineOutcome::Done);
     assert!(
-        matches!(state.resolution, Some(ScenarioEnding::Resolution(_))),
+        matches!(state.ending, Some(ScenarioEnding::Resolution(_))),
         "Ghoul Priest defeat should set resolution to Won"
     );
 }
@@ -59,7 +59,7 @@ fn defeating_other_enemy_does_not_advance_act_3() {
     );
     assert_eq!(out, EngineOutcome::Done);
     assert!(
-        state.resolution.is_none(),
+        state.ending.is_none(),
         "only the Ghoul Priest's defeat advances Act 3"
     );
 }
@@ -96,7 +96,7 @@ fn advance_act_action_rejected_for_act_3_objective() {
         "AdvanceAct must be rejected for Act 3's non-clue objective"
     );
     assert!(
-        result.state.resolution.is_none(),
+        result.state.ending.is_none(),
         "rejected AdvanceAct must not latch the Won resolution (no instant win)"
     );
     assert_eq!(result.state.act_index, 0, "act did not advance");

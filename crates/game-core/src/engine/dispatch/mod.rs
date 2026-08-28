@@ -479,7 +479,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
 /// [`ScenarioEnd`](crate::state::Continuation::ScenarioEnd) frame sits at the
 /// bottom of the stack from that moment, so this cannot drain the stack.
 fn scenario_end_cancels_top(state: &crate::state::GameState) -> bool {
-    state.resolution.is_some()
+    state.ending.is_some()
         && state
             .continuations
             .last()

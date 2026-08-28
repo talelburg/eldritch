@@ -241,7 +241,7 @@ async fn resolution_banner_names_the_resolution_point() {
     let mut state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .build();
-    state.resolution = Some(ScenarioEnding::Resolution(ResolutionId::new(3)));
+    state.ending = Some(ScenarioEnding::Resolution(ResolutionId::new(3)));
 
     let _ = render_state(state).await;
 
@@ -266,7 +266,7 @@ async fn resolution_banner_renders_no_resolution_reached() {
     let mut state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .build();
-    state.resolution = Some(ScenarioEnding::NoResolution);
+    state.ending = Some(ScenarioEnding::NoResolution);
 
     let _ = render_state(state).await;
 

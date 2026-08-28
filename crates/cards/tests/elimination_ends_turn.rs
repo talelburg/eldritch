@@ -200,7 +200,7 @@ fn solo_defeat_ends_the_scenario_instead_of_rotating() {
     assert_eq!(result.state.investigators[&DYING].status, Status::Killed);
     assert!(
         matches!(
-            result.state.resolution,
+            result.state.ending,
             Some(game_core::scenario::ScenarioEnding::NoResolution)
         ),
         "RR p.10 step 6: no remaining players ⇒ the scenario ends"

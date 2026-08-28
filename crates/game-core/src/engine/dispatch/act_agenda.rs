@@ -57,7 +57,7 @@ pub(crate) fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
 /// doom-bearing card exists.
 ///
 /// If the current agenda is terminal (carries a `resolution`), advancing
-/// it ends the scenario: set the resolution latch instead of moving the
+/// it ends the scenario: set the scenario-ending latch instead of moving the
 /// cursor. Otherwise emit [`Event::AgendaAdvanced`], reset doom, and make
 /// the next agenda current.
 pub(crate) fn check_doom_threshold(cx: &mut Cx) {
@@ -69,7 +69,7 @@ pub(crate) fn check_doom_threshold(cx: &mut Cx) {
         return;
     }
     match agenda.resolution {
-        Some(id) => request_resolution(cx.state, ScenarioEnding::Resolution(id)),
+        Some(id) => end_scenario(cx.state, ScenarioEnding::Resolution(id)),
         None => advance_agenda(cx),
     }
 }
@@ -82,7 +82,7 @@ pub(crate) fn check_doom_threshold(cx: &mut Cx) {
 /// past-the-end terminal guard lives in `advance_reverse::finalize`).
 ///
 /// Only ever called for a *non-terminal* agenda (`resolution` is `None`); a
-/// terminal agenda latches its resolution via `request_resolution` instead.
+/// terminal agenda latches its resolution via `end_scenario` instead.
 pub(super) fn advance_agenda(cx: &mut Cx) {
     let from = cx.state.agenda_index;
     let leaving_code = cx.state.agenda_deck[from].code.clone();
@@ -178,7 +178,7 @@ pub(crate) fn check_advance_act(
 /// Handler for `TurnAction::AdvanceAct`:
 /// validate via [`check_advance_act`], then (on success) spend exactly the act's
 /// clue threshold (acting investigator first, then the rest in `turn_order`) and
-/// either set the resolution latch (terminal act) or emit [`Event::ActAdvanced`]
+/// either set the scenario-ending latch (terminal act) or emit [`Event::ActAdvanced`]
 /// and advance the cursor.
 pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     let threshold = match check_advance_act(cx.state, investigator) {
@@ -189,7 +189,7 @@ pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> E
     // All validations passed — mutate.
     spend_clues(cx.state, investigator, threshold);
     match cx.state.act_deck[cx.state.act_index].resolution {
-        Some(id) => request_resolution(cx.state, ScenarioEnding::Resolution(id)),
+        Some(id) => end_scenario(cx.state, ScenarioEnding::Resolution(id)),
         // The `AdvanceAct` action *is* the player's flip — a deliberate advance.
         None => advance_act(cx, crate::state::AdvanceTrigger::Deliberate),
     }
@@ -374,9 +374,9 @@ pub(crate) fn advance_act(cx: &mut Cx, trigger: crate::state::AdvanceTrigger) {
 /// outcome `apply` clears events but does not roll back `state`, so a
 /// latch set on a doomed path would persist. All current callers latch
 /// only on their success branches.
-pub(crate) fn request_resolution(state: &mut GameState, ending: ScenarioEnding) {
-    if state.resolution.is_none() {
-        state.resolution = Some(ending);
+pub(crate) fn end_scenario(state: &mut GameState, ending: ScenarioEnding) {
+    if state.ending.is_none() {
+        state.ending = Some(ending);
         state.continuations.insert(
             0,
             crate::state::Continuation::ScenarioEnd {
@@ -496,7 +496,7 @@ mod doom_agenda_tests {
         assert_eq!(state.agenda_index, 1);
         assert_eq!(state.agenda_doom, 0, "doom resets on advance");
         assert!(
-            state.resolution.is_none(),
+            state.ending.is_none(),
             "non-terminal advance does not resolve"
         );
         assert_event!(events, Event::AgendaAdvanced { from } if *from == 0);
@@ -526,7 +526,7 @@ mod doom_agenda_tests {
         // agenda's printed (→R#) survives into the latch rather than being
         // flattened to "lost".
         assert_eq!(
-            state.resolution,
+            state.ending,
             Some(crate::scenario::ScenarioEnding::Resolution(
                 ResolutionId::new(3)
             ))
@@ -555,13 +555,13 @@ mod doom_agenda_tests {
     }
 
     #[test]
-    fn request_resolution_is_first_writer_wins() {
+    fn end_scenario_is_first_writer_wins() {
         use crate::scenario::{ResolutionId, ScenarioEnding};
         let mut state = GameStateBuilder::new().build();
         // The elimination step-6 ending wins over a later resolution point.
-        request_resolution(&mut state, ScenarioEnding::NoResolution);
-        request_resolution(&mut state, ScenarioEnding::Resolution(ResolutionId::new(2)));
-        assert_eq!(state.resolution, Some(ScenarioEnding::NoResolution));
+        end_scenario(&mut state, ScenarioEnding::NoResolution);
+        end_scenario(&mut state, ScenarioEnding::Resolution(ResolutionId::new(2)));
+        assert_eq!(state.ending, Some(ScenarioEnding::NoResolution));
     }
 }
 
@@ -692,7 +692,7 @@ mod advance_act_tests {
             "AdvanceAct must be rejected for a zero-threshold objective act"
         );
         assert!(
-            result.state.resolution.is_none(),
+            result.state.ending.is_none(),
             "rejected AdvanceAct must not latch the act's Won resolution"
         );
         assert_eq!(
@@ -744,7 +744,7 @@ mod advance_act_tests {
             result.state.investigators[&inv].clues, 1,
             "spent exactly 2 of 3"
         );
-        assert!(result.state.resolution.is_none());
+        assert!(result.state.ending.is_none());
         assert_event!(result.events, Event::ActAdvanced { from } if *from == 0);
     }
 
@@ -778,7 +778,7 @@ mod advance_act_tests {
             "cursor does not move on a terminal act"
         );
         assert!(matches!(
-            result.state.resolution,
+            result.state.ending,
             Some(crate::scenario::ScenarioEnding::Resolution(_))
         ));
         assert_no_event!(result.events, Event::ActAdvanced { .. });

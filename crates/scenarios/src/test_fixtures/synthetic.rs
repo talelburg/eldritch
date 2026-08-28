@@ -4,7 +4,7 @@
 //! the shape of a scenario module without having to grok any real
 //! scenario's content. One investigator, one location, seeded
 //! two-card act/agenda decks whose terminal cards carry resolution
-//! points (push-model: the engine latches `GameState.resolution`
+//! points (push-model: the engine latches `GameState.ending`
 //! when an act/agenda resolution point is reached).
 
 use std::collections::VecDeque;
@@ -46,8 +46,8 @@ pub const ID: &str = "synthetic";
 /// Also seeds two-card act and agenda decks. Each deck's first card
 /// is non-terminal (`resolution: None`) and its second carries a
 /// resolution point — advancing past the terminal card latches
-/// `GameState.resolution` (act → `Won { id: "demo" }`, agenda →
-/// `Lost { reason: "agenda" }`), driving the push-model hook.
+/// `GameState.ending` (act → `Resolution(R1)`, agenda →
+/// `Resolution(R2)`), driving the push-model hook.
 ///
 /// [`synth_cards::SYNTH_LOC_CODE`]: super::synth_cards::SYNTH_LOC_CODE
 /// [`synth_cards::SYNTH_TREACHERY_CODE`]: super::synth_cards::SYNTH_TREACHERY_CODE

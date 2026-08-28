@@ -1766,14 +1766,14 @@ fn heal_effect(
 /// Resolve [`Effect::AdvanceCurrentAct`]: latch a resolution if the current
 /// act carries one, else advance the act deck.
 fn apply_advance_current_act(cx: &mut Cx) -> EngineOutcome {
-    use crate::engine::dispatch::act_agenda::{advance_act, request_resolution};
+    use crate::engine::dispatch::act_agenda::{advance_act, end_scenario};
     if cx.state.act_deck.is_empty() {
         return EngineOutcome::Rejected {
             reason: "AdvanceCurrentAct: no act deck is modeled".into(),
         };
     }
     match cx.state.act_deck[cx.state.act_index].resolution {
-        Some(id) => request_resolution(cx.state, crate::scenario::ScenarioEnding::Resolution(id)),
+        Some(id) => end_scenario(cx.state, crate::scenario::ScenarioEnding::Resolution(id)),
         // AdvanceCurrentAct is only reached from a Forced ability (01110's
         // Ghoul-Priest-defeat advance) — a game-forced advance, so it prompts
         // the on-card flip (#558).
@@ -5187,7 +5187,7 @@ mod tests {
         // (no registry ⇒ the reverse fires nothing ⇒ it drives straight through).
         crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
         assert_eq!(state.act_index, 1);
-        assert!(state.resolution.is_none());
+        assert!(state.ending.is_none());
     }
 
     #[test]
@@ -5216,7 +5216,7 @@ mod tests {
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(state.act_index, 0, "terminal act does not move the cursor");
         assert!(matches!(
-            state.resolution,
+            state.ending,
             Some(crate::scenario::ScenarioEnding::Resolution(_))
         ));
     }

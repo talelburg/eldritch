@@ -248,7 +248,7 @@ pub(crate) fn apply_via(
 /// holding the [`ScenarioRegistry`].
 ///
 /// Short-circuits on every other apply. Popping the frame is what makes this
-/// fire-once: it is pushed exactly once (`request_resolution` is
+/// fire-once: it is pushed exactly once (`end_scenario` is
 /// first-writer-wins) and popped exactly once, so no "already finalized" flag
 /// is needed. The `ScenarioResolved` event is a property of engine state, so it
 /// fires even when no module is registered (or `scenario_id` is `None`); only
@@ -263,11 +263,11 @@ fn finalize_scenario_end(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
         return;
     }
     cx.state.continuations.pop();
-    let Some(ending) = cx.state.resolution else {
+    let Some(ending) = cx.state.ending else {
         debug_assert!(
             false,
             "a ScenarioEnd frame exists without a latched scenario ending; \
-             `request_resolution` pushes the two together"
+             `end_scenario` pushes the two together"
         );
         return;
     };

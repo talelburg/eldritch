@@ -71,7 +71,7 @@ fn solo_roland_is_seated_in_the_study_ready_to_act() {
         state.investigators.contains_key(&INV),
         "Roland seated as investigator 1"
     );
-    assert!(state.resolution.is_none(), "no resolution latched at setup");
+    assert!(state.ending.is_none(), "no resolution latched at setup");
 }
 
 /// Ended with *no resolution reached* via the real all-investigators-defeated
@@ -114,7 +114,7 @@ fn enemy_attack_defeats_roland_and_latches_no_resolution() {
     assert_event!(result.events, Event::AllInvestigatorsDefeated);
     assert_event!(result.events, Event::ScenarioResolved { .. });
     assert_eq!(
-        result.state.resolution,
+        result.state.ending,
         Some(ScenarioEnding::NoResolution),
         "no investigator remains, so no resolution point was reached",
     );
@@ -243,7 +243,7 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
     assert_event!(result.events, Event::EnemyDefeated { .. });
     assert_event!(result.events, Event::ScenarioResolved { .. });
     assert_eq!(
-        result.state.resolution,
+        result.state.ending,
         Some(ScenarioEnding::Resolution(ResolutionId::new(1))),
         "act 01110 carries the campaign guide's (→R1)",
     );

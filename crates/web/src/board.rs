@@ -148,7 +148,7 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
     }
 }
 
-/// Scenario-ending banner — rendered only once `GameState.resolution` latches.
+/// Scenario-ending banner — rendered only once `GameState.ending` latches.
 /// Read-only display of state, matching the pure-fn display pattern; keeps
 /// `board.rs` read-only (no new interactivity).
 ///
@@ -160,7 +160,7 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
 /// the campaign guide owns, not something this pure function can compute. See
 /// `docs/adr/0012-a-scenario-ends-at-a-resolution-point-or-at-none.md`.
 fn resolution_banner(game: &GameState) -> impl IntoView {
-    game.resolution.map(|ending| {
+    game.ending.map(|ending| {
         let text = match ending {
             // `ResolutionId` renders as the campaign guide titles it,
             // e.g. "Resolution 3".

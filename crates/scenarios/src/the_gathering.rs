@@ -15,6 +15,25 @@
 //! symbol-token effects on reference card 01104 are C2). C1a does
 //! not claim faithful win/lose semantics — only structural reachability,
 //! proven by `tests/the_gathering.rs`.
+//!
+//! # Module gap
+//!
+//! **Agenda 01107's resolution point is conditional; this module hardcodes
+//! the act-1/2 branch (#806).** The card's reverse prints two bullets and
+//! only the first carries a `(→R#)`:
+//!
+//! > - If the investigators are at Act 1 or 2, they are trapped inside the
+//! >   house as the ghouls tear them apart. **(→R3)**
+//! > - If the investigators are at Act 3, they barely escape with their
+//! >   lives, allowing the ghouls to run rampant. Each investigator that has
+//! >   not resigned is defeated and suffers 1 physical trauma.
+//!
+//! `Agenda.resolution` is a flat `Option<ResolutionId>` — printed data, not
+//! effect DSL — so it cannot read `act_index` to pick a branch. The act-3
+//! branch reaches *no* resolution point at all: defeating everyone drains the
+//! last `Status::Active` and routes through `check_all_defeated` to
+//! [`ScenarioEnding::NoResolution`]. Expressing that needs the terminal
+//! agenda to run an effect rather than carry a datum, which is #806.
 
 use game_core::card_data::CardKind;
 use game_core::event::Event;
@@ -214,7 +233,7 @@ pub fn setup() -> GameState {
     // the agendas' own `AgendaAdvanced` forced abilities (cards::whats_going_on,
     // cards::rise_of_the_ghouls); #281.
     // TODO(#775): act-3 (01110) reverse is the lead's R1/R2 resolution choice,
-    // and the hardcoded `Won { id: "R1" }` below makes R2 unreachable. The
+    // and the hardcoded `ResolutionId::new(1)` below makes R2 unreachable. The
     // *prompt* is phase-7 gate work; its consequences (trauma, campaign log,
     // earning Lita Chantler) stay phase 9 with #766.
     state.act_deck = vec![
@@ -234,9 +253,11 @@ pub fn setup() -> GameState {
             // 01110 advances via its Forced EnemyDefeated objective (01116; in cards::what_have_you_done), not a clue spend.
             code: CardCode("01110".into()),
             clue_threshold: act_clue_threshold("01110"),
-            // (→R1) — the campaign guide's "Resolution 1": Lita burns the
-            // house down. Act 3's R1/R2 choice is #775; R1 is the default
-            // until that lands.
+            // 01110's reverse prints a choice, not a constant: "The lead
+            // investigator must decide (choose one): - It was never much of a
+            // home. Burn it down! (→R1) / - This hell-pit is my home! No way
+            // are we burning it! (→R2)". Wiring the choice is #775; R1 is the
+            // default until it lands.
             resolution: Some(ResolutionId::new(1)),
         },
     ];
@@ -257,12 +278,12 @@ pub fn setup() -> GameState {
         Agenda {
             code: CardCode("01107".into()),
             doom_threshold: agenda_doom("01107"),
-            // (→R3) — the campaign guide's "Resolution 3": "You run to the
-            // hallway to try to find a way to escape the house, but the
-            // burning-hot barrier still blocks your path. Trapped, the horde
-            // of feral creatures that have invaded your home close in, and
-            // you have nowhere to run." An agenda-invoked ending is a
-            // resolution point like any other; nothing here says "lost".
+            // 01107's reverse: "If the investigators are at Act 1 or 2, they
+            // are trapped inside the house as the ghouls tear them apart.
+            // (→R3)". An agenda-invoked ending is a resolution point like any
+            // other; nothing here says "lost". The card's *other* branch (at
+            // Act 3) prints no resolution point — see this module's
+            // "Module gap" section and #806.
             resolution: Some(ResolutionId::new(3)),
         },
     ];

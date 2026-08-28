@@ -3,7 +3,7 @@
 //!
 //! Drives the synthetic fixture through both of its acts via
 //! `PlayerAction::AdvanceAct`; advancing past the terminal act latches
-//! `GameState.resolution = Won { id: "demo" }`, and the push-model hook
+//! `GameState.ending = Resolution(R1)`, and the push-model hook
 //! emits `Event::ScenarioResolved` + runs `apply_resolution`. Lives in
 //! `crates/scenarios/tests/` rather than `game-core/src/engine/`
 //! because:
@@ -82,7 +82,7 @@ fn synthetic_scenario_resolves_won_via_act_advance() {
         Event::ScenarioResolved { ending: ScenarioEnding::Resolution(id) }
             if *id == ResolutionId::new(1)
     );
-    assert!(state.resolution.is_some());
+    assert!(state.ending.is_some());
 }
 
 #[test]
@@ -118,7 +118,7 @@ fn synthetic_scenario_resolves_lost_via_doom() {
     for _ in 0..12 {
         let r1 = take_turn_action(state, &TurnAction::EndTurn);
         doom_events.extend(r1.events);
-        let latched = r1.state.resolution.is_some();
+        let latched = r1.state.ending.is_some();
         if latched {
             assert_eq!(
                 r1.outcome,
@@ -148,7 +148,7 @@ fn synthetic_scenario_resolves_lost_via_doom() {
             );
             doom_events.extend(r2.events);
             state = r2.state;
-            if state.resolution.is_some() {
+            if state.ending.is_some() {
                 break;
             }
         }
@@ -163,8 +163,5 @@ fn synthetic_scenario_resolves_lost_via_doom() {
             ending: ScenarioEnding::Resolution(_)
         }
     );
-    assert!(matches!(
-        state.resolution,
-        Some(ScenarioEnding::Resolution(_))
-    ));
+    assert!(matches!(state.ending, Some(ScenarioEnding::Resolution(_))));
 }
