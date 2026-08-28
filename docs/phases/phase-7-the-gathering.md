@@ -100,31 +100,7 @@ the Tablet came out.
 |---|---|
 | #541 ✅ PR #801 | End turn, Gain resource, Draw and the Mythos draw live in a sticky `.action-bar`, so the board is not the input surface and every anchored `PickSingle` renders twice — closes **#206** |
 | #787 ✅ PR #802 | The skill-test result panel renders the chaos token as `—` whenever a symbol token's ST.4 effect suspends and splits the event batch |
-| #770 ✅ PR #803 | A terminal version mismatch surfaces as one status line under a live-looking board — the filed premise (an unknown `InputKind` reaching a control-less fallback arm) turned out to be unreachable |
-
-**Why #787 and #770 are in the gate**, given that neither is a rules defect: both
-corrupt **#769's findings**, which is the wave-4 deliverable. A result panel that
-cannot name the token that decided a test produces a run nobody can check afterwards
-— and #787's fix is the treatment the store already gives the test's *difficulty*,
-which it latches across batches for exactly this reason, where `last_events` is
-overwritten wholesale on every `Applied`. #770 is in for the *run*, not the release:
-with matched binaries it never fires, but #769 is exercised against a live
-`trunk serve` loop where skew is the known hazard, and a control-less prompt is
-**indistinguishable from an engine stall** — the risk is that it gets filed as an
-engine bug. (It was split from #586, which keeps the `max_health()` render panic and
-stays out of the gate as stale-client hardening.)
-
-**#770's premise did not survive contact.** It was filed against a `#[non_exhaustive]`
-fallback arm rendering a control-less prompt for an unknown `InputKind`. That arm went
-with `input.rs` in S6, and `InputKind` derives plain `Deserialize` with no
-`#[serde(other)]` — so an unknown variant fails the whole `ServerMessage` parse and
-lands in the skew path *before* render, where #463 already sets
-`ConnStatus::VersionMismatch` and stops reconnecting. The hazard had collapsed into
-versioning on its own. What was left, and what PR #803 fixes, is the loudness of that
-catch: a terminal state announced by one line in the header, under a board still
-rendered and clickable, is the same "indistinguishable from an engine stall" the issue
-was filed about — so it now gets a scrim and a card above every other overlay. The
-gate rationale survived the false premise unchanged.
+| #770 ✅ PR #803 | A terminal version mismatch surfaces as one status line under a live-looking board, indistinguishable from an engine stall |
 
 ### Wave 3 — optional content (#258's children)
 
