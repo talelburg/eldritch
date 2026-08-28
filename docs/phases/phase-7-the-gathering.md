@@ -104,14 +104,57 @@ the Tablet came out.
 
 ### Wave 3 — optional content (#258's children)
 
-Ordered: **#644 → #772 → #771 → #773 → #774 → #775**.
+Ordered: **#804 ✅ → #644 → #805 → #772 → #771 → #773 → #774 → #775**.
 
+- **#804 ✅ PR #807 — a scenario ends at a resolution point, or at none.** `Resolution`
+  was `Won { id } | Lost { reason }`, a *standalone-mode projection* rather than what
+  the rules model. `glossary/Winning_and_Losing.md` has three endings — an act-invoked
+  `(→R#)`, an agenda-invoked `(→R#)`, and *"the scenario end\[ing\] with no resolution
+  being reached"* — and only the standalone bullet collapses them to two, since in
+  campaign play *"players will proceed to the next scenario … regardless of the
+  outcome."* Shipped as `ScenarioEnding::Resolution(ResolutionId) | NoResolution`, with
+  `ResolutionId` a `u8` (`(→R#)` is a number), which makes the ending `Copy` and
+  removed all three `.clone()`s at the dispatch sites. The ending **does not record
+  which deck invoked it**: resolution points also appear *"on other encounter
+  cardtypes"*, so the deck is a proxy, and whether a resolution is favorable is
+  campaign-guide knowledge. The two defects are fixed — agenda 01107 now carries its
+  printed `(→R3)` for #766 to look up, and `check_all_defeated` latches `NoResolution`
+  rather than a loss, which is the door **#644** needs. The three `Option<Resolution>`
+  fields split by the question each asks: `Act`/`Agenda.resolution` are
+  `Option<ResolutionId>`, while the latch became `GameState.ending:
+  Option<ScenarioEnding>` (renamed with `request_resolution` → `end_scenario`) so its
+  `None` — *not ended* — stays distinct from `NoResolution`. Carries
+  [ADR 0012](../adr/0012-a-scenario-ends-at-a-resolution-point-or-at-none.md) and the
+  `CONTEXT.md` entries (**resolution point**, **no resolution reached**). Two
+  corrections to this entry as originally written: the blast radius **did** include
+  `web` — `board.rs` names the type to build the banner, which now names the ending
+  instead of declaring a win — and review caught that agenda 01107's `(→R3)` is
+  *conditional* on the investigators being at act 1 or 2, so the act-1/2 branch ships
+  with a `# Module gap` note and **#806** tracks the rest.
 - **#644 — Resign semantics.** Unblocked: #695 shipped as #707/#708/#709/#735, and
   #696 already gave the engine `ActionDesignator::Resign` and its AoO exemption. What
   is left is elimination **by resignation** — `Status::Resigned` / `DefeatCause::
   Resigned` exist, are wired through elimination, and have never been constructed —
-  plus `glossary/Winning_and_Losing.md`'s *"no resolution being reached"* ending. #696's
-  reviewer note stands: tagging the Parlor 01115 is this issue's job.
+  plus `glossary/Winning_and_Losing.md`'s *"no resolution being reached"* ending, which
+  #804 has by then given a correct latch to land in. #696's reviewer note stands:
+  tagging the Parlor 01115 is this issue's job. Resignation is `Effect::Resign`, a
+  nullary variant declared beside `ActionDesignator::Resign` — symmetric with how
+  `Effect::Fight` sits under a **Fight** designator today, and chosen over letting the
+  designator drive the elimination so that `impls/` carries one theory of what a
+  designator is rather than two. Elimination runs steps 0–6 unchanged
+  (`glossary/Elimination.md`: *"any time his or her investigator is defeated, **or if
+  he or she resigns**"* — one procedure, no branch), and `Event::InvestigatorDefeated`
+  / `DefeatCause` are renamed to `InvestigatorEliminated` / `EliminationCause`, since
+  the current names assert exactly what `glossary/Resign.md` denies.
+- **#805 — a designator performs its action; the effect carries the modification.**
+  `ActionDesignator` is a pure rules tag — `provokes_aoo` and `action_class()` read it,
+  and the ability's effect does the acting, so `machete.rs` declares **Fight** and
+  roots in `Effect::Fight` with nothing linking the two. `glossary/Ability.md` inverts
+  that: *"Activating such an ability **performs the designated action** … but modified
+  in the manner described by the ability."* Invert it for every designator; the
+  modification (Machete's `+1 [combat]`, Flashlight's `-2 [shroud]`) is what stays on
+  the ability. Lands after #644 rather than before it because #644's nullary
+  `Effect::Resign` *is* the empty modification this keeps, so it survives the refactor.
 - **#772 — an uncontrolled asset is an unreachable ability source, and *"she gains"*
   has no DSL.** Two gaps on one card pair. `glossary/Triggered_Abilities.md` bullet 2
   reaches Lita 01117; #708's implementation of that bullet walks the location, its
