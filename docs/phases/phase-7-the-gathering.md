@@ -106,7 +106,7 @@ the Tablet came out.
 
 | Issue | Defect |
 |---|---|
-| #804 ✅ PR #807 | `Resolution` is `Won { id } \| Lost { reason }` — a standalone-mode projection, with no representation for the ending that reaches no resolution point |
+| #804 ✅ PR #807 | `Resolution` is `Won { id } \| Lost { reason }` — a standalone-mode projection, with no representation for the ending that reaches no resolution point ([ADR 0012](../adr/0012-a-scenario-ends-at-a-resolution-point-or-at-none.md)) |
 | #806 | Agenda 01107's `(→R3)` is conditional on the investigators being at act 1 or 2, and the engine latches it unconditionally |
 | #644 | Elimination **by resignation** never happens — `Status::Resigned` / `DefeatCause::Resigned` exist and have never been constructed |
 | #805 | An `ActionDesignator` is a pure tag that performs nothing, so a **Fight** ability and `Effect::Fight` are linked by convention alone |
@@ -116,22 +116,6 @@ the Tablet came out.
 | #774 | The Parlor movement barrier — mandatory printed behaviour that was inheriting optional content's deferral |
 | #775 | 01110b asks the lead investigator to choose the ending; the act's resolution point is hardcoded, so R2 is unreachable |
 
-- **#804 ✅ PR #807 — a scenario ends at a resolution point, or at none.** Shipped as
-  `ScenarioEnding::Resolution(ResolutionId) | NoResolution`, with `ResolutionId` a `u8`
-  because `(→R#)` is a number — which makes the ending `Copy` and removed the clones
-  the dispatch sites needed. The ending **does not record which deck invoked it**:
-  resolution points also appear *"on other encounter cardtypes"*, so the deck is a
-  proxy, and whether a resolution is favorable is campaign-guide knowledge. Agenda
-  01107 now carries its printed `(→R3)` for #766 to look up, and `check_all_defeated`
-  latches `NoResolution` rather than a loss — the door **#644** needs. The three
-  `Option<Resolution>` fields split by the question each asks: `Act`/`Agenda.resolution`
-  are `Option<ResolutionId>`, while the latch is `GameState.ending:
-  Option<ScenarioEnding>` (with `request_resolution` → `end_scenario`) so its `None` —
-  *not ended* — stays distinct from `NoResolution`. Win/loss is a standalone-mode
-  projection computed where the ending is displayed, and `board.rs` now names the
-  ending rather than declaring a verdict. Why, in full:
-  [ADR 0012](../adr/0012-a-scenario-ends-at-a-resolution-point-or-at-none.md); the
-  vocabulary is in `CONTEXT.md` (**resolution point**, **no resolution reached**).
 - **#806 — agenda 01107's resolution point is conditional.** The reverse prints two
   bullets and only the first carries a point: *"If the investigators are at Act 1 or 2,
   they are trapped inside the house as the ghouls tear them apart. **(→R3)**"*, against
