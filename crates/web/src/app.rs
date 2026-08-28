@@ -60,13 +60,15 @@ pub fn App() -> impl IntoView {
 }
 
 /// Everything the app layers over the board: the pre-game picker, the skill-test
-/// result modal and the prompt banner.
+/// result modal, the prompt banner and the version-mismatch overlay.
 ///
 /// A component rather than three inline tags so a headless test can mount the
 /// exact set the app does — which is how "`.action-bar` is absent from the DOM"
 /// is asserted against the real composition rather than against a copy of it
 /// (#541). The sticky bar that used to hold these is gone; each of the three is
 /// now its own viewport-fixed overlay, and the picker only renders pre-game.
+/// The version-mismatch overlay is last, and stacks above the rest: it is
+/// terminal, so nothing it covers can still be acted on (#770).
 #[component]
 pub fn Overlays() -> impl IntoView {
     view! {
@@ -76,6 +78,7 @@ pub fn Overlays() -> impl IntoView {
                 <crate::picker::PickerView/>
                 <crate::skill_test_result::SkillTestResultView/>
                 <crate::prompt_banner::PromptBanner/>
+                <crate::version_mismatch::VersionMismatchView/>
             }.into_any() }
             #[cfg(not(target_arch = "wasm32"))]
             { ().into_any() }

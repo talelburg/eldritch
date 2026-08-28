@@ -205,6 +205,16 @@ fn clear_saved_id() {
     }
 }
 
+/// Reload the page, keeping the saved game id — the *rejoin* counterpart to
+/// [`start_new_game`]. Drives the version-mismatch overlay's button (#770): the
+/// server-side game persists across a server restart, so the fix for a skew is
+/// to pick the same game back up with a freshly-loaded client, not to abandon it.
+pub fn reload() {
+    if let Some(w) = web_sys::window() {
+        let _ = w.location().reload();
+    }
+}
+
 /// Forget the saved game id and reload, so `bootstrap()` re-enters the picker
 /// (no saved id → `await_roster`). The server-side game persists; this only
 /// drops the local pointer. Pairs with the "New game" button in `BoardView`.
