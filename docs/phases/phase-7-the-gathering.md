@@ -104,33 +104,46 @@ the Tablet came out.
 
 ### Wave 3 — optional content (#258's children)
 
-Ordered: **#804 ✅ → #644 → #805 → #772 → #771 → #773 → #774 → #775**.
+| Issue | Defect |
+|---|---|
+| #804 ✅ PR #807 | `Resolution` is `Won { id } \| Lost { reason }` — a standalone-mode projection, with no representation for the ending that reaches no resolution point |
+| #806 | Agenda 01107's `(→R3)` is conditional on the investigators being at act 1 or 2, and the engine latches it unconditionally |
+| #644 | Elimination **by resignation** never happens — `Status::Resigned` / `DefeatCause::Resigned` exist and have never been constructed |
+| #805 | An `ActionDesignator` is a pure tag that performs nothing, so a **Fight** ability and `Effect::Fight` are linked by convention alone |
+| #772 | Lita 01117 is an ability source nobody controls, so #708's walk never reaches her — and neither 01115's Parley nor her buffs are printed on the card that has them |
+| #771 | Set-aside is enemies-only, so act 01109b's *"Put the set-aside Lita Chantler into play"* has nowhere to go |
+| #773 | Lita 01117's controlled-side grants are location-scoped and reaction-driven; both collapse to one investigator in 1p |
+| #774 | The Parlor movement barrier — mandatory printed behaviour that was inheriting optional content's deferral |
+| #775 | 01110b asks the lead investigator to choose the ending; the act's resolution point is hardcoded, so R2 is unreachable |
 
-- **#804 ✅ PR #807 — a scenario ends at a resolution point, or at none.** `Resolution`
-  was `Won { id } | Lost { reason }`, a *standalone-mode projection* rather than what
-  the rules model. `glossary/Winning_and_Losing.md` has three endings — an act-invoked
-  `(→R#)`, an agenda-invoked `(→R#)`, and *"the scenario end\[ing\] with no resolution
-  being reached"* — and only the standalone bullet collapses them to two, since in
-  campaign play *"players will proceed to the next scenario … regardless of the
-  outcome."* Shipped as `ScenarioEnding::Resolution(ResolutionId) | NoResolution`, with
-  `ResolutionId` a `u8` (`(→R#)` is a number), which makes the ending `Copy` and
-  removed all three `.clone()`s at the dispatch sites. The ending **does not record
-  which deck invoked it**: resolution points also appear *"on other encounter
-  cardtypes"*, so the deck is a proxy, and whether a resolution is favorable is
-  campaign-guide knowledge. The two defects are fixed — agenda 01107 now carries its
-  printed `(→R3)` for #766 to look up, and `check_all_defeated` latches `NoResolution`
-  rather than a loss, which is the door **#644** needs. The three `Option<Resolution>`
-  fields split by the question each asks: `Act`/`Agenda.resolution` are
-  `Option<ResolutionId>`, while the latch became `GameState.ending:
-  Option<ScenarioEnding>` (renamed with `request_resolution` → `end_scenario`) so its
-  `None` — *not ended* — stays distinct from `NoResolution`. Carries
-  [ADR 0012](../adr/0012-a-scenario-ends-at-a-resolution-point-or-at-none.md) and the
-  `CONTEXT.md` entries (**resolution point**, **no resolution reached**). Two
-  corrections to this entry as originally written: the blast radius **did** include
-  `web` — `board.rs` names the type to build the banner, which now names the ending
-  instead of declaring a win — and review caught that agenda 01107's `(→R3)` is
-  *conditional* on the investigators being at act 1 or 2, so the act-1/2 branch ships
-  with a `# Module gap` note and **#806** tracks the rest.
+- **#804 ✅ PR #807 — a scenario ends at a resolution point, or at none.** Shipped as
+  `ScenarioEnding::Resolution(ResolutionId) | NoResolution`, with `ResolutionId` a `u8`
+  because `(→R#)` is a number — which makes the ending `Copy` and removed the clones
+  the dispatch sites needed. The ending **does not record which deck invoked it**:
+  resolution points also appear *"on other encounter cardtypes"*, so the deck is a
+  proxy, and whether a resolution is favorable is campaign-guide knowledge. Agenda
+  01107 now carries its printed `(→R3)` for #766 to look up, and `check_all_defeated`
+  latches `NoResolution` rather than a loss — the door **#644** needs. The three
+  `Option<Resolution>` fields split by the question each asks: `Act`/`Agenda.resolution`
+  are `Option<ResolutionId>`, while the latch is `GameState.ending:
+  Option<ScenarioEnding>` (with `request_resolution` → `end_scenario`) so its `None` —
+  *not ended* — stays distinct from `NoResolution`. Win/loss is a standalone-mode
+  projection computed where the ending is displayed, and `board.rs` now names the
+  ending rather than declaring a verdict. Why, in full:
+  [ADR 0012](../adr/0012-a-scenario-ends-at-a-resolution-point-or-at-none.md); the
+  vocabulary is in `CONTEXT.md` (**resolution point**, **no resolution reached**).
+- **#806 — agenda 01107's resolution point is conditional.** The reverse prints two
+  bullets and only the first carries a point: *"If the investigators are at Act 1 or 2,
+  they are trapped inside the house as the ghouls tear them apart. **(→R3)**"*, against
+  *"If the investigators are at Act 3, they barely escape with their lives … Each
+  investigator that has not resigned is defeated and suffers 1 physical trauma."* The
+  act-3 branch reaches **no** resolution point — defeating everyone drains the last
+  active investigator into `check_all_defeated` and so into #804's `NoResolution`. But
+  `Agenda.resolution` is printed data rather than effect DSL, so it cannot read
+  `act_index` to choose; #804 shipped the act-1/2 branch with a `# Module gap` note.
+  Expressing the branch needs the terminal agenda to *run* something, which is the same
+  shape as **#775** on the act side — worth settling both with one mechanism rather
+  than two. Physical trauma has no engine representation, so that half stays #766's.
 - **#644 — Resign semantics.** Unblocked: #695 shipped as #707/#708/#709/#735, and
   #696 already gave the engine `ActionDesignator::Resign` and its AoO exemption. What
   is left is elimination **by resignation** — `Status::Resigned` / `DefeatCause::
