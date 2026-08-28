@@ -100,21 +100,7 @@ the Tablet came out.
 |---|---|
 | #541 ✅ PR #801 | End turn, Gain resource, Draw and the Mythos draw live in a sticky `.action-bar`, so the board is not the input surface and every anchored `PickSingle` renders twice — closes **#206** |
 | #787 ✅ PR #802 | The skill-test result panel renders the chaos token as `—` whenever a symbol token's ST.4 effect suspends and splits the event batch |
-| #770 | An unknown `InputKind` renders a prompt with no controls |
-
-**Why #787 and #770 are in the gate**, given that neither is a rules defect: both
-corrupt **#769's findings**, which is the wave-4 deliverable. A result panel that
-cannot name the token that decided a test produces a run nobody can check afterwards
-— and #787's fix is the treatment the store already gives the test's *difficulty*,
-which it latches across batches for exactly this reason, where `last_events` is
-overwritten wholesale on every `Applied`. #770 is in for the *run*, not the release:
-with matched binaries it never fires, but #769 is exercised against a live
-`trunk serve` loop where skew is the known hazard, and a control-less prompt is
-**indistinguishable from an engine stall** — the risk is that it gets filed as an
-engine bug. (It was split from #586, which keeps the `max_health()` render panic and
-stays out of the gate as stale-client hardening.) **S6 did not fix #770**, but its
-prompt banner is now the floor for any live prompt, so the fallback it deletes is not
-regressed.
+| #770 ✅ PR #803 | A terminal version mismatch surfaces as one status line under a live-looking board, indistinguishable from an engine stall |
 
 ### Wave 3 — optional content (#258's children)
 
