@@ -15,11 +15,30 @@
 //! symbol-token effects on reference card 01104 are C2). C1a does
 //! not claim faithful win/lose semantics — only structural reachability,
 //! proven by `tests/the_gathering.rs`.
+//!
+//! # Module gap
+//!
+//! **Agenda 01107's resolution point is conditional; this module hardcodes
+//! the act-1/2 branch (#806).** The card's reverse prints two bullets and
+//! only the first carries a `(→R#)`:
+//!
+//! > - If the investigators are at Act 1 or 2, they are trapped inside the
+//! >   house as the ghouls tear them apart. **(→R3)**
+//! > - If the investigators are at Act 3, they barely escape with their
+//! >   lives, allowing the ghouls to run rampant. Each investigator that has
+//! >   not resigned is defeated and suffers 1 physical trauma.
+//!
+//! `Agenda.resolution` is a flat `Option<ResolutionId>` — printed data, not
+//! effect DSL — so it cannot read `act_index` to pick a branch. The act-3
+//! branch reaches *no* resolution point at all: defeating everyone drains the
+//! last `Status::Active` and routes through `check_all_defeated` to
+//! [`ScenarioEnding::NoResolution`]. Expressing that needs the terminal
+//! agenda to run an effect rather than carry a datum, which is #806.
 
 use game_core::card_data::CardKind;
 use game_core::event::Event;
 use game_core::scenario::{
-    Resolution, ScenarioId, ScenarioModule, SymbolCtx, SymbolOutcome, TokenEffect,
+    ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule, SymbolCtx, SymbolOutcome, TokenEffect,
 };
 use game_core::state::{Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
 
@@ -214,7 +233,7 @@ pub fn setup() -> GameState {
     // the agendas' own `AgendaAdvanced` forced abilities (cards::whats_going_on,
     // cards::rise_of_the_ghouls); #281.
     // TODO(#775): act-3 (01110) reverse is the lead's R1/R2 resolution choice,
-    // and the hardcoded `Won { id: "R1" }` below makes R2 unreachable. The
+    // and the hardcoded `ResolutionId::new(1)` below makes R2 unreachable. The
     // *prompt* is phase-7 gate work; its consequences (trauma, campaign log,
     // earning Lita Chantler) stay phase 9 with #766.
     state.act_deck = vec![
@@ -234,12 +253,17 @@ pub fn setup() -> GameState {
             // 01110 advances via its Forced EnemyDefeated objective (01116; in cards::what_have_you_done), not a clue spend.
             code: CardCode("01110".into()),
             clue_threshold: act_clue_threshold("01110"),
-            resolution: Some(Resolution::Won { id: "R1".into() }),
+            // 01110's reverse prints a choice, not a constant: "The lead
+            // investigator must decide (choose one): - It was never much of a
+            // home. Burn it down! (→R1) / - This hell-pit is my home! No way
+            // are we burning it! (→R2)". Wiring the choice is #775; R1 is the
+            // default until it lands.
+            resolution: Some(ResolutionId::new(1)),
         },
     ];
 
     // Agenda deck 01105 -> 01106 -> 01107. Doom thresholds read from the
-    // corpus. The terminal agenda carries the Lost latch.
+    // corpus. The terminal agenda carries the printed (→R#) resolution point.
     state.agenda_deck = vec![
         Agenda {
             code: CardCode("01105".into()),
@@ -254,9 +278,13 @@ pub fn setup() -> GameState {
         Agenda {
             code: CardCode("01107".into()),
             doom_threshold: agenda_doom("01107"),
-            resolution: Some(Resolution::Lost {
-                reason: "The ghouls break free".into(),
-            }),
+            // 01107's reverse: "If the investigators are at Act 1 or 2, they
+            // are trapped inside the house as the ghouls tear them apart.
+            // (→R3)". An agenda-invoked ending is a resolution point like any
+            // other; nothing here says "lost". The card's *other* branch (at
+            // Act 3) prints no resolution point — see this module's
+            // "Module gap" section and #806.
+            resolution: Some(ResolutionId::new(3)),
         },
     ];
 
@@ -277,11 +305,7 @@ pub fn setup() -> GameState {
 
 /// No-op for C1a (matches the synthetic fixture). XP / trauma / campaign
 /// log application is Phase 9.
-pub fn apply_resolution(
-    _resolution: &Resolution,
-    _state: &mut GameState,
-    _events: &mut Vec<Event>,
-) {
+pub fn apply_resolution(_ending: ScenarioEnding, _state: &mut GameState, _events: &mut Vec<Event>) {
 }
 
 /// The [`ScenarioModule`] value for The Gathering.
@@ -383,10 +407,7 @@ mod tests {
             s.act_deck[2].clue_threshold, 0,
             "01110 advances on Ghoul-Priest-defeat, not clues"
         );
-        assert!(matches!(
-            s.act_deck[2].resolution,
-            Some(Resolution::Won { .. })
-        ));
+        assert_eq!(s.act_deck[2].resolution, Some(ResolutionId::new(1)));
     }
 
     #[test]
@@ -396,10 +417,9 @@ mod tests {
         assert_eq!(act_codes, ["01108", "01109", "01110"]);
         assert_eq!(s.act_deck[0].clue_threshold, 2);
         assert_eq!(s.act_deck[1].clue_threshold, 3);
-        assert!(matches!(
-            s.act_deck[2].resolution,
-            Some(Resolution::Won { .. })
-        ));
+        // The campaign guide's Resolution 1 (the house burns). #775 adds
+        // act 3's R1/R2 choice; until then R1 is what 01110 reaches.
+        assert_eq!(s.act_deck[2].resolution, Some(ResolutionId::new(1)));
 
         let agenda_codes: Vec<_> = s.agenda_deck.iter().map(|a| a.code.as_str()).collect();
         assert_eq!(agenda_codes, ["01105", "01106", "01107"]);
@@ -410,10 +430,11 @@ mod tests {
                 .collect::<Vec<_>>(),
             [3, 7, 10]
         );
-        assert!(matches!(
-            s.agenda_deck[2].resolution,
-            Some(Resolution::Lost { .. })
-        ));
+        // The campaign guide's Resolution 3 ("Trapped, the horde of feral
+        // creatures ... close in"). The number survives into the latch for
+        // phase 9's campaign log to look up; the old shape kept only a
+        // diagnostic string.
+        assert_eq!(s.agenda_deck[2].resolution, Some(ResolutionId::new(3)));
     }
 
     #[test]

@@ -27,7 +27,7 @@ use crate::state::{CardCode, LocationId, Phase};
 ///   queued abilities have drained — so on this path a caller that resumes
 ///   after this function sees an elimination still **in progress**: status
 ///   flipped, but cards not yet removed and no `AllInvestigatorsDefeated` /
-///   `Resolution::Lost` latch yet. [`super::combat::place_assignment`] is the
+///   `ScenarioEnding` latch yet. [`super::combat::place_assignment`] is the
 ///   only such caller today and gates on [`Status`] for exactly this reason.
 ///
 /// [`Status`]: crate::state::Status
@@ -142,7 +142,7 @@ pub(super) fn apply_investigator_defeat(
 /// # All investigators defeated
 ///
 /// The armed frame is never resumed: `check_all_defeated` latches
-/// `Resolution::Lost`, and an `InvestigatorTurn` is
+/// `ScenarioEnding::NoResolution`, and an `InvestigatorTurn` is
 /// [cancelled by a latched resolution](Continuation::cancelled_by_scenario_end),
 /// so `drive` pops it rather than rotating (ADR 0004). Solo defeat therefore
 /// ends the scenario, and this arming is what keeps a *surviving* table moving.
@@ -383,7 +383,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
 
     // Step 6 (no remaining players => scenario ends) is signaled by
     // `check_all_defeated` (caller) emitting AllInvestigatorsDefeated
-    // and latching Resolution::Lost; the `apply` hook turns that latch
+    // and latching ScenarioEnding::NoResolution; the `apply` hook turns that latch
     // into ScenarioResolved + apply_resolution.
 
     // The investigator has left play — clear their location last, after
@@ -471,13 +471,16 @@ pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
 /// Idempotent on subsequent defeats: the predicate becomes true at the
 /// first all-defeated transition and stays true. Callers only invoke it
 /// after a status flip, so the event fires exactly once per scenario in
-/// practice; the resolution latch is likewise transition-bounded
+/// practice; the scenario-ending latch is likewise transition-bounded
 /// (first-writer-wins).
 ///
-/// Mutates `state` via the resolution latch (below): on the no-active-
-/// investigator transition it requests [`crate::scenario::Resolution::Lost`]
-/// per Rules Reference p.10 step 6. The `apply` hook turns that latch into
-/// [`Event::ScenarioResolved`] + `apply_resolution`.
+/// Mutates `state` via the scenario-ending latch (below): on the no-active-
+/// investigator transition it requests
+/// [`ScenarioEnding::NoResolution`](crate::scenario::ScenarioEnding::NoResolution)
+/// per Rules Reference p.10 step 6 — the scenario ended without reaching a
+/// resolution point, which is not the same thing as losing it. The `apply`
+/// hook turns that latch into [`Event::ScenarioResolved`] +
+/// `apply_resolution`.
 pub(super) fn check_all_defeated(cx: &mut Cx) {
     let any_active = cx
         .state
@@ -491,15 +494,13 @@ pub(super) fn check_all_defeated(cx: &mut Cx) {
         cx.events.push(Event::AllInvestigatorsDefeated);
         // Rules Reference p.10 step 6: "If there are no remaining players,
         // the scenario ends. Refer to 'no resolution was reached' entry
-        // for that scenario in the campaign guide." Latch the loss
-        // (first-writer-wins, so an already-fired act/agenda resolution
-        // stays authoritative).
-        super::act_agenda::request_resolution(
-            cx.state,
-            crate::scenario::Resolution::Lost {
-                reason: "no resolution was reached".into(),
-            },
-        );
+        // for that scenario in the campaign guide." That is the third
+        // ending, not a loss: in campaign play the players "proceed to the
+        // next scenario ... regardless of the outcome", and an investigator
+        // who got here by resigning is "not considered to have been
+        // defeated" (glossary/Resign). First-writer-wins, so an
+        // already-fired act/agenda resolution point stays authoritative.
+        super::act_agenda::end_scenario(cx.state, crate::scenario::ScenarioEnding::NoResolution);
     }
 }
 
@@ -692,7 +693,7 @@ mod elimination_tests {
     #[test]
     fn last_investigator_defeated_latches_lost_resolution() {
         // Single investigator; defeat them and assert the no-remaining-players
-        // resolution latch is set (Rules Reference p.10 step 6).
+        // scenario-ending latch is set (Rules Reference p.10 step 6).
         crate::test_support::install_test_registry();
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
@@ -718,12 +719,13 @@ mod elimination_tests {
         );
 
         assert_event!(events, Event::AllInvestigatorsDefeated);
-        assert!(
-            matches!(
-                state.resolution,
-                Some(crate::scenario::Resolution::Lost { .. })
-            ),
-            "no-remaining-players must latch Lost"
+        // RR Elimination step 6 is the *third* ending, not a loss: the
+        // scenario ended without a resolution point being reached, and the
+        // campaign guide answers it under "If no resolution was reached".
+        assert_eq!(
+            state.ending,
+            Some(crate::scenario::ScenarioEnding::NoResolution),
+            "no-remaining-players must latch NoResolution, not a resolution point"
         );
     }
 

@@ -4,13 +4,13 @@
 //! the shape of a scenario module without having to grok any real
 //! scenario's content. One investigator, one location, seeded
 //! two-card act/agenda decks whose terminal cards carry resolution
-//! points (push-model: the engine latches `GameState.resolution`
+//! points (push-model: the engine latches `GameState.ending`
 //! when an act/agenda resolution point is reached).
 
 use std::collections::VecDeque;
 
 use game_core::event::Event;
-use game_core::scenario::{Resolution, ScenarioId, ScenarioModule};
+use game_core::scenario::{ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule};
 use game_core::state::{Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, LocationId};
 use game_core::test_support::{test_location, GameStateBuilder};
 
@@ -46,8 +46,8 @@ pub const ID: &str = "synthetic";
 /// Also seeds two-card act and agenda decks. Each deck's first card
 /// is non-terminal (`resolution: None`) and its second carries a
 /// resolution point — advancing past the terminal card latches
-/// `GameState.resolution` (act → `Won { id: "demo" }`, agenda →
-/// `Lost { reason: "agenda" }`), driving the push-model hook.
+/// `GameState.ending` (act → `Resolution(R1)`, agenda →
+/// `Resolution(R2)`), driving the push-model hook.
 ///
 /// [`synth_cards::SYNTH_LOC_CODE`]: super::synth_cards::SYNTH_LOC_CODE
 /// [`synth_cards::SYNTH_TREACHERY_CODE`]: super::synth_cards::SYNTH_TREACHERY_CODE
@@ -87,9 +87,7 @@ pub fn setup() -> GameState {
         Agenda {
             code: CardCode("_synth_agenda_2".into()),
             doom_threshold: 2,
-            resolution: Some(Resolution::Lost {
-                reason: "agenda".into(),
-            }),
+            resolution: Some(ResolutionId::new(2)),
         },
     ];
     state.act_deck = vec![
@@ -101,7 +99,7 @@ pub fn setup() -> GameState {
         Act {
             code: CardCode("_synth_act_2".into()),
             clue_threshold: 2,
-            resolution: Some(Resolution::Won { id: "demo".into() }),
+            resolution: Some(ResolutionId::new(1)),
         },
     ];
     state
@@ -120,11 +118,7 @@ pub fn with_encounter_deck(state: &mut GameState, codes: Vec<CardCode>) {
 
 /// No-op. Phase 9 fills in real bodies once campaign-log XP / trauma
 /// application lands.
-pub fn apply_resolution(
-    _resolution: &Resolution,
-    _state: &mut GameState,
-    _events: &mut Vec<Event>,
-) {
+pub fn apply_resolution(_ending: ScenarioEnding, _state: &mut GameState, _events: &mut Vec<Event>) {
 }
 
 /// The [`ScenarioModule`] value for the synthetic fixture. Bundles

@@ -245,10 +245,20 @@ pub struct GameState {
     pub act_deck: Vec<Act>,
     /// Cursor into [`act_deck`](Self::act_deck): the current act.
     pub act_index: usize,
-    /// Fire-once scenario-resolution latch: **did the scenario end?** `None`
-    /// until a resolution fires; set by `request_resolution` at the act/agenda
-    /// resolution point or the no-remaining-players elimination step, which
-    /// pushes a [`ScenarioEnd`](Continuation::ScenarioEnd) frame with it.
+    /// Fire-once scenario-ending latch: **did the scenario end, and how?**
+    /// `None` until the scenario ends; set by `end_scenario` at the
+    /// act/agenda resolution point or the no-remaining-players elimination
+    /// step, which pushes a [`ScenarioEnd`](Continuation::ScenarioEnd) frame
+    /// with it.
+    ///
+    /// The two `None`s in play here are different questions, which is why this
+    /// is not an `Option<ResolutionId>`: *this* `None` means the scenario has
+    /// not ended, while [`ScenarioEnding::NoResolution`] means it ended without
+    /// reaching a resolution point. Nothing here says whether the players
+    /// *won* — that is a standalone-mode projection computed where the ending
+    /// is displayed.
+    ///
+    /// [`ScenarioEnding::NoResolution`]: crate::scenario::ScenarioEnding::NoResolution
     ///
     /// While `Some`, the `drive` loop cancels every frame that is only an
     /// opportunity or a framework step
@@ -259,7 +269,7 @@ pub struct GameState {
     /// `apply_resolution`, exactly once (the idempotency guard formerly tracked
     /// as #131). See
     /// `docs/adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md`.
-    pub resolution: Option<crate::scenario::Resolution>,
+    pub ending: Option<crate::scenario::ScenarioEnding>,
     /// The victory display (Rules Reference p.21): an out-of-play zone of
     /// cards worth experience, scored at scenario end. Victory-point
     /// locations are placed here when the scenario resolves (in play +
@@ -302,7 +312,7 @@ pub struct Agenda {
     /// The printed resolution point on this agenda's reverse. `Some` on
     /// a terminal agenda (advancing it ends the scenario); `None` on an
     /// agenda that advances to the next card.
-    pub resolution: Option<crate::scenario::Resolution>,
+    pub resolution: Option<crate::scenario::ResolutionId>,
 }
 
 /// One act card's mechanically-relevant state: the clues the group must
@@ -320,7 +330,7 @@ pub struct Act {
     pub clue_threshold: u8,
     /// The printed resolution point on this act's reverse. `Some` on a
     /// terminal act; `None` otherwise.
-    pub resolution: Option<crate::scenario::Resolution>,
+    pub resolution: Option<crate::scenario::ResolutionId>,
 }
 
 /// Which driver to resume after a mid-attack reaction window closes.
@@ -886,7 +896,7 @@ pub enum Continuation {
     /// bindings) so resume re-binds without replay.
     Effect(EffectFrame),
     /// The scenario's ending, in progress (#566). Pushed at the **bottom** of the
-    /// stack by the engine's `request_resolution` the moment the resolution
+    /// stack by the engine's `end_scenario` the moment the resolution
     /// latches, so it is reached only once every frame above it has either
     /// completed or been cancelled
     /// ([`cancelled_by_scenario_end`](Self::cancelled_by_scenario_end)). It then
@@ -908,7 +918,7 @@ pub enum Continuation {
     ///
     /// Never awaits input (the acknowledge above it is the prompt); pushed once
     /// per scenario and popped once, so its presence *is* the once-only finalize
-    /// marker: [`GameState::resolution`] answers "did the scenario end", this
+    /// marker: [`GameState::ending`] answers "did the scenario end", this
     /// frame answers "has the ending finished". See
     /// `docs/adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md`.
     ScenarioEnd {
@@ -944,7 +954,7 @@ pub enum Continuation {
     /// `apply_investigator_defeat` returns. On this frame's path the investigator
     /// is already off `Status::Active`, but their cards are still in play and
     /// `check_all_defeated` has not run — so no `AllInvestigatorsDefeated` and no
-    /// `Resolution::Lost` latch yet. Post-defeat bookkeeping must therefore key
+    /// `ScenarioEnding` latch yet. Post-defeat bookkeeping must therefore key
     /// off `Status`, never off a zone having been drained;
     /// `combat::place_assignment`'s asset sweep is the one such caller today and
     /// does exactly that.

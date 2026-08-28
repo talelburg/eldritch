@@ -1,4 +1,4 @@
-//! Scenario-module data types: identifier, resolution outcome, and the
+//! Scenario-module data types: identifier, scenario ending, and the
 //! static `ScenarioModule` / `ScenarioRegistry` pair that bridges
 //! engine ↔ scenarios crate.
 //!
@@ -7,7 +7,7 @@
 //! [`ScenarioRegistry`] of function pointers, and the host installs it
 //! once at startup via
 //! [`scenario_registry::install`](crate::scenario_registry::install).
-//! The engine watches `GameState.resolution` for a `None`->`Some`
+//! The engine watches `GameState.ending` for a `None`->`Some`
 //! transition during an apply (a push-model latch set at discrete
 //! trigger sites); on that transition it looks up the active
 //! scenario's module and runs its `apply_resolution`.
@@ -54,27 +54,79 @@ impl ScenarioId {
     }
 }
 
-/// Outcome of a scenario.
+/// A printed resolution point, `(→R#)`.
 ///
-/// Phase-4 minimal shape. Phase-9 will refine the payloads when the
-/// typed campaign-log `Fact` enum and branching scenario sequencing
-/// land; the `#[non_exhaustive]` annotation reserves that room.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Rules Reference, `Winning and Losing`: *"Some instructions in the act
+/// deck (as well as on other encounter cardtypes) contain resolution
+/// points, in the format of: '**(→R#)**.'"* The `#` is a number — the
+/// campaign guide's endings are titled "Resolution 1", "Resolution 2",
+/// and so on — so this is a `u8`, not a string. That keeps
+/// [`ScenarioEnding`] [`Copy`], which is why the act/agenda dispatch
+/// sites can read a terminal card's resolution point without cloning it
+/// out from under the `&mut GameState` they are about to hand to
+/// `end_scenario`.
+///
+/// The meaning of a given number is scenario-local: the campaign guide's
+/// "do not read until end of game" section is what interprets it, and
+/// Phase 9's campaign log looks the ending up by it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ResolutionId(u8);
+
+impl ResolutionId {
+    /// Construct a resolution point from its printed number.
+    #[must_use]
+    pub const fn new(n: u8) -> Self {
+        Self(n)
+    }
+
+    /// The printed number, i.e. the `#` in `(→R#)`.
+    #[must_use]
+    pub const fn number(self) -> u8 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for ResolutionId {
+    /// Renders as the campaign guide titles the ending: `Resolution 3`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Resolution {}", self.0)
+    }
+}
+
+/// How a scenario ended.
+///
+/// A scenario ends at a **resolution point**, or with **none reached** —
+/// not at a win or a loss. Rules Reference, `Winning and Losing`, gives
+/// the two doors: the act deck and the agenda deck both invoke resolution
+/// points in the same `(→R#)` notation, and *"Should the scenario end with
+/// no resolution being reached (for example, if all investigators have been
+/// eliminated or have resigned), instructions for resolving the scenario
+/// can be found in the 'do not read until end of game' section of the
+/// campaign guide."*
+///
+/// Win and loss are **not** stored here. They are a standalone-mode
+/// projection over this fact: in campaign play *"players will proceed to
+/// the next scenario in the campaign regardless of the outcome"*, and only
+/// the standalone bullet collapses the endings into two. See
+/// `docs/adr/0012-a-scenario-ends-at-a-resolution-point-or-at-none.md`.
+///
+/// `#[non_exhaustive]` reserves room for Phase 9's campaign-log work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
-pub enum Resolution {
-    /// Scenario completed successfully.
-    Won {
-        /// Per-scenario resolution branch identifier (e.g. `"R1"`,
-        /// `"R2"`). The meaning is scenario-local — Phase 9's
-        /// `next_scenario` orchestration interprets it.
-        id: String,
-    },
-    /// Scenario ended in defeat.
-    Lost {
-        /// Human-readable cause for diagnostics. Not semantically
-        /// load-bearing today; Phase 9 may swap for a typed enum.
-        reason: String,
-    },
+pub enum ScenarioEnding {
+    /// A printed resolution point was reached, from the act deck or the
+    /// agenda deck. Which deck invoked it is deliberately not recorded:
+    /// resolution points also appear *"on other encounter cardtypes"*, so
+    /// the deck is a proxy rather than a fact, and the only rule that asks
+    /// (standalone mode's *"they win if they complete a resolution on an
+    /// act card"*) is scenario-local knowledge the campaign guide owns.
+    Resolution(ResolutionId),
+    /// The scenario ended with no resolution point reached — Rules
+    /// Reference `Elimination` step 6, *"If there are no remaining
+    /// players, the scenario ends."* The campaign guide gives this ending
+    /// its own untitled entry, *"If no resolution was reached (each
+    /// investigator resigned or was defeated)"*.
+    NoResolution,
 }
 
 /// Read-only board view handed to a scenario's symbol-token hook
@@ -164,13 +216,13 @@ pub struct ScenarioModule {
     pub setup: fn() -> GameState,
     /// Apply the resolution's effects (XP, trauma, scenario-end cleanup).
     /// Called by [`apply`](crate::engine::apply) exactly once, when the
-    /// engine observes `GameState.resolution` transition from `None` to
+    /// engine observes `GameState.ending` transition from `None` to
     /// `Some` during an apply. Receives the events buffer so changes are
     /// observable to clients.
     ///
     /// For the Phase-4 synthetic fixture this is a no-op. Phase 9 fills in
     /// real bodies once the campaign log lands.
-    pub apply_resolution: fn(&Resolution, &mut GameState, &mut Vec<Event>),
+    pub apply_resolution: fn(ScenarioEnding, &mut GameState, &mut Vec<Event>),
 }
 
 /// Lookup table of [`ScenarioModule`]s, keyed by [`ScenarioId`].

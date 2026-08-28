@@ -11,7 +11,7 @@
 use game_core::action::RosterEntry;
 use game_core::engine::{apply, seat_and_open, EngineOutcome};
 use game_core::event::Event;
-use game_core::scenario::Resolution;
+use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId};
 use game_core::test_support::take_turn_action;
 use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
@@ -71,14 +71,18 @@ fn solo_roland_is_seated_in_the_study_ready_to_act() {
         state.investigators.contains_key(&INV),
         "Roland seated as investigator 1"
     );
-    assert!(state.resolution.is_none(), "no resolution latched at setup");
+    assert!(state.ending.is_none(), "no resolution latched at setup");
 }
 
-/// Lost via the real all-investigators-defeated latch: Roland is seeded one
-/// hit from death with an engaged Ghoul Minion, then a real Enemy-phase
-/// attack defeats him and `check_all_defeated` latches `Resolution::Lost`.
+/// Ended with *no resolution reached* via the real all-investigators-defeated
+/// latch: Roland is seeded one hit from death with an engaged Ghoul Minion,
+/// then a real Enemy-phase attack defeats him and `check_all_defeated` latches
+/// [`ScenarioEnding::NoResolution`] — Rules Reference `Elimination` step 6,
+/// which the campaign guide answers under "If no resolution was reached (each
+/// investigator resigned or was defeated)". Not a loss: in campaign play the
+/// players proceed "regardless of the outcome".
 #[test]
-fn enemy_attack_defeats_roland_and_latches_lost() {
+fn enemy_attack_defeats_roland_and_latches_no_resolution() {
     use game_core::state::EnemyId;
     use game_core::test_support::test_enemy;
 
@@ -104,15 +108,15 @@ fn enemy_attack_defeats_roland_and_latches_lost() {
     state.enemies.insert(enemy_id, minion);
 
     // Drive: end Roland's turn → tick into the Enemy phase → the engaged
-    // enemy attacks → Roland defeated → all-defeated → Resolution::Lost.
+    // enemy attacks → Roland defeated → all-defeated → NoResolution.
     let result = take_turn_action(state, &TurnAction::EndTurn);
 
     assert_event!(result.events, Event::AllInvestigatorsDefeated);
     assert_event!(result.events, Event::ScenarioResolved { .. });
-    assert!(
-        matches!(result.state.resolution, Some(Resolution::Lost { .. })),
-        "expected a Lost resolution, got {:?}",
-        result.state.resolution,
+    assert_eq!(
+        result.state.ending,
+        Some(ScenarioEnding::NoResolution),
+        "no investigator remains, so no resolution point was reached",
     );
 }
 
@@ -120,7 +124,7 @@ fn enemy_attack_defeats_roland_and_latches_lost() {
 /// (`AdvanceAct`) and act 2 (the C3d round-end clue-spend window) for real —
 /// act 2's reverse spawns the **real** Ghoul Priest — then fights that
 /// spawned Priest to trigger `what_have_you_done`'s forced advance on the terminal
-/// act → `Resolution::Won { R1 }`.
+/// act → `ScenarioEnding::Resolution(R1)`.
 ///
 /// Two seeds, both off the resolution path: clues (acquiring them via
 /// Attic/Cellar investigation is unit-tested elsewhere — the focus here is
@@ -216,7 +220,7 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
 
     // --- Drive the defeating Fight against the real spawned Priest: combat 4
     // + Numeric(0) ≥ fight 4 → success → deal 1 → defeated → act 3 advances →
-    // Resolution::Won { R1 }.
+    // ScenarioEnding::Resolution(R1).
     let paused = take_turn_action(
         state,
         &TurnAction::Fight {
@@ -238,10 +242,10 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
 
     assert_event!(result.events, Event::EnemyDefeated { .. });
     assert_event!(result.events, Event::ScenarioResolved { .. });
-    assert!(
-        matches!(result.state.resolution, Some(Resolution::Won { .. })),
-        "expected a Won resolution, got {:?}",
-        result.state.resolution,
+    assert_eq!(
+        result.state.ending,
+        Some(ScenarioEnding::Resolution(ResolutionId::new(1))),
+        "act 01110 carries the campaign guide's (→R1)",
     );
 
     // #566: advancing act 3 reaches a resolution point, so the scenario ends

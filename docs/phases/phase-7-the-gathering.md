@@ -104,14 +104,54 @@ the Tablet came out.
 
 ### Wave 3 — optional content (#258's children)
 
-Ordered: **#644 → #772 → #771 → #773 → #774 → #775**.
+| Issue | Defect |
+|---|---|
+| #804 ✅ PR #807 | `Resolution` is `Won { id } \| Lost { reason }` — a standalone-mode projection, with no representation for the ending that reaches no resolution point ([ADR 0012](../adr/0012-a-scenario-ends-at-a-resolution-point-or-at-none.md)) |
+| #806 | Agenda 01107's `(→R3)` is conditional on the investigators being at act 1 or 2, and the engine latches it unconditionally |
+| #644 | Elimination **by resignation** never happens — `Status::Resigned` / `DefeatCause::Resigned` exist and have never been constructed |
+| #805 | An `ActionDesignator` is a pure tag that performs nothing, so a **Fight** ability and `Effect::Fight` are linked by convention alone |
+| #772 | Lita 01117 is an ability source nobody controls, so #708's walk never reaches her — and neither 01115's Parley nor her buffs are printed on the card that has them |
+| #771 | Set-aside is enemies-only, so act 01109b's *"Put the set-aside Lita Chantler into play"* has nowhere to go |
+| #773 | Lita 01117's controlled-side grants are location-scoped and reaction-driven; both collapse to one investigator in 1p |
+| #774 | The Parlor movement barrier — mandatory printed behaviour that was inheriting optional content's deferral |
+| #775 | 01110b asks the lead investigator to choose the ending; the act's resolution point is hardcoded, so R2 is unreachable |
 
+- **#806 — agenda 01107's resolution point is conditional.** The reverse prints two
+  bullets and only the first carries a point: *"If the investigators are at Act 1 or 2,
+  they are trapped inside the house as the ghouls tear them apart. **(→R3)**"*, against
+  *"If the investigators are at Act 3, they barely escape with their lives … Each
+  investigator that has not resigned is defeated and suffers 1 physical trauma."* The
+  act-3 branch reaches **no** resolution point — defeating everyone drains the last
+  active investigator into `check_all_defeated` and so into #804's `NoResolution`. But
+  `Agenda.resolution` is printed data rather than effect DSL, so it cannot read
+  `act_index` to choose; #804 shipped the act-1/2 branch with a `# Module gap` note.
+  Expressing the branch needs the terminal agenda to *run* something, which is the same
+  shape as **#775** on the act side — worth settling both with one mechanism rather
+  than two. Physical trauma has no engine representation, so that half stays #766's.
 - **#644 — Resign semantics.** Unblocked: #695 shipped as #707/#708/#709/#735, and
   #696 already gave the engine `ActionDesignator::Resign` and its AoO exemption. What
   is left is elimination **by resignation** — `Status::Resigned` / `DefeatCause::
   Resigned` exist, are wired through elimination, and have never been constructed —
-  plus `glossary/Winning_and_Losing.md`'s *"no resolution being reached"* ending. #696's
-  reviewer note stands: tagging the Parlor 01115 is this issue's job.
+  plus `glossary/Winning_and_Losing.md`'s *"no resolution being reached"* ending, which
+  #804 has by then given a correct latch to land in. #696's reviewer note stands:
+  tagging the Parlor 01115 is this issue's job. Resignation is `Effect::Resign`, a
+  nullary variant declared beside `ActionDesignator::Resign` — symmetric with how
+  `Effect::Fight` sits under a **Fight** designator today, and chosen over letting the
+  designator drive the elimination so that `impls/` carries one theory of what a
+  designator is rather than two. Elimination runs steps 0–6 unchanged
+  (`glossary/Elimination.md`: *"any time his or her investigator is defeated, **or if
+  he or she resigns**"* — one procedure, no branch), and `Event::InvestigatorDefeated`
+  / `DefeatCause` are renamed to `InvestigatorEliminated` / `EliminationCause`, since
+  the current names assert exactly what `glossary/Resign.md` denies.
+- **#805 — a designator performs its action; the effect carries the modification.**
+  `ActionDesignator` is a pure rules tag — `provokes_aoo` and `action_class()` read it,
+  and the ability's effect does the acting, so `machete.rs` declares **Fight** and
+  roots in `Effect::Fight` with nothing linking the two. `glossary/Ability.md` inverts
+  that: *"Activating such an ability **performs the designated action** … but modified
+  in the manner described by the ability."* Invert it for every designator; the
+  modification (Machete's `+1 [combat]`, Flashlight's `-2 [shroud]`) is what stays on
+  the ability. Lands after #644 rather than before it because #644's nullary
+  `Effect::Resign` *is* the empty modification this keeps, so it survives the refactor.
 - **#772 — an uncontrolled asset is an unreachable ability source, and *"she gains"*
   has no DSL.** Two gaps on one card pair. `glossary/Triggered_Abilities.md` bullet 2
   reaches Lita 01117; #708's implementation of that bullet walks the location, its

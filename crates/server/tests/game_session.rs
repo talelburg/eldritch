@@ -7,7 +7,7 @@
 use game_core::scenario::{ScenarioId, ScenarioModule, ScenarioRegistry};
 use game_core::state::GameStateBuilder;
 use game_core::state::{ChaosBag, ChaosToken, GameState, InvestigatorId};
-use game_core::{EngineOutcome, Event, InputResponse, OptionId, PlayerAction, Resolution};
+use game_core::{EngineOutcome, Event, InputResponse, OptionId, PlayerAction, ScenarioEnding};
 use server::session::GameSession;
 use server::GameId;
 use sqlx::sqlite::SqlitePoolOptions;
@@ -23,7 +23,7 @@ fn test_setup() -> GameState {
         .build()
 }
 
-fn noop_resolution(_: &Resolution, _: &mut GameState, _: &mut Vec<Event>) {}
+fn noop_resolution(_: ScenarioEnding, _: &mut GameState, _: &mut Vec<Event>) {}
 
 static TEST_MODULE: ScenarioModule = ScenarioModule {
     resolve_symbol: None,

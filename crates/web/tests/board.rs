@@ -236,37 +236,51 @@ fn last_resolution_html() -> String {
 }
 
 #[wasm_bindgen_test]
-async fn resolution_banner_renders_won() {
-    use game_core::Resolution;
+async fn resolution_banner_names_the_resolution_point() {
+    use game_core::{ResolutionId, ScenarioEnding};
     let mut state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .build();
-    state.resolution = Some(Resolution::Won { id: "demo".into() });
+    state.ending = Some(ScenarioEnding::Resolution(ResolutionId::new(3)));
 
     let _ = render_state(state).await;
 
+    // The banner names the ending the player takes to the campaign guide, not
+    // a win/loss verdict — R3 is agenda-invoked in The Gathering, and calling
+    // that "lost" is the standalone-mode projection this client no longer
+    // makes.
     let html = last_resolution_html();
-    assert!(html.contains("won"), "won banner text missing: {html}");
-    assert!(html.contains("demo"), "won id missing: {html}");
+    assert!(
+        html.contains("Resolution 3"),
+        "banner must name the resolution point: {html}"
+    );
+    assert!(
+        !html.contains("won") && !html.contains("lost"),
+        "banner must not adjudicate win/loss: {html}"
+    );
 }
 
 #[wasm_bindgen_test]
-async fn resolution_banner_renders_lost() {
-    use game_core::Resolution;
+async fn resolution_banner_renders_no_resolution_reached() {
+    use game_core::ScenarioEnding;
     let mut state = GameStateBuilder::new()
         .with_investigator(test_investigator(1))
         .build();
-    state.resolution = Some(Resolution::Lost {
-        reason: "cultist-surge".into(),
-    });
+    state.ending = Some(ScenarioEnding::NoResolution);
 
     let _ = render_state(state).await;
 
+    // RR Elimination step 6's ending has its own campaign-guide entry ("If no
+    // resolution was reached"), and an investigator who got here by resigning
+    // is "not considered to have been defeated".
     let html = last_resolution_html();
-    assert!(html.contains("lost"), "lost banner text missing: {html}");
     assert!(
-        html.contains("cultist-surge"),
-        "lost reason missing: {html}"
+        html.contains("no resolution reached"),
+        "no-resolution banner text missing: {html}"
+    );
+    assert!(
+        !html.contains("lost"),
+        "no resolution reached is not a loss: {html}"
     );
 }
 

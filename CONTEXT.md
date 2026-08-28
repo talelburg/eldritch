@@ -81,6 +81,14 @@ A **determination** that a skill test fails or succeeds regardless of the number
 A determination known **before** the chaos token is revealed skips ST.3 and ST.4 — no token is drawn at all. One caused **by** a token does not, since the reveal has already happened. Both are the same determination; only the timing differs.
 _Avoid_: Reading "if a `[skull]` or `[auto_fail]` symbol is revealed" as a clause about failing; it is a clause about the token. No Core + Dunwich card keys off the *determination* being an automatic failure rather than an ordinary one, so `FailureReason::AutoFail` is display attribution, not a rules distinction.
 
+**Resolution point**:
+The printed `(→R#)` on an act's or agenda's reverse — the numbered ending a scenario can reach. The Rules Reference gives one notation for both decks: *"Some instructions in the act deck (as well as on other encounter cardtypes) contain resolution points, in the format of: '**(→R#)**.'"* — and the same sentence again for the agenda deck. The `#` is a number, and the campaign guide titles the matching entry "Resolution 1", "Resolution 2", … — so `ResolutionId` is a `u8`, not a string. Which deck invoked it is deliberately not modelled: resolution points also appear on other encounter cardtypes, so the deck is a proxy rather than a fact.
+_Avoid_: "Win" and "loss" as scenario state. Those are a **standalone-mode projection** — *"they win if they complete a resolution on an act card. Any other resolution is considered a loss"* — and in campaign play the players *"proceed to the next scenario in the campaign regardless of the outcome."* Which resolutions are favorable is scenario-local knowledge the campaign guide owns; compute the verdict where the ending is displayed, never store it. See `docs/adr/0012-a-scenario-ends-at-a-resolution-point-or-at-none.md`.
+
+**No resolution reached**:
+The third way a scenario ends: not at a resolution point at all. *"Should the scenario end with no resolution being reached (for example, if all investigators have been eliminated or have resigned), instructions for resolving the scenario can be found in the 'do not read until end of game' section of the campaign guide."* Our `ScenarioEnding::NoResolution`, latched by `check_all_defeated` for Rules Reference `Elimination` step 6. The campaign guide gives it its own untitled entry alongside the numbered ones — The Gathering's reads *"If no resolution was reached (each investigator resigned or was defeated)"*.
+_Avoid_: Calling it a loss, or a defeat. An investigator who reached it by resigning is *"not considered to have been defeated"* (`glossary/Resign.md`), and it is a distinct campaign-guide entry from every numbered resolution, not a synonym for the darkest one.
+
 ## Project vocabulary
 
 **Project phase**:

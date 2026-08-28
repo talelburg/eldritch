@@ -10,7 +10,7 @@
 
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::{Event, TraumaKind};
-use game_core::scenario::{Resolution, ScenarioId};
+use game_core::scenario::{ResolutionId, ScenarioId};
 use game_core::state::{
     AbilitySource, Act, CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag,
     ChaosToken, Continuation, EmitStep, GameState, InvestigatorId, LocationId, Phase,
@@ -293,7 +293,7 @@ fn resolving_state(cover_up_clues: u8) -> GameState {
     state.act_deck = vec![Act {
         code: CardCode("_test_act".into()),
         clue_threshold: 1,
-        resolution: Some(Resolution::Won { id: "test".into() }),
+        resolution: Some(ResolutionId::new(1)),
     }];
     state
 }

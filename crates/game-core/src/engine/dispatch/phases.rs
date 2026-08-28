@@ -3382,7 +3382,7 @@ mod enemy_phase_tests {
         // happens, including e1's own exhaust, which since #704 follows its
         // attack rather than being part of it.
         assert!(
-            state.resolution.is_some(),
+            state.ending.is_some(),
             "the sole investigator's defeat ended the scenario"
         );
         assert!(

@@ -385,7 +385,7 @@ impl GameStateBuilder {
             agenda_doom: 0,
             act_deck: Vec::new(),
             act_index: 0,
-            resolution: None,
+            ending: None,
             victory_display: Vec::new(),
             interactive_acknowledge: false,
         }

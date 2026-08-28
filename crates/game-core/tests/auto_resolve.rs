@@ -204,7 +204,7 @@ fn mock_setup() -> GameState {
 }
 
 fn mock_apply_resolution(
-    _: &game_core::scenario::Resolution,
+    _: game_core::scenario::ScenarioEnding,
     _: &mut GameState,
     _: &mut Vec<Event>,
 ) {

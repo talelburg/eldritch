@@ -264,7 +264,7 @@ fn elimination_without_a_step_zero_ability_still_runs_its_steps() {
     // Step 2 still deposited the possessed clues at the location.
     assert_eq!(state.locations[&LocationId(10)].clues, 2);
     // No `Elimination` frame is pushed at all on this path. (The stack is not
-    // empty: the solo death latches `Resolution::Lost`, which parks the
+    // empty: the solo death latches `ScenarioEnding::NoResolution`, which parks the
     // `ScenarioEnd` frame at the bottom for the apply boundary to finalize.)
     assert!(
         !state
