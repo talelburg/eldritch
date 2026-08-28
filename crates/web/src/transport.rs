@@ -220,7 +220,5 @@ pub fn reload() {
 /// drops the local pointer. Pairs with the "New game" button in `BoardView`.
 pub fn start_new_game() {
     clear_saved_id();
-    if let Some(w) = web_sys::window() {
-        let _ = w.location().reload();
-    }
+    reload();
 }

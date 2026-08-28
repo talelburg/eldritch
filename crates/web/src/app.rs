@@ -62,11 +62,11 @@ pub fn App() -> impl IntoView {
 /// Everything the app layers over the board: the pre-game picker, the skill-test
 /// result modal, the prompt banner and the version-mismatch overlay.
 ///
-/// A component rather than three inline tags so a headless test can mount the
+/// A component rather than four inline tags so a headless test can mount the
 /// exact set the app does — which is how "`.action-bar` is absent from the DOM"
 /// is asserted against the real composition rather than against a copy of it
-/// (#541). The sticky bar that used to hold these is gone; each of the three is
-/// now its own viewport-fixed overlay, and the picker only renders pre-game.
+/// (#541). The sticky bar that used to hold these is gone; each of them is now
+/// its own viewport-fixed overlay, and the picker only renders pre-game.
 /// The version-mismatch overlay is last, and stacks above the rest: it is
 /// terminal, so nothing it covers can still be acted on (#770).
 #[component]
