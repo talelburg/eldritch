@@ -1,9 +1,10 @@
 //! The Gathering (Night of the Zealot, scenario 1) — Slice 1 C1a skeleton.
 //!
 //! Builds the faithful **Act-1 board**: only the Study is in play (the
-//! Hallway/Attic/Cellar/Parlor are set aside (`set_aside_locations`) and
-//! enter play via Act 1's (01108) Forced on-advance reverse, which also
-//! relocates investigators to the Hallway and removes the Study).
+//! Hallway/Attic/Cellar/Parlor are set aside (`set_aside_cards`, by code)
+//! and enter play via Act 1's (01108) Forced on-advance reverse, which
+//! also relocates investigators to the Hallway and removes the Study).
+//! Their connections come from [`LAYOUT`], wired as each room enters.
 //! `setup()` builds the world; the scenario setup (via `seat_and_open`)
 //! seats investigators at the starting location (the Study, `01111`) via
 //! `GameState.starting_location`.
@@ -29,7 +30,8 @@
 use game_core::card_data::CardKind;
 use game_core::event::Event;
 use game_core::scenario::{
-    ScenarioEnding, ScenarioId, ScenarioModule, SymbolCtx, SymbolOutcome, TokenEffect,
+    LocationLayout, ScenarioEnding, ScenarioId, ScenarioModule, SymbolCtx, SymbolOutcome,
+    TokenEffect,
 };
 use game_core::state::{Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
 
@@ -172,9 +174,21 @@ fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> SymbolOutcome {
     }
 }
 
+/// The Gathering's location layout: the Hallway (01112) is the hub, with
+/// the Attic (01113), Cellar (01114) and Parlor (01115) as spokes. Read
+/// from the connection symbols printed on the location cards — the pinned
+/// snapshot carries no connection field, so the board's topology is the
+/// scenario's to own (see [`LocationLayout`]).
+///
+/// The Study (01111) appears in no pair: Act 1 is *"trapped in the
+/// Study"*, and the act's reverse removes it from the game when the rest
+/// of the house arrives.
+pub const LAYOUT: LocationLayout = &[("01112", "01113"), ("01112", "01114"), ("01112", "01115")];
+
 /// Build the initial [`GameState`]: the Study in play (isolated), the
-/// four set-aside locations (Hallway/Attic/Cellar/Parlor, pre-connected),
-/// the act/agenda decks, the Standard chaos bag, and `starting_location`.
+/// four set-aside rooms (Hallway/Attic/Cellar/Parlor, by code), the
+/// set-aside Ghoul Priest, the act/agenda decks, the Standard chaos bag,
+/// and `starting_location`.
 /// No investigators — they are seated via `seat_and_open` at scenario setup.
 ///
 /// # Panics
@@ -188,30 +202,24 @@ pub fn setup() -> GameState {
         .with_scenario_id(ScenarioId::new(ID))
         .build();
 
-    // The Gathering board. Ids are minted by `add_location` /
-    // `add_set_aside_location` (deterministic, construction order), so no
-    // hand-assigned LocationId literals. The scenario looks up each
-    // location's metadata in the corpus and hands it to the engine; stats
-    // (shroud/clues) come from the metadata. The Study starts in play
-    // (isolated — Act 1 is "trapped in the Study"); the Hallway hub +
-    // Attic/Cellar/Parlor spokes are set aside until Act 1's (01108)
-    // Forced on-advance reverse brings them into play.
-    let meta = |code: &str| cards::by_code(code).expect("Gathering location in corpus");
+    // The Gathering board. Ids are minted by `add_location` (deterministic,
+    // construction order), so no hand-assigned LocationId literals. The
+    // scenario looks up each card's metadata in the corpus and hands it to
+    // the engine; stats (shroud/clues) come from the metadata. The Study
+    // starts in play (isolated — Act 1 is "trapped in the Study").
+    let meta = |code: &str| cards::by_code(code).expect("Gathering card in corpus");
     let study = state.add_location(meta("01111"));
-    let hallway = state.add_set_aside_location(meta("01112"));
-    let attic = state.add_set_aside_location(meta("01113"));
-    let cellar = state.add_set_aside_location(meta("01114"));
-    let parlor = state.add_set_aside_location(meta("01115"));
-    state.connect(hallway, attic);
-    state.connect(hallway, cellar);
-    state.connect(hallway, parlor);
     state.starting_location = Some(study);
 
-    // The Ghoul Priest (01116) starts set aside; Act 2's (01109) reverse
-    // spawns it in the Hallway when the act advances (cards::the_barrier).
-    // Recorded by code only — its per-investigator health is minted from
-    // the corpus at spawn, when the investigator count is known.
-    state.add_set_aside_enemy(meta("01116"));
+    // Set aside by code only, in one zone: the Hallway hub +
+    // Attic/Cellar/Parlor spokes until Act 1's (01108) Forced on-advance
+    // reverse puts them into play (each minting its id and wiring LAYOUT
+    // as it enters), then the Ghoul Priest (01116) until Act 2's (01109)
+    // reverse spawns it in the Hallway (cards::the_barrier), where its
+    // per-investigator health is minted with the investigator count known.
+    for code in ["01112", "01113", "01114", "01115", "01116"] {
+        state.add_set_aside_card(meta(code));
+    }
 
     // Act deck 01108 -> 01109 -> 01110. Clue thresholds read from the
     // corpus. 01110 advances via its Forced EnemyDefeated objective
@@ -287,6 +295,7 @@ pub const MODULE: ScenarioModule = ScenarioModule {
     resolve_symbol: Some(resolve_symbol),
     setup,
     apply_resolution,
+    layout: LAYOUT,
 };
 
 #[cfg(test)]
@@ -323,54 +332,44 @@ mod tests {
     }
 
     #[test]
-    fn setup_places_study_in_play_and_four_set_aside() {
+    fn setup_places_study_in_play_and_the_rest_set_aside_by_code() {
         let s = setup();
         // In play: only the Study (Act-1 board).
         assert_eq!(s.locations.len(), 1);
         let study = &s.locations[&s.starting_location.unwrap()];
         assert_eq!(study.code, CardCode("01111".into()));
         assert!(study.connections.is_empty(), "Study is isolated");
-        // Set aside: Hallway, Attic, Cellar, Parlor, each pre-connected.
-        let codes: Vec<_> = s
-            .set_aside_locations
-            .iter()
-            .map(|l| l.code.as_str().to_owned())
-            .collect();
-        assert_eq!(codes, ["01112", "01113", "01114", "01115"]);
-        let hallway = s
-            .set_aside_locations
-            .iter()
-            .find(|l| l.code.as_str() == "01112")
-            .unwrap();
-        let mut hall_conns: Vec<_> = hallway.connections.clone();
-        hall_conns.sort();
-        let mut others: Vec<_> = s
-            .set_aside_locations
-            .iter()
-            .filter(|l| l.code.as_str() != "01112")
-            .map(|l| l.id)
-            .collect();
-        others.sort();
+        // Set aside: the four rooms and the Ghoul Priest, codes only. No
+        // LocationId is minted for a room until it enters play.
         assert_eq!(
-            hall_conns, others,
-            "Hallway connects to Attic/Cellar/Parlor"
+            s.set_aside_cards
+                .iter()
+                .map(|c| c.as_str().to_owned())
+                .collect::<Vec<_>>(),
+            ["01112", "01113", "01114", "01115", "01116"],
         );
-        for l in s
-            .set_aside_locations
-            .iter()
-            .filter(|l| l.code.as_str() != "01112")
-        {
-            assert_eq!(
-                l.connections,
-                vec![hallway.id],
-                "spokes connect back to the Hallway"
-            );
-        }
         assert_eq!(
-            s.locations[&s.starting_location.unwrap()].code.as_str(),
-            "01111"
+            s.location_ids.peek(),
+            1,
+            "only the Study has minted an id at setup",
         );
         assert!(s.investigators.is_empty(), "setup() seats no one");
+    }
+
+    #[test]
+    fn layout_is_the_hallway_hub_and_its_three_spokes() {
+        // The printed connection symbols: Hallway (01112) to each of the
+        // Attic (01113), Cellar (01114) and Parlor (01115). The Study
+        // (01111) is in no pair — it is removed from the game when the
+        // rest of the house arrives.
+        assert_eq!(
+            LAYOUT,
+            [("01112", "01113"), ("01112", "01114"), ("01112", "01115")],
+        );
+        assert!(
+            !LAYOUT.iter().any(|(a, b)| *a == "01111" || *b == "01111"),
+            "the Study connects to nothing",
+        );
     }
 
     #[test]

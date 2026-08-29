@@ -11,11 +11,13 @@
 //! `ForcedTriggerPoint::ActAdvanced` when the act advances, before the
 //! next act becomes current. "Discard each enemy in the Study" is a
 //! faithful **no-op** — nothing can spawn into the isolated Act-1 Study
-//! in Slice-1 scope (no encounter path targets the Study). The set-aside
-//! locations + their connections
-//! are built by the scenario's `setup()`; this ability just moves them
-//! into play, relocates investigators to the Hallway (01112), and removes
-//! the Study (01111).
+//! in Slice-1 scope (no encounter path targets the Study). The four rooms
+//! are set aside by the scenario's `setup()` as bare card codes; this
+//! ability puts each into play through
+//! [`put_set_aside_card_into_play`], which mints its `LocationId` and
+//! wires its printed connections from the scenario's layout table, then
+//! relocates investigators to the Hallway (01112) and removes the Study
+//! (01111).
 //!
 //! The board build is board-dependent, single-use scenario logic, so it
 //! lives card-locally as a [`card_dsl::dsl::Effect::Native`] handler
@@ -36,10 +38,26 @@
 
 use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
 use game_core::card_registry::NativeEffectFn;
-use game_core::{location_id_by_code, reveal_location, Cx, EngineOutcome, EvalContext, Event};
+use game_core::{
+    location_id_by_code, put_set_aside_card_into_play, reveal_location, Cx, EngineOutcome,
+    EvalContext, Event,
+};
 
 /// `ArkhamDB` code for Act 1, "Trapped".
 pub const CODE: &str = "01108";
+
+/// The Study (01111), removed from the game by this reverse.
+const STUDY: &str = "01111";
+
+/// The Hallway (01112), where this reverse places each investigator.
+const HALLWAY: &str = "01112";
+
+/// The set-aside rooms this reverse puts into play, in printed order:
+/// *"Put into play the set-aside Hallway, Cellar, Attic, and Parlor."*
+/// The order is cosmetic — each room's connections are wired from the
+/// scenario's layout as it enters, and a connection is made by whichever
+/// of its two endpoints enters second.
+const ROOMS: [&str; 4] = [HALLWAY, "01114", "01113", "01115"];
 
 /// Native-effect tag for this act's reverse board build.
 const BOARD_BUILD: &str = "01108:board-build";
@@ -63,37 +81,35 @@ pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
 /// Put the set-aside Hallway/Cellar/Attic/Parlor into play, relocate
 /// every investigator to the Hallway (01112), and remove the Study
 /// (01111). Ports the three former `Effect` arms verbatim, now
-/// card-local. Validates both required locations up front (the Hallway
-/// may still be set-aside at that point, so the check spans both zones)
+/// card-local. Validates the whole set of rooms and the Study up front
 /// and rejects before any mutation; a rejection is additionally rolled
 /// back wholesale by `apply_via`'s snapshot-restore, so validate-first
 /// here is about precise reasons, not state safety.
 fn board_build(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    // Validate-first: 01112 must exist in play or set-aside, 01111 in play.
-    let hallway_available = location_id_by_code(cx.state, "01112").is_some()
-        || cx
-            .state
-            .set_aside_locations
-            .iter()
-            .any(|l| l.code.as_str() == "01112");
-    if !hallway_available {
+    // Validate-first: all four rooms set aside, and 01111 in play.
+    for code in ROOMS {
+        if !cx.state.set_aside_cards.iter().any(|c| c.as_str() == code) {
+            return EngineOutcome::Rejected {
+                reason: format!("01108 board-build: {code} is not set aside").into(),
+            };
+        }
+    }
+    if location_id_by_code(cx.state, STUDY).is_none() {
         return EngineOutcome::Rejected {
-            reason: "01108 board-build: no in-play or set-aside Hallway (01112)".into(),
+            reason: format!("01108 board-build: no in-play Study ({STUDY})").into(),
         };
     }
-    if location_id_by_code(cx.state, "01111").is_none() {
-        return EngineOutcome::Rejected {
-            reason: "01108 board-build: no in-play Study (01111)".into(),
-        };
-    }
-    // Put set-aside locations into play.
-    let drained = std::mem::take(&mut cx.state.set_aside_locations);
-    for loc in drained {
-        cx.state.locations.insert(loc.id, loc);
+    // Put the set-aside rooms into play; each mints its id and wires its
+    // printed connections to the rooms already there.
+    for code in ROOMS {
+        match put_set_aside_card_into_play(cx, code, None) {
+            EngineOutcome::Done => {}
+            other => return other,
+        }
     }
     // Relocate all investigators to the Hallway (01112).
-    let Some(dest) = location_id_by_code(cx.state, "01112") else {
-        unreachable!("01108 board-build: Hallway validated above (in play or set-aside)");
+    let Some(dest) = location_id_by_code(cx.state, HALLWAY) else {
+        unreachable!("01108 board-build: the Hallway just entered play");
     };
     let ids: Vec<_> = cx.state.investigators.keys().copied().collect();
     for id in ids {
@@ -116,10 +132,8 @@ fn board_build(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     }
     reveal_location(cx, dest);
     // Remove the Study (01111) from the game.
-    let Some(study) = location_id_by_code(cx.state, "01111") else {
-        return EngineOutcome::Rejected {
-            reason: "01108 board-build: no in-play Study (01111)".into(),
-        };
+    let Some(study) = location_id_by_code(cx.state, STUDY) else {
+        unreachable!("01108 board-build: the Study was validated in play above");
     };
     cx.state.locations.remove(&study);
     EngineOutcome::Done

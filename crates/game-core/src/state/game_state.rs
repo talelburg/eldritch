@@ -41,20 +41,22 @@ pub struct GameState {
     pub investigators: BTreeMap<InvestigatorId, Investigator>,
     /// All locations laid out (revealed and unrevealed alike), keyed by ID.
     pub locations: BTreeMap<LocationId, Location>,
-    /// Locations set aside, out of play (Rules Reference p.3, "set
-    /// aside"). Brought into play by card effects — The Gathering's
-    /// Act-1 reverse drains these into play (the `01108:board-build`
-    /// native effect).
-    pub set_aside_locations: Vec<Location>,
-    /// Enemies set aside, out of play (Rules Reference p.3, "set aside"),
-    /// recorded by printed code only — their stats (per-investigator
-    /// health, combat) are minted from the corpus at spawn time, when the
-    /// investigator count is known. Brought into play by card effects —
-    /// The Gathering's Act-2 reverse spawns the Ghoul Priest (01116) from
-    /// here (the `01109:reverse` native effect, via [`spawn_set_aside_enemy`]).
+    /// Cards set aside, out of play (Rules Reference p.3, "set aside"),
+    /// recorded by printed code only — one zone for every cardtype that
+    /// can be set aside, because a card's stats are minted when it enters
+    /// play, not at `setup()`. An enemy's per-investigator health depends
+    /// on the live investigator count, and a location's [`LocationId`] is
+    /// minted at entry, so nothing here can be pre-built.
     ///
-    /// [`spawn_set_aside_enemy`]: crate::engine::spawn_set_aside_enemy
-    pub set_aside_enemies: Vec<CardCode>,
+    /// Brought into play by card effects, via
+    /// [`put_set_aside_card_into_play`], which dispatches on the card's
+    /// [`CardKind`]: The Gathering's Act-1 reverse puts the four house
+    /// locations into play (the `01108:board-build` native effect) and its
+    /// Act-2 reverse spawns the Ghoul Priest (01116) in the Hallway (the
+    /// `01109:reverse` native effect).
+    ///
+    /// [`put_set_aside_card_into_play`]: crate::engine::put_set_aside_card_into_play
+    pub set_aside_cards: Vec<CardCode>,
     /// Where roster-seated investigators are placed at scenario start.
     /// `setup()` sets it (e.g. The Gathering -> the Study); the
     /// scenario setup (via `seat_and_open`) reads it. `None` leaves seated
@@ -2989,60 +2991,34 @@ impl GameState {
         id
     }
 
-    /// Add a location to the **set-aside** (out-of-play) zone from its card
-    /// metadata, returning the minted [`LocationId`]. Card effects (e.g. The
-    /// Gathering's Act-1 reverse) later move it into play.
-    pub fn add_set_aside_location(&mut self, metadata: &CardMetadata) -> LocationId {
-        let loc = self.location_from_metadata(metadata);
-        let id = loc.id;
-        self.set_aside_locations.push(loc);
-        id
-    }
-
-    /// Add an enemy to the **set-aside** (out-of-play) zone, recording its
-    /// printed code only. Unlike set-aside locations (fully built here),
-    /// an enemy's stats — notably per-investigator health — depend on the
-    /// in-game investigator count, which isn't known at `setup()`; so the
-    /// `Enemy` is minted from the corpus when a card effect brings it into
-    /// play (see [`spawn_set_aside_enemy`](crate::engine::spawn_set_aside_enemy)).
+    /// Add a card to the **set-aside** (out-of-play) zone, recording its
+    /// printed code only. Nothing is minted here — the cardtype is read
+    /// back from the metadata when a card effect brings the card into play
+    /// (see [`put_set_aside_card_into_play`]), which is where an enemy's
+    /// per-investigator health and a location's [`LocationId`] can be
+    /// resolved against the live board.
     ///
-    /// # Panics
-    ///
-    /// Panics if `metadata` is not [`CardKind::Enemy`] — a setup-time invariant
-    /// (the scenario passes an enemy card).
-    pub fn add_set_aside_enemy(&mut self, metadata: &CardMetadata) {
-        assert!(
-            matches!(metadata.kind, CardKind::Enemy { .. }),
-            "add_set_aside_enemy: card {} is not an Enemy ({:?})",
-            metadata.code,
-            metadata.kind,
-        );
-        self.set_aside_enemies
+    /// [`put_set_aside_card_into_play`]: crate::engine::put_set_aside_card_into_play
+    pub fn add_set_aside_card(&mut self, metadata: &CardMetadata) {
+        self.set_aside_cards
             .push(CardCode::new(metadata.code.clone()));
     }
 
-    /// Find a location by id across both the in-play and set-aside zones.
-    fn location_mut(&mut self, id: LocationId) -> Option<&mut Location> {
-        if let Some(loc) = self.locations.get_mut(&id) {
-            return Some(loc);
-        }
-        self.set_aside_locations.iter_mut().find(|l| l.id == id)
-    }
-
-    /// Wire a **bidirectional** connection between two locations (each gains
-    /// the other in its `connections`). Resolves both ids across the in-play
-    /// and set-aside zones.
+    /// Wire a **bidirectional** connection between two in-play locations
+    /// (each gains the other in its `connections`).
     ///
     /// # Panics
     ///
-    /// Panics if either `a` or `b` is not a location in the in-play or set-aside
-    /// zones — a build-time invariant (callers connect freshly-minted ids).
+    /// Panics if either `a` or `b` is not an in-play location — a build-time
+    /// invariant (callers connect ids they just put into play).
     pub fn connect(&mut self, a: LocationId, b: LocationId) {
-        self.location_mut(a)
+        self.locations
+            .get_mut(&a)
             .unwrap_or_else(|| panic!("connect: location {a:?} not found"))
             .connections
             .push(b);
-        self.location_mut(b)
+        self.locations
+            .get_mut(&b)
             .unwrap_or_else(|| panic!("connect: location {b:?} not found"))
             .connections
             .push(a);
@@ -3583,13 +3559,19 @@ mod add_location_tests {
     }
 
     #[test]
-    fn add_set_aside_location_goes_to_the_set_aside_zone() {
+    fn add_set_aside_card_records_a_location_by_code_only() {
         let mut state = GameStateBuilder::new().build();
-        let id = state.add_set_aside_location(&location_meta("01113", "Attic", 1, 2));
-        assert!(!state.locations.contains_key(&id), "not in play");
-        assert_eq!(state.set_aside_locations.len(), 1);
-        assert_eq!(state.set_aside_locations[0].id, id);
-        assert_eq!(state.set_aside_locations[0].code.as_str(), "01113");
+        state.add_set_aside_card(&location_meta("01113", "Attic", 1, 2));
+        assert_eq!(
+            state.set_aside_cards,
+            vec![crate::state::CardCode::new("01113")],
+        );
+        assert!(state.locations.is_empty(), "not in play");
+        assert_eq!(
+            state.location_ids.peek(),
+            0,
+            "no LocationId is minted until the location enters play",
+        );
     }
 
     fn enemy_meta(code: &str, name: &str) -> CardMetadata {
@@ -3622,21 +3604,20 @@ mod add_location_tests {
     }
 
     #[test]
-    fn add_set_aside_enemy_records_the_code() {
+    fn add_set_aside_card_holds_locations_and_enemies_in_one_zone() {
+        // The point of the single zone: two cardtypes, one collection, one
+        // representation. Which one a code is gets read back from the
+        // metadata at put-into-play time.
         let mut state = GameStateBuilder::new().build();
-        state.add_set_aside_enemy(&enemy_meta("01116", "Ghoul Priest"));
+        state.add_set_aside_card(&location_meta("01113", "Attic", 1, 2));
+        state.add_set_aside_card(&enemy_meta("01116", "Ghoul Priest"));
         assert_eq!(
-            state.set_aside_enemies,
-            vec![crate::state::CardCode::new("01116")],
-            "set-aside enemies record only the code (stats minted at spawn)",
+            state.set_aside_cards,
+            vec![
+                crate::state::CardCode::new("01113"),
+                crate::state::CardCode::new("01116"),
+            ],
         );
-    }
-
-    #[test]
-    #[should_panic(expected = "not an Enemy")]
-    fn add_set_aside_enemy_panics_on_non_enemy_metadata() {
-        let mut state = GameStateBuilder::new().build();
-        state.add_set_aside_enemy(&location_meta("01113", "Attic", 1, 2));
     }
 
     #[test]
@@ -3696,37 +3677,20 @@ mod connect_tests {
     }
 
     #[test]
-    fn connect_resolves_set_aside_locations() {
-        // Both endpoints live in the set-aside zone (The Gathering wires
-        // its board there before Act 1 brings it into play).
-        let mut state = GameStateBuilder::new().build();
-        state.set_aside_locations.push(Location::new(
-            LocationId(2),
-            CardCode("hub".into()),
-            "Hub",
-            1,
-            0,
-        ));
-        state.set_aside_locations.push(Location::new(
-            LocationId(3),
-            CardCode("spoke".into()),
-            "Spoke",
-            1,
-            0,
-        ));
-        state.connect(LocationId(2), LocationId(3));
-        let hub = state
-            .set_aside_locations
-            .iter()
-            .find(|l| l.id == LocationId(2))
-            .unwrap();
-        let spoke = state
-            .set_aside_locations
-            .iter()
-            .find(|l| l.id == LocationId(3))
-            .unwrap();
-        assert_eq!(hub.connections, vec![LocationId(3)]);
-        assert_eq!(spoke.connections, vec![LocationId(2)]);
+    #[should_panic(expected = "connect: location LocationId(2) not found")]
+    fn connect_panics_on_a_location_that_is_not_in_play() {
+        // A set-aside card has no `LocationId` at all now, so `connect` has
+        // one zone to search. Layout wiring happens at entry instead.
+        let mut state = GameStateBuilder::new()
+            .with_location(Location::new(
+                LocationId(1),
+                CardCode("a".into()),
+                "A",
+                1,
+                0,
+            ))
+            .build();
+        state.connect(LocationId(2), LocationId(1));
     }
 }
 

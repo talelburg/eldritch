@@ -163,8 +163,8 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     // is revealed. This makes act 3's "Ghoul Priest defeated" objective
     // reachable in real play.
     assert!(
-        r.state.set_aside_enemies.is_empty(),
-        "the Ghoul Priest left the set-aside zone",
+        r.state.set_aside_cards.is_empty(),
+        "the Ghoul Priest was the last card in the set-aside zone, and it left",
     );
     let priest = r
         .state
@@ -300,16 +300,48 @@ fn advancing_act_1_rebuilds_the_board() {
             .map(String::from)
             .collect()
     );
-    assert!(result.state.set_aside_locations.is_empty());
+    assert_eq!(
+        result
+            .state
+            .set_aside_cards
+            .iter()
+            .map(|c| c.as_str().to_owned())
+            .collect::<Vec<_>>(),
+        ["01116"],
+        "only the Ghoul Priest is still set aside (Act 2 spawns it)",
+    );
+
+    // The layout table wired the rooms as they entered: Hallway hub,
+    // Attic/Cellar/Parlor spokes. Each id is minted at entry, so this is
+    // the first moment any of these connections could exist.
+    let id_of = |code: &str| {
+        result
+            .state
+            .locations
+            .values()
+            .find(|l| l.code.as_str() == code)
+            .unwrap_or_else(|| panic!("{code} in play"))
+            .id
+    };
+    let hallway_id = id_of("01112");
+    let mut spokes = ["01113", "01114", "01115"].map(id_of);
+    spokes.sort_unstable();
+    let mut hall_conns = result.state.locations[&hallway_id].connections.clone();
+    hall_conns.sort_unstable();
+    assert_eq!(
+        hall_conns,
+        spokes.to_vec(),
+        "Hallway connects to Attic/Cellar/Parlor",
+    );
+    for spoke in spokes {
+        assert_eq!(
+            result.state.locations[&spoke].connections,
+            vec![hallway_id],
+            "each spoke connects back to the Hallway",
+        );
+    }
 
     // Investigator relocated to the Hallway (01112).
-    let hallway_id = result
-        .state
-        .locations
-        .values()
-        .find(|l| l.code.as_str() == "01112")
-        .unwrap()
-        .id;
     assert_eq!(
         result.state.investigators[&inv].current_location,
         Some(hallway_id)
@@ -319,11 +351,8 @@ fn advancing_act_1_rebuilds_the_board() {
     assert_eq!(result.state.act_index, 1);
 
     // Hallway (01112) was revealed when the investigator was relocated there.
-    let hallway = result
-        .state
-        .locations
-        .values()
-        .find(|l| l.code.as_str() == "01112")
-        .unwrap();
-    assert!(hallway.revealed, "relocate-to-Hallway reveals it");
+    assert!(
+        result.state.locations[&hallway_id].revealed,
+        "relocate-to-Hallway reveals it",
+    );
 }

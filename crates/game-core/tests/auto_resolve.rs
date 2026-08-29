@@ -214,6 +214,7 @@ static SYMBOL_MODULE: ScenarioModule = ScenarioModule {
     resolve_symbol: Some(mock_resolve_symbol),
     setup: mock_setup,
     apply_resolution: mock_apply_resolution,
+    layout: &[],
 };
 
 fn mock_module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {

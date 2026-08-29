@@ -393,9 +393,10 @@ fn spawn_enemy(
 /// Mint an enemy from `metadata` at an explicit `location_id`, resolving
 /// engagement-on-spawn (prey). The reusable spawn core: [`spawn_enemy`]
 /// supplies a location from the card's own spawn rule;
-/// [`spawn_set_aside_enemy`] supplies a location named by the bringing
-/// effect (The Gathering's Act-2 reverse spawns the Ghoul Priest in the
-/// Hallway). The engagement candidates come from `location_id` itself.
+/// [`put_set_aside_card_into_play`](super::set_aside::put_set_aside_card_into_play)
+/// supplies a location named by the bringing effect (The Gathering's Act-2
+/// reverse spawns the Ghoul Priest in the Hallway). The engagement
+/// candidates come from `location_id` itself.
 #[allow(clippy::too_many_lines)]
 pub(super) fn spawn_enemy_at(
     cx: &mut Cx,
@@ -521,49 +522,6 @@ pub(super) fn spawn_enemy_at(
             }
         }
     }
-}
-
-/// Bring a **set-aside enemy** into play at the location named by
-/// `location_code`, minting its stats from the corpus (so per-investigator
-/// health scales by the live investigator count). The set-aside-enemy
-/// path: [`GameState::add_set_aside_enemy`](crate::state::GameState::add_set_aside_enemy)
-/// records the code at `setup()`; a card effect calls this to spawn it
-/// (The Gathering's Act-2 reverse, `01109:reverse`).
-///
-/// Validate-first: rejects (mutating nothing) if `enemy_code` isn't in the
-/// set-aside zone, no card registry is installed, the code has no metadata,
-/// or `location_code` isn't in play. Only after every check passes does it
-/// remove the code from the zone and mint the enemy via `spawn_enemy_at`
-/// (the engagement candidates come from the spawn location).
-pub fn spawn_set_aside_enemy(cx: &mut Cx, enemy_code: &str, location_code: &str) -> EngineOutcome {
-    let Some(pos) = cx
-        .state
-        .set_aside_enemies
-        .iter()
-        .position(|c| c.as_str() == enemy_code)
-    else {
-        return EngineOutcome::Rejected {
-            reason: format!("spawn_set_aside_enemy: {enemy_code} is not set aside").into(),
-        };
-    };
-    let Some(registry) = card_registry::current() else {
-        return EngineOutcome::Rejected {
-            reason: "spawn_set_aside_enemy: no card registry installed".into(),
-        };
-    };
-    let Some(metadata) = (registry.metadata_for)(&CardCode::new(enemy_code)) else {
-        return EngineOutcome::Rejected {
-            reason: format!("spawn_set_aside_enemy: no metadata for {enemy_code}").into(),
-        };
-    };
-    let Some(location_id) = crate::engine::location_id_by_code(cx.state, location_code) else {
-        return EngineOutcome::Rejected {
-            reason: format!("spawn_set_aside_enemy: location {location_code} not in play").into(),
-        };
-    };
-    // All checks passed — mutate.
-    cx.state.set_aside_enemies.remove(pos);
-    spawn_enemy_at(cx, CardCode::new(enemy_code), metadata, location_id)
 }
 
 /// Fisher-Yates shuffle of the shared encounter deck using the
@@ -1382,62 +1340,6 @@ mod spawn_enemy_tests {
             events,
             Event::EnemySpawned { location, .. } if *location == LocationId(11)
         );
-    }
-
-    #[test]
-    fn spawn_set_aside_enemy_rejects_when_not_set_aside() {
-        // Empty set-aside zone — the spawn must reject before touching the
-        // registry or location, and mint nothing.
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_turn_order([InvestigatorId(1)])
-            .build();
-        let mut events = Vec::new();
-        let outcome = spawn_set_aside_enemy(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            "01116",
-            "01112",
-        );
-        assert!(
-            matches!(outcome, EngineOutcome::Rejected { .. }),
-            "spawning an enemy that isn't set aside must reject, got {outcome:?}",
-        );
-        assert!(state.enemies.is_empty(), "no enemy minted on reject");
-    }
-
-    #[test]
-    fn spawn_set_aside_enemy_keeps_the_code_aside_on_a_failed_spawn() {
-        // The enemy is set aside, but the target location isn't in play (and
-        // no usable metadata is guaranteed in a bare unit test) — the spawn
-        // must reject without removing the code from the set-aside zone
-        // (validate-first: no mutation on reject).
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_turn_order([InvestigatorId(1)])
-            .build();
-        state.set_aside_enemies.push(CardCode::new("01116"));
-        let mut events = Vec::new();
-        let outcome = spawn_set_aside_enemy(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            "01116",
-            "01112", // not in play
-        );
-        assert!(
-            matches!(outcome, EngineOutcome::Rejected { .. }),
-            "missing target location must reject, got {outcome:?}",
-        );
-        assert_eq!(
-            state.set_aside_enemies,
-            vec![CardCode::new("01116")],
-            "the code stays set aside when the spawn rejects",
-        );
-        assert!(state.enemies.is_empty(), "no enemy minted on reject");
     }
 
     #[test]

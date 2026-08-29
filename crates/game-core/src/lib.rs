@@ -45,16 +45,19 @@ pub use card_registry::CardRegistry;
 pub use engine::{
     apply, attach_to_location, deal_damage_to_enemy, defeat_investigator, discard_random_from_hand,
     enemy_can_enter_location, legal_actions, location_id_by_code, modified_value,
-    place_in_threat_area, relocate_enemy, reshuffle_encounter_discard, resolve_choice_count,
-    resolve_encounter_card, reveal_location, round_end_advance, round_end_advance_affordable,
-    seat_and_open, shortest_first_steps, spawn_set_aside_enemy, suspend_for_native_choice,
-    take_damage, ApplyResult, ChoiceOption, ChoiceResolution, Contribution, ContributionSource, Cx,
-    EngineOutcome, EvalContext, InputKind, InputRequest, ModifiedQuantity, ModifierBreakdown,
-    ModifierTarget, OptionId, OptionTarget, ReadContext, ResumeToken, TurnAction,
+    place_in_threat_area, put_set_aside_card_into_play, relocate_enemy,
+    reshuffle_encounter_discard, resolve_choice_count, resolve_encounter_card, reveal_location,
+    round_end_advance, round_end_advance_affordable, seat_and_open, shortest_first_steps,
+    suspend_for_native_choice, take_damage, ApplyResult, ChoiceOption, ChoiceResolution,
+    Contribution, ContributionSource, Cx, EngineOutcome, EvalContext, InputKind, InputRequest,
+    ModifiedQuantity, ModifierBreakdown, ModifierTarget, OptionId, OptionTarget, ReadContext,
+    ResumeToken, TurnAction,
 };
 pub use event::{Event, FailureReason, TraumaKind};
 pub use rng::RngState;
-pub use scenario::{ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry};
+pub use scenario::{
+    LocationLayout, ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry,
+};
 pub use state::{
     resolve_token, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     DifficultyBasis, EliminationCause, Enemy, EnemyId, GameState, Investigator, InvestigatorId,

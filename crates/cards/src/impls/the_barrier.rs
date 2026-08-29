@@ -32,9 +32,9 @@
 //! Like 01108's board build, the reverse is board-dependent, single-use
 //! scenario logic, so it lives card-locally as a [`card_dsl::dsl::Effect::Native`]
 //! handler (#276) rather than as shared `Effect` variants. The spawn reuses
-//! the engine's [`game_core::spawn_set_aside_enemy`], which mints the
-//! Priest's combat stats / keywords / per-investigator health from the
-//! corpus.
+//! the engine's [`game_core::put_set_aside_card_into_play`], which reads
+//! the Priest's cardtype back from the corpus metadata and mints his
+//! combat stats / keywords / per-investigator health from it.
 //!
 //! Solo-scope note: with one investigator in the Hallway the Priest's
 //! `Prey - Highest [combat]` resolves to that lone investigator and the
@@ -77,8 +77,8 @@ use card_dsl::dsl::{
 use game_core::card_registry::{EligibilityFn, NativeEffectFn};
 use game_core::state::GameState;
 use game_core::{
-    location_id_by_code, reveal_location, round_end_advance, round_end_advance_affordable,
-    spawn_set_aside_enemy, Cx, EngineOutcome, EvalContext,
+    location_id_by_code, put_set_aside_card_into_play, reveal_location, round_end_advance,
+    round_end_advance_affordable, Cx, EngineOutcome, EvalContext,
 };
 
 /// `ArkhamDB` code for Act 2, "The Barrier".
@@ -166,8 +166,9 @@ fn advance_via_clue_spend(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
 
 /// Reveal the Parlor (01115) and spawn the set-aside Ghoul Priest (01116)
 /// in the Hallway (01112). Validate-first: the Parlor must be in play
-/// before any mutation; the spawn ([`spawn_set_aside_enemy`]) validates
-/// the set-aside zone + Hallway internally and rejects without mutating.
+/// before any mutation; the spawn ([`put_set_aside_card_into_play`])
+/// validates the set-aside zone + Hallway internally and rejects without
+/// mutating.
 /// The Parlor is revealed only after a successful spawn, so a reject
 /// leaves the board untouched. (Reveal vs. spawn order is functionally
 /// independent — they touch disjoint state.)
@@ -177,7 +178,7 @@ fn reverse(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
             reason: "01109 reverse: Parlor (01115) not in play".into(),
         };
     };
-    let spawned = spawn_set_aside_enemy(cx, GHOUL_PRIEST, HALLWAY);
+    let spawned = put_set_aside_card_into_play(cx, GHOUL_PRIEST, Some(HALLWAY));
     if !matches!(spawned, EngineOutcome::Done) {
         return spawned;
     }

@@ -80,6 +80,7 @@ mod tests {
         resolve_symbol: None,
         setup: empty_state,
         apply_resolution: no_op_apply,
+        layout: &[],
     };
 
     fn fake_module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
