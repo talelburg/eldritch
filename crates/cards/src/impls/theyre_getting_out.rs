@@ -81,7 +81,7 @@
 //! and these investigators take one physical trauma, the first step on that
 //! track rather than its end. So the defeat carries
 //! [`game_core::DefeatCause::CardAbility`] and leaves
-//! [`game_core::Status::DefeatedByCardAbility`], both distinct from the damage
+//! [`game_core::Status::Defeated`], both distinct from the damage
 //! and horror values.
 //!
 //! **The physical trauma is announced, not recorded.** `Event::TraumaSuffered`
@@ -469,7 +469,7 @@ mod tests {
         for id in [a, b] {
             assert_eq!(
                 state.investigators[&id].status,
-                Status::DefeatedByCardAbility,
+                Status::Defeated,
                 "defeated by a card ability — neither killed nor driven insane",
             );
         }
@@ -514,10 +514,7 @@ mod tests {
         let events = cx_apply(&mut state, the_ghouls_run_rampant);
 
         assert_eq!(state.investigators[&a].status, Status::Resigned);
-        assert_eq!(
-            state.investigators[&b].status,
-            Status::DefeatedByCardAbility
-        );
+        assert_eq!(state.investigators[&b].status, Status::Defeated);
         assert_eq!(defeat_order(&events), vec![b]);
         assert!(
             !events.iter().any(|e| matches!(

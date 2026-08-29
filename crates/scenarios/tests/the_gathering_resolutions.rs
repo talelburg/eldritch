@@ -431,7 +431,7 @@ fn dooming_out_the_terminal_agenda_at_act_3_defeats_the_table_and_reaches_no_res
     );
     assert_eq!(
         result.state.investigators[&INV].status,
-        Status::DefeatedByCardAbility,
+        Status::Defeated,
         "defeated by a card ability — neither killed nor driven insane",
     );
     assert_event!(

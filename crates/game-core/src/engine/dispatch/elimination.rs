@@ -54,7 +54,7 @@ pub(super) fn apply_investigator_defeat(
         DefeatCause::Damage => Status::Killed,
         DefeatCause::Horror => Status::Insane,
         DefeatCause::Resigned => Status::Resigned,
-        DefeatCause::CardAbility => Status::DefeatedByCardAbility,
+        DefeatCause::CardAbility => Status::Defeated,
     };
     cx.events.push(Event::InvestigatorDefeated {
         investigator,
@@ -461,7 +461,7 @@ pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
 /// defeated by a card ability."*
 ///
 /// The card-local (#276) entry point onto the ordinary defeat path: it flips
-/// status to [`Status::DefeatedByCardAbility`], announces
+/// status to [`Status::Defeated`], announces
 /// [`Event::InvestigatorDefeated`] with [`DefeatCause::CardAbility`], and runs
 /// Rules Reference p.10 Elimination — including step 6, *"If there are no
 /// remaining players, the scenario ends"*, which is how a card that defeats the
@@ -1106,7 +1106,7 @@ mod elimination_tests {
 
         assert_eq!(
             state.investigators[&a].status,
-            Status::DefeatedByCardAbility,
+            Status::Defeated,
             "not Killed (damage) and not Insane (horror)",
         );
         assert_event!(events, Event::InvestigatorDefeated { investigator, cause }

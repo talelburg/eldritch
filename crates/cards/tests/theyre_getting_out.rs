@@ -406,7 +406,7 @@ fn agenda_01107_reverse_at_act_3_defeats_the_unresigned_in_turn_order() {
     for id in [a, c] {
         assert_eq!(
             state.investigators[&id].status,
-            Status::DefeatedByCardAbility,
+            Status::Defeated,
             "defeated by a card ability — neither killed nor driven insane",
         );
         assert!(events
