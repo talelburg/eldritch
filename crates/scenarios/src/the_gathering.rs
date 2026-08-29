@@ -216,8 +216,10 @@ pub fn setup() -> GameState {
     // reverse puts them into play (each minting its id and wiring LAYOUT
     // as it enters), then the Ghoul Priest (01116) until Act 2's (01109)
     // reverse spawns it in the Hallway (cards::the_barrier), where its
-    // per-investigator health is minted with the investigator count known.
-    for code in ["01112", "01113", "01114", "01115", "01116"] {
+    // per-investigator health is minted with the investigator count known,
+    // then Lita Chantler (01117), whom the same reverse puts into play in the
+    // Parlor under no investigator's control (#771/#772).
+    for code in ["01112", "01113", "01114", "01115", "01116", "01117"] {
         state.add_set_aside_card(meta(code));
     }
 
@@ -339,14 +341,15 @@ mod tests {
         let study = &s.locations[&s.starting_location.unwrap()];
         assert_eq!(study.code, CardCode("01111".into()));
         assert!(study.connections.is_empty(), "Study is isolated");
-        // Set aside: the four rooms and the Ghoul Priest, codes only. No
-        // LocationId is minted for a room until it enters play.
+        // Set aside: the four rooms, the Ghoul Priest and Lita Chantler,
+        // codes only. No LocationId is minted for a room until it enters play,
+        // and no CardInstanceId for Lita until she is put into play (#771).
         assert_eq!(
             s.set_aside_cards
                 .iter()
                 .map(|c| c.as_str().to_owned())
                 .collect::<Vec<_>>(),
-            ["01112", "01113", "01114", "01115", "01116"],
+            ["01112", "01113", "01114", "01115", "01116", "01117"],
         );
         assert_eq!(
             s.location_ids.peek(),

@@ -179,6 +179,25 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                     }
                 })
                 .collect();
+            // Cards put into play *at* the location, under nobody's control
+            // (Lita Chantler 01117 in the Parlor). They are in play — RR
+            // "In Play and Out of Play" counts a card "at a location" as such —
+            // so the node has to show them; nobody's play area will (#771).
+            let at_location: Vec<_> = loc
+                .cards_at_location
+                .iter()
+                .map(|c| {
+                    let name = game_core::card_registry::current()
+                        .and_then(|r| (r.metadata_for)(&c.code))
+                        .map_or_else(|| c.code.as_str().to_owned(), |m| m.name.clone());
+                    view! {
+                        <div class="at-location-token">
+                            {name} " (uncontrolled)"
+                            {c.exhausted.then(|| view! { <span>" (exhausted)"</span> })}
+                        </div>
+                    }
+                })
+                .collect();
             let style = format!("left:{left}px;top:{top}px;width:{NODE_W}px;height:{NODE_H}px;");
             let menu_opts = crate::interaction::options_for(
                 &pending,
@@ -251,6 +270,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                     <span class="loc-revealed">{revealed_label}</span>
                     {invs}
                     {enemies}
+                    {at_location}
                     {
                         // wasm-only: the menu trigger + menu read/submit via web_sys /
                         // the wasm-only OutboundTx. On host the block is empty; `menu_opts`

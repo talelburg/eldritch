@@ -1,4 +1,4 @@
-//! The modified-value sweep, end to end over all six collections a
+//! The modified-value sweep, end to end over all seven collections a
 //! modifying card can sit in.
 //!
 //! Lives at `crates/game-core/tests/` so it runs in its own
@@ -240,6 +240,59 @@ fn a_modifier_on_a_location_attachment_reaches_that_location() {
         shroud(&state, THERE),
         2,
         "an unfogged location is untouched"
+    );
+}
+
+// ---- 3b. cards put into play at a location ----------------------
+
+/// Lita Chantler put into play *in* a location, controlled by nobody,
+/// reaches the investigators standing there — the same audience, resolved
+/// against the location she sits in rather than a controller's seat (#771).
+/// Combat 3 + 1 against difficulty 4 passes by 0.
+#[test]
+fn a_card_put_into_play_at_my_location_reaches_me() {
+    let mut parlor = test_location(10, "Parlor");
+    parlor.cards_at_location.push(in_play(LITA, 1));
+    let state = board(THERE).with_location(parlor).build();
+
+    let result = perform_skill_test_no_commits(state, ME, SkillKind::Combat, 4);
+    assert_event!(
+        result.events,
+        Event::SkillTestSucceeded { investigator, margin: 0, .. } if *investigator == ME
+    );
+}
+
+/// The same card at another location reaches nobody: the placement's
+/// location *is* the source's location, so the audience is bounded by it.
+#[test]
+fn a_card_put_into_play_at_another_location_does_not_reach_me() {
+    let mut parlor = test_location(11, "Parlor");
+    parlor.cards_at_location.push(in_play(LITA, 1));
+    let state = board(THERE).with_location(parlor).build();
+
+    let result = perform_skill_test_no_commits(state, ME, SkillKind::Combat, 4);
+    assert_event!(
+        result.events,
+        Event::SkillTestFailed { investigator, by: 1, .. } if *investigator == ME
+    );
+}
+
+/// The zone is not the attachment zone. A card *at* a location is not
+/// attached to it, so an `AttachedCard` audience — Obscuring Fog's
+/// *"Attached location gets +2 shroud"* — does not reach the location it
+/// is standing in. `glossary/Attach_To.md` gives attachment its own
+/// lifetime and its own audience; being put into play in a place buys
+/// neither.
+#[test]
+fn a_card_put_into_play_at_a_location_is_not_attached_to_it() {
+    let mut fogged = test_location(10, "Study");
+    fogged.cards_at_location.push(in_play(FOG, 1));
+    let state = board(THERE).with_location(fogged).build();
+
+    assert_eq!(
+        shroud(&state, HERE),
+        2,
+        "printed 2 — a card at the location is not an attachment on it",
     );
 }
 

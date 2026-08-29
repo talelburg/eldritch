@@ -136,9 +136,9 @@ impl SourceCard<'_> {
 /// The order is the three bullets in the order the Rules Reference prints them:
 /// the control bullet first (`Investigator::controlled_card_instances`': the
 /// investigator card, then cards in play, then the threat area), then the
-/// co-location bullet (the location itself, its attachments, each enemy at it
-/// with its attachments, then the threat areas of the *other* investigators
-/// there), then the current act and the current agenda. It is what the turn menu
+/// co-location bullet (the location itself, its attachments, the cards put into
+/// play at it, each enemy at it with its attachments, then the threat areas of
+/// the *other* investigators there), then the current act and the current agenda. It is what the turn menu
 /// is listed in, so it must stay deterministic — `investigators`, `locations`
 /// and `enemies` are all `BTreeMap`s, so iteration is by id.
 ///
@@ -217,7 +217,8 @@ pub(crate) fn reachable_sources(
 /// caller re-deriving which board card the source is.
 ///
 /// [`InPlay`](AbilitySource::InPlay) is answered board-wide — any investigator's
-/// controlled collections, a location's attachments, or an enemy's — matching
+/// controlled collections, a location's attachments or the cards put into play
+/// at it, or an enemy's attachments — matching
 /// the collections [`reachable_sources`] reads, so a co-located threat-area card
 /// (#708) is not reported gone just because its controller is not the
 /// candidate's.
@@ -276,6 +277,11 @@ fn colocated_sources<'a>(
     // player distinction goes, and it wants the card's own metadata rather than
     // the collection it landed in.
     sources.extend(location.attachments.iter().map(as_instance));
+    // Cards *put into play at* the location (Lita Chantler 01117, whom act
+    // 01109's reverse puts into play in the Parlor). She is the sixth arm of
+    // this bullet and the only way she is reached at all: nobody controls her,
+    // so the control bullet above never yields her (#771).
+    sources.extend(location.cards_at_location.iter().map(as_instance));
     for enemy in state
         .enemies
         .values()
@@ -374,8 +380,8 @@ pub(crate) fn resolve_mut(
 }
 
 /// The in-play instance `instance_id` names, wherever on the board it sits:
-/// any investigator's controlled collections, a location's attachments, or an
-/// enemy's. The read side of [`instance_in_play_mut`], which walks the same
+/// any investigator's controlled collections, a location's attachments or the
+/// cards put into play at it, or an enemy's attachments. The read side of [`instance_in_play_mut`], which walks the same
 /// collections — one walk each way, so the pair cannot drift into disagreeing
 /// about where a card can be.
 fn instance_in_play(state: &GameState, instance_id: CardInstanceId) -> Option<&CardInPlay> {
@@ -383,12 +389,12 @@ fn instance_in_play(state: &GameState, instance_id: CardInstanceId) -> Option<&C
         .investigators
         .values()
         .flat_map(Investigator::controlled_card_instances)
-        .chain(
-            state
-                .locations
-                .values()
-                .flat_map(|location| location.attachments.iter()),
-        )
+        .chain(state.locations.values().flat_map(|location| {
+            location
+                .attachments
+                .iter()
+                .chain(location.cards_at_location.iter())
+        }))
         .chain(
             state
                 .enemies
@@ -399,8 +405,8 @@ fn instance_in_play(state: &GameState, instance_id: CardInstanceId) -> Option<&C
 }
 
 /// The in-play instance `instance_id` names, wherever on the board it sits:
-/// any investigator's controlled collections, a location's attachments, or an
-/// enemy's.
+/// any investigator's controlled collections, a location's attachments or the
+/// cards put into play at it, or an enemy's attachments.
 ///
 /// The write-side mirror of the collections [`reachable_sources`] reads, kept as
 /// one walk so a source that became reachable through somebody else's
@@ -419,7 +425,12 @@ fn instance_in_play_mut(
     state
         .locations
         .values_mut()
-        .flat_map(|location| location.attachments.iter_mut())
+        .flat_map(|location| {
+            location
+                .attachments
+                .iter_mut()
+                .chain(location.cards_at_location.iter_mut())
+        })
         .chain(
             state
                 .enemies
@@ -474,8 +485,10 @@ mod tests {
 
         let mut study = test_location(1, "Study");
         study.attachments.push(card("01168", 40));
+        study.cards_at_location.push(card("01117", 60));
         let mut hallway = test_location(2, "Hallway");
         hallway.attachments.push(card("01168", 41));
+        hallway.cards_at_location.push(card("01117", 61));
 
         let mut here = test_enemy(1, "Ghoul");
         here.current_location = Some(STUDY);
@@ -565,12 +578,59 @@ mod tests {
                 AbilitySource::InPlay(CardInstanceId(31)),
                 "the threat area of an investigator at another location",
             ),
+            (
+                AbilitySource::InPlay(CardInstanceId(61)),
+                "a card put into play at another location",
+            ),
         ] {
             assert!(
                 !sources.contains(&unexpected),
                 "{why} must stay out of reach; sources were {sources:?}",
             );
         }
+    }
+
+    /// A card put into play **at** the location is reached by the same
+    /// co-location bullet as the location's attachments, and by nothing else:
+    /// nobody controls it, so the control bullet never yields it (#771).
+    #[test]
+    fn a_card_put_into_play_at_the_location_is_reachable() {
+        let state = board();
+        let sources = sources_for(&state, InvestigatorId(1));
+        assert!(
+            sources.contains(&AbilitySource::InPlay(CardInstanceId(60))),
+            "a card at the acting investigator's location should be reachable; sources were \
+             {sources:?}",
+        );
+        for inv in state.investigators.values() {
+            assert!(
+                !inv.controlled_card_instances()
+                    .any(|c| c.instance_id == CardInstanceId(60)),
+                "an uncontrolled card at a location is in nobody's controlled collections",
+            );
+        }
+    }
+
+    /// The presence probe (`source_card`) is board-wide, so a forced or
+    /// reaction candidate minted from an uncontrolled card at a location is
+    /// not reported gone (#735's contract, extended to the new zone).
+    #[test]
+    fn source_card_finds_a_card_put_into_play_at_a_location() {
+        let state = board();
+        let found = source_card(&state, AbilitySource::InPlay(CardInstanceId(60)))
+            .expect("a card at a location is on the board");
+        assert_eq!(found.code().as_str(), "01117");
+    }
+
+    /// The write side walks the same collections as the read side, so an
+    /// ability on an uncontrolled card can still be paid for by exhausting it.
+    #[test]
+    fn instance_in_play_mut_reaches_a_card_put_into_play_at_a_location() {
+        let mut state = board();
+        instance_in_play_mut(&mut state, CardInstanceId(60))
+            .expect("a card at a location is writable")
+            .exhausted = true;
+        assert!(state.locations[&STUDY].cards_at_location[0].exhausted);
     }
 
     /// Co-location is not control: a co-located investigator's *assets* are

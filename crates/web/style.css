@@ -46,6 +46,9 @@
 .loc-head { font-weight: 600; margin-bottom: 0.15rem; }
 .inv-token { color: #157a3a; }
 .enemy-token { color: #a3261b; }
+/* A card put into play at a location, controlled by nobody (Lita Chantler
+   01117 in the Parlor) — in play, but in no investigator's play area. */
+.at-location-token { color: #6a4c93; }
 /* Column direction stacks the map above the investigators panel: the map's
    location nodes are absolutely positioned, so a flex *row* would let a shrunk
    map overflow them onto the panel. The map reserves its inline height; the
