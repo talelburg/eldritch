@@ -65,7 +65,7 @@ jobs:
       # no-retry GitHub-release download (#196). Version pinned (was
       # `latest`) so behavior is deterministic.
       - name: Install trunk
-        uses: taiki-e/install-action@v2.86.3
+        uses: taiki-e/install-action@v2.86.8
         with:
           tool: trunk@0.21.14
       - name: Build web crate
@@ -93,7 +93,7 @@ jobs:
       # replaces jetli/wasm-pack-action's bare GitHub-release download —
       # the wasm-pack fetch that 504'd in #196.
       - name: Install wasm-pack
-        uses: taiki-e/install-action@v2.86.3
+        uses: taiki-e/install-action@v2.86.8
         with:
           tool: wasm-pack@0.15.0
       - name: Headless wasm tests
