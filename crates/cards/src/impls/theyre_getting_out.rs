@@ -54,7 +54,13 @@
 //! DSL-primitive threshold independently. **Turn order rather than map order**
 //! because the order is observable on a defeat body: Elimination step 5
 //! reassigns the lead when the lead is eliminated, and step 6's all-defeated
-//! check fires on whoever falls last.
+//! check fires on whoever falls last. **One caveat on that order**: an
+//! investigator holding an in-play weakness with a *"when the game ends"* ability
+//! (Cover Up 01007) routes Elimination onto a `Continuation::Elimination` frame
+//! (#638), so their steps 1–6 run after this synchronous loop rather than inside
+//! it. The ending is the same either way — the frame drains before anything reads
+//! it — but the teardown interleaves. Pre-existing to this card, and the shape
+//! `Effect::ForEach` will have to answer for whenever #363 lands.
 //!
 //! **The ending is reached by the rules' route, not latched.** Each defeat runs
 //! Rules Reference p.10 Elimination, and step 6 — *"If there are no remaining
@@ -63,8 +69,10 @@
 //! [`ScenarioEnding::NoResolution`](game_core::ScenarioEnding::NoResolution).
 //! The card names no ending on this branch, because the card prints none.
 //!
-//! *"That has not resigned"* needs no filter: [`defeat_investigator`] no-ops on
-//! any investigator who is not `Active`, and a resigned one is not.
+//! *"That has not resigned"* needs no filter to be *correct*:
+//! [`defeat_investigator`] no-ops on any investigator who is not `Active`, and a
+//! resigned one is not. The loop reads the status anyway, so that the trauma
+//! announcement fires only for someone this card actually defeated.
 //!
 //! **A defeat by a card ability is neither killed nor driven insane.**
 //! `glossary/Defeat.md`: *"An investigator might also be defeated by a card

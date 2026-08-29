@@ -10,8 +10,7 @@
 
 use game_core::action::RosterEntry;
 use game_core::engine::{apply, seat_and_open, EngineOutcome};
-use game_core::event::Event;
-use game_core::event::TraumaKind;
+use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, DefeatCause, GameState, InvestigatorId, Status,

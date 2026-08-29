@@ -1084,6 +1084,7 @@ mod elimination_tests {
         assert_eq!(state.investigators[&dead].status, Status::Resigned);
         assert_eq!(turn_frame(&state), Some((dead, true)));
     }
+
     /// `glossary/Defeat.md`: *"An investigator might also be defeated by a card
     /// ability."* That defeat is neither killed nor driven insane — the same
     /// entry makes those two consequences of **trauma** — so it carries its own
