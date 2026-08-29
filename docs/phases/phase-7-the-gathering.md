@@ -110,7 +110,7 @@ the Tablet came out.
 | #808 ✅ PR #810 | A terminal card's `(→R#)` is a flat `Option<ResolutionId>` field, so a reverse that *decides* — 01107's board-state branch, 01110's player choice — cannot be expressed, and a terminal card ends the scenario without ever flipping ([ADR 0013](../adr/0013-a-resolution-point-is-a-printed-effect.md)) |
 | #809 ✅ PR #815 | Agenda 01107's `(→R3)` is conditional on the investigators being at act 1 or 2, and the engine latches it unconditionally |
 | #644 ✅ PR #817 | Elimination **by resignation** never happens — `Status::Resigned` / `DefeatCause::Resigned` exist and have never been constructed |
-| #805 | An `ActionDesignator` is a pure tag that performs nothing, so a **Fight** ability and `Effect::Fight` are linked by convention alone |
+| #805 ✅ PR #819 | An `ActionDesignator` is a pure tag that performs nothing, so a **Fight** ability and `Effect::Fight` are linked by convention alone |
 | #772 | Lita 01117 is an ability source nobody controls, so #708's walk never reaches her — and neither 01115's Parley nor her buffs are printed on the card that has them |
 | #771 | Set-aside is enemies-only, so act 01109b's *"Put the set-aside Lita Chantler into play"* has nowhere to go |
 | #773 | Lita 01117's controlled-side grants are location-scoped and reaction-driven; both collapse to one investigator in 1p |
@@ -169,15 +169,6 @@ the Tablet came out.
   have the potential to change the game state, the ability does not initiate."* —
   no destination, no move, no rejection. The same reading is already applied one
   line below to a Ghoul with no available step (#797).
-- **#805 — a designator performs its action; the effect carries the modification.**
-  `ActionDesignator` is a pure rules tag — `provokes_aoo` and `action_class()` read it,
-  and the ability's effect does the acting, so `machete.rs` declares **Fight** and
-  roots in `Effect::Fight` with nothing linking the two. `glossary/Ability.md` inverts
-  that: *"Activating such an ability **performs the designated action** … but modified
-  in the manner described by the ability."* Invert it for every designator; the
-  modification (Machete's `+1 [combat]`, Flashlight's `-2 [shroud]`) is what stays on
-  the ability. Lands after #644 rather than before it because #644's nullary
-  `Effect::Resign` *is* the empty modification this keeps, so it survives the refactor.
 - **#772 — an uncontrolled asset is an unreachable ability source, and *"she gains"*
   has no DSL.** Two gaps on one card pair. `glossary/Triggered_Abilities.md` bullet 2
   reaches Lita 01117; #708's implementation of that bullet walks the location, its
