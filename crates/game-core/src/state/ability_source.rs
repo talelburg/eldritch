@@ -129,6 +129,9 @@ mod tests {
     fn a_parked_activation_frame_round_trips_through_serialization() {
         let resume = ActionResume::ActivateAbility {
             source: AbilitySource::InPlay(CardInstanceId(7)),
+            // Flashlight 01087's shape: the designated action rides the frame
+            // beside the (empty) residual effect (#805).
+            designator: Some(card_dsl::dsl::investigate(-2i8)),
             effect: card_dsl::dsl::Effect::Seq(vec![]),
         };
         let json = serde_json::to_string(&resume).expect("serializes");

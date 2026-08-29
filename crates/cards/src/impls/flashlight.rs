@@ -8,26 +8,28 @@
 //!
 //! One activated ability: an action paying 1 supply (`Cost::SpendUses`) to
 //! Investigate the controller's location with its shroud reduced by 2 for
-//! this investigation. The `-2` is an
-//! [`Effect::Investigate`](card_dsl::dsl::Effect::Investigate) `shroud_modifier`
-//! (#313) — the Investigate mirror of `Effect::Fight`: it lowers the
-//! location *difficulty* (clamped at 0), not the investigator's total, and
-//! reuses the base Investigate follow-up so a success discovers a clue. The
-//! `Uses (3 supplies)` pool is corpus metadata (`CardKind::Asset.uses`,
+//! this investigation.
+//!
+//! **Designator: Investigate** — the bold word, which **performs the
+//! investigation** (#805) carrying the `-2` as its `shroud_modifier` (#313).
+//! The modifier lowers the location *difficulty* (clamped at 0), not the
+//! investigator's total, and the investigation is the same primary the basic
+//! investigate action runs, so a success discovers a clue exactly as that does.
+//!
+//! **Investigate** is not on the attack-of-opportunity exempt list
+//! (`glossary/Attack_of_Opportunity.md` names only **fight**, **evade**,
+//! **parley** and **resign**), so activating this `[action]` while engaged with
+//! a ready enemy provokes one — again exactly as the basic action does. Shipped
+//! engine-wide in #361, exercised in
+//! `crates/cards/tests/activate_ability_aoo.rs`.
+//!
+//! The `Uses (3 supplies)` pool is corpus metadata (`CardKind::Asset.uses`,
 //! pipeline-parsed with `discard_when_empty: false` — Flashlight's printed
 //! text has no depletion-discard clause, so it stays in play at 0 supplies,
 //! unlike First Aid). `abilities()` declares only the action.
-//!
-//! **Designator: Investigate** (`ActionDesignator::Investigate`, #696) — the
-//! bold word above the effect. **Investigate** is not on the attack-of-
-//! opportunity exempt list (`glossary/Attack_of_Opportunity.md` names only
-//! **fight**, **evade**, **parley** and **resign**), so activating this
-//! `[action]` while engaged with a ready enemy provokes one — exactly as the
-//! basic investigate action does. Shipped engine-wide in #361, exercised in
-//! `crates/cards/tests/activate_ability_aoo.rs`.
 
 use card_dsl::card_data::UseKind;
-use card_dsl::dsl::{activated_as, investigate, Ability, ActionDesignator, Cost};
+use card_dsl::dsl::{activated_as, investigate, seq, Ability, Cost};
 
 /// `ArkhamDB` code for Flashlight (original-Core printing).
 pub const CODE: &str = "01087";
@@ -36,20 +38,20 @@ pub const CODE: &str = "01087";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![activated_as(
-        ActionDesignator::Investigate,
+        investigate(-2i8),
         1,
         vec![Cost::SpendUses {
             kind: UseKind::Supplies,
             count: 1,
         }],
-        investigate(-2i8),
+        seq([]),
     )]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::{Effect, IntExpr, Trigger};
+    use card_dsl::dsl::{ActionDesignator, Effect, IntExpr, Trigger};
 
     #[test]
     fn one_action_ability_spending_a_supply_to_investigate_minus_two_shroud() {
@@ -59,7 +61,9 @@ mod tests {
             abilities[0].trigger,
             Trigger::Activated {
                 action_cost: 1,
-                designator: Some(ActionDesignator::Investigate),
+                designator: Some(ActionDesignator::Investigate {
+                    shroud_modifier: IntExpr::Lit(-2),
+                }),
             }
         );
         assert_eq!(
@@ -69,12 +73,9 @@ mod tests {
                 count: 1,
             }]
         );
-        assert!(matches!(
-            abilities[0].effect,
-            Effect::Investigate {
-                shroud_modifier: IntExpr::Lit(-2),
-            }
-        ));
+        // The designator performs the investigation; nothing is printed beside
+        // it (#805).
+        assert_eq!(abilities[0].effect, Effect::Seq(vec![]));
     }
 
     /// Catches a `pub mod` rename or a fat-fingered match arm in

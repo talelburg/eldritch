@@ -1051,6 +1051,24 @@ pub enum EffectFrame {
         /// The evaluation context for this node.
         ctx: crate::engine::EvalContext,
     },
+    /// The **designated action** of an activated ability, performed as the
+    /// rules describe it but modified in the manner the ability carries
+    /// (`glossary/Ability.md`; #805). Machete 01020's *"\[action\]:
+    /// **Fight.**"* is this frame with a `+1 [combat]` modification, not an
+    /// effect that happens to fight.
+    ///
+    /// A frame rather than a call inside the activation handler because
+    /// choosing among 2+ co-located enemies **suspends in place** exactly as
+    /// [`Leaf`](Self::Leaf) does, and re-enters on resume with
+    /// `ctx.chosen_option` set — the same target-grounding machinery, on the
+    /// same evaluation context, so a native predicate reading the chosen enemy
+    /// (Machete's `sole_engaged_target`) binds identically either way.
+    Designated {
+        /// The bold action designator, carrying the ability's modification.
+        designator: Box<card_dsl::dsl::ActionDesignator>,
+        /// The evaluation context for the designated action.
+        ctx: crate::engine::EvalContext,
+    },
 }
 
 /// Which action's primary effect a parked [`Continuation::ActionResolution`]
@@ -1072,17 +1090,24 @@ pub enum ActionResume {
     Engage { enemy: EnemyId },
     /// Draw 1 card (with the empty-deck penalty path).
     Draw,
-    /// Run the activated ability's `effect` for `source` (#361). Unlike the
-    /// basic actions, this snapshots the resolved `effect` rather than
-    /// re-deriving it: an ability's effect is fixed at activation (not
-    /// board-dependent), and the source may have self-discarded as a cost
-    /// (First Aid 01019 depleting its last supply), so a live re-resolution by
-    /// source would be fragile. `source` is kept only as the eval context's
-    /// source.
+    /// Resolve the activated ability for `source` after its `AoO` loop (#361):
+    /// perform its designated action, then run its residual `effect`. Unlike
+    /// the basic actions, this snapshots both rather than re-deriving them: an
+    /// ability's declaration is fixed at activation (not board-dependent), and
+    /// the source may have self-discarded as a cost (First Aid 01019 depleting
+    /// its last supply), so a live re-resolution by source would be fragile.
+    /// `source` is kept only as the eval context's source.
     ActivateAbility {
         /// The ability source — the eval context's `source` on resume (#707).
         source: crate::state::AbilitySource,
-        /// The ability's effect, resolved at activation, run after the `AoO` loop.
+        /// The bold action designator the ability prints, if any — what
+        /// **performs the action** (#805), snapshotted at activation exactly as
+        /// `effect` is. Flashlight 01087's **Investigate** is performed here,
+        /// after the loop; a designated **Fight** or **Resign** never reaches
+        /// this frame at all, being AoO-exempt.
+        designator: Option<card_dsl::dsl::ActionDesignator>,
+        /// The ability's residual effect, resolved at activation, run after the
+        /// designated action. Empty for every ability implemented today.
         effect: card_dsl::dsl::Effect,
     },
     /// Complete a non-fast card play after its `AoO` loop (#378): run the card's
@@ -2656,9 +2681,9 @@ pub struct RecordedModifier {
     /// [`Investigator`](ModifierTarget::Investigator) for a `Modify` with
     /// audience [`Controller`](crate::dsl::ModifierAudience::Controller);
     /// a [`Location`](ModifierTarget::Location) for the shroud reduction an
-    /// [`Effect::Investigate`](crate::dsl::Effect::Investigate) grants the
-    /// investigation it starts (Flashlight 01087's *"Your location gets -2
-    /// shroud for this investigation."*).
+    /// [`Investigate`](crate::dsl::ActionDesignator::Investigate) designator
+    /// grants the investigation it performs (Flashlight 01087's *"Your location
+    /// gets -2 shroud for this investigation."*).
     pub target: ModifierTarget,
     /// The "you" a
     /// [`Delta`](RecordedModifierKind::Delta)'s expression is evaluated
@@ -2732,8 +2757,8 @@ impl RecordedModifier {
     /// [`target`](Self::target), with `investigator` as the "you" its
     /// [`Delta`](RecordedModifierKind::Delta) expression reads. The shroud
     /// reduction an
-    /// [`Effect::Investigate`](crate::dsl::Effect::Investigate) grants
-    /// (Flashlight 01087) is the one row today whose target is not its
+    /// [`Investigate`](crate::dsl::ActionDesignator::Investigate) designator
+    /// grants (Flashlight 01087) is the one row today whose target is not its
     /// controller.
     #[must_use]
     pub fn targeting(

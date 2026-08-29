@@ -1,7 +1,7 @@
 //! #300 / #592 behaviour test: Machete (01020) conditional extra damage.
 //!
 //! The `+1` fires only when the **attacked** enemy is the sole enemy engaged
-//! with the actor. Since #451 widened `Effect::Fight`'s candidates from
+//! with the actor. Since #451 widened a Fight's candidates from
 //! engaged-only to every co-located enemy, "engaged with exactly one enemy" is
 //! not the same question as "the enemy I am attacking is that one" — the cases
 //! below pin both the bonus and each way of losing it:
@@ -46,7 +46,7 @@ fn board(enemy_count: u32) -> game_core::GameState {
 
 /// Board with Machete in play, `engaged` enemies engaged with the actor and
 /// `unengaged` enemies merely *co-located* with them (the scope #451 widened
-/// `Effect::Fight` to). Engaged enemies take ids `100+n`, unengaged `200+n`, so
+/// a Fight to). Engaged enemies take ids `100+n`, unengaged `200+n`, so
 /// the `BTreeMap`-ascending `OptionId` order is engaged-first.
 fn board_with(engaged: u32, unengaged: u32) -> game_core::GameState {
     let mut inv = test_investigator(1);

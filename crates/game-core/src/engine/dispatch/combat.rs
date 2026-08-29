@@ -10,13 +10,13 @@ use crate::state::{
 
 use super::Cx;
 
-/// The scope of enemies a Fight (basic action or weapon `Effect::Fight`) may
-/// target: any enemy *at your location*. Per RR you choose an enemy at your
+/// The scope of enemies a Fight (basic action or designated **Fight** ability)
+/// may target: any enemy *at your location*. Per RR you choose an enemy at your
 /// location to attack and need not already be engaged, so this is co-located
-/// (`At(Here)`), not engaged-only (#451). Single source of truth shared by the
-/// activation pre-cost gate (`check_effect_target_available`) and the
-/// evaluator's target grounding (`ground_fight_target_choice`), so the two
-/// can't drift.
+/// (`At(Here)`), not engaged-only (#451). Single source of truth, read through
+/// `designator::fight_candidates` by the basic action's target validation, the
+/// activation pre-cost gate (`can_perform`) and the evaluator's target
+/// grounding (`ground_fight_target_choice`) alike, so the three can't drift.
 pub(crate) fn fight_target_scope() -> crate::dsl::EntityScope {
     crate::dsl::EntityScope::At(crate::dsl::LocationSet::Here)
 }

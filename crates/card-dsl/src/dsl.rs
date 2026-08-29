@@ -114,27 +114,109 @@ use serde::{Deserialize, Serialize};
 /// (`glossary/Parley.md`, `glossary/Resign.md`) and are named by the attack-of-
 /// opportunity clause above. Campaign-specific designators (`Explore`) land when
 /// their campaign does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+///
+/// # The designator performs; the ability modifies
+///
+/// Each variant carries **the modification the printed text describes**, and
+/// nothing else (#805). Machete 01020's *"You get +1 \[combat\] for this
+/// attack"* is [`Fight`](Self::Fight)'s `combat_modifier`; Flashlight 01087's
+/// *"Your location gets -2 shroud for this investigation"* is
+/// [`Investigate`](Self::Investigate)'s `shroud_modifier`. The
+/// **action** is the designator's — there is no `Effect::Fight` beside it to
+/// disagree with the bold word, which is what the first paragraph's rules
+/// quote asks for and what a tag-plus-effect split could only achieve by
+/// convention.
+///
+/// Two variants carry nothing, and neither is an exception to that:
+///
+/// - **Parley performs nothing.** `glossary/Parley.md`, in full: *"Some
+///   abilities are identified with a **Parley** action designator. Such
+///   abilities are initiated using the 'Activate' action."* The rules give it
+///   no procedure, so the whole ability is its [`Ability::effect`] residual.
+/// - **Resign performs the elimination**, per `glossary/Resign.md`: *"When an
+///   investigator resigns, the investigator is eliminated by resignation (see
+///   'Elimination' on page 10.) An investigator who resigns is not considered
+///   to have been defeated."* Nothing in the corpus parameterises the
+///   resignation, so the modification is empty.
+///
+/// `TODO(#805)`: the designator rides [`Trigger::Activated`] because no
+/// implemented card prints one on another trigger. Backstab 01051 prints a bold
+/// **Fight** on an *event* (`Trigger::OnPlay`) and the rules attach the
+/// designator to the ability rather than to how it was reached — the FAQ
+/// answers for Ursula Downs 04002 that *"Ursula's reaction allows you to take
+/// any investigate action, including those performed via the activate action or
+/// via the play action."* Promoting the field to [`Ability`] is mechanical when
+/// Backstab lands; doing it now would be speculation.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ActionDesignator {
-    /// **Fight** — performs a fight action. Every weapon in the corpus
-    /// (Machete 01020, .45 Automatic 01016, Roland's .38 Special 01006,
-    /// Knife 01086's two abilities).
-    Fight,
-    /// **Evade** — performs an evade action. No corpus card yet.
+    /// **Fight** — performs a fight action against an enemy *at the
+    /// controller's location*. Every weapon in the corpus (Machete 01020,
+    /// .45 Automatic 01016, Roland's .38 Special 01006, Knife 01086's two
+    /// abilities).
+    ///
+    /// Per RR you choose an enemy at your location to attack and need not
+    /// already be engaged with it, so the candidate scope is co-located, not
+    /// engaged-only (#451). The engine auto-targets on exactly one candidate
+    /// and suspends for a pick on two or more; the activation check rejects
+    /// *zero* candidates before any cost is paid.
+    ///
+    /// Because the target need not be an engaged one, an `extra_damage`
+    /// expression whose card text qualifies on the *attacked* enemy must read
+    /// the chosen target, not the controller's engaged count — see Machete
+    /// 01020's [`Condition::Native`] predicate (#592).
+    Fight {
+        /// Combat modifier for this attack. Evaluated at every read
+        /// while the attack runs, not once at initiation, so an
+        /// expression that counts something on the board answers from
+        /// the board as it stands.
+        combat_modifier: IntExpr,
+        /// Bonus damage beyond the base 1 (.38 Special: +1).
+        extra_damage: IntExpr,
+    },
+    /// **Evade** — performs an evade action. No corpus card yet, so the
+    /// modification it would carry has no sample to take its shape from; the
+    /// engine rejects a designated Evade rather than guessing one.
     Evade,
-    /// **Move** — performs a move action. No corpus card yet; named by
-    /// Frozen in Fear 01164's ruling.
+    /// **Move** — performs a move action. No corpus card yet (named by Frozen
+    /// in Fear 01164's ruling); same posture as [`Evade`](Self::Evade).
     Move,
-    /// **Investigate** — performs an investigate action. Flashlight 01087.
-    Investigate,
+    /// **Investigate** — performs an investigate action against the
+    /// controller's current location. Flashlight 01087.
+    ///
+    /// The mirror of [`Fight`](Self::Fight): the modifier adjusts the
+    /// **location difficulty**, not the investigator's total. It is one
+    /// contribution among however many the location carries (Obscuring Fog
+    /// 01168's +2 is another), so the composed shroud clamps at 0 once, after
+    /// all of them. The investigation reuses the base Investigate skill-test
+    /// follow-up, so on success it discovers a clue like the action does.
+    Investigate {
+        /// Shroud-difficulty modifier for this investigation
+        /// (Flashlight: `-2`). Evaluated at every read while the
+        /// investigation runs, like [`Fight`](Self::Fight)'s combat
+        /// modifier.
+        shroud_modifier: IntExpr,
+    },
     /// **Parley** — `glossary/Parley.md` in full: *"Some abilities are
     /// identified with a **Parley** action designator. Such abilities are
     /// initiated using the 'Activate' action."* The Midnight Masks cultists
-    /// (01138-01140) and Mob Enforcer 01101 print one.
+    /// (01138-01140) and Mob Enforcer 01101 print one. Performs nothing; the
+    /// ability's whole content is its [`Ability::effect`].
     Parley,
-    /// **Resign** — the Parlor 01115 and every resign location. The designator
-    /// only; the resignation itself is [`Effect::Resign`] (#644), the same split
-    /// [`Fight`](Self::Fight) has from [`Effect::Fight`].
+    /// **Resign** — the Parlor 01115 and every resign location. Eliminates the
+    /// controller from the scenario **by resignation**, running
+    /// `glossary/Elimination.md`'s steps 0–6 unbranched (they are one procedure
+    /// for defeat and resignation alike), so the only thing distinguishing it
+    /// from a defeat is the `EliminationCause::Resigned` it carries
+    /// (`game-core` owns that enum; `card-dsl` has no workspace dependencies to
+    /// name it through).
+    ///
+    /// Nullary because nothing in the corpus parameterises the resignation
+    /// itself. Where a later card prints more, the extra is a **cost** or an
+    /// **eligibility clause** rather than a parameter: Tear Through Time
+    /// 02322's *"\[action\] Spend 2 clues: **Resign.**"* rides [`Cost`], and
+    /// Escape the Tower 11617's *"\[action\] If you are at Twisting Catwalks:
+    /// **Resign.**"* rides the ability's eligibility. Both hang off the
+    /// [`Ability`], not off the designator.
     Resign,
 }
 
@@ -160,12 +242,12 @@ impl ActionDesignator {
     /// investigating, parleying or resigning. A new consumer wanting those
     /// grows `ActionClass` first.
     #[must_use]
-    pub fn action_class(self) -> Option<ActionClass> {
+    pub fn action_class(&self) -> Option<ActionClass> {
         match self {
-            Self::Fight => Some(ActionClass::Fight),
+            Self::Fight { .. } => Some(ActionClass::Fight),
             Self::Evade => Some(ActionClass::Evade),
             Self::Move => Some(ActionClass::Move),
-            Self::Investigate | Self::Parley | Self::Resign => None,
+            Self::Investigate { .. } | Self::Parley | Self::Resign => None,
         }
     }
 }
@@ -1060,44 +1142,6 @@ pub enum Effect {
         /// `on_success` — success and margin-keyed-failure are separate axes.
         on_fail: Option<Box<Effect>>,
     },
-    /// Resign: eliminate the controller from the scenario **by resignation**.
-    ///
-    /// `glossary/Resign.md`, in full:
-    ///
-    /// > Some abilities are identified with a **Resign** action designator.
-    /// > Such abilities are initiated using the "Activate" action.
-    /// >
-    /// > - When an investigator resigns, the investigator is eliminated by
-    /// >   resignation (see "Elimination" on page 10.) An investigator who
-    /// >   resigns is not considered to have been defeated.
-    ///
-    /// Nullary: nothing in the corpus parameterises the resignation itself. The
-    /// Core-set printings are the Parlor 01115 — *\[action\] **Resign.** "This
-    /// is too much for me!" You run out the front door, fleeing in panic.* —
-    /// and Predator or Prey? 01121a, Time Is Running Short 01122 and the Main
-    /// Path 01149, which print *"\[action\]: **Resign.**"* and a flavour
-    /// sentence. Where a later card prints more, the extra is a **cost** or an
-    /// **eligibility clause** rather than a parameter of the resignation: Tear
-    /// Through Time 02322's *"\[action\] Spend 2 clues: **Resign.**"* rides
-    /// [`Cost`], and Escape the Tower 11617's *"\[action\] If you are at
-    /// Twisting Catwalks: **Resign.**"* rides the ability's eligibility. Both
-    /// hang off the [`Ability`], not off this effect.
-    ///
-    /// **The designator does not do this.** The bold word rides
-    /// [`Trigger::Activated`] as an [`ActionDesignator`] — a rules tag read by
-    /// the attack-of-opportunity predicate and by
-    /// [`ActionDesignator::action_class`] — while the action itself is
-    /// performed by the effect, exactly as Machete 01020 declares **Fight**
-    /// *and* roots in [`Fight`](Self::Fight). `TODO(#805)`: that relationship
-    /// is being inverted DSL-wide; a nullary `Resign` is the "empty
-    /// modification" the inversion keeps.
-    ///
-    /// Elimination then runs unbranched — `glossary/Elimination.md`'s steps 0–6
-    /// are one procedure for defeat and resignation alike — so the only thing
-    /// distinguishing this from a defeat is the `EliminationCause::Resigned`
-    /// it carries (`game-core` owns that enum; `card-dsl` has no workspace
-    /// dependencies to name it through).
-    Resign,
     /// Discard the firing card instance (the evaluator context's
     /// `source`). Locates the instance in a threat area or location
     /// attachment, removes it, and discards it to the encounter discard.
@@ -1148,30 +1192,6 @@ pub enum Effect {
         /// Cover Up 01007). `0` for cards that enter clue-less.
         clues: u8,
     },
-    /// Initiate a Fight against an enemy *at the controller's location*,
-    /// with `combat_modifier` (e.g. .38 Special's +1/+3) modifying the
-    /// controller's combat for the duration of the attack, dealing
-    /// `1 + extra_damage` on success. Per RR you
-    /// choose an enemy at your location to attack and need not already be
-    /// engaged with it, so the candidate scope is co-located, not engaged-only
-    /// (#451). Auto-targets on exactly one candidate and suspends for a pick on
-    /// two or more; the activation check rejects *zero* candidates before any
-    /// cost is paid. Inspectable (not `Native`) precisely so that pre-charge
-    /// target check can see it.
-    ///
-    /// Because the target need not be an engaged one, an `extra_damage`
-    /// expression whose card text qualifies on the *attacked* enemy must read
-    /// the chosen target, not the controller's engaged count — see Machete
-    /// 01020's [`Condition::Native`] predicate (#592).
-    Fight {
-        /// Combat modifier for this attack. Evaluated at every read
-        /// while the attack runs, not once at initiation, so an
-        /// expression that counts something on the board answers from
-        /// the board as it stands.
-        combat_modifier: IntExpr,
-        /// Bonus damage beyond the base 1 (.38 Special: +1).
-        extra_damage: IntExpr,
-    },
     /// Draw `count` cards for the resolved target investigator —
     /// "draw 1 card" (Guts 01089, Perception 01090, Overpower 01091,
     /// Manual Dexterity 01092). `count == 0` is a no-op. Deck-out (drawing
@@ -1210,25 +1230,6 @@ pub enum Effect {
     /// for `CannotPlay`, `pending_action_surcharge` for `ExtraActionCost`);
     /// resolving it as an effect is a misuse and rejects.
     Restrict(Restriction),
-    /// Initiate an Investigate against the controller's current location,
-    /// with `shroud_modifier` modifying that location's shroud
-    /// *difficulty* for the duration of the investigation — Flashlight
-    /// 01087's "-2 shroud for this investigation." The mirror of
-    /// [`Fight`](Self::Fight): the modifier adjusts the **location
-    /// difficulty**, not the investigator's total. It is one contribution
-    /// among however many the location carries (Obscuring Fog 01168's +2 is
-    /// another), so the composed shroud clamps at 0 once, after all of
-    /// them. Reuses the base Investigate skill-test
-    /// follow-up, so on success it discovers a clue like the action does.
-    /// Inspectable (not `Native`) so the activation check can reject — before
-    /// any cost is paid — an investigation with no revealed location to test.
-    Investigate {
-        /// Shroud-difficulty modifier for this investigation
-        /// (Flashlight: `-2`). Evaluated at every read while the
-        /// investigation runs, like [`Fight`](Self::Fight)'s combat
-        /// modifier.
-        shroud_modifier: IntExpr,
-    },
     /// Search a region of an investigator's deck for one card matching
     /// `filter`, move it to that investigator's hand, then shuffle the deck.
     /// Old Book of Lore 01031 (top 3, any card, chosen investigator) and
@@ -1921,8 +1922,12 @@ pub fn activated(action_cost: u8, costs: Vec<Cost>, effect: Effect) -> Ability {
 /// Flashlight 01087's *"\[action\] Spend 1 supply: **Investigate.**"*, the
 /// Parlor 01115's *"\[action\] **Resign.**"*.
 ///
-/// The designator rides the trigger rather than being read back off `effect`
-/// because that is what the rules quote; see [`ActionDesignator`].
+/// **The designator performs the action; `effect` is the residual** the printed
+/// text prints *beside* the designated action, and is empty (`seq([])`) for
+/// every card implemented today (#805). The modification the action itself takes
+/// — Machete's `+1 [combat]`, Flashlight's `-2 [shroud]` — rides the designator,
+/// so no effect can re-root a designated action into a different one; see
+/// [`ActionDesignator`].
 #[must_use]
 pub fn activated_as(
     designator: ActionDesignator,
@@ -2162,12 +2167,6 @@ pub fn advance_current_act() -> Effect {
     Effect::AdvanceCurrentAct
 }
 
-/// Build an [`Effect::Resign`]. Nullary — see the variant.
-#[must_use]
-pub fn resign() -> Effect {
-    Effect::Resign
-}
-
 /// Build an [`Effect::ReachResolution`] for the printed `(→R#)` number.
 #[must_use]
 pub fn reach_resolution(n: u8) -> Effect {
@@ -2238,22 +2237,28 @@ pub fn put_into_threat_area_with_clues(code: impl Into<String>, clues: u8) -> Ef
     }
 }
 
-/// Build an [`Effect::Fight`] with the given combat modifier and bonus
-/// damage (.38 Special: `fight(IntExpr::cond(Condition::Compare { quantity: Quantity::CluesAtControllerLocation, op: CmpOp::Gt, value: 0 }, 3, 1), 1u8)`).
+/// Build an [`ActionDesignator::Fight`] carrying the modification the card
+/// prints on its attack — the combat modifier and the bonus damage beyond the
+/// base 1 (.38 Special: `fight(IntExpr::cond(Condition::Compare { quantity: Quantity::CluesAtControllerLocation, op: CmpOp::Gt, value: 0 }, 3, 1), 1u8)`).
+/// The fight itself is the designator's; this only says how it differs from a
+/// basic one (#805).
 #[must_use]
-pub fn fight(combat_modifier: impl Into<IntExpr>, extra_damage: impl Into<IntExpr>) -> Effect {
-    Effect::Fight {
+pub fn fight(
+    combat_modifier: impl Into<IntExpr>,
+    extra_damage: impl Into<IntExpr>,
+) -> ActionDesignator {
+    ActionDesignator::Fight {
         combat_modifier: combat_modifier.into(),
         extra_damage: extra_damage.into(),
     }
 }
 
-/// Build an [`Effect::Investigate`] applying `shroud_modifier` to the
+/// Build an [`ActionDesignator::Investigate`] applying `shroud_modifier` to the
 /// controller's location difficulty for this investigation (Flashlight 01087:
 /// `investigate(-2i8)`).
 #[must_use]
-pub fn investigate(shroud_modifier: impl Into<IntExpr>) -> Effect {
-    Effect::Investigate {
+pub fn investigate(shroud_modifier: impl Into<IntExpr>) -> ActionDesignator {
+    ActionDesignator::Investigate {
         shroud_modifier: shroud_modifier.into(),
     }
 }
@@ -2294,10 +2299,7 @@ mod tests {
     /// doesn't name map to `None` (#754).
     #[test]
     fn a_designator_maps_onto_the_action_class_it_performs() {
-        assert_eq!(
-            ActionDesignator::Fight.action_class(),
-            Some(ActionClass::Fight)
-        );
+        assert_eq!(fight(0u8, 0u8).action_class(), Some(ActionClass::Fight));
         assert_eq!(
             ActionDesignator::Evade.action_class(),
             Some(ActionClass::Evade)
@@ -2307,7 +2309,7 @@ mod tests {
             Some(ActionClass::Move)
         );
         for d in [
-            ActionDesignator::Investigate,
+            investigate(0u8),
             ActionDesignator::Parley,
             ActionDesignator::Resign,
         ] {

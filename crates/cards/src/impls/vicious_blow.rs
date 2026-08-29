@@ -20,7 +20,7 @@
 //! The **"during an attack"** qualifier is expressed by that kind gate —
 //! symmetric to Deduction 01039's "while investigating"
 //! ([`Condition::SkillTestKind`] of [`SkillTestKind::Investigate`]). Every
-//! attack in the engine, whether the Fight *action* or an `Effect::Fight`
+//! attack in the engine, whether the Fight *action* or a designated **Fight**
 //! weapon, runs a [`SkillTestKind::Fight`] test, so the gate captures
 //! exactly "an attack" and nothing else. Gating the *accumulate* (rather
 //! than relying on the Fight follow-up being the only reader of

@@ -25,11 +25,12 @@ use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId,
 use super::Cx;
 use crate::action::InputResponse;
 
-/// The one-shot modifier an initiating effect grants the test it starts:
-/// a weapon's *"+N \[combat\] for this attack"*
-/// ([`Effect::Fight`](crate::dsl::Effect::Fight)'s combat modifier) or
-/// Flashlight 01087's *"Your location gets -2 shroud for this
-/// investigation"* ([`Effect::Investigate`](crate::dsl::Effect::Investigate)'s
+/// The one-shot modifier an initiator grants the test it starts: a weapon's
+/// *"+N \[combat\] for this attack"* (the
+/// [`Fight`](crate::dsl::ActionDesignator::Fight) designator's combat modifier)
+/// or Flashlight 01087's *"Your location gets -2 shroud for this
+/// investigation"* (the
+/// [`Investigate`](crate::dsl::ActionDesignator::Investigate) designator's
 /// shroud modifier).
 ///
 /// Handed to [`start_skill_test`] **unstamped**: the test it belongs to has

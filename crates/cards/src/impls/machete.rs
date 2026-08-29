@@ -5,16 +5,19 @@
 //! enemy is the only enemy engaged with you, this attack deals +1 damage.
 //! ```
 //!
-//! **Designator: Fight** — the bold word above the effect, declared on the
-//! trigger (`ActionDesignator::Fight`, #696). It is what exempts the
-//! activation from attacks of opportunity, and the exemption is the rule's
-//! own wording (`glossary/Attack_of_Opportunity.md`: *"an action other than
-//! to **fight**"*), not a property of the `Effect::Fight` below it.
+//! **Designator: Fight** — the bold word, declared on the trigger, which
+//! **performs the attack** and carries the two modifications the printed text
+//! describes: the `+1 [combat]` and the conditional `+1` damage (#805). There
+//! is no effect beside it that could root the ability in a different action;
+//! the whole ability *is* a Fight, modified. The designator is also what
+//! exempts the activation from attacks of opportunity, in the rule's own
+//! wording (`glossary/Attack_of_Opportunity.md`: *"an action other than to
+//! **fight**"*).
 //!
 //! A bare `[action]` Fight (no exhaust, no uses) with a flat `+1` combat
 //! modifier. The bonus damage is conditional on the **attacked** enemy, not on
-//! the controller's engaged count alone: `Effect::Fight`'s candidate scope is
-//! every enemy *at your location* (#451), so the target may be one you are not
+//! the controller's engaged count alone: a Fight's candidate scope is every
+//! enemy *at your location* (#451), so the target may be one you are not
 //! engaged with at all. `sole_engaged_target` therefore asks whether the set of
 //! enemies engaged with you is exactly `{the chosen target}`.
 //!
@@ -37,7 +40,7 @@
 //! and the picked enemy may be engaged with you, with another investigator, or
 //! with nobody.
 
-use card_dsl::dsl::{activated_as, fight, native_condition, Ability, ActionDesignator, IntExpr};
+use card_dsl::dsl::{activated_as, fight, native_condition, seq, Ability, IntExpr};
 use game_core::card_registry::NativeConditionFn;
 use game_core::state::GameState;
 use game_core::EvalContext;
@@ -51,18 +54,19 @@ const SOLE_ENGAGED_TAG: &str = "01020:sole_engaged_target";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![activated_as(
-        ActionDesignator::Fight,
+        fight(1u8, IntExpr::cond(native_condition(SOLE_ENGAGED_TAG), 1, 0)),
         1,
         vec![],
-        fight(1u8, IntExpr::cond(native_condition(SOLE_ENGAGED_TAG), 1, 0)),
+        seq([]),
     )]
 }
 
 /// "If the attacked enemy is the only enemy engaged with you" — true iff the
 /// enemies engaged with the controller are exactly the one being attacked.
 ///
-/// Reads the Fight target from [`EvalContext::chosen_enemy`], which
-/// `ground_chosen_targets` binds before `apply_fight` evaluates `extra_damage`.
+/// Reads the Fight target from [`EvalContext::chosen_enemy`], which the
+/// designated-action frame binds before the Fight's `extra_damage` is
+/// evaluated.
 /// An unbound target (no Fight in flight) is `false`: no attacked enemy, no
 /// bonus. Both FAQ exclusions fall out of the set equality — an enemy engaged
 /// with nobody or with another investigator is not in the controller's engaged
@@ -99,36 +103,39 @@ pub(crate) fn native_condition_for(tag: &str) -> Option<NativeConditionFn> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::{Effect, Trigger};
+    use card_dsl::dsl::{ActionDesignator, Effect, Trigger};
 
     #[test]
     fn one_costless_activated_fight_ability() {
         let abilities = abilities();
         assert_eq!(abilities.len(), 1);
-        assert_eq!(
-            abilities[0].trigger,
-            Trigger::Activated {
-                action_cost: 1,
-                designator: Some(ActionDesignator::Fight),
-            }
-        );
+        let Trigger::Activated {
+            action_cost: 1,
+            designator:
+                Some(ActionDesignator::Fight {
+                    combat_modifier,
+                    extra_damage,
+                }),
+        } = &abilities[0].trigger
+        else {
+            panic!(
+                "expected a 1-action Fight designator, got {:?}",
+                abilities[0].trigger
+            );
+        };
         assert!(
             abilities[0].costs.is_empty(),
             "Machete's Fight has no exhaust/uses cost — just the action",
         );
-        let Effect::Fight {
-            combat_modifier,
-            extra_damage,
-        } = &abilities[0].effect
-        else {
-            panic!("expected Effect::Fight");
-        };
         assert_eq!(*combat_modifier, IntExpr::Lit(1));
         // +1 only when the *attacked* enemy is the sole engaged enemy (#592).
         assert_eq!(
             *extra_damage,
             IntExpr::cond(native_condition(SOLE_ENGAGED_TAG), 1, 0)
         );
+        // The designator performs the attack; nothing is printed beside it
+        // (#805).
+        assert_eq!(abilities[0].effect, Effect::Seq(vec![]));
     }
 
     /// Catches a `pub mod` rename or a fat-fingered match arm in

@@ -1,9 +1,10 @@
 //! End-to-end weapon flow with a mock `CardRegistry`: a firearm-shaped
 //! asset that carries `Uses (4 ammo)` and an `[action] Spend 1 ammo:
-//! Fight` activated ability: an `ActionDesignator::Fight` on the trigger over
-//! an `Effect::Fight`. The designator is what makes it a fight action (#696) —
-//! it is what the attack-of-opportunity exemption and the pre-cost
-//! "needs a co-located enemy" check both read.
+//! Fight` activated ability — an `ActionDesignator::Fight` on the trigger,
+//! carrying the `+1 [combat]` / `+1` damage the card prints. The designator is
+//! what makes it a fight action and what **performs** the attack (#696, #805):
+//! it is what the attack-of-opportunity exemption, the pre-cost "needs a
+//! co-located enemy" check, and the attack itself all read.
 //!
 //! Lives at `crates/game-core/tests/` (its own integration-test binary,
 //! hence its own process + `OnceLock<CardRegistry>`) so the mock
@@ -12,7 +13,7 @@
 //! then a mock card exercises the full path.
 
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
-use game_core::dsl::{activated_as, fight, Ability, ActionDesignator, Cost, IntExpr};
+use game_core::dsl::{activated_as, fight, seq, Ability, Cost, IntExpr};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
@@ -29,6 +30,11 @@ use std::sync::OnceLock;
 /// Mock firearm: `Uses (4 ammo)`, `[action] Spend 1 ammo: Fight. +1
 /// [combat], +1 damage.`
 const WEAPON: &str = "WEAP1";
+
+/// Mock asset printing a bare `[action]: Fight.` with **no** modification —
+/// the designated action stripped to exactly what the basic Fight action is.
+/// Only [`a_designated_fight_is_a_fight_action`] uses it.
+const BARE: &str = "WEAP0";
 
 fn weapon_metadata() -> CardMetadata {
     CardMetadata {
@@ -65,22 +71,54 @@ fn weapon_metadata_static() -> &'static CardMetadata {
     M.get_or_init(weapon_metadata)
 }
 
+fn bare_metadata_static() -> &'static CardMetadata {
+    static M: OnceLock<CardMetadata> = OnceLock::new();
+    M.get_or_init(|| CardMetadata {
+        code: BARE.to_owned(),
+        name: "Mock Cudgel".to_owned(),
+        text: Some("[action]: Fight.".to_owned()),
+        kind: match weapon_metadata().kind {
+            CardKind::Asset { class, cost, .. } => CardKind::Asset {
+                class,
+                cost,
+                xp: None,
+                slots: vec![Slot::Hand],
+                health: None,
+                sanity: None,
+                skill_icons: SkillIcons::default(),
+                is_fast: false,
+                deck_limit: 1,
+                uses: None,
+                play_only_during_turn: false,
+            },
+            other => other,
+        },
+        ..weapon_metadata()
+    })
+}
+
 fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-    (code.as_str() == WEAPON).then(weapon_metadata_static)
+    match code.as_str() {
+        WEAPON => Some(weapon_metadata_static()),
+        BARE => Some(bare_metadata_static()),
+        _ => None,
+    }
 }
 
 fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     match code.as_str() {
         // [action] Spend 1 ammo: Fight. +1 [combat], +1 damage.
         WEAPON => Some(vec![activated_as(
-            ActionDesignator::Fight,
+            fight(IntExpr::Lit(1), 1u8),
             1,
             vec![Cost::SpendUses {
                 kind: UseKind::Ammo,
                 count: 1,
             }],
-            fight(IntExpr::Lit(1), 1u8),
+            seq([]),
         )]),
+        // [action]: Fight. No modification at all.
+        BARE => Some(vec![activated_as(fight(0u8, 0u8), 1, vec![], seq([]))]),
         _ => None,
     }
 }
@@ -419,4 +457,83 @@ fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
     assert_eq!(r2.state.enemies[&game_core::state::EnemyId(101)].damage, 0);
     // Ammo was spent on activation.
     assert_eq!(ammo_remaining(&r2.state, id, weapon), 3);
+}
+
+/// **A designated Fight *is* a Fight action** (#805). `glossary/Ability.md`:
+/// *"Activating such an ability **performs the designated action** as described
+/// in the rules, but modified in the manner described by the ability."*
+///
+/// So a designated **Fight** carrying *no* modification and the basic Fight
+/// action, taken against the same board, must resolve identically. Both run
+/// through `actions::perform_fight`; before this issue they built their own
+/// near-identical skill tests side by side, and the assertion below is what
+/// keeps them from drifting apart again.
+///
+/// Compared from `SkillTestStarted` onward: the prefixes differ legitimately —
+/// an activation announces `AbilityActivated` and charges the ability's printed
+/// cost, a basic action charges 1 — and everything after is the action itself.
+#[test]
+fn a_designated_fight_is_a_fight_action() {
+    /// The board of [`board_with_weapon`], with the bare-Fight asset in play
+    /// instead of the firearm.
+    fn board_with_bare_asset() -> (game_core::GameState, InvestigatorId, CardInstanceId) {
+        let (mut state, id, inst) = board_with_weapon(1);
+        let card = state.investigators.get_mut(&id).expect("controller");
+        card.cards_in_play.clear();
+        card.cards_in_play
+            .push(CardInPlay::enter_play(CardCode::new(BARE), inst));
+        (state, id, inst)
+    }
+
+    /// Everything from the skill test's start onward, as `Debug` strings.
+    fn from_the_test_onward(events: &[Event]) -> Vec<String> {
+        let start = events
+            .iter()
+            .position(|e| matches!(e, Event::SkillTestStarted { .. }))
+            .expect("the fight must start a skill test");
+        events[start..].iter().map(|e| format!("{e:?}")).collect()
+    }
+
+    fn resolve(state: game_core::GameState, action: &TurnAction) -> game_core::engine::ApplyResult {
+        let idx = game_core::engine::enumerate::legal_actions(&state)
+            .iter()
+            .position(|a| a == action)
+            .unwrap_or_else(|| panic!("{action:?} must be legal"));
+        apply_no_commits(
+            state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+            }),
+        )
+    }
+
+    let (designated_board, id, asset) = board_with_bare_asset();
+    let designated = resolve(
+        designated_board,
+        &TurnAction::ActivateAbility {
+            investigator: id,
+            source: AbilitySource::InPlay(asset),
+            ability_index: 0,
+        },
+    );
+
+    let (basic_board, id, _) = board_with_bare_asset();
+    let basic = resolve(
+        basic_board,
+        &TurnAction::Fight {
+            investigator: id,
+            enemy: game_core::state::EnemyId(100),
+        },
+    );
+
+    assert_eq!(
+        from_the_test_onward(&designated.events),
+        from_the_test_onward(&basic.events),
+        "an unmodified designated Fight must resolve exactly as the basic \
+         Fight action does",
+    );
+    assert_eq!(
+        designated.state.enemies[&game_core::state::EnemyId(100)].damage,
+        basic.state.enemies[&game_core::state::EnemyId(100)].damage,
+    );
 }

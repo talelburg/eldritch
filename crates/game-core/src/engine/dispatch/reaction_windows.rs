@@ -1870,53 +1870,35 @@ fn payable_play_cost(play_cost: Option<i8>, code: &CardCode) -> Result<u8, Cow<'
     }
 }
 
-/// Reject an activation whose effect needs a target it cannot get, at the check
-/// layer (before any cost is paid) so the rejection is honest for
-/// `any_fast_play_eligible` and `Effect::Fight` / `DealDamageToEnemy` can treat
-/// a missing target as an invariant violation.
+/// Reject an activation that cannot get what it needs, at the check layer —
+/// **before any cost is paid**, so the rejection is honest for
+/// `any_fast_play_eligible` and the evaluator can treat a missing target as an
+/// invariant violation.
 ///
-/// The Fight branch covers every fight ability the corpus prints, because each
-/// declares the **Fight** designator. One shape escapes it: an ability rooted in
-/// `Effect::Fight` that declares *no* designator. Nothing in the corpus is in
-/// that shape (a fight ability is a fight ability by printing the bold word),
-/// and the evaluator rejects it rather than resolving a targetless attack —
-/// `apply_via` then rolls the costs back with it, so the escape costs
-/// correctness nothing and honesty only here. Deliberately unlifted with no
-/// tracking issue (YAGNI, as with [`reject_incompatible_costs`]); whoever wants
-/// the guard tightened files one.
+/// Two halves, asked in the order the ability declares them:
 ///
-/// - **Fight:** an ability printing the **Fight** designator needs ≥1 enemy *at
-///   your location* (0 = no target, rejected pre-cost; 2+ suspends to a
-///   `PickSingle` target-pick in the evaluator). Keyed off the declared
-///   designator rather than an `Effect::Fight` at the effect root (#696): the
-///   designator is what makes the ability a fight action, and an effect-root
-///   match misses a `Seq`-wrapped one.
-///   Scope is co-located, not engaged-only: per RR you choose an enemy at your
-///   location to attack and need not already be engaged (matches the basic
-///   Fight action — an Aloof enemy, or one engaged with another investigator
-///   in MP, is a legal weapon target). #451.
+/// - **The designated action** — delegated whole to
+///   [`can_perform`](crate::engine::designator::can_perform), the single
+///   predicate the basic-action handlers and the turn-menu enumerator also
+///   read (#805). A **Fight** needs ≥1 enemy at your location (0 = no target,
+///   rejected here; 2+ suspends to a `PickSingle` in the evaluator); an
+///   **Investigate** needs a revealed location, so Flashlight 01087 cannot
+///   spend its supply with nothing to investigate.
 /// - **`DealDamageToEnemy`:** needs ≥1 enemy in the chosen scope (e.g. "at your
 ///   location"). ≥1 proceeds — 2+ suspends via the `Choose` resolver — so only
 ///   the empty case rejects here; this is why the effect is typed, not `Native`
 ///   (Beat Cop can't pay its discard-self cost for no legal target). `amount` is
 ///   not consulted (a degenerate `amount: 0` ability — none in scope — would
 ///   still require a target here even though its handler is a no-op).
-/// - **`Investigate`:** needs the controller at a revealed location to test
-///   (Flashlight can't pay its supply cost with nothing to investigate).
-fn check_effect_target_available(
+fn check_activation_target_available(
     state: &GameState,
     investigator: InvestigatorId,
-    designator: Option<ActionDesignator>,
+    designator: Option<&ActionDesignator>,
     effect: &crate::dsl::Effect,
 ) -> Result<(), Cow<'static, str>> {
-    if designator == Some(ActionDesignator::Fight)
-        && super::combat::enemies_in_scope(state, investigator, super::combat::fight_target_scope())
-            .is_empty()
-    {
-        return Err(
-            "ActivateAbility: a Fight ability needs an enemy at your location (none co-located)"
-                .into(),
-        );
+    if let Some(designator) = designator {
+        crate::engine::designator::can_perform(state, investigator, designator)
+            .map_err(|why| Cow::from(format!("ActivateAbility: {why}")))?;
     }
     if let crate::dsl::Effect::DealDamageToEnemy {
         target: crate::dsl::EnemyTarget::Chosen(choose),
@@ -1931,21 +1913,40 @@ fn check_effect_target_available(
             );
         }
     }
-    if matches!(effect, crate::dsl::Effect::Investigate { .. }) {
-        let revealed_here = state
-            .investigators
-            .get(&investigator)
-            .and_then(|inv| inv.current_location)
-            .and_then(|loc| state.locations.get(&loc))
-            .is_some_and(|loc| loc.revealed);
-        if !revealed_here {
-            return Err(
-                "ActivateAbility: an Investigate ability needs a revealed location to investigate"
-                    .into(),
-            );
-        }
-    }
     Ok(())
+}
+
+/// The `ExtraActionCost` surcharge an activation owes, plus the
+/// `first_each_round` sources to mark spent once it commits.
+///
+/// A bold action designator makes this an action of that type, so a surcharge
+/// on that class applies here exactly as it does to the basic action (#754).
+/// Official FAQ: *"Abilities with a bold action designator (like Fight, Evade
+/// or Investigate) count as an action of that type."* Frozen in Fear 01164's
+/// ruling names the case directly: *"Also applies to \[action\] card abilities
+/// with action designators (**Move**, **Fight**, **Evade**)."* Read through the
+/// same `action_surcharge` the basic-action handlers use, so the two can't
+/// drift apart.
+///
+/// Scoped to action-cost abilities: the same ruling taxes *fast* designated
+/// abilities too, which no corpus card can reach and which needs a decision
+/// #754 didn't make (#759, and the `# Module gap` on Frozen in Fear's own
+/// module).
+fn designated_action_surcharge(
+    state: &GameState,
+    investigator: InvestigatorId,
+    action_cost: u8,
+    designator: Option<&ActionDesignator>,
+) -> (u8, Vec<crate::state::CardInstanceId>) {
+    if action_cost == 0 {
+        return (0, Vec::new());
+    }
+    match designator.and_then(ActionDesignator::action_class) {
+        Some(class) => {
+            crate::engine::dispatch::actions::action_surcharge(state, investigator, class)
+        }
+        None => (0, Vec::new()),
+    }
 }
 
 /// The RR initiation gate on the activation path (#639).
@@ -1973,8 +1974,20 @@ fn check_activation_changes_state(
     investigator: InvestigatorId,
     source: AbilitySource,
     code: &CardCode,
+    designator: Option<&ActionDesignator>,
     effect: &crate::dsl::Effect,
 ) -> Result<(), Cow<'static, str>> {
+    // A designated ability's substance is the action it performs, not the
+    // residual effect beside it (#805) — and every implemented one's residual
+    // is empty, which the generic gate proves inert. Whether the *action* can
+    // happen is `can_perform`'s question, asked by
+    // [`check_activation_target_available`] just above. **Parley** is the one
+    // designator that performs nothing, so it falls through to the generic gate
+    // on its residual, which is exactly right: a Parley ability whose effect is
+    // a no-op has no potential to change the game state.
+    if designator.is_some_and(|d| !matches!(d, ActionDesignator::Parley)) {
+        return Ok(());
+    }
     let ctx = EvalContext::for_controller_with_optional_source(investigator, source.instance());
     if crate::engine::evaluator::effect_can_change_state(state, ctx, effect) {
         return Ok(());
@@ -2163,29 +2176,8 @@ pub(crate) fn check_activate_ability(
         }
     }
 
-    // A bold action designator makes this an action of that type, so an
-    // `ExtraActionCost` surcharge on that class applies here exactly as it does
-    // to the basic action (#754). Official FAQ: *"Abilities with a bold action
-    // designator (like Fight, Evade or Investigate) count as an action of that
-    // type."* Frozen in Fear 01164's ruling names the case directly: *"Also
-    // applies to [action] card abilities with action designators (Move, Fight,
-    // Evade)."* Read through the same `action_surcharge` the basic-action
-    // handlers use, so the two can't drift apart.
-    //
-    // Scoped to action-cost abilities: the same ruling taxes *fast* designated
-    // abilities too, which no corpus card can reach and which needs a decision
-    // this change doesn't make (#759, and the `# Module gap` on Frozen in Fear's
-    // own module).
-    let (surcharge, surcharge_sources) = if action_cost > 0 {
-        match designator.and_then(crate::dsl::ActionDesignator::action_class) {
-            Some(class) => {
-                crate::engine::dispatch::actions::action_surcharge(state, investigator, class)
-            }
-            None => (0, Vec::new()),
-        }
-    } else {
-        (0, Vec::new())
-    };
+    let (surcharge, surcharge_sources) =
+        designated_action_surcharge(state, investigator, action_cost, designator.as_ref());
     let action_cost = action_cost.saturating_add(surcharge);
 
     // Re-borrow inv after state borrows above.
@@ -2213,8 +2205,15 @@ pub(crate) fn check_activate_ability(
 
     reject_incompatible_costs(&costs)?;
     reject_source_costs_without_an_instance(source, &source_code, &costs)?;
-    check_effect_target_available(state, investigator, designator, &effect)?;
-    check_activation_changes_state(state, investigator, source, &source_code, &effect)?;
+    check_activation_target_available(state, investigator, designator.as_ref(), &effect)?;
+    check_activation_changes_state(
+        state,
+        investigator,
+        source,
+        &source_code,
+        designator.as_ref(),
+        &effect,
+    )?;
 
     Ok(super::ActivateCheckResult {
         source_code,

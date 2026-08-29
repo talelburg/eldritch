@@ -576,9 +576,17 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
         ActionResume::Resource => actions::resource_primary_effect(cx, investigator),
         ActionResume::Engage { enemy } => actions::engage_primary_effect(cx, investigator, enemy),
         ActionResume::Draw => cards::draw_primary_effect(cx, investigator),
-        ActionResume::ActivateAbility { source, effect } => {
-            abilities::resume_activate_ability(cx, investigator, source, &effect)
-        }
+        ActionResume::ActivateAbility {
+            source,
+            designator,
+            effect,
+        } => abilities::resume_activate_ability(
+            cx,
+            investigator,
+            source,
+            designator.as_ref(),
+            &effect,
+        ),
         ActionResume::PlayCard { card } => {
             let Some(card) = card else {
                 unreachable!(

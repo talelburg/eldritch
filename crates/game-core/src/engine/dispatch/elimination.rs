@@ -489,9 +489,9 @@ pub fn defeat_investigator(cx: &mut Cx, investigator: InvestigatorId) {
     apply_investigator_elimination(cx, investigator, EliminationCause::CardAbility);
 }
 
-/// Resign `investigator` from the scenario — the semantics of
-/// [`Effect::Resign`](crate::dsl::Effect::Resign), and the only producer of
-/// [`EliminationCause::Resigned`].
+/// Resign `investigator` from the scenario — what the
+/// [`Resign`](crate::dsl::ActionDesignator::Resign) action designator performs
+/// (#805), and the only producer of [`EliminationCause::Resigned`].
 ///
 /// `glossary/Resign.md`: *"When an investigator resigns, the investigator is
 /// eliminated by resignation (see 'Elimination' on page 10.) An investigator
@@ -1104,7 +1104,7 @@ mod elimination_tests {
         // eliminated all the same, so 2.2.1 sends the turn to 2.2.2 either way.
         //
         // Live since #644: `resign_investigator` is the producer, reached from
-        // `Effect::Resign` on the Parlor 01115. The whole trail through a real
+        // the Parlor 01115's **Resign** designator. The whole trail through a real
         // activation is `crates/cards/tests/resign.rs`; this pins the turn-end
         // half at the unit seam.
         let resigner = InvestigatorId(1);

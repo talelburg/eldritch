@@ -107,30 +107,54 @@ pub(super) fn investigate_primary_effect(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
-    let inv = cx
-        .state
-        .investigators
-        .get(&investigator)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "investigate_primary_effect: investigator {investigator:?} not in map after the \
-                 Status::Active re-validation gate; this is a state-corruption invariant violation"
-            )
-        });
-    let Some(location_id) = inv.current_location else {
-        return EngineOutcome::Done; // lapsed: locationless after AoO
-    };
-    let Some(location) = cx.state.locations.get(&location_id) else {
+    assert!(
+        cx.state.investigators.contains_key(&investigator),
+        "investigate_primary_effect: investigator {investigator:?} not in map after the \
+         Status::Active re-validation gate; this is a state-corruption invariant violation"
+    );
+    // Locationless after the AoO, or the location gone / no longer revealed:
+    // the precondition lapsed, so suppress the primary rather than rejecting
+    // (the §D contract). Read through the same helper `can_perform` uses, so
+    // the basic action and a designated **Investigate** agree on what a
+    // location has to be to investigate it (#805).
+    let Some(location_id) = crate::engine::designator::investigate_location(cx.state, investigator)
+    else {
         return EngineOutcome::Done;
     };
-    if !location.revealed {
-        return EngineOutcome::Done; // precondition lapsed
-    }
-    // The difficulty of an investigation *is* this location's modified
-    // shroud, read live at ST.6 — everything modifying the location
-    // (Obscuring Fog 01168's +2) is folded in there rather than snapshotted
-    // here.
-    let location_id = location.id;
+    // A basic investigation carries no modification — the designated one
+    // (Flashlight 01087) reaches the same primary with its `-2 [shroud]`.
+    perform_investigate(cx, investigator, location_id, None, None)
+}
+
+/// Perform an **investigate** against `location_id`: an Intellect test whose
+/// difficulty *is* that location's modified shroud, read live at ST.6 rather
+/// than snapshotted here (#677), with the base Investigate follow-up (so a
+/// success discovers a clue).
+///
+/// The one primary behind both ways of investigating (#805) — the basic action
+/// (via [`investigate_primary_effect`], after its attack-of-opportunity loop)
+/// and an ability printing the bold **Investigate** designator (Flashlight
+/// 01087). `glossary/Ability.md` is what makes them the same procedure:
+/// *"Activating such an ability **performs the designated action** as described
+/// in the rules, but modified in the manner described by the ability."* The
+/// modification is `shroud_modifier`, and it is the *only* thing that differs.
+///
+/// `shroud_modifier` adjusts the **location difficulty** (shroud), not the
+/// investigator's total, and it is one contribution among however many the
+/// location carries: Flashlight's `-2` composes with Obscuring Fog 01168's `+2`
+/// into a single shroud, clamped at 0 once at the end (RR p.4: game values can
+/// never be reduced below 0). It travels into the test unevaluated so the row
+/// it becomes is recalculated at every read (ADR 0005).
+///
+/// Callers validate that the location exists and is revealed; this takes the id
+/// as given.
+pub(crate) fn perform_investigate(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    location_id: LocationId,
+    shroud_modifier: Option<crate::dsl::IntExpr>,
+    source: Option<crate::state::CardInstanceId>,
+) -> EngineOutcome {
     super::skill_test::start_skill_test(
         cx,
         investigator,
@@ -140,8 +164,14 @@ pub(super) fn investigate_primary_effect(
         SkillTestFollowUp::Investigate,
         None,
         None,
-        None,
-        None, // no weapon/effect modifier on a base Investigate
+        source,
+        // "Your location gets -2 shroud for this investigation" — a row over
+        // the *location*, scoped to the test about to start.
+        shroud_modifier.map(|delta| super::skill_test::InitiatorModifier {
+            target: crate::state::ModifierTarget::Location(location_id),
+            stat: crate::dsl::Stat::Shroud,
+            delta,
+        }),
     )
 }
 
@@ -778,10 +808,16 @@ fn validate_engaged_action<'a>(
     Ok(enemy)
 }
 
-/// Validate that `enemy_id` is a legal Fight target for an investigator
-/// standing at `inv_location`: the enemy exists, is co-located (RR p.12,
-/// *"To fight an enemy **at his or her location**…"* — engagement is not
-/// required, unlike Evade), and its printed fight value is not malformed.
+/// Validate that `enemy_id` is a legal Fight target for `investigator`: it is
+/// one of the enemies a Fight may target (RR p.12, *"To fight an enemy **at his
+/// or her location**…"* — engagement is not required, unlike Evade), and its
+/// printed fight value is not malformed.
+///
+/// Candidacy is
+/// [`designator::fight_candidates`](crate::engine::designator::fight_candidates)
+/// — the same list a designated **Fight** grounds its pick against and the same
+/// one `can_perform` counts pre-cost (#805). The basic action differs only in
+/// naming its target up front instead of choosing among them.
 ///
 /// Returns nothing on success: the fight value it range-checks is read
 /// again at ST.6 through the modified-value query, not carried out of
@@ -789,7 +825,6 @@ fn validate_engaged_action<'a>(
 fn validate_fight_target(
     state: &GameState,
     investigator: InvestigatorId,
-    inv_location: LocationId,
     enemy_id: EnemyId,
 ) -> Result<(), EngineOutcome> {
     let Some(enemy) = state.enemies.get(&enemy_id) else {
@@ -797,10 +832,10 @@ fn validate_fight_target(
             reason: format!("Fight: enemy {enemy_id:?} is not in state").into(),
         });
     };
-    if enemy.current_location != Some(inv_location) {
+    if !crate::engine::designator::fight_candidates(state, investigator).contains(&enemy_id) {
         return Err(EngineOutcome::Rejected {
             reason: format!(
-                "Fight: enemy {enemy_id:?} (at {:?}) is not at {investigator:?}'s location ({inv_location:?})",
+                "Fight: enemy {enemy_id:?} (at {:?}) is not at {investigator:?}'s location",
                 enemy.current_location,
             )
             .into(),
@@ -946,24 +981,57 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         Ok(inv) => inv,
         Err(rejection) => return rejection,
     };
-    // A `None` location can't host a fight (mirrors `engage`); without it the
-    // `enemy.current_location != inv_location` check would let a locationless
-    // investigator fight a locationless enemy (`None != None == false`).
-    let Some(inv_location) = inv.current_location else {
+    // A `None` location can't host a fight (mirrors `engage`); `fight_candidates`
+    // is empty for a locationless investigator, so the target check below would
+    // reject anyway — but with a message about the enemy rather than about the
+    // investigator standing nowhere.
+    if inv.current_location.is_none() {
         return EngineOutcome::Rejected {
             reason: format!("Fight: {investigator:?} has no current_location to fight from").into(),
         };
-    };
-    if let Err(rejection) = validate_fight_target(cx.state, investigator, inv_location, enemy_id) {
+    }
+    if let Err(rejection) = validate_fight_target(cx.state, investigator, enemy_id) {
         return rejection;
     }
     if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Fight, "Fight")
     {
         return rejected;
     }
-    // The difficulty *is* the enemy's modified fight value, read at ST.6 —
-    // so The Ritual Begins 01144's "Each enemy gets +1 fight" reaches this
-    // attack (#677).
+    // A basic attack carries no modification — a designated Fight (every
+    // corpus weapon) reaches the same primary with its combat bonus and its
+    // bonus damage.
+    perform_fight(cx, investigator, enemy_id, None, 0, None)
+}
+
+/// Perform a **fight** against `enemy_id`: a Combat test whose difficulty *is*
+/// that enemy's modified fight value, read at ST.6 rather than snapshotted here
+/// (#677), dealing `1 + extra_damage` on success.
+///
+/// The one primary behind both ways of attacking (#805) — the basic Fight
+/// action and an ability printing the bold **Fight** designator (every weapon
+/// in the corpus). `glossary/Ability.md`: *"Activating such an ability
+/// **performs the designated action** as described in the rules, but modified
+/// in the manner described by the ability."* The modification is
+/// `combat_modifier` + `extra_damage`, and it is the *only* thing that differs;
+/// before this the two built their own near-identical tests side by side.
+///
+/// `combat_modifier` is *"+N \[combat\] for this attack"* — a row over the
+/// controller's combat skill scoped to the test about to start, not a number
+/// added to a snapshotted total. It travels unevaluated so the row answers from
+/// the board at every read (ADR 0005), which is what makes Esoteric Formula
+/// 02254's *"+2 \[willpower\] for this attack for each clue on the attacked
+/// enemy"* expressible without a second mechanism. `extra_damage` is already a
+/// number here: the Fight follow-up consumes it as a `u8`.
+///
+/// Callers validate the target; this takes the id as given.
+pub(crate) fn perform_fight(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    enemy_id: EnemyId,
+    combat_modifier: Option<crate::dsl::IntExpr>,
+    extra_damage: u8,
+    source: Option<crate::state::CardInstanceId>,
+) -> EngineOutcome {
     super::skill_test::start_skill_test(
         cx,
         investigator,
@@ -972,12 +1040,16 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         crate::state::DifficultyBasis::Fight(enemy_id),
         SkillTestFollowUp::Fight {
             enemy: enemy_id,
-            extra_damage: 0,
+            extra_damage,
         },
         None,
         None,
-        None,
-        None, // base Fight: no weapon modifier
+        source,
+        combat_modifier.map(|delta| super::skill_test::InitiatorModifier {
+            target: crate::state::ModifierTarget::Investigator(investigator),
+            stat: crate::dsl::Stat::Combat,
+            delta,
+        }),
     )
 }
 
