@@ -31,9 +31,63 @@
 //! >   allowing the ghouls to run rampant. Each investigator that has not
 //! >   resigned is defeated and suffers 1 physical trauma.
 //!
-//! It reaches its resolution point by *running an effect* — `reach_resolution`
-//! (ADR 0013). 01107 is terminal in the ordinary way: last card in the agenda
-//! deck, so dooming out flips it and its reverse is what ends the scenario.
+//! **The reverse branches on the act deck**, and only the first branch carries a
+//! resolution point. At act 1 or 2 it reaches the printed `(→R3)` by *running an
+//! effect* (ADR 0013); at act 3 it prints **no** `(→R#)` at all — it defeats the
+//! table instead, and the scenario ends where the campaign guide's untitled
+//! *"If no resolution was reached (each investigator resigned or was defeated)"*
+//! entry says it does. 01107 is terminal in the ordinary way: last card in the
+//! agenda deck, so dooming out flips it and its reverse is what ends the
+//! scenario, on either branch.
+//!
+//! The branch is an `Effect::If` over a card-local
+//! [`Condition::Native`](card_dsl::dsl::Condition::Native) (#276/#592) reading
+//! `act_index`. One consumer, and a plain scenario-state read rather than the
+//! *compound or target-referencing* predicate `TODO(#609)` reserves promotion
+//! for, so it stays card-local. **The card says "Act 3"; the engine holds a
+//! zero-based act cursor**, so the predicate is `act_index == 2`.
+//!
+//! The act-3 arm is likewise a card-local native effect — a loop over
+//! `turn_order` calling [`defeat_investigator`], not `Effect::ForEach`, whose
+//! evaluator arm is a stub and whose general design is still open (#363). The
+//! loop and the body it fans out to each have one consumer, so both fail the
+//! DSL-primitive threshold independently. **Turn order rather than map order**
+//! because the order is observable on a defeat body: Elimination step 5
+//! reassigns the lead when the lead is eliminated, and step 6's all-defeated
+//! check fires on whoever falls last. **One caveat on that order**: an
+//! investigator holding an in-play weakness with a *"when the game ends"* ability
+//! (Cover Up 01007) routes Elimination onto a `Continuation::Elimination` frame
+//! (#638), so their steps 1–6 run after this synchronous loop rather than inside
+//! it. The ending is the same either way — the frame drains before anything reads
+//! it — but the teardown interleaves. Pre-existing to this card, and the shape
+//! `Effect::ForEach` will have to answer for whenever #363 lands.
+//!
+//! **The ending is reached by the rules' route, not latched.** Each defeat runs
+//! Rules Reference p.10 Elimination, and step 6 — *"If there are no remaining
+//! players, the scenario ends. Refer to "no resolution was reached" entry for
+//! that scenario in the campaign guide."* — is what produces
+//! [`ScenarioEnding::NoResolution`](game_core::ScenarioEnding::NoResolution).
+//! The card names no ending on this branch, because the card prints none.
+//!
+//! *"That has not resigned"* needs no filter to be *correct*:
+//! [`defeat_investigator`] no-ops on any investigator who is not `Active`, and a
+//! resigned one is not. The loop reads the status anyway, so that the trauma
+//! announcement fires only for someone this card actually defeated.
+//!
+//! **A defeat by a card ability is neither killed nor driven insane.**
+//! `glossary/Defeat.md`: *"An investigator might also be defeated by a card
+//! ability."* The same entry makes killed and insane consequences of **trauma**
+//! — *"Taking trauma may cause an investigator to be killed or driven insane"* —
+//! and these investigators take one physical trauma, the first step on that
+//! track rather than its end. So the defeat carries
+//! [`game_core::DefeatCause::CardAbility`] and leaves
+//! [`game_core::Status::Defeated`], both distinct from the damage
+//! and horror values.
+//!
+//! **The physical trauma is announced, not recorded.** `Event::TraumaSuffered`
+//! is emitted per defeated investigator, following Cover Up 01007's
+//! mental-trauma precedent; nothing persists it until the phase-9 campaign log
+//! (#766).
 //!
 //! **Cell: the `after` cell of the `AgendaAdvanced` condition**, for the
 //! reverse. The reverse prints no trigger word, because it is not a triggered
@@ -56,32 +110,17 @@
 //! [`relocate_enemy`], so a Ghoul arriving at an investigator's location
 //! engages on arrival per the general engagement rule (#633) — the card
 //! text is positional only, but the framework rule applies regardless.
-//!
-//! # Module gap
-//!
-//! **The reverse's branch is not modelled; this module reaches R3
-//! unconditionally (#809).** Only the first printed bullet carries a `(→R#)`:
-//! the act-1/2 branch is *"trapped inside the house … **(→R3)**"*, while the
-//! act-3 branch reaches **no** resolution point at all — *"Each investigator
-//! that has not resigned is defeated and suffers 1 physical trauma"*, which
-//! drains the last active investigator into `check_all_defeated` and so into
-//! `ScenarioEnding::NoResolution`. So an investigator who doomed out at act 3
-//! is handed a resolution point the card does not print for them.
-//!
-//! Unchanged from what shipped when the point was a `resolution` field on the
-//! agenda (ADR 0012), and deliberately so: #808 is the mechanism, and **#809**
-//! is the branch — an `Effect::If` over a card-local `Condition::Native`
-//! reading `act_index`, with the act-3 arm defeating each investigator in
-//! `turn_order`.
 
 use card_dsl::dsl::{
-    forced_on_event, native, reach_resolution, Ability, EventPattern, EventTiming, Phase,
+    forced_on_event, if_else, native, native_condition, reach_resolution, Ability, EventPattern,
+    EventTiming, Phase,
 };
-use game_core::card_registry::NativeEffectFn;
-use game_core::state::{EnemyId, LocationId};
+use game_core::card_registry::{NativeConditionFn, NativeEffectFn};
+use game_core::event::TraumaKind;
+use game_core::state::{EnemyId, GameState, InvestigatorId, LocationId, Status};
 use game_core::{
-    enemy_can_enter_location, location_id_by_code, relocate_enemy, shortest_first_steps, Cx,
-    EngineOutcome, EvalContext,
+    defeat_investigator, enemy_can_enter_location, location_id_by_code, relocate_enemy,
+    shortest_first_steps, Cx, EngineOutcome, EvalContext, Event,
 };
 
 /// `ArkhamDB` code for Agenda 3, "They're Getting Out!".
@@ -89,6 +128,12 @@ pub const CODE: &str = "01107";
 
 const MOVE_GHOULS: &str = "01107:move-ghouls";
 const ROUND_END_DOOM: &str = "01107:round-end-doom";
+const AT_ACT_THREE: &str = "01107:at-act-three";
+const GHOULS_RUN_RAMPANT: &str = "01107:ghouls-run-rampant";
+
+/// Zero-based cursor for the card's *"Act 3"*. `act_index` counts from 0, so
+/// act 3 is index 2.
+const ACT_THREE_INDEX: usize = 2;
 
 /// The Parlor and Hallway printed codes (the doom-counting locations;
 /// the Parlor is also the movement target).
@@ -113,7 +158,11 @@ pub fn abilities() -> Vec<Ability> {
         forced_on_event(
             EventPattern::AgendaAdvanced,
             EventTiming::After,
-            reach_resolution(3),
+            if_else(
+                native_condition(AT_ACT_THREE),
+                native(GHOULS_RUN_RAMPANT),
+                reach_resolution(3),
+            ),
         ),
     ]
 }
@@ -124,8 +173,63 @@ pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
     match tag {
         MOVE_GHOULS => Some(move_ghouls_toward_parlor as NativeEffectFn),
         ROUND_END_DOOM => Some(place_round_end_doom as NativeEffectFn),
+        GHOULS_RUN_RAMPANT => Some(the_ghouls_run_rampant as NativeEffectFn),
         _ => None,
     }
+}
+
+/// Resolve this agenda's native-condition tags. Wired into the crate
+/// registry's `native_condition_for`.
+pub(crate) fn native_condition_for(tag: &str) -> Option<NativeConditionFn> {
+    match tag {
+        AT_ACT_THREE => Some(at_act_three as NativeConditionFn),
+        _ => None,
+    }
+}
+
+/// *"If the investigators are at Act 3"* — the reverse's branch predicate.
+///
+/// The card counts acts from 1 and the engine holds a zero-based cursor, so
+/// this is [`ACT_THREE_INDEX`]. Everything else — The Gathering's acts 1 and 2 —
+/// takes the printed `(→R3)` arm, which is the other half of the card's own
+/// dichotomy.
+fn at_act_three(state: &GameState, _ctx: &EvalContext) -> bool {
+    state.act_index == ACT_THREE_INDEX
+}
+
+/// *"If the investigators are at Act 3, they barely escape with their lives,
+/// allowing the ghouls to run rampant. Each investigator that has not resigned
+/// is defeated and suffers 1 physical trauma."*
+///
+/// **No resolution point.** This branch prints no `(→R#)`, and this function
+/// latches nothing: defeating the last active investigator drains Rules
+/// Reference p.10 Elimination step 6 — *"If there are no remaining players, the
+/// scenario ends"* — which is what produces `ScenarioEnding::NoResolution`.
+///
+/// **Turn order**, because the order is observable here: Elimination step 5
+/// reassigns the lead when the lead falls, and step 6's check fires on whoever
+/// falls last.
+///
+/// **The `Active` gate is *"that has not resigned"*.** [`defeat_investigator`]
+/// no-ops on a non-`Active` investigator anyway; reading the status first is
+/// what keeps the trauma announcement from firing for someone who was never
+/// defeated by this card.
+fn the_ghouls_run_rampant(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
+    let order: Vec<InvestigatorId> = cx.state.turn_order.clone();
+    for investigator in order {
+        if cx.state.investigators.get(&investigator).map(|i| i.status) != Some(Status::Active) {
+            continue;
+        }
+        defeat_investigator(cx, investigator);
+        // Announced, not recorded: nothing persists trauma until the phase-9
+        // campaign log (#766). Cover Up 01007's mental trauma is the precedent.
+        cx.events.push(Event::TraumaSuffered {
+            investigator,
+            kind: TraumaKind::Physical,
+            amount: 1,
+        });
+    }
+    EngineOutcome::Done
 }
 
 fn is_ghoul(traits: &[String]) -> bool {
@@ -240,6 +344,17 @@ mod tests {
         events
     }
 
+    /// The investigators announced defeated, in the order the events landed.
+    fn defeat_order(events: &[Event]) -> Vec<InvestigatorId> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                Event::InvestigatorDefeated { investigator, .. } => Some(*investigator),
+                _ => None,
+            })
+            .collect()
+    }
+
     fn with_agenda(state: &mut game_core::state::GameState) {
         state.agenda_deck = vec![Agenda {
             code: CardCode::new("01107"),
@@ -273,12 +388,11 @@ mod tests {
         assert!(matches!(&abilities[1].effect, Effect::Native { tag } if tag == ROUND_END_DOOM));
     }
 
-    /// The reverse reaches R3 by *running an effect* on the `after` cell of the
-    /// agenda's own advance (ADR 0013). Unconditional: the act-1/2-vs-act-3
-    /// branch is #809, and until it lands this is behaviour-identical to the
-    /// deleted `Agenda.resolution` field.
+    /// The reverse branches on the `after` cell of the agenda's own advance
+    /// (ADR 0013): at act 3 the ghouls run rampant, and **otherwise** — the
+    /// card's act-1-or-2 half — it reaches the printed `(→R3)`.
     #[test]
-    fn reverse_reaches_resolution_three_after_the_agenda_advances() {
+    fn reverse_branches_on_the_act_deck_after_the_agenda_advances() {
         let abilities = abilities();
         assert_eq!(
             abilities[2].trigger,
@@ -288,17 +402,134 @@ mod tests {
                 kind: card_dsl::dsl::TriggerKind::Forced,
             }
         );
+        let Effect::If {
+            condition,
+            then,
+            else_,
+        } = &abilities[2].effect
+        else {
+            panic!("the reverse is a branch, got {:?}", abilities[2].effect);
+        };
         assert!(
-            matches!(abilities[2].effect, Effect::ReachResolution(3)),
-            "the reverse reaches R3, got {:?}",
-            abilities[2].effect
+            matches!(condition, card_dsl::dsl::Condition::Native { tag } if tag == AT_ACT_THREE),
+            "branches on the card-local act-3 predicate, got {condition:?}",
+        );
+        assert!(
+            matches!(&**then, Effect::Native { tag } if tag == GHOULS_RUN_RAMPANT),
+            "act 3: the ghouls run rampant, got {then:?}",
+        );
+        assert!(
+            matches!(else_.as_deref(), Some(Effect::ReachResolution(3))),
+            "act 1 or 2: the printed (→R3), got {else_:?}",
+        );
+    }
+
+    /// *"If the investigators are at Act 3"* against a zero-based cursor.
+    #[test]
+    fn the_act_three_predicate_reads_the_zero_based_cursor() {
+        let mut state = GameStateBuilder::new().build();
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        for (act_index, expected) in [(0, false), (1, false), (ACT_THREE_INDEX, true)] {
+            state.act_index = act_index;
+            assert_eq!(
+                at_act_three(&state, &ctx),
+                expected,
+                "act_index {act_index} (the card's Act {})",
+                act_index + 1,
+            );
+        }
+    }
+
+    #[test]
+    fn native_condition_for_resolves_the_act_three_tag() {
+        assert!(native_condition_for(AT_ACT_THREE).is_some());
+        assert!(native_condition_for("01107:other").is_none());
+        assert!(
+            crate::impls::native_condition_for(AT_ACT_THREE).is_some(),
+            "and is reachable through the crate-level dispatch",
+        );
+    }
+
+    /// The act-3 branch, end to end over the native body: both investigators are
+    /// defeated in turn order, each announcing 1 physical trauma, and the
+    /// scenario ends at **no resolution point** — Elimination step 6, reached by
+    /// the defeats rather than latched by the card.
+    #[test]
+    fn the_act_three_branch_defeats_the_table_and_reaches_no_resolution() {
+        let _ = game_core::card_registry::install(crate::REGISTRY);
+        let (a, b) = (InvestigatorId(1), InvestigatorId(2));
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_turn_order([a, b])
+            .build();
+
+        let events = cx_apply(&mut state, the_ghouls_run_rampant);
+
+        for id in [a, b] {
+            assert_eq!(
+                state.investigators[&id].status,
+                Status::Defeated,
+                "defeated by a card ability — neither killed nor driven insane",
+            );
+        }
+        assert_eq!(
+            defeat_order(&events),
+            vec![a, b],
+            "defeated in turn order, not map order",
+        );
+        for id in [a, b] {
+            assert!(
+                events.iter().any(|e| matches!(e, Event::TraumaSuffered {
+                    investigator, kind, amount
+                } if *investigator == id
+                    && *kind == TraumaKind::Physical
+                    && *amount == 1)),
+                "each defeated investigator suffers 1 physical trauma",
+            );
+        }
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, Event::AllInvestigatorsDefeated)));
+        assert_eq!(
+            state.ending,
+            Some(game_core::ScenarioEnding::NoResolution),
+            "no resolution point: the card prints none on this branch",
+        );
+    }
+
+    /// *"Each investigator that has not resigned"* — the resigned one is left
+    /// alone, and announces no trauma.
+    #[test]
+    fn an_investigator_who_has_resigned_is_left_alone() {
+        let _ = game_core::card_registry::install(crate::REGISTRY);
+        let (a, b) = (InvestigatorId(1), InvestigatorId(2));
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_investigator(test_investigator(2))
+            .with_turn_order([a, b])
+            .build();
+        state.investigators.get_mut(&a).expect("seated").status = Status::Resigned;
+
+        let events = cx_apply(&mut state, the_ghouls_run_rampant);
+
+        assert_eq!(state.investigators[&a].status, Status::Resigned);
+        assert_eq!(state.investigators[&b].status, Status::Defeated);
+        assert_eq!(defeat_order(&events), vec![b]);
+        assert!(
+            !events.iter().any(|e| matches!(
+                e,
+                Event::TraumaSuffered { investigator, .. } if *investigator == a
+            )),
+            "no trauma announced for an investigator this card never defeated",
         );
     }
 
     #[test]
-    fn native_effect_for_resolves_both_tags() {
+    fn native_effect_for_resolves_every_tag() {
         assert!(native_effect_for(MOVE_GHOULS).is_some());
         assert!(native_effect_for(ROUND_END_DOOM).is_some());
+        assert!(native_effect_for(GHOULS_RUN_RAMPANT).is_some());
         assert!(native_effect_for("01107:other").is_none());
     }
 

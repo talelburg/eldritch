@@ -197,10 +197,12 @@ pub fn native_eligibility_for(tag: &str) -> Option<game_core::card_registry::Eli
 /// Dispatch a [`Condition::Native`](card_dsl::dsl::Condition::Native) tag to its
 /// card-local predicate; returns `None` for unregistered tags.
 ///
-/// `TODO(#609)`: Machete is the only entry, and a *second* one should not be
-/// added — the next card wanting a compound or target-referencing condition is
-/// the trigger to promote both to declarative DSL vocab instead.
+/// `TODO(#609)`: promotion to declarative DSL vocab is triggered by the next card
+/// wanting a **compound or target-referencing** condition — which is what Machete
+/// (01020) has and the DSL cannot express. 01107's act-deck branch is neither: it
+/// is a plain scenario-state read (`act_index == 2`), so it lands here without
+/// firing that trigger.
 #[must_use]
 pub fn native_condition_for(tag: &str) -> Option<game_core::card_registry::NativeConditionFn> {
-    machete::native_condition_for(tag)
+    machete::native_condition_for(tag).or_else(|| theyre_getting_out::native_condition_for(tag))
 }

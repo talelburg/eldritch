@@ -43,7 +43,7 @@ pub use action::{Action, EngineRecord, InputResponse, PlayerAction};
 pub use card_data::{CardMetadata, CardType, Class, SkillIcons, Slot};
 pub use card_registry::CardRegistry;
 pub use engine::{
-    apply, attach_to_location, deal_damage_to_enemy, discard_random_from_hand,
+    apply, attach_to_location, deal_damage_to_enemy, defeat_investigator, discard_random_from_hand,
     enemy_can_enter_location, legal_actions, location_id_by_code, modified_value,
     place_in_threat_area, relocate_enemy, reshuffle_encounter_discard, resolve_choice_count,
     resolve_encounter_card, reveal_location, round_end_advance, round_end_advance_affordable,

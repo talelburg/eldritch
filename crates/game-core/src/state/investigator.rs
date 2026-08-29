@@ -225,6 +225,26 @@ fn investigator_capacity(code: &CardCode) -> (u8, u8) {
 ///
 /// Resigned is a placeholder slot until the Resign action lands; the
 /// engine doesn't currently produce that variant.
+///
+/// # `TODO(#814)`: three variants where the rules want one
+///
+/// The rules' scenario-layer partition is `Active` / **defeated** /
+/// **resigned** — `glossary/Elimination.md`: *"A player is eliminated from a
+/// scenario any time his or her investigator is defeated, or if he or she
+/// resigns"*, and `glossary/Resign.md`: *"An investigator who resigns is not
+/// considered to have been defeated."*
+///
+/// [`Killed`](Self::Killed) and [`Insane`](Self::Insane) do not belong on that
+/// axis. They are **campaign-log states derived from accumulated trauma
+/// totals**, not consequences of how a scenario defeat happened —
+/// `glossary/Campaign_Play.md`: *"If an investigator has physical trauma equal
+/// to his or her printed health, the investigator is **killed**."* An
+/// investigator defeated by damage at zero prior trauma is defeated and suffers
+/// 1 physical trauma; this enum marks them `Killed`. No card in the corpus reads
+/// a defeat sub-status — cards read *eliminated* (the union) and *undefeated*
+/// (defeat vs. resignation), and impose killed/insane explicitly when they mean
+/// them. #814 collapses the three into [`Defeated`](Self::Defeated) once the
+/// campaign log (#766) has a home for the trauma totals to be read against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Status {
@@ -232,12 +252,35 @@ pub enum Status {
     #[default]
     Active,
     /// Investigator was killed (`damage >= max_health`).
+    ///
+    /// `TODO(#814)`: a scenario defeat by damage is not a kill — see the note
+    /// on the enum.
     Killed,
     /// Investigator was driven insane (`horror >= max_sanity`).
+    ///
+    /// `TODO(#814)`: a scenario defeat by horror is not insanity — see the note
+    /// on the enum.
     Insane,
     /// Investigator chose to resign from the scenario. Not yet
     /// produced by the engine; the Resign action is downstream.
     Resigned,
+    /// Investigator was defeated, with no campaign-log consequence implied.
+    ///
+    /// Produced today only by a card ability — `glossary/Defeat.md`: *"An
+    /// investigator might also be defeated by a card ability."* Neither killed
+    /// nor driven insane: that same entry makes those two consequences of
+    /// **trauma** — *"Taking trauma may cause an investigator to be killed or
+    /// driven insane"* — and a card that defeats and hands out one trauma has
+    /// taken the first step on that track, not the last. The Gathering's agenda
+    /// 01107 (act-3 branch) is the first producer.
+    ///
+    /// **This is the variant #814 collapses the other two defeats into**, which
+    /// is why it is named for the defeat rather than for the ability that caused
+    /// it: `DefeatCause` on [`Event::InvestigatorDefeated`] already carries the
+    /// cause, and that is where the rules put it.
+    ///
+    /// [`Event::InvestigatorDefeated`]: crate::event::Event::InvestigatorDefeated
+    Defeated,
 }
 
 /// Why an investigator was defeated. Carried on
@@ -255,6 +298,11 @@ pub enum DefeatCause {
     /// Investigator resigned. Not yet produced; reserved for the
     /// Resign action.
     Resigned,
+    /// A card ability defeated the investigator outright, with no damage
+    /// or horror threshold involved — `glossary/Defeat.md`: *"An
+    /// investigator might also be defeated by a card ability."* Flips
+    /// status to [`Status::Defeated`].
+    CardAbility,
 }
 
 // `Skills` and `SkillKind` moved down to `card-dsl`

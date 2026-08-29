@@ -54,6 +54,7 @@ pub(super) fn apply_investigator_defeat(
         DefeatCause::Damage => Status::Killed,
         DefeatCause::Horror => Status::Insane,
         DefeatCause::Resigned => Status::Resigned,
+        DefeatCause::CardAbility => Status::Defeated,
     };
     cx.events.push(Event::InvestigatorDefeated {
         investigator,
@@ -453,6 +454,31 @@ pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
     // Dynamite Blast 01024's `for inv in investigators` loop is the caller that
     // makes this the harder of the two to migrate.
     super::combat::soak_and_place(cx, investigator, amount, 0);
+}
+
+/// Defeat `investigator` outright by a card ability, with no damage or horror
+/// threshold involved — `glossary/Defeat.md`: *"An investigator might also be
+/// defeated by a card ability."*
+///
+/// The card-local (#276) entry point onto the ordinary defeat path: it flips
+/// status to [`Status::Defeated`], announces
+/// [`Event::InvestigatorDefeated`] with [`DefeatCause::CardAbility`], and runs
+/// Rules Reference p.10 Elimination — including step 6, *"If there are no
+/// remaining players, the scenario ends"*, which is how a card that defeats the
+/// last active investigator reaches
+/// [`ScenarioEnding::NoResolution`](crate::scenario::ScenarioEnding::NoResolution)
+/// without latching it itself. Re-exported at `game_core::defeat_investigator`.
+///
+/// **No-ops on an investigator who is not `Active`** — one who has already been
+/// killed, driven insane, or resigned is not defeated again. That is what lets a
+/// card printing *"each investigator that has not resigned"* skip the filter:
+/// `apply_investigator_defeat`'s own status gate is the filter.
+///
+/// The twin of [`take_damage`] / `take_horror` for the non-numeric case: those
+/// route through the soak entry because damage and horror can be absorbed, and a
+/// card-ability defeat cannot be.
+pub fn defeat_investigator(cx: &mut Cx, investigator: InvestigatorId) {
+    apply_investigator_defeat(cx, investigator, DefeatCause::CardAbility);
 }
 
 /// Emit [`Event::AllInvestigatorsDefeated`] when no `Active`
@@ -1057,5 +1083,95 @@ mod elimination_tests {
 
         assert_eq!(state.investigators[&dead].status, Status::Resigned);
         assert_eq!(turn_frame(&state), Some((dead, true)));
+    }
+
+    /// `glossary/Defeat.md`: *"An investigator might also be defeated by a card
+    /// ability."* That defeat is neither killed nor driven insane — the same
+    /// entry makes those two consequences of **trauma** — so it carries its own
+    /// cause and its own status.
+    #[test]
+    fn a_card_ability_defeat_is_neither_killed_nor_insane() {
+        crate::test_support::install_test_registry();
+        let (a, b) = (InvestigatorId(1), InvestigatorId(2));
+        let mut state = two_investigator_open_turn(a);
+        let mut events = Vec::new();
+
+        defeat_investigator(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            a,
+        );
+
+        assert_eq!(
+            state.investigators[&a].status,
+            Status::Defeated,
+            "not Killed (damage) and not Insane (horror)",
+        );
+        assert_event!(events, Event::InvestigatorDefeated { investigator, cause }
+            if *investigator == a && *cause == DefeatCause::CardAbility);
+        assert_eq!(
+            state.investigators[&b].status,
+            Status::Active,
+            "the other investigator is untouched",
+        );
+        assert!(
+            state.ending.is_none(),
+            "one active investigator remains, so the scenario has not ended",
+        );
+    }
+
+    /// Elimination step 6, *"If there are no remaining players, the scenario
+    /// ends"* — reached through the ordinary defeat path, so a card ability that
+    /// drains the last active investigator ends the scenario at **no** resolution
+    /// point without latching one itself.
+    #[test]
+    fn a_card_ability_defeating_the_last_investigator_latches_no_resolution() {
+        crate::test_support::install_test_registry();
+        let (a, b) = (InvestigatorId(1), InvestigatorId(2));
+        let mut state = two_investigator_open_turn(a);
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        defeat_investigator(&mut cx, a);
+        defeat_investigator(&mut cx, b);
+
+        assert_event!(events, Event::AllInvestigatorsDefeated);
+        assert_eq!(
+            state.ending,
+            Some(crate::scenario::ScenarioEnding::NoResolution),
+            "Elimination step 6, not a numbered resolution",
+        );
+    }
+
+    /// An investigator who is not `Active` is not defeated again — which is what
+    /// lets a card printing *"each investigator that has not resigned"* skip the
+    /// filter entirely.
+    #[test]
+    fn a_card_ability_defeat_no_ops_on_an_already_eliminated_investigator() {
+        crate::test_support::install_test_registry();
+        let (a, b) = (InvestigatorId(1), InvestigatorId(2));
+        let mut state = two_investigator_open_turn(b);
+        state.investigators.get_mut(&a).expect("seated").status = Status::Resigned;
+        let mut events = Vec::new();
+
+        defeat_investigator(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            a,
+        );
+
+        assert_eq!(
+            state.investigators[&a].status,
+            Status::Resigned,
+            "the resigned investigator is left alone",
+        );
+        assert_no_event!(events, Event::InvestigatorDefeated { .. });
     }
 }

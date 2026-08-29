@@ -4,18 +4,29 @@
 //! covers round-end ordering — the act's "when the round ends" window
 //! resolves before this agenda's "at the end of the round" doom (RR `when`
 //! before `at`).
+//!
+//! And the **reverse's branch** (#809), through the same real registry: which of
+//! the two printed bullets fires depends on the act cursor, and only the first
+//! carries a `(→R#)`. Driven via `fire_forced_on_agenda_advance` — the
+//! `ForcedTriggerPoint::AgendaAdvanced` path the flip itself uses — rather than a
+//! full Mythos doom-to-threshold cascade, which is
+//! `scenarios/tests/the_gathering_resolutions.rs`'s job. This is the seam that
+//! carries the *multi-investigator* claims the solo end-to-end cannot: the fan-out
+//! order, and the investigator it must leave alone.
 
 use card_dsl::dsl::EventTiming;
 use game_core::action::InputResponse;
 use game_core::engine::TimingEvent;
+use game_core::event::TraumaKind;
+use game_core::scenario::ScenarioEnding;
 use game_core::state::{
-    Act, Agenda, CardCode, Continuation, Enemy, EnemyId, GameState, InvestigatorId, Location,
-    LocationId, Phase, TimingMode,
+    Act, Agenda, CardCode, Continuation, DefeatCause, Enemy, EnemyId, GameState, InvestigatorId,
+    Location, LocationId, Phase, Status, TimingMode,
 };
 use game_core::test_support::{
-    fire_forced_on_phase_end, fire_forced_on_round_end, resume_round_end_window,
-    run_enemy_phase_end, run_upkeep_round_end, take_turn_action, test_enemy, test_investigator,
-    GameStateBuilder,
+    fire_forced_on_agenda_advance, fire_forced_on_phase_end, fire_forced_on_round_end,
+    resume_round_end_window, run_enemy_phase_end, run_upkeep_round_end, take_turn_action,
+    test_enemy, test_investigator, GameStateBuilder,
 };
 use game_core::{EngineOutcome, Event, TurnAction};
 
@@ -289,5 +300,145 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
     assert!(
         state.agenda_doom >= 2,
         "the `at` doom lands after the act window resolves"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The reverse's branch (#809)
+// ---------------------------------------------------------------------------
+
+/// Real investigator codes, so `max_health()` / `max_sanity()` resolve against
+/// the installed `cards` registry (`TEST_INV` is only known to game-core's own
+/// test registry). Roland Banks, Daisy Walker, "Skids" O'Toole — none of whose
+/// implemented abilities reach the defeat path.
+const SEATS: [&str; 3] = ["01001", "01002", "01003"];
+
+/// A table of `n` seated investigators in turn order, with The Gathering's
+/// three-card act deck and 01107 as the sole (and therefore terminal) agenda.
+fn table_at_act(n: usize, act_index: usize) -> GameState {
+    let mut builder = GameStateBuilder::new();
+    for (i, code) in SEATS.iter().enumerate().take(n) {
+        let mut inv = test_investigator(u32::try_from(i).expect("small") + 1);
+        inv.investigator_card.code = CardCode::new(*code);
+        builder = builder.with_investigator(inv);
+    }
+    let order: Vec<InvestigatorId> = (1..=n)
+        .map(|i| InvestigatorId(u32::try_from(i).expect("small")))
+        .collect();
+    let mut state = builder.with_turn_order(order).build();
+    state.act_deck = ["01108", "01109", "01110"]
+        .iter()
+        .map(|code| Act {
+            code: CardCode::new(*code),
+            clue_threshold: 2,
+        })
+        .collect();
+    state.act_index = act_index;
+    state.agenda_deck = vec![Agenda {
+        code: CardCode::new("01107"),
+        doom_threshold: 10,
+    }];
+    state.agenda_index = 0;
+    state
+}
+
+fn defeat_order(events: &[Event]) -> Vec<InvestigatorId> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            Event::InvestigatorDefeated { investigator, .. } => Some(*investigator),
+            _ => None,
+        })
+        .collect()
+}
+
+/// *"If the investigators are at Act 1 or 2, they are trapped inside the house
+/// as the ghouls tear them apart. **(→R3)**"* — both halves of that bullet reach
+/// the printed resolution point, and nobody is defeated.
+#[test]
+fn agenda_01107_reverse_at_act_1_or_2_reaches_resolution_3() {
+    for act_index in [0, 1] {
+        let mut state = table_at_act(2, act_index);
+        let mut events = Vec::new();
+
+        let outcome =
+            fire_forced_on_agenda_advance(&mut state, &mut events, CardCode::new("01107"));
+
+        assert_eq!(outcome, EngineOutcome::Done);
+        assert_eq!(
+            state.ending,
+            Some(ScenarioEnding::Resolution(game_core::ResolutionId::new(3))),
+            "act cursor {act_index} is the card's Act {}",
+            act_index + 1,
+        );
+        assert!(
+            defeat_order(&events).is_empty(),
+            "nobody is defeated on this branch: {events:?}",
+        );
+    }
+}
+
+/// *"If the investigators are at Act 3, they barely escape with their lives,
+/// allowing the ghouls to run rampant. Each investigator that has not resigned
+/// is defeated and suffers 1 physical trauma."*
+///
+/// Three seats with the middle one resigned. The fan-out runs in **turn order**
+/// — observable here, where the solo end-to-end cannot see it — skips the
+/// resigned investigator entirely, and ends the scenario at **no resolution
+/// point**: the card prints no `(→R#)` on this bullet, and the ending arrives
+/// via Rules Reference p.10 Elimination step 6, *"If there are no remaining
+/// players, the scenario ends."*
+#[test]
+fn agenda_01107_reverse_at_act_3_defeats_the_unresigned_in_turn_order() {
+    let (a, b, c) = (InvestigatorId(1), InvestigatorId(2), InvestigatorId(3));
+    let mut state = table_at_act(3, 2);
+    state.investigators.get_mut(&b).expect("seated").status = Status::Resigned;
+    let mut events = Vec::new();
+
+    let outcome = fire_forced_on_agenda_advance(&mut state, &mut events, CardCode::new("01107"));
+
+    assert_eq!(outcome, EngineOutcome::Done);
+    assert_eq!(
+        defeat_order(&events),
+        vec![a, c],
+        "turn order, and the resigned investigator is left alone",
+    );
+    for id in [a, c] {
+        assert_eq!(
+            state.investigators[&id].status,
+            Status::Defeated,
+            "defeated by a card ability — neither killed nor driven insane",
+        );
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, Event::InvestigatorDefeated {
+                investigator, cause
+            } if *investigator == id && *cause == DefeatCause::CardAbility)),);
+        assert!(
+            events.iter().any(|e| matches!(e, Event::TraumaSuffered {
+                investigator, kind, amount
+            } if *investigator == id && *kind == TraumaKind::Physical && *amount == 1)),
+            "1 physical trauma, announced per investigator",
+        );
+    }
+    assert_eq!(
+        state.investigators[&b].status,
+        Status::Resigned,
+        "*that has not resigned*",
+    );
+    assert!(
+        !events.iter().any(|e| matches!(
+            e,
+            Event::TraumaSuffered { investigator, .. } if *investigator == b
+        )),
+        "no trauma for an investigator this card never defeated",
+    );
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, Event::AllInvestigatorsDefeated)));
+    assert_eq!(
+        state.ending,
+        Some(ScenarioEnding::NoResolution),
+        "the act-3 bullet prints no (→R#)",
     );
 }
