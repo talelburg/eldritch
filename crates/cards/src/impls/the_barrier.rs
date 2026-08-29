@@ -26,10 +26,19 @@
 //! Hallway (01112), making act 3's "If the Ghoul Priest is Defeated,
 //! advance" objective reachable in real play.
 //!
-//! "Put the set-aside Lita Chantler into play in the Parlor" is deferred to
-//! **#772** — see the `TODO` on the private `reverse` handler below. The engine
-//! gained the ability to do it in #771; what is still missing is everything
-//! that would make her *matter* once she is there.
+//! # Module gap
+//!
+//! **Line 2 of the reverse — *"Put the set-aside Lita Chantler into play in the
+//! Parlor"* — is not shipped.** Everything else on the card is. The engine can
+//! now do it: `put_set_aside_card_into_play` dispatches a set-aside asset into a
+//! location's `cards_at_location` zone (#771), and Lita 01117 is set aside at
+//! setup. What is missing is everything that would make her *matter* once she is
+//! there — an uncontrolled card is not yet reachable as an ability source, so
+//! neither the Parlor's *"While Lita Chantler is not controlled by a player, she
+//! gains: \[action\] **Parley.** …"* nor her own controlled-side buffs exist
+//! (#772, #773). Putting her into play now would seat an inert, unreachable card
+//! in the Parlor, which is a worse board than not having her, so the line waits
+//! for the granting hook rather than being approximated. Tracked by **#772**.
 //!
 //! Like 01108's board build, the reverse is board-dependent, single-use
 //! scenario logic, so it lives card-locally as a [`card_dsl::dsl::Effect::Native`]

@@ -21,15 +21,17 @@
 //!
 //! Most modifiers are true exactly while a card sits somewhere, so the
 //! sweep over those places *is* the population and there is nothing to
-//! keep in sync. Six collections carry them:
+//! keep in sync. Seven collections carry them:
 //!
 //! 1. every investigator's controlled instances (investigator card,
 //!    cards in play, threat area),
 //! 2. every location's own card,
 //! 3. every location's attachments,
-//! 4. every enemy's own card,
-//! 5. every enemy's attachments,
-//! 6. the current act and the current agenda.
+//! 4. every location's cards put into play *at* it, controlled by
+//!    nobody (Lita Chantler 01117 in the Parlor),
+//! 5. every enemy's own card,
+//! 6. every enemy's attachments,
+//! 7. the current act and the current agenda.
 //!
 //! Narrower is wrong rather than merely incomplete: Whippoorwill 02090
 //! is an *enemy* modifying investigators, Whateley Ruins 02250 a
@@ -592,7 +594,7 @@ fn sweep(
             visit(&card.code, Some(card), Placement::Controlled(inv.id));
         }
     }
-    // 2, 3 and 3b. Every location, its attachments, and the cards put into
+    // 2, 3 and 4. Every location, its attachments, and the cards put into
     //    play at it.
     for (id, loc) in &state.locations {
         visit(&loc.code, None, Placement::Location(*id));
@@ -603,14 +605,14 @@ fn sweep(
             visit(&card.code, Some(card), Placement::AtLocation(*id));
         }
     }
-    // 4 and 5. Every enemy and its attachments.
+    // 5 and 6. Every enemy and its attachments.
     for (id, enemy) in &state.enemies {
         visit(&enemy.code, None, Placement::Enemy(*id));
         for att in &enemy.attachments {
             visit(&att.code, Some(att), Placement::EnemyAttachment(*id));
         }
     }
-    // 6. The current act and agenda.
+    // 7. The current act and agenda.
     if let Some(act) = state.act_deck.get(state.act_index) {
         visit(&act.code, None, Placement::ActAgenda);
     }

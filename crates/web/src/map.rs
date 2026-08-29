@@ -187,9 +187,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                 .cards_at_location
                 .iter()
                 .map(|c| {
-                    let name = game_core::card_registry::current()
-                        .and_then(|r| (r.metadata_for)(&c.code))
-                        .map_or_else(|| c.code.as_str().to_owned(), |m| m.name.clone());
+                    let name = crate::names::card_name(&c.code);
                     view! {
                         <div class="at-location-token">
                             {name} " (uncontrolled)"

@@ -133,8 +133,8 @@ pub fn put_set_aside_card_into_play(cx: &mut Cx, code: &str, at: Option<&str>) -
         }
         ref kind => EngineOutcome::Rejected {
             reason: format!(
-                "put_set_aside_card_into_play: a set-aside {kind:?} ({code}) has no \
-                 put-into-play path"
+                "TODO(#824): a set-aside {kind:?} ({code}) needs a put-into-play path \
+                 (lands with #824)"
             )
             .into(),
         },

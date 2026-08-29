@@ -71,6 +71,29 @@ pub struct Location {
     /// an uncontrolled asset is not an eligible soak target, since
     /// `glossary/Asset_Cards.md` restricts assignment to assets *"he or she
     /// controls"*. Empty for the common case.
+    ///
+    /// # Leaving the zone
+    ///
+    /// Two exits, and neither is implemented yet — the zone has exactly one
+    /// occupant today, and she leaves it only through #772's take-control
+    /// Parley.
+    ///
+    /// **Take control** moves the *same* [`CardInPlay`] out of here and into
+    /// the new controller's `cards_in_play`. Moving the instance rather than
+    /// minting a fresh one is the contract: the struct carries
+    /// `accumulated_damage`, `accumulated_horror`, `uses` and `ability_usage`,
+    /// and a card that changes hands is the same card — *"When you 'take
+    /// control' of a card, it enters your play area (not your hand)"*
+    /// (<https://arkhamdb.com/card/01117>). The play-card path's
+    /// mint-on-entry is therefore the wrong shape to reuse.
+    ///
+    /// **Leaving play** goes to the same destination the card's own type
+    /// dictates, except where the scenario overrides it — for Lita, held
+    /// temporarily and owned by nobody's deck, the override is explicit: *"If
+    /// Lita leaves play while a player controls her temporarily during 'The
+    /// Gathering' scenario (i.e. while she is technically not a part of that
+    /// player's deck), remove her from the game (do not place her into any
+    /// discard pile)"* (<https://arkhamdb.com/card/01117>).
     pub cards_at_location: Vec<CardInPlay>,
 }
 

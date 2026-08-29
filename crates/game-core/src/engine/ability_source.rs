@@ -138,9 +138,10 @@ impl SourceCard<'_> {
 /// investigator card, then cards in play, then the threat area), then the
 /// co-location bullet (the location itself, its attachments, the cards put into
 /// play at it, each enemy at it with its attachments, then the threat areas of
-/// the *other* investigators there), then the current act and the current agenda. It is what the turn menu
-/// is listed in, so it must stay deterministic — `investigators`, `locations`
-/// and `enemies` are all `BTreeMap`s, so iteration is by id.
+/// the *other* investigators there), then the current act and the current
+/// agenda. It is what the turn menu is listed in, so it must stay
+/// deterministic — `investigators`, `locations` and `enemies` are all
+/// `BTreeMap`s, so iteration is by id.
 ///
 /// The acting investigator's own threat area is yielded once, under the control
 /// bullet: the co-location pass skips them, since a card cannot be in two
@@ -381,9 +382,9 @@ pub(crate) fn resolve_mut(
 
 /// The in-play instance `instance_id` names, wherever on the board it sits:
 /// any investigator's controlled collections, a location's attachments or the
-/// cards put into play at it, or an enemy's attachments. The read side of [`instance_in_play_mut`], which walks the same
-/// collections — one walk each way, so the pair cannot drift into disagreeing
-/// about where a card can be.
+/// cards put into play at it, or an enemy's attachments. The read side of
+/// [`instance_in_play_mut`], which walks the same collections — one walk each
+/// way, so the pair cannot drift into disagreeing about where a card can be.
 fn instance_in_play(state: &GameState, instance_id: CardInstanceId) -> Option<&CardInPlay> {
     state
         .investigators
