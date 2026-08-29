@@ -568,7 +568,6 @@ fn agenda(code: &str) -> Agenda {
     Agenda {
         code: CardCode::new(code),
         doom_threshold: 3,
-        resolution: None,
     }
 }
 
@@ -576,7 +575,6 @@ fn act(code: &str) -> Act {
     Act {
         code: CardCode::new(code),
         clue_threshold: 2,
-        resolution: None,
     }
 }
 

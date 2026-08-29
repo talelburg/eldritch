@@ -289,10 +289,13 @@ pub struct GameState {
 }
 
 /// One agenda card's mechanically-relevant state: the doom needed to
-/// advance it, and the printed `(→R#)` resolution point on its reverse
-/// (if any). Card *effect* text is out of scope (per-scenario content);
-/// `resolution` is the structural pointer that ends the scenario when a
-/// terminal agenda advances.
+/// advance it. Card *effect* text is out of scope (per-scenario content),
+/// and so is the printed `(→R#)` resolution point on its reverse — a
+/// terminal agenda reaches its ending by *running*
+/// [`Effect::ReachResolution`](crate::dsl::Effect::ReachResolution) from
+/// that reverse, and it is terminal because it is the last card in
+/// [`GameState::agenda_deck`], not because it carries a flag. See
+/// `docs/adr/0013-a-resolution-point-is-a-printed-effect.md`.
 ///
 /// Deliberately NOT `#[non_exhaustive]`: scenario setup in the
 /// `scenarios` crate constructs these with struct literals, which a
@@ -309,14 +312,11 @@ pub struct Agenda {
     /// and `Objective –` overrides are deferred until a real
     /// scenario needs them.
     pub doom_threshold: u8,
-    /// The printed resolution point on this agenda's reverse. `Some` on
-    /// a terminal agenda (advancing it ends the scenario); `None` on an
-    /// agenda that advances to the next card.
-    pub resolution: Option<crate::scenario::ResolutionId>,
 }
 
 /// One act card's mechanically-relevant state: the clues the group must
-/// spend to advance it, and its `(→R#)` resolution point (if any). Not
+/// spend to advance it. Its `(→R#)` resolution point is printed on its
+/// reverse and reached by effect, exactly as [`Agenda`]'s is. Not
 /// `#[non_exhaustive]` for the same cross-crate-construction reason as
 /// [`Agenda`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -328,9 +328,6 @@ pub struct Act {
     /// Clues the investigators must spend to advance (Rules Reference
     /// p.3). Flat value only for now.
     pub clue_threshold: u8,
-    /// The printed resolution point on this act's reverse. `Some` on a
-    /// terminal act; `None` otherwise.
-    pub resolution: Option<crate::scenario::ResolutionId>,
 }
 
 /// Which driver to resume after a mid-attack reaction window closes.
@@ -3496,12 +3493,10 @@ mod act_agenda_code_tests {
         let act = Act {
             code: CardCode("01108".into()),
             clue_threshold: 2,
-            resolution: None,
         };
         let agenda = Agenda {
             code: CardCode("01105".into()),
             doom_threshold: 3,
-            resolution: None,
         };
         assert_eq!(act.code, CardCode("01108".into()));
         assert_eq!(agenda.code, CardCode("01105".into()));

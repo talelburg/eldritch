@@ -4939,9 +4939,13 @@ mod tests {
     }
 
     /// Build an Investigation-phase state whose current (only) act is
-    /// terminal and whose investigator holds exactly enough clues to
-    /// advance it — so a single `AdvanceAct` latches `Won`.
+    /// terminal — it is the only card in the deck (ADR 0013) — and whose
+    /// investigator holds exactly enough clues to advance it. A single
+    /// `AdvanceAct` flips it and its reverse latches `Resolution(1)`, which is
+    /// why the test registry has to be installed: the reverse is an ability the
+    /// registry serves, not a field on the deck entry.
     fn terminal_act_state(scenario_id: Option<&str>) -> crate::state::GameState {
+        crate::test_support::install_test_registry();
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
         investigator.clues = 1;
@@ -4962,9 +4966,8 @@ mod tests {
         }
         let mut state = builder.build();
         state.act_deck = vec![Act {
-            code: CardCode("_test_act".into()),
+            code: crate::test_support::terminal_code(1),
             clue_threshold: 1,
-            resolution: Some(ResolutionId::new(1)),
         }];
         state
     }

@@ -73,7 +73,6 @@ fn round_ended_fires_agenda_forced_ability() {
     state.agenda_deck = vec![Agenda {
         code: CardCode::new(AGENDA),
         doom_threshold: 10,
-        resolution: None,
     }];
     state.agenda_index = 0;
     let mut events = Vec::new();
@@ -126,7 +125,6 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     state.agenda_deck = vec![Agenda {
         code: CardCode::new(AGENDA),
         doom_threshold: 10,
-        resolution: None,
     }];
     state.agenda_index = 0;
 

@@ -53,7 +53,6 @@ fn enemy_01102_forced_ack_anchors_to_the_attacking_enemy() {
     state.agenda_deck = vec![Agenda {
         code: CardCode::new("01105"),
         doom_threshold: 3,
-        resolution: None,
     }];
     state.agenda_index = 0;
     state.interactive_acknowledge = true;

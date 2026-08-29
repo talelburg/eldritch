@@ -35,7 +35,6 @@ fn agenda_01105_forced_ack_anchors_to_the_agenda_card() {
     state.agenda_deck = vec![Agenda {
         code: CardCode::new("01105"),
         doom_threshold: 3,
-        resolution: None,
     }];
     state.agenda_index = 0;
     state.interactive_acknowledge = true;

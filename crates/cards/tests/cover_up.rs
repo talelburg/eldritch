@@ -8,14 +8,14 @@
 
 use game_core::action::EngineRecord;
 use game_core::event::{Event, TraumaKind};
-use game_core::scenario::{ResolutionId, ScenarioId};
+use game_core::scenario::ScenarioId;
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
     InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{
-    drive, take_turn_action, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
-    TestSession,
+    drive, take_turn_action, terminal_code, test_investigator, test_location, GameStateBuilder,
+    ScriptedResolver, TestSession,
 };
 use game_core::{
     apply, assert_event_sequence, assert_no_event, Action, EngineOutcome, InputResponse,
@@ -29,7 +29,11 @@ const LOC: LocationId = LocationId(10);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    // The real registry plus `test_support`'s synthetic terminal card: the
+    // game-end fixtures below end their act deck in one, because a terminal card
+    // reaches its resolution point by running an effect on its reverse (ADR
+    // 0013) and so needs the registry to serve it.
+    game_core::test_support::install_registry_with_terminal_cards(cards::REGISTRY);
 }
 
 /// A Cover-Up instance carrying `clues`, pre-placed in the threat area.
@@ -264,11 +268,48 @@ fn resolving_state(cover_up_clues: u8) -> GameState {
         .with_scenario_id(ScenarioId::new("unknown"))
         .build();
     state.act_deck = vec![Act {
-        code: CardCode("_test_act".into()),
+        // Terminal because it is the only act; its reverse reaches R1, which is
+        // what ends the scenario and opens the GameEnd point under test.
+        code: terminal_code(1),
         clue_threshold: 1,
-        resolution: Some(ResolutionId::new(1)),
     }];
     state
+}
+
+/// Advance the terminal act and clear the acknowledge its **reverse** raises,
+/// returning the merged result.
+///
+/// A terminal act reaches its resolution point by running `reach_resolution` on
+/// its reverse (ADR 0013), and a lone Forced ability in interactive mode surfaces
+/// a #466 acknowledge before it runs. That acknowledge is not what these tests
+/// are about — the `GameEnd` forced that follows it is — so it is drained here,
+/// with the events from both applies merged so the ordering assertions still read
+/// one sequence.
+fn advance_terminal_act_interactively(state: GameState) -> game_core::engine::ApplyResult {
+    let paused = take_turn_action(state, &TurnAction::AdvanceAct { investigator: INV });
+    assert!(
+        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
+        "expected the terminal act's reverse to raise its forced acknowledge, got {:?}",
+        paused.outcome,
+    );
+    assert!(
+        !paused
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::ScenarioResolved { .. })),
+        "the ending is latched by the reverse, so nothing resolves before it runs; events = {:?}",
+        paused.events,
+    );
+    let mut events = paused.events;
+    let mut done = apply(
+        paused.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+        }),
+    );
+    events.append(&mut done.events);
+    done.events = events;
+    done
 }
 
 /// The trauma resolves in the `when` cell of the `GameEnd` condition (#720), and
@@ -329,7 +370,7 @@ fn interactive_game_end_trauma_surfaces_an_acknowledge_before_resolving() {
     let mut state = resolving_state(3);
     state.interactive_acknowledge = true;
 
-    let paused = take_turn_action(state, &TurnAction::AdvanceAct { investigator: INV });
+    let paused = advance_terminal_act_interactively(state);
 
     assert!(
         matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -399,7 +440,7 @@ fn interactive_game_end_with_a_clueless_cover_up_neither_prompts_nor_resolves_it
     let mut state = resolving_state(0);
     state.interactive_acknowledge = true;
 
-    let r = take_turn_action(state, &TurnAction::AdvanceAct { investigator: INV });
+    let r = advance_terminal_act_interactively(state);
 
     assert!(
         !matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -457,12 +498,13 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
         .build();
     state.interactive_acknowledge = true;
     state.act_deck = vec![Act {
-        code: CardCode("_test_act".into()),
+        // Terminal because it is the only act; its reverse reaches R1, which is
+        // what ends the scenario and opens the GameEnd point under test.
+        code: terminal_code(1),
         clue_threshold: 1,
-        resolution: Some(ResolutionId::new(1)),
     }];
 
-    let mut result = take_turn_action(state, &TurnAction::AdvanceAct { investigator: INV });
+    let mut result = advance_terminal_act_interactively(state);
     let mut events = std::mem::take(&mut result.events);
     let mut state = result.state;
 

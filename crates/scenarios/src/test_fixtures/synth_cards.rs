@@ -377,7 +377,12 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         // SYNTH_ENEMY_CODE intentionally returns None — the synthetic
         // enemy has no Revelation effect; the spawn handler is the
         // only thing exercised by the integration test.
-        _ => None,
+        //
+        // The synthetic terminal act/agenda cards are composed in from
+        // `game_core::test_support` the way `metadata_for_test_inv` is above:
+        // the `synthetic` fixture's decks end in one, and without its reverse a
+        // terminal advance would reach no ending (ADR 0013).
+        _ => game_core::test_support::abilities_for_terminal(code),
     }
 }
 

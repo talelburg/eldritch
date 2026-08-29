@@ -44,7 +44,6 @@ fn board_with_agenda() -> GameState {
     state.agenda_deck = vec![Agenda {
         code: CardCode::new("01107"),
         doom_threshold: 10,
-        resolution: None,
     }];
     state.agenda_index = 0;
     state
@@ -251,7 +250,6 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
     state.act_deck = vec![Act {
         code: CardCode::new("01109"),
         clue_threshold: 3,
-        resolution: None,
     }];
     state.act_index = 0;
     {

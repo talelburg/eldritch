@@ -121,19 +121,16 @@ fn board() -> GameState {
         Act {
             code: CardCode::new(ACT_ONE),
             clue_threshold: 99,
-            resolution: None,
         },
         Act {
             code: CardCode::new(ACT_TWO),
             clue_threshold: 99,
-            resolution: None,
         },
     ];
     state.act_index = 0;
     state.agenda_deck = vec![Agenda {
         code: CardCode::new(AGENDA),
         doom_threshold: 99,
-        resolution: None,
     }];
     state.agenda_index = 0;
     state

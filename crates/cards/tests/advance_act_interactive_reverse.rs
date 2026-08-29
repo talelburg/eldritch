@@ -66,12 +66,10 @@ fn interactive_act_reverse_resolves_cleanly() {
         Act {
             code: CardCode(IACT.into()),
             clue_threshold: 1,
-            resolution: None,
         },
         Act {
             code: CardCode("_iact_2".into()),
             clue_threshold: 3,
-            resolution: None,
         },
     ];
     state.act_index = 0;

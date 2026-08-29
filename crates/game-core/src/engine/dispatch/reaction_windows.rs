@@ -2838,7 +2838,6 @@ mod candidate_source_present_tests {
         let act = |code: &str| Act {
             code: CardCode::new(code),
             clue_threshold: 0,
-            resolution: None,
         };
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
@@ -2876,7 +2875,6 @@ mod candidate_source_present_tests {
         state.agenda_deck = vec![Agenda {
             code: CardCode::new(SOME_CODE),
             doom_threshold: 3,
-            resolution: None,
         }];
         state.agenda_index = 0;
         let cand = ResolutionCandidate::new(

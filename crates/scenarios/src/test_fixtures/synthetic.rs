@@ -3,16 +3,17 @@
 //! Teaching example — a Phase-7 implementer reading this should see
 //! the shape of a scenario module without having to grok any real
 //! scenario's content. One investigator, one location, seeded
-//! two-card act/agenda decks whose terminal cards carry resolution
-//! points (push-model: the engine latches `GameState.ending`
-//! when an act/agenda resolution point is reached).
+//! two-card act/agenda decks whose **last** card is the synthetic
+//! terminal card from `game_core::test_support` (push-model: the engine
+//! latches `GameState.ending` when an act/agenda resolution point is
+//! reached).
 
 use std::collections::VecDeque;
 
 use game_core::event::Event;
-use game_core::scenario::{ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule};
+use game_core::scenario::{ScenarioEnding, ScenarioId, ScenarioModule};
 use game_core::state::{Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, LocationId};
-use game_core::test_support::{test_location, GameStateBuilder};
+use game_core::test_support::{terminal_code, test_location, GameStateBuilder};
 
 use super::synth_cards::{SYNTH_LOC_CODE, SYNTH_TREACHERY_CODE};
 
@@ -43,11 +44,15 @@ pub const ID: &str = "synthetic";
 /// code (`synth_cards::SYNTH_ENEMY_CODE`) onto the deck themselves
 /// after calling `setup()`.
 ///
-/// Also seeds two-card act and agenda decks. Each deck's first card
-/// is non-terminal (`resolution: None`) and its second carries a
-/// resolution point — advancing past the terminal card latches
-/// `GameState.ending` (act → `Resolution(R1)`, agenda →
-/// `Resolution(R2)`), driving the push-model hook.
+/// Also seeds two-card act and agenda decks. Each deck's **last** card is what
+/// makes it terminal (ADR 0013), and it is [`terminal_code`]'s synthetic card,
+/// whose reverse reaches the printed resolution point when the deck advances —
+/// act → R1, agenda → R2 — driving the push-model hook. That reverse comes from
+/// [`synth_cards::TEST_REGISTRY`], which composes
+/// `test_support::abilities_for_terminal`, so a test that walks either deck to
+/// its end must have that registry installed.
+///
+/// [`synth_cards::TEST_REGISTRY`]: super::synth_cards::TEST_REGISTRY
 ///
 /// [`synth_cards::SYNTH_LOC_CODE`]: super::synth_cards::SYNTH_LOC_CODE
 /// [`synth_cards::SYNTH_TREACHERY_CODE`]: super::synth_cards::SYNTH_TREACHERY_CODE
@@ -82,24 +87,22 @@ pub fn setup() -> GameState {
         Agenda {
             code: CardCode("_synth_agenda_1".into()),
             doom_threshold: 2,
-            resolution: None,
         },
         Agenda {
-            code: CardCode("_synth_agenda_2".into()),
+            // Terminal: last in the deck. Its reverse reaches R2.
+            code: terminal_code(2),
             doom_threshold: 2,
-            resolution: Some(ResolutionId::new(2)),
         },
     ];
     state.act_deck = vec![
         Act {
             code: CardCode("_synth_act_1".into()),
             clue_threshold: 2,
-            resolution: None,
         },
         Act {
-            code: CardCode("_synth_act_2".into()),
+            // Terminal: last in the deck. Its reverse reaches R1.
+            code: terminal_code(1),
             clue_threshold: 2,
-            resolution: Some(ResolutionId::new(1)),
         },
     ];
     state
