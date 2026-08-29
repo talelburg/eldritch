@@ -1979,12 +1979,20 @@ fn check_activation_changes_state(
 ) -> Result<(), Cow<'static, str>> {
     // A designated ability's substance is the action it performs, not the
     // residual effect beside it (#805) — and every implemented one's residual
-    // is empty, which the generic gate proves inert. Whether the *action* can
-    // happen is `can_perform`'s question, asked by
-    // [`check_activation_target_available`] just above. **Parley** is the one
-    // designator that performs nothing, so it falls through to the generic gate
-    // on its residual, which is exactly right: a Parley ability whose effect is
-    // a no-op has no potential to change the game state.
+    // is empty, which the generic gate proves inert, so asking the gate of the
+    // *effect* here would refuse every weapon in the corpus.
+    //
+    // This is not a hole in the RR gate but a redirection of it: the same
+    // question, *"has this the potential to change the game state"*, is asked
+    // of the **action** by `can_perform` — no co-located enemy, no Fight; no
+    // revealed location, no Investigate — and `check_activate_ability` calls
+    // that immediately before this, so an ability reaching here has already
+    // answered it. The ordering is what makes the early return sound.
+    //
+    // **Parley** is the one designator that performs nothing, so it falls
+    // through to the generic gate on its residual, which is exactly right: a
+    // Parley ability whose effect is a no-op has nothing to change the game
+    // state with.
     if designator.is_some_and(|d| !matches!(d, ActionDesignator::Parley)) {
         return Ok(());
     }

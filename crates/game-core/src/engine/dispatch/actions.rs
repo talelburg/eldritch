@@ -817,7 +817,11 @@ fn validate_engaged_action<'a>(
 /// [`designator::fight_candidates`](crate::engine::designator::fight_candidates)
 /// — the same list a designated **Fight** grounds its pick against and the same
 /// one `can_perform` counts pre-cost (#805). The basic action differs only in
-/// naming its target up front instead of choosing among them.
+/// naming its target up front instead of choosing among them, which is why it
+/// reads the *list* rather than `can_perform` itself: *"is **this** enemy a
+/// legal target"* is a question the activation gate deliberately does not ask
+/// (it asks only whether **some** target exists, and leaves the pick to the
+/// evaluator).
 ///
 /// Returns nothing on success: the fight value it range-checks is read
 /// again at ST.6 through the modified-value query, not carried out of

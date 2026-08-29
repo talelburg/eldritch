@@ -139,8 +139,9 @@ use serde::{Deserialize, Serialize};
 ///   to have been defeated."* Nothing in the corpus parameterises the
 ///   resignation, so the modification is empty.
 ///
-/// `TODO(#805)`: the designator rides [`Trigger::Activated`] because no
-/// implemented card prints one on another trigger. Backstab 01051 prints a bold
+/// `TODO(#778)`: the designator rides [`Trigger::Activated`] because no
+/// implemented card prints one on another trigger. Backstab 01051 — which #778
+/// brings in with the rest of the level-0 Rogue pool — prints a bold
 /// **Fight** on an *event* (`Trigger::OnPlay`) and the rules attach the
 /// designator to the ability rather than to how it was reached — the FAQ
 /// answers for Ursula Downs 04002 that *"Ursula's reaction allows you to take

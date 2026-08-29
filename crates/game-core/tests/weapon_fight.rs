@@ -472,6 +472,12 @@ fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
 /// Compared from `SkillTestStarted` onward: the prefixes differ legitimately —
 /// an activation announces `AbilityActivated` and charges the ability's printed
 /// cost, a basic action charges 1 — and everything after is the action itself.
+///
+/// *"Apart from the modifier row"* is the whole of the licensed difference, so
+/// the row count is asserted too rather than left implicit: the designated path
+/// records one (the modification, `+0` here) and the basic path records none.
+/// Without that assertion an unmodified designated Fight and a basic one could
+/// differ in a way the event stream never shows.
 #[test]
 fn a_designated_fight_is_a_fight_action() {
     /// The board of [`board_with_weapon`], with the bare-Fight asset in play
@@ -494,17 +500,35 @@ fn a_designated_fight_is_a_fight_action() {
         events[start..].iter().map(|e| format!("{e:?}")).collect()
     }
 
-    fn resolve(state: game_core::GameState, action: &TurnAction) -> game_core::engine::ApplyResult {
-        let idx = game_core::engine::enumerate::legal_actions(&state)
+    fn take(state: &game_core::GameState, action: &TurnAction) -> Action {
+        let idx = game_core::engine::enumerate::legal_actions(state)
             .iter()
             .position(|a| a == action)
             .unwrap_or_else(|| panic!("{action:?} must be legal"));
-        apply_no_commits(
-            state,
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
-            }),
-        )
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+        })
+    }
+
+    /// The rows recorded while the fight's test is still in flight. Taken with
+    /// `apply` rather than `apply_no_commits` so the walk stops at the commit
+    /// window: a `Lifetime::SkillTest` row is swept when the test resolves, so
+    /// after resolution both paths read empty and the comparison would be
+    /// vacuous.
+    fn rows_mid_test(state: game_core::GameState, action: &TurnAction) -> usize {
+        let a = take(&state, action);
+        let r = apply(state, a);
+        assert!(
+            matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
+            "expected the commit window with the test in flight; got {:?}",
+            r.outcome,
+        );
+        r.state.recorded_modifiers.len()
+    }
+
+    fn resolve(state: game_core::GameState, action: &TurnAction) -> game_core::engine::ApplyResult {
+        let a = take(&state, action);
+        apply_no_commits(state, a)
     }
 
     let (designated_board, id, asset) = board_with_bare_asset();
@@ -535,5 +559,34 @@ fn a_designated_fight_is_a_fight_action() {
     assert_eq!(
         designated.state.enemies[&game_core::state::EnemyId(100)].damage,
         basic.state.enemies[&game_core::state::EnemyId(100)].damage,
+    );
+    // The one licensed difference, pinned in both directions while the test is
+    // still in flight: the designated Fight carries the ability's modification
+    // as a row over the controller's combat (a `+0` one here, since this asset
+    // prints no bonus), and the basic action carries none at all.
+    let (designated_board, id, asset) = board_with_bare_asset();
+    assert_eq!(
+        rows_mid_test(
+            designated_board,
+            &TurnAction::ActivateAbility {
+                investigator: id,
+                source: AbilitySource::InPlay(asset),
+                ability_index: 0,
+            },
+        ),
+        1,
+        "the designated Fight records its modification as one row",
+    );
+    let (basic_board, id, _) = board_with_bare_asset();
+    assert_eq!(
+        rows_mid_test(
+            basic_board,
+            &TurnAction::Fight {
+                investigator: id,
+                enemy: game_core::state::EnemyId(100),
+            },
+        ),
+        0,
+        "the basic Fight action carries no modification",
     );
 }

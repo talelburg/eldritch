@@ -478,9 +478,10 @@ fn perform_designated(
         // ability's whole content is its residual effect.
         D::Parley => EngineOutcome::Done,
         // Unreachable through the activation path: `can_perform` rejects both
-        // pre-cost, since no implemented card prints either.
+        // pre-cost, since no implemented card prints either (`TODO(#818)`).
+        // Shares that rejection's wording so the two cannot drift.
         D::Evade | D::Move => EngineOutcome::Rejected {
-            reason: format!("a designated {designator:?} is not implemented").into(),
+            reason: crate::engine::designator::unimplemented_designator(designator),
         },
     }
 }
