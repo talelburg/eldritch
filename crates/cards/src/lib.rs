@@ -115,9 +115,9 @@ fn registry_native_condition_for(tag: &str) -> Option<game_core::card_registry::
 pub const REGISTRY: CardRegistry = CardRegistry {
     metadata_for: registry_metadata_for,
     abilities_for: registry_abilities_for,
+    back_abilities_for: registry_back_abilities_for,
     native_effect_for: registry_native_effect_for,
     native_eligibility_for: registry_native_eligibility_for,
-    back_abilities_for: registry_back_abilities_for,
     native_condition_for: registry_native_condition_for,
 };
 

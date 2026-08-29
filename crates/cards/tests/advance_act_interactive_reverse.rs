@@ -41,10 +41,7 @@ fn install() {
     let _ = game_core::card_registry::install(CardRegistry {
         metadata_for,
         abilities_for,
-        back_abilities_for: |_| None,
-        native_effect_for: |_| None,
-        native_eligibility_for: |_| None,
-        native_condition_for: |_| None,
+        ..CardRegistry::EMPTY
     });
 }
 

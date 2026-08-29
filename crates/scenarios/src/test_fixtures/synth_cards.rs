@@ -428,11 +428,9 @@ fn native_eligibility_for(tag: &str) -> Option<EligibilityFn> {
 pub const TEST_REGISTRY: CardRegistry = CardRegistry {
     metadata_for,
     abilities_for,
-    back_abilities_for: |_| None,
     native_effect_for,
     native_eligibility_for,
-    // No synthetic card carries a `Condition::Native` gate.
-    native_condition_for: |_| None,
+    ..CardRegistry::EMPTY
 };
 
 #[cfg(test)]

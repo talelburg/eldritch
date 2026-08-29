@@ -184,13 +184,11 @@ pub fn install_test_registry() {
         fn abilities_for(code: &CardCode) -> Option<Vec<crate::dsl::Ability>> {
             abilities_for_terminal(code)
         }
-        let _ = crate::card_registry::install(crate::card_registry::CardRegistry {
+        use crate::card_registry::CardRegistry;
+        let _ = crate::card_registry::install(CardRegistry {
             metadata_for,
             abilities_for,
-            back_abilities_for: |_| None,
-            native_effect_for: |_| None,
-            native_eligibility_for: |_| None,
-            native_condition_for: |_| None,
+            ..CardRegistry::EMPTY
         });
     });
 }

@@ -760,10 +760,7 @@ mod measure_value_tests {
         CardRegistry {
             metadata_for: no_metadata,
             abilities_for: fake_abilities,
-            back_abilities_for: |_| None,
-            native_effect_for: |_| None,
-            native_eligibility_for: |_| None,
-            native_condition_for: |_| None,
+            ..CardRegistry::EMPTY
         }
     }
 

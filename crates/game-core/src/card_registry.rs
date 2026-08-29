@@ -118,6 +118,54 @@ pub struct CardRegistry {
     pub native_condition_for: fn(&str) -> Option<NativeConditionFn>,
 }
 
+impl CardRegistry {
+    /// A registry that knows nothing: every lookup returns `None`.
+    ///
+    /// **The base every partial registry is built from**, so a literal names
+    /// only the slots it actually implements:
+    ///
+    /// ```
+    /// # use game_core::card_registry::CardRegistry;
+    /// # use game_core::state::CardCode;
+    /// # use game_core::dsl::Ability;
+    /// # fn mock_abilities_for(_: &CardCode) -> Option<Vec<Ability>> { None }
+    /// let reg = CardRegistry {
+    ///     abilities_for: mock_abilities_for,
+    ///     ..CardRegistry::EMPTY
+    /// };
+    /// ```
+    ///
+    /// This exists because adding a slot used to mean editing **every literal
+    /// in the workspace** — ~37 of them, each gaining one more `|_| None,`.
+    /// That is churn no reviewer can read, and it buries the one or two
+    /// literals where the new slot actually matters. With `EMPTY` as the base,
+    /// a new slot touches only the literals that implement it.
+    ///
+    /// `const`, so a `const` registry (`cards::REGISTRY`,
+    /// `synth_cards::TEST_REGISTRY`) can spread it too.
+    ///
+    /// **Spread `EMPTY` only over a registry you are building from nothing.**
+    /// A helper wrapping a *real* registry must spread that registry instead —
+    /// naming a slot it doesn't override silently switches the real lookup off,
+    /// which is exactly the bug #774's review caught in
+    /// [`install_registry_with_terminal_cards`](crate::test_support::install_registry_with_terminal_cards).
+    pub const EMPTY: Self = Self {
+        metadata_for: |_| None,
+        abilities_for: |_| None,
+        back_abilities_for: |_| None,
+        native_effect_for: |_| None,
+        native_eligibility_for: |_| None,
+        native_condition_for: |_| None,
+    };
+}
+
+impl Default for CardRegistry {
+    /// [`CardRegistry::EMPTY`] — the knows-nothing registry.
+    fn default() -> Self {
+        Self::EMPTY
+    }
+}
+
 static REGISTRY: OnceLock<CardRegistry> = OnceLock::new();
 
 /// Install the global card registry. Idempotent at the
@@ -212,10 +260,7 @@ mod tests {
         CardRegistry {
             metadata_for: fake_metadata_for,
             abilities_for: fake_abilities_for,
-            back_abilities_for: |_| None,
-            native_effect_for: |_| None,
-            native_eligibility_for: |_| None,
-            native_condition_for: |_| None,
+            ..CardRegistry::EMPTY
         }
     }
 

@@ -145,10 +145,7 @@ fn install_mock_registry() {
     let _ = game_core::card_registry::install(game_core::card_registry::CardRegistry {
         metadata_for: mock_metadata_for,
         abilities_for: mock_abilities_for,
-        back_abilities_for: |_| None,
-        native_effect_for: |_| None,
-        native_eligibility_for: |_| None,
-        native_condition_for: |_| None,
+        ..game_core::card_registry::CardRegistry::EMPTY
     });
 }
 
