@@ -13,6 +13,7 @@
 pub(crate) mod ability_source;
 mod cx;
 pub use cx::Cx;
+pub(crate) mod designator;
 mod dispatch;
 pub mod enumerate;
 pub mod evaluator;

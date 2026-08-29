@@ -33,13 +33,12 @@
 //!
 //! # Designator and effect
 //!
-//! **Designator: Resign**, declared on the trigger (`ActionDesignator::Resign`,
-//! #696), which is what exempts the activation from attacks of opportunity —
-//! `glossary/Attack_of_Opportunity.md` exempts *"an action other than to
-//! **fight**, to **evade**, or to activate a **parley** or **resign**
-//! ability"*. The elimination itself is the effect's (`Effect::Resign`, #644),
-//! the same split Machete 01020 has between its **Fight** designator and its
-//! `Effect::Fight`.
+//! **Designator: Resign**, declared on the trigger, which is what exempts the
+//! activation from attacks of opportunity — `glossary/Attack_of_Opportunity.md`
+//! exempts *"an action other than to **fight**, to **evade**, or to activate a
+//! **parley** or **resign** ability"* — and which **performs the elimination**
+//! (#644, #805). Nothing is printed beside it: the designator is the whole
+//! ability, as Machete 01020's **Fight** is the whole of its.
 //!
 //! The quoted sentence is flavour: `glossary/Resign.md` gives the ability its
 //! whole meaning — *"When an investigator resigns, the investigator is
@@ -49,7 +48,7 @@
 //! ability while at its location — ADR 0010) is the whole restriction, and it is
 //! the engine's, not the card's.
 
-use card_dsl::dsl::{activated_as, resign, Ability, ActionDesignator};
+use card_dsl::dsl::{activated_as, seq, Ability, ActionDesignator};
 
 /// `ArkhamDB` code for the Parlor.
 pub const CODE: &str = "01115";
@@ -57,7 +56,7 @@ pub const CODE: &str = "01115";
 /// The Parlor's `[action]` **Resign**.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![activated_as(ActionDesignator::Resign, 1, vec![], resign())]
+    vec![activated_as(ActionDesignator::Resign, 1, vec![], seq([]))]
 }
 
 #[cfg(test)]
@@ -76,6 +75,7 @@ mod tests {
             }
         );
         assert!(abilities[0].costs.is_empty());
-        assert_eq!(abilities[0].effect, Effect::Resign);
+        // The designator performs the resignation; nothing is printed beside it.
+        assert_eq!(abilities[0].effect, Effect::Seq(vec![]));
     }
 }

@@ -91,10 +91,13 @@ pub fn suspend_for_native_choice(
 }
 
 /// Resume an effect node suspended in place for a controller pick (#422): the
-/// top frame is the suspended [`EffectFrame::Leaf`]. Set its `chosen_option` and
-/// re-step it via the effect drive — the node grounds/picks (checked indexing,
-/// validate-first) instead of suspending. On completion, re-enter the enclosing
-/// driver (skill test / reaction window), mirroring the former replay resume.
+/// top frame is the suspended [`EffectFrame::Leaf`] — or the
+/// [`EffectFrame::Designated`] a designated **Fight** suspends on while the
+/// controller picks which co-located enemy to attack (#805). Set its
+/// `chosen_option` and re-step it via the effect drive — the node grounds/picks
+/// (checked indexing, validate-first) instead of suspending. On completion,
+/// re-enter the enclosing driver (skill test / reaction window), mirroring the
+/// former replay resume.
 pub(crate) fn resume_effect_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     let InputResponse::PickSingle(picked) = response else {
         return EngineOutcome::Rejected {
@@ -102,12 +105,14 @@ pub(crate) fn resume_effect_choice(cx: &mut Cx, response: &InputResponse) -> Eng
         };
     };
     match cx.state.continuations.last_mut() {
-        Some(Continuation::Effect(EffectFrame::Leaf { ctx, .. })) => {
+        Some(Continuation::Effect(
+            EffectFrame::Leaf { ctx, .. } | EffectFrame::Designated { ctx, .. },
+        )) => {
             ctx.set_chosen_option(Some(*picked));
         }
         _ => {
             return EngineOutcome::Rejected {
-                reason: "resume_effect_choice: top frame is not a suspended effect leaf".into(),
+                reason: "resume_effect_choice: top frame is not a suspended effect node".into(),
             }
         }
     }

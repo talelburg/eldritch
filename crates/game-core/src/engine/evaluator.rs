@@ -72,10 +72,10 @@ use serde::{Deserialize, Serialize};
 use crate::card_registry::CardRegistry;
 use crate::dsl::{
     Ability, CmpOp, Condition, Determination, Effect, EnemyTarget, HarmKind, IntExpr,
-    InvestigatorTarget, LocationTarget, ModifierScope, Quantity, SkillTestKind, Trigger,
+    InvestigatorTarget, LocationTarget, ModifierScope, Quantity, Trigger,
 };
 use crate::event::Event;
-use crate::state::{CandidateSource, GameState, InvestigatorId, SkillKind};
+use crate::state::{CandidateSource, GameState, InvestigatorId};
 
 use super::outcome::EngineOutcome;
 use super::Cx;
@@ -368,7 +368,169 @@ pub(crate) fn step_effect_frame(cx: &mut Cx) -> EngineOutcome {
             EngineOutcome::Done
         }
         EffectFrame::Leaf { effect, ctx } => step_leaf(cx, &effect, ctx),
+        EffectFrame::Designated { designator, ctx } => step_designated(cx, &designator, ctx),
     }
+}
+
+/// Push a [`EffectFrame::Designated`](crate::state::EffectFrame::Designated)
+/// frame for the global `drive` loop to own — the designated action of an
+/// activated ability (#805). The [`push_effect`] twin for the half of an
+/// ability that is not an effect.
+pub(crate) fn push_designated_action(
+    cx: &mut Cx,
+    designator: &crate::dsl::ActionDesignator,
+    eval_ctx: EvalContext,
+) {
+    cx.state
+        .continuations
+        .push(crate::state::Continuation::Effect(
+            crate::state::EffectFrame::Designated {
+                designator: Box::new(designator.clone()),
+                ctx: eval_ctx,
+            },
+        ));
+}
+
+/// Step a [`EffectFrame::Designated`](crate::state::EffectFrame::Designated)
+/// frame: ground the target the designated action needs, then perform it.
+///
+/// A **Fight** whose target is not yet bound grounds against the co-located
+/// enemy list — auto on exactly one, suspend-in-place on 2+ (re-pushing this
+/// frame, which *is* the prompt, exactly as [`step_leaf`] does). Everything
+/// else needs no grounding and performs immediately.
+fn step_designated(
+    cx: &mut Cx,
+    designator: &crate::dsl::ActionDesignator,
+    eval_ctx: EvalContext,
+) -> EngineOutcome {
+    let eval_ctx = if matches!(designator, crate::dsl::ActionDesignator::Fight { .. })
+        && eval_ctx.chosen_enemy().is_none()
+    {
+        match ground_fight_target_choice(cx, eval_ctx) {
+            Ok(ctx) => ctx,
+            Err(outcome) => {
+                if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
+                    push_designated_action(cx, designator, eval_ctx);
+                }
+                return outcome;
+            }
+        }
+    } else {
+        eval_ctx
+    };
+    perform_designated(cx, designator, &eval_ctx)
+}
+
+/// Perform the action a bold [`ActionDesignator`](crate::dsl::ActionDesignator)
+/// names, modified in the manner the ability carries (#805).
+/// `glossary/Ability.md`, verbatim:
+///
+/// > Some abilities have bold action designators (such as **Fight**, **Evade**,
+/// > **Investigate**, or **Move**). Activating such an ability **performs the
+/// > designated action** as described in the rules, but modified in the manner
+/// > described by the ability.
+///
+/// Every arm routes through the **same primary the basic action uses**
+/// (`actions::perform_fight` / `actions::perform_investigate` /
+/// `elimination::resign_investigator`), passing the modification as its only
+/// difference — so *"a designated Fight is a Fight action"* holds in code rather
+/// than by parallel construction.
+///
+/// The eligibility every arm assumes was checked pre-cost by
+/// [`can_perform`](crate::engine::designator::can_perform); the rejections here
+/// are the state-shape residue of a board that changed underneath (an attack of
+/// opportunity moved the actor), and `apply_via` rolls the whole activation back
+/// with them.
+fn perform_designated(
+    cx: &mut Cx,
+    designator: &crate::dsl::ActionDesignator,
+    eval_ctx: &EvalContext,
+) -> EngineOutcome {
+    use crate::dsl::ActionDesignator as D;
+    match designator {
+        D::Fight {
+            combat_modifier,
+            extra_damage,
+        } => perform_designated_fight(cx, eval_ctx, combat_modifier, extra_damage),
+        D::Investigate { shroud_modifier } => {
+            let Some(location_id) =
+                crate::engine::designator::investigate_location(cx.state, eval_ctx.controller)
+            else {
+                return EngineOutcome::Rejected {
+                    reason: "Investigate: no revealed location to investigate".into(),
+                };
+            };
+            crate::engine::dispatch::actions::perform_investigate(
+                cx,
+                eval_ctx.controller,
+                location_id,
+                Some(shroud_modifier.clone()),
+                eval_ctx.source,
+            )
+        }
+        D::Resign => {
+            crate::engine::dispatch::elimination::resign_investigator(cx, eval_ctx.controller);
+            EngineOutcome::Done
+        }
+        // `glossary/Parley.md` in full: *"Some abilities are identified with a
+        // **Parley** action designator. Such abilities are initiated using the
+        // 'Activate' action."* No procedure, so nothing to perform — the
+        // ability's whole content is its residual effect.
+        D::Parley => EngineOutcome::Done,
+        // Unreachable through the activation path: `can_perform` rejects both
+        // pre-cost, since no implemented card prints either (`TODO(#818)`).
+        // Shares that rejection's wording so the two cannot drift.
+        D::Evade | D::Move => EngineOutcome::Rejected {
+            reason: crate::engine::designator::unimplemented_designator(designator),
+        },
+    }
+}
+
+/// The **Fight** arm of [`perform_designated`]: evaluate `extra_damage` against
+/// the live board, then run the shared Fight primary against the grounded
+/// target.
+///
+/// `extra_damage` is evaluated here because the Fight follow-up consumes it as a
+/// `u8`; `combat_modifier` is **not**, travelling into the test as an
+/// unevaluated [`IntExpr`] so the row it becomes is recalculated at every read
+/// (ADR 0005). Machete 01020's conditional `+1` is why the evaluation happens
+/// on this context: `sole_engaged_target` reads the chosen enemy the step above
+/// just bound.
+fn perform_designated_fight(
+    cx: &mut Cx,
+    eval_ctx: &EvalContext,
+    combat_modifier: &IntExpr,
+    extra_damage: &IntExpr,
+) -> EngineOutcome {
+    let extra_damage_n = match eval_int_expr(cx.state, eval_ctx, extra_damage) {
+        Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
+        Err(reason) => {
+            return EngineOutcome::Rejected {
+                reason: reason.into(),
+            }
+        }
+    };
+    // Bound by `step_designated` before this runs, and `can_perform` rejected
+    // an empty candidate list pre-cost, so `None` is a state-shape violation.
+    let Some(enemy_id) = eval_ctx.chosen_enemy() else {
+        return EngineOutcome::Rejected {
+            reason: "Fight: no co-located enemy chosen".into(),
+        };
+    };
+    // `enemy_id` came from `enemies_in_scope` over this same map, so it is
+    // present; its absence is a state-corruption invariant violation.
+    assert!(
+        cx.state.enemies.contains_key(&enemy_id),
+        "Fight chosen_enemy returned an id absent from state.enemies",
+    );
+    crate::engine::dispatch::actions::perform_fight(
+        cx,
+        eval_ctx.controller,
+        enemy_id,
+        Some(combat_modifier.clone()),
+        extra_damage_n,
+        eval_ctx.source,
+    )
 }
 
 /// Re-push a suspended `Leaf` so resume re-steps it with `ctx.chosen_option`
@@ -477,10 +639,6 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         }
         Effect::ForEach { .. } => awaiting_input_stub("ForEach"),
         Effect::ChooseOne(branches) => step_choose_one(cx, branches, eval_ctx, effect),
-        Effect::Resign => {
-            crate::engine::dispatch::elimination::resign_investigator(cx, eval_ctx.controller);
-            EngineOutcome::Done
-        }
         Effect::AdvanceCurrentAct => apply_advance_current_act(cx),
         Effect::ReachResolution(n) => apply_reach_resolution(cx, *n),
         Effect::PlaceDoomOnCurrentAgenda { count, may_advance } => {
@@ -531,16 +689,9 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                      never executed"
                 .into(),
         },
-        Effect::Fight {
-            combat_modifier,
-            extra_damage,
-        } => apply_fight(cx, &eval_ctx, combat_modifier, extra_damage),
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
         Effect::DiscoverAdditionalClues(amount) => discover_additional_clues_effect(cx, *amount),
         Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, *count),
-        Effect::Investigate { shroud_modifier } => {
-            apply_investigate(cx, &eval_ctx, shroud_modifier)
-        }
         Effect::SearchDeck {
             target,
             scope,
@@ -900,151 +1051,6 @@ fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
         test.bonus_clues_discovered = test.bonus_clues_discovered.saturating_add(amount);
     }
     EngineOutcome::Done
-}
-
-/// Resolve [`Effect::Fight`]: record the combat modifier as a row over the
-/// test about to start, read the target
-/// enemy from the evaluation context (grounded by `ground_chosen_targets`
-/// before this handler runs), and start a Combat skill test whose Fight
-/// follow-up deals `1 + extra_damage`. The activation check has already
-/// guaranteed ≥1 co-located enemy; `ground_chosen_targets` auto-selects on 1,
-/// suspends for a `PickSingle` on 2+, and `chosen_enemy()` is `None` only on
-/// 0 (caught pre-cost) — so a missing target here is a state-shape violation
-/// rejected loudly rather than silently no-oped.
-///
-/// `extra_damage` is evaluated here (it is consumed by the Fight follow-up
-/// as a `u8`, negative results treated as 0). `combat_modifier` is **not**:
-/// it travels into the test as an unevaluated
-/// [`IntExpr`](crate::dsl::IntExpr) so the row it becomes is recalculated at
-/// every read — the rule ADR 0005 applies to every modifier, and what makes
-/// Esoteric Formula 02254's *"+2 \[willpower\] for this attack for each clue
-/// on the attacked enemy"* expressible without a second mechanism.
-fn apply_fight(
-    cx: &mut Cx,
-    eval_ctx: &EvalContext,
-    combat_modifier: &IntExpr,
-    extra_damage: &IntExpr,
-) -> EngineOutcome {
-    let extra_damage_n = match eval_int_expr(cx.state, eval_ctx, extra_damage) {
-        Ok(v) => u8::try_from(v.max(0)).unwrap_or(u8::MAX),
-        Err(reason) => {
-            return EngineOutcome::Rejected {
-                reason: reason.into(),
-            }
-        }
-    };
-    // The target is bound by `ground_chosen_targets` before this handler runs;
-    // `None` here means 0 co-located enemies. The pre-cost gate
-    // (`check_effect_target_available`) catches that for an ability declaring
-    // the **Fight** action designator, which is every fight ability the corpus
-    // prints — but since #696 that gate keys off the designator, so an ability
-    // rooted in `Effect::Fight` that declares *no* designator reaches here
-    // instead. That is a malformed declaration rather than an engine bug (the
-    // designator is what makes an ability a fight action), and this is where it
-    // surfaces: the rejection rolls the whole activation back through
-    // `apply_via`, costs included.
-    let Some(enemy_id) = eval_ctx.chosen_enemy() else {
-        return EngineOutcome::Rejected {
-            reason: "Effect::Fight: no co-located enemy chosen; the ability declares \
-                     no Fight action designator, so the pre-cost check did not run"
-                .into(),
-        };
-    };
-    // `enemy_id` came from `enemies_in_scope` over this same map, so it is
-    // present; its absence is a state-corruption invariant violation, and
-    // panics here exactly as the `.expect()` this replaced did. (The
-    // *difficulty* no longer needs the lookup — it is the enemy's modified
-    // fight value, read at ST.6 — but the invariant is still worth holding.)
-    assert!(
-        cx.state.enemies.contains_key(&enemy_id),
-        "Fight chosen_enemy returned an id absent from state.enemies",
-    );
-    crate::engine::dispatch::skill_test::start_skill_test(
-        cx,
-        eval_ctx.controller,
-        SkillKind::Combat,
-        SkillTestKind::Fight,
-        // The difficulty *is* the enemy's modified fight value, read at
-        // ST.6 rather than snapshotted here (#677).
-        crate::state::DifficultyBasis::Fight(enemy_id),
-        crate::state::SkillTestFollowUp::Fight {
-            enemy: enemy_id,
-            extra_damage: extra_damage_n,
-        },
-        None,
-        None,
-        eval_ctx.source,
-        // "+N [combat] for this attack" — a row over the controller's
-        // combat skill scoped to the test about to start, not a number
-        // added to a snapshotted total. The expression travels unevaluated
-        // so the row answers from the board at every read (ADR 0005).
-        Some(crate::engine::dispatch::skill_test::InitiatorModifier {
-            target: crate::state::ModifierTarget::Investigator(eval_ctx.controller),
-            stat: crate::dsl::Stat::Combat,
-            delta: combat_modifier.clone(),
-        }),
-    )
-}
-
-/// Resolve [`Effect::Investigate`]: start an Investigate skill test against
-/// the controller's location (reusing the base Investigate follow-up, so
-/// success discovers a clue), with `shroud_modifier` recorded as a modifier
-/// of that **location's shroud** for the duration of the test.
-///
-/// The modifier adjusts the *location difficulty* (shroud), not the
-/// investigator's total, and it is one contribution among however many the
-/// location carries: Flashlight 01087's `-2` composes with Obscuring Fog
-/// 01168's `+2` into a single shroud, clamped at 0 once at the end (RR p.4:
-/// game values can never be reduced below 0). The activation check has already
-/// confirmed a revealed location to test, so the missing/unrevealed cases
-/// here are defensive (state-shape) rejections.
-fn apply_investigate(
-    cx: &mut Cx,
-    eval_ctx: &EvalContext,
-    shroud_modifier: &IntExpr,
-) -> EngineOutcome {
-    let Some(location_id) = cx
-        .state
-        .investigators
-        .get(&eval_ctx.controller)
-        .and_then(|inv| inv.current_location)
-    else {
-        return EngineOutcome::Rejected {
-            reason: "Effect::Investigate: controller has no current location".into(),
-        };
-    };
-    let Some(location) = cx.state.locations.get(&location_id) else {
-        return EngineOutcome::Rejected {
-            reason: format!("Effect::Investigate: location {location_id:?} is not in state").into(),
-        };
-    };
-    if !location.revealed {
-        return EngineOutcome::Rejected {
-            reason: format!("Effect::Investigate: location {location_id:?} is not revealed").into(),
-        };
-    }
-    crate::engine::dispatch::skill_test::start_skill_test(
-        cx,
-        eval_ctx.controller,
-        SkillKind::Intellect,
-        SkillTestKind::Investigate,
-        // The difficulty *is* this location's modified shroud, read at
-        // ST.6. The reduction below is one contribution to it, not a
-        // subtraction from a smaller snapshot: Obscuring Fog 01168's +2 and
-        // Flashlight's -2 compose into one shroud, clamped once (#677).
-        crate::state::DifficultyBasis::Shroud(location_id),
-        crate::state::SkillTestFollowUp::Investigate,
-        None,
-        None,
-        eval_ctx.source,
-        // "Your location gets -2 shroud for this investigation" — a row
-        // over the *location*, scoped to the test about to start.
-        Some(crate::engine::dispatch::skill_test::InitiatorModifier {
-            target: crate::state::ModifierTarget::Location(location_id),
-            stat: crate::dsl::Stat::Shroud,
-            delta: shroud_modifier.clone(),
-        }),
-    )
 }
 
 /// Resolve [`Effect::DiscardSelf`]: remove `eval_ctx.source` from
@@ -1912,12 +1918,6 @@ fn ground_chosen_targets(
         }
     }
 
-    if let Effect::Fight { .. } = effect {
-        if eval_ctx.chosen_enemy().is_none() {
-            return ground_fight_target_choice(cx, eval_ctx);
-        }
-    }
-
     Ok(eval_ctx)
 }
 
@@ -2077,7 +2077,7 @@ fn ground_enemy_choice(
     )
 }
 
-/// Ground the [`Effect::Fight`] target against the co-located-enemy list.
+/// Ground a designated **Fight**'s target against the co-located-enemy list.
 ///
 /// Candidates are `combat::enemies_in_scope` under
 /// [`combat::fight_target_scope`](crate::engine::dispatch::combat::fight_target_scope)
@@ -2089,7 +2089,8 @@ fn ground_enemy_choice(
 /// - 1 candidate → auto-bind (no suspend; preserves single-enemy behaviour).
 /// - 2+ candidates → suspend `AwaitingInput { PickSingle }`.
 ///
-/// On resume the evaluator re-enters the same `Leaf` step; `chosen_option`
+/// On resume the evaluator re-enters the same
+/// [`Designated`](crate::state::EffectFrame::Designated) step; `chosen_option`
 /// is set and the right branch of `resolve_grounded_choice` picks from the
 /// same deterministic list.
 fn ground_fight_target_choice(

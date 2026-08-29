@@ -2,7 +2,7 @@
 //! Investigate. Your location gets -2 shroud for this investigation.`
 //! end-to-end against the real `cards::REGISTRY`.
 //!
-//! Exercises the new `Effect::Investigate` shroud modifier: the -2 lowers
+//! Exercises the **Investigate** designator's shroud modifier: the -2 lowers
 //! the location difficulty (clamped at 0), the test reuses the base
 //! Investigate follow-up (so a success discovers a clue), and the
 //! activation rejects before spending a supply when there is no revealed

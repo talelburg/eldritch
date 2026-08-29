@@ -261,9 +261,9 @@ pub enum Status {
     /// `TODO(#814)`: a scenario defeat by horror is not insanity — see the note
     /// on the enum.
     Insane,
-    /// Investigator resigned from the scenario, via a **Resign** ability's
-    /// [`Effect::Resign`](card_dsl::dsl::Effect::Resign) — the Parlor 01115 is
-    /// the corpus's first (#644).
+    /// Investigator resigned from the scenario, via an ability printing the
+    /// [`Resign`](card_dsl::dsl::ActionDesignator::Resign) action designator —
+    /// the Parlor 01115 is the corpus's first (#644).
     ///
     /// `glossary/Resign.md`: *"When an investigator resigns, the investigator
     /// is eliminated by resignation … An investigator who resigns is not
@@ -309,9 +309,10 @@ pub enum EliminationCause {
     Damage,
     /// Horror reached `max_sanity`.
     Horror,
-    /// Investigator resigned, via a **Resign** ability's
-    /// [`Effect::Resign`](card_dsl::dsl::Effect::Resign). Flips status to
-    /// [`Status::Resigned`]. **Not a defeat** — see the enum's own note.
+    /// Investigator resigned, via an ability printing the
+    /// [`Resign`](card_dsl::dsl::ActionDesignator::Resign) action designator.
+    /// Flips status to [`Status::Resigned`]. **Not a defeat** — see the enum's
+    /// own note.
     Resigned,
     /// A card ability defeated the investigator outright, with no damage
     /// or horror threshold involved — `glossary/Defeat.md`: *"An

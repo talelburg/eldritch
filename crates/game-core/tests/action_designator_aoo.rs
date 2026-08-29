@@ -11,21 +11,28 @@
 //! > investigator.
 //!
 //! The exemption is four designators. The engine used to infer it from the
-//! effect root — exempting `Effect::Fight` because every corpus weapon happens
-//! to be rooted in one — which got two shapes wrong: a `Seq`-wrapped Fight
-//! provoked, and **Parley** / **Resign** have no effect of their own to match,
-//! so the Parlor 01115's *"[action] **Resign.**"* would have provoked once #708
-//! made a location's abilities reachable.
+//! effect root — exempting `Effect::Fight` because every corpus weapon happened
+//! to be rooted in one — which got two shapes wrong: a Fight buried inside a
+//! larger effect tree provoked, and **Parley** / **Resign** have no effect of
+//! their own to match, so the Parlor 01115's *"[action] **Resign.**"* would
+//! have provoked once #708 made a location's abilities reachable.
+//!
+//! Since #805 the designator *performs* the action and no `Effect::Fight`
+//! exists to be matched, so the effect-root reading is not merely wrong but
+//! unrepresentable. What remains testable — and what these tests fix — is that
+//! the exemption is the **designator's** doing and not the residual effect's:
+//! [`SATCHEL`] prints the *same residual effect* twice, once under a **Fight**
+//! designator and once under none, and only the designated one is exempt.
 //!
 //! Own integration-test binary so it can install a hand-rolled `CardRegistry`.
-//! **No corpus card can exercise any of these three shapes:** no shipped weapon
-//! wraps its Fight in a `Seq`, and the Parley and Resign cards (the Parlor
-//! 01115, the Midnight Masks cultists 01138-01140, Mob Enforcer 01101) have no
-//! ability implementations — Resign's effect has nowhere to resolve until #644.
-//! The synthetic cards stand in for them, printing the designator each does and
-//! an effect chosen only so the *initiation* gate passes; what is asserted is
-//! the attack of opportunity, never the effect. Prior art:
-//! `ability_source_colocation.rs`, which stands in for the same cards.
+//! **No corpus card can exercise any of these shapes:** no shipped weapon
+//! prints a residual beside its designated Fight, and the Parley cards (the
+//! Midnight Masks cultists 01138-01140, Mob Enforcer 01101) have no ability
+//! implementations. The synthetic cards stand in for them, printing the
+//! designator each does and a residual effect chosen only so the *initiation*
+//! gate has something to see; what is asserted is the attack of opportunity,
+//! never the effect. Prior art: `ability_source_colocation.rs`, which stands in
+//! for the same cards.
 //!
 //! The real-corpus half — Machete 01020 (**Fight**, exempt), Flashlight 01087
 //! (**Investigate**, not exempt), First Aid 01019 (no designator, not exempt) —
@@ -51,9 +58,9 @@ use game_core::test_support::{
 };
 use game_core::TurnAction;
 
-/// Synthetic **asset**, standing in for a weapon that wraps its Fight in a
-/// `Seq` — a shape no corpus weapon prints, and the one the retired effect-root
-/// match got wrong.
+/// Synthetic **asset** printing the same residual effect twice — once under a
+/// **Fight** designator, once under none. The pair is the control: only the
+/// designator can account for a difference between them.
 const SATCHEL: &str = "DESIGN_ASSET";
 /// Synthetic **location**, standing in for the Parlor 01115: *"[action]
 /// **Resign.** 'This is too much for me!' You run out the front door, fleeing
@@ -68,39 +75,35 @@ const HERE: LocationId = LocationId(1);
 const ATTACKER: EnemyId = EnemyId(1);
 const BAG: CardInstanceId = CardInstanceId(10);
 
-/// The designated Fight, wrapped in a `Seq` so its effect **root** is not a
-/// `Effect::Fight`.
-const SEQ_FIGHT_DESIGNATED: u8 = 0;
-/// The same effect tree with **no** designator — the control that fixes what is
-/// doing the work.
-const SEQ_FIGHT_UNDESIGNATED: u8 = 1;
+/// A designated **Fight** carrying a residual effect beside the bold word.
+const DESIGNATED_FIGHT: u8 = 0;
+/// The same residual effect with **no** designator — the control that fixes
+/// what is doing the work.
+const UNDESIGNATED: u8 = 1;
 /// The sole ability on the location / on the enemy.
 const ONLY: u8 = 0;
 
-/// A `Seq` whose root is not a Fight but which fights inside it. The
-/// `gain_resources` leg is there only to make the root a `Seq`.
-fn seq_wrapped_fight() -> Effect {
-    seq(vec![
-        gain_resources(InvestigatorTarget::Active, 1),
-        fight(0u8, 0u8),
-    ])
+/// The residual effect both satchel abilities print beside (or instead of) a
+/// bold word — a plain resource gain, chosen only because it always has the
+/// potential to change the game state, so the initiation gate never
+/// short-circuits either ability.
+fn residual() -> Effect {
+    seq(vec![gain_resources(InvestigatorTarget::Active, 1)])
 }
 
 fn probe_abilities(code: &CardCode) -> Option<Vec<Ability>> {
     match code.as_str() {
         SATCHEL => Some(vec![
-            activated_as(ActionDesignator::Fight, 1, vec![], seq_wrapped_fight()),
-            activated(1, vec![], seq_wrapped_fight()),
+            activated_as(fight(0u8, 0u8), 1, vec![], residual()),
+            activated(1, vec![], residual()),
         ]),
-        // The Parlor's Resign. `gain_resources` stands in for the effect:
-        // resignation's own semantics are #644, and an ability whose effect
-        // cannot change the game state is refused at initiation before the
-        // attack-of-opportunity question is ever reached.
+        // The Parlor's Resign, in its real shape: the designator performs the
+        // elimination and nothing is printed beside it (#644, #805).
         PARLOR => Some(vec![activated_as(
             ActionDesignator::Resign,
             1,
             vec![],
-            gain_resources(InvestigatorTarget::Active, 1),
+            seq(vec![]),
         )]),
         // Mob Enforcer's Parley, with the same stand-in effect (its printed
         // effect discards the enemy, which is beside the point here).
@@ -161,9 +164,9 @@ fn install_probe_registry() {
 /// synchronous — no order pick — and no soaker is in play, so the damage lands
 /// on the investigator directly and `damage()` is the whole assertion.
 ///
-/// The `Numeric(0)` chaos bag is there only so the Fight buried in the `Seq`
-/// has a bag to draw from once the effect runs — the assertion is taken before
-/// the test resolves either way.
+/// The `Numeric(0)` chaos bag is there only so the designated Fight has a bag
+/// to draw from once it performs — the assertion is taken before the test
+/// resolves either way.
 fn board() -> GameState {
     let mut mine = test_investigator(1);
     mine.cards_in_play
@@ -214,36 +217,33 @@ fn damage_after_activating(source: AbilitySource, ability_index: u8) -> u8 {
     result.state.investigators[&MINE].damage()
 }
 
-/// The designator, not the effect root: an ability printing **Fight** is exempt
-/// even when its effect is a `Seq` that fights inside it. The retired
-/// effect-root match saw a `Seq`, not a `Effect::Fight`, and provoked.
+/// An ability printing **Fight** is exempt, whatever residual effect it prints
+/// beside the bold word.
 #[test]
-fn a_seq_wrapped_fight_is_exempt_because_the_designator_says_fight() {
+fn a_designated_fight_is_exempt_whatever_it_prints_beside_the_bold_word() {
     assert_eq!(
-        damage_after_activating(AbilitySource::InPlay(BAG), SEQ_FIGHT_DESIGNATED),
+        damage_after_activating(AbilitySource::InPlay(BAG), DESIGNATED_FIGHT),
         0,
-        "a **Fight** ability provokes no attack of opportunity, whatever shape \
-         its effect tree has",
+        "a **Fight** ability provokes no attack of opportunity, whatever its \
+         residual effect is",
     );
 }
 
-/// The control that fixes what is doing the work: the *same* effect tree with
-/// no printed designator is an ordinary activate action and provokes. So the
-/// exemption above is the designator's doing, not the `Effect::Fight` buried in
-/// the `Seq`.
+/// The control that fixes what is doing the work: the *same* residual effect
+/// with no printed designator is an ordinary activate action and provokes. So
+/// the exemption above is the designator's doing and nothing else's.
 #[test]
-fn the_same_effect_tree_without_the_designator_provokes() {
+fn the_same_residual_effect_without_the_designator_provokes() {
     assert_eq!(
-        damage_after_activating(AbilitySource::InPlay(BAG), SEQ_FIGHT_UNDESIGNATED),
+        damage_after_activating(AbilitySource::InPlay(BAG), UNDESIGNATED),
         1,
-        "an undesignated action-cost ability provokes, even though it fights \
-         inside its effect",
+        "an undesignated action-cost ability provokes",
     );
 }
 
 /// The Parlor 01115's *"[action] **Resign.**"*, activated while engaged with a
-/// ready enemy, provokes nothing. **Resign** has no effect shape of its own, so
-/// no effect-root match could ever have exempted it — and #708 made a
+/// ready enemy, provokes nothing. **Resign** prints nothing beside the bold
+/// word, so no effect-root match could ever have exempted it — and #708 made a
 /// location's abilities reachable, which is what put the question on the board.
 #[test]
 fn a_resign_ability_on_a_location_provokes_nothing() {

@@ -21,14 +21,21 @@ use super::Cx;
 /// trigger,
 /// and every cost-payability precondition. On success, pays every cost
 /// (emitting cost events per primitive), emits [`Event::AbilityActivated`],
-/// and dispatches the ability's effect through the DSL evaluator.
+/// and resolves the ability — **its designated action first, then its residual
+/// effect** ([`push_activation_resolution`]).
+///
+/// The designated action is the ability's substance for every card that prints
+/// a bold word (#805): `glossary/Ability.md`, *"Activating such an ability
+/// **performs the designated action** as described in the rules, but modified
+/// in the manner described by the ability."* Every implemented such ability's
+/// residual `effect` is empty; a non-empty one would run after.
 ///
 /// An action-cost ability whose printed **action designator** is not on the
 /// attack-of-opportunity exempt list provokes one from each engaged ready
-/// enemy, fired after costs and before the effect — see [`provokes_aoo`]; the
-/// effect is parked on an `ActionResolution` frame and run on resume
-/// ([`resume_activate_ability`]). Exempt and fast abilities resolve their
-/// effect synchronously.
+/// enemy, fired after costs and before the action — see [`provokes_aoo`]; both
+/// halves are parked on an `ActionResolution` frame and run on resume
+/// ([`resume_activate_ability`]). Exempt and fast abilities resolve
+/// synchronously.
 ///
 /// # Timing gate
 ///
@@ -133,22 +140,52 @@ pub(super) fn activate_ability(
     // (`pay_activation_costs`), so we park the effect on an `ActionResolution`
     // frame and drive the AoO loop (which may open a Dodge cancel / Guard Dog
     // soak window), then run the effect on resume. (#361, K3.)
-    if provokes_aoo(action_cost, designator) {
+    if provokes_aoo(action_cost, designator.as_ref()) {
         cx.state
             .continuations
             .push(crate::state::Continuation::ActionResolution {
                 investigator,
-                resume: crate::state::ActionResume::ActivateAbility { source, effect },
+                resume: crate::state::ActionResume::ActivateAbility {
+                    source,
+                    designator,
+                    effect,
+                },
             });
         return super::combat::drive_aoo(cx, investigator);
     }
 
-    // Fast (not an action), or an AoO-exempt designator: push the effect for
+    // Fast (not an action), or an AoO-exempt designator: push both halves for
     // the drive loop (Slice D, #423) — no enclosing frame, no post-logic.
     let eval_ctx =
         EvalContext::for_controller_with_optional_source(investigator, source.instance());
-    push_effect(cx, &effect, eval_ctx);
+    push_activation_resolution(cx, designator.as_ref(), &effect, eval_ctx);
     EngineOutcome::Done
+}
+
+/// Push an activated ability's two halves for the global drive loop, in
+/// resolution order: the **designated action** it performs (#805), then the
+/// residual `effect` its text prints beside the bold word.
+///
+/// Continuation frames are LIFO, so they go on in reverse. Every ability
+/// implemented today has an empty residual — a `Seq` of nothing, which pops
+/// without running anything — so the observable behaviour is the designated
+/// action alone; an undesignated ability is its effect alone, exactly as
+/// before.
+///
+/// A residual cannot contradict the bold word the way the retired
+/// designator-plus-`Effect::Fight` split could: with the fight and the
+/// investigation gone from [`Effect`](crate::dsl::Effect) entirely, no effect
+/// tree can re-root a designated action into a different one.
+fn push_activation_resolution(
+    cx: &mut Cx,
+    designator: Option<&ActionDesignator>,
+    effect: &crate::dsl::Effect,
+    eval_ctx: EvalContext,
+) {
+    push_effect(cx, effect, eval_ctx);
+    if let Some(designator) = designator {
+        crate::engine::evaluator::push_designated_action(cx, designator, eval_ctx);
+    }
 }
 
 /// Whether activating an ability with this `action_cost` and `designator`
@@ -174,12 +211,12 @@ pub(super) fn activate_ability(
 /// abilities (`action_cost == 0`) are not actions and never provoke — the same
 /// glossary entry, added in FAQ: *"\[free\] abilities with a bold action
 /// designator do not provoke attacks of opportunity."*
-fn provokes_aoo(action_cost: u8, designator: Option<ActionDesignator>) -> bool {
+fn provokes_aoo(action_cost: u8, designator: Option<&ActionDesignator>) -> bool {
     action_cost > 0
         && !matches!(
             designator,
             Some(
-                ActionDesignator::Fight
+                ActionDesignator::Fight { .. }
                     | ActionDesignator::Evade
                     | ActionDesignator::Parley
                     | ActionDesignator::Resign
@@ -212,11 +249,12 @@ pub(super) fn resume_activate_ability(
     cx: &mut Cx,
     investigator: InvestigatorId,
     source: AbilitySource,
+    designator: Option<&ActionDesignator>,
     effect: &crate::dsl::Effect,
 ) -> EngineOutcome {
     let eval_ctx =
         EvalContext::for_controller_with_optional_source(investigator, source.instance());
-    push_effect(cx, effect, eval_ctx);
+    push_activation_resolution(cx, designator, effect, eval_ctx);
     EngineOutcome::Done
 }
 
@@ -434,7 +472,9 @@ fn cost_label(cost: &Cost) -> &'static str {
 pub(super) struct ActivatedAbility {
     /// Actions the activation costs; `0` for a `[free]` ability.
     pub(super) action_cost: u8,
-    /// The bold action designator the ability prints, if any.
+    /// The bold action designator the ability prints, if any — which is what
+    /// **performs the action**, carrying the modification the printed text
+    /// describes (#805).
     pub(super) designator: Option<ActionDesignator>,
     /// The ability's payment costs, in printed order.
     pub(super) costs: Vec<Cost>,
@@ -479,7 +519,7 @@ pub(super) fn resolve_activated_ability(
     };
     let Trigger::Activated {
         action_cost,
-        designator,
+        ref designator,
     } = ability.trigger
     else {
         return Err(EngineOutcome::Rejected {
@@ -493,7 +533,7 @@ pub(super) fn resolve_activated_ability(
     };
     Ok(ActivatedAbility {
         action_cost,
-        designator,
+        designator: designator.clone(),
         costs: ability.costs.clone(),
         effect: ability.effect.clone(),
         usage_limit: ability.usage_limit,
@@ -562,17 +602,18 @@ mod tests {
     /// flavours.
     #[test]
     fn provokes_aoo_exempts_exactly_the_four_named_designators() {
-        use ActionDesignator::{Evade, Fight, Investigate, Move, Parley, Resign};
+        use crate::dsl::{fight, investigate};
+        use ActionDesignator::{Evade, Move, Parley, Resign};
 
-        for exempt in [Fight, Evade, Parley, Resign] {
+        for exempt in [fight(0u8, 0u8), Evade, Parley, Resign] {
             assert!(
-                !provokes_aoo(1, Some(exempt)),
+                !provokes_aoo(1, Some(&exempt)),
                 "{exempt:?} is on the exempt list"
             );
         }
-        for provoking in [Move, Investigate] {
+        for provoking in [Move, investigate(0u8)] {
             assert!(
-                provokes_aoo(1, Some(provoking)),
+                provokes_aoo(1, Some(&provoking)),
                 "{provoking:?} is not on the exempt list"
             );
         }
@@ -585,8 +626,16 @@ mod tests {
 
         // `[free]` (action_cost 0) is not an action and never provokes, "even"
         // with a bold action designator (same entry, added in FAQ).
-        for designator in [None, Some(Fight), Some(Investigate), Some(Resign)] {
-            assert!(!provokes_aoo(0, designator), "{designator:?} at cost 0");
+        for designator in [
+            None,
+            Some(fight(0u8, 0u8)),
+            Some(investigate(0u8)),
+            Some(Resign),
+        ] {
+            assert!(
+                !provokes_aoo(0, designator.as_ref()),
+                "{designator:?} at cost 0"
+            );
         }
     }
 
