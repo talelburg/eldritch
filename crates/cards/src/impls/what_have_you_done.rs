@@ -32,23 +32,37 @@
 //! > - It was never much of a home. Burn it down! **(→R1)**
 //! > - This hell-pit is my home! No way are we burning it! **(→R2)**
 //!
-//! It reaches its resolution point by running one — `reach_resolution` on the
-//! `after` cell of the act's own advance, the cell every on-advance reverse
-//! declares in (01108, 01109, 01105, 01106), because the flip is step 2 of the
-//! Rules Reference's advance procedure rather than a triggered ability
-//! (`glossary/Act_Deck_and_Agenda_Deck.md`). This is 01110 being terminal in the
-//! ordinary way: it is the last card in the act deck, so advancing it flips it
-//! and its reverse ends the scenario (ADR 0013).
+//! It reaches its resolution point by *running an effect* — `reach_resolution`
+//! (ADR 0013). This is 01110 being terminal in the ordinary way: it is the last
+//! card in the act deck, so advancing it flips it and its reverse ends the
+//! scenario.
 //!
-//! **The choice is not modelled yet.** The card prints two resolution points and
-//! this ability reaches R1 unconditionally, which is exactly the behaviour that
-//! shipped before the reverse was an effect at all — R2 stays unreachable and
-//! the lead is never asked. #775 swaps the `reach_resolution(1)` for an
-//! `Effect::ChooseOne` of the two printed options; its consequences (trauma, the
-//! campaign log, earning Lita Chantler) stay with #766.
+//! **Cell: the `after` cell of the `ActAdvanced` condition**, for the reverse.
+//! The reverse prints no trigger word, because it is not a triggered ability: it
+//! is step 2 of the advance procedure — *"Flip the advancing card over and
+//! follow the instructions on the reverse ("b") side."*
+//! (`glossary/Act_Deck_and_Agenda_Deck.md`). Declaring it in the `after` cell of
+//! the flip is what puts it where the procedure puts it: after step 1's token
+//! removal and the flip itself, and before step 3's *"the next card in the deck
+//! becomes the current act/agenda"* — which for a terminal act never comes,
+//! since the `AdvanceReverse` frame holds the cursor and there is no next card.
+//! The same cell 01108 and 01109 declare. The card's rulings
+//! (<https://arkhamdb.com/card/01110>) reach only the Objective's timing, quoted
+//! above; nothing contests this cell.
 //!
 //! The Ghoul Priest enemy + its spawn land in C3 (#231);
 //! this objective is unit-tested here and proven end-to-end in C7b (#245).
+//!
+//! # Module gap
+//!
+//! **The reverse's choice is not modelled; this module reaches R1
+//! unconditionally (#775).** The card prints two resolution points and asks the
+//! lead investigator to pick between them, so R2 is unreachable and the lead is
+//! never asked. Unchanged from what shipped when the point was a `resolution`
+//! field on the act (ADR 0012), and deliberately so: #808 is the mechanism,
+//! and **#775** is the choice — an `Effect::ChooseOne` of the two printed
+//! options, anchored to `OptionTarget::Act`. Its consequences (trauma, the
+//! campaign log, earning the Lita Chantler card) stay with #766.
 
 use card_dsl::dsl::{
     advance_current_act, forced_on_event, reach_resolution, Ability, EventPattern, EventTiming,

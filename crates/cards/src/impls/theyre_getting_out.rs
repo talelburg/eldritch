@@ -13,7 +13,7 @@
 //! `EventPattern::PhaseEnded { Enemy }`; the round-end doom off the new
 //! `EventPattern::RoundEnded`.
 //!
-//! **Cell: the `at` cell, for both.** Each prints *"At"* — *"At the end of
+//! **Cell: the `at` cell, for both fronts.** Each prints *"At"* — *"At the end of
 //! the enemy phase"* and *"At the end of the round"* — and `glossary/At.md`
 //! puts such abilities *"in between any "when..." abilities and any
 //! "after..." abilities with the same triggering condition."* The ruling on
@@ -31,20 +31,22 @@
 //! >   allowing the ghouls to run rampant. Each investigator that has not
 //! >   resigned is defeated and suffers 1 physical trauma.
 //!
-//! It reaches its resolution point by running an effect — `reach_resolution` on
-//! the `after` cell of the agenda's own advance, the cell every on-advance
-//! reverse declares in (01105, 01106), because the flip is step 2 of the Rules
-//! Reference's advance procedure rather than a triggered ability
-//! (`glossary/Act_Deck_and_Agenda_Deck.md`). 01107 is terminal in the ordinary
-//! way: last card in the agenda deck, so dooming out flips it and its reverse is
-//! what ends the scenario (ADR 0013).
+//! It reaches its resolution point by *running an effect* — `reach_resolution`
+//! (ADR 0013). 01107 is terminal in the ordinary way: last card in the agenda
+//! deck, so dooming out flips it and its reverse is what ends the scenario.
 //!
-//! **The branch is not modelled yet.** Only the first bullet carries a `(→R#)`;
-//! the second reaches no resolution point at all. This ability reaches R3
-//! unconditionally, which is exactly the behaviour that shipped before the
-//! reverse was an effect — so an investigator who doomed out at act 3 is still
-//! handed a resolution point the card does not print for them. **#809** makes it
-//! an `Effect::If` over a card-local `Condition::Native` reading `act_index`.
+//! **Cell: the `after` cell of the `AgendaAdvanced` condition**, for the
+//! reverse. The reverse prints no trigger word, because it is not a triggered
+//! ability: it is step 2 of the advance procedure — *"Flip the advancing card
+//! over and follow the instructions on the reverse ("b") side."*
+//! (`glossary/Act_Deck_and_Agenda_Deck.md`). Declaring it in the `after` cell of
+//! the flip is what puts it where the procedure puts it: after step 1's token
+//! removal and the flip itself, and before step 3's *"the next card in the deck
+//! becomes the current act/agenda"* — which for a terminal agenda never comes,
+//! since the `AdvanceReverse` frame holds the cursor and there is no next card.
+//! The same cell 01105 and 01106 declare. With no printed word to read against,
+//! nothing contests it; the card's rulings
+//! (<https://arkhamdb.com/card/01107>) reach only the two Forced fronts.
 //!
 //! Map note: on The Gathering's star map (Hallway hub ↔ Attic/Cellar/
 //! Parlor), every location has a unique shortest first step toward the
@@ -54,6 +56,23 @@
 //! [`relocate_enemy`], so a Ghoul arriving at an investigator's location
 //! engages on arrival per the general engagement rule (#633) — the card
 //! text is positional only, but the framework rule applies regardless.
+//!
+//! # Module gap
+//!
+//! **The reverse's branch is not modelled; this module reaches R3
+//! unconditionally (#809).** Only the first printed bullet carries a `(→R#)`:
+//! the act-1/2 branch is *"trapped inside the house … **(→R3)**"*, while the
+//! act-3 branch reaches **no** resolution point at all — *"Each investigator
+//! that has not resigned is defeated and suffers 1 physical trauma"*, which
+//! drains the last active investigator into `check_all_defeated` and so into
+//! `ScenarioEnding::NoResolution`. So an investigator who doomed out at act 3
+//! is handed a resolution point the card does not print for them.
+//!
+//! Unchanged from what shipped when the point was a `resolution` field on the
+//! agenda (ADR 0012), and deliberately so: #808 is the mechanism, and **#809**
+//! is the branch — an `Effect::If` over a card-local `Condition::Native`
+//! reading `act_index`, with the act-3 arm defeating each investigator in
+//! `turn_order`.
 
 use card_dsl::dsl::{
     forced_on_event, native, reach_resolution, Ability, EventPattern, EventTiming, Phase,

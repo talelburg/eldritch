@@ -278,6 +278,24 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
     );
 }
 
+/// The open prompt's text. Panics with the outcome if nothing is awaiting input.
+fn prompt_of(r: &game_core::engine::ApplyResult) -> &str {
+    match &r.outcome {
+        EngineOutcome::AwaitingInput { request, .. } => &request.prompt,
+        other => panic!("expected a prompt, got {other:?}"),
+    }
+}
+
+/// Answer whatever single-option prompt is open with `OptionId(0)`.
+fn pick_single(state: GameState) -> game_core::engine::ApplyResult {
+    apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+        }),
+    )
+}
+
 /// Reveal the Parlor (01115) so 01107's own enemy-phase-end forced can run.
 ///
 /// That ability moves each unengaged Ghoul *toward the Parlor* and rejects when
@@ -309,6 +327,12 @@ fn with_parlor_in_play(state: &mut GameState) {
 /// Before #808 this path never emitted `AgendaAdvanced` at all: the doom-threshold
 /// check latched the field *instead of* advancing, so the board went quiet and the
 /// player never saw which agenda ended their game.
+///
+/// Here rather than in `crates/cards/tests/` — which is where the rest of 01107's
+/// integration coverage lives — because reaching agenda 3 needs
+/// `scenarios::the_gathering::setup()`, and `scenarios` depends on `cards`, not the
+/// other way round. This target installs `cards::REGISTRY` too, so it is the same
+/// real-corpus seam.
 #[test]
 fn dooming_out_the_terminal_agenda_advances_it_and_its_reverse_reaches_r3() {
     let mut state = seated_roland();
@@ -358,51 +382,52 @@ fn the_terminal_agendas_advance_flip_acknowledge_precedes_the_ending() {
     state.interactive_acknowledge = true;
     with_parlor_in_play(&mut state);
 
-    let paused = take_turn_action(state, &TurnAction::EndTurn);
-
-    let EngineOutcome::AwaitingInput { request, .. } = &paused.outcome else {
-        panic!(
-            "expected the advance-flip acknowledge, got {:?}",
-            paused.outcome
+    // Ending the round fires 01107's two Forced *fronts* first — the
+    // enemy-phase-end Ghoul move and the round-end doom — each raising its own
+    // #466 acknowledge before the Mythos doom tips the threshold.
+    let mut r = take_turn_action(state, &TurnAction::EndTurn);
+    for _ in 0..2 {
+        assert_eq!(
+            prompt_of(&r),
+            "Forced — They're Getting Out!",
+            "01107's own fronts resolve before the agenda advances",
         );
+        r = pick_single(r.state);
+    }
+
+    // Then the flip: a single on-card option anchored to the agenda, with the
+    // ending still unlatched — the player reads the reverse before the result
+    // panel replaces the board (#558).
+    assert_eq!(prompt_of(&r), "Agenda 3 advanced — acknowledge.");
+    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
+        unreachable!("prompt_of would have panicked")
     };
-    assert_eq!(
-        request.options.len(),
-        1,
-        "the flip pick is a single on-card option: {request:?}"
-    );
+    assert_eq!(request.options.len(), 1, "one option: {request:?}");
     assert_eq!(
         request.options[0].target,
         Some(game_core::engine::OptionTarget::Agenda),
         "it anchors to the agenda card the player is being asked to read",
     );
-    assert!(
-        paused.state.ending.is_none(),
-        "the ending lands only once the reverse has run",
-    );
+    assert!(r.state.ending.is_none(), "nothing latched before the flip");
 
-    // Answer the flip, then the #466 acknowledge the reverse's own forced
-    // ability raises — the terminal agenda's reverse is a Forced like 01105's,
-    // so interactive play acknowledges it the same way.
-    let mut result = apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
-        }),
-    );
-    for _ in 0..4 {
-        if !matches!(result.outcome, EngineOutcome::AwaitingInput { .. }) {
-            break;
-        }
-        result = apply(
-            result.state,
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
-            }),
-        );
-    }
+    // Answering the flip fires the reverse, which is a Forced like 01105's and
+    // acknowledges the same way — and only running it latches the ending.
+    r = pick_single(r.state);
     assert_eq!(
-        result.state.ending,
+        prompt_of(&r),
+        "Forced — They're Getting Out!",
+        "the reverse"
+    );
+    assert!(r.state.ending.is_none(), "nor before the reverse runs");
+
+    let done = pick_single(r.state);
+    assert_eq!(
+        done.outcome,
+        EngineOutcome::Done,
+        "the reverse's acknowledge is the last of them",
+    );
+    assert_eq!(
+        done.state.ending,
         Some(ScenarioEnding::Resolution(ResolutionId::new(3))),
     );
 }
