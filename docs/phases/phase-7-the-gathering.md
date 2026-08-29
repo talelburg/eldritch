@@ -108,7 +108,7 @@ the Tablet came out.
 |---|---|
 | #804 ✅ PR #807 | `Resolution` is `Won { id } \| Lost { reason }` — a standalone-mode projection, with no representation for the ending that reaches no resolution point ([ADR 0012](../adr/0012-a-scenario-ends-at-a-resolution-point-or-at-none.md)) |
 | #808 ✅ PR #810 | A terminal card's `(→R#)` is a flat `Option<ResolutionId>` field, so a reverse that *decides* — 01107's board-state branch, 01110's player choice — cannot be expressed, and a terminal card ends the scenario without ever flipping ([ADR 0013](../adr/0013-a-resolution-point-is-a-printed-effect.md)) |
-| #809 | Agenda 01107's `(→R3)` is conditional on the investigators being at act 1 or 2, and the engine latches it unconditionally |
+| #809 ✅ PR #815 | Agenda 01107's `(→R3)` is conditional on the investigators being at act 1 or 2, and the engine latches it unconditionally |
 | #644 | Elimination **by resignation** never happens — `Status::Resigned` / `DefeatCause::Resigned` exist and have never been constructed |
 | #805 | An `ActionDesignator` is a pure tag that performs nothing, so a **Fight** ability and `Effect::Fight` are linked by convention alone |
 | #772 | Lita 01117 is an ability source nobody controls, so #708's walk never reaches her — and neither 01115's Parley nor her buffs are printed on the card that has them |
@@ -117,26 +117,30 @@ the Tablet came out.
 | #774 | The Parlor movement barrier — mandatory printed behaviour that was inheriting optional content's deferral |
 | #775 | 01110b asks the lead investigator to choose the ending; the act's reverse reaches R1 unconditionally, so R2 is unreachable |
 | #811 | Agenda 01107's Ghoul move **rejects the player's action** whenever the Parlor is not yet in play — which agenda 3 reaches on its own doom clock, independent of act progress |
+| #814 | `Status` carries `Killed` / `Insane` alongside `Defeated`, but the rules make killed and insane **campaign-log states derived from trauma totals** — so a first defeat by damage is recorded as a kill |
 
-- **#809 — agenda 01107's resolution point is conditional.** The reverse prints two
-  bullets and only the first carries a point: *"If the investigators are at Act 1 or 2,
-  they are trapped inside the house as the ghouls tear them apart. **(→R3)**"*, against
-  *"If the investigators are at Act 3, they barely escape with their lives … Each
-  investigator that has not resigned is defeated and suffers 1 physical trauma."* The
-  act-3 branch reaches **no** resolution point — defeating everyone drains the last
-  active investigator into `check_all_defeated` and so into #804's `NoResolution`. On
-  #808's mechanism that is an `Effect::If` over a card-local `Condition::Native` reading
-  `act_index`, with the act-3 branch defeating each investigator in `turn_order` and
-  reaching the ending by the rules' own route rather than latching `NoResolution`
-  directly. The defeat is by **card ability** — `glossary/Defeat.md`'s *"An investigator
-  might also be defeated by a card ability"* — so it takes a new cause and a new status
-  rather than reusing `Killed`/`Insane`, which that same entry makes consequences of
-  *trauma*: *"Taking trauma may cause an investigator to be **killed** or driven
-  **insane**"*. The fan-out stays a card-local native over `turn_order`: `Effect::ForEach`'s
-  evaluator arm is a stub and its design is still open (#363, which now records 01107 as
-  a second investigator-all consumer), and a defeat body has one consumer — loop and body
-  fail the DSL threshold independently. `Event::TraumaSuffered { Physical, 1 }` is
-  emitted and nothing persists it until #766.
+- **#814 — `Status` conflates the scenario's defeat/resign partition with the
+  campaign's killed/insane record.** `apply_investigator_defeat` maps
+  `DefeatCause::Damage => Status::Killed` and `Horror => Insane`, but killed and insane
+  are neither scenario states nor consequences of *how* a defeat happened.
+  `glossary/Campaign_Play.md` derives them from **accumulated trauma totals**: *"If an
+  investigator has physical trauma equal to his or her printed health, the investigator
+  is **killed**."* So an investigator defeated by damage at zero prior trauma is
+  defeated and suffers 1 physical trauma — the engine marks them `Killed` on their first
+  defeat of the campaign. The rules' partition is `Active` / defeated / resigned, with
+  `Resigned` the one genuine non-defeat (`glossary/Resign.md`: *"An investigator who
+  resigns is not considered to have been defeated."*), and `DefeatCause` already rides
+  `Event::InvestigatorDefeated` to carry the flavour. Surveying every `text` /
+  `back_text` in the snapshot: cards read **eliminated** (the union — Threads of Time
+  04315, Dark Pact 04038) and **undefeated** (defeat vs. resignation — All In 02068),
+  and impose killed/insane explicitly where they mean them (Chaos Incarnate 06289: *"Each
+  investigator is defeated **and driven insane**."*). **No card reads a defeat
+  sub-status**, so three of the five variants answer a question no card asks. Found while
+  naming #809's new status, which landed as `Status::Defeated` — the variant this
+  collapses the other two into — with a `TODO(#814)` on each. Not blocked on the campaign
+  log: deleting the two variants loses nothing an observer needs today, and it clears the
+  scenario layer so #766's *derivation* has one honest input rather than a field already
+  claiming the answer.
 - **#811 — 01107's Ghoul move rejects the player's action with no Parlor.**
   `move_ghouls_toward_parlor` resolves its destination first and returns
   `Rejected` when the Parlor (01115) is not in play — and since a rejection rolls
