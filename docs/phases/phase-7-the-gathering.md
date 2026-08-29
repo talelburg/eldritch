@@ -186,31 +186,8 @@ the Tablet came out.
   cluster wants are that **Sentinel Peak 02284**'s back is a movement *cost* rather than a
   restriction, and **Museum Halls 02127**'s back grants an ability to a *different*
   location (#772's shape, not #821's).
-- **#820 — the set-aside zone cannot be one collection.** Prerequisite for #771, and a
-  change to already-shipped code, which is why it is its own issue rather than riding
-  #771: the ticket as filed was *"put an asset into play at a location"*, not that plus a
-  rewrite of the act-1 board build. The zone is two collections in two representations —
-  `set_aside_locations: Vec<Location>` (fully built, ids minted) and `set_aside_enemies:
-  Vec<CardCode>` (codes, because per-investigator health isn't known at `setup()`). #771
-  needs a third kind, and it is code-deferred like the enemy.
-  **Pre-building serves exactly one line**: `the_gathering.rs:205-207` calls
-  `state.connect(hallway, attic)` at setup, which needs both `LocationId`s to exist.
-  Everything else is downstream — `location_id_by_code` searches only `state.locations`, so
-  set-aside locations are **not addressable by code** and 01108's board-build hand-rolls its
-  own scan (`trapped.rs:74-80`); `GameState::location_mut` exists *solely* so `connect` can
-  reach the set-aside zone; and the drain is a wholesale `std::mem::take` with no per-location
-  entry logic. So: one `set_aside_cards: Vec<CardCode>`, type read from metadata at
-  put-into-play, and the topology moves to a **scenario-owned layout table** reached through
-  `ScenarioRegistry`. Not inline in 01108's `board_build`, which already means "build the
-  board": that works only because The Gathering's set-aside locations all arrive at once,
-  which is a property of this scenario — The Hidden Chamber 02214 and the Train Cars each
-  enter play individually. Connections are printed on the cards as symbols, but a field
-  census over all **1,257 locations** in the pinned snapshot finds no field for them (the
-  nearest are `back_link`, the a/b side pairing, and prose in `back_text`), so
-  scenario-owned layout is permanent rather than a stopgap. That upstream gap is
-  deliberately unfiled — a data question for another day.
-- **#771 — set-aside assets, and an uncontrolled card in play at a location.** Set-aside is
-  enemies-only (`set_aside_enemies` + `spawn_set_aside_enemy`), so act 01109b's *"Put the
+- **#771 — set-aside assets, and an uncontrolled card in play at a location.**
+  `put_set_aside_card_into_play` dispatches Location and Enemy only, so act 01109b's *"Put the
   set-aside Lita Chantler into play in the Parlor"* has nowhere to go while its neighbour
   *"Spawn the set-aside Ghoul Priest in the Hallway"* works (#231). Her home is
   **`Location.cards_at_location: Vec<CardInPlay>` + `Placement::AtLocation`**, not
