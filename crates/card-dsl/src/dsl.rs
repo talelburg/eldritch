@@ -174,12 +174,31 @@ pub enum ActionDesignator {
         /// Bonus damage beyond the base 1 (.38 Special: +1).
         extra_damage: IntExpr,
     },
-    /// **Evade** — performs an evade action. No corpus card yet, so the
-    /// modification it would carry has no sample to take its shape from; the
-    /// engine rejects a designated Evade rather than guessing one.
+    /// **Evade** — performs an evade action. Ten corpus cards print it, none
+    /// implemented, so the engine rejects a designated Evade rather than
+    /// guessing at a payload (`TODO(#818)`). Eight are **events** whose bold
+    /// word rides `Trigger::OnPlay` (Blinding Light 01066/01069, Cunning
+    /// Distraction 01078, Bind Monster 02031, Bait and Switch 02034), which
+    /// needs the designator promoted off [`Trigger::Activated`] first — the
+    /// `TODO(#778)` above. The two that are already this shape are assets:
+    /// Fire Extinguisher 02114's *"\[action\] Exile Fire Extinguisher:
+    /// **Evade.** You get +3 \[agility\] for this test…"*, whose `+3` is the
+    /// [`Fight`](Self::Fight) modification's twin, and Strange Solution 02264's
+    /// *"\[action\] Spend 1 supply: **Evade.** Evade with a base \[agility\]
+    /// skill of 6."*, whose **base-value replacement** (`CONTEXT.md`, "Base
+    /// value") is a shape no designator payload carries yet. So the field is
+    /// unfixed because two live cards disagree about what it should be, not
+    /// for want of a sample.
     Evade,
-    /// **Move** — performs a move action. No corpus card yet (named by Frozen
-    /// in Fear 01164's ruling); same posture as [`Evade`](Self::Evade).
+    /// **Move** — performs a move action. **No corpus card prints it**, though
+    /// 29 in the snapshot do (Sled Dog 08127's *"\[action\] Exhaust X Sled
+    /// Dogs: **Move.** Move X times."*, Ring Library 11624's *"\[action\]:
+    /// **Move.** Move to a revealed \[\[Passageway\]\] location."*), so its
+    /// modification is a *destination or a repeat count* rather than a stat
+    /// row. Rejected on the same `TODO(#818)` as [`Evade`](Self::Evade), for
+    /// the stronger reason: nothing the build compiles prints one at all. Named
+    /// as a designator by the rules quote above and by Frozen in Fear 01164's
+    /// ruling.
     Move,
     /// **Investigate** — performs an investigate action against the
     /// controller's current location. Flashlight 01087.

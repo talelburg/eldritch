@@ -56,9 +56,13 @@ use crate::state::{EnemyId, GameState, InvestigatorId, LocationId};
 /// - **Resign** — eliminating the controller is always available to an
 ///   investigator who reached the ability at all.
 /// - **Evade** / **Move** — rejected, with [`unimplemented_designator`]'s
-///   reason. No implemented card prints either, so neither variant carries the
-///   modification a real one would, and the engine says so rather than
-///   performing a guess at printed text nobody has read. `TODO(#818)`.
+///   reason (`TODO(#818)`). Neither variant carries a modification, and no
+///   implemented card prints either, so the engine says so rather than
+///   performing a guess. Note the two differ in *why*: ten corpus cards print
+///   **Evade** and disagree about the payload's shape (Fire Extinguisher
+///   02114's `+3 [agility]` row vs Strange Solution 02264's base-value
+///   replacement), while **Move** is printed by no corpus card at all. See the
+///   variants' own docs.
 pub(crate) fn can_perform(
     state: &GameState,
     investigator: InvestigatorId,
@@ -92,6 +96,9 @@ pub(crate) fn can_perform(
 /// **Evade** and **Move**, the two `ActionDesignator` variants that neither
 /// carry a modification nor perform anything (`TODO(#818)`).
 ///
+/// "No implemented card", deliberately, rather than "no corpus card": ten
+/// corpus cards print **Evade** (none built yet), and none prints **Move**.
+///
 /// One helper rather than the same prose at both sites: this is read pre-cost
 /// by [`can_perform`] and again by the evaluator's perform dispatch, where the
 /// arm is unreachable through the activation path precisely *because*
@@ -99,8 +106,8 @@ pub(crate) fn can_perform(
 /// drift the moment #818 lands.
 pub(crate) fn unimplemented_designator(designator: &ActionDesignator) -> Cow<'static, str> {
     format!(
-        "a designated {designator:?} is not implemented: no corpus card prints one, so the \
-         modification it would carry has no shape yet (TODO(#818))",
+        "a designated {designator:?} is not implemented: no card the build compiles \
+         declares one, so the modification it would carry has no shape yet (TODO(#818))",
     )
     .into()
 }
@@ -195,8 +202,10 @@ mod tests {
         assert!(can_perform(&state, ME, &ActionDesignator::Resign).is_ok());
     }
 
-    /// The two designators no implemented card prints reject rather than
+    /// The two designators no *implemented* card prints reject rather than
     /// performing a guess — and they reject *pre-cost*, so nothing is spent.
+    /// (Corpus cards printing **Evade** exist — Fire Extinguisher 02114,
+    /// Strange Solution 02264 — but none is built, so nothing reaches this.)
     #[test]
     fn an_unprinted_designator_rejects_rather_than_guessing() {
         let state = board(true, 1);
