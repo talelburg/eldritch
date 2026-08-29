@@ -29,6 +29,7 @@ static TEST_MODULE: ScenarioModule = ScenarioModule {
     resolve_symbol: None,
     setup: test_setup,
     apply_resolution: noop_resolution,
+    layout: &[],
 };
 
 fn module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {

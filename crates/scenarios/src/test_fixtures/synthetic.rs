@@ -131,4 +131,5 @@ pub const MODULE: ScenarioModule = ScenarioModule {
     resolve_symbol: None,
     setup,
     apply_resolution,
+    layout: &[],
 };

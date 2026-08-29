@@ -358,8 +358,7 @@ impl GameStateBuilder {
         GameState {
             investigators: self.investigators,
             locations: self.locations,
-            set_aside_locations: Vec::new(),
-            set_aside_enemies: Vec::new(),
+            set_aside_cards: Vec::new(),
             starting_location: None,
             enemies: self.enemies,
             chaos_bag: self.chaos_bag,
@@ -399,13 +398,13 @@ impl Default for GameStateBuilder {
 }
 
 #[cfg(test)]
-mod set_aside_locations_tests {
+mod set_aside_cards_tests {
     use super::*;
 
     #[test]
-    fn build_starts_with_empty_set_aside_locations() {
+    fn build_starts_with_empty_set_aside_cards() {
         let state = GameStateBuilder::new().build();
-        assert!(state.set_aside_locations.is_empty());
+        assert!(state.set_aside_cards.is_empty());
     }
 
     #[test]

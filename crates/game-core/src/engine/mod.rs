@@ -27,12 +27,11 @@ pub use dispatch::cards::discard_random_from_hand;
 pub use dispatch::choice::{resolve_choice_count, suspend_for_native_choice, ChoiceResolution};
 pub use dispatch::combat::deal_damage_to_enemy;
 pub use dispatch::elimination::{defeat_investigator, take_damage};
-pub use dispatch::encounter::{
-    reshuffle_encounter_discard, resolve_encounter_card, spawn_set_aside_enemy,
-};
+pub use dispatch::encounter::{reshuffle_encounter_discard, resolve_encounter_card};
 pub use dispatch::hunters::relocate_enemy;
 pub use dispatch::movement::{enemy_can_enter_location, investigator_can_enter_location};
 pub use dispatch::reveal::reveal_location;
+pub use dispatch::set_aside::put_set_aside_card_into_play;
 pub use dispatch::threat_area::{attach_to_location, place_in_threat_area};
 pub use enumerate::{legal_actions, TurnAction};
 pub use evaluator::{location_id_by_code, EvalContext};
@@ -1741,17 +1740,13 @@ mod tests {
     }
 
     #[test]
-    fn move_to_a_set_aside_location_is_rejected() {
-        use crate::state::{CardCode, Location, LocationId};
+    fn move_to_a_location_that_is_not_in_play_is_rejected() {
+        use crate::state::{CardCode, LocationId};
         let (inv_id, a, _b, mut state) = move_scenario();
-        // A location that exists only in the set-aside zone is out of play.
-        state.set_aside_locations.push(Location::new(
-            LocationId(99),
-            CardCode("setaside".into()),
-            "Aside",
-            1,
-            0,
-        ));
+        // A set-aside location is a bare code — it has no LocationId at all
+        // until it enters play, so the destination below names nothing in
+        // `state.locations`.
+        state.set_aside_cards.push(CardCode("setaside".into()));
         // Illegally connect the current location to it; the move must STILL be rejected (not in play).
         state
             .locations
@@ -1759,12 +1754,12 @@ mod tests {
             .unwrap()
             .connections
             .push(LocationId(99));
-        // Set-aside location is out of play → Move to it is not legal.
+        // A dangling connection is out of play → Move to it is not legal.
         assert!(
             !crate::engine::enumerate::legal_actions(&state)
                 .iter()
                 .any(|a| matches!(a, TurnAction::Move { investigator, destination } if *investigator == inv_id && *destination == LocationId(99))),
-            "set-aside location is out of play"
+            "a location that is not in play is not a legal destination"
         );
     }
 
@@ -4931,6 +4926,7 @@ mod tests {
         resolve_symbol: None,
         setup: unused_setup,
         apply_resolution: stamp_apply,
+        layout: &[],
     };
 
     fn stamp_module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {

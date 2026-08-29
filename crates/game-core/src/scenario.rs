@@ -197,6 +197,21 @@ pub enum TokenEffect {
     Horror(u8),
 }
 
+/// A scenario's **location layout**: the connections printed as connection
+/// symbols on its location cards, as unordered pairs of card codes. Each
+/// pair is wired bidirectionally when the second of its two locations
+/// enters play.
+///
+/// The layout is scenario-owned rather than card-owned because the pinned
+/// `ArkhamDB` snapshot has **no field for connections**. A field census over
+/// all 1,257 locations in `data/arkhamdb-snapshot/` yields `shroud`,
+/// `clues`, `back_link` (the a/b side pairing, not connections) and prose
+/// in `back_text` (*"Easttown is connected to Velma's Diner."*), and
+/// nothing else that names a neighbour. So no scenario's layout is
+/// derivable from card metadata at this upstream, and the scenario module
+/// is the smallest thing that knows the whole board.
+pub type LocationLayout = &'static [(&'static str, &'static str)];
+
 /// Static, host-installed bundle of function pointers for one
 /// scenario module.
 ///
@@ -223,6 +238,12 @@ pub struct ScenarioModule {
     /// For the Phase-4 synthetic fixture this is a no-op. Phase 9 fills in
     /// real bodies once the campaign log lands.
     pub apply_resolution: fn(ScenarioEnding, &mut GameState, &mut Vec<Event>),
+    /// This scenario's [`LocationLayout`]. Read when a set-aside location
+    /// enters play, which is the only moment both of a connection's
+    /// [`LocationId`]s exist. `&[]` for a scenario whose locations are all
+    /// laid out by `setup()` (test fixtures, and any board with no
+    /// deferred rooms).
+    pub layout: LocationLayout,
 }
 
 /// Lookup table of [`ScenarioModule`]s, keyed by [`ScenarioId`].
@@ -236,6 +257,28 @@ pub struct ScenarioRegistry {
     /// Look up a scenario module by its id. Returns `None` for ids
     /// not known to this registry.
     pub module_for: fn(&ScenarioId) -> Option<&'static ScenarioModule>,
+}
+
+/// The active scenario's [`LocationLayout`], or `&[]` when there is no
+/// active scenario, no installed registry, or an unknown id. Routes
+/// `state.scenario_id` → installed scenario registry → `module_for` →
+/// [`ScenarioModule::layout`], mirroring [`resolve_symbol_token`].
+///
+/// An absent layout is not an error: a board with no set-aside locations
+/// never asks, and a scenario that laid its whole board out in `setup()`
+/// has already wired it.
+#[must_use]
+pub fn scenario_layout(state: &GameState) -> LocationLayout {
+    let Some(id) = state.scenario_id.as_ref() else {
+        return &[];
+    };
+    let Some(registry) = crate::scenario_registry::current() else {
+        return &[];
+    };
+    let Some(module) = (registry.module_for)(id) else {
+        return &[];
+    };
+    module.layout
 }
 
 /// Resolve a drawn chaos symbol token against the active scenario's
