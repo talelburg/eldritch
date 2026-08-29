@@ -23,14 +23,9 @@ twice, once as reconnaissance before the fixes and once as the run of record.
 
 **The Lita cluster was designed 2026-08-29** (`/grill-with-docs` over #771-#774), which
 added one issue to the wave and reordered it. **#820** — the set-aside zone is two
-collections in two representations, and cannot take a third card kind — is a prerequisite
-for #771 and is not one of #258's children. The wave's order is now **#774 → #820 → #771
-→ #772 → #773**, and #774 grew: enforcing the Parlor's barrier means reading a location's
-`back_text` as abilities that apply while it is unrevealed, which 19 of the 20 `back_text`
-locations in Core + Dunwich are waiting on. **#774 has since shipped (PR #822)** — the
-mechanism is `game_core::engine::abilities_in_effect`, and its module header carries the
-survey. The session also spun out **#821** (a constant
-`Restrict` cannot carry a condition), unmilestoned, which #774 does not need.
+collections in two representations, and cannot take a third card kind — is not one of
+#258's children. The wave runs **#774, #820, #771, #772, #773**. The session also spun out
+**#821** (a constant `Restrict` cannot carry a condition), unmilestoned.
 
 ## Goal
 
@@ -124,9 +119,9 @@ the Tablet came out.
 | #805 ✅ PR #819 | An `ActionDesignator` is a pure tag that performs nothing, so a **Fight** ability and `Effect::Fight` are linked by convention alone |
 | #774 ✅ PR #822 | The Parlor movement barrier — mandatory printed behaviour that was inheriting optional content's deferral |
 | #820 | Set-aside locations are pre-built `Location`s while set-aside enemies are codes, so the zone cannot be one collection |
-| #771 → #820 | Set-aside is enemies-only, so act 01109b's *"Put the set-aside Lita Chantler into play"* has nowhere to go |
-| #772 → #771 | Lita 01117 is an ability source nobody controls, so #708's walk never reaches her — and neither 01115's Parley nor her buffs are printed on the card that has them |
-| #773 → #772 | Lita 01117's controlled-side grants are location-scoped and reaction-driven; both collapse to one investigator in 1p |
+| #771 | Set-aside is enemies-only, so act 01109b's *"Put the set-aside Lita Chantler into play"* has nowhere to go |
+| #772 | Lita 01117 is an ability source nobody controls, so #708's walk never reaches her — and neither 01115's Parley nor her buffs are printed on the card that has them |
+| #773 | Lita 01117's controlled-side grants are location-scoped and reaction-driven; both collapse to one investigator in 1p |
 | #775 | 01110b asks the lead investigator to choose the ending; the act's reverse reaches R1 unconditionally, so R2 is unreachable |
 | #811 | Agenda 01107's Ghoul move **rejects the player's action** whenever the Parlor is not yet in play — which agenda 3 reaches on its own doom clock, independent of act progress |
 | #814 | `Status` carries `Killed` / `Insane` alongside `Defeated`, but the rules make killed and insane **campaign-log states derived from trauma totals** — so a first defeat by damage is recorded as a kill |
@@ -183,40 +178,14 @@ the Tablet came out.
   line below to a Ghoul with no available step (#797).
 - **The Lita cluster was designed 2026-08-29** (`/grill-with-docs` over #771-#774). The
   session settled five things and changed the cluster's shape, so the bullets below are
-  the design rather than the finding. **Ordering is now #774 → #820 → #771 → #772 →
-  #773**, with #774 first because it is independent of the other four and gets the Parlor
-  correct before anything is put into it.
-- **#774 — the Parlor movement barrier**, split out of #258 because it is **mandatory
-  printed behaviour** that was inheriting optional content's deferral. **Shipped, PR #822**,
-  and it grew a mechanism on the way: **a location's `back_text` abilities apply while it is
-  unrevealed, its front's while it is revealed**, so 01115's back declares a plain
-  unconditional `Trigger::Constant` + `Effect::Restrict(InvestigatorMovementBlocked)` and
-  act 01109b's reveal is what lifts it. The mechanism lives in
-  `game_core::engine::abilities_in_effect`, whose module header carries the snapshot survey
-  that justifies it over a hardcode and the reason every reader funnels through one place
-  (front and back are different vectors, and an ability is addressed by
-  `(code, ability_index)`).
-  **Two movement predicates, not one**, is the decision worth keeping here, because it is
-  the one a later reader is most likely to try to undo. 01115's only ruling settles it:
-  *"**Q:** Can enemies move into Parlor even when investigators are blocked by the barrier?
-  **A:** Yes; in The Gathering scenario, enemies can move into The Parlor even when the
-  investigators are blocked by the barrier."* (<https://arkhamdb.com/card/01115>). The
-  Parlor blocks investigators and not enemies; Barricade 01038 blocks enemies and not
-  investigators — so `Restriction::InvestigatorMovementBlocked` sits beside
-  `EnemyMovementBlocked`, and both predicates live in `engine::dispatch::movement`. They
-  share #651's posture — the block is checked against the compelled step, never baked into
-  the graph (`glossary/Nearest.md`: *"even if one or more of those connections are blocked
-  by another card ability"*; `glossary/Hunter.md` for the non-move) — but the **Elite
-  exemption belongs to the enemy side alone**. #651 and #797 having shipped is why there
-  was exactly one application site to inherit; the graph-pruning pathfinding variants
-  (`bfs_distance_with`, `shortest_first_steps_with`) are gone with the reading they served,
-  so a new mover cannot reach for them by accident. The same clause appears on a
-  **fixed**-destination mover in `glossary/Patrol.md`, which is why 01107's forced Ghoul
-  move became #797 rather than riding #651.
-  Two things the survey turned up that the *next* issue in this area wants: **Sentinel Peak
-  02284** is the one `back_text` location that is a movement **cost** rather than a
-  restriction, and **Museum Halls 02127**'s back carries a *second* clause — it grants an
-  ability to a different location — which is #772's shape, not #821's.
+  the design rather than the finding. **The wave runs #774, #820, #771, #772, #773**, with
+  #774 first because it is independent of the other four and gets the Parlor correct before
+  anything is put into it. #774 has shipped; the mechanism it added — a location's
+  `back_text` abilities apply while it is unrevealed — is documented at
+  `game_core::engine::abilities_in_effect`, and the two survey findings the rest of the
+  cluster wants are that **Sentinel Peak 02284**'s back is a movement *cost* rather than a
+  restriction, and **Museum Halls 02127**'s back grants an ability to a *different*
+  location (#772's shape, not #821's).
 - **#820 — the set-aside zone cannot be one collection.** Prerequisite for #771, and a
   change to already-shipped code, which is why it is its own issue rather than riding
   #771: the ticket as filed was *"put an asset into play at a location"*, not that plus a
