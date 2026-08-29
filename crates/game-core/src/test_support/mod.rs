@@ -131,6 +131,10 @@ pub fn install_registry_with_terminal_cards(base: crate::card_registry::CardRegi
             .or_else(|| BASE.get().and_then(|base| (base.abilities_for)(code)))
     }
     let _ = BASE.set(base);
+    // `back_abilities_for` rides `..base` deliberately: the terminal cards are
+    // synthetic acts/agendas with no reverse side, so there is nothing to
+    // compose in, and overriding the slot would switch the *real* registry's
+    // back sides off for every test that installs through here (#774).
     let _ = crate::card_registry::install(CardRegistry {
         abilities_for,
         ..base
@@ -180,12 +184,11 @@ pub fn install_test_registry() {
         fn abilities_for(code: &CardCode) -> Option<Vec<crate::dsl::Ability>> {
             abilities_for_terminal(code)
         }
-        let _ = crate::card_registry::install(crate::card_registry::CardRegistry {
+        use crate::card_registry::CardRegistry;
+        let _ = crate::card_registry::install(CardRegistry {
             metadata_for,
             abilities_for,
-            native_effect_for: |_| None,
-            native_eligibility_for: |_| None,
-            native_condition_for: |_| None,
+            ..CardRegistry::EMPTY
         });
     });
 }

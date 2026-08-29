@@ -84,6 +84,14 @@ fn registry_abilities_for(code: &CardCode) -> Option<Vec<card_dsl::dsl::Ability>
     abilities_for(code.as_str())
 }
 
+/// Adapter from [`CardCode`] to [`impls::back_abilities_for`] — the abilities
+/// printed on a card's **reverse side**. See
+/// [`game_core::card_registry::CardRegistry::back_abilities_for`] for when the
+/// engine reads this side rather than the front.
+fn registry_back_abilities_for(code: &CardCode) -> Option<Vec<card_dsl::dsl::Ability>> {
+    impls::back_abilities_for(code.as_str())
+}
+
 /// Adapter from a native-effect tag to its card-local handler.
 fn registry_native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEffectFn> {
     impls::native_effect_for(tag)
@@ -107,6 +115,7 @@ fn registry_native_condition_for(tag: &str) -> Option<game_core::card_registry::
 pub const REGISTRY: CardRegistry = CardRegistry {
     metadata_for: registry_metadata_for,
     abilities_for: registry_abilities_for,
+    back_abilities_for: registry_back_abilities_for,
     native_effect_for: registry_native_effect_for,
     native_eligibility_for: registry_native_eligibility_for,
     native_condition_for: registry_native_condition_for,

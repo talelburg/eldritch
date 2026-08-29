@@ -7,9 +7,10 @@
 
 use crate::card_registry;
 use crate::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
+use crate::engine::abilities_in_effect;
 use crate::state::{
-    AbilitySource, CandidateSource, CardCode, EnemyId, InvestigatorId, LocationId, Phase,
-    ResolutionCandidate, Status,
+    AbilitySource, CandidateSource, CardCode, EnemyId, GameState, InvestigatorId, LocationId,
+    Phase, ResolutionCandidate, Status,
 };
 
 use super::super::evaluator::{push_effect, EvalContext};
@@ -233,7 +234,7 @@ pub(super) fn collect_forced_hits(
                 return hits;
             };
             push_matching(
-                reg,
+                state,
                 &loc.code,
                 *investigator,
                 CandidateSource::Ability(AbilitySource::Location(*location)),
@@ -245,7 +246,6 @@ pub(super) fn collect_forced_hits(
         ForcedTriggerPoint::PhaseStarted { phase } => {
             let want_phase = dsl_phase(*phase);
             push_scenario_structure_matching(
-                reg,
                 state,
                 &mut hits,
                 bucket,
@@ -255,7 +255,6 @@ pub(super) fn collect_forced_hits(
         ForcedTriggerPoint::PhaseEnded { phase } => {
             let want_phase = dsl_phase(*phase);
             push_scenario_structure_matching(
-                reg,
                 state,
                 &mut hits,
                 bucket,
@@ -267,7 +266,7 @@ pub(super) fn collect_forced_hits(
                 return hits;
             };
             push_matching(
-                reg,
+                state,
                 code,
                 lead,
                 CandidateSource::Ability(AbilitySource::Act),
@@ -281,7 +280,7 @@ pub(super) fn collect_forced_hits(
                 return hits;
             };
             push_matching(
-                reg,
+                state,
                 code,
                 lead,
                 CandidateSource::Ability(AbilitySource::Agenda),
@@ -296,7 +295,7 @@ pub(super) fn collect_forced_hits(
             };
             if let Some(act) = state.act_deck.get(state.act_index) {
                 push_matching(
-                    reg,
+                    state,
                     &act.code,
                     lead,
                     CandidateSource::Ability(AbilitySource::Act),
@@ -322,7 +321,7 @@ pub(super) fn collect_forced_hits(
                 return hits;
             };
             push_matching(
-                reg,
+                state,
                 &attacker.code,
                 *investigator,
                 CandidateSource::Ability(AbilitySource::Enemy(*enemy)),
@@ -337,7 +336,7 @@ pub(super) fn collect_forced_hits(
             };
             if let Some(act) = state.act_deck.get(state.act_index) {
                 push_matching(
-                    reg,
+                    state,
                     &act.code,
                     lead,
                     CandidateSource::Ability(AbilitySource::Act),
@@ -348,7 +347,7 @@ pub(super) fn collect_forced_hits(
             }
             if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
                 push_matching(
-                    reg,
+                    state,
                     &agenda.code,
                     lead,
                     CandidateSource::Ability(AbilitySource::Agenda),
@@ -376,7 +375,7 @@ pub(super) fn collect_forced_hits(
             {
                 for card in inv.controlled_card_instances() {
                     push_matching(
-                        reg,
+                        state,
                         &card.code,
                         *inv_id,
                         CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
@@ -397,7 +396,7 @@ pub(super) fn collect_forced_hits(
             // source instance when an effect needs to discard itself.
             for card in inv.controlled_card_instances() {
                 push_matching(
-                    reg,
+                    state,
                     &card.code,
                     *investigator,
                     CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
@@ -432,7 +431,7 @@ pub(super) fn collect_forced_hits(
             // finds itself.
             for card in inv.controlled_card_instances() {
                 push_matching(
-                    reg,
+                    state,
                     &card.code,
                     *investigator,
                     CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
@@ -449,7 +448,7 @@ pub(super) fn collect_forced_hits(
                 if let Some(loc) = state.locations.get(&loc_id) {
                     for att in &loc.attachments {
                         push_matching(
-                            reg,
+                            state,
                             &att.code,
                             *investigator,
                             CandidateSource::Ability(AbilitySource::InPlay(att.instance_id)),
@@ -481,7 +480,7 @@ pub(super) fn collect_forced_hits(
             {
                 for card in inv.controlled_card_instances() {
                     push_matching(
-                        reg,
+                        state,
                         &card.code,
                         *inv_id,
                         CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
@@ -523,7 +522,7 @@ pub(super) fn collect_forced_hits(
                 .filter(|c| (reg.metadata_for)(&c.code).is_some_and(|m| m.weakness))
             {
                 push_matching(
-                    reg,
+                    state,
                     &card.code,
                     *investigator,
                     CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
@@ -542,7 +541,7 @@ pub(super) fn collect_forced_hits(
             if let Some(loc) = state.locations.get(location) {
                 for att in &loc.attachments {
                     push_matching(
-                        reg,
+                        state,
                         &att.code,
                         *investigator,
                         CandidateSource::Ability(AbilitySource::InPlay(att.instance_id)),
@@ -566,7 +565,9 @@ pub(super) fn collect_forced_hits(
     // generic check can't introspect, and without the tag layer a clueless Cover
     // Up initiated — and prompted — at game end.
     hits.retain(|hit| {
-        let Some(abilities) = (reg.abilities_for)(&hit.code) else {
+        let Some(abilities) =
+            abilities_in_effect::for_candidate_source(state, hit.source, &hit.code)
+        else {
             return false;
         };
         let ability = &abilities[hit.ability_index as usize];
@@ -591,7 +592,6 @@ pub(super) fn collect_forced_hits(
 /// carries the doom model, this scan's in-play arm, and 01170 together, since
 /// none of the three is assertable without the other two.
 fn push_scenario_structure_matching(
-    reg: &card_registry::CardRegistry,
     state: &crate::state::GameState,
     hits: &mut Vec<ResolutionCandidate>,
     bucket: EventTiming,
@@ -602,7 +602,7 @@ fn push_scenario_structure_matching(
     };
     if let Some(act) = state.act_deck.get(state.act_index) {
         push_matching(
-            reg,
+            state,
             &act.code,
             lead,
             CandidateSource::Ability(AbilitySource::Act),
@@ -613,7 +613,7 @@ fn push_scenario_structure_matching(
     }
     if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
         push_matching(
-            reg,
+            state,
             &agenda.code,
             lead,
             CandidateSource::Ability(AbilitySource::Agenda),
@@ -636,7 +636,7 @@ fn dsl_phase(phase: Phase) -> crate::dsl::Phase {
 }
 
 fn push_matching(
-    reg: &card_registry::CardRegistry,
+    state: &GameState,
     code: &CardCode,
     controller: InvestigatorId,
     source: CandidateSource,
@@ -644,7 +644,7 @@ fn push_matching(
     bucket: EventTiming,
     want: impl Fn(&EventPattern) -> bool,
 ) {
-    let Some(abilities) = (reg.abilities_for)(code) else {
+    let Some(abilities) = abilities_in_effect::for_candidate_source(state, source, code) else {
         return;
     };
     for (idx, ability) in abilities.iter().enumerate() {
@@ -677,12 +677,14 @@ fn push_matching(
 }
 
 fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> EngineOutcome {
-    let Some(reg) = card_registry::current() else {
+    if card_registry::current().is_none() {
         return EngineOutcome::Rejected {
             reason: "queue_forced_triggers: registry vanished between collect and resolve".into(),
         };
-    };
-    let Some(abilities) = (reg.abilities_for)(&hit.code) else {
+    }
+    let Some(abilities) =
+        abilities_in_effect::for_candidate_source(cx.state, hit.source, &hit.code)
+    else {
         return EngineOutcome::Rejected {
             reason: format!(
                 "queue_forced_triggers: {} has no abilities at resolve time",

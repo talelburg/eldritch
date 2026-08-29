@@ -7,7 +7,8 @@ use crate::card_registry;
 use crate::dsl::{ActionDesignator, Cost, Trigger};
 use crate::event::Event;
 use crate::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, Investigator, InvestigatorId, UseKind,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState, Investigator, InvestigatorId,
+    UseKind,
 };
 
 use super::super::evaluator::{push_effect, EvalContext};
@@ -484,24 +485,30 @@ pub(super) struct ActivatedAbility {
     pub(super) usage_limit: Option<crate::dsl::UsageLimit>,
 }
 
-/// Resolve the activated ability at `(code, ability_index)` from the
-/// installed [`card_registry`], returning its [`ActivatedAbility`]
+/// Resolve the activated ability at `(code, ability_index)` on the side of the
+/// card behind `source` that is in effect, returning its [`ActivatedAbility`]
 /// or the rejection reason.
 ///
 /// Split out so [`activate_ability`] stays under the function-size
 /// lint, and to mirror [`resolve_play_target`]'s role for
 /// [`play_card`].
 pub(super) fn resolve_activated_ability(
+    state: &GameState,
+    source: AbilitySource,
     code: &CardCode,
     ability_index: u8,
 ) -> Result<ActivatedAbility, EngineOutcome> {
-    let Some(registry) = card_registry::current() else {
+    if card_registry::current().is_none() {
         return Err(EngineOutcome::Rejected {
             reason: "ActivateAbility: no card registry installed; engine cannot resolve abilities."
                 .into(),
         });
-    };
-    let Some(abilities) = (registry.abilities_for)(code) else {
+    }
+    // Indexed against the side in effect (#774), which is the same side the
+    // enumerator counted from — so an `ability_index` means the same ability
+    // on both ends of the round trip.
+    let Some(abilities) = crate::engine::abilities_in_effect::for_source(state, source, code)
+    else {
         return Err(EngineOutcome::Rejected {
             reason: format!("ActivateAbility: card {code} has no effect implementation").into(),
         });

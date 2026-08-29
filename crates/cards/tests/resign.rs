@@ -4,10 +4,11 @@
 //! ## Verified card text (`data/arkhamdb-snapshot`, 2026-08-29)
 //!
 //! **Parlor (01115):** "[action] <b>Resign.</b> \"This is too much for me!\"
-//! You run out the front door, fleeing in panic." (Shroud 2, 0 clues. The
-//! card's other two clauses — Lita Chantler's granted Parley and the back
-//! side's barrier — are #772 and #774; neither is implemented, so neither is
-//! exercised here.)
+//! You run out the front door, fleeing in panic." (Shroud 2, 0 clues. Lita
+//! Chantler's granted Parley is #772 and is not implemented, so it is not
+//! exercised here. The back side's barrier shipped in #774 and lives in
+//! `parlor_barrier.rs`; the Parlor is **revealed** throughout this file, which
+//! is the side the Resign is printed on.)
 //!
 //! ## The rules being asserted
 //!

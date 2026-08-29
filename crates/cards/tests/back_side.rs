@@ -1,4 +1,4 @@
-//! Integration: double-sided act/agenda cards carry their reverse side
+//! Integration: double-sided cards carry their reverse side
 //! (`back_name`/`back_text`) through the pipeline into the corpus (#558,
 //! slice 1). Own process so it can install the process-global registry
 //! against the real `cards` corpus.
@@ -37,4 +37,26 @@ fn single_sided_card_has_no_reverse() {
     let m = (reg.metadata_for)(&CardCode::new("01020")).expect("01020 metadata");
     assert_eq!(m.back_name, None);
     assert_eq!(m.back_text, None);
+}
+
+/// The Parlor 01115 is a **location** with a reverse, and the only card in the
+/// corpus whose back declares abilities (#774). Its `back_text` is what
+/// `parlor::back_abilities()` implements, so the two must not drift: this pins
+/// the printed sentence the barrier is derived from.
+#[test]
+fn location_01115_carries_its_barrier_reverse() {
+    let reg = game_core::card_registry::current().expect("registry installed");
+    let m = (reg.metadata_for)(&CardCode::new("01115")).expect("01115 metadata");
+    assert_eq!(
+        m.back_text.as_deref(),
+        Some(
+            "The entrance to the Parlor is blocked by a darkly glowing unfathomable barrier. \
+             You cannot move into the Parlor."
+        ),
+        "the barrier text, verbatim from data/arkhamdb-snapshot/pack/core/core_encounter.json",
+    );
+    assert!(
+        (reg.back_abilities_for)(&CardCode::new("01115")).is_some(),
+        "and the back is implemented — it is the one card that reads this registry slot",
+    );
 }

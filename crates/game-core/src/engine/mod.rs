@@ -10,6 +10,7 @@
 //! replaying it via [`apply`] from the initial state reproduces the
 //! current state bit-for-bit.
 
+pub(crate) mod abilities_in_effect;
 pub(crate) mod ability_source;
 mod cx;
 pub use cx::Cx;
@@ -29,7 +30,8 @@ pub use dispatch::elimination::{defeat_investigator, take_damage};
 pub use dispatch::encounter::{
     reshuffle_encounter_discard, resolve_encounter_card, spawn_set_aside_enemy,
 };
-pub use dispatch::hunters::{enemy_can_enter_location, relocate_enemy};
+pub use dispatch::hunters::relocate_enemy;
+pub use dispatch::movement::{enemy_can_enter_location, investigator_can_enter_location};
 pub use dispatch::reveal::reveal_location;
 pub use dispatch::threat_area::{attach_to_location, place_in_threat_area};
 pub use enumerate::{legal_actions, TurnAction};

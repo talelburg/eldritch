@@ -440,6 +440,16 @@ pub(super) fn move_action(
             reason: format!("Move: {destination:?} is not connected to {from:?}").into(),
         };
     }
+    // The movement barrier (#774). Checked here as well as in `legal_actions`
+    // because the `apply` seam is submittable directly: a client that never
+    // read the menu, or read a stale one, must still be refused. The Parlor
+    // 01115's unrevealed back is the only card in the corpus that prints one.
+    if !super::movement::investigator_can_enter_location(cx.state, destination) {
+        return EngineOutcome::Rejected {
+            reason: format!("Move: movement into {destination:?} is blocked by a card ability")
+                .into(),
+        };
+    }
 
     // Mutate-second. Charge the action (base 1 + surcharge) last — after
     // every move precondition has passed — so a rejected move spends nothing.
@@ -461,9 +471,11 @@ pub(super) fn move_action(
 
 /// The relocation half of a Move, run after its attack-of-opportunity loop
 /// completes (#293). Re-derives `from` from the live `current_location` (the `AoO`
-/// never moves the actor) and re-checks the destination is still connected —
-/// the §D primary-precondition re-check — suppressing the move (returns `Done`)
-/// if it no longer holds.
+/// never moves the actor) and re-checks the destination is still connected and
+/// still enterable — the §D primary-precondition re-check — suppressing the
+/// move (returns `Done`) if either no longer holds. The barrier re-check is
+/// there for the same reason the connection one is: the `AoO` loop can resolve
+/// arbitrary card effects between validation and relocation.
 ///
 /// Then it does nothing but emit. The departure itself — the engaged enemies
 /// that ride along, the location assignment, the `InvestigatorMoved` event —
@@ -494,13 +506,14 @@ pub(super) fn move_primary_effect(
         // (return Done) defensively rather than panic.
         return EngineOutcome::Done;
     };
-    let still_connected = cx
+    let still_enterable = cx
         .state
         .locations
         .get(&from)
         .is_some_and(|l| l.connections.contains(&destination))
-        && cx.state.locations.contains_key(&destination);
-    if !still_connected {
+        && cx.state.locations.contains_key(&destination)
+        && super::movement::investigator_can_enter_location(cx.state, destination);
+    if !still_enterable {
         return EngineOutcome::Done; // precondition lapsed: suppress
     }
 
@@ -610,7 +623,7 @@ pub(super) fn resolve_departure(
                  and the drag-along; this is a state-corruption invariant violation"
             )
         });
-        let follows = super::hunters::enemy_can_enter_location(cx.state, enemy, destination);
+        let follows = super::movement::enemy_can_enter_location(cx.state, enemy, destination);
         let enemy = cx
             .state
             .enemies

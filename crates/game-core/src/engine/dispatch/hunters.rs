@@ -2,7 +2,6 @@
 
 use crate::card_data::{Prey, PreyDirection, PreyMeasure};
 use crate::card_registry::{self, CardRegistry};
-use crate::dsl::{Effect, Restriction, Trigger};
 use crate::engine::modified_value::{
     modified_value, ModifiedQuantity, ModifierTarget, ReadContext,
 };
@@ -13,6 +12,7 @@ use crate::state::{
 };
 
 use super::cursor;
+use super::movement::enemy_can_enter_location;
 use super::Cx;
 use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 
@@ -133,47 +133,6 @@ fn is_eligible_hunter(enemy: &Enemy) -> bool {
         && !enemy.exhausted
         && enemy.engaged_with.is_none()
         && enemy.current_location.is_some()
-}
-
-/// Whether `enemy` is Elite — read from its `traits` (populated from card
-/// metadata at spawn, the same field the agenda's `is_ghoul` reads). No
-/// registry round-trip.
-fn enemy_is_elite(enemy: &Enemy) -> bool {
-    enemy.traits.iter().any(|t| t == "Elite")
-}
-
-/// Whether `enemy` may move into `loc`. Blocked only when `loc` carries a
-/// `Restriction::EnemyMovementBlocked` (a Barricade 01038 attachment) **and**
-/// the enemy is non-Elite (RR: movement-blockers exempt Elite). Shared by
-/// Hunter movement and forced enemy-movement effects (agenda 01107's Ghoul
-/// move), so a barricade is honored consistently regardless of what moves the
-/// enemy.
-pub fn enemy_can_enter_location(state: &GameState, enemy: &Enemy, loc: LocationId) -> bool {
-    enemy_is_elite(enemy) || !location_blocks_enemy_movement(state, loc)
-}
-
-/// Whether `loc` carries a constant `EnemyMovementBlocked` restriction (a
-/// Barricade 01038 attachment) — read the way `play_is_prohibited` reads
-/// constant restrictions. `false` with no registry.
-fn location_blocks_enemy_movement(state: &GameState, loc: LocationId) -> bool {
-    let Some(reg) = card_registry::current() else {
-        return false;
-    };
-    let Some(location) = state.locations.get(&loc) else {
-        return false;
-    };
-    location.attachments.iter().any(|att| {
-        (reg.abilities_for)(&att.code)
-            .into_iter()
-            .flatten()
-            .any(|a| {
-                a.trigger == Trigger::Constant
-                    && matches!(
-                        &a.effect,
-                        Effect::Restrict(Restriction::EnemyMovementBlocked)
-                    )
-            })
-    })
 }
 
 /// Compute the prey-legal destination set for a hunter at `from`:
@@ -801,9 +760,7 @@ mod measure_value_tests {
         CardRegistry {
             metadata_for: no_metadata,
             abilities_for: fake_abilities,
-            native_effect_for: |_| None,
-            native_eligibility_for: |_| None,
-            native_condition_for: |_| None,
+            ..CardRegistry::EMPTY
         }
     }
 

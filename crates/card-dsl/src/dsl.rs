@@ -1480,6 +1480,27 @@ pub enum Restriction {
     /// (RR: most movement-blockers exempt Elite) is applied at the read site,
     /// which has the moving enemy's traits.
     EnemyMovementBlocked,
+    /// Investigators cannot move into the location this restriction's source
+    /// is printed on or attached to (the Parlor 01115's unrevealed back:
+    /// *"The entrance to the Parlor is blocked by a darkly glowing
+    /// unfathomable barrier. You cannot move into the Parlor."*).
+    /// **Inspected, not executed** — the Move action reads it, both when
+    /// enumerating destinations and in its own validate-first, and it shares
+    /// [`EnemyMovementBlocked`](Restriction::EnemyMovementBlocked)'s posture:
+    /// the block applies to the **compelled step alone**, never to the
+    /// connection graph.
+    ///
+    /// **The two sides are deliberately separate restrictions, not one**, and
+    /// 01115's only `ArkhamDB` ruling is why: *"**Q:** Can enemies move into
+    /// Parlor even when investigators are blocked by the barrier? **A:** Yes;
+    /// in The Gathering scenario, enemies can move into The Parlor even when
+    /// the investigators are blocked by the barrier."*
+    /// (<https://arkhamdb.com/card/01115>). The Parlor blocks investigators
+    /// and not enemies; Barricade 01038 blocks enemies and not investigators.
+    /// The **Elite exemption** belongs to the enemy side alone — there is no
+    /// investigator analogue of it, so this variant has no read-site
+    /// carve-out.
+    InvestigatorMovementBlocked,
 }
 
 /// One action kind an [`Restriction::ExtraActionCost`] can surcharge.

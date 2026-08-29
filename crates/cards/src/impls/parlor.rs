@@ -9,27 +9,54 @@
 //! Chantler."
 //! ```
 //!
+//! The unrevealed back:
+//!
+//! ```text
+//! The entrance to the Parlor is blocked by a darkly glowing unfathomable
+//! barrier. You cannot move into the Parlor.
+//! ```
+//!
 //! # Module gap
 //!
-//! **Only the Resign clause is implemented.** The card prints three; the other
-//! two are unimplemented and tracked, not approximated:
+//! **The front's Lita grant is not implemented.** The card prints two front
+//! clauses and one on its back; the grant is the one gap, tracked rather than
+//! approximated:
 //!
 //! - `TODO(#772)`: the Lita Chantler grant — *"While Lita Chantler is not
 //!   controlled by a player, she gains: '\[action\]: **Parley.** Test
 //!   \[intellect\] (4). If you succeed, take control of Lita Chantler.'"* An
 //!   ability one card grants to another, conditional on control, which the DSL
 //!   has no shape for.
-//! - `TODO(#774)`: the back side's barrier — *"The entrance to the Parlor is
-//!   blocked by a darkly glowing unfathomable barrier. You cannot move into the
-//!   Parlor."* The card's only `ArkhamDB` ruling belongs to that clause, not to
-//!   this one: *"**Q:** Can enemies move into Parlor even when investigators are
-//!   blocked by the barrier? **A:** Yes; in The Gathering scenario, enemies can
-//!   move into The Parlor even when the investigators are blocked by the
-//!   barrier."* (<https://arkhamdb.com/card/01115>)
 //!
-//! Neither gap touches the Resign: it is a front-side `[action]` with no
-//! interaction with either clause, so shipping it alone resolves correctly
-//! rather than approximately.
+//! That gap does not touch the Resign: it is a front-side `[action]` with no
+//! interaction with the grant, so shipping it alone resolves correctly rather
+//! than approximately.
+//!
+//! # The back: the barrier
+//!
+//! **The card is double-sided**, and the barrier is printed on the side in
+//! effect while the location is unrevealed — so the barrier is a property of
+//! the Parlor being **unrevealed**, and act 01109b lifts it by revealing: *"The
+//! barrier blocking passage into the parlor has vanished. Reveal the Parlor."*
+//! Nothing on the card conditions it, so [`back_abilities`] is a plain
+//! unconditional `Trigger::Constant` + `Effect::Restrict` — a bare restriction,
+//! never an `Effect::If`. The engine picks the side
+//! (`game_core::engine::abilities_in_effect`); this module only declares what
+//! each side says.
+//!
+//! **The restriction is investigator-side only**, and the card's only
+//! `ArkhamDB` ruling is why:
+//!
+//! > **Q:** Can enemies move into Parlor even when investigators are blocked by
+//! > the barrier? **A:** Yes; in The Gathering scenario, enemies can move into
+//! > The Parlor even when the investigators are blocked by the barrier.
+//! > (March 2024)
+//!
+//! (<https://arkhamdb.com/card/01115>) — which is why
+//! `Restriction::InvestigatorMovementBlocked` is a second restriction beside
+//! Barricade 01038's `EnemyMovementBlocked` rather than one shared block: the
+//! Parlor stops investigators and not enemies, Barricade stops enemies and not
+//! investigators.
 //!
 //! # Designator and effect
 //!
@@ -48,20 +75,30 @@
 //! ability while at its location — ADR 0010) is the whole restriction, and it is
 //! the engine's, not the card's.
 
-use card_dsl::dsl::{activated_as, seq, Ability, ActionDesignator};
+use card_dsl::dsl::{
+    activated_as, constant, restrict, seq, Ability, ActionDesignator, Restriction,
+};
 
 /// `ArkhamDB` code for the Parlor.
 pub const CODE: &str = "01115";
 
-/// The Parlor's `[action]` **Resign**.
+/// The Parlor's front — its `[action]` **Resign**. In effect while the
+/// location is revealed.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![activated_as(ActionDesignator::Resign, 1, vec![], seq([]))]
 }
 
+/// The Parlor's unrevealed back — the barrier. In effect while the location is
+/// unrevealed, which is exactly until act 01109b reveals it.
+#[must_use]
+pub fn back_abilities() -> Vec<Ability> {
+    vec![constant(restrict(Restriction::InvestigatorMovementBlocked))]
+}
+
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{ActionDesignator, Effect, Trigger};
+    use card_dsl::dsl::{ActionDesignator, Effect, Restriction, Trigger};
 
     #[test]
     fn abilities_are_one_action_costed_resign() {
@@ -77,5 +114,21 @@ mod tests {
         assert!(abilities[0].costs.is_empty());
         // The designator performs the resignation; nothing is printed beside it.
         assert_eq!(abilities[0].effect, Effect::Seq(vec![]));
+    }
+
+    #[test]
+    fn back_abilities_are_one_constant_investigator_movement_block() {
+        let abilities = super::back_abilities();
+        assert_eq!(abilities.len(), 1);
+        assert_eq!(abilities[0].trigger, Trigger::Constant);
+        assert!(abilities[0].costs.is_empty());
+        // A bare `Restrict`, never an `Effect::If`: *"You cannot move into the
+        // Parlor"* is unqualified, and the reveal is what lifts it. And
+        // investigator-side, not enemy-side — 01115's ruling has enemies moving
+        // into the Parlor while investigators are blocked.
+        assert_eq!(
+            abilities[0].effect,
+            Effect::Restrict(Restriction::InvestigatorMovementBlocked)
+        );
     }
 }

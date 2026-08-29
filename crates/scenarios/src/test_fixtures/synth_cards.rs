@@ -430,8 +430,7 @@ pub const TEST_REGISTRY: CardRegistry = CardRegistry {
     abilities_for,
     native_effect_for,
     native_eligibility_for,
-    // No synthetic card carries a `Condition::Native` gate.
-    native_condition_for: |_| None,
+    ..CardRegistry::EMPTY
 };
 
 #[cfg(test)]

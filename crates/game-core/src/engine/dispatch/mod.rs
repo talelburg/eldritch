@@ -45,6 +45,7 @@ pub(crate) mod encounter;
 // via pub(crate) for test_support::fire_forced_at (Task 2 of #215).
 pub(super) mod forced_triggers;
 pub(crate) mod hunters;
+pub(crate) mod movement;
 pub(super) mod phases;
 // `pub(crate)` so the evaluator can reach `open_queued_reaction_window`; other
 // items stay `pub(super)`-to-dispatch.

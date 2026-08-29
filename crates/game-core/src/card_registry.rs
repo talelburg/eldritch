@@ -79,6 +79,24 @@ pub struct CardRegistry {
     /// Look up hand-implemented abilities by code. Returns `None` for
     /// unimplemented (or unknown) cards.
     pub abilities_for: fn(&CardCode) -> Option<Vec<Ability>>,
+    /// Look up the abilities printed on a card's **reverse side** by code.
+    /// Returns `None` for a card with no implemented back-side abilities —
+    /// which is every card but the Parlor 01115 today.
+    ///
+    /// A location's back is in effect exactly while the location is
+    /// **unrevealed**, and its front exactly while it is revealed (#774), so
+    /// nothing reads this slot directly: engine code goes through
+    /// `engine::abilities_in_effect`, which owns
+    /// that choice. Reading `abilities_for` for a location instead is the bug
+    /// this slot exists to make impossible to write by accident — an
+    /// unrevealed Parlor would offer its front's **Resign**, and would not
+    /// carry its back's barrier.
+    ///
+    /// It is deliberately a second slot rather than a `side` tag on
+    /// [`Ability`]: the side is a property of where the text is printed, not
+    /// of the ability, and every non-location card in the corpus would carry
+    /// a field that is always `Front`.
+    pub back_abilities_for: fn(&CardCode) -> Option<Vec<Ability>>,
     /// Look up a card-local Rust effect by its [`Effect::Native`] tag.
     /// Returns `None` for unregistered tags.
     ///
@@ -98,6 +116,54 @@ pub struct CardRegistry {
     ///
     /// [`Condition::Native`]: crate::dsl::Condition::Native
     pub native_condition_for: fn(&str) -> Option<NativeConditionFn>,
+}
+
+impl CardRegistry {
+    /// A registry that knows nothing: every lookup returns `None`.
+    ///
+    /// **The base every partial registry is built from**, so a literal names
+    /// only the slots it actually implements:
+    ///
+    /// ```
+    /// # use game_core::card_registry::CardRegistry;
+    /// # use game_core::state::CardCode;
+    /// # use game_core::dsl::Ability;
+    /// # fn mock_abilities_for(_: &CardCode) -> Option<Vec<Ability>> { None }
+    /// let reg = CardRegistry {
+    ///     abilities_for: mock_abilities_for,
+    ///     ..CardRegistry::EMPTY
+    /// };
+    /// ```
+    ///
+    /// This exists because adding a slot used to mean editing **every literal
+    /// in the workspace** — ~37 of them, each gaining one more `|_| None,`.
+    /// That is churn no reviewer can read, and it buries the one or two
+    /// literals where the new slot actually matters. With `EMPTY` as the base,
+    /// a new slot touches only the literals that implement it.
+    ///
+    /// `const`, so a `const` registry (`cards::REGISTRY`,
+    /// `synth_cards::TEST_REGISTRY`) can spread it too.
+    ///
+    /// **Spread `EMPTY` only over a registry you are building from nothing.**
+    /// A helper wrapping a *real* registry must spread that registry instead —
+    /// naming a slot it doesn't override silently switches the real lookup off,
+    /// which is exactly the bug #774's review caught in
+    /// [`install_registry_with_terminal_cards`](crate::test_support::install_registry_with_terminal_cards).
+    pub const EMPTY: Self = Self {
+        metadata_for: |_| None,
+        abilities_for: |_| None,
+        back_abilities_for: |_| None,
+        native_effect_for: |_| None,
+        native_eligibility_for: |_| None,
+        native_condition_for: |_| None,
+    };
+}
+
+impl Default for CardRegistry {
+    /// [`CardRegistry::EMPTY`] — the knows-nothing registry.
+    fn default() -> Self {
+        Self::EMPTY
+    }
 }
 
 static REGISTRY: OnceLock<CardRegistry> = OnceLock::new();
@@ -194,9 +260,7 @@ mod tests {
         CardRegistry {
             metadata_for: fake_metadata_for,
             abilities_for: fake_abilities_for,
-            native_effect_for: |_| None,
-            native_eligibility_for: |_| None,
-            native_condition_for: |_| None,
+            ..CardRegistry::EMPTY
         }
     }
 

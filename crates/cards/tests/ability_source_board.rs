@@ -98,9 +98,7 @@ fn install_probe_registry() {
     let _ = card_registry::install(CardRegistry {
         metadata_for: metadata_for_test_inv,
         abilities_for: probe_abilities,
-        native_effect_for: |_| None,
-        native_eligibility_for: |_| None,
-        native_condition_for: |_| None,
+        ..CardRegistry::EMPTY
     });
 }
 
