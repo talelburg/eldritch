@@ -238,6 +238,17 @@ pub enum Status {
     /// Investigator chose to resign from the scenario. Not yet
     /// produced by the engine; the Resign action is downstream.
     Resigned,
+    /// Investigator was defeated by a card ability rather than by damage
+    /// or horror — `glossary/Defeat.md`: *"An investigator might also be
+    /// defeated by a card ability."*
+    ///
+    /// Neither killed nor driven insane. That same entry makes those two
+    /// consequences of **trauma** — *"Taking trauma may cause an
+    /// investigator to be killed or driven insane"* — so an ability that
+    /// defeats and hands out one trauma has taken the first step on that
+    /// track, not the last. The Gathering's agenda 01107 (act-3 branch) is
+    /// the first producer.
+    DefeatedByCardAbility,
 }
 
 /// Why an investigator was defeated. Carried on
@@ -255,6 +266,11 @@ pub enum DefeatCause {
     /// Investigator resigned. Not yet produced; reserved for the
     /// Resign action.
     Resigned,
+    /// A card ability defeated the investigator outright, with no damage
+    /// or horror threshold involved — `glossary/Defeat.md`: *"An
+    /// investigator might also be defeated by a card ability."* Flips
+    /// status to [`Status::DefeatedByCardAbility`].
+    CardAbility,
 }
 
 // `Skills` and `SkillKind` moved down to `card-dsl`

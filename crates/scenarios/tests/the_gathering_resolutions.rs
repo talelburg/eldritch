@@ -11,8 +11,11 @@
 use game_core::action::RosterEntry;
 use game_core::engine::{apply, seat_and_open, EngineOutcome};
 use game_core::event::Event;
+use game_core::event::TraumaKind;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
-use game_core::state::{CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId};
+use game_core::state::{
+    CardCode, ChaosBag, ChaosToken, DefeatCause, GameState, InvestigatorId, Status,
+};
 use game_core::test_support::take_turn_action;
 use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
 
@@ -319,10 +322,8 @@ fn with_parlor_in_play(state: &mut GameState) {
 /// > - If the investigators are at Act 1 or 2, they are trapped inside the house
 /// >   as the ghouls tear them apart. **(→R3)**
 ///
-/// Roland is at act 1 here, so R3 is the branch the card prints for him. The
-/// act-3 branch (which reaches no resolution point) is #809; until it lands the
-/// reverse reaches R3 unconditionally, exactly as the deleted `Agenda.resolution`
-/// field did.
+/// Roland is at act 1 here, so R3 is the branch the card prints for him; the
+/// act-3 branch is the two tests below.
 ///
 /// Before #808 this path never emitted `AgendaAdvanced` at all: the doom-threshold
 /// check latched the field *instead of* advancing, so the board went quiet and the
@@ -361,6 +362,98 @@ fn dooming_out_the_terminal_agenda_advances_it_and_its_reverse_reaches_r3() {
     assert_eq!(
         result.state.agenda_index, 2,
         "a terminal agenda does not bump the cursor — there is no next agenda",
+    );
+    assert!(
+        result.state.continuations.is_empty(),
+        "no stranded frames after the ending: {:?}",
+        result.state.continuations,
+    );
+}
+
+/// Act **2** is the other half of the card's first bullet — *"If the
+/// investigators are at Act 1 or 2"* — so it reaches the same printed `(→R3)`.
+/// Seeded rather than driven: the act-progression path is
+/// [`act_progression_and_ghoul_priest_defeat_latches_won`]'s subject, and what
+/// this pins is the branch predicate's boundary, one index below the act-3 arm.
+#[test]
+fn dooming_out_the_terminal_agenda_at_act_2_also_reaches_r3() {
+    let mut state = seated_roland();
+    state.act_index = 1; // the card's Act 2 (zero-based cursor)
+    state.agenda_index = 2;
+    state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
+    state.encounter_deck.clear();
+    with_parlor_in_play(&mut state);
+
+    let result = take_turn_action(state, &TurnAction::EndTurn);
+
+    assert_eq!(
+        result.state.ending,
+        Some(ScenarioEnding::Resolution(ResolutionId::new(3))),
+        "act 2 is still the (→R3) bullet",
+    );
+}
+
+/// Dooming out at **act 3** reaches *no resolution point at all*.
+///
+/// `back_text` verbatim (`data/arkhamdb-snapshot/pack/core/core_encounter.json`):
+///
+/// > - If the investigators are at Act 3, they barely escape with their lives,
+/// >   allowing the ghouls to run rampant. Each investigator that has not
+/// >   resigned is defeated and suffers 1 physical trauma.
+///
+/// No `(→R#)` is printed on this bullet, and none is latched. Solo Roland is
+/// defeated by the card ability, which drains Rules Reference p.10 Elimination
+/// step 6 — *"If there are no remaining players, the scenario ends. Refer to 'no
+/// resolution was reached' entry for that scenario in the campaign guide."* —
+/// and *that* is what ends the scenario. The ending is
+/// [`ScenarioEnding::NoResolution`], the campaign guide's own untitled entry,
+/// rather than the Resolution 3 the act-1/2 branch reaches (#809).
+#[test]
+fn dooming_out_the_terminal_agenda_at_act_3_defeats_the_table_and_reaches_no_resolution() {
+    let mut state = seated_roland();
+    state.act_index = 2; // the card's Act 3 (zero-based cursor)
+    assert_eq!(
+        state.act_deck[2].code.as_str(),
+        "01110",
+        "act 3 is the terminal act"
+    );
+    state.agenda_index = 2;
+    state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
+    state.encounter_deck.clear();
+    with_parlor_in_play(&mut state);
+
+    let result = take_turn_action(state, &TurnAction::EndTurn);
+
+    assert_event!(result.events, Event::AgendaAdvanced { from } if *from == 2);
+    assert_event!(
+        result.events,
+        Event::InvestigatorDefeated { investigator, cause }
+            if *investigator == INV && *cause == DefeatCause::CardAbility
+    );
+    assert_eq!(
+        result.state.investigators[&INV].status,
+        Status::DefeatedByCardAbility,
+        "defeated by a card ability — neither killed nor driven insane",
+    );
+    assert_event!(
+        result.events,
+        Event::TraumaSuffered { investigator, kind, amount }
+            if *investigator == INV && *kind == TraumaKind::Physical && *amount == 1
+    );
+    assert_event!(result.events, Event::AllInvestigatorsDefeated);
+    assert_eq!(
+        result.state.ending,
+        Some(ScenarioEnding::NoResolution),
+        "the act-3 bullet prints no (→R#), so no resolution point is reached",
+    );
+    assert!(
+        !result
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::ScenarioResolved { ending }
+                if matches!(ending, ScenarioEnding::Resolution(_)))),
+        "no numbered resolution is ever latched: {:?}",
+        result.events,
     );
     assert!(
         result.state.continuations.is_empty(),
