@@ -4,14 +4,14 @@
 
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::scenario::{ResolutionId, ScenarioId};
+use game_core::scenario::ScenarioId;
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId,
     Phase, SkillKind, TokenResolution,
 };
 use game_core::test_support::{
-    dispatch_turn_action_unchecked, drive_skill_test, perform_skill_test_no_commits, test_enemy,
-    test_investigator, test_location, GameStateBuilder, ScriptedResolver,
+    dispatch_turn_action_unchecked, drive_skill_test, perform_skill_test_no_commits, terminal_code,
+    test_enemy, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
 };
 use game_core::{assert_event, assert_event_count, TurnAction};
 use scenarios::REGISTRY;
@@ -19,7 +19,11 @@ use scenarios::REGISTRY;
 #[ctor::ctor(unsafe)]
 fn install_registries() {
     let _ = game_core::scenario_registry::install(REGISTRY);
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    // The real registry plus `test_support`'s synthetic terminal card: the
+    // victory-display fixtures below end their act deck in one, because a
+    // terminal card reaches its resolution point by running an effect on its
+    // reverse (ADR 0013) and so needs the registry to serve it.
+    game_core::test_support::install_registry_with_terminal_cards(cards::REGISTRY);
 }
 
 fn gathering_state(token: ChaosToken, ghouls: u8) -> game_core::state::GameState {
@@ -401,9 +405,10 @@ fn resolvable_state_with_attic(revealed: bool, clues: u8) -> game_core::state::G
     attic.clues = clues;
     state.locations.insert(attic.id, attic);
     state.act_deck = vec![Act {
-        code: CardCode("_test_act".into()),
+        // Terminal because it is the only act; advancing it fires the reverse
+        // that reaches R1, which is what triggers the victory-display scan.
+        code: terminal_code(1),
         clue_threshold: 1,
-        resolution: Some(ResolutionId::new(1)),
     }];
     state
 }
@@ -473,9 +478,10 @@ fn two_cleared_victory_locations_both_enter_display() {
         state.locations.insert(loc.id, loc);
     }
     state.act_deck = vec![Act {
-        code: CardCode("_test_act".into()),
+        // Terminal because it is the only act; advancing it fires the reverse
+        // that reaches R1, which is what triggers the victory-display scan.
+        code: terminal_code(1),
         clue_threshold: 1,
-        resolution: Some(ResolutionId::new(1)),
     }];
     let r = advance_to_resolution(state);
     assert!(

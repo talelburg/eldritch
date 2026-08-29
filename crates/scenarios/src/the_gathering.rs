@@ -16,29 +16,20 @@
 //! not claim faithful win/lose semantics — only structural reachability,
 //! proven by `tests/the_gathering.rs`.
 //!
-//! # Module gap
-//!
-//! **Agenda 01107's resolution point is conditional; this module hardcodes
-//! the act-1/2 branch (#806).** The card's reverse prints two bullets and
-//! only the first carries a `(→R#)`:
-//!
-//! > - If the investigators are at Act 1 or 2, they are trapped inside the
-//! >   house as the ghouls tear them apart. **(→R3)**
-//! > - If the investigators are at Act 3, they barely escape with their
-//! >   lives, allowing the ghouls to run rampant. Each investigator that has
-//! >   not resigned is defeated and suffers 1 physical trauma.
-//!
-//! `Agenda.resolution` is a flat `Option<ResolutionId>` — printed data, not
-//! effect DSL — so it cannot read `act_index` to pick a branch. The act-3
-//! branch reaches *no* resolution point at all: defeating everyone drains the
-//! last `Status::Active` and routes through `check_all_defeated` to
-//! [`ScenarioEnding::NoResolution`]. Expressing that needs the terminal
-//! agenda to run an effect rather than carry a datum, which is #806.
+//! **The two terminal cards carry no resolution point here.** A resolution
+//! point is a printed *effect* on a card's reverse, not a datum on the deck
+//! entry (ADR 0013), so 01107's `(→R3)` and 01110's `(→R1)` live in
+//! `cards::theyre_getting_out` and `cards::what_have_you_done`. Both are the
+//! last card in their deck, which is the only thing that makes them terminal.
+//! Their remaining fidelity gaps are recorded on the cards: 01107's reverse
+//! branches on the current act and this scenario still reaches R3
+//! unconditionally (#809); 01110's asks the lead to choose between R1 and R2
+//! and this scenario still reaches R1 unconditionally (#775).
 
 use game_core::card_data::CardKind;
 use game_core::event::Event;
 use game_core::scenario::{
-    ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule, SymbolCtx, SymbolOutcome, TokenEffect,
+    ScenarioEnding, ScenarioId, ScenarioModule, SymbolCtx, SymbolOutcome, TokenEffect,
 };
 use game_core::state::{Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder};
 
@@ -232,59 +223,42 @@ pub fn setup() -> GameState {
     // Agenda reverses (01105 discard/horror, 01106 dig-until-Ghoul) ship as
     // the agendas' own `AgendaAdvanced` forced abilities (cards::whats_going_on,
     // cards::rise_of_the_ghouls); #281.
-    // TODO(#775): act-3 (01110) reverse is the lead's R1/R2 resolution choice,
-    // and the hardcoded `ResolutionId::new(1)` below makes R2 unreachable. The
-    // *prompt* is phase-7 gate work; its consequences (trauma, campaign log,
-    // earning Lita Chantler) stay phase 9 with #766.
     state.act_deck = vec![
         Act {
             code: CardCode("01108".into()),
             clue_threshold: act_clue_threshold("01108"),
-            resolution: None,
         },
         Act {
             code: CardCode("01109".into()),
             clue_threshold: act_clue_threshold("01109"),
-            resolution: None,
             // "When the round ends, investigators in the hallway may, as a
             // group, spend the requisite number of clues to advance." (C3d)
         },
         Act {
             // 01110 advances via its Forced EnemyDefeated objective (01116; in cards::what_have_you_done), not a clue spend.
+            // Terminal because it is last here; its reverse — which reaches the
+            // resolution point, R1 until #775 wires the printed choice — is an
+            // ability on the card (cards::what_have_you_done).
             code: CardCode("01110".into()),
             clue_threshold: act_clue_threshold("01110"),
-            // 01110's reverse prints a choice, not a constant: "The lead
-            // investigator must decide (choose one): - It was never much of a
-            // home. Burn it down! (→R1) / - This hell-pit is my home! No way
-            // are we burning it! (→R2)". Wiring the choice is #775; R1 is the
-            // default until it lands.
-            resolution: Some(ResolutionId::new(1)),
         },
     ];
 
     // Agenda deck 01105 -> 01106 -> 01107. Doom thresholds read from the
-    // corpus. The terminal agenda carries the printed (→R#) resolution point.
+    // corpus. 01107 is terminal because it is last; its reverse reaches the
+    // printed (→R#) — R3 until #809 wires the act-1/2-vs-act-3 branch.
     state.agenda_deck = vec![
         Agenda {
             code: CardCode("01105".into()),
             doom_threshold: agenda_doom("01105"),
-            resolution: None,
         },
         Agenda {
             code: CardCode("01106".into()),
             doom_threshold: agenda_doom("01106"),
-            resolution: None,
         },
         Agenda {
             code: CardCode("01107".into()),
             doom_threshold: agenda_doom("01107"),
-            // 01107's reverse: "If the investigators are at Act 1 or 2, they
-            // are trapped inside the house as the ghouls tear them apart.
-            // (→R3)". An agenda-invoked ending is a resolution point like any
-            // other; nothing here says "lost". The card's *other* branch (at
-            // Act 3) prints no resolution point — see this module's
-            // "Module gap" section and #806.
-            resolution: Some(ResolutionId::new(3)),
         },
     ];
 
@@ -407,19 +381,24 @@ mod tests {
             s.act_deck[2].clue_threshold, 0,
             "01110 advances on Ghoul-Priest-defeat, not clues"
         );
-        assert_eq!(s.act_deck[2].resolution, Some(ResolutionId::new(1)));
+        assert_eq!(
+            s.act_deck.len(),
+            3,
+            "01110 is terminal because it is last, not because it carries a flag"
+        );
     }
 
     #[test]
-    fn setup_seeds_act_and_agenda_decks_with_terminal_latches() {
+    fn setup_seeds_act_and_agenda_decks_ending_in_their_terminal_cards() {
         let s = setup();
         let act_codes: Vec<_> = s.act_deck.iter().map(|a| a.code.as_str()).collect();
         assert_eq!(act_codes, ["01108", "01109", "01110"]);
         assert_eq!(s.act_deck[0].clue_threshold, 2);
         assert_eq!(s.act_deck[1].clue_threshold, 3);
-        // The campaign guide's Resolution 1 (the house burns). #775 adds
-        // act 3's R1/R2 choice; until then R1 is what 01110 reaches.
-        assert_eq!(s.act_deck[2].resolution, Some(ResolutionId::new(1)));
+        // 01110 is last, which is the only thing that makes it terminal
+        // (ADR 0013). Which resolution point its reverse reaches — the campaign
+        // guide's Resolution 1, the house burning — is the card's own assertion,
+        // in `cards::what_have_you_done`.
 
         let agenda_codes: Vec<_> = s.agenda_deck.iter().map(|a| a.code.as_str()).collect();
         assert_eq!(agenda_codes, ["01105", "01106", "01107"]);
@@ -430,11 +409,9 @@ mod tests {
                 .collect::<Vec<_>>(),
             [3, 7, 10]
         );
-        // The campaign guide's Resolution 3 ("Trapped, the horde of feral
-        // creatures ... close in"). The number survives into the latch for
-        // phase 9's campaign log to look up; the old shape kept only a
-        // diagnostic string.
-        assert_eq!(s.agenda_deck[2].resolution, Some(ResolutionId::new(3)));
+        // 01107 is last, and so terminal. Its reverse reaching the campaign
+        // guide's Resolution 3 ("Trapped, the horde of feral creatures ...
+        // close in") is asserted on the card, in `cards::theyre_getting_out`.
     }
 
     #[test]

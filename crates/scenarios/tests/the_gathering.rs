@@ -5,7 +5,6 @@
 
 use game_core::action::RosterEntry;
 use game_core::engine::{apply, seat_and_open, EngineOutcome};
-use game_core::scenario::ResolutionId;
 use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{
     dispatch_turn_action_unchecked, fire_forced_on_enter, take_turn_action, test_investigator,
@@ -120,9 +119,11 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     );
     assert_eq!(r.state.act_index, 2, "act 2 advanced to act 3 (01110)");
     assert_eq!(
-        r.state.act_deck[2].resolution,
-        Some(ResolutionId::new(1)),
-        "the terminal act carries the Won resolution (latched on Ghoul-Priest defeat)",
+        r.state.act_deck.len(),
+        3,
+        "act 3 (01110) is the last act, which is what makes it terminal — its \
+         resolution point is an effect on its reverse (ADR 0013), reached when \
+         the Ghoul-Priest defeat advances it",
     );
 
     // Act 2's reverse (#280) fired on advance: the set-aside Ghoul Priest

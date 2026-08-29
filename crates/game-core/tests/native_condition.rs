@@ -82,7 +82,6 @@ fn state_with_agenda(code: &str, doom: u8) -> GameState {
     state.agenda_deck = vec![Agenda {
         code: CardCode::new(code),
         doom_threshold: 10,
-        resolution: None,
     }];
     state.agenda_index = 0;
     state.agenda_doom = doom;

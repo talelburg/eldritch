@@ -10,14 +10,15 @@
 
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::{Event, TraumaKind};
-use game_core::scenario::{ResolutionId, ScenarioId};
+use game_core::scenario::ScenarioId;
 use game_core::state::{
     AbilitySource, Act, CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag,
     ChaosToken, Continuation, EmitStep, GameState, InvestigatorId, LocationId, Phase,
     ResolutionCandidate, TimingSub,
 };
 use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
+    dispatch_turn_action_unchecked, terminal_code, test_investigator, test_location,
+    GameStateBuilder,
 };
 use game_core::{Action, InputResponse, PlayerAction, TurnAction};
 use scenarios::test_fixtures::synth_cards::{SYNTH_COVER_UP_CODE, TEST_REGISTRY};
@@ -291,9 +292,10 @@ fn resolving_state(cover_up_clues: u8) -> GameState {
         .with_scenario_id(ScenarioId::new("unknown"))
         .build();
     state.act_deck = vec![Act {
-        code: CardCode("_test_act".into()),
+        // Terminal because it is the only act; its reverse reaches R1, which is
+        // what ends the scenario and opens the GameEnd point under test.
+        code: terminal_code(1),
         clue_threshold: 1,
-        resolution: Some(ResolutionId::new(1)),
     }];
     state
 }

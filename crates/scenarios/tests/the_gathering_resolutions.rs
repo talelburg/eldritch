@@ -120,34 +120,10 @@ fn enemy_attack_defeats_roland_and_latches_no_resolution() {
     );
 }
 
-/// Won via the real progression + defeat→advance→win latch. Drives act 1
-/// (`AdvanceAct`) and act 2 (the C3d round-end clue-spend window) for real —
-/// act 2's reverse spawns the **real** Ghoul Priest — then fights that
-/// spawned Priest to trigger `what_have_you_done`'s forced advance on the terminal
-/// act → `ScenarioEnding::Resolution(R1)`.
-///
-/// Two seeds, both off the resolution path: clues (acquiring them via
-/// Attic/Cellar investigation is unit-tested elsewhere — the focus here is
-/// the act-advancement chain), and the spawned Priest's health (solo Roland
-/// has no weapon and 5 sanity, so he cannot out-damage a 5-health Retaliate
-/// Hunter dealing 2 horror/attack without going insane first — the kill is
-/// the one necessary shortcut). The encounter deck is emptied so round-2's
-/// Mythos draw doesn't inject random interference.
-#[test]
-fn act_progression_and_ghoul_priest_defeat_latches_won() {
-    let mut state = seated_roland();
-    {
-        // Seed: clues for both thresholds (act 1 = 2, act 2 = 3).
-        let roland = state.investigators.get_mut(&INV).expect("Roland seated");
-        roland.clues = 5;
-    }
-    // Seed: round-2's Mythos draws exactly one benign card — Ancient Evils
-    // (01166), whose Revelation only places 1 doom (the agenda threshold is
-    // 3, so it can't advance to a loss). This keeps the Mythos deterministic
-    // and harmless rather than drawing a random damaging/spawning card.
-    state.encounter_deck.clear();
-    state.encounter_deck.push_back(CardCode::new("01166"));
-
+/// Drive acts 1 and 2 for real, leaving Roland in round 2's Investigation phase
+/// with the terminal act 3 (01110) current and the real Ghoul Priest on the
+/// board. Extracted so the test below reads as the terminal-act claim it makes.
+fn advance_to_the_terminal_act(state: GameState) -> GameState {
     // --- Act 1 (real): spend clues to advance → the reverse builds the board
     // and relocates Roland to the Hallway (the act-2 contributor location).
     let advanced = take_turn_action(state, &TurnAction::AdvanceAct { investigator: INV });
@@ -198,7 +174,37 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
         mythos.outcome,
         EngineOutcome::AwaitingInput { .. }
     ));
-    let mut state = mythos.state;
+    mythos.state
+}
+
+/// Won via the real progression + defeat→advance→win latch. Drives act 1
+/// (`AdvanceAct`) and act 2 (the C3d round-end clue-spend window) for real —
+/// act 2's reverse spawns the **real** Ghoul Priest — then fights that
+/// spawned Priest to trigger `what_have_you_done`'s forced advance on the terminal
+/// act → `ScenarioEnding::Resolution(R1)`.
+///
+/// Two seeds, both off the resolution path: clues (acquiring them via
+/// Attic/Cellar investigation is unit-tested elsewhere — the focus here is
+/// the act-advancement chain), and the spawned Priest's health (solo Roland
+/// has no weapon and 5 sanity, so he cannot out-damage a 5-health Retaliate
+/// Hunter dealing 2 horror/attack without going insane first — the kill is
+/// the one necessary shortcut). The encounter deck is emptied so round-2's
+/// Mythos draw doesn't inject random interference.
+#[test]
+fn act_progression_and_ghoul_priest_defeat_latches_won() {
+    let mut state = seated_roland();
+    {
+        // Seed: clues for both thresholds (act 1 = 2, act 2 = 3).
+        let roland = state.investigators.get_mut(&INV).expect("Roland seated");
+        roland.clues = 5;
+    }
+    // Seed: round-2's Mythos draws exactly one benign card — Ancient Evils
+    // (01166), whose Revelation only places 1 doom (threshold 3, so it can't
+    // advance to a loss), keeping the Mythos deterministic and harmless.
+    state.encounter_deck.clear();
+    state.encounter_deck.push_back(CardCode::new("01166"));
+
+    let mut state = advance_to_the_terminal_act(state);
 
     // --- Seed only the spawned Priest's health + engagement (see doc above).
     let priest_id = {
@@ -218,9 +224,8 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
         .expect("Roland seated")
         .actions_remaining = 3;
 
-    // --- Drive the defeating Fight against the real spawned Priest: combat 4
-    // + Numeric(0) ≥ fight 4 → success → deal 1 → defeated → act 3 advances →
-    // ScenarioEnding::Resolution(R1).
+    // --- Drive the defeating Fight: combat 4 + Numeric(0) ≥ fight 4 → success
+    // → deal 1 → defeated → act 3 advances → its reverse reaches R1.
     let paused = take_turn_action(
         state,
         &TurnAction::Fight {
@@ -241,22 +246,25 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
     );
 
     assert_event!(result.events, Event::EnemyDefeated { .. });
+    // The terminal act flips like every other one before the ending lands, and
+    // holds its cursor because there is no next act (ADR 0013).
+    assert_event!(result.events, Event::ActAdvanced { from } if *from == 2);
+    assert_eq!(result.state.act_index, 2, "terminal: cursor does not bump");
     assert_event!(result.events, Event::ScenarioResolved { .. });
     assert_eq!(
         result.state.ending,
         Some(ScenarioEnding::Resolution(ResolutionId::new(1))),
-        "act 01110 carries the campaign guide's (→R1)",
+        "act 01110's reverse reaches the campaign guide's (→R1)",
     );
 
     // #566: advancing act 3 reaches a resolution point, so the scenario ends
     // *during* the defeat that triggered it — and Roland Banks' "After you
-    // defeat an enemy: Discover 1 clue at your location" window must never
-    // open. Act 01110's ruling is explicit that its Forced objective "will
-    // trigger as soon as you defeat the Ghoul Priest, before any 'After you
-    // defeat an enemy' reactions can be used"; the queued reaction window sits
-    // *beneath* that objective's effect frame, so only cancelling it on the way
-    // back down honours the ruling. Before #566 the window opened anyway —
-    // after `apply_resolution` had already run.
+    // defeat an enemy: Discover 1 clue at your location" window must never open.
+    // Act 01110's ruling is explicit that its Forced objective "will trigger as
+    // soon as you defeat the Ghoul Priest, before any 'After you defeat an
+    // enemy' reactions can be used"; the queued reaction window sits *beneath*
+    // that objective's effect frame, so only cancelling it on the way back down
+    // honours the ruling.
     assert_eq!(
         result.outcome,
         EngineOutcome::Done,
@@ -267,5 +275,134 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
         "no stranded frames after the ending — in particular no open \
          after-defeat reaction window: {:?}",
         result.state.continuations,
+    );
+}
+
+/// Reveal the Parlor (01115) so 01107's own enemy-phase-end forced can run.
+///
+/// That ability moves each unengaged Ghoul *toward the Parlor* and rejects when
+/// the Parlor is not in play, and the Parlor only enters via act 2's reverse — so
+/// a fixture that sits on agenda 3 while still at act 1 has to put it there. Off
+/// the path under test either way: there are no Ghouls on this board, so the move
+/// is a no-op once it can run at all.
+fn with_parlor_in_play(state: &mut GameState) {
+    let mut parlor = game_core::test_support::test_location(115, "Parlor");
+    parlor.code = CardCode::new("01115");
+    parlor.revealed = true;
+    state.locations.insert(parlor.id, parlor);
+}
+
+/// Doomed out on the **terminal agenda** (01107): the agenda advances like any
+/// other — `AgendaAdvanced` is emitted and its reverse fires — and the reverse
+/// is what reaches the printed `(→R3)` (ADR 0013).
+///
+/// `back_text` verbatim (`data/arkhamdb-snapshot/pack/core/core_encounter.json`):
+///
+/// > - If the investigators are at Act 1 or 2, they are trapped inside the house
+/// >   as the ghouls tear them apart. **(→R3)**
+///
+/// Roland is at act 1 here, so R3 is the branch the card prints for him. The
+/// act-3 branch (which reaches no resolution point) is #809; until it lands the
+/// reverse reaches R3 unconditionally, exactly as the deleted `Agenda.resolution`
+/// field did.
+///
+/// Before #808 this path never emitted `AgendaAdvanced` at all: the doom-threshold
+/// check latched the field *instead of* advancing, so the board went quiet and the
+/// player never saw which agenda ended their game.
+#[test]
+fn dooming_out_the_terminal_agenda_advances_it_and_its_reverse_reaches_r3() {
+    let mut state = seated_roland();
+    // Seed the terminal agenda as current, one doom short of its threshold, so
+    // Mythos step 1.2's single doom tips it at 1.3.
+    state.agenda_index = 2;
+    assert_eq!(
+        state.agenda_deck[2].code.as_str(),
+        "01107",
+        "agenda 3 is the terminal agenda"
+    );
+    state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
+    // No encounter draws to interfere; the ending cancels 1.4 anyway.
+    state.encounter_deck.clear();
+    with_parlor_in_play(&mut state);
+
+    let result = take_turn_action(state, &TurnAction::EndTurn);
+
+    assert_event!(result.events, Event::AgendaAdvanced { from } if *from == 2);
+    assert_event!(result.events, Event::ScenarioResolved { .. });
+    assert_eq!(
+        result.state.ending,
+        Some(ScenarioEnding::Resolution(ResolutionId::new(3))),
+        "the reverse reached the campaign guide's Resolution 3",
+    );
+    assert_eq!(
+        result.state.agenda_index, 2,
+        "a terminal agenda does not bump the cursor — there is no next agenda",
+    );
+    assert!(
+        result.state.continuations.is_empty(),
+        "no stranded frames after the ending: {:?}",
+        result.state.continuations,
+    );
+}
+
+/// The player gets to read the terminal agenda's reverse before the result panel
+/// replaces the board: the advance-flip acknowledge (#558) surfaces on the
+/// terminal agenda exactly as it does on 01105 and 01106, and the ending is not
+/// latched until it is answered.
+#[test]
+fn the_terminal_agendas_advance_flip_acknowledge_precedes_the_ending() {
+    let mut state = seated_roland();
+    state.agenda_index = 2;
+    state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
+    state.encounter_deck.clear();
+    state.interactive_acknowledge = true;
+    with_parlor_in_play(&mut state);
+
+    let paused = take_turn_action(state, &TurnAction::EndTurn);
+
+    let EngineOutcome::AwaitingInput { request, .. } = &paused.outcome else {
+        panic!(
+            "expected the advance-flip acknowledge, got {:?}",
+            paused.outcome
+        );
+    };
+    assert_eq!(
+        request.options.len(),
+        1,
+        "the flip pick is a single on-card option: {request:?}"
+    );
+    assert_eq!(
+        request.options[0].target,
+        Some(game_core::engine::OptionTarget::Agenda),
+        "it anchors to the agenda card the player is being asked to read",
+    );
+    assert!(
+        paused.state.ending.is_none(),
+        "the ending lands only once the reverse has run",
+    );
+
+    // Answer the flip, then the #466 acknowledge the reverse's own forced
+    // ability raises — the terminal agenda's reverse is a Forced like 01105's,
+    // so interactive play acknowledges it the same way.
+    let mut result = apply(
+        paused.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+        }),
+    );
+    for _ in 0..4 {
+        if !matches!(result.outcome, EngineOutcome::AwaitingInput { .. }) {
+            break;
+        }
+        result = apply(
+            result.state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            }),
+        );
+    }
+    assert_eq!(
+        result.state.ending,
+        Some(ScenarioEnding::Resolution(ResolutionId::new(3))),
     );
 }

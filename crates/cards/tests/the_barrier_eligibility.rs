@@ -33,7 +33,6 @@ fn barrier_advance_eligibility_gates_on_hallway_affordability() {
     state.act_deck = vec![Act {
         code: CardCode("01109".into()),
         clue_threshold: 3,
-        resolution: None,
     }];
     state.act_index = 0;
 

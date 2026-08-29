@@ -745,7 +745,6 @@ mod tests {
         Act {
             code: CardCode::new(code),
             clue_threshold,
-            resolution: None,
         }
     }
 
@@ -753,7 +752,6 @@ mod tests {
         Agenda {
             code: CardCode::new(code),
             doom_threshold: 3,
-            resolution: None,
         }
     }
 

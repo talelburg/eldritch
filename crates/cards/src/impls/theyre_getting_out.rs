@@ -22,6 +22,30 @@
 //! Barrier)"* (<https://arkhamdb.com/card/01107>) — act 01109's *when* half
 //! resolves first, then this doom placement, then any `after` ability.
 //!
+//! **The reverse**, `back_text` verbatim
+//! (`data/arkhamdb-snapshot/pack/core/core_encounter.json`):
+//!
+//! > - If the investigators are at Act 1 or 2, they are trapped inside the
+//! >   house as the ghouls tear them apart. **(→R3)**
+//! > - If the investigators are at Act 3, they barely escape with their lives,
+//! >   allowing the ghouls to run rampant. Each investigator that has not
+//! >   resigned is defeated and suffers 1 physical trauma.
+//!
+//! It reaches its resolution point by running an effect — `reach_resolution` on
+//! the `after` cell of the agenda's own advance, the cell every on-advance
+//! reverse declares in (01105, 01106), because the flip is step 2 of the Rules
+//! Reference's advance procedure rather than a triggered ability
+//! (`glossary/Act_Deck_and_Agenda_Deck.md`). 01107 is terminal in the ordinary
+//! way: last card in the agenda deck, so dooming out flips it and its reverse is
+//! what ends the scenario (ADR 0013).
+//!
+//! **The branch is not modelled yet.** Only the first bullet carries a `(→R#)`;
+//! the second reaches no resolution point at all. This ability reaches R3
+//! unconditionally, which is exactly the behaviour that shipped before the
+//! reverse was an effect — so an investigator who doomed out at act 3 is still
+//! handed a resolution point the card does not print for them. **#809** makes it
+//! an `Effect::If` over a card-local `Condition::Native` reading `act_index`.
+//!
 //! Map note: on The Gathering's star map (Hallway hub ↔ Attic/Cellar/
 //! Parlor), every location has a unique shortest first step toward the
 //! Parlor, so the lowest-`LocationId` tie-break below is unreachable in
@@ -31,7 +55,9 @@
 //! engages on arrival per the general engagement rule (#633) — the card
 //! text is positional only, but the framework rule applies regardless.
 
-use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming, Phase};
+use card_dsl::dsl::{
+    forced_on_event, native, reach_resolution, Ability, EventPattern, EventTiming, Phase,
+};
 use game_core::card_registry::NativeEffectFn;
 use game_core::state::{EnemyId, LocationId};
 use game_core::{
@@ -64,6 +90,11 @@ pub fn abilities() -> Vec<Ability> {
             EventPattern::RoundEnded,
             EventTiming::At,
             native(ROUND_END_DOOM),
+        ),
+        forced_on_event(
+            EventPattern::AgendaAdvanced,
+            EventTiming::After,
+            reach_resolution(3),
         ),
     ]
 }
@@ -194,14 +225,13 @@ mod tests {
         state.agenda_deck = vec![Agenda {
             code: CardCode::new("01107"),
             doom_threshold: 10,
-            resolution: None,
         }];
     }
 
     #[test]
-    fn abilities_are_two_forced_native_effects() {
+    fn abilities_are_the_two_forced_natives_then_the_reverse() {
         let abilities = abilities();
-        assert_eq!(abilities.len(), 2);
+        assert_eq!(abilities.len(), 3);
         assert_eq!(
             abilities[0].trigger,
             Trigger::OnEvent {
@@ -222,6 +252,28 @@ mod tests {
             }
         );
         assert!(matches!(&abilities[1].effect, Effect::Native { tag } if tag == ROUND_END_DOOM));
+    }
+
+    /// The reverse reaches R3 by *running an effect* on the `after` cell of the
+    /// agenda's own advance (ADR 0013). Unconditional: the act-1/2-vs-act-3
+    /// branch is #809, and until it lands this is behaviour-identical to the
+    /// deleted `Agenda.resolution` field.
+    #[test]
+    fn reverse_reaches_resolution_three_after_the_agenda_advances() {
+        let abilities = abilities();
+        assert_eq!(
+            abilities[2].trigger,
+            Trigger::OnEvent {
+                pattern: EventPattern::AgendaAdvanced,
+                timing: EventTiming::After,
+                kind: card_dsl::dsl::TriggerKind::Forced,
+            }
+        );
+        assert!(
+            matches!(abilities[2].effect, Effect::ReachResolution(3)),
+            "the reverse reaches R3, got {:?}",
+            abilities[2].effect
+        );
     }
 
     #[test]

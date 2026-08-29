@@ -56,10 +56,15 @@ pub(crate) fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
 /// TODO(#572): sum doom on other cards in play once a
 /// doom-bearing card exists.
 ///
-/// If the current agenda is terminal (carries a `resolution`), advancing
-/// it ends the scenario: set the scenario-ending latch instead of moving the
-/// cursor. Otherwise emit [`Event::AgendaAdvanced`], reset doom, and make
-/// the next agenda current.
+/// **Every** agenda advances the same way, terminal or not (ADR 0013): emit
+/// [`Event::AgendaAdvanced`], pause on the advance-flip acknowledge, fire the
+/// leaving agenda's reverse, then reset doom and move the cursor. A terminal
+/// agenda's reverse is what ends the scenario — it runs
+/// [`Effect::ReachResolution`](crate::dsl::Effect::ReachResolution), or drains
+/// the last active investigator — and `advance_reverse::finalize` holds the
+/// cursor there and asserts the ending landed. This used to latch the agenda's
+/// `resolution` field *instead of* advancing, which meant the last agenda in the
+/// deck never flipped and the player never saw which branch ended their game.
 pub(crate) fn check_doom_threshold(cx: &mut Cx) {
     if cx.state.agenda_deck.is_empty() {
         return;
@@ -68,21 +73,17 @@ pub(crate) fn check_doom_threshold(cx: &mut Cx) {
     if cx.state.agenda_doom < agenda.doom_threshold {
         return;
     }
-    match agenda.resolution {
-        Some(id) => end_scenario(cx.state, ScenarioEnding::Resolution(id)),
-        None => advance_agenda(cx),
-    }
+    advance_agenda(cx);
 }
 
 /// Advance the agenda deck one step (#482): push an
 /// [`AdvanceReverse`](crate::state::Continuation::AdvanceReverse) frame and let
 /// the `drive` loop run it — emit [`Event::AgendaAdvanced`], optionally pause for
 /// the gated acknowledge, fire the leaving agenda's Forced reverse (which may
-/// suspend), then reset doom + move the cursor at `Finalize` (RR order; the
-/// past-the-end terminal guard lives in `advance_reverse::finalize`).
+/// suspend), then reset doom + move the cursor at `Finalize` (RR order; a
+/// terminal agenda holds its cursor there instead — `advance_reverse::finalize`).
 ///
-/// Only ever called for a *non-terminal* agenda (`resolution` is `None`); a
-/// terminal agenda latches its resolution via `end_scenario` instead.
+/// Called for every agenda, terminal or not (ADR 0013).
 pub(super) fn advance_agenda(cx: &mut Cx) {
     let from = cx.state.agenda_index;
     let leaving_code = cx.state.agenda_deck[from].code.clone();
@@ -90,8 +91,8 @@ pub(super) fn advance_agenda(cx: &mut Cx) {
     // observable event, optionally pauses for the gated acknowledge, fires the
     // leaving agenda's Forced reverse (which may suspend — 01105's ChooseOne),
     // then bumps the cursor at Finalize (RR order — after the reverse resolves).
-    // The drive loop owns it from here; the past-the-end terminal guard now lives
-    // in `advance_reverse::finalize`.
+    // The drive loop owns it from here; the terminal-card guard now lives in
+    // `advance_reverse::finalize`.
     cx.state
         .continuations
         .push(crate::state::Continuation::AdvanceReverse {
@@ -178,8 +179,8 @@ pub(crate) fn check_advance_act(
 /// Handler for `TurnAction::AdvanceAct`:
 /// validate via [`check_advance_act`], then (on success) spend exactly the act's
 /// clue threshold (acting investigator first, then the rest in `turn_order`) and
-/// either set the scenario-ending latch (terminal act) or emit [`Event::ActAdvanced`]
-/// and advance the cursor.
+/// advance the act — terminal or not (ADR 0013); a terminal act's ending comes
+/// from the reverse the advance fires, not from this handler.
 pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     let threshold = match check_advance_act(cx.state, investigator) {
         Ok(t) => t,
@@ -188,11 +189,8 @@ pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> E
 
     // All validations passed — mutate.
     spend_clues(cx.state, investigator, threshold);
-    match cx.state.act_deck[cx.state.act_index].resolution {
-        Some(id) => end_scenario(cx.state, ScenarioEnding::Resolution(id)),
-        // The `AdvanceAct` action *is* the player's flip — a deliberate advance.
-        None => advance_act(cx, crate::state::AdvanceTrigger::Deliberate),
-    }
+    // The `AdvanceAct` action *is* the player's flip — a deliberate advance.
+    advance_act(cx, crate::state::AdvanceTrigger::Deliberate);
     EngineOutcome::Done
 }
 
@@ -315,9 +313,9 @@ pub fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> Engine
 /// [`AdvanceReverse`](crate::state::Continuation::AdvanceReverse) frame for the
 /// `drive` loop to run — emit [`Event::ActAdvanced`], optionally pause for the
 /// gated acknowledge, fire the leaving act's Forced reverse (which may suspend),
-/// then move the cursor at `Finalize` (RR order; the past-the-end terminal guard
-/// lives in `advance_reverse::finalize`). Mirrors [`advance_agenda`]. Only called
-/// for a non-terminal act.
+/// then move the cursor at `Finalize` (RR order; a terminal act holds its cursor
+/// there instead — `advance_reverse::finalize`). Mirrors [`advance_agenda`], and
+/// like it is called for every act, terminal or not (ADR 0013).
 ///
 /// Invariant: the leaving act's on-advance Forced effect must not itself
 /// re-advance the act (no in-scope card does; a re-advance from that
@@ -333,7 +331,7 @@ pub(crate) fn advance_act(cx: &mut Cx, trigger: crate::state::AdvanceTrigger) {
     // Mirror of advance_agenda (#482): defer to the resumable AdvanceReverse
     // sub-process (observable event → gated acknowledge → leaving act's Forced
     // reverse, which may suspend → bump the cursor at Finalize, RR order). The
-    // drive loop owns it; the past-the-end terminal guard lives in
+    // drive loop owns it; the terminal-card guard lives in
     // `advance_reverse::finalize`.
     cx.state
         .continuations
@@ -389,9 +387,9 @@ pub(crate) fn end_scenario(state: &mut GameState, ending: ScenarioEnding) {
 #[cfg(test)]
 mod doom_agenda_tests {
     use super::*;
+    use crate::assert_event;
     use crate::event::Event;
     use crate::test_support::GameStateBuilder;
-    use crate::{assert_event, assert_no_event};
 
     #[test]
     fn place_doom_increments_agenda_doom() {
@@ -400,7 +398,6 @@ mod doom_agenda_tests {
         state.agenda_deck = vec![Agenda {
             code: CardCode("_test_agenda".into()),
             doom_threshold: 2,
-            resolution: None,
         }];
         let mut events = Vec::new();
         place_doom_on_agenda(
@@ -429,12 +426,10 @@ mod doom_agenda_tests {
             Agenda {
                 code: CardCode("_agenda_1".into()),
                 doom_threshold: 1,
-                resolution: None,
             },
             Agenda {
                 code: CardCode("_agenda_2".into()),
                 doom_threshold: 3,
-                resolution: None,
             },
         ];
         let mut events = Vec::new();
@@ -471,12 +466,10 @@ mod doom_agenda_tests {
             Agenda {
                 code: CardCode("_test_agenda_1".into()),
                 doom_threshold: 2,
-                resolution: None,
             },
             Agenda {
                 code: CardCode("_test_agenda_2".into()),
                 doom_threshold: 2,
-                resolution: Some(crate::scenario::ResolutionId::new(3)),
             },
         ];
         state.agenda_doom = 2;
@@ -502,15 +495,28 @@ mod doom_agenda_tests {
         assert_event!(events, Event::AgendaAdvanced { from } if *from == 0);
     }
 
+    /// A terminal agenda takes the same advance path as every other one
+    /// (ADR 0013): it **emits `AgendaAdvanced`**, its reverse fires, and the
+    /// reverse is what latches the ending — the cursor stays put because there
+    /// is no next card. Before #808 the threshold check latched the field and
+    /// skipped the flip entirely, so the player never saw which agenda ended
+    /// their game.
     #[test]
-    fn doom_threshold_on_terminal_agenda_sets_resolution_latch() {
-        use crate::scenario::ResolutionId;
-        use crate::state::{Agenda, CardCode};
-        let mut state = GameStateBuilder::new().build();
+    fn terminal_agenda_advances_and_its_reverse_latches_the_ending() {
+        use crate::scenario::{ResolutionId, ScenarioEnding};
+        use crate::state::{Agenda, InvestigatorId};
+        use crate::test_support::{terminal_code, test_investigator};
+        // The synthetic terminal card's reverse comes from the registry, and a
+        // forced on-advance ability binds the lead — so both are needed.
+        crate::test_support::install_test_registry();
+        let inv = InvestigatorId(1);
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .with_turn_order([inv])
+            .build();
         state.agenda_deck = vec![Agenda {
-            code: CardCode("_test_agenda".into()),
+            code: terminal_code(3),
             doom_threshold: 2,
-            resolution: Some(ResolutionId::new(3)),
         }];
         state.agenda_doom = 2;
         let mut events = Vec::new();
@@ -518,20 +524,25 @@ mod doom_agenda_tests {
             state: &mut state,
             events: &mut events,
         });
+        crate::engine::dispatch::drive(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EngineOutcome::Done,
+        );
         assert_eq!(
             state.agenda_index, 0,
-            "cursor does not move on a terminal agenda"
+            "a terminal agenda does not bump the cursor — there is no next card"
         );
-        // An agenda-invoked ending is a resolution point like any other; the
-        // agenda's printed (→R#) survives into the latch rather than being
-        // flattened to "lost".
+        assert_event!(events, Event::AgendaAdvanced { from } if *from == 0);
+        // The agenda's printed (→R#) survives into the latch rather than being
+        // flattened to "lost" — and it arrives from the reverse, not from a
+        // field on the deck entry.
         assert_eq!(
             state.ending,
-            Some(crate::scenario::ScenarioEnding::Resolution(
-                ResolutionId::new(3)
-            ))
+            Some(ScenarioEnding::Resolution(ResolutionId::new(3)))
         );
-        assert_no_event!(events, Event::AgendaAdvanced { .. });
     }
 
     #[test]
@@ -541,7 +552,6 @@ mod doom_agenda_tests {
         state.agenda_deck = vec![Agenda {
             code: CardCode("_test_agenda".into()),
             doom_threshold: 3,
-            resolution: None,
         }];
         state.agenda_doom = 2;
         let mut events = Vec::new();
@@ -567,12 +577,12 @@ mod doom_agenda_tests {
 
 #[cfg(test)]
 mod advance_act_tests {
+    use crate::assert_event;
     use crate::engine::enumerate::{legal_actions, TurnAction};
     use crate::engine::EngineOutcome;
     use crate::event::Event;
     use crate::state::{InvestigatorId, Phase};
     use crate::test_support::{take_turn_action, test_investigator, GameStateBuilder};
-    use crate::{assert_event, assert_no_event};
 
     #[test]
     fn round_end_advance_affordable_tracks_hallway_clues_vs_threshold() {
@@ -592,7 +602,6 @@ mod advance_act_tests {
         state.act_deck = vec![Act {
             code: CardCode("_act".into()),
             clue_threshold: 3,
-            resolution: None,
         }];
         state.act_index = 0;
 
@@ -635,7 +644,6 @@ mod advance_act_tests {
         state.act_deck = vec![Act {
             code: CardCode("_test_act".into()),
             clue_threshold: 2,
-            resolution: None,
         }];
 
         // Insufficient clues (1 < 2): AdvanceAct is not legal.
@@ -672,7 +680,6 @@ mod advance_act_tests {
         state.act_deck = vec![Act {
             code: CardCode("01110".into()),
             clue_threshold: 0,
-            resolution: Some(crate::scenario::ResolutionId::new(1)),
         }];
 
         assert!(
@@ -709,7 +716,6 @@ mod advance_act_tests {
 
     #[test]
     fn advance_act_spends_clues_and_advances_non_terminal() {
-        use crate::scenario::ResolutionId;
         use crate::state::{Act, CardCode};
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
@@ -728,12 +734,10 @@ mod advance_act_tests {
             Act {
                 code: CardCode("_test_act_1".into()),
                 clue_threshold: 2,
-                resolution: None,
             },
             Act {
                 code: CardCode("_test_act_2".into()),
                 clue_threshold: 2,
-                resolution: Some(ResolutionId::new(1)),
             },
         ];
 
@@ -748,10 +752,17 @@ mod advance_act_tests {
         assert_event!(result.events, Event::ActAdvanced { from } if *from == 0);
     }
 
+    /// The act-side mirror of
+    /// [`terminal_agenda_advances_and_its_reverse_latches_the_ending`]: a
+    /// terminal act **emits `ActAdvanced`** and its reverse latches the ending,
+    /// rather than the handler latching a field and skipping the flip (ADR
+    /// 0013). The clues are still spent, as before.
     #[test]
-    fn advance_act_on_terminal_act_sets_resolution_latch() {
-        use crate::scenario::ResolutionId;
-        use crate::state::{Act, CardCode};
+    fn terminal_act_advances_and_its_reverse_latches_the_ending() {
+        use crate::scenario::{ResolutionId, ScenarioEnding};
+        use crate::state::Act;
+        use crate::test_support::terminal_code;
+        crate::test_support::install_test_registry();
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
         investigator.clues = 2;
@@ -766,28 +777,26 @@ mod advance_act_tests {
             .with_investigator_turn(inv)
             .build();
         state.act_deck = vec![Act {
-            code: CardCode("_test_act".into()),
+            code: terminal_code(1),
             clue_threshold: 2,
-            resolution: Some(ResolutionId::new(1)),
         }];
 
         let result = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });
         assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(
             result.state.act_index, 0,
-            "cursor does not move on a terminal act"
+            "a terminal act does not bump the cursor — there is no next card"
         );
-        assert!(matches!(
+        assert_event!(result.events, Event::ActAdvanced { from } if *from == 0);
+        assert_eq!(
             result.state.ending,
-            Some(crate::scenario::ScenarioEnding::Resolution(_))
-        ));
-        assert_no_event!(result.events, Event::ActAdvanced { .. });
+            Some(ScenarioEnding::Resolution(ResolutionId::new(1)))
+        );
         assert_eq!(result.state.investigators[&inv].clues, 0);
     }
 
     #[test]
     fn advance_act_without_registry_still_advances() {
-        use crate::scenario::ResolutionId;
         use crate::state::{Act, CardCode, InvestigatorId, Phase};
         use crate::test_support::{take_turn_action, test_investigator, GameStateBuilder};
         let inv = InvestigatorId(1);
@@ -807,12 +816,10 @@ mod advance_act_tests {
             Act {
                 code: CardCode("01108".into()),
                 clue_threshold: 2,
-                resolution: None,
             },
             Act {
                 code: CardCode("01109".into()),
                 clue_threshold: 3,
-                resolution: Some(ResolutionId::new(1)),
             },
         ];
         let result = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });
@@ -843,20 +850,18 @@ mod advance_act_tests {
             })
             .with_investigator_turn(acting)
             .build();
-        // Two acts so the non-terminal first act can advance the cursor to 1
-        // (a terminal `resolution: None` act at the end would hit the
-        // advance-past-end `unreachable!`). The successor's contents are
-        // irrelevant to this spend-order test.
+        // Two acts so the first is non-terminal and its advance bumps the cursor
+        // to 1 (a lone act would be terminal, and would need a reverse that
+        // reaches an ending). The successor's contents are irrelevant to this
+        // spend-order test.
         state.act_deck = vec![
             Act {
                 code: CardCode("_test_act_1".into()),
                 clue_threshold: 2,
-                resolution: None,
             },
             Act {
                 code: CardCode("_test_act_2".into()),
                 clue_threshold: 2,
-                resolution: None,
             },
         ];
 

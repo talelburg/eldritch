@@ -439,7 +439,6 @@ mod tests {
         state.act_deck = vec![Act {
             code: CardCode("_test_act".into()),
             clue_threshold: threshold,
-            resolution: None,
         }];
         state
     }
@@ -854,12 +853,10 @@ mod tests {
             crate::state::Act {
                 code: crate::state::CardCode("_act1".into()),
                 clue_threshold: 2,
-                resolution: None,
             },
             crate::state::Act {
                 code: crate::state::CardCode("_act2".into()),
                 clue_threshold: 99,
-                resolution: None,
             },
         ];
 

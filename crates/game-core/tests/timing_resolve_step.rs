@@ -135,7 +135,6 @@ fn state_with_act(act: &str) -> GameState {
     state.act_deck = vec![Act {
         code: CardCode::new(act),
         clue_threshold: 0,
-        resolution: None,
     }];
     state.act_index = 0;
     state

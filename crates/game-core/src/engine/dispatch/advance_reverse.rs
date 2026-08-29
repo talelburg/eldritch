@@ -115,26 +115,41 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Bump the deck cursor (RR order: after the reverse resolved) and pop the frame.
+///
+/// **A terminal card does not bump the cursor.** Terminality is structural — the
+/// advancing card is the last in its deck — rather than a flag the card carries
+/// (ADR 0013), so there is no next card to become current and the cursor stays
+/// where it is. What must have happened instead is that the reverse *ended the
+/// scenario*: either by running
+/// [`Effect::ReachResolution`](crate::dsl::Effect::ReachResolution), or by
+/// draining the last active investigator into `check_all_defeated`. Asserting
+/// that here is the inverse of the past-the-end guard this replaced, and it fails
+/// at the card whose reverse forgot to reach an ending rather than at a cursor
+/// that has run off the end of the deck.
 fn finalize(cx: &mut Cx, deck: AdvanceDeck, from: usize) {
+    let (len, what) = match deck {
+        AdvanceDeck::Agenda => (cx.state.agenda_deck.len(), "agenda"),
+        AdvanceDeck::Act => (cx.state.act_deck.len(), "act"),
+    };
+    let terminal = from + 1 >= len;
     match deck {
         AdvanceDeck::Agenda => {
             cx.state.agenda_doom = 0;
-            cx.state.agenda_index += 1;
-            assert!(
-                cx.state.agenda_index < cx.state.agenda_deck.len(),
-                "advance_reverse: agenda {from} advanced past the end without a resolution \
-                 (terminal agendas carry a resolution point); malformed scenario data",
-            );
+            if !terminal {
+                cx.state.agenda_index += 1;
+            }
         }
         AdvanceDeck::Act => {
-            cx.state.act_index += 1;
-            assert!(
-                cx.state.act_index < cx.state.act_deck.len(),
-                "advance_reverse: act {from} advanced past the end without a resolution \
-                 (terminal acts carry a resolution point); malformed scenario data",
-            );
+            if !terminal {
+                cx.state.act_index += 1;
+            }
         }
     }
+    assert!(
+        !terminal || cx.state.ending.is_some(),
+        "advance_reverse: terminal {what} {from} finished without an ending latched — its \
+         reverse reached no resolution point and defeated nobody; malformed scenario data",
+    );
     let popped = cx.state.continuations.pop();
     debug_assert!(
         matches!(popped, Some(Continuation::AdvanceReverse { .. })),
@@ -182,12 +197,10 @@ mod tests {
             Agenda {
                 code: CardCode("_a1".into()),
                 doom_threshold: 1,
-                resolution: None,
             },
             Agenda {
                 code: CardCode("_a2".into()),
                 doom_threshold: 3,
-                resolution: None,
             },
         ];
         state.agenda_index = 0;
@@ -212,12 +225,10 @@ mod tests {
             Act {
                 code: CardCode("_c1".into()),
                 clue_threshold: 1,
-                resolution: None,
             },
             Act {
                 code: CardCode("_c2".into()),
                 clue_threshold: 2,
-                resolution: None,
             },
         ];
         state.act_index = 0;
@@ -313,6 +324,26 @@ mod tests {
             "the flip pick anchors to the act card"
         );
         assert_eq!(state.act_index, 0, "cursor must NOT bump yet");
+    }
+
+    /// A terminal card whose reverse reaches no ending fails **loudly**, at the
+    /// card rather than as a cursor running off the end of the deck (ADR 0013).
+    /// `_a1` is the only agenda here and no registry is installed, so its reverse
+    /// fires nothing — the shape a scenario author ships by forgetting the
+    /// `reach_resolution` on the last card's reverse.
+    #[test]
+    #[should_panic(expected = "terminal agenda 0 finished without an ending latched")]
+    fn a_terminal_card_whose_reverse_reaches_no_ending_panics() {
+        let mut state = state_advancing_agenda(false);
+        state.agenda_deck.truncate(1);
+        let mut events = Vec::new();
+        let _ = crate::engine::dispatch::drive(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            EngineOutcome::Done,
+        );
     }
 
     /// Deliberate + interactive: the advance was already the player's choice, so

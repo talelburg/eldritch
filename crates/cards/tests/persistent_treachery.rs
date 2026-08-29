@@ -226,7 +226,6 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
     state.agenda_deck = vec![Agenda {
         code: CardCode::new("01107"),
         doom_threshold: 10,
-        resolution: None,
     }];
     state.agenda_index = 0;
 
