@@ -66,9 +66,9 @@ fn install() {
     let _ = card_registry::install(CardRegistry {
         metadata_for: mock_metadata_for,
         abilities_for: mock_abilities_for,
+        back_abilities_for: |_| None,
         native_effect_for: |_| None,
         native_eligibility_for: |_| None,
-        back_abilities_for: |_| None,
         native_condition_for: mock_native_condition_for,
     });
 }

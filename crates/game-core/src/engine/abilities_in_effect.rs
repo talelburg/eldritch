@@ -12,12 +12,31 @@
 //!
 //! # Why a mechanism rather than a hardcode
 //!
-//! **20 locations in Core + Dunwich carry `back_text`, and 19 of the 20 are
-//! movement restrictions.** Seven of those are unconditional and need nothing
-//! beyond this module (Parlor 01115, Dormitories 02052, Faculty Offices
-//! 02054/02055, Alchemy Labs 02057, Museum Halls 02127, Ascending Path
-//! 02283); the other twelve carry a condition a constant `Restrict` cannot
-//! yet hold, which is `#821`.
+//! **20 locations in Core + Dunwich carry `back_text`, and every one of the 20
+//! is about movement.** Nineteen are movement *restrictions*, and they split
+//! seven / twelve:
+//!
+//! - **Seven unconditional** — Parlor 01115, Dormitories 02052, Faculty Offices
+//!   02054/02055, Alchemy Labs 02057, Museum Halls 02127, Ascending Path 02283
+//!   — each a bare *"You cannot move into X."* that needs nothing beyond this
+//!   module and a `Trigger::Constant` `Restrict`.
+//! - **Twelve conditional** — Train Car 02167-02174, Engine Car 02175-02177,
+//!   The Edge of the Universe 02321 — each gating on discovered clues, which a
+//!   constant `Restrict` cannot carry. That is `#821`, and it does not block
+//!   this.
+//!
+//! The twentieth, Sentinel Peak 02284, is the one that is not a restriction:
+//! *"As an additional cost to move to Sentinel Peak, the investigators must
+//! spend 2 \[`per_investigator`\] clues, as a group"* — a movement **cost**, which
+//! is `Restriction::ExtraActionCost`'s shape rather than a block.
+//!
+//! One caveat on the seven, since it is the reason the survey is a survey and
+//! not a licence: **02127's back carries a second clause this module does not
+//! serve** — *"Museum Entrance gains: '\[action\]: Test \[combat\] (5) to
+//! attempt to break down the door to the Museum. If you are successful,
+//! immediately advance to Act 1b.'"* — a granted ability, which is #772's gap
+//! and not this one's. Its *restriction* clause is unconditional; the card is
+//! not.
 //!
 //! # Why not "unrevealed ⇒ unenterable"
 //!

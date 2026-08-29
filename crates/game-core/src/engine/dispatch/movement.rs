@@ -49,9 +49,9 @@ use crate::state::{Enemy, GameState, LocationId};
 /// `false` with no registry installed.
 fn location_carries_restriction(state: &GameState, loc: LocationId, r: &Restriction) -> bool {
     let carries = |abilities: &[crate::dsl::Ability]| {
-        abilities
-            .iter()
-            .any(|a| a.trigger == Trigger::Constant && a.effect == Effect::Restrict(r.clone()))
+        abilities.iter().any(|a| {
+            a.trigger == Trigger::Constant && matches!(&a.effect, Effect::Restrict(got) if got == r)
+        })
     };
     if carries(&abilities_in_effect::location_abilities_or_empty(
         state, loc,

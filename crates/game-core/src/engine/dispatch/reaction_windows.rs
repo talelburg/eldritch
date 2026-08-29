@@ -1055,26 +1055,29 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // "Static" now means *static per side* (#774): a location shows its back's
     // abilities while unrevealed and its front's while revealed, so a reveal
     // between scan and fire would swap the vector the `ability_index` indexes.
-    // No back side in the corpus declares a triggered ability — the Parlor
-    // 01115's is a `Trigger::Constant`, which is inspected rather than
-    // scanned — so no candidate can be minted from a side that can flip. The
-    // first back-side *trigger* is what makes this a real ordering question.
-    if card_registry::current().is_none() {
-        unreachable!(
-            "fire_pending_trigger: registry was installed at scan time but is now \
-             missing; the OnceLock contract guarantees once-set-stays-set"
-        );
-    }
+    // That is a **game-state** change, not registry corruption, so it rejects
+    // rather than panicking — `unreachable!()` is for invariant violations, and
+    // "no location was revealed mid-window" is a property of today's corpus
+    // (no back side declares a *triggered* ability; the Parlor 01115's is a
+    // `Trigger::Constant`, inspected rather than scanned), not an invariant the
+    // engine enforces. `candidate_still_offerable` above has already rejected a
+    // source that left play, so what survives to here is the side flip.
+    //
     // Abilities resolve by code (works for in-play instances and scenario
     // board cards alike); `source` is the firing instance, when any.
     let code = trigger.code.clone();
-    let abilities = abilities_in_effect::for_candidate_source(cx.state, trigger.source, &code)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "fire_pending_trigger: registry lost abilities for card {code:?} between \
-                 scan and fire; the OnceLock contract guarantees stable lookups",
+    let Some(abilities) =
+        abilities_in_effect::for_candidate_source(cx.state, trigger.source, &code)
+    else {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: reaction-window PickSingle(OptionId({i})) names {code}, which no \
+                 longer has abilities on the side in effect — the card was scanned on one side \
+                 and fired on another. Re-read the current option list."
             )
-        });
+            .into(),
+        };
+    };
     let ability = abilities
         .get(usize::from(trigger.ability_index))
         .unwrap_or_else(|| {

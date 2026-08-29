@@ -9,7 +9,9 @@
 //! > The entrance to the Parlor is blocked by a darkly glowing unfathomable
 //! > barrier. You cannot move into the Parlor.
 //!
-//! **The Barrier (01109)**, `back_text` verbatim, is what lifts it:
+//! **The Barrier (01109)** is what lifts it — the first of its `back_text`'s
+//! three lines, verbatim (the other two put Lita Chantler into play and spawn
+//! the Ghoul Priest, and are #771 and #231):
 //!
 //! > The barrier blocking passage into the parlor has vanished. Reveal the
 //! > Parlor.
