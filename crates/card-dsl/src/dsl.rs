@@ -933,11 +933,34 @@ pub enum Effect {
     /// branch's effect. Requires an `AwaitingInput` round-trip; the
     /// evaluator stub for this lands in Phase 3 alongside skill tests.
     ChooseOne(Vec<Effect>),
-    /// Advance the current act one step. If the act is terminal (carries
-    /// a resolution) the scenario resolves; otherwise the cursor moves
-    /// and the act's on-advance reverse fires. Used by act objectives
-    /// like 01110 ("If the Ghoul Priest is Defeated, advance.").
+    /// Advance the current act one step: the cursor moves and the act's
+    /// on-advance reverse fires. Used by act objectives like 01110 ("If the
+    /// Ghoul Priest is Defeated, advance."). A *terminal* act advances the
+    /// same way — its reverse is what ends the scenario, via
+    /// [`ReachResolution`](Self::ReachResolution).
     AdvanceCurrentAct,
+    /// Reach the printed resolution point `(→R#)`, ending the scenario there.
+    ///
+    /// Rules Reference, `Winning and Losing`: *"Some instructions in the act
+    /// deck (as well as on other encounter cardtypes) contain resolution
+    /// points, in the format of: '**(→R#)**.'"* A terminal card's reverse
+    /// prints one, and running this effect is how the card reaches it — the
+    /// same way a reverse does anything else printed on it. The Gathering's
+    /// act 3 (01110) and agenda 3 (01107) are the two consumers in the corpus
+    /// today, and every future scenario's terminal cards are behind them.
+    ///
+    /// **A bare `u8`, not the engine's `ResolutionId`.** `card-dsl` has no
+    /// workspace dependencies and that newtype lives in `game-core`, so the
+    /// conversion happens where the effect is evaluated. The number is the
+    /// printed one: the campaign guide titles its entries "Resolution 1",
+    /// "Resolution 2", and so on.
+    ///
+    /// Latching is first-writer-wins (the engine's `end_scenario`), so a
+    /// resolution point already reached this scenario stands — see
+    /// `docs/adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md`.
+    /// The decision to make this an effect rather than a card datum is
+    /// `docs/adr/0013-a-resolution-point-is-a-printed-effect.md`.
+    ReachResolution(u8),
     /// Place `count` doom on the current agenda, and — only if `may_advance` —
     /// run the doom-threshold check.
     ///
@@ -2098,6 +2121,12 @@ pub fn choose_one(effects: impl IntoIterator<Item = Effect>) -> Effect {
 #[must_use]
 pub fn advance_current_act() -> Effect {
     Effect::AdvanceCurrentAct
+}
+
+/// Build an [`Effect::ReachResolution`] for the printed `(→R#)` number.
+#[must_use]
+pub fn reach_resolution(n: u8) -> Effect {
+    Effect::ReachResolution(n)
 }
 
 /// Build an [`Effect::PlaceDoomOnCurrentAgenda`] for a card that prints the

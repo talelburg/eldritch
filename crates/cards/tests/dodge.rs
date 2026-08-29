@@ -110,7 +110,6 @@ fn acolyte_state() -> (GameState, InvestigatorId, EnemyId) {
     state.agenda_deck = vec![game_core::state::Agenda {
         code: CardCode::new("01105"),
         doom_threshold: 3,
-        resolution: None,
     }];
     state.agenda_index = 0;
     (state, inv_id, enemy_id)

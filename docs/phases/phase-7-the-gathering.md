@@ -107,27 +107,48 @@ the Tablet came out.
 | Issue | Defect |
 |---|---|
 | #804 ✅ PR #807 | `Resolution` is `Won { id } \| Lost { reason }` — a standalone-mode projection, with no representation for the ending that reaches no resolution point ([ADR 0012](../adr/0012-a-scenario-ends-at-a-resolution-point-or-at-none.md)) |
-| #806 | Agenda 01107's `(→R3)` is conditional on the investigators being at act 1 or 2, and the engine latches it unconditionally |
+| #808 ✅ PR #810 | A terminal card's `(→R#)` is a flat `Option<ResolutionId>` field, so a reverse that *decides* — 01107's board-state branch, 01110's player choice — cannot be expressed, and a terminal card ends the scenario without ever flipping ([ADR 0013](../adr/0013-a-resolution-point-is-a-printed-effect.md)) |
+| #809 | Agenda 01107's `(→R3)` is conditional on the investigators being at act 1 or 2, and the engine latches it unconditionally |
 | #644 | Elimination **by resignation** never happens — `Status::Resigned` / `DefeatCause::Resigned` exist and have never been constructed |
 | #805 | An `ActionDesignator` is a pure tag that performs nothing, so a **Fight** ability and `Effect::Fight` are linked by convention alone |
 | #772 | Lita 01117 is an ability source nobody controls, so #708's walk never reaches her — and neither 01115's Parley nor her buffs are printed on the card that has them |
 | #771 | Set-aside is enemies-only, so act 01109b's *"Put the set-aside Lita Chantler into play"* has nowhere to go |
 | #773 | Lita 01117's controlled-side grants are location-scoped and reaction-driven; both collapse to one investigator in 1p |
 | #774 | The Parlor movement barrier — mandatory printed behaviour that was inheriting optional content's deferral |
-| #775 | 01110b asks the lead investigator to choose the ending; the act's resolution point is hardcoded, so R2 is unreachable |
+| #775 | 01110b asks the lead investigator to choose the ending; the act's reverse reaches R1 unconditionally, so R2 is unreachable |
+| #811 | Agenda 01107's Ghoul move **rejects the player's action** whenever the Parlor is not yet in play — which agenda 3 reaches on its own doom clock, independent of act progress |
 
-- **#806 — agenda 01107's resolution point is conditional.** The reverse prints two
+- **#809 — agenda 01107's resolution point is conditional.** The reverse prints two
   bullets and only the first carries a point: *"If the investigators are at Act 1 or 2,
   they are trapped inside the house as the ghouls tear them apart. **(→R3)**"*, against
   *"If the investigators are at Act 3, they barely escape with their lives … Each
   investigator that has not resigned is defeated and suffers 1 physical trauma."* The
   act-3 branch reaches **no** resolution point — defeating everyone drains the last
-  active investigator into `check_all_defeated` and so into #804's `NoResolution`. But
-  `Agenda.resolution` is printed data rather than effect DSL, so it cannot read
-  `act_index` to choose; #804 shipped the act-1/2 branch with a `# Module gap` note.
-  Expressing the branch needs the terminal agenda to *run* something, which is the same
-  shape as **#775** on the act side — worth settling both with one mechanism rather
-  than two. Physical trauma has no engine representation, so that half stays #766's.
+  active investigator into `check_all_defeated` and so into #804's `NoResolution`. On
+  #808's mechanism that is an `Effect::If` over a card-local `Condition::Native` reading
+  `act_index`, with the act-3 branch defeating each investigator in `turn_order` and
+  reaching the ending by the rules' own route rather than latching `NoResolution`
+  directly. The defeat is by **card ability** — `glossary/Defeat.md`'s *"An investigator
+  might also be defeated by a card ability"* — so it takes a new cause and a new status
+  rather than reusing `Killed`/`Insane`, which that same entry makes consequences of
+  *trauma*: *"Taking trauma may cause an investigator to be **killed** or driven
+  **insane**"*. The fan-out stays a card-local native over `turn_order`: `Effect::ForEach`'s
+  evaluator arm is a stub and its design is still open (#363, which now records 01107 as
+  a second investigator-all consumer), and a defeat body has one consumer — loop and body
+  fail the DSL threshold independently. `Event::TraumaSuffered { Physical, 1 }` is
+  emitted and nothing persists it until #766.
+- **#811 — 01107's Ghoul move rejects the player's action with no Parlor.**
+  `move_ghouls_toward_parlor` resolves its destination first and returns
+  `Rejected` when the Parlor (01115) is not in play — and since a rejection rolls
+  the whole apply back (#161), that takes the *player's* action with it. The
+  Parlor enters only via act 2's reverse, while agenda 3 becomes current at doom
+  7 on a clock that does not read act progress, so a group still on act 1 or 2
+  when the agenda deck turns over is stuck every enemy phase. Found while writing
+  #808's terminal-agenda test, which works around it by seeding the Parlor. Not a
+  card-text condition: `glossary/Ability.md` says *"If a forced ability does not
+  have the potential to change the game state, the ability does not initiate."* —
+  no destination, no move, no rejection. The same reading is already applied one
+  line below to a Ghoul with no available step (#797).
 - **#644 — Resign semantics.** Unblocked: #695 shipped as #707/#708/#709/#735, and
   #696 already gave the engine `ActionDesignator::Resign` and its AoO exemption. What
   is left is elimination **by resignation** — `Status::Resigned` / `DefeatCause::
@@ -189,13 +210,17 @@ the Tablet came out.
   pathfinding variants (`bfs_distance_with`, `shortest_first_steps_with`) are gone
   with the reading they served, so a new mover cannot reach for them by accident.
 - **#775 — act 3's R1/R2 choice.** 01110b asks the lead investigator to choose the
-  ending, and `the_gathering.rs:235` hardcodes `Resolution::Won { id: "R1" }`, so R2
-  is unreachable. Not a new finding: the 2026-08-22 sweep had already split it into
-  **#766** as phase-9 campaign work, and it moves here on the reading #766 itself
-  offered — *"the 01110 choice can land earlier as a plain prompt if #75 is not yet
-  there."* The **prompt** is in the gate because it is what makes both printed endings
-  reachable; the **consequences** (trauma, campaign log, earning the Lita Chantler
-  card) stay in #766, so `apply_resolution` grows a match arm per id and nothing more.
+  ending, and the act's resolution point is hardcoded to R1, so R2 is unreachable. Not
+  a new finding: the 2026-08-22 sweep had already split it into **#766** as phase-9
+  campaign work, and it moves here on the reading #766 itself offered — *"the 01110
+  choice can land earlier as a plain prompt if #75 is not yet there."* The **prompt** is
+  in the gate because it is what makes both printed endings reachable; the
+  **consequences** (trauma, campaign log, earning the Lita Chantler card) stay in #766,
+  so `apply_resolution` grows a match arm per id and nothing more. **Unblocked by
+  #808**, which shrank this to one change: 01110's reverse now carries an unconditional
+  `reach_resolution(1)` (a `# Module gap` on the card records that R2 is unreachable
+  until this lands), and this swaps it for an `Effect::ChooseOne` of the two printed
+  options, anchored to `OptionTarget::Act`.
 
 `[action]: **Parley.**` needs no new action type — #696 shipped the designator.
 #231 and #257, named in #258 as neighbours, are both closed.

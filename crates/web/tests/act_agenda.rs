@@ -37,12 +37,10 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
     state.act_deck = vec![Act {
         code: CardCode::new("01109"),
         clue_threshold: 2,
-        resolution: None,
     }];
     state.agenda_deck = vec![Agenda {
         code: CardCode::new("01107"),
         doom_threshold: 3,
-        resolution: None,
     }];
     state.agenda_doom = 1;
 
@@ -86,12 +84,10 @@ async fn mount_with_prompt(
     state.act_deck = vec![Act {
         code: CardCode::new("01109"),
         clue_threshold: 2,
-        resolution: None,
     }];
     state.agenda_deck = vec![Agenda {
         code: CardCode::new("01107"),
         doom_threshold: 3,
-        resolution: None,
     }];
     state.agenda_doom = 1;
     let store = RwSignal::new(ClientState::default());
@@ -226,7 +222,6 @@ async fn mount_advancing(
             state.agenda_deck = vec![Agenda {
                 code: CardCode::new(code),
                 doom_threshold: 3,
-                resolution: None,
             }];
             state.agenda_index = 0;
         }
@@ -234,7 +229,6 @@ async fn mount_advancing(
             state.act_deck = vec![Act {
                 code: CardCode::new(code),
                 clue_threshold: 2,
-                resolution: None,
             }];
             state.act_index = 0;
         }

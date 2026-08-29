@@ -6,7 +6,7 @@
 
 use card_dsl::dsl::EventTiming;
 use game_core::engine::{EngineOutcome, TurnAction};
-use game_core::scenario::{ResolutionId, ScenarioEnding};
+use game_core::scenario::ScenarioEnding;
 use game_core::state::{Act, CardCode, InvestigatorId, Phase};
 use game_core::test_support::{
     dispatch_turn_action_unchecked, test_investigator, GameStateBuilder,
@@ -24,7 +24,6 @@ fn act3_state() -> game_core::state::GameState {
     state.act_deck = vec![Act {
         code: CardCode("01110".into()),
         clue_threshold: 0,
-        resolution: Some(ResolutionId::new(1)),
     }];
     state
 }
@@ -86,7 +85,6 @@ fn advance_act_action_rejected_for_act_3_objective() {
     state.act_deck = vec![Act {
         code: CardCode("01110".into()),
         clue_threshold: 0,
-        resolution: Some(ResolutionId::new(1)),
     }];
 
     let result =
@@ -121,7 +119,6 @@ fn advance_act_rejected_for_round_end_advance_act() {
     state.act_deck = vec![Act {
         code: CardCode("01109".into()),
         clue_threshold: 3,
-        resolution: None,
     }];
 
     let result =

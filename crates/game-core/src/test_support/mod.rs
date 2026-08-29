@@ -44,6 +44,99 @@ fn test_inv_metadata() -> &'static crate::card_data::CardMetadata {
     })
 }
 
+/// Printed-code prefix for the synthetic **terminal** act/agenda cards.
+///
+/// A card is terminal because it is last in its deck (ADR 0013), and a terminal
+/// card ends the scenario by *running an effect on its reverse* — so a fixture
+/// that wants "advancing this act/agenda ends the scenario" needs a card whose
+/// abilities the registry can serve. [`terminal_code`] mints one per printed
+/// resolution number and [`abilities_for_terminal`] serves its reverse.
+///
+/// Synthetic rather than a real corpus code (01107 / 01110): a unit test that is
+/// about *terminality* should not break when a snapshot bump moves the content
+/// it was never asserting on.
+pub const TEST_TERMINAL_PREFIX: &str = "_TEST_TERM_R";
+
+/// The synthetic terminal card that reaches printed resolution point `n`, e.g.
+/// `terminal_code(1)` → `_TEST_TERM_R1`. Put it last in an act or agenda deck
+/// and advancing it ends the scenario at `Resolution(n)`.
+#[must_use]
+pub fn terminal_code(n: u8) -> crate::state::CardCode {
+    crate::state::CardCode::new(format!("{TEST_TERMINAL_PREFIX}{n}"))
+}
+
+/// Abilities lookup for the synthetic terminal cards ([`terminal_code`]).
+///
+/// The reverse is declared on both the act-advanced and the agenda-advanced
+/// condition, in the `after` cell — the cell every real on-advance reverse uses
+/// (01105, 01106, 01108, 01109), because the flip is step 2 of the Rules
+/// Reference's advance procedure rather than a triggered ability. One card
+/// serving both decks keeps the fixture surface to a single code family.
+///
+/// Composed into [`install_test_registry`], and into out-of-crate mocks the way
+/// [`metadata_for_test_inv`] is:
+///
+/// ```ignore
+/// fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
+///     game_core::test_support::abilities_for_terminal(code)
+///         .or_else(|| /* mock-specific lookups */)
+/// }
+/// ```
+#[must_use]
+pub fn abilities_for_terminal(code: &crate::state::CardCode) -> Option<Vec<crate::dsl::Ability>> {
+    use crate::dsl::{forced_on_event, reach_resolution, EventPattern, EventTiming};
+    let n: u8 = code
+        .as_str()
+        .strip_prefix(TEST_TERMINAL_PREFIX)?
+        .parse()
+        .ok()?;
+    Some(vec![
+        forced_on_event(
+            EventPattern::ActAdvanced,
+            EventTiming::After,
+            reach_resolution(n),
+        ),
+        forced_on_event(
+            EventPattern::AgendaAdvanced,
+            EventTiming::After,
+            reach_resolution(n),
+        ),
+    ])
+}
+
+/// Install `base` with the synthetic terminal cards ([`terminal_code`]) composed
+/// into its `abilities_for`, so a fixture whose act/agenda deck ends in one gets
+/// its reverse served alongside whatever `base` already knows.
+///
+/// For **integration tests in other crates**, which install a real registry
+/// (`cards::REGISTRY`, `synth_cards::TEST_REGISTRY`) into the process-global
+/// `OnceLock` and so cannot compose at the definition site the way
+/// [`install_test_registry`] does. Call it exactly where the plain install went:
+///
+/// ```ignore
+/// #[ctor::ctor(unsafe)]
+/// fn install() {
+///     game_core::test_support::install_registry_with_terminal_cards(cards::REGISTRY);
+/// }
+/// ```
+///
+/// Idempotent, and — like [`card_registry::install`](crate::card_registry::install)
+/// — first-install-wins.
+pub fn install_registry_with_terminal_cards(base: crate::card_registry::CardRegistry) {
+    use crate::card_registry::CardRegistry;
+    use crate::state::CardCode;
+    static BASE: std::sync::OnceLock<CardRegistry> = std::sync::OnceLock::new();
+    fn abilities_for(code: &CardCode) -> Option<Vec<crate::dsl::Ability>> {
+        abilities_for_terminal(code)
+            .or_else(|| BASE.get().and_then(|base| (base.abilities_for)(code)))
+    }
+    let _ = BASE.set(base);
+    let _ = crate::card_registry::install(CardRegistry {
+        abilities_for,
+        ..base
+    });
+}
+
 /// Metadata lookup for the synthetic `TEST_INV` investigator code.
 ///
 /// Integration tests in `crates/game-core/tests/` install their own
@@ -67,9 +160,16 @@ pub fn metadata_for_test_inv(
     (code.as_str() == TEST_INV).then(test_inv_metadata)
 }
 
-/// Install a minimal game-core test registry that knows `TEST_INV` (and only
-/// it). Idempotent; safe to call from any test. Capacity-reading code
-/// (`max_health()` / `max_sanity()` / soak / defeat) needs this installed.
+/// Install a minimal game-core test registry that knows `TEST_INV` and the
+/// synthetic terminal cards ([`terminal_code`]), and nothing else. Idempotent;
+/// safe to call from any test. Capacity-reading code (`max_health()` /
+/// `max_sanity()` / soak / defeat) needs this installed, and so does any fixture
+/// whose act/agenda deck ends in a terminal card — without the registry its
+/// reverse never fires and the advance finds no ending latched.
+///
+/// One registry for the whole crate because `OnceLock<CardRegistry>` is
+/// process-global: a second per-test install would collide (the same constraint
+/// that put [`fire_forced_on_enter`] here).
 pub fn install_test_registry() {
     use crate::state::CardCode;
     static INSTALL: std::sync::OnceLock<()> = std::sync::OnceLock::new();
@@ -77,8 +177,8 @@ pub fn install_test_registry() {
         fn metadata_for(code: &CardCode) -> Option<&'static crate::card_data::CardMetadata> {
             (code.as_str() == TEST_INV).then(test_inv_metadata)
         }
-        fn abilities_for(_: &CardCode) -> Option<Vec<crate::dsl::Ability>> {
-            None
+        fn abilities_for(code: &CardCode) -> Option<Vec<crate::dsl::Ability>> {
+            abilities_for_terminal(code)
         }
         let _ = crate::card_registry::install(crate::card_registry::CardRegistry {
             metadata_for,

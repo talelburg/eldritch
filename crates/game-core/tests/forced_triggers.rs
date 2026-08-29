@@ -396,7 +396,6 @@ fn state_with_doom_agenda() -> game_core::state::GameState {
     state.agenda_deck = vec![Agenda {
         code: CardCode(DOOM_AGENDA.into()),
         doom_threshold: 3,
-        resolution: None,
     }];
     state.agenda_index = 0;
     state
@@ -478,7 +477,6 @@ fn forced_on_phase_end_no_op_when_agenda_has_no_abilities() {
     state.agenda_deck = vec![Agenda {
         code: CardCode("plain-agenda".into()),
         doom_threshold: 3,
-        resolution: None,
     }];
     state.agenda_index = 0;
 
@@ -534,13 +532,11 @@ fn forced_on_phase_end_fires_act_ability() {
     state.act_deck = vec![Act {
         code: CardCode(DOOM_ACT.into()),
         clue_threshold: 3,
-        resolution: None,
     }];
     state.act_index = 0;
     state.agenda_deck = vec![Agenda {
         code: CardCode("plain-agenda".into()),
         doom_threshold: 3,
-        resolution: None,
     }];
     state.agenda_index = 0;
 
@@ -1271,13 +1267,11 @@ fn upkeep_phase_end_forced_resolves_before_the_round_end() {
     state.act_deck = vec![Act {
         code: CardCode(UPKEEP_END_ACT.into()),
         clue_threshold: 3,
-        resolution: None,
     }];
     state.act_index = 0;
     state.agenda_deck = vec![Agenda {
         code: CardCode(ROUND_END_AGENDA.into()),
         doom_threshold: 3,
-        resolution: None,
     }];
     state.agenda_index = 0;
 
@@ -1323,13 +1317,11 @@ fn board_with_two_phase_end_forced() -> game_core::state::GameState {
     state.act_deck = vec![Act {
         code: CardCode(DOOM_ACT.into()),
         clue_threshold: 3,
-        resolution: None,
     }];
     state.act_index = 0;
     state.agenda_deck = vec![Agenda {
         code: CardCode(DOOM_AGENDA.into()),
         doom_threshold: 3,
-        resolution: None,
     }];
     state.agenda_index = 0;
     state

@@ -58,12 +58,10 @@ async fn act_agenda_cards_render_name_and_thresholds() {
     state.act_deck = vec![Act {
         code: CardCode("_test_act".into()),
         clue_threshold: 2,
-        resolution: None,
     }];
     state.agenda_deck = vec![Agenda {
         code: CardCode("_test_agenda".into()),
         doom_threshold: 5,
-        resolution: None,
     }];
     state.agenda_doom = 1;
 

@@ -214,7 +214,6 @@ fn mid_investigation() -> game_core::state::GameState {
     state.act_deck = vec![Act {
         code: CardCode::new(ACT),
         clue_threshold: 0,
-        resolution: None,
     }];
     state.act_index = 0;
     state.encounter_deck.push_back(CardCode::new(TREACHERY));

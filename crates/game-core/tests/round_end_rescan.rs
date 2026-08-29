@@ -109,7 +109,6 @@ fn rescan_state() -> GameState {
     state.act_deck = vec![Act {
         code: CardCode::new(TEST_ACT),
         clue_threshold: 0,
-        resolution: None,
     }];
     state.act_index = 0;
     state

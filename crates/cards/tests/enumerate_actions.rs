@@ -141,12 +141,10 @@ fn full_enumeration_covers_every_action_category_and_all_apply() {
         Act {
             code: CardCode("_act1".into()),
             clue_threshold: 2,
-            resolution: None,
         },
         Act {
             code: CardCode("_act2".into()),
             clue_threshold: 99,
-            resolution: None,
         },
     ];
 
@@ -225,12 +223,10 @@ fn the_corpus_act_and_agenda_are_reachable_but_offer_no_activation() {
     state.act_deck = vec![Act {
         code: CardCode::new(TRAPPED),
         clue_threshold: 2,
-        resolution: None,
     }];
     state.agenda_deck = vec![Agenda {
         code: CardCode::new(WHATS_GOING_ON),
         doom_threshold: 3,
-        resolution: None,
     }];
 
     let menu = legal_actions(&state);

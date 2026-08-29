@@ -231,7 +231,6 @@ fn ancient_evils_places_doom_on_the_current_agenda_then_discards() {
     state.agenda_deck = vec![Agenda {
         code: CardCode::new("01105"),
         doom_threshold: 3,
-        resolution: None,
     }];
     let doom_before = state.agenda_doom;
 
