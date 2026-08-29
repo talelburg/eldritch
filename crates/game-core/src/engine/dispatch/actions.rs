@@ -1117,7 +1117,7 @@ mod actions_tests {
         // suppressed, the action point + AoO damage persist.
         // Investigator has 1 health, enemy deals 1 damage → lethal AoO.
         //
-        // Note: `apply_investigator_defeat` clears `current_location` to `None`
+        // Note: `apply_investigator_elimination` clears `current_location` to `None`
         // on defeat — the investigator is removed from their location as part of
         // defeat resolution. The key invariant is that no `InvestigatorMoved`
         // event fires and the investigator does NOT appear at the destination.

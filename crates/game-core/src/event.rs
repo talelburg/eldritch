@@ -18,8 +18,8 @@ use card_dsl::card_data::CardType;
 use crate::dsl::Determination;
 use crate::scenario::ScenarioEnding;
 use crate::state::{
-    CardCode, CardInstanceId, ChaosToken, DefeatCause, EnemyId, InvestigatorId, LocationId, Phase,
-    SkillKind, TokenResolution, UseKind, Zone,
+    CardCode, CardInstanceId, ChaosToken, EliminationCause, EnemyId, InvestigatorId, LocationId,
+    Phase, SkillKind, TokenResolution, UseKind, Zone,
 };
 
 /// One state-change record emitted by the engine.
@@ -323,17 +323,23 @@ pub enum Event {
         /// say "defeat this enemy").
         by: Option<InvestigatorId>,
     },
-    /// An investigator was defeated. The investigator's
-    /// [`Status`](crate::state::Status) has been flipped from
-    /// `Active` to `Killed` / `Insane` (or `Resigned` once the
-    /// Resign action lands). The investigator entry stays in
-    /// `state.investigators` so consumers can still identify them by
+    /// An investigator was eliminated from the scenario. The investigator's
+    /// [`Status`](crate::state::Status) has been flipped from `Active` to
+    /// `Killed` / `Insane` / `Defeated` / `Resigned`. The investigator entry
+    /// stays in `state.investigators` so consumers can still identify them by
     /// id; they just can't take actions or be targeted as "active."
-    InvestigatorDefeated {
-        /// The defeated investigator.
+    ///
+    /// **Elimination, not defeat** — `glossary/Elimination.md` opens *"A player
+    /// is eliminated from a scenario any time his or her investigator is
+    /// defeated, or if he or she resigns"*, and `glossary/Resign.md` is
+    /// explicit that an investigator who resigns *"is not considered to have
+    /// been defeated"*. Defeat is one [`EliminationCause`] among four, so the
+    /// umbrella term is the one the event carries (#644).
+    InvestigatorEliminated {
+        /// The eliminated investigator.
         investigator: InvestigatorId,
-        /// What caused the defeat.
-        cause: DefeatCause,
+        /// What eliminated them.
+        cause: EliminationCause,
     },
     /// An investigator's player deck was shuffled. State inspection
     /// has the new order; this event is the announcement.
@@ -395,12 +401,18 @@ pub enum Event {
         code: CardCode,
     },
     /// Every investigator in `state.investigators` is now non-Active.
-    /// Fires immediately after the [`InvestigatorDefeated`] that
-    /// flipped the last active investigator. Scenario-resolution
+    /// Fires immediately after the [`InvestigatorEliminated`] that
+    /// flipped the last active investigator.
+    ///
+    /// `TODO(#816)`: **the name outlived the rule.** Since #644 this fires for a
+    /// scenario nobody was defeated in — every investigator resigned — and
+    /// `glossary/Elimination.md` step 6 asks about *"no remaining players"*, not
+    /// about defeat. Renaming it is #816's; `CONTEXT.md`'s **Elimination** entry
+    /// is the standard it currently breaks. Scenario-resolution
     /// flow (#74) consumes this when it lands; for now, downstream
     /// listeners can use it as a "scenario lost" trigger.
     ///
-    /// [`InvestigatorDefeated`]: Event::InvestigatorDefeated
+    /// [`InvestigatorEliminated`]: Event::InvestigatorEliminated
     AllInvestigatorsDefeated,
     /// An investigator played a card from their hand. Fires before
     /// any `Trigger::OnPlay` effects resolve (the play *causes* the

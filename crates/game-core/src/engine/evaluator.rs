@@ -477,6 +477,10 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         }
         Effect::ForEach { .. } => awaiting_input_stub("ForEach"),
         Effect::ChooseOne(branches) => step_choose_one(cx, branches, eval_ctx, effect),
+        Effect::Resign => {
+            crate::engine::dispatch::elimination::resign_investigator(cx, eval_ctx.controller);
+            EngineOutcome::Done
+        }
         Effect::AdvanceCurrentAct => apply_advance_current_act(cx),
         Effect::ReachResolution(n) => apply_reach_resolution(cx, *n),
         Effect::PlaceDoomOnCurrentAgenda { count, may_advance } => {
@@ -5117,7 +5121,7 @@ mod tests {
         use crate::state::Status;
         // Apply damage that exactly reaches max_health (8 from TEST_INV) via
         // Effect::Deal and assert the investigator is Killed and
-        // InvestigatorDefeated is emitted. Pre-load 5 accumulated_damage so
+        // InvestigatorEliminated is emitted. Pre-load 5 accumulated_damage so
         // 5 + 3 = 8 = defeated with a 3-damage deal.
         crate::test_support::install_test_registry();
         let id = InvestigatorId(1);
@@ -5137,7 +5141,7 @@ mod tests {
         assert_eq!(state.investigators[&id].status, Status::Killed);
         assert_event!(
             events,
-            Event::InvestigatorDefeated { investigator, .. } if *investigator == id
+            Event::InvestigatorEliminated { investigator, .. } if *investigator == id
         );
     }
 

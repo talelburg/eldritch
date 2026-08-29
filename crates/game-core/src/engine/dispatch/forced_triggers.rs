@@ -514,7 +514,7 @@ pub(super) fn collect_forced_hits(
             //   ("Any card that player owns but does not control…"), so if
             //   cross-player control ever lands, this scan needs an ownership
             //   field to filter on rather than a re-reading.
-            // - **no `Status` filter.** `apply_investigator_defeat` flips status
+            // - **no `Status` filter.** `apply_investigator_elimination` flips status
             //   before running the steps, so the investigator this point names is
             //   never `Active` — filtering on it (as `GameEnd`/`RoundEnded` do,
             //   #567) would drop every hit.

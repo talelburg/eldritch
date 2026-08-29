@@ -5,16 +5,24 @@ use super::super::outcome::EngineOutcome;
 use super::Cx;
 use crate::event::Event;
 use crate::state::{
-    CardInPlay, CardInstanceId, Continuation, DefeatCause, EliminationStep, EnemyId,
+    CardInPlay, CardInstanceId, Continuation, EliminationCause, EliminationStep, EnemyId,
     InvestigatorId, Status,
 };
 
 #[cfg(test)]
 use crate::state::{CardCode, LocationId, Phase};
 
-/// Flip an Active investigator's status to the appropriate defeated variant for
-/// `cause` and emit [`Event::InvestigatorDefeated`]. No-op if the investigator
-/// is already non-Active (an investigator can only be defeated once per attack).
+/// Flip an Active investigator's status to the variant `cause` implies and emit
+/// [`Event::InvestigatorEliminated`]. No-op if the investigator is already
+/// non-Active — an investigator is eliminated once, and only once.
+///
+/// **Elimination, not defeat.** `glossary/Elimination.md` opens *"A player is
+/// eliminated from a scenario any time his or her investigator is defeated, **or
+/// if he or she resigns**"* and then gives the steps once, so this one helper
+/// serves both — the four [`EliminationCause`]s differ in the status they land
+/// on and in nothing else. [`EliminationCause::Resigned`] in particular is *not*
+/// a defeat (`glossary/Resign.md`), which is why the umbrella term names the
+/// function and the event; see [`resign_investigator`].
 ///
 /// # Then one of two paths (#638)
 ///
@@ -33,17 +41,17 @@ use crate::state::{CardCode, LocationId, Phase};
 /// [`Status`]: crate::state::Status
 /// [`Status::Killed`]: crate::state::Status::Killed
 /// [`Status::Insane`]: crate::state::Status::Insane
-pub(super) fn apply_investigator_defeat(
+pub(super) fn apply_investigator_elimination(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    cause: DefeatCause,
+    cause: EliminationCause,
 ) {
     let inv = cx.state
         .investigators
         .get_mut(&investigator)
         .unwrap_or_else(|| {
             unreachable!(
-                "apply_investigator_defeat: investigator {investigator:?} is not in the investigators map; \
+                "apply_investigator_elimination: investigator {investigator:?} is not in the investigators map; \
              this is a state-corruption invariant violation"
             )
         });
@@ -51,12 +59,12 @@ pub(super) fn apply_investigator_defeat(
         return;
     }
     inv.status = match cause {
-        DefeatCause::Damage => Status::Killed,
-        DefeatCause::Horror => Status::Insane,
-        DefeatCause::Resigned => Status::Resigned,
-        DefeatCause::CardAbility => Status::Defeated,
+        EliminationCause::Damage => Status::Killed,
+        EliminationCause::Horror => Status::Insane,
+        EliminationCause::Resigned => Status::Resigned,
+        EliminationCause::CardAbility => Status::Defeated,
     };
-    cx.events.push(Event::InvestigatorDefeated {
+    cx.events.push(Event::InvestigatorEliminated {
         investigator,
         cause,
     });
@@ -117,7 +125,7 @@ pub(super) fn apply_investigator_defeat(
 ///
 /// Arming the flag is inert by comparison — the frame is already on the stack,
 /// and the loop reaches it in its own time. That also makes this safe on the
-/// step-0 weakness path, where [`apply_investigator_defeat`] returns before
+/// step-0 weakness path, where [`apply_investigator_elimination`] returns before
 /// steps 1–6 have run: the frame waits for [`drive_elimination`] to finish
 /// either way.
 ///
@@ -138,7 +146,7 @@ pub(super) fn apply_investigator_defeat(
 /// later from [`drive_elimination`], so announcing here is the one position that
 /// fires exactly once on both paths without duplicating the push into the frame
 /// driver. The turn is over the moment the status flips, so the log reads
-/// `InvestigatorDefeated` → `TurnEnded` → the teardown that follows.
+/// `InvestigatorEliminated` → `TurnEnded` → the teardown that follows.
 ///
 /// # All investigators defeated
 ///
@@ -165,7 +173,7 @@ fn end_turn_on_elimination(cx: &mut Cx, investigator: InvestigatorId) {
 /// ends"* Forced ability — i.e. whether Elimination step 0 has anything to fire.
 ///
 /// Asks the step-0 scan itself rather than re-deriving the predicate, so the
-/// fork in [`apply_investigator_defeat`] cannot drift from what the scan
+/// fork in [`apply_investigator_elimination`] cannot drift from what the scan
 /// collects — including its RR p.2 "no potential to change the game state" drop,
 /// which is conservative for a native effect (a Cover Up holding no clues still
 /// routes elimination onto the frame; the ability then resolves to nothing,
@@ -405,7 +413,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
 
 /// Apply `amount` horror to an investigator. If their accumulated
 /// horror reaches `max_sanity`, flip status to [`Status::Insane`],
-/// emit [`Event::InvestigatorDefeated`], and (if no `Active`
+/// emit [`Event::InvestigatorEliminated`], and (if no `Active`
 /// investigators remain) emit [`Event::AllInvestigatorsDefeated`].
 ///
 /// No-ops when `amount == 0` or the investigator is already defeated.
@@ -418,7 +426,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
 /// [`place_assignment`](super::combat::place_assignment) handles the
 /// simultaneous-placement + investigator-defeat semantics. The
 /// single-source-damage twin [`take_damage`] is symmetric for
-/// [`DefeatCause::Damage`]. Enemy attacks (which deal both damage and horror
+/// [`EliminationCause::Damage`]. Enemy attacks (which deal both damage and horror
 /// from one source) reach the same entry via
 /// [`enemy_attack`](super::combat::enemy_attack).
 ///
@@ -437,7 +445,7 @@ pub(crate) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8)
 }
 
 /// Apply `amount` damage to `investigator` via the numeric helper,
-/// then apply defeat (cause [`DefeatCause::Damage`]) if it was lethal.
+/// then apply defeat (cause [`EliminationCause::Damage`]) if it was lethal.
 /// The single-source-damage twin of `take_horror` — called by
 /// `Effect::Deal`'s evaluator (the `HarmKind::Damage` arm).
 ///
@@ -462,7 +470,7 @@ pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
 ///
 /// The card-local (#276) entry point onto the ordinary defeat path: it flips
 /// status to [`Status::Defeated`], announces
-/// [`Event::InvestigatorDefeated`] with [`DefeatCause::CardAbility`], and runs
+/// [`Event::InvestigatorEliminated`] with [`EliminationCause::CardAbility`], and runs
 /// Rules Reference p.10 Elimination — including step 6, *"If there are no
 /// remaining players, the scenario ends"*, which is how a card that defeats the
 /// last active investigator reaches
@@ -472,13 +480,43 @@ pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
 /// **No-ops on an investigator who is not `Active`** — one who has already been
 /// killed, driven insane, or resigned is not defeated again. That is what lets a
 /// card printing *"each investigator that has not resigned"* skip the filter:
-/// `apply_investigator_defeat`'s own status gate is the filter.
+/// `apply_investigator_elimination`'s own status gate is the filter.
 ///
 /// The twin of [`take_damage`] / `take_horror` for the non-numeric case: those
 /// route through the soak entry because damage and horror can be absorbed, and a
 /// card-ability defeat cannot be.
 pub fn defeat_investigator(cx: &mut Cx, investigator: InvestigatorId) {
-    apply_investigator_defeat(cx, investigator, DefeatCause::CardAbility);
+    apply_investigator_elimination(cx, investigator, EliminationCause::CardAbility);
+}
+
+/// Resign `investigator` from the scenario — the semantics of
+/// [`Effect::Resign`](crate::dsl::Effect::Resign), and the only producer of
+/// [`EliminationCause::Resigned`].
+///
+/// `glossary/Resign.md`: *"When an investigator resigns, the investigator is
+/// eliminated by resignation (see 'Elimination' on page 10.) An investigator
+/// who resigns is not considered to have been defeated."*
+///
+/// **One procedure, no branch.** `glossary/Elimination.md` opens *"A player is
+/// eliminated from a scenario any time his or her investigator is defeated, **or
+/// if he or she resigns**"* and then gives steps 0–6 once, so this runs the
+/// identical path [`defeat_investigator`] does and differs only in the cause it
+/// carries. Two consequences worth naming, both from that shared path:
+///
+/// - Step 2 places the resigner's clues **at the location they resigned from**,
+///   so walking out of the Parlor 01115 leaves those clues on the board for act
+///   1 to keep counting.
+/// - Step 6 — *"If there are no remaining players, the scenario ends"* — is
+///   reached through [`check_all_defeated`], so the last investigator resigning
+///   ends the scenario at
+///   [`ScenarioEnding::NoResolution`](crate::scenario::ScenarioEnding::NoResolution)
+///   rather than at a resolution point. That ending is **not** a loss; see the
+///   **No resolution reached** entry in `CONTEXT.md`.
+///
+/// **No-ops on an investigator who is not `Active`**, via
+/// `apply_investigator_elimination`'s own status gate.
+pub(crate) fn resign_investigator(cx: &mut Cx, investigator: InvestigatorId) {
+    apply_investigator_elimination(cx, investigator, EliminationCause::Resigned);
 }
 
 /// Emit [`Event::AllInvestigatorsDefeated`] when no `Active`
@@ -487,7 +525,7 @@ pub fn defeat_investigator(cx: &mut Cx, investigator: InvestigatorId) {
 /// **Contract for callers:** *any* code path that flips a
 /// `Status::Active` investigator to a non-`Active` status (Killed,
 /// Insane, Resigned) must call this helper afterwards. Currently the
-/// only status-flipping path is [`apply_investigator_defeat`], so
+/// only status-flipping path is [`apply_investigator_elimination`], so
 /// that one helper is the only caller; future paths that flip status
 /// outside this helper (a scenario effect that bypasses the standard
 /// defeat-cause routing) need to add a call too — otherwise the event
@@ -552,13 +590,13 @@ mod elimination_tests {
         let mut state = GameStateBuilder::default().with_investigator(inv).build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(
+        apply_investigator_elimination(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
             id,
-            DefeatCause::Damage,
+            EliminationCause::Damage,
         );
 
         let after = &state.investigators[&id];
@@ -597,13 +635,13 @@ mod elimination_tests {
             .build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(
+        apply_investigator_elimination(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
             id,
-            DefeatCause::Damage,
+            EliminationCause::Damage,
         );
 
         assert_eq!(
@@ -649,13 +687,13 @@ mod elimination_tests {
             .build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(
+        apply_investigator_elimination(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
             dead,
-            DefeatCause::Damage,
+            EliminationCause::Damage,
         );
 
         assert_event!(events, Event::EnemyDisengaged { enemy, investigator }
@@ -697,13 +735,13 @@ mod elimination_tests {
             .build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(
+        apply_investigator_elimination(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
             dead,
-            DefeatCause::Damage,
+            EliminationCause::Damage,
         );
 
         assert_event!(events, Event::EnemyDisengaged { enemy, investigator }
@@ -784,13 +822,13 @@ mod elimination_tests {
             .build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(
+        apply_investigator_elimination(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
             dead,
-            DefeatCause::Horror,
+            EliminationCause::Horror,
         );
 
         assert_eq!(state.investigators[&dead].status, Status::Insane);
@@ -832,13 +870,13 @@ mod elimination_tests {
             .build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(
+        apply_investigator_elimination(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
             dead,
-            DefeatCause::Damage,
+            EliminationCause::Damage,
         );
 
         assert_event!(events, Event::EnemyDisengaged { enemy, investigator }
@@ -861,13 +899,13 @@ mod elimination_tests {
         let mut state = GameStateBuilder::default().with_investigator(inv).build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(
+        apply_investigator_elimination(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
             id,
-            DefeatCause::Damage,
+            EliminationCause::Damage,
         );
 
         assert_eq!(
@@ -894,13 +932,13 @@ mod elimination_tests {
         let mut state = GameStateBuilder::default().with_investigator(inv).build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(
+        apply_investigator_elimination(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
             id,
-            DefeatCause::Damage,
+            EliminationCause::Damage,
         );
 
         assert!(
@@ -959,13 +997,13 @@ mod elimination_tests {
         let mut state = two_investigator_open_turn(dead);
         let mut events = Vec::new();
 
-        apply_investigator_defeat(
+        apply_investigator_elimination(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
             dead,
-            DefeatCause::Damage,
+            EliminationCause::Damage,
         );
 
         assert_eq!(
@@ -989,13 +1027,13 @@ mod elimination_tests {
         let mut state = two_investigator_open_turn(active);
         let mut events = Vec::new();
 
-        apply_investigator_defeat(
+        apply_investigator_elimination(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
             dead,
-            DefeatCause::Damage,
+            EliminationCause::Damage,
         );
 
         assert_eq!(
@@ -1018,13 +1056,13 @@ mod elimination_tests {
             .build();
         let mut events = Vec::new();
 
-        apply_investigator_defeat(
+        apply_investigator_elimination(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
             dead,
-            DefeatCause::Horror,
+            EliminationCause::Horror,
         );
 
         assert_eq!(turn_frame(&state), None);
@@ -1046,13 +1084,13 @@ mod elimination_tests {
         }
         let mut events = Vec::new();
 
-        apply_investigator_defeat(
+        apply_investigator_elimination(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
             dead,
-            DefeatCause::Damage,
+            EliminationCause::Damage,
         );
 
         assert_eq!(turn_frame(&state), Some((dead, true)));
@@ -1065,24 +1103,24 @@ mod elimination_tests {
         // resignation" and "is not considered to have been defeated" — but
         // eliminated all the same, so 2.2.1 sends the turn to 2.2.2 either way.
         //
-        // Forward-looking: no Resign action exists yet (`DefeatCause::Resigned`
-        // is still "a placeholder slot until the Resign action lands"), so this
-        // pins the behaviour for when one does rather than covering live code.
-        let dead = InvestigatorId(1);
-        let mut state = two_investigator_open_turn(dead);
+        // Live since #644: `resign_investigator` is the producer, reached from
+        // `Effect::Resign` on the Parlor 01115. The whole trail through a real
+        // activation is `crates/cards/tests/resign.rs`; this pins the turn-end
+        // half at the unit seam.
+        let resigner = InvestigatorId(1);
+        let mut state = two_investigator_open_turn(resigner);
         let mut events = Vec::new();
 
-        apply_investigator_defeat(
+        resign_investigator(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
-            dead,
-            DefeatCause::Resigned,
+            resigner,
         );
 
-        assert_eq!(state.investigators[&dead].status, Status::Resigned);
-        assert_eq!(turn_frame(&state), Some((dead, true)));
+        assert_eq!(state.investigators[&resigner].status, Status::Resigned);
+        assert_eq!(turn_frame(&state), Some((resigner, true)));
     }
 
     /// `glossary/Defeat.md`: *"An investigator might also be defeated by a card
@@ -1109,8 +1147,8 @@ mod elimination_tests {
             Status::Defeated,
             "not Killed (damage) and not Insane (horror)",
         );
-        assert_event!(events, Event::InvestigatorDefeated { investigator, cause }
-            if *investigator == a && *cause == DefeatCause::CardAbility);
+        assert_event!(events, Event::InvestigatorEliminated { investigator, cause }
+            if *investigator == a && *cause == EliminationCause::CardAbility);
         assert_eq!(
             state.investigators[&b].status,
             Status::Active,
@@ -1172,6 +1210,6 @@ mod elimination_tests {
             Status::Resigned,
             "the resigned investigator is left alone",
         );
-        assert_no_event!(events, Event::InvestigatorDefeated { .. });
+        assert_no_event!(events, Event::InvestigatorEliminated { .. });
     }
 }

@@ -9,7 +9,7 @@
 //! for `TEST_INV` only.
 //!
 //! Elimination is reached through the **real** path (a lethal Grasping Hands
-//! revelation driven via `apply`); `apply_investigator_defeat` stays `pub(super)`.
+//! revelation driven via `apply`); `apply_investigator_elimination` stays `pub(super)`.
 //!
 //! ## Verified card text (`data/arkhamdb-snapshot`, 2026-07-17)
 //!

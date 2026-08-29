@@ -981,7 +981,7 @@ fn investigator_card_overflow_eliminates_the_investigator() {
     state = result.state;
 
     // The investigator card reached its printed health → elimination, with
-    // the damage cause (Killed). The InvestigatorDefeated event fired.
+    // the damage cause (Killed). The InvestigatorEliminated event fired.
     assert_eq!(
         state.investigators[&inv_id].status,
         Status::Killed,
@@ -990,10 +990,10 @@ fn investigator_card_overflow_eliminates_the_investigator() {
     assert!(
         result.events.iter().any(|e| matches!(
             e,
-            Event::InvestigatorDefeated { investigator, cause }
-                if *investigator == inv_id && *cause == game_core::state::DefeatCause::Damage
+            Event::InvestigatorEliminated { investigator, cause }
+                if *investigator == inv_id && *cause == game_core::state::EliminationCause::Damage
         )),
-        "InvestigatorDefeated {{ cause: Damage }} emitted: {:?}",
+        "InvestigatorEliminated {{ cause: Damage }} emitted: {:?}",
         result.events
     );
     // The investigator card was NOT discarded to a pile as if it were an

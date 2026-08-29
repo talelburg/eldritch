@@ -35,6 +35,6 @@ pub use game_state::{
     SkillTestFollowUp, SkillTestId, SkillTestStep, SpawnEngagePending, TimingMode, TimingSub,
     UpkeepResume,
 };
-pub use investigator::{DefeatCause, Investigator, InvestigatorId, Status};
+pub use investigator::{EliminationCause, Investigator, InvestigatorId, Status};
 pub use location::{Location, LocationId};
 pub use phase::Phase;

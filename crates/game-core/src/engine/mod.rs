@@ -323,8 +323,8 @@ mod tests {
     use crate::event::{Event, FailureReason};
     use crate::state::EnemyId;
     use crate::state::{
-        AbilitySource, CardCode, ChaosToken, DefeatCause, GameState, InvestigatorId, LocationId,
-        Phase, SkillKind, Status, TokenModifiers, TokenResolution, Zone,
+        AbilitySource, CardCode, ChaosToken, EliminationCause, GameState, InvestigatorId,
+        LocationId, Phase, SkillKind, Status, TokenModifiers, TokenResolution, Zone,
     };
     use crate::test_support::{
         apply_no_commits, dispatch_turn_action_unchecked, perform_skill_test,
@@ -3262,9 +3262,9 @@ mod tests {
         );
         assert_event!(
             result.events,
-            Event::InvestigatorDefeated {
+            Event::InvestigatorEliminated {
                 investigator,
-                cause: DefeatCause::Damage,
+                cause: EliminationCause::Damage,
             } if *investigator == inv_id
         );
         // Status flipped to Killed.
@@ -3320,9 +3320,9 @@ mod tests {
         );
         assert_event!(
             result.events,
-            Event::InvestigatorDefeated {
+            Event::InvestigatorEliminated {
                 investigator,
-                cause: DefeatCause::Horror,
+                cause: EliminationCause::Horror,
             } if *investigator == inv_id
         );
         assert_eq!(result.state.investigators[&inv_id].status, Status::Insane);
@@ -3347,7 +3347,7 @@ mod tests {
         );
         assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.investigators[&inv_id].status, Status::Active);
-        assert_no_event!(result.events, Event::InvestigatorDefeated { .. });
+        assert_no_event!(result.events, Event::InvestigatorEliminated { .. });
         // Move proceeds.
         assert_event!(result.events, Event::InvestigatorMoved { .. });
     }
@@ -3403,9 +3403,9 @@ mod tests {
             r2.state.continuations,
         );
         // Exactly one DamageTaken event (from the chosen first AoO) and one
-        // InvestigatorDefeated; the second enemy never attacks (early-break).
+        // InvestigatorEliminated; the second enemy never attacks (early-break).
         assert_event_count!(r2.events, 1, Event::DamageTaken { .. });
-        assert_event_count!(r2.events, 1, Event::InvestigatorDefeated { .. });
+        assert_event_count!(r2.events, 1, Event::InvestigatorEliminated { .. });
         // Only one AoO fired: pre-loaded 7 + first AoO's 5 = 12; if the
         // second AoO had fired too, damage() would be 17 instead.
         assert_eq!(r2.state.investigators[&inv_id].damage(), 12);
@@ -3452,13 +3452,13 @@ mod tests {
         // Pre-loaded 3 + attack 5 = 8; horror 0 + 1 = 1.
         assert_eq!(result.state.investigators[&inv_id].damage(), 8);
         assert_eq!(result.state.investigators[&inv_id].horror(), 1);
-        // Exactly one InvestigatorDefeated, caused by Damage.
-        assert_event_count!(result.events, 1, Event::InvestigatorDefeated { .. });
+        // Exactly one InvestigatorEliminated, caused by Damage.
+        assert_event_count!(result.events, 1, Event::InvestigatorEliminated { .. });
         assert_event!(
             result.events,
-            Event::InvestigatorDefeated {
+            Event::InvestigatorEliminated {
                 investigator,
-                cause: DefeatCause::Damage,
+                cause: EliminationCause::Damage,
             } if *investigator == inv_id
         );
         assert_eq!(result.state.investigators[&inv_id].status, Status::Killed);
@@ -3500,12 +3500,12 @@ mod tests {
         // damage: 0 + 1 = 1; horror: pre-loaded 3 + attack 5 = 8.
         assert_eq!(result.state.investigators[&inv_id].damage(), 1);
         assert_eq!(result.state.investigators[&inv_id].horror(), 8);
-        assert_event_count!(result.events, 1, Event::InvestigatorDefeated { .. });
+        assert_event_count!(result.events, 1, Event::InvestigatorEliminated { .. });
         assert_event!(
             result.events,
-            Event::InvestigatorDefeated {
+            Event::InvestigatorEliminated {
                 investigator,
-                cause: DefeatCause::Horror,
+                cause: EliminationCause::Horror,
             } if *investigator == inv_id
         );
         assert_eq!(result.state.investigators[&inv_id].status, Status::Insane);
@@ -3515,7 +3515,7 @@ mod tests {
     fn aoo_with_both_lethal_defeats_once_with_damage_cause() {
         // Both stats cross their threshold from the same attack. Per
         // the enemy_attack doc comment, the tie-break is
-        // DefeatCause::Damage (Rules Reference is silent on the
+        // EliminationCause::Damage (Rules Reference is silent on the
         // simultaneous-lethal case; damage-first is the convention).
         let (inv_id, _, b, enemy_id, mut state) = move_scenario_with_engaged_enemy();
         // Pre-load both counters so remaining health and sanity = 1 each.
@@ -3546,12 +3546,12 @@ mod tests {
         // Pre-loaded 7 + attack 1 = 8 each.
         assert_eq!(result.state.investigators[&inv_id].damage(), 8);
         assert_eq!(result.state.investigators[&inv_id].horror(), 8);
-        assert_event_count!(result.events, 1, Event::InvestigatorDefeated { .. });
+        assert_event_count!(result.events, 1, Event::InvestigatorEliminated { .. });
         assert_event!(
             result.events,
-            Event::InvestigatorDefeated {
+            Event::InvestigatorEliminated {
                 investigator,
-                cause: DefeatCause::Damage,
+                cause: EliminationCause::Damage,
             } if *investigator == inv_id
         );
         assert_eq!(result.state.investigators[&inv_id].status, Status::Killed);
@@ -3608,7 +3608,7 @@ mod tests {
         assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_event!(
             result.events,
-            Event::InvestigatorDefeated { investigator, .. } if *investigator == inv1
+            Event::InvestigatorEliminated { investigator, .. } if *investigator == inv1
         );
         assert_no_event!(result.events, Event::AllInvestigatorsDefeated);
         assert_eq!(result.state.investigators[&inv1].status, Status::Killed);
@@ -3858,9 +3858,9 @@ mod tests {
         );
         assert_event!(
             result.events,
-            Event::InvestigatorDefeated {
+            Event::InvestigatorEliminated {
                 investigator,
-                cause: DefeatCause::Horror,
+                cause: EliminationCause::Horror,
             } if *investigator == id
         );
         assert_eq!(result.state.investigators[&id].status, Status::Insane);

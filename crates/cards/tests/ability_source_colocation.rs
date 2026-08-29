@@ -26,12 +26,14 @@
 //! which build the same board shape one crate down.
 //!
 //! Own integration-test binary so it can install a hand-rolled `CardRegistry`.
-//! **No corpus card can exercise this**: the Parlor 01115 (*"[action]
-//! **Resign.** 'This is too much for me!' You run out the front door, fleeing
-//! in panic."*) and the basic weaknesses have no ability implementations, and
-//! shipping one is not available either — Resign's effect has nowhere to go
-//! until #644. Purpose-built abilities prove reachability directly. Prior art:
-//! `ability_source_control.rs`.
+//! The abilities are **purpose-built** rather than borrowed from the corpus, so
+//! that "reachable here" and "unreachable there" differ only in the source: the
+//! same three probes sit on the location, on the enemy, on the threat-area card
+//! and on the investigator card, and only one of them (`gain_resources`) is
+//! observable. The Parlor 01115's Resign is a real implementation since #644,
+//! but it is the wrong instrument here — it eliminates its user, so every case
+//! after the first would be reasoning about a board that no longer has an
+//! investigator on it. Prior art: `ability_source_control.rs`.
 
 use std::sync::OnceLock;
 

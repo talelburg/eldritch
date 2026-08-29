@@ -20,8 +20,8 @@ use game_core::engine::TimingEvent;
 use game_core::event::TraumaKind;
 use game_core::scenario::ScenarioEnding;
 use game_core::state::{
-    Act, Agenda, CardCode, Continuation, DefeatCause, Enemy, EnemyId, GameState, InvestigatorId,
-    Location, LocationId, Phase, Status, TimingMode,
+    Act, Agenda, CardCode, Continuation, EliminationCause, Enemy, EnemyId, GameState,
+    InvestigatorId, Location, LocationId, Phase, Status, TimingMode,
 };
 use game_core::test_support::{
     fire_forced_on_agenda_advance, fire_forced_on_phase_end, fire_forced_on_round_end,
@@ -346,7 +346,7 @@ fn defeat_order(events: &[Event]) -> Vec<InvestigatorId> {
     events
         .iter()
         .filter_map(|e| match e {
-            Event::InvestigatorDefeated { investigator, .. } => Some(*investigator),
+            Event::InvestigatorEliminated { investigator, .. } => Some(*investigator),
             _ => None,
         })
         .collect()
@@ -411,9 +411,9 @@ fn agenda_01107_reverse_at_act_3_defeats_the_unresigned_in_turn_order() {
         );
         assert!(events
             .iter()
-            .any(|e| matches!(e, Event::InvestigatorDefeated {
+            .any(|e| matches!(e, Event::InvestigatorEliminated {
                 investigator, cause
-            } if *investigator == id && *cause == DefeatCause::CardAbility)),);
+            } if *investigator == id && *cause == EliminationCause::CardAbility)),);
         assert!(
             events.iter().any(|e| matches!(e, Event::TraumaSuffered {
                 investigator, kind, amount

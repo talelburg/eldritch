@@ -5,7 +5,7 @@ use crate::engine::EngineOutcome;
 use crate::event::Event;
 use crate::state::{
     Assignment, AttackLoopStage, CardCode, CardInstanceId, Continuation, DealDamageStep,
-    DefeatCause, EnemyAttackSource, EnemyId, GameState, InvestigatorId, Status,
+    EliminationCause, EnemyAttackSource, EnemyId, GameState, InvestigatorId, Status,
 };
 
 use super::Cx;
@@ -408,11 +408,11 @@ pub(super) fn place_assignment(cx: &mut Cx, investigator: InvestigatorId, assign
     let hor_lethal = apply_horror_numeric(cx, investigator, assignment.investigator_horror);
     if dmg_lethal || hor_lethal {
         let cause = if dmg_lethal {
-            DefeatCause::Damage
+            EliminationCause::Damage
         } else {
-            DefeatCause::Horror
+            EliminationCause::Horror
         };
-        super::elimination::apply_investigator_defeat(cx, investigator, cause);
+        super::elimination::apply_investigator_elimination(cx, investigator, cause);
     }
 
     // An eliminated investigator's controlled assets are elimination's business,
@@ -437,10 +437,10 @@ pub(super) fn place_assignment(cx: &mut Cx, investigator: InvestigatorId, assign
 /// Add `amount` to the investigator's `damage` and emit
 /// [`Event::DamageTaken`]. Returns `true` iff the new total reaches
 /// `max_health` (i.e. the investigator now qualifies for defeat under
-/// [`DefeatCause::Damage`]).
+/// [`EliminationCause::Damage`]).
 ///
-/// Does NOT flip [`Status`] or emit [`Event::InvestigatorDefeated`] —
-/// the caller composes the defeat step via [`apply_investigator_defeat`]
+/// Does NOT flip [`Status`] or emit [`Event::InvestigatorEliminated`] —
+/// the caller composes the defeat step via [`apply_investigator_elimination`]
 /// when the return is `true`. This split exists so [`place_assignment`]
 /// can place damage AND horror on the investigator before either
 /// triggers defeat detection, matching the Rules Reference page 7
@@ -485,7 +485,7 @@ pub(super) fn apply_damage_numeric(cx: &mut Cx, investigator: InvestigatorId, am
 /// Symmetric to [`apply_damage_numeric`] but against `horror` /
 /// `max_sanity`. Returns `true` iff the new total reaches the
 /// max-sanity threshold; defeat application is the caller's
-/// responsibility (see [`super::elimination::apply_investigator_defeat`]).
+/// responsibility (see [`super::elimination::apply_investigator_elimination`]).
 pub(super) fn apply_horror_numeric(cx: &mut Cx, investigator: InvestigatorId, amount: u8) -> bool {
     if amount == 0 {
         return false;
@@ -1193,7 +1193,7 @@ fn suspend_order_pick(
 ///   and do not exhaust, per Rules Reference p.10 Elimination step 3 (*"All
 ///   enemies engaged with that player are placed at the location … unengaged"*)
 ///   and p.25 (*"Each ready, engaged enemy makes an attack"* — a disengaged enemy
-///   is not "engaged"). `apply_investigator_defeat` (#144) also clears
+///   is not "engaged"). `apply_investigator_elimination` (#144) also clears
 ///   `engaged_with`, so this is the simpler local form of a condition that holds
 ///   anyway.
 /// - **None left** — run the source-keyed tail ([`finish_attack_loop`]).

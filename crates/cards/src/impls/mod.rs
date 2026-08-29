@@ -49,6 +49,8 @@
 //!   `deal_horror(You, 1)`.
 //! - Cellar (01114) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
 //!   `deal_damage(You, 1)`.
+//! - Parlor (01115) — `Trigger::Activated { action_cost: 1 }` with the
+//!   **Resign** action designator + nullary `Effect::Resign`.
 //! - Deduction (01039) — `Trigger::OnSkillTestResolution` (Success-
 //!   gated) + `If(SkillTestKind(Investigate), DiscoverClue@TestedLocation)`.
 //! - Roland Banks (01001) — investigator. `Trigger::OnEvent`
@@ -95,6 +97,7 @@ pub mod mind_over_matter;
 pub mod obscuring_fog;
 pub mod old_book_of_lore;
 pub mod overpower;
+pub mod parlor;
 pub mod perception;
 pub mod physical_training;
 pub mod research_librarian;
@@ -149,6 +152,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         obscuring_fog::CODE => Some(obscuring_fog::abilities()),
         old_book_of_lore::CODE => Some(old_book_of_lore::abilities()),
         overpower::CODE => Some(overpower::abilities()),
+        parlor::CODE => Some(parlor::abilities()),
         perception::CODE => Some(perception::abilities()),
         physical_training::CODE => Some(physical_training::abilities()),
         research_librarian::CODE => Some(research_librarian::abilities()),
