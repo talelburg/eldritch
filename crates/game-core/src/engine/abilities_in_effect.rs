@@ -1,9 +1,16 @@
 //! Which side of a card is in effect right now (#774).
 //!
 //! A double-sided card prints text on both faces, and only one of them is in
-//! effect at a time. For a location the switch is [`Location::revealed`]: **a
-//! location's `back_text` abilities apply while it is unrevealed, and its
-//! front's while it is revealed.** The Parlor 01115 is the corpus's first
+//! effect at a time. For a location the switch is [`Location::revealed`], and
+//! `glossary/Location_Cards.md` puts it as a **reading instruction** rather
+//! than as a state flag:
+//!
+//! > Locations enter play in an "unrevealed" state, so that the side with no
+//! > shroud value and/or clue value is faceup. **Do not read the "revealed"
+//! > side at this time.**
+//!
+//! So: **a location's `back_text` abilities apply while it is unrevealed, and
+//! its front's while it is revealed.** The Parlor 01115 is the corpus's first
 //! card to need the distinction — its unrevealed back reads *"The entrance to
 //! the Parlor is blocked by a darkly glowing unfathomable barrier. You cannot
 //! move into the Parlor."*, and act 01109b lifts it by revealing (*"The
@@ -40,10 +47,15 @@
 //!
 //! # Why not "unrevealed ⇒ unenterable"
 //!
-//! That is not a rule. The Attic 01113 and the Cellar 01114 enter play
-//! unrevealed and are revealed **by** being entered
-//! (`dispatch::actions::resume_move_enter`). Only a location that prints a
-//! barrier on its back has one.
+//! That is not a rule — the same entry makes entry the thing that *reveals*:
+//! *"The first time a location is entered by an investigator, that location is
+//! revealed by turning it to its other side and placing a number of clues on
+//! it equal to its clue value."* So the Attic 01113 and the Cellar 01114 enter
+//! play unrevealed and are revealed **by** being entered
+//! (`dispatch::actions::resume_move_enter`, which reveals before the
+//! entered-location Forced window, so their front-side Forced abilities see a
+//! revealed location). Only a location that prints a barrier on its back has
+//! one.
 //!
 //! # Why every reader funnels through here
 //!

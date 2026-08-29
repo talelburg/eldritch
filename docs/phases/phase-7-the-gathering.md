@@ -21,6 +21,17 @@ are now #258's six children. The **playthrough is now an issue** (#769) and runs
 twice, once as reconnaissance before the fixes and once as the run of record.
 **Investigator breadth left**, to `phase-7.5-investigator-breadth`.
 
+**The Lita cluster was designed 2026-08-29** (`/grill-with-docs` over #771-#774), which
+added one issue to the wave and reordered it. **#820** — the set-aside zone is two
+collections in two representations, and cannot take a third card kind — is a prerequisite
+for #771 and is not one of #258's children. The wave's order is now **#774 → #820 → #771
+→ #772 → #773**, and #774 grew: enforcing the Parlor's barrier means reading a location's
+`back_text` as abilities that apply while it is unrevealed, which 19 of the 20 `back_text`
+locations in Core + Dunwich are waiting on. **#774 has since shipped (PR #822)** — the
+mechanism is `game_core::engine::abilities_in_effect`, and its module header carries the
+survey. The session also spun out **#821** (a constant
+`Restrict` cannot carry a condition), unmilestoned, which #774 does not need.
+
 ## Goal
 
 A solo human, in the browser, picks an investigator, sets up The Gathering,
@@ -111,10 +122,11 @@ the Tablet came out.
 | #809 ✅ PR #815 | Agenda 01107's `(→R3)` is conditional on the investigators being at act 1 or 2, and the engine latches it unconditionally |
 | #644 ✅ PR #817 | Elimination **by resignation** never happens — `Status::Resigned` / `DefeatCause::Resigned` exist and have never been constructed |
 | #805 ✅ PR #819 | An `ActionDesignator` is a pure tag that performs nothing, so a **Fight** ability and `Effect::Fight` are linked by convention alone |
-| #772 | Lita 01117 is an ability source nobody controls, so #708's walk never reaches her — and neither 01115's Parley nor her buffs are printed on the card that has them |
-| #771 | Set-aside is enemies-only, so act 01109b's *"Put the set-aside Lita Chantler into play"* has nowhere to go |
-| #773 | Lita 01117's controlled-side grants are location-scoped and reaction-driven; both collapse to one investigator in 1p |
-| #774 | The Parlor movement barrier — mandatory printed behaviour that was inheriting optional content's deferral |
+| #774 ✅ PR #822 | The Parlor movement barrier — mandatory printed behaviour that was inheriting optional content's deferral |
+| #820 | Set-aside locations are pre-built `Location`s while set-aside enemies are codes, so the zone cannot be one collection |
+| #771 → #820 | Set-aside is enemies-only, so act 01109b's *"Put the set-aside Lita Chantler into play"* has nowhere to go |
+| #772 → #771 | Lita 01117 is an ability source nobody controls, so #708's walk never reaches her — and neither 01115's Parley nor her buffs are printed on the card that has them |
+| #773 → #772 | Lita 01117's controlled-side grants are location-scoped and reaction-driven; both collapse to one investigator in 1p |
 | #775 | 01110b asks the lead investigator to choose the ending; the act's reverse reaches R1 unconditionally, so R2 is unreachable |
 | #811 | Agenda 01107's Ghoul move **rejects the player's action** whenever the Parlor is not yet in play — which agenda 3 reaches on its own doom clock, independent of act progress |
 | #814 | `Status` carries `Killed` / `Insane` alongside `Defeated`, but the rules make killed and insane **campaign-log states derived from trauma totals** — so a first defeat by damage is recorded as a kill |
@@ -169,42 +181,145 @@ the Tablet came out.
   have the potential to change the game state, the ability does not initiate."* —
   no destination, no move, no rejection. The same reading is already applied one
   line below to a Ghoul with no available step (#797).
-- **#772 — an uncontrolled asset is an unreachable ability source, and *"she gains"*
-  has no DSL.** Two gaps on one card pair. `glossary/Triggered_Abilities.md` bullet 2
-  reaches Lita 01117; #708's implementation of that bullet walks the location, its
-  attachments, co-located enemies and *other investigators'* threat areas, and she is
-  none of those. She is also the **first source with a `CardInstanceId` that nobody
-  controls**, so #708's `instance().is_none()` rejections do not cover her. Separately,
-  neither 01115's Parley nor 01117's buffs are *printed* on the card that has them —
-  each is granted under a mutually exclusive `While` predicate, and `card-dsl` has no
-  conditional granting. Taken as a native hook on #368's precedent, with one caveat
-  worth watching: #368's natives return `bool`, and a grant returns `Vec<Ability>` and
-  must be consulted wherever abilities are enumerated. If that spreads further than a
-  hook threads cleanly it is an **ADR**, not a `TODO`.
-- **#771 — set-aside assets.** Set-aside is enemies-only (`set_aside_enemies` +
-  `spawn_set_aside_enemy`), so act 01109b's *"Put the set-aside Lita Chantler into play
-  in the Parlor"* has nowhere to go while its neighbour *"Spawn the set-aside Ghoul
-  Priest in the Hallway"* works (#231).
-- **#773 — Lita 01117's controlled-side grants.** A location-scoped `+1 [combat]` for
-  *each* investigator there and a `+1` damage reaction on another investigator's
-  successful `[[Monster]]` attack. Both collapse to one investigator in 1p; implement
-  the printed predicate, not its degenerate case, or the test asserts nothing.
+- **The Lita cluster was designed 2026-08-29** (`/grill-with-docs` over #771-#774). The
+  session settled five things and changed the cluster's shape, so the bullets below are
+  the design rather than the finding. **Ordering is now #774 → #820 → #771 → #772 →
+  #773**, with #774 first because it is independent of the other four and gets the Parlor
+  correct before anything is put into it.
 - **#774 — the Parlor movement barrier**, split out of #258 because it is **mandatory
-  printed behaviour** that was inheriting optional content's deferral. Lands after
-  #651 and inherits its reading of where a block applies rather than inventing a second.
-  #651 has shipped, so that reading is now fixed: **the block is checked against the
-  compelled step, never baked into the graph** — distances and shortest paths run on
-  the full connection graph (`glossary/Nearest.md`: *"even if one or more of those
-  connections are blocked by another card ability"*) and a blocked step is a non-move
-  (`glossary/Hunter.md`). Two notes from that PR for whoever picks this up: the same
-  clause appears on a **fixed**-destination mover in `glossary/Patrol.md`, so it does
-  not depend on the target being a "nearest" one — which is why agenda 01107's forced
-  Ghoul move became **#797**, shipped in PR #798. So there is now exactly one
-  application site to inherit, not two: the enemy-side predicate is
-  `enemy_can_enter_location`, and both `hunter_destinations` and
-  `move_ghouls_toward_parlor` apply it to the compelled step. The graph-pruning
-  pathfinding variants (`bfs_distance_with`, `shortest_first_steps_with`) are gone
-  with the reading they served, so a new mover cannot reach for them by accident.
+  printed behaviour** that was inheriting optional content's deferral. **Shipped, PR #822**,
+  and it grew a mechanism on the way: **a location's `back_text` abilities apply while it is
+  unrevealed, its front's while it is revealed**, so 01115's back declares a plain
+  unconditional `Trigger::Constant` + `Effect::Restrict(InvestigatorMovementBlocked)` and
+  act 01109b's reveal is what lifts it. The mechanism lives in
+  `game_core::engine::abilities_in_effect`, whose module header carries the snapshot survey
+  that justifies it over a hardcode and the reason every reader funnels through one place
+  (front and back are different vectors, and an ability is addressed by
+  `(code, ability_index)`).
+  **Two movement predicates, not one**, is the decision worth keeping here, because it is
+  the one a later reader is most likely to try to undo. 01115's only ruling settles it:
+  *"**Q:** Can enemies move into Parlor even when investigators are blocked by the barrier?
+  **A:** Yes; in The Gathering scenario, enemies can move into The Parlor even when the
+  investigators are blocked by the barrier."* (<https://arkhamdb.com/card/01115>). The
+  Parlor blocks investigators and not enemies; Barricade 01038 blocks enemies and not
+  investigators — so `Restriction::InvestigatorMovementBlocked` sits beside
+  `EnemyMovementBlocked`, and both predicates live in `engine::dispatch::movement`. They
+  share #651's posture — the block is checked against the compelled step, never baked into
+  the graph (`glossary/Nearest.md`: *"even if one or more of those connections are blocked
+  by another card ability"*; `glossary/Hunter.md` for the non-move) — but the **Elite
+  exemption belongs to the enemy side alone**. #651 and #797 having shipped is why there
+  was exactly one application site to inherit; the graph-pruning pathfinding variants
+  (`bfs_distance_with`, `shortest_first_steps_with`) are gone with the reading they served,
+  so a new mover cannot reach for them by accident. The same clause appears on a
+  **fixed**-destination mover in `glossary/Patrol.md`, which is why 01107's forced Ghoul
+  move became #797 rather than riding #651.
+  Two things the survey turned up that the *next* issue in this area wants: **Sentinel Peak
+  02284** is the one `back_text` location that is a movement **cost** rather than a
+  restriction, and **Museum Halls 02127**'s back carries a *second* clause — it grants an
+  ability to a different location — which is #772's shape, not #821's.
+- **#820 — the set-aside zone cannot be one collection.** Prerequisite for #771, and a
+  change to already-shipped code, which is why it is its own issue rather than riding
+  #771: the ticket as filed was *"put an asset into play at a location"*, not that plus a
+  rewrite of the act-1 board build. The zone is two collections in two representations —
+  `set_aside_locations: Vec<Location>` (fully built, ids minted) and `set_aside_enemies:
+  Vec<CardCode>` (codes, because per-investigator health isn't known at `setup()`). #771
+  needs a third kind, and it is code-deferred like the enemy.
+  **Pre-building serves exactly one line**: `the_gathering.rs:205-207` calls
+  `state.connect(hallway, attic)` at setup, which needs both `LocationId`s to exist.
+  Everything else is downstream — `location_id_by_code` searches only `state.locations`, so
+  set-aside locations are **not addressable by code** and 01108's board-build hand-rolls its
+  own scan (`trapped.rs:74-80`); `GameState::location_mut` exists *solely* so `connect` can
+  reach the set-aside zone; and the drain is a wholesale `std::mem::take` with no per-location
+  entry logic. So: one `set_aside_cards: Vec<CardCode>`, type read from metadata at
+  put-into-play, and the topology moves to a **scenario-owned layout table** reached through
+  `ScenarioRegistry`. Not inline in 01108's `board_build`, which already means "build the
+  board": that works only because The Gathering's set-aside locations all arrive at once,
+  which is a property of this scenario — The Hidden Chamber 02214 and the Train Cars each
+  enter play individually. Connections are printed on the cards as symbols, but a field
+  census over all **1,257 locations** in the pinned snapshot finds no field for them (the
+  nearest are `back_link`, the a/b side pairing, and prose in `back_text`), so
+  scenario-owned layout is permanent rather than a stopgap. That upstream gap is
+  deliberately unfiled — a data question for another day.
+- **#771 — set-aside assets, and an uncontrolled card in play at a location.** Set-aside is
+  enemies-only (`set_aside_enemies` + `spawn_set_aside_enemy`), so act 01109b's *"Put the
+  set-aside Lita Chantler into play in the Parlor"* has nowhere to go while its neighbour
+  *"Spawn the set-aside Ghoul Priest in the Hallway"* works (#231). Her home is
+  **`Location.cards_at_location: Vec<CardInPlay>` + `Placement::AtLocation`**, not
+  `Location.attachments` — which would have been free, since reachability, the modifier
+  sweep and both instance walks already cover attachments, but `glossary/Attach_To.md` gives
+  the word semantics she does not have (*"an attachment remains attached until either the
+  attachment or the game element to which it is attached leaves play (in which case the
+  attachment is discarded)"*, plus `ModifierAudience::AttachedCard` and FAQ 1.14's
+  attachment-control rules). She is *put into play in* the Parlor, and the rules already
+  name that zone — `glossary/In_Play_and_Out_of_Play.md`: *"each encounter card in a
+  investigator's threat area **or at a location**, are all considered in play."* Rejected:
+  a global in-play collection with an `Option<InvestigatorId>` controller, which inverts the
+  controlled-collections addressing model for one card. Mechanically the new collection is
+  the attachment arm copied at ~6 sites — `instance_in_play` / `instance_in_play_mut`,
+  `colocated_sources` (the sixth arm of #708's predicate, and what makes her reachable),
+  `sweep` / `source_location`, and protocol/rendering.
+  Two smaller decisions ride along. **The act-2 reverse resolves in printed order** —
+  reveal the Parlor, put Lita in it, spawn the Priest — with validate-first moved to an
+  up-front check of all three preconditions; `the_barrier.rs` currently inverts reveal and
+  spawn on the grounds that they *"touch disjoint state"*, which stops being true once #774
+  makes `revealed` the barrier's gate. And **01109's Lita line stays behind its `TODO`
+  until #772**, because #771 alone would put an inert, unreachable card in the Parlor —
+  a worse board state than not having her.
+- **#772 — an uncontrolled asset is an unreachable ability source, and *"she gains"* has no
+  DSL.** Two gaps on one card pair. `glossary/Triggered_Abilities.md` bullet 2 reaches Lita
+  01117; #708's implementation walks the location, its attachments, co-located enemies and
+  *other investigators'* threat areas, and she is none of those. She is also the **first
+  source with a `CardInstanceId` that nobody controls**. Separately, neither 01115's Parley
+  nor 01117's buffs are *printed* on the card that has them — each is granted under a
+  mutually exclusive `While` predicate, and `glossary/Gains.md` makes that a real
+  distinction: *"'Gained' characteristics are not considered to be 'printed' on the card."*
+  **Settled as an ADR, not a `TODO`** — the caveat this issue flagged turned out to hold.
+  `CardRegistry::abilities_for` is `fn(&str) -> Option<Vec<Ability>>`, **state-free**, called
+  at **28 sites**; a grant is state-dependent. Rather than widening it, a new
+  `native_grants_for` hook (`fn(&GameState, &EvalContext) -> Vec<Ability>`, the
+  `Vec<Ability>`-returning sibling of #368's `bool` and #592's `Condition::Native`) is
+  funnelled through one helper `abilities_in_effect(state, code, placement)`. Six
+  *enumeration* sites migrate — turn menu, fast-window, forced scan, reaction scan,
+  `modified_value::sweep`, `reachable_sources`; the other 22 are card-local `abilities()`
+  lookups in `crates/cards` and do not move. **The native evaluates its own condition and
+  returns bare abilities**, which is what keeps #773 off #679 (see below). Promotion trigger
+  is the **third** consumer, and the candidate is already in the snapshot — Museum Halls
+  02127's unrevealed back grants an ability to a *different location* (*"Museum Entrance
+  gains: '\[action\]: Test \[combat\] (5) to attempt to break down the door to the
+  Museum…'"*), which is `tmm`, phase 10. The **take-control transition** is in scope and has
+  a shape problem worth knowing before starting: `glossary/Slots.md` says *"If playing **or
+  gaining control** of an asset would put an investigator above his or her slot limit …the
+  investigator must choose and discard other assets"*, and Lita is `slot: Ally` against a
+  corpus with three Allies in it — but `enter_asset_making_room` takes a `CardCode` and
+  mints a **fresh** instance, where taking control must preserve hers (usage counters,
+  accumulated damage). Her ruling also makes leaving play a removal rather than a discard:
+  *"If Lita leaves play while a player controls her temporarily … remove her from the game
+  (do not place her into any discard pile)."* (<https://arkhamdb.com/card/01117>) Finally,
+  `bump_usage_counter` needs no rejection arm: #771's `cards_at_location` gets the matching
+  arm in `instance_in_play_mut`, so an uncontrolled source is addressable and no
+  `unreachable!` is reached.
+- **#773 — Lita 01117's controlled-side grants**, both of which turned out to be **smaller
+  than the issue claimed**, because the machinery exists in each case. The `+1 [combat]`
+  premise that "existing skill modifiers are self-scoped" is stale:
+  `ModifierAudience::EachInvestigatorAtSourceLocation` exists
+  (`crates/card-dsl/src/dsl.rs:1364-1372`) and its doc-comment names this card by code, so
+  the half is a plain `modify(Stat::Combat, 1, WhileInPlay)` with that audience. **That
+  works only because #772's native evaluates its grant condition and returns a bare
+  `Effect::Modify`** — `modified_value::sweep` skips `Effect::If { then: Modify }`, the gap
+  tracked as **#679, which sits in phase-9**, and whose doc-comment names this exact card
+  (*"a decision about who 'you' is for a source with no controller"*). Wrapping the grant in
+  a condition would block this issue on a phase-9 issue. The `+1` damage needs no payload
+  either: `InFlightSkillTest::bonus_attack_damage` (Vicious Blow 01025's) is read at exactly
+  one site, `SkillTestFollowUp::Fight` (`dispatch/skill_test.rs:1607`) — which delivers her
+  ruling for free. *"Lita's +1 damage bonus only applies to **Fight** actions, not to any
+  other effects that deal damage (Sneak Attack, etc.)"* (<https://arkhamdb.com/card/01117>):
+  `ActionDesignator::Fight` performs a fight action, so Machete 01020 / .45 Automatic 01016
+  / .38 Special 01006 all qualify (the ruling scopes to any Fight *ability*, not the bare
+  action), while Dynamite Blast 01023 and Sneak Attack 01052 never construct that follow-up.
+  The work is the **trigger** — another investigator at her location successfully attacking
+  a `[[Monster]]` — not the payload. Implement the printed predicate (*each* investigator at
+  *her* location) rather than its 1p degenerate case, or the test asserts nothing. Earning
+  the Lita Chantler card at R1 stays **campaign-log driven and phase-9**.
 - **#775 — act 3's R1/R2 choice.** 01110b asks the lead investigator to choose the
   ending, and the act's resolution point is hardcoded to R1, so R2 is unreachable. Not
   a new finding: the 2026-08-22 sweep had already split it into **#766** as phase-9
