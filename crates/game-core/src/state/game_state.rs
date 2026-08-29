@@ -923,7 +923,7 @@ pub enum Continuation {
         step: ScenarioEndStep,
     },
     /// An investigator's elimination, in progress (#638). Pushed by
-    /// `apply_investigator_defeat` **only** when the investigator owns an in-play
+    /// `apply_investigator_elimination` **only** when the investigator owns an in-play
     /// weakness carrying a *"when the game ends"* Forced ability — Rules
     /// Reference p.10 Elimination **step 0**:
     ///
@@ -942,13 +942,13 @@ pub enum Continuation {
     /// # The fork, and what it costs
     ///
     /// With no such weakness there is nothing to sequence, so
-    /// `apply_investigator_defeat` runs the steps inline instead of pushing this
+    /// `apply_investigator_elimination` runs the steps inline instead of pushing this
     /// frame. That is not merely an optimisation: it keeps the far commoner path
     /// — every elimination bar a Roland holding clues on Cover Up — reading a
     /// *finished* elimination, exactly as it did before #638.
     ///
     /// The two paths are **not** equivalent for a caller that resumes after
-    /// `apply_investigator_defeat` returns. On this frame's path the investigator
+    /// `apply_investigator_elimination` returns. On this frame's path the investigator
     /// is already off `Status::Active`, but their cards are still in play and
     /// `check_all_defeated` has not run — so no `AllInvestigatorsDefeated` and no
     /// `ScenarioEnding` latch yet. Post-defeat bookkeeping must therefore key
@@ -961,7 +961,7 @@ pub enum Continuation {
     /// including step 0's own *"Then, remove those weaknesses from the game"*
     /// tail — ride this frame and run at `RunSteps`, after the whole sequence,
     /// so they are not the condition's impact and its `when` cell is safe to
-    /// walk. `apply_investigator_defeat`'s fork predicate must therefore ask
+    /// walk. `apply_investigator_elimination`'s fork predicate must therefore ask
     /// about **every** cell: a hardcoded one drops a retagged ability silently,
     /// by taking the inline path and removing the weakness unfired.
     ///
@@ -1130,7 +1130,7 @@ impl Continuation {
                 | Continuation::TimingPointWindow { .. }
                 | Continuation::EmitEvent { .. }
                 | Continuation::TimingPoint { .. }
-                // Not queued *by* an emit — `apply_investigator_defeat` pushes
+                // Not queued *by* an emit — `apply_investigator_elimination` pushes
                 // it — but it owes the loop the emit itself plus steps 1–6, and
                 // burying it strands an elimination mid-sequence exactly as it
                 // would strand an ability. Nothing can bury it today (an anchor

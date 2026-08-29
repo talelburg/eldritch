@@ -237,7 +237,7 @@ fn a_weakness_whose_condition_fails_suffers_nothing() {
 
 #[test]
 fn elimination_without_a_step_zero_ability_still_runs_its_steps() {
-    // The other side of the fork in `apply_investigator_defeat`: with nothing
+    // The other side of the fork in `apply_investigator_elimination`: with nothing
     // for step 0 to fire, elimination stays synchronous. Steps 1–6 must land
     // identically either way.
     let mut state = board("plain-card", 0, true);

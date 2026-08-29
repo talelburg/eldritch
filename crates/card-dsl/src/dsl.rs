@@ -133,7 +133,8 @@ pub enum ActionDesignator {
     /// (01138-01140) and Mob Enforcer 01101 print one.
     Parley,
     /// **Resign** — the Parlor 01115 and every resign location. The designator
-    /// only; resignation's own semantics are #644.
+    /// only; the resignation itself is [`Effect::Resign`] (#644), the same split
+    /// [`Fight`](Self::Fight) has from [`Effect::Fight`].
     Resign,
 }
 
@@ -1059,6 +1060,44 @@ pub enum Effect {
         /// `on_success` — success and margin-keyed-failure are separate axes.
         on_fail: Option<Box<Effect>>,
     },
+    /// Resign: eliminate the controller from the scenario **by resignation**.
+    ///
+    /// `glossary/Resign.md`, in full:
+    ///
+    /// > Some abilities are identified with a **Resign** action designator.
+    /// > Such abilities are initiated using the "Activate" action.
+    /// >
+    /// > - When an investigator resigns, the investigator is eliminated by
+    /// >   resignation (see "Elimination" on page 10.) An investigator who
+    /// >   resigns is not considered to have been defeated.
+    ///
+    /// Nullary: nothing in the corpus parameterises the resignation itself. The
+    /// Core-set printings are the Parlor 01115 — *\[action\] **Resign.** "This
+    /// is too much for me!" You run out the front door, fleeing in panic.* —
+    /// and Predator or Prey? 01121a, Time Is Running Short 01122 and the Main
+    /// Path 01149, which print *"\[action\]: **Resign.**"* and a flavour
+    /// sentence. Where a later card prints more, the extra is a **cost** or an
+    /// **eligibility clause** rather than a parameter of the resignation: Tear
+    /// Through Time 02322's *"\[action\] Spend 2 clues: **Resign.**"* rides
+    /// [`Cost`], and Escape the Tower 11617's *"\[action\] If you are at
+    /// Twisting Catwalks: **Resign.**"* rides the ability's eligibility. Both
+    /// hang off the [`Ability`], not off this effect.
+    ///
+    /// **The designator does not do this.** The bold word rides
+    /// [`Trigger::Activated`] as an [`ActionDesignator`] — a rules tag read by
+    /// the attack-of-opportunity predicate and by
+    /// [`ActionDesignator::action_class`] — while the action itself is
+    /// performed by the effect, exactly as Machete 01020 declares **Fight**
+    /// *and* roots in [`Fight`](Self::Fight). `TODO(#805)`: that relationship
+    /// is being inverted DSL-wide; a nullary `Resign` is the "empty
+    /// modification" the inversion keeps.
+    ///
+    /// Elimination then runs unbranched — `glossary/Elimination.md`'s steps 0–6
+    /// are one procedure for defeat and resignation alike — so the only thing
+    /// distinguishing this from a defeat is the `EliminationCause::Resigned`
+    /// it carries (`game-core` owns that enum; `card-dsl` has no workspace
+    /// dependencies to name it through).
+    Resign,
     /// Discard the firing card instance (the evaluator context's
     /// `source`). Locates the instance in a threat area or location
     /// attachment, removes it, and discards it to the encounter discard.
@@ -2121,6 +2160,12 @@ pub fn choose_one(effects: impl IntoIterator<Item = Effect>) -> Effect {
 #[must_use]
 pub fn advance_current_act() -> Effect {
     Effect::AdvanceCurrentAct
+}
+
+/// Build an [`Effect::Resign`]. Nullary — see the variant.
+#[must_use]
+pub fn resign() -> Effect {
+    Effect::Resign
 }
 
 /// Build an [`Effect::ReachResolution`] for the printed `(→R#)` number.

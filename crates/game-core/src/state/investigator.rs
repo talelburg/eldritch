@@ -22,7 +22,7 @@ pub struct InvestigatorId(pub u32);
 ///   [`investigator_card.accumulated_damage`](CardInPlay::accumulated_damage);
 ///   when [`damage()`](Self::damage) reaches [`max_health()`](Self::max_health)
 ///   the apply loop flips `status` to [`Status::Killed`] and emits
-///   [`Event::InvestigatorDefeated`]. Symmetric for horror /
+///   [`Event::InvestigatorEliminated`]. Symmetric for horror /
 ///   [`Status::Insane`]. The accessor methods are `u8` so they don't
 ///   wrap; the threshold check is what defines defeat.
 /// - Once `status != Status::Active`, the investigator is "out of
@@ -30,7 +30,7 @@ pub struct InvestigatorId(pub u32);
 ///   them take actions, and card effects targeting investigators
 ///   should filter by status.
 ///
-/// [`Event::InvestigatorDefeated`]: crate::event::Event::InvestigatorDefeated
+/// [`Event::InvestigatorEliminated`]: crate::event::Event::InvestigatorEliminated
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Investigator {
@@ -261,8 +261,15 @@ pub enum Status {
     /// `TODO(#814)`: a scenario defeat by horror is not insanity — see the note
     /// on the enum.
     Insane,
-    /// Investigator chose to resign from the scenario. Not yet
-    /// produced by the engine; the Resign action is downstream.
+    /// Investigator resigned from the scenario, via a **Resign** ability's
+    /// [`Effect::Resign`](card_dsl::dsl::Effect::Resign) — the Parlor 01115 is
+    /// the corpus's first (#644).
+    ///
+    /// `glossary/Resign.md`: *"When an investigator resigns, the investigator
+    /// is eliminated by resignation … An investigator who resigns is not
+    /// considered to have been defeated."* So this is the one non-`Active`
+    /// status that carries no defeat, and phase 9's campaign log reads that
+    /// distinction — trauma is owed for defeat, not for walking out.
     Resigned,
     /// Investigator was defeated, with no campaign-log consequence implied.
     ///
@@ -276,27 +283,35 @@ pub enum Status {
     ///
     /// **This is the variant #814 collapses the other two defeats into**, which
     /// is why it is named for the defeat rather than for the ability that caused
-    /// it: `DefeatCause` on [`Event::InvestigatorDefeated`] already carries the
+    /// it: `EliminationCause` on [`Event::InvestigatorEliminated`] already carries the
     /// cause, and that is where the rules put it.
     ///
-    /// [`Event::InvestigatorDefeated`]: crate::event::Event::InvestigatorDefeated
+    /// [`Event::InvestigatorEliminated`]: crate::event::Event::InvestigatorEliminated
     Defeated,
 }
 
-/// Why an investigator was defeated. Carried on
-/// [`Event::InvestigatorDefeated`] so consumers (campaign log,
-/// after-defeat triggers) know the cause without re-reading state.
+/// Why an investigator was eliminated from the scenario. Carried on
+/// [`Event::InvestigatorEliminated`] so consumers (campaign log,
+/// after-elimination triggers) know the cause without re-reading state.
 ///
-/// [`Event::InvestigatorDefeated`]: crate::event::Event::InvestigatorDefeated
+/// Three of the four causes are defeats; [`Resigned`](Self::Resigned) is not
+/// (`glossary/Resign.md`: *"An investigator who resigns is not considered to
+/// have been defeated"*). `glossary/Elimination.md` is what unifies them —
+/// *"A player is eliminated from a scenario any time his or her investigator
+/// is defeated, or if he or she resigns"* — and the procedure it then
+/// gives runs identically for all four.
+///
+/// [`Event::InvestigatorEliminated`]: crate::event::Event::InvestigatorEliminated
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
-pub enum DefeatCause {
+pub enum EliminationCause {
     /// Damage reached `max_health`.
     Damage,
     /// Horror reached `max_sanity`.
     Horror,
-    /// Investigator resigned. Not yet produced; reserved for the
-    /// Resign action.
+    /// Investigator resigned, via a **Resign** ability's
+    /// [`Effect::Resign`](card_dsl::dsl::Effect::Resign). Flips status to
+    /// [`Status::Resigned`]. **Not a defeat** — see the enum's own note.
     Resigned,
     /// A card ability defeated the investigator outright, with no damage
     /// or horror threshold involved — `glossary/Defeat.md`: *"An

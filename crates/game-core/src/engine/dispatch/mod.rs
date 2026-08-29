@@ -550,7 +550,7 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
         // this frame mid-play must still be placed, or popping the frame would
         // drop it out of the game silently, which is precisely the #604 failure.
         // In practice the frame is already empty: the only thing that flips an
-        // investigator off `Active` is `apply_investigator_defeat`, whose
+        // investigator off `Active` is `apply_investigator_elimination`, whose
         // elimination steps sweep the in-progress play off this very frame.
         // Since #638 those steps may run from a `Continuation::Elimination`
         // frame rather than inline, so what guarantees "already empty" here is

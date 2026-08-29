@@ -80,7 +80,7 @@
 //! — *"Taking trauma may cause an investigator to be killed or driven insane"* —
 //! and these investigators take one physical trauma, the first step on that
 //! track rather than its end. So the defeat carries
-//! [`game_core::DefeatCause::CardAbility`] and leaves
+//! [`game_core::EliminationCause::CardAbility`] and leaves
 //! [`game_core::Status::Defeated`], both distinct from the damage
 //! and horror values.
 //!
@@ -349,7 +349,7 @@ mod tests {
         events
             .iter()
             .filter_map(|e| match e {
-                Event::InvestigatorDefeated { investigator, .. } => Some(*investigator),
+                Event::InvestigatorEliminated { investigator, .. } => Some(*investigator),
                 _ => None,
             })
             .collect()

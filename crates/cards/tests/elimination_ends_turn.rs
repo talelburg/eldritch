@@ -1,7 +1,7 @@
 //! A defeated active investigator's turn ends (#764), driven through the public
 //! `apply` loop with the real card corpus installed.
 //!
-//! Before this, `apply_investigator_defeat` flipped the status and ran the
+//! Before this, `apply_investigator_elimination` flipped the status and ran the
 //! elimination steps but left the `InvestigatorTurn` frame on top with
 //! `ending: false` — so `drive` re-enumerated the open turn and prompted the
 //! investigator who had just been killed, with only `EndTurn` surviving

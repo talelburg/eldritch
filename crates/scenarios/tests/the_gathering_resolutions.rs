@@ -13,7 +13,7 @@ use game_core::engine::{apply, seat_and_open, EngineOutcome};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, DefeatCause, GameState, InvestigatorId, Status,
+    CardCode, ChaosBag, ChaosToken, EliminationCause, GameState, InvestigatorId, Status,
 };
 use game_core::test_support::take_turn_action;
 use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
@@ -426,8 +426,8 @@ fn dooming_out_the_terminal_agenda_at_act_3_defeats_the_table_and_reaches_no_res
     assert_event!(result.events, Event::AgendaAdvanced { from } if *from == 2);
     assert_event!(
         result.events,
-        Event::InvestigatorDefeated { investigator, cause }
-            if *investigator == INV && *cause == DefeatCause::CardAbility
+        Event::InvestigatorEliminated { investigator, cause }
+            if *investigator == INV && *cause == EliminationCause::CardAbility
     );
     assert_eq!(
         result.state.investigators[&INV].status,

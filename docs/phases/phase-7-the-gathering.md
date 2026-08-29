@@ -109,7 +109,7 @@ the Tablet came out.
 | #804 ✅ PR #807 | `Resolution` is `Won { id } \| Lost { reason }` — a standalone-mode projection, with no representation for the ending that reaches no resolution point ([ADR 0012](../adr/0012-a-scenario-ends-at-a-resolution-point-or-at-none.md)) |
 | #808 ✅ PR #810 | A terminal card's `(→R#)` is a flat `Option<ResolutionId>` field, so a reverse that *decides* — 01107's board-state branch, 01110's player choice — cannot be expressed, and a terminal card ends the scenario without ever flipping ([ADR 0013](../adr/0013-a-resolution-point-is-a-printed-effect.md)) |
 | #809 ✅ PR #815 | Agenda 01107's `(→R3)` is conditional on the investigators being at act 1 or 2, and the engine latches it unconditionally |
-| #644 | Elimination **by resignation** never happens — `Status::Resigned` / `DefeatCause::Resigned` exist and have never been constructed |
+| #644 ✅ PR #817 | Elimination **by resignation** never happens — `Status::Resigned` / `DefeatCause::Resigned` exist and have never been constructed |
 | #805 | An `ActionDesignator` is a pure tag that performs nothing, so a **Fight** ability and `Effect::Fight` are linked by convention alone |
 | #772 | Lita 01117 is an ability source nobody controls, so #708's walk never reaches her — and neither 01115's Parley nor her buffs are printed on the card that has them |
 | #771 | Set-aside is enemies-only, so act 01109b's *"Put the set-aside Lita Chantler into play"* has nowhere to go |
@@ -118,10 +118,11 @@ the Tablet came out.
 | #775 | 01110b asks the lead investigator to choose the ending; the act's reverse reaches R1 unconditionally, so R2 is unreachable |
 | #811 | Agenda 01107's Ghoul move **rejects the player's action** whenever the Parlor is not yet in play — which agenda 3 reaches on its own doom clock, independent of act progress |
 | #814 | `Status` carries `Killed` / `Insane` alongside `Defeated`, but the rules make killed and insane **campaign-log states derived from trauma totals** — so a first defeat by damage is recorded as a kill |
+| #816 | `Event::AllInvestigatorsDefeated` and `check_all_defeated` keep the word #644 renamed away from, and now fire for a scenario nobody was defeated in — everyone resigned |
 
 - **#814 — `Status` conflates the scenario's defeat/resign partition with the
-  campaign's killed/insane record.** `apply_investigator_defeat` maps
-  `DefeatCause::Damage => Status::Killed` and `Horror => Insane`, but killed and insane
+  campaign's killed/insane record.** `apply_investigator_elimination` maps
+  `EliminationCause::Damage => Status::Killed` and `Horror => Insane`, but killed and insane
   are neither scenario states nor consequences of *how* a defeat happened.
   `glossary/Campaign_Play.md` derives them from **accumulated trauma totals**: *"If an
   investigator has physical trauma equal to his or her printed health, the investigator
@@ -129,8 +130,8 @@ the Tablet came out.
   defeated and suffers 1 physical trauma — the engine marks them `Killed` on their first
   defeat of the campaign. The rules' partition is `Active` / defeated / resigned, with
   `Resigned` the one genuine non-defeat (`glossary/Resign.md`: *"An investigator who
-  resigns is not considered to have been defeated."*), and `DefeatCause` already rides
-  `Event::InvestigatorDefeated` to carry the flavour. Surveying every `text` /
+  resigns is not considered to have been defeated."*), and `EliminationCause` already
+  rides `Event::InvestigatorEliminated` to carry the flavour. Surveying every `text` /
   `back_text` in the snapshot: cards read **eliminated** (the union — Threads of Time
   04315, Dark Pact 04038) and **undefeated** (defeat vs. resignation — All In 02068),
   and impose killed/insane explicitly where they mean them (Chaos Incarnate 06289: *"Each
@@ -141,6 +142,21 @@ the Tablet came out.
   log: deleting the two variants loses nothing an observer needs today, and it clears the
   scenario layer so #766's *derivation* has one honest input rather than a field already
   claiming the answer.
+- **#816 — the half of the elimination rename #644 left behind.** #644 renamed
+  `Event::InvestigatorDefeated` / `DefeatCause` to `InvestigatorEliminated` /
+  `EliminationCause`, because `glossary/Resign.md` says a resigner *"is not considered
+  to have been defeated"* and the old names asserted what the rules deny.
+  `Event::AllInvestigatorsDefeated` and `check_all_defeated` kept theirs, and now fire
+  for a board where **nobody was defeated at all** — every investigator walked out
+  through a Resign ability (`crates/cards/tests/resign.rs` is the live case). The rules
+  supply the word twice: `glossary/Elimination.md` step 6 asks about *"no remaining
+  players"*, and `glossary/Winning_and_Losing.md` names the ending *"if all
+  investigators have been eliminated **or have resigned**"*. #644 scoped its rename to
+  the two symbols its own section 3 named rather than widen the wave's largest blast
+  radius, so this is the second rename; `CONTEXT.md`'s new **Elimination** entry is the
+  standard it currently breaks. Blast radius is `game-core` plus the `cards` and
+  `scenarios` integration tests — neither `protocol` nor `web` names it.
+
 - **#811 — 01107's Ghoul move rejects the player's action with no Parlor.**
   `move_ghouls_toward_parlor` resolves its destination first and returns
   `Rejected` when the Parlor (01115) is not in play — and since a rejection rolls
@@ -153,21 +169,6 @@ the Tablet came out.
   have the potential to change the game state, the ability does not initiate."* —
   no destination, no move, no rejection. The same reading is already applied one
   line below to a Ghoul with no available step (#797).
-- **#644 — Resign semantics.** Unblocked: #695 shipped as #707/#708/#709/#735, and
-  #696 already gave the engine `ActionDesignator::Resign` and its AoO exemption. What
-  is left is elimination **by resignation** — `Status::Resigned` / `DefeatCause::
-  Resigned` exist, are wired through elimination, and have never been constructed —
-  plus `glossary/Winning_and_Losing.md`'s *"no resolution being reached"* ending, which
-  #804 has by then given a correct latch to land in. #696's reviewer note stands:
-  tagging the Parlor 01115 is this issue's job. Resignation is `Effect::Resign`, a
-  nullary variant declared beside `ActionDesignator::Resign` — symmetric with how
-  `Effect::Fight` sits under a **Fight** designator today, and chosen over letting the
-  designator drive the elimination so that `impls/` carries one theory of what a
-  designator is rather than two. Elimination runs steps 0–6 unchanged
-  (`glossary/Elimination.md`: *"any time his or her investigator is defeated, **or if
-  he or she resigns**"* — one procedure, no branch), and `Event::InvestigatorDefeated`
-  / `DefeatCause` are renamed to `InvestigatorEliminated` / `EliminationCause`, since
-  the current names assert exactly what `glossary/Resign.md` denies.
 - **#805 — a designator performs its action; the effect carries the modification.**
   `ActionDesignator` is a pure rules tag — `provokes_aoo` and `action_class()` read it,
   and the ability's effect does the acting, so `machete.rs` declares **Fight** and
@@ -1193,9 +1194,9 @@ Roland's signature firing.
 
 Since the 2026-08-23 recharter, **"a resolution" means all three** — #769 runs to
 **Won** (R1 *or* R2, once #775 offers the choice), to **Lost**, and to **Resigned**
-(once #644 gives resignation semantics and Wave 3 makes the Parlor's `[action]`
-resolve). Two of those three are currently unreachable, which is why the optional
-content came into the gate.
+— the last of which #644 made reachable, tagging the Parlor 01115's `[action]`
+**Resign** and giving it `Effect::Resign` to resolve to. R2 is still unreachable
+until #775, which is why the optional content came into the gate.
 
 Difficulty and solo-2 are Future slices. Investigator breadth is
 [phase 7.5](phase-7.5-investigator-breadth.md).
