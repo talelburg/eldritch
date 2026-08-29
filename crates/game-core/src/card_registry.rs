@@ -79,6 +79,24 @@ pub struct CardRegistry {
     /// Look up hand-implemented abilities by code. Returns `None` for
     /// unimplemented (or unknown) cards.
     pub abilities_for: fn(&CardCode) -> Option<Vec<Ability>>,
+    /// Look up the abilities printed on a card's **reverse side** by code.
+    /// Returns `None` for a card with no implemented back-side abilities —
+    /// which is every card but the Parlor 01115 today.
+    ///
+    /// A location's back is in effect exactly while the location is
+    /// **unrevealed**, and its front exactly while it is revealed (#774), so
+    /// nothing reads this slot directly: engine code goes through
+    /// `engine::abilities_in_effect`, which owns
+    /// that choice. Reading `abilities_for` for a location instead is the bug
+    /// this slot exists to make impossible to write by accident — an
+    /// unrevealed Parlor would offer its front's **Resign**, and would not
+    /// carry its back's barrier.
+    ///
+    /// It is deliberately a second slot rather than a `side` tag on
+    /// [`Ability`]: the side is a property of where the text is printed, not
+    /// of the ability, and every non-location card in the corpus would carry
+    /// a field that is always `Front`.
+    pub back_abilities_for: fn(&CardCode) -> Option<Vec<Ability>>,
     /// Look up a card-local Rust effect by its [`Effect::Native`] tag.
     /// Returns `None` for unregistered tags.
     ///
@@ -196,6 +214,7 @@ mod tests {
             abilities_for: fake_abilities_for,
             native_effect_for: |_| None,
             native_eligibility_for: |_| None,
+            back_abilities_for: |_| None,
             native_condition_for: |_| None,
         }
     }

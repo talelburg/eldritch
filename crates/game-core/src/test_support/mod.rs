@@ -185,6 +185,7 @@ pub fn install_test_registry() {
             abilities_for,
             native_effect_for: |_| None,
             native_eligibility_for: |_| None,
+            back_abilities_for: |_| None,
             native_condition_for: |_| None,
         });
     });

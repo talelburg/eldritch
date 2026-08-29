@@ -538,7 +538,16 @@ fn sweep(
     out: &mut Vec<Contribution>,
 ) {
     let mut visit = |code: &CardCode, instance: Option<&CardInPlay>, placement: Placement| {
-        let Some(abilities) = (registry.abilities_for)(code) else {
+        // A location contributes the side that is in effect — its back's
+        // constants while unrevealed, its front's while revealed (#774).
+        // Everything else in play shows one face, so it reads the front.
+        let abilities = match placement {
+            Placement::Location(id) => {
+                crate::engine::abilities_in_effect::location_abilities(state, id)
+            }
+            _ => (registry.abilities_for)(code),
+        };
+        let Some(abilities) = abilities else {
             return;
         };
         for ability in &abilities {
@@ -903,6 +912,7 @@ mod tests {
             abilities_for: mock_abilities_for,
             native_effect_for: |_| None,
             native_eligibility_for: |_| None,
+            back_abilities_for: |_| None,
             native_condition_for: |_| None,
         }
     }

@@ -265,7 +265,8 @@ fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut 
     // window-eligible ones (so non-`Activated` indices are simply not offered).
     for (source, code) in crate::engine::ability_source::reachable_source_codes(state, investigator)
     {
-        let ability_count = (reg.abilities_for)(&code).map_or(0, |a| a.len());
+        let ability_count = crate::engine::abilities_in_effect::for_source(state, source, &code)
+            .map_or(0, |a| a.len());
         for idx in 0..ability_count {
             let ability_index = u8::try_from(idx).unwrap_or(u8::MAX);
             if crate::engine::dispatch::reaction_windows::check_activate_ability(
@@ -390,7 +391,14 @@ fn push_basic_actions(state: &GameState, investigator: InvestigatorId, out: &mut
         return;
     };
     for &dest in &from_loc.connections {
-        if dest != from && state.locations.contains_key(&dest) {
+        // The barrier filter is applied to the *step*, never to the graph
+        // (#651/#774): a blocked destination is simply not offered, and the
+        // connection itself stays on the map for everything that measures
+        // distance across it.
+        if dest != from
+            && state.locations.contains_key(&dest)
+            && crate::engine::dispatch::movement::investigator_can_enter_location(state, dest)
+        {
             out.push(TurnAction::Move {
                 investigator,
                 destination: dest,

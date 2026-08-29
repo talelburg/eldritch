@@ -15,6 +15,7 @@ use crate::action::InputResponse;
 use crate::card_data::{CardMetadata, CardType};
 use crate::card_registry;
 use crate::dsl::{Ability, ActionDesignator, EventPattern, EventTiming, Trigger, TriggerKind};
+use crate::engine::abilities_in_effect;
 use crate::engine::enumerate::TurnAction;
 use crate::engine::TimingEvent;
 use crate::event::{Event, LapseReason};
@@ -822,12 +823,12 @@ fn lapse_reason(state: &GameState, candidate: &ResolutionCandidate) -> LapseReas
     {
         return LapseReason::CostUnpayable;
     }
-    let still_eligible = card_registry::current()
-        .and_then(|reg| (reg.abilities_for)(&candidate.code))
-        .and_then(|abilities| abilities.get(usize::from(candidate.ability_index)).cloned())
-        .is_some_and(|ability| {
-            ability_can_initiate(state, &ability, candidate.source, candidate.controller)
-        });
+    let still_eligible =
+        abilities_in_effect::for_candidate_source(state, candidate.source, &candidate.code)
+            .and_then(|abilities| abilities.get(usize::from(candidate.ability_index)).cloned())
+            .is_some_and(|ability| {
+                ability_can_initiate(state, &ability, candidate.source, candidate.controller)
+            });
     if still_eligible {
         LapseReason::NoLongerEligible
     } else {
@@ -1050,21 +1051,30 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // Look up the ability fresh from the registry. The card may have
     // changed state between scan and fire (exhausted, used, …) but
     // its ability list is static, so registry lookup is sufficient.
-    let Some(reg) = card_registry::current() else {
+    //
+    // "Static" now means *static per side* (#774): a location shows its back's
+    // abilities while unrevealed and its front's while revealed, so a reveal
+    // between scan and fire would swap the vector the `ability_index` indexes.
+    // No back side in the corpus declares a triggered ability — the Parlor
+    // 01115's is a `Trigger::Constant`, which is inspected rather than
+    // scanned — so no candidate can be minted from a side that can flip. The
+    // first back-side *trigger* is what makes this a real ordering question.
+    if card_registry::current().is_none() {
         unreachable!(
             "fire_pending_trigger: registry was installed at scan time but is now \
              missing; the OnceLock contract guarantees once-set-stays-set"
         );
-    };
+    }
     // Abilities resolve by code (works for in-play instances and scenario
     // board cards alike); `source` is the firing instance, when any.
     let code = trigger.code.clone();
-    let abilities = (reg.abilities_for)(&code).unwrap_or_else(|| {
-        unreachable!(
-            "fire_pending_trigger: registry lost abilities for card {code:?} between \
-             scan and fire; the OnceLock contract guarantees stable lookups",
-        )
-    });
+    let abilities = abilities_in_effect::for_candidate_source(cx.state, trigger.source, &code)
+        .unwrap_or_else(|| {
+            unreachable!(
+                "fire_pending_trigger: registry lost abilities for card {code:?} between \
+                 scan and fire; the OnceLock contract guarantees stable lookups",
+            )
+        });
     let ability = abilities
         .get(usize::from(trigger.ability_index))
         .unwrap_or_else(|| {
@@ -2146,7 +2156,12 @@ pub(crate) fn check_activate_ability(
         costs,
         effect,
         usage_limit,
-    } = match super::abilities::resolve_activated_ability(&source_code, ability_index) {
+    } = match super::abilities::resolve_activated_ability(
+        state,
+        source,
+        &source_code,
+        ability_index,
+    ) {
         Ok(v) => v,
         Err(EngineOutcome::Rejected { reason }) => return Err(reason),
         Err(other) => {
@@ -2294,9 +2309,9 @@ pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
 /// that dispatch path verbatim. Empty when the registry isn't installed.
 pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
     let mut out = Vec::new();
-    let Some(reg) = crate::card_registry::current() else {
+    if crate::card_registry::current().is_none() {
         return out;
-    };
+    }
     for (&inv_id, inv) in &state.investigators {
         // Fast events / Fast assets in hand.
         for hand_idx_usize in 0..inv.hand.len() {
@@ -2317,7 +2332,7 @@ pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
         // and `[action]` together, so the fast window consults the same
         // reachability predicate the turn menu does (#707).
         for (source, code) in crate::engine::ability_source::reachable_source_codes(state, inv_id) {
-            let Some(abilities) = (reg.abilities_for)(&code) else {
+            let Some(abilities) = abilities_in_effect::for_source(state, source, &code) else {
                 continue;
             };
             for (ab_idx, ability) in abilities.iter().enumerate() {

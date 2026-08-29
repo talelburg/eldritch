@@ -50,7 +50,10 @@
 //! - Cellar (01114) — `Trigger::OnEvent` (`EnteredLocation`, `After`) +
 //!   `deal_damage(You, 1)`.
 //! - Parlor (01115) — `Trigger::Activated { action_cost: 1 }` with the
-//!   nullary **Resign** action designator, which performs the elimination.
+//!   nullary **Resign** action designator, which performs the elimination;
+//!   and the corpus's only **back-side** abilities (see [`back_abilities_for`]),
+//!   a `Trigger::Constant` `Restrict` that blocks investigator movement while
+//!   the location is unrevealed.
 //! - Deduction (01039) — `Trigger::OnSkillTestResolution` (Success-
 //!   gated) + `If(SkillTestKind(Investigate), DiscoverClue@TestedLocation)`.
 //! - Roland Banks (01001) — investigator. `Trigger::OnEvent`
@@ -169,6 +172,23 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         what_have_you_done::CODE => Some(what_have_you_done::abilities()),
         whats_going_on::CODE => Some(whats_going_on::abilities()),
         working_a_hunch::CODE => Some(working_a_hunch::abilities()),
+        _ => None,
+    }
+}
+
+/// Look up the abilities printed on a card's **reverse side** by code. Returns
+/// `None` for a card with no implemented back-side abilities.
+///
+/// A separate dispatch from [`abilities_for`], not a second arm of it: which
+/// side is in effect is the engine's question (for a location, its `revealed`
+/// flag — `game_core::engine::abilities_in_effect`), and a card declares only
+/// what each side says. The Parlor 01115 is the sole entry today; its back
+/// carries the barrier that blocks investigators until act 01109b reveals the
+/// location.
+#[must_use]
+pub fn back_abilities_for(code: &str) -> Option<Vec<Ability>> {
+    match code {
+        parlor::CODE => Some(parlor::back_abilities()),
         _ => None,
     }
 }

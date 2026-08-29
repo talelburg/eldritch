@@ -87,6 +87,38 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     state = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv }).state;
     assert_eq!(state.act_index, 1, "act 1 advanced to act 2");
 
+    // #774: the board act 1 builds puts the Parlor (01115) into play
+    // **unrevealed**, and its unrevealed back reads *"The entrance to the
+    // Parlor is blocked by a darkly glowing unfathomable barrier. You cannot
+    // move into the Parlor."* — so the Hallway investigator is not offered it,
+    // while the Attic and Cellar off the same Hallway stay reachable. Without
+    // the barrier an investigator could walk in from round 1 and skip act 2's
+    // gate entirely, which is exactly what this act-2 advance is.
+    let parlor_id = location_id(&state, "01115");
+    assert!(
+        !state.locations[&parlor_id].revealed,
+        "the Parlor enters play unrevealed",
+    );
+    let offered = game_core::engine::legal_actions(&state);
+    assert!(
+        !offered.contains(&TurnAction::Move {
+            investigator: inv,
+            destination: parlor_id,
+        }),
+        "the Parlor's barrier is up before act 2 advances; offered {offered:?}",
+    );
+    for code in ["01113", "01114"] {
+        let id = location_id(&state, code);
+        assert!(
+            offered.contains(&TurnAction::Move {
+                investigator: inv,
+                destination: id,
+            }),
+            "{code} is an ordinary Hallway neighbour and stays reachable; \
+             offered {offered:?}",
+        );
+    }
+
     // End the round: the cascade reaches step 4.6 and opens act 2's round-end
     // window (Hallway investigator holds >= 3 clues).
     let r = take_turn_action(state, &TurnAction::EndTurn);
@@ -159,6 +191,24 @@ fn drives_act_1_then_act_2_via_round_end_window() {
         .find(|l| l.code.as_str() == "01115")
         .expect("Parlor (01115) in play");
     assert!(parlor.revealed, "act 2's reverse reveals the Parlor");
+
+    // …and revealing it is what lifts the barrier (#774), which is the whole
+    // point of 01109b's *"The barrier blocking passage into the parlor has
+    // vanished. Reveal the Parlor."* The Hallway investigator can now move in.
+    assert!(
+        game_core::engine::investigator_can_enter_location(&r.state, parlor.id),
+        "the reveal lifts the barrier",
+    );
+}
+
+/// The id of the in-play location with `code`.
+fn location_id(state: &game_core::GameState, code: &str) -> LocationId {
+    state
+        .locations
+        .values()
+        .find(|l| l.code.as_str() == code)
+        .unwrap_or_else(|| panic!("location {code} in play"))
+        .id
 }
 
 #[test]
