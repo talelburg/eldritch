@@ -120,7 +120,7 @@ the Tablet came out.
 | #774 ✅ PR #822 | The Parlor movement barrier — mandatory printed behaviour that was inheriting optional content's deferral |
 | #820 ✅ PR #823 | Set-aside locations are pre-built `Location`s while set-aside enemies are codes, so the zone cannot be one collection |
 | #771 ✅ PR #825 | Set-aside is enemies-only, so act 01109b's *"Put the set-aside Lita Chantler into play"* has nowhere to go |
-| #772 | Lita 01117 is an ability source nobody controls, so #708's walk never reaches her — and neither 01115's Parley nor her buffs are printed on the card that has them |
+| #772 ✅ PR #830 | Lita 01117 is an ability source nobody controls, so #708's walk never reaches her — and neither 01115's Parley nor her buffs are printed on the card that has them |
 | #773 | Lita 01117's controlled-side grants are location-scoped and reaction-driven; both collapse to one investigator in 1p |
 | #775 | 01110b asks the lead investigator to choose the ending; the act's reverse reaches R1 unconditionally, so R2 is unreachable |
 | #811 | Agenda 01107's Ghoul move **rejects the player's action** whenever the Parlor is not yet in play — which agenda 3 reaches on its own doom clock, independent of act progress |
@@ -180,53 +180,22 @@ the Tablet came out.
   session settled five things and changed the cluster's shape, so the bullets below are
   the design rather than the finding. **The wave runs #774, #820, #771, #772, #773**, with
   #774 first because it is independent of the other four and gets the Parlor correct before
-  anything is put into it. #774, #820 and #771 have shipped; the mechanism #774 added —
+  anything is put into it. #774, #820, #771 and #772 have shipped, leaving **#773**; the
+  mechanism #774 added —
   a location's `back_text` abilities apply while it is unrevealed — is documented at
   `game_core::engine::abilities_in_effect`, and the two survey findings the rest of the
   cluster wants are that **Sentinel Peak 02284**'s back is a movement *cost* rather than a
   restriction, and **Museum Halls 02127**'s back grants an ability to a *different*
   location (#772's shape, not #821's).
-- **#772 — an uncontrolled asset is an unreachable ability source, and *"she gains"* has no
-  DSL.** Two gaps on one card pair. `glossary/Triggered_Abilities.md` bullet 2 reaches Lita
-  01117; #708's implementation walks the location, its attachments, co-located enemies and
-  *other investigators'* threat areas, and she is none of those. She is also the **first
-  source with a `CardInstanceId` that nobody controls**. Separately, neither 01115's Parley
-  nor 01117's buffs are *printed* on the card that has them — each is granted under a
-  mutually exclusive `While` predicate, and `glossary/Gains.md` makes that a real
-  distinction: *"'Gained' characteristics are not considered to be 'printed' on the card."*
-  **Settled as an ADR, not a `TODO`** — the caveat this issue flagged turned out to hold.
-  `CardRegistry::abilities_for` is `fn(&str) -> Option<Vec<Ability>>`, **state-free**, called
-  at **28 sites**; a grant is state-dependent. Rather than widening it, a new
-  `native_grants_for` hook (`fn(&GameState, &EvalContext) -> Vec<Ability>`, the
-  `Vec<Ability>`-returning sibling of #368's `bool` and #592's `Condition::Native`) is
-  funnelled through one helper `abilities_in_effect(state, code, placement)`. Six
-  *enumeration* sites migrate — turn menu, fast-window, forced scan, reaction scan,
-  `modified_value::sweep`, `reachable_sources`; the other 22 are card-local `abilities()`
-  lookups in `crates/cards` and do not move. **The native evaluates its own condition and
-  returns bare abilities**, which is what keeps #773 off #679 (see below). Promotion trigger
-  is the **third** consumer, and the candidate is already in the snapshot — Museum Halls
-  02127's unrevealed back grants an ability to a *different location* (*"Museum Entrance
-  gains: '\[action\]: Test \[combat\] (5) to attempt to break down the door to the
-  Museum…'"*), which is `tmm`, phase 10. The **take-control transition** is in scope and has
-  a shape problem worth knowing before starting: `glossary/Slots.md` says *"If playing **or
-  gaining control** of an asset would put an investigator above his or her slot limit …the
-  investigator must choose and discard other assets"*, and Lita is `slot: Ally` against a
-  corpus with three Allies in it — but `enter_asset_making_room` takes a `CardCode` and
-  mints a **fresh** instance, where taking control must preserve hers (usage counters,
-  accumulated damage). Her ruling also makes leaving play a removal rather than a discard:
-  *"If Lita leaves play while a player controls her temporarily … remove her from the game
-  (do not place her into any discard pile)."* (<https://arkhamdb.com/card/01117>) Finally,
-  `bump_usage_counter` needs no rejection arm: #771's `cards_at_location` gets the matching
-  arm in `instance_in_play_mut`, so an uncontrolled source is addressable and no
-  `unreachable!` is reached.
 - **#773 — Lita 01117's controlled-side grants**, both of which turned out to be **smaller
   than the issue claimed**, because the machinery exists in each case. The `+1 [combat]`
   premise that "existing skill modifiers are self-scoped" is stale:
   `ModifierAudience::EachInvestigatorAtSourceLocation` exists
   (`crates/card-dsl/src/dsl.rs:1364-1372`) and its doc-comment names this card by code, so
   the half is a plain `modify(Stat::Combat, 1, WhileInPlay)` with that audience. **That
-  works only because #772's native evaluates its grant condition and returns a bare
-  `Effect::Modify`** — `modified_value::sweep` skips `Effect::If { then: Modify }`, the gap
+  works only because #772's sweep evaluates the grant's own `condition` field and hands the
+  recipient a bare `Effect::Modify`** — `modified_value::sweep` skips
+  `Effect::If { then: Modify }`, the gap
   tracked as **#679, which sits in phase-9**, and whose doc-comment names this exact card
   (*"a decision about who 'you' is for a source with no controller"*). Wrapping the grant in
   a condition would block this issue on a phase-9 issue. The `+1` damage needs no payload

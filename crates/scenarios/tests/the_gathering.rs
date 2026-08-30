@@ -75,6 +75,27 @@ fn set_aside_codes(state: &game_core::GameState) -> Vec<String> {
         .collect()
 }
 
+/// Act 2's reverse leaves the Parlor (01115) revealed with Lita Chantler
+/// (01117) in play *at* it under nobody's control — lines 1 and 2 of the three
+/// it prints (#772).
+fn assert_parlor_revealed_with_lita(state: &game_core::state::GameState) {
+    let parlor = state
+        .locations
+        .values()
+        .find(|l| l.code.as_str() == "01115")
+        .expect("Parlor (01115) in play");
+    assert!(parlor.revealed, "act 2's reverse reveals the Parlor");
+    assert_eq!(
+        parlor
+            .cards_at_location
+            .iter()
+            .map(|c| c.code.as_str())
+            .collect::<Vec<_>>(),
+        ["01117"],
+        "Lita is put into play in the Parlor, under nobody's control",
+    );
+}
+
 #[test]
 fn drives_act_1_then_act_2_via_round_end_window() {
     let inv = InvestigatorId(1);
@@ -167,12 +188,16 @@ fn drives_act_1_then_act_2_via_round_end_window() {
          the Ghoul-Priest defeat advances it",
     );
 
-    // Act 2's reverse (#280) fired on advance: the set-aside Ghoul Priest
-    // (01116) is now in play in the Hallway (01112), and the Parlor (01115)
-    // is revealed. This makes act 3's "Ghoul Priest defeated" objective
-    // reachable in real play. Lita Chantler (01117) stays set aside until
-    // #772 unblocks 01109b's second line.
-    assert_eq!(set_aside_codes(&r.state), ["01117"]);
+    // Act 2's reverse (#280) fired on advance: all three of its printed lines
+    // ran, so the Parlor (01115) is revealed, Lita Chantler (01117) is in play
+    // *at* the Parlor under nobody's control (#772), and the set-aside Ghoul
+    // Priest (01116) is in the Hallway (01112) — which makes act 3's "Ghoul
+    // Priest defeated" objective reachable in real play.
+    assert!(
+        set_aside_codes(&r.state).is_empty(),
+        "the reverse emptied the set-aside zone, got {:?}",
+        set_aside_codes(&r.state),
+    );
     let priest = r
         .state
         .enemies
@@ -191,19 +216,16 @@ fn drives_act_1_then_act_2_via_round_end_window() {
         Some(hallway_id),
         "the Ghoul Priest spawns in the Hallway",
     );
-    let parlor = r
-        .state
-        .locations
-        .values()
-        .find(|l| l.code.as_str() == "01115")
-        .expect("Parlor (01115) in play");
-    assert!(parlor.revealed, "act 2's reverse reveals the Parlor");
+    assert_parlor_revealed_with_lita(&r.state);
 
     // …and revealing it is what lifts the barrier (#774), which is the whole
     // point of 01109b's *"The barrier blocking passage into the parlor has
     // vanished. Reveal the Parlor."* The Hallway investigator can now move in.
     assert!(
-        game_core::engine::investigator_can_enter_location(&r.state, parlor.id),
+        game_core::engine::investigator_can_enter_location(
+            &r.state,
+            location_id(&r.state, "01115"),
+        ),
         "the reveal lifts the barrier",
     );
 }

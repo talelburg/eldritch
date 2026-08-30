@@ -7,6 +7,7 @@
 use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId,
     InvestigatorId, Phase, TokenModifiers, UseKind,
@@ -72,7 +73,7 @@ fn fire(state: game_core::GameState) -> game_core::engine::ApplyResult {
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(WEAPON_INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         })
         .resolve_choices(|c| {
             c.commit_cards(&[]);

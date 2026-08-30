@@ -7,6 +7,7 @@
 
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId,
     FastActorScope, FastWindowKind, InvestigatorId, LocationId, Phase, PhaseStep,
@@ -254,7 +255,7 @@ fn weapon_fight_substituting_uses_intellect_and_keeps_weapon_damage() {
         &TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(WEAPON_INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(

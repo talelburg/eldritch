@@ -9,6 +9,7 @@ use game_core::dsl::HarmKind;
 use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Phase, UseKind,
 };
@@ -71,7 +72,7 @@ fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
         &TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(KIT_INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     )
 }
@@ -188,7 +189,7 @@ fn an_undamaged_solo_investigator_cannot_activate_first_aid() {
         &TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(KIT_INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(
@@ -217,7 +218,7 @@ fn the_turn_menu_does_not_offer_first_aid_with_nothing_to_heal() {
     let activation = TurnAction::ActivateAbility {
         investigator: INV,
         source: AbilitySource::InPlay(KIT_INST),
-        ability_index: 0,
+        address: AbilityAddress::Printed(0),
     };
     assert!(
         legal_actions(&board_with_harm(3, 2, 2)).contains(&activation),

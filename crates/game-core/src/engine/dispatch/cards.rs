@@ -6,7 +6,7 @@ use crate::card_data::CardType;
 use crate::card_registry;
 use crate::dsl::{Effect, Trigger};
 use crate::event::Event;
-use crate::state::{CardCode, CardInstanceId, InvestigatorId, Zone};
+use crate::state::{AssetEntry, CardCode, CardInPlay, CardInstanceId, InvestigatorId, Zone};
 
 use super::super::evaluator::{push_effect, EvalContext};
 use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
@@ -361,12 +361,34 @@ pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Op
     Some(card)
 }
 
-/// Discard `instance_id` from `investigator`'s `cards_in_play` to their discard
-/// pile, emitting [`Event::CardDiscarded`] `{ from: Zone::InPlay }`. Shared by
+/// Take `instance_id` out of `investigator`'s `cards_in_play` and file it where
+/// its **owner** says. Shared by
 /// [`Cost::DiscardSelf`](crate::dsl::Cost::DiscardSelf) payment, uses-depletion
 /// auto-discard, soak-defeat asset removal, and slot make-room (#498/#119). A
 /// missing instance is a state-corruption invariant violation (callers locate it
 /// first).
+///
+/// **Where a card goes when it leaves play is a question about its owner, not
+/// its controller** (#772). Those are the same investigator for every card in
+/// the corpus but one, so the ordinary case is unchanged — an owned card lands
+/// in its owner's discard with [`Event::CardDiscarded`] `{ from: Zone::InPlay }`.
+/// A **scenario-owned** card (`owner: None`) has no discard pile to land in and
+/// is removed from the game instead, with
+/// [`Event::CardRemovedFromGame`](crate::Event::CardRemovedFromGame). Lita
+/// Chantler 01117's ruling states the derivation
+/// (<https://arkhamdb.com/card/01117>): *"If Lita leaves play while a player
+/// controls her temporarily during 'The Gathering' scenario **(i.e. while she is
+/// technically not a part of that player's deck)**, remove her from the game (do
+/// not place her into any discard pile)."*
+///
+/// The parenthetical is why the question is *"whose is it"* rather than *"is it
+/// mine"*: a card another **player** owns is that player's to file, and
+/// `glossary/Ownership_and_Control.md` sends it to their pile — *"If a card
+/// would enter an out-of-play area that does not belong to the card's owner, the
+/// card is physically placed in its owner's equivalent out-of-play area
+/// instead."* Nothing in Core takes control off a teammate, but
+/// `control::take_control` accepts it, so the routing answers it rather than
+/// removing the card from the game by default.
 pub(in crate::engine) fn discard_card_from_play(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -385,12 +407,37 @@ pub(in crate::engine) fn discard_card_from_play(
             unreachable!("discard_card_from_play: instance {instance_id:?} not in cards_in_play")
         });
     let card = inv.cards_in_play.remove(pos);
-    inv.discard.push(card.code.clone());
-    cx.events.push(Event::CardDiscarded {
-        investigator,
-        code: card.code,
-        from: crate::state::Zone::InPlay,
+    place_card_leaving_play(cx, investigator, card);
+}
+
+/// File `card`, just taken out of play under `controller`, by its **owner** —
+/// the routing [`discard_card_from_play`]'s docs describe.
+///
+/// Separated so the owner lookup can borrow `cx.state` fresh: the owner may be
+/// somebody other than the controller whose collection the card was removed
+/// from, and an owner who has left the game has no pile either.
+fn place_card_leaving_play(cx: &mut Cx, controller: InvestigatorId, card: CardInPlay) {
+    let owners_pile = card.owner.and_then(|owner| {
+        cx.state
+            .investigators
+            .get_mut(&owner)
+            .map(|inv| (owner, inv))
     });
+    if let Some((owner, inv)) = owners_pile {
+        inv.discard.push(card.code.clone());
+        cx.events.push(Event::CardDiscarded {
+            investigator: owner,
+            code: card.code,
+            from: Zone::InPlay,
+        });
+    } else {
+        cx.state.removed_from_game.push(card.code.clone());
+        cx.events.push(Event::CardRemovedFromGame {
+            investigator: controller,
+            code: card.code,
+            from: Zone::InPlay,
+        });
+    }
 }
 
 /// Grant `amount` resources to `investigator`: saturating-add to the
@@ -1026,35 +1073,45 @@ pub(super) fn play_card(
     complete_play(cx, investigator, card)
 }
 
-/// Move the mid-play asset `card` into play (RR Appendix I step 4, "placed in
-/// play"): mint + seed its in-play instance, push it to `cards_in_play`, and
-/// announce it via the `EnteredPlay` timing event. The emit outcome is
-/// intentionally discarded — the frame driving this call is already popped, so
-/// the `drive` loop opens any after-enters-play reaction window (Research
-/// Librarian 01032) itself. Called by `slots::enter_asset_making_room` once the
-/// asset's slots are clear, whether that took a discard or not (#498). The caller
-/// owns the card (it left hand at step 3), so there is no hand lookup here to go
-/// stale (#565).
+/// Move the asset **instance** `card` into `investigator`'s play area (RR
+/// Appendix I step 4, "placed in play"): push it to `cards_in_play` and announce
+/// it via the `EnteredPlay` timing event. The emit outcome is intentionally
+/// discarded — the frame driving this call is already popped, so the `drive`
+/// loop opens any after-enters-play reaction window (Research Librarian 01032)
+/// itself. Called by `slots::enter_asset_making_room` once the asset's slots are
+/// clear, whether that took a discard or not (#498). The caller owns the card
+/// (it left hand at step 3), so there is no hand lookup here to go stale (#565).
+///
+/// **Takes the instance, not a code** (#772). A play from hand mints one on the
+/// way in and a take-control moves the one already on the board, and only the
+/// second of those has anything to preserve — Lita Chantler 01117 keeps her
+/// accumulated damage and horror, her uses and her usage counters as she changes
+/// hands. Minting here would have re-created her instead.
 pub(in crate::engine) fn enter_asset_into_play(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    card: CardCode,
+    card: CardInPlay,
+    entry: AssetEntry,
 ) {
-    let in_play = super::threat_area::new_in_play_instance(cx, card);
-    let instance = in_play.instance_id;
+    let instance = card.instance_id;
     cx.state
         .investigators
         .get_mut(&investigator)
         .expect("enter_asset_into_play: investigator present")
         .cards_in_play
-        .push(in_play);
-    let _ = super::emit::queue_event(
-        cx,
-        &super::emit::TimingEvent::EnteredPlay {
-            instance,
-            controller: investigator,
-        },
-    );
+        .push(card);
+    // Only a card that was out of play enters it. A card whose control changed
+    // was already in play and stays there, so announcing it would fire every
+    // after-enters-play reaction a second time (#772).
+    if entry == AssetEntry::PlayedFromHand {
+        let _ = super::emit::queue_event(
+            cx,
+            &super::emit::TimingEvent::EnteredPlay {
+                instance,
+                controller: investigator,
+            },
+        );
+    }
 }
 
 /// Dispose of a [`PlayFromHand`](crate::state::Continuation::PlayFromHand) frame
@@ -1097,7 +1154,15 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
             EngineOutcome::Done
         }
         super::PlayDestination::InPlay => {
-            super::slots::enter_asset_making_room(cx, investigator, card)
+            // Play from hand mints the instance here, at the door: the card is
+            // its owner's, so the mint carries that ownership in.
+            let instance = super::threat_area::new_in_play_instance(cx, card, Some(investigator));
+            super::slots::enter_asset_making_room(
+                cx,
+                investigator,
+                instance,
+                AssetEntry::PlayedFromHand,
+            )
         }
     }
 }

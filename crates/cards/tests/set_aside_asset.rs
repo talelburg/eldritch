@@ -39,11 +39,11 @@
 //!
 //! ## What is *not* here
 //!
-//! 01109b's second line stays behind a `TODO(#772)` in
-//! `cards::the_barrier::reverse`, so the act-2 advance still leaves Lita set
-//! aside. This file drives `put_set_aside_card_into_play` directly for the
-//! entry path, and asserts the reverse's own contract — printed order, and
-//! preconditions checked up front — separately.
+//! Lita's **Parley** — the ability the Parlor grants her once she is on the
+//! board — is #772's, and lives in `lita_parley.rs`. This file drives
+//! `put_set_aside_card_into_play` directly for the entry path, and asserts
+//! 01109b's own contract — printed order, and preconditions checked up front —
+//! separately.
 //!
 //! Own process → installs `cards::REGISTRY`.
 
@@ -351,21 +351,48 @@ fn the_reverse_resolves_in_printed_order() {
         .any(|e| e.code.as_str() == GHOUL_PRIEST));
 }
 
-/// Line 2 is still `TODO(#772)`: the reverse leaves Lita set aside and the
-/// Parlor empty, because an uncontrolled card nobody can reach is a worse board
-/// than no card at all.
+/// Line 2 — *"Put the set-aside Lita Chantler into play in the Parlor."* — puts
+/// her into play there under nobody's control (#772). She waited on the
+/// granting hook: until the Parlor's *"While Lita Chantler is not controlled by
+/// a player, she gains: \[action\] **Parley.** …"* existed she would have
+/// arrived inert, which is a worse board than not having her.
 #[test]
-fn the_reverse_leaves_lita_set_aside_until_772() {
+fn the_reverse_puts_lita_into_play_in_the_parlor() {
     let mut state = board();
     let (outcome, _) = reverse(&mut state);
     assert_eq!(outcome, EngineOutcome::Done);
 
-    assert_eq!(
+    assert!(
+        state.set_aside_cards.is_empty(),
+        "both set-aside cards left the zone, got {:?}",
         state.set_aside_cards,
-        vec![CardCode::new(LITA)],
-        "the Priest left the zone; Lita has not",
     );
-    assert!(state.locations[&PARLOR_ID].cards_at_location.is_empty());
+    let at_parlor = &state.locations[&PARLOR_ID].cards_at_location;
+    assert_eq!(at_parlor.len(), 1, "one card at the Parlor");
+    assert_eq!(at_parlor[0].code.as_str(), LITA);
+    assert_eq!(
+        at_parlor[0].owner, None,
+        "she is scenario-owned; the reverse gives nobody control of her",
+    );
+}
+
+/// The reverse checks **Lita's** precondition up front too: a board where she
+/// is no longer set aside rejects before the reveal, rather than half-resolving.
+#[test]
+fn the_reverse_rejects_when_lita_is_not_set_aside() {
+    let mut state = board();
+    state.set_aside_cards.retain(|c| c.as_str() != LITA);
+
+    let (outcome, events) = reverse(&mut state);
+    assert!(
+        matches!(&outcome, EngineOutcome::Rejected { reason } if reason.contains("Lita")),
+        "a missing Lita must reject, got {outcome:?}",
+    );
+    assert!(
+        !state.locations[&PARLOR_ID].revealed,
+        "the Parlor must not have been revealed by a reverse that cannot finish",
+    );
+    assert!(events.is_empty(), "no event on reject, got {events:?}");
 }
 
 /// The preconditions are checked **up front**, not implied by the ordering:

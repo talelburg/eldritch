@@ -71,8 +71,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::card_registry::CardRegistry;
 use crate::dsl::{
-    Ability, CmpOp, Condition, Determination, Effect, EnemyTarget, HarmKind, IntExpr,
-    InvestigatorTarget, LocationTarget, ModifierScope, Quantity, Trigger,
+    Ability, CmpOp, Condition, ControlStatus, Determination, Effect, EnemyTarget, HarmKind,
+    IntExpr, InvestigatorTarget, LocationTarget, ModifierScope, Quantity, Trigger,
 };
 use crate::event::Event;
 use crate::state::{CandidateSource, GameState, InvestigatorId};
@@ -689,6 +689,14 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                      never executed"
                 .into(),
         },
+        Effect::Grant { .. } => EngineOutcome::Rejected {
+            reason: "Effect::Grant is a constant marker — swept off the board by \
+                     engine::abilities_in_effect, never executed"
+                .into(),
+        },
+        Effect::TakeControl { code } => {
+            crate::engine::dispatch::take_control(cx, eval_ctx.controller, code)
+        }
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
         Effect::DiscoverAdditionalClues(amount) => discover_additional_clues_effect(cx, *amount),
         Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, *count),
@@ -1022,7 +1030,7 @@ fn apply_attach_self_to_location(cx: &mut Cx) -> EngineOutcome {
         };
     };
     // Validated: take the card off its frame so it is re-homed, not discarded.
-    let code = cx.state.continuations[frame_idx]
+    let (code, _owner) = cx.state.continuations[frame_idx]
         .take_play_in_progress(investigator)
         .expect("AttachSelfToLocation: the located frame still holds its card");
     crate::engine::dispatch::threat_area::attach_to_location(cx, location, code);
@@ -1165,17 +1173,51 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
 /// A `Rejected` returned by the branch passes through; any events
 /// the branch already pushed (and any state it mutated) are rolled
 /// back by `apply_via`'s snapshot-restore at the apply boundary.
+/// Which side of the control split the card printed with `code` is on —
+/// [`Condition::ControlStatus`]'s reader, and the one the grant sweep asks on
+/// behalf of a recipient nobody controls.
+///
+/// Reads `cards_in_play` only. `glossary/Ownership_and_Control.md` splits the
+/// two out-of-play cases — *"A player controls the cards located in his or her
+/// out-of-play game areas"* against *"The scenario controls the cards in its
+/// out-of-play game areas"* — and `glossary/In_Play_and_Out_of_Play.md` counts
+/// *"each encounter card in a investigator's threat area **or at a location**"*
+/// as in play. So an encounter card in a threat area sits in an investigator's
+/// area while being the scenario's card, and a card put into play *at* a
+/// location is under nobody's control at all (#825). The Parlor's *"While Lita
+/// Chantler is not controlled by a player"* is therefore true for as long as
+/// Lita sits in `Location::cards_at_location`, and false the instant her Parley
+/// moves her into a player's `cards_in_play`.
+#[must_use]
+pub(crate) fn card_control_status(state: &GameState, code: &str) -> ControlStatus {
+    let controlled = state
+        .investigators
+        .values()
+        .flat_map(|inv| inv.cards_in_play.iter())
+        .any(|card| card.code.as_str() == code);
+    if controlled {
+        ControlStatus::ByAPlayer
+    } else {
+        ControlStatus::ByNoPlayer
+    }
+}
+
 /// Resolve a [`Condition`] against the current state.
 ///
 /// Returns `Err` for conditions that aren't expressible yet (the
 /// state shape they'd query against doesn't exist) — the caller
 /// turns those into [`EngineOutcome::Rejected`].
-fn eval_condition(
+pub(crate) fn eval_condition(
     state: &GameState,
     eval_ctx: &EvalContext,
     condition: &Condition,
 ) -> Result<bool, String> {
     match condition {
+        // Board-global: it reads no "you", which is what lets the grant sweep
+        // ask it on behalf of a recipient nobody controls (ADR 0014).
+        Condition::ControlStatus { code, status } => {
+            Ok(card_control_status(state, code) == *status)
+        }
         Condition::SkillTestKind(kind) => {
             let t = state.current_skill_test().ok_or_else(|| {
                 "Condition::SkillTestKind but no skill test is in flight".to_owned()

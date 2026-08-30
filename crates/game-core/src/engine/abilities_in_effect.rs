@@ -41,9 +41,11 @@
 //! not a licence: **02127's back carries a second clause this module does not
 //! serve** — *"Museum Entrance gains: '\[action\]: Test \[combat\] (5) to
 //! attempt to break down the door to the Museum. If you are successful,
-//! immediately advance to Act 1b.'"* — a granted ability, which is #772's gap
-//! and not this one's. Its *restriction* clause is unconditional; the card is
-//! not.
+//! immediately advance to Act 1b.'"* — a granted ability, which is the *other*
+//! thing this module now answers (below), and which works without a special
+//! case: its back grants to a different location, and the side choice is
+//! already inside [`printed_in_effect`]. Its *restriction* clause is
+//! unconditional; the card is not.
 //!
 //! # Why not "unrevealed ⇒ unenterable"
 //!
@@ -59,17 +61,39 @@
 //!
 //! # Why every reader funnels through here
 //!
-//! An ability is addressed by `(code, ability_index)` — candidates minted by
-//! a scan are re-resolved by index when they fire. Front and back are
-//! different vectors, so a scan that picks a side and a resolve that picks
-//! the other would fire the wrong ability. One choice, made in one place, is
-//! what keeps the index meaningful.
+//! An ability is named across a suspension by an [`AbilityAddress`] — a
+//! candidate minted by a scan is re-resolved by address when it fires. Front
+//! and back are different vectors, so a scan that picks a side and a resolve
+//! that picks the other would fire the wrong ability. One choice, made in one
+//! place, is what keeps the address meaningful.
+//!
+//! # Granted abilities (#772)
+//!
+//! Since #772 this module answers a second question, and it is the same
+//! question: *what abilities does this card have right now?* A card can have
+//! abilities that are not printed on it — `glossary/Gains.md`: *"If a card
+//! gains a characteristic (such as an icon, a trait, a keyword, or ability
+//! text), the card functions as if it possesses the gained characteristic."*,
+//! and *"'Gained' characteristics are not considered to be 'printed' on the
+//! card."*
+//!
+//! So [`for_source`] returns the side-in-effect **printed** abilities plus
+//! whatever the board **grants**, and the grant sweep ([`granted_to`]) is the
+//! walk `modified_value::sweep` already does over the seven in-play
+//! collections, matching `Effect::Grant` where that one matches
+//! `Effect::Modify`. The sweep itself reads [`printed_in_effect`], not
+//! [`for_source`] — a grant cannot be granted, which is what leaves the
+//! addressing with a fixed vector to index. `docs/adr/0014-a-granted-ability-is-a-constant-effect-swept-off-the-board.md`
+//! has the argument.
 //!
 //! [`Location::revealed`]: crate::state::Location::revealed
 
 use crate::card_registry;
-use crate::dsl::Ability;
-use crate::state::{AbilitySource, CandidateSource, CardCode, GameState, LocationId};
+use crate::dsl::{Ability, Condition, Effect, GrantTarget, Trigger};
+use crate::state::{
+    AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, GameState,
+    InvestigatorId, LocationId,
+};
 
 /// The abilities in effect on the location `id`: its back's while it is
 /// unrevealed, its front's while it is revealed.
@@ -98,20 +122,101 @@ pub(crate) fn location_abilities_or_empty(state: &GameState, id: LocationId) -> 
     location_abilities(state, id).unwrap_or_default()
 }
 
-/// The abilities in effect on the card behind `source`.
+/// The abilities in effect on the card behind `source`: the ones **printed**
+/// on the side of it that is in effect, plus the ones other cards **grant** it.
 ///
-/// Delegates to [`location_abilities`] for
-/// [`AbilitySource::Location`] and to the registry's front-side lookup for
-/// every other source — an act, an agenda, an enemy and an in-play instance
-/// each have exactly one face in play, so their side never varies.
+/// Returns `None` when the card implements nothing *and* is granted nothing —
+/// preserving `abilities_for`'s *"this card implements nothing"* signal for the
+/// callers that reject on it. Since #772 the `None` means *"no printed **and**
+/// no granted abilities"*, which is the same rejection those callers wanted.
 ///
-/// Returns `None` for an unimplemented card, preserving `abilities_for`'s
-/// distinction between *"this card implements nothing"* and *"this card's
-/// abilities are empty"* for the callers that reject on it. An unrevealed
-/// location whose back implements nothing is `None` for the same reason a
-/// card with no implementation is — there is nothing on the side in effect.
+/// Each ability comes paired with its [`AbilityAddress`] — how to name it again
+/// after a suspension. Callers scan the pairs and carry the address, never the
+/// position: the merged vector is a function of game state, so a position in it
+/// is not an identity (ADR 0014).
 #[must_use]
 pub(crate) fn for_source(
+    state: &GameState,
+    source: AbilitySource,
+    code: &CardCode,
+) -> Option<Vec<(AbilityAddress, Ability)>> {
+    let printed = printed_in_effect(state, source, code);
+    let granted = granted_to(state, source, code);
+    if printed.is_none() && granted.is_empty() {
+        return None;
+    }
+    let mut out = addressed_as_printed(printed.unwrap_or_default());
+    out.extend(granted);
+    Some(out)
+}
+
+/// [`for_source`] for a [`CandidateSource`]. A [`Hand`](CandidateSource::Hand)
+/// candidate is a card being *played*, never a board card with two faces, so
+/// it reads the front — and nothing grants to a card in hand, which is not in
+/// play, so every address it yields is [`AbilityAddress::Printed`].
+#[must_use]
+pub(crate) fn for_candidate_source(
+    state: &GameState,
+    source: CandidateSource,
+    code: &CardCode,
+) -> Option<Vec<(AbilityAddress, Ability)>> {
+    match source {
+        CandidateSource::Ability(source) => for_source(state, source, code),
+        CandidateSource::Hand => Some(addressed_as_printed(
+            (card_registry::current()?.abilities_for)(code)?
+        )),
+    }
+}
+
+/// Pair each of a card's printed abilities with the address that names it.
+#[must_use]
+fn addressed_as_printed(abilities: Vec<Ability>) -> Vec<(AbilityAddress, Ability)> {
+    abilities
+        .into_iter()
+        .enumerate()
+        .map(|(idx, ability)| {
+            (
+                AbilityAddress::Printed(u8::try_from(idx).unwrap_or(u8::MAX)),
+                ability,
+            )
+        })
+        .collect()
+}
+
+/// **The one place an [`AbilityAddress`] becomes an [`Ability`].**
+///
+/// Re-derives rather than remembers: a granted ability whose granter has left
+/// play, or whose condition has flipped, is simply not in the list any more and
+/// resolves to `None`. A candidate holding such an address lapses through
+/// machinery that already exists (`lapse_reason`), and a resolve path that
+/// re-looks-up gets the ability the address *names* rather than whatever
+/// currently sits at some position.
+#[must_use]
+pub(crate) fn resolve(
+    state: &GameState,
+    source: CandidateSource,
+    code: &CardCode,
+    address: &AbilityAddress,
+) -> Option<Ability> {
+    for_candidate_source(state, source, code)?
+        .into_iter()
+        .find(|(candidate, _)| candidate == address)
+        .map(|(_, ability)| ability)
+}
+
+/// The abilities **printed** on the side of `source` that is in effect.
+///
+/// Private, and the grant sweep calls *this* rather than [`for_source`]. Two
+/// things follow, and ADR 0014 leans on both: **a grant cannot itself be
+/// granted**, so there is no fixed point to iterate to and no termination
+/// argument to make; and an [`AbilityAddress::Granted`] indexes a vector that
+/// is a pure function of `(code, side)`, which is what makes the address sound.
+///
+/// `TODO(#829)`: a granted grant does not apply. Promoting it means a bounded
+/// fixed point and an address that can name a chain, and it wants a card that
+/// prints one.
+#[must_use]
+fn printed_in_effect(
     state: &GameState,
     source: AbilitySource,
     code: &CardCode,
@@ -123,17 +228,172 @@ pub(crate) fn for_source(
     (reg.abilities_for)(code)
 }
 
-/// [`for_source`] for a [`CandidateSource`]. A [`Hand`](CandidateSource::Hand)
-/// candidate is a card being *played*, never a board card with two faces, so
-/// it reads the front.
+/// **The grant sweep**: every ability the board currently grants the card
+/// behind `source`.
+///
+/// Walks the same seven in-play collections `modified_value::sweep` does,
+/// matching a **bare** `Effect::Grant` under [`Trigger::Constant`] where that
+/// one matches a bare `Effect::Modify`. A grant wrapped in an `Effect::If` is
+/// invisible here, deliberately and for the reason the variant's own
+/// doc-comment gives.
+///
+/// The walk order — investigators, then locations with their attachments and
+/// their at-location cards, then enemies with their attachments, then the
+/// current act and agenda — is the sweep's order, and both maps are ordered, so
+/// the granted abilities land in a deterministic order. Nothing depends on that
+/// order for identity (an address names the granter, not a position), but a
+/// stable enumeration keeps the turn menu stable between reads.
 #[must_use]
-pub(crate) fn for_candidate_source(
+fn granted_to(
     state: &GameState,
-    source: CandidateSource,
-    code: &CardCode,
-) -> Option<Vec<Ability>> {
-    match source {
-        CandidateSource::Ability(source) => for_source(state, source, code),
-        CandidateSource::Hand => (card_registry::current()?.abilities_for)(code),
+    recipient: AbilitySource,
+    recipient_code: &CardCode,
+) -> Vec<(AbilityAddress, Ability)> {
+    // Who "you" is for the recipient, and `None` when nobody controls it —
+    // Lita Chantler 01117 sitting in the Parlor is the case that exists. A
+    // condition needing a "you" does not hold against `None`; a board-global
+    // one is answered anyway. (ADR 0014.)
+    let you = controller_of(state, recipient);
+    let source_instance = recipient.instance();
+    let mut out = Vec::new();
+    let mut visit = |granter: AbilitySource, granter_code: &CardCode| {
+        let Some(abilities) = printed_in_effect(state, granter, granter_code) else {
+            return;
+        };
+        for (idx, ability) in abilities.iter().enumerate() {
+            if ability.trigger != Trigger::Constant {
+                continue;
+            }
+            let Effect::Grant {
+                to,
+                condition,
+                abilities: granted,
+            } = &ability.effect
+            else {
+                continue;
+            };
+            let addressed = match to {
+                GrantTarget::SelfCard => granter == recipient,
+                GrantTarget::Card(code) => code.as_str() == recipient_code.as_str(),
+            };
+            if !addressed {
+                continue;
+            }
+            if let Some(condition) = condition {
+                if !condition_holds(state, condition, you, source_instance) {
+                    continue;
+                }
+            }
+            for (sub, granted_ability) in granted.iter().enumerate() {
+                out.push((
+                    AbilityAddress::Granted {
+                        granter: granter_code.clone(),
+                        ability: u8::try_from(idx).unwrap_or(u8::MAX),
+                        sub: u8::try_from(sub).unwrap_or(u8::MAX),
+                    },
+                    granted_ability.clone(),
+                ));
+            }
+        }
+    };
+
+    for inv in state.investigators.values() {
+        for card in inv.controlled_card_instances() {
+            visit(AbilitySource::InPlay(card.instance_id), &card.code);
+        }
+    }
+    for (id, location) in &state.locations {
+        visit(AbilitySource::Location(*id), &location.code);
+        for card in location
+            .attachments
+            .iter()
+            .chain(location.cards_at_location.iter())
+        {
+            visit(AbilitySource::InPlay(card.instance_id), &card.code);
+        }
+    }
+    for (id, enemy) in &state.enemies {
+        visit(AbilitySource::Enemy(*id), &enemy.code);
+        for att in &enemy.attachments {
+            visit(AbilitySource::InPlay(att.instance_id), &att.code);
+        }
+    }
+    if let Some(act) = state.act_deck.get(state.act_index) {
+        visit(AbilitySource::Act, &act.code);
+    }
+    if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
+        visit(AbilitySource::Agenda, &agenda.code);
+    }
+    out
+}
+
+/// The investigator controlling the card behind `source`, or `None` when
+/// nobody does.
+///
+/// `glossary/Ownership_and_Control.md` splits control from ownership, and this
+/// is the control half: a location, an enemy, the act, the agenda, and a card
+/// put into play *at* a location are all controlled by the scenario rather than
+/// by a player.
+#[must_use]
+fn controller_of(state: &GameState, source: AbilitySource) -> Option<InvestigatorId> {
+    let instance = source.instance()?;
+    state
+        .investigators
+        .values()
+        .find(|inv| {
+            inv.controlled_card_instances()
+                .any(|card| card.instance_id == instance)
+        })
+        .map(|inv| inv.id)
+}
+
+/// Whether `condition` holds for a grant whose recipient's controller is `you`.
+///
+/// Folds the *"a condition needing a 'you' against `None` does not hold"* rule
+/// through [`try_condition`]: an unanswerable condition is a condition that
+/// does not hold, never one that silently holds.
+#[must_use]
+fn condition_holds(
+    state: &GameState,
+    condition: &Condition,
+    you: Option<InvestigatorId>,
+    source: Option<CardInstanceId>,
+) -> bool {
+    try_condition(state, condition, you, source).unwrap_or(false)
+}
+
+/// [`condition_holds`]'s three-valued core: `None` means *"this condition needs
+/// a 'you' and there is none"*.
+///
+/// Three-valued rather than two because *"cannot be asked"* and *"asked and
+/// false"* are the same answer **only while no condition inverts another**. A
+/// `Condition::Not`-style combinator would have to propagate the `None` rather
+/// than invert it, or a negated unanswerable condition would come back `true`;
+/// keeping the shape three-valued is what leaves that trap already sprung.
+fn try_condition(
+    state: &GameState,
+    condition: &Condition,
+    you: Option<InvestigatorId>,
+    source: Option<CardInstanceId>,
+) -> Option<bool> {
+    match condition {
+        // Board-global: no "you" to bind, so it is answerable for an
+        // uncontrolled recipient — which is the whole case the Parlor 01115's
+        // grant serves.
+        Condition::ControlStatus { code, status } => {
+            Some(crate::engine::evaluator::card_control_status(state, code) == *status)
+        }
+        other => {
+            let you = you?;
+            let eval_ctx =
+                crate::engine::evaluator::EvalContext::for_controller_with_optional_source(
+                    you, source,
+                );
+            // An unexpressible condition is card data, not an engine invariant,
+            // and a constant sweep has no rejection channel — so it does not
+            // hold, exactly as the modified-value sweep skips an `IntExpr` it
+            // cannot resolve rather than counting it as zero.
+            Some(crate::engine::evaluator::eval_condition(state, &eval_ctx, other).unwrap_or(false))
+        }
     }
 }

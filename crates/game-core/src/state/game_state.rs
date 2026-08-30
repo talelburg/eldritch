@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, VecDeque};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ability_source::AbilitySource,
-    card::{CardCode, CardInstanceId},
+    ability_source::{AbilityAddress, AbilitySource},
+    card::{CardCode, CardInPlay, CardInstanceId},
     chaos_bag::{ChaosBag, TokenModifiers},
     counter::Counter,
     enemy::{Enemy, EnemyId},
@@ -278,6 +278,25 @@ pub struct GameState {
     /// revealed + no clues); victory-point enemies enter as defeated
     /// (C3). Phase 9 sums these cards' corpus victory values for XP.
     pub victory_display: Vec<CardCode>,
+    /// Cards removed from the game (#772), scenario-owned and sitting beside
+    /// [`victory_display`](Self::victory_display) because removal is a property
+    /// of the *card* rather than of any player's area.
+    ///
+    /// `glossary/Removed_from_Game.md`: *"A card that has been removed from the
+    /// game is placed away from the game area and has no further interaction
+    /// with the game in any manner for the duration of its removal."*
+    ///
+    /// **Not** [`Investigator::removed_from_game`](crate::state::Investigator::removed_from_game),
+    /// which is a different thing wearing the same words: the pile elimination
+    /// step 1 sweeps an *eliminated investigator's own deck's* cards into. A
+    /// card a player controls but does not own has no business in it — which is
+    /// exactly Lita Chantler 01117 after a Parley, whose ruling puts her here
+    /// instead of in anyone's discard (<https://arkhamdb.com/card/01117>).
+    ///
+    /// `#[serde(default)]` for the same reason `interactive_acknowledge` carries
+    /// one: seeds written before the field existed still deserialize.
+    #[serde(default)]
+    pub removed_from_game: Vec<CardCode>,
     /// When set, the engine suspends with an `AwaitingInput { InputKind::Confirm }`
     /// at skill-test resolution (after the result events are emitted, before the
     /// ST.7 consequence resolves) so an interactive host can show the player the
@@ -502,6 +521,26 @@ pub enum AdvanceTrigger {
     /// Player-chosen (spend clues / round-end objective). The advance action
     /// was the flip, so the ack is skipped.
     Deliberate,
+}
+
+/// **Why an asset instance is entering an investigator's play area** — which
+/// decides whether the arrival is announced as *entering play* (#772).
+///
+/// The two paths share the slot make-room machinery, because
+/// `glossary/Slots.md` writes them into one sentence — *"If playing **or
+/// gaining control** of an asset would put an investigator above his or her slot
+/// limit …"* — but only one of them is a card entering play. A card whose
+/// control changes was already in play and does not enter it again, so
+/// announcing it would fire every after-enters-play reaction a second time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AssetEntry {
+    /// Played from hand (RR Appendix I step 4, *"placed in play"*). Announced
+    /// via the `EnteredPlay` timing event.
+    PlayedFromHand,
+    /// Control of an already-in-play card was taken
+    /// ([`Effect::TakeControl`](crate::dsl::Effect::TakeControl)). Not
+    /// announced: the card never left play, so it does not re-enter it.
+    ControlTaken,
 }
 
 /// A frame on the [`GameState::continuations`] suspend/resume stack
@@ -761,10 +800,21 @@ pub enum Continuation {
     /// candidate list. Awaits input (covered by the `awaits_input` catch-all;
     /// not a phase anchor).
     SlotDiscard {
-        /// The investigator playing the asset.
+        /// The investigator playing the asset, or taking control of it.
         investigator: InvestigatorId,
-        /// The asset mid-play — see [`Continuation::play_in_progress`].
-        card: Option<CardCode>,
+        /// The asset mid-entry — see [`Continuation::play_in_progress`].
+        ///
+        /// A whole [`CardInPlay`] rather than a bare code (#772): the frame's
+        /// job is to hold the card that is in no zone (ADR 0002), and the
+        /// instance serves that strictly better than the code once
+        /// [`TakeControl`](crate::dsl::Effect::TakeControl) can be what put it
+        /// there. Lita Chantler 01117 arrives here mid-Parley carrying her
+        /// accumulated damage and horror, her uses and her usage counters, and
+        /// a code would drop all four.
+        card: Option<CardInPlay>,
+        /// Why the asset is entering the play area — which decides whether it
+        /// is announced as *entering play* once the deficit clears.
+        entry: AssetEntry,
     },
     /// The Mythos phase anchor (slice 1a, #393). Pushed at Mythos entry; sits
     /// beneath the phase's framework windows. On a child window's close the
@@ -1371,10 +1421,14 @@ impl Continuation {
                 investigator,
                 resume: ActionResume::PlayCard { card },
             }
-            | Continuation::PlayFromHand { investigator, card }
-            | Continuation::SlotDiscard { investigator, card } => {
+            | Continuation::PlayFromHand { investigator, card } => {
                 card.as_ref().map(|c| (*investigator, c))
             }
+            // Same role, different payload: this frame holds the whole instance
+            // (#772), so the code is read off it.
+            Continuation::SlotDiscard {
+                investigator, card, ..
+            } => card.as_ref().map(|c| (*investigator, &c.code)),
             _ => None,
         }
     }
@@ -1399,7 +1453,17 @@ impl Continuation {
     /// [`SlotDiscard`](Self::SlotDiscard) frame is emptied by elimination alone,
     /// which is what lets their resume paths treat "emptied" and "controller is
     /// no longer `Active`" as the same condition.
-    pub fn take_play_in_progress(&mut self, investigator: InvestigatorId) -> Option<CardCode> {
+    ///
+    /// **The card comes back with its owner**, because where a card in no zone
+    /// is finally placed is a question about its owner rather than about the
+    /// frame that was holding it (#772). A card being played from hand is the
+    /// player's own; a card riding a [`SlotDiscard`](Self::SlotDiscard) frame
+    /// may be one a [`TakeControl`](crate::dsl::Effect::TakeControl) lifted off
+    /// the board, and that one is the scenario's — `None`.
+    pub fn take_play_in_progress(
+        &mut self,
+        investigator: InvestigatorId,
+    ) -> Option<(CardCode, Option<InvestigatorId>)> {
         match self {
             Continuation::ActionResolution {
                 investigator: owner,
@@ -1408,11 +1472,12 @@ impl Continuation {
             | Continuation::PlayFromHand {
                 investigator: owner,
                 card,
-            }
-            | Continuation::SlotDiscard {
+            } if *owner == investigator => card.take().map(|code| (code, Some(investigator))),
+            Continuation::SlotDiscard {
                 investigator: owner,
                 card,
-            } if *owner == investigator => card.take(),
+                ..
+            } if *owner == investigator => card.take().map(|c| (c.code, c.owner)),
             _ => None,
         }
     }
@@ -2378,9 +2443,13 @@ pub struct ResolutionCandidate {
     pub code: CardCode,
     /// The investigator the effect resolves under (controller / player).
     pub controller: InvestigatorId,
-    /// Zero-based index into the card's
-    /// [`abilities`](crate::dsl::Ability) vec — which ability fires / runs.
-    pub ability_index: u8,
+    /// **Which ability fires / runs**, named by where it is printed rather
+    /// than by where it currently sits in the card's merged ability list
+    /// (#772). A candidate is minted by a scan and re-resolved when it fires,
+    /// possibly several suspensions later, and a merged position is not an
+    /// identity once anything grants abilities to the card — see
+    /// [`AbilityAddress`].
+    pub address: AbilityAddress,
     /// Where the candidate comes from, deciding how it resolves — see
     /// [`CandidateSource`].
     pub source: CandidateSource,
@@ -2394,13 +2463,13 @@ impl ResolutionCandidate {
     pub fn new(
         code: CardCode,
         controller: InvestigatorId,
-        ability_index: u8,
+        address: AbilityAddress,
         source: CandidateSource,
     ) -> Self {
         Self {
             code,
             controller,
-            ability_index,
+            address,
             source,
         }
     }
@@ -3051,7 +3120,7 @@ mod open_window_tests {
         let candidate = ResolutionCandidate {
             code: CardCode::new("01022"),
             controller: InvestigatorId(1),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
             source: CandidateSource::Hand,
         };
         let json = serde_json::to_string(&candidate).expect("serialize");

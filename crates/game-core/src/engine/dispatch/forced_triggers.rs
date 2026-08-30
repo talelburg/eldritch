@@ -570,7 +570,9 @@ pub(super) fn collect_forced_hits(
         else {
             return false;
         };
-        let ability = &abilities[hit.ability_index as usize];
+        let Some((_, ability)) = abilities.iter().find(|(addr, _)| *addr == hit.address) else {
+            return false;
+        };
         crate::engine::evaluator::ability_can_initiate(state, ability, hit.source, hit.controller)
     });
     hits
@@ -647,7 +649,7 @@ fn push_matching(
     let Some(abilities) = abilities_in_effect::for_candidate_source(state, source, code) else {
         return;
     };
-    for (idx, ability) in abilities.iter().enumerate() {
+    for (address, ability) in &abilities {
         if let Trigger::OnEvent {
             pattern,
             timing,
@@ -665,8 +667,7 @@ fn push_matching(
                 out.push(ResolutionCandidate {
                     code: code.clone(),
                     controller,
-                    ability_index: u8::try_from(idx)
-                        .expect("ability_index fits u8 — abilities vecs are tiny"),
+                    address: address.clone(),
                     // Origin set by the caller: an in-play / threat-area instance,
                     // a scenario board card, or a location's own forced ability.
                     source,
@@ -682,18 +683,17 @@ fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> EngineOutcome {
             reason: "queue_forced_triggers: registry vanished between collect and resolve".into(),
         };
     }
-    let Some(abilities) =
-        abilities_in_effect::for_candidate_source(cx.state, hit.source, &hit.code)
+    let Some(ability) = abilities_in_effect::resolve(cx.state, hit.source, &hit.code, &hit.address)
     else {
         return EngineOutcome::Rejected {
             reason: format!(
-                "queue_forced_triggers: {} has no abilities at resolve time",
-                hit.code
+                "queue_forced_triggers: {} no longer has the ability at {:?} at resolve time",
+                hit.code, hit.address,
             )
             .into(),
         };
     };
-    let effect = abilities[usize::from(hit.ability_index)].effect.clone();
+    let effect = ability.effect;
     // A forced run holds only in-play / board candidates (`Hand` ⇒ `None` is
     // harmless — hand Fast events are reaction-window plays, never forced).
     let ctx =
@@ -764,7 +764,7 @@ pub(crate) fn resume_acknowledge_forced(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::CardInstanceId;
+    use crate::state::{AbilityAddress, CardInstanceId};
 
     #[test]
     fn acknowledge_forced_suspends_then_pops_on_pick() {
@@ -778,7 +778,7 @@ mod tests {
             candidate: ResolutionCandidate::new(
                 CardCode::new("01113"),
                 InvestigatorId(1),
-                0,
+                AbilityAddress::Printed(0),
                 CandidateSource::Ability(AbilitySource::Location(LocationId(1))),
             ),
         });
@@ -820,7 +820,7 @@ mod tests {
             candidate: ResolutionCandidate::new(
                 CardCode::new("01113"),
                 InvestigatorId(1),
-                0,
+                AbilityAddress::Printed(0),
                 CandidateSource::Ability(AbilitySource::Location(LocationId(1))),
             ),
         });
@@ -853,7 +853,7 @@ mod tests {
             candidate: ResolutionCandidate::new(
                 CardCode::new("01020"),
                 InvestigatorId(1),
-                0,
+                AbilityAddress::Printed(0),
                 CandidateSource::Ability(AbilitySource::InPlay(CardInstanceId(5))),
             ),
         });
@@ -887,7 +887,7 @@ mod tests {
             candidate: ResolutionCandidate::new(
                 CardCode::new("01113"),
                 InvestigatorId(1),
-                0,
+                AbilityAddress::Printed(0),
                 CandidateSource::Ability(AbilitySource::Location(LocationId(3))),
             ),
         });
@@ -926,7 +926,7 @@ mod tests {
             candidate: ResolutionCandidate::new(
                 CardCode::new("01105"),
                 InvestigatorId(1),
-                0,
+                AbilityAddress::Printed(0),
                 CandidateSource::Ability(AbilitySource::Agenda),
             ),
         });

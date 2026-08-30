@@ -20,6 +20,7 @@ use game_core::dsl::{
 };
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, EnemyId,
     InvestigatorId, LocationId, Phase, TokenModifiers,
@@ -277,7 +278,10 @@ fn matching_reaction_opens_window_and_suspends() {
             CardInstanceId(1)
         ))
     );
-    assert_eq!(window.pending_candidates().unwrap()[0].ability_index, 0);
+    assert_eq!(
+        window.pending_candidates().unwrap()[0].address,
+        AbilityAddress::Printed(0)
+    );
 }
 
 #[test]

@@ -22,6 +22,7 @@ use game_core::dsl::{
 };
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId,
     LocationId, Phase, SkillKind, TokenModifiers,
@@ -100,7 +101,7 @@ fn activate(state: game_core::GameState) -> game_core::ApplyResult {
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         })
         .resolve_choices(|r| {
             r.commit_cards(&[]);

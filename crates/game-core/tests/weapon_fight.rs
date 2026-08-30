@@ -16,6 +16,7 @@ use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseK
 use game_core::dsl::{activated_as, fight, seq, Ability, Cost, IntExpr};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId,
     LocationId, Phase, TokenModifiers,
@@ -242,7 +243,7 @@ fn weapon_fight_spends_ammo_and_deals_bonus_damage() {
             a == &TurnAction::ActivateAbility {
                 investigator: id,
                 source: AbilitySource::InPlay(weapon),
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
             }
         })
         .expect("ability must be legal");
@@ -294,7 +295,7 @@ fn weapon_fight_targets_a_co_located_unengaged_enemy() {
             a == &TurnAction::ActivateAbility {
                 investigator: id,
                 source: AbilitySource::InPlay(weapon),
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
             }
         })
         .expect("ability must be legal");
@@ -358,7 +359,7 @@ fn weapon_fight_rejects_an_enemy_at_a_different_location() {
         &TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(weapon_inst),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     let EngineOutcome::Rejected { reason } = &result.outcome else {
@@ -387,7 +388,7 @@ fn weapon_fight_rejects_when_no_co_located_enemy() {
         &TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(weapon),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
@@ -414,7 +415,7 @@ fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
             a == &TurnAction::ActivateAbility {
                 investigator: id,
                 source: AbilitySource::InPlay(weapon),
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
             }
         })
         .expect("ability must be legal");
@@ -535,7 +536,7 @@ fn a_designated_fight_is_a_fight_action() {
         &TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(asset),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
 
@@ -569,7 +570,7 @@ fn a_designated_fight_is_a_fight_action() {
             &TurnAction::ActivateAbility {
                 investigator: id,
                 source: AbilitySource::InPlay(asset),
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
             },
         ),
         1,

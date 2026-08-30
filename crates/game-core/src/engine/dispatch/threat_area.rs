@@ -17,10 +17,28 @@ use super::Cx;
 /// attachments and emits the zone-specific event.
 ///
 /// The single construction point shared by `place_in_threat_area`,
-/// `attach_to_location`, and `play_card`'s in-play branch ([#296]).
+/// `attach_to_location`, and `play_card`'s in-play branch ([#296]) — and, since
+/// #772, the single place a card's [`owner`](CardInPlay::owner) is written.
+///
+/// `owner` is the player whose deck the card came from, `None` for a
+/// scenario-owned card. **It is not "who controls it"**: control is which
+/// collection the instance ends up in, and it can change later while the owner
+/// does not (`glossary/Ownership_and_Control.md`).
+///
+/// A card entering a *threat area* or a location's *attachment* zone is
+/// scenario-owned here, which is right for the encounter cards that occupy both
+/// zones in the corpus today and wrong for the two player cards that can —
+/// Cover Up 01007 (a weakness, threat area) and Barricade 01038 (a location
+/// attachment). Neither exit reads `owner`: only the `cards_in_play` exit
+/// (`cards::discard_card_from_play`) does. `TODO(#829)`: thread the real owner
+/// through those two zones when something reads it there.
 ///
 /// [#296]: https://github.com/talelburg/eldritch/issues/296
-pub(super) fn new_in_play_instance(cx: &mut Cx, code: CardCode) -> CardInPlay {
+pub(super) fn new_in_play_instance(
+    cx: &mut Cx,
+    code: CardCode,
+    owner: Option<InvestigatorId>,
+) -> CardInPlay {
     let instance_id = cx.state.card_instance_ids.mint();
     let uses = crate::card_registry::current()
         .and_then(|reg| (reg.metadata_for)(&code))
@@ -28,7 +46,7 @@ pub(super) fn new_in_play_instance(cx: &mut Cx, code: CardCode) -> CardInPlay {
             CardKind::Asset { uses, .. } => *uses,
             _ => None,
         });
-    let mut card = CardInPlay::enter_play(code, instance_id);
+    let mut card = CardInPlay::enter_play(code, instance_id).owned_by(owner);
     if let Some(u) = uses {
         card.uses.insert(u.kind, u.count);
     }
@@ -56,7 +74,7 @@ pub fn place_in_threat_area(
     if !cx.state.investigators.contains_key(&investigator) {
         return None;
     }
-    let card = new_in_play_instance(cx, code.clone());
+    let card = new_in_play_instance(cx, code.clone(), None);
     let instance_id = card.instance_id;
     let inv = cx
         .state
@@ -94,7 +112,7 @@ pub fn attach_to_location(
     if !cx.state.locations.contains_key(&location) {
         return None;
     }
-    let card = new_in_play_instance(cx, code.clone());
+    let card = new_in_play_instance(cx, code.clone(), None);
     let instance_id = card.instance_id;
     let loc = cx
         .state
@@ -136,7 +154,7 @@ pub(super) fn put_into_play_at_location(
     if !cx.state.locations.contains_key(&location) {
         return None;
     }
-    let card = new_in_play_instance(cx, code.clone());
+    let card = new_in_play_instance(cx, code.clone(), None);
     let instance_id = card.instance_id;
     let loc = cx
         .state

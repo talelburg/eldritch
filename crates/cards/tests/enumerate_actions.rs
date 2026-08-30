@@ -4,6 +4,7 @@
 //! real card metadata/abilities, so they install `cards::REGISTRY` and live here
 //! rather than in `game-core`'s registry-less unit tests.
 
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
     InvestigationResume, InvestigatorId, Phase,
@@ -77,7 +78,7 @@ fn activate_offered_for_an_in_play_activated_ability() {
         legal_actions(&state).contains(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(inst),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         })
     );
 }
@@ -245,7 +246,7 @@ fn the_corpus_act_and_agenda_are_reachable_but_offer_no_activation() {
             &TurnAction::ActivateAbility {
                 investigator: INV,
                 source,
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
             },
         );
         let EngineOutcome::Rejected { reason } = &result.outcome else {

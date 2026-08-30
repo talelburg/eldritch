@@ -22,10 +22,11 @@
 //! Both target a co-located enemy (choice-resolved when several are present
 //! — #449/#451 widened the scope beyond engaged-only) and reject when no
 //! eligible target exists **before** any cost is paid — so ability 1's
-//! discard is never spent for nothing. The two abilities are at vec indices 0 and 1;
-//! `ActivateAbility.ability_index` selects between them
-//! (`resolve_activated_ability` indexes the raw abilities vec and rejects
-//! any non-`Activated` trigger).
+//! discard is never spent for nothing. The two are printed abilities 0 and 1;
+//! an activation names one by its **ability address**
+//! (`AbilityAddress::Printed`), which `resolve_activated_ability` re-derives
+//! against the card's abilities in effect, rejecting any non-`Activated`
+//! trigger.
 
 use card_dsl::dsl::{activated_as, fight, seq, Ability, Cost};
 

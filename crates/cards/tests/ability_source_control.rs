@@ -18,6 +18,7 @@
 //! discard has nowhere to go until #708/#644). Prior art:
 //! `activation_cost_source.rs`.
 
+use game_core::state::AbilityAddress;
 use std::sync::OnceLock;
 
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
@@ -174,7 +175,7 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
     TurnAction::ActivateAbility {
         investigator: MINE,
         source,
-        ability_index,
+        address: AbilityAddress::Printed(ability_index),
     }
 }
 

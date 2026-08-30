@@ -35,6 +35,7 @@
 //! after the first would be reasoning about a board that no longer has an
 //! investigator on it. Prior art: `ability_source_control.rs`.
 
+use game_core::state::AbilityAddress;
 use std::sync::OnceLock;
 
 use game_core::assert_event;
@@ -197,7 +198,7 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
     TurnAction::ActivateAbility {
         investigator: MINE,
         source,
-        ability_index,
+        address: AbilityAddress::Printed(ability_index),
     }
 }
 
@@ -274,7 +275,7 @@ fn the_activation_event_names_a_source_with_no_card_instance() {
             investigator,
             source: AbilitySource::Location(location),
             code,
-            ability_index: LIVE,
+            address: AbilityAddress::Printed(LIVE),
         } if *investigator == MINE && *location == HERE && code.as_str() == HALL
     );
 }

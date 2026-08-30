@@ -39,6 +39,7 @@
 
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, InputKind, OptionTarget};
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
     EnemyId, FastActorScope, FastWindowKind, InvestigatorId, LocationId, MythosResume, Phase,
@@ -258,7 +259,7 @@ fn board_with_beat_cop(open_window: bool) -> game_core::GameState {
 const BEAT_COP_FAST: TurnAction = TurnAction::ActivateAbility {
     investigator: InvestigatorId(2),
     source: AbilitySource::InPlay(CardInstanceId(1)),
-    ability_index: 1,
+    address: AbilityAddress::Printed(1),
 };
 
 #[test]

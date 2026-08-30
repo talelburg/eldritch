@@ -30,6 +30,7 @@ use game_core::action::InputResponse;
 use game_core::dsl::EventTiming;
 use game_core::engine::{EngineOutcome, OptionId, TimingEvent, TurnAction};
 use game_core::event::{Event, LapseReason};
+use game_core::state::AbilityAddress;
 use game_core::state::{
     CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
     EnemyId, GameState, Investigator, InvestigatorId, LocationId, Phase, ResolutionCandidate,
@@ -317,7 +318,7 @@ fn firing_a_candidate_whose_card_left_hand_rejects_instead_of_panicking() {
         candidates: vec![ResolutionCandidate::new(
             CardCode::new(EVIDENCE),
             inv_id,
-            0,
+            AbilityAddress::Printed(0),
             CandidateSource::Hand,
         )],
     });

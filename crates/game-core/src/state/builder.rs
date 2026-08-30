@@ -325,7 +325,26 @@ impl GameStateBuilder {
     }
 
     /// Materialize the configured [`GameState`].
-    pub fn build(self) -> GameState {
+    pub fn build(mut self) -> GameState {
+        // **A card in an investigator's play area when the board is built came
+        // from that investigator's deck**, so it is theirs to own (#772). There
+        // is no other way for one to be there at construction time: a
+        // scenario-owned card enters play mid-scenario, into a location's
+        // `cards_at_location` (act 01109b's Lita Chantler 01117), and reaches a
+        // play area only through `Effect::TakeControl` — which moves the
+        // instance without touching its owner, long after this runs.
+        //
+        // Stamping it here rather than on `CardInPlay::enter_play` is what keeps
+        // `owner` honest for every board assembled from parts, including every
+        // fixture: `enter_play` has no investigator to name, and a card built
+        // with no owner would otherwise be removed from the game on discard
+        // instead of landing in its owner's pile.
+        for (&id, inv) in &mut self.investigators {
+            inv.investigator_card.owner.get_or_insert(id);
+            for card in &mut inv.cards_in_play {
+                card.owner.get_or_insert(id);
+            }
+        }
         // Builder-staged windows become `Resolution` frames on the one
         // continuation stack (Axis-B T3); a staged hand-size discard becomes a
         // `HandSizeDiscard` frame on top of them (#348).
@@ -386,6 +405,7 @@ impl GameStateBuilder {
             act_index: 0,
             ending: None,
             victory_display: Vec::new(),
+            removed_from_game: Vec::new(),
             interactive_acknowledge: false,
         }
     }
@@ -468,5 +488,51 @@ mod with_open_window_tests {
                 ..
             }
         ));
+    }
+}
+
+/// The ownership stamp `build()` applies (#772).
+#[cfg(test)]
+mod owner_stamp_tests {
+    use super::*;
+
+    /// **A card in an investigator's play area at construction time is theirs.**
+    /// The builder stamps the owner so every board assembled from parts — every
+    /// fixture included — routes a discarded player card to its owner's pile
+    /// rather than out of the game (#772).
+    #[test]
+    fn build_stamps_the_owner_on_cards_in_an_investigators_play_area() {
+        let mut inv = crate::test_support::test_investigator(1);
+        inv.cards_in_play.push(crate::state::CardInPlay::enter_play(
+            crate::state::CardCode::new("_asset"),
+            crate::state::CardInstanceId(1),
+        ));
+        let state = GameStateBuilder::new().with_investigator(inv).build();
+        let inv = &state.investigators[&InvestigatorId(1)];
+        assert_eq!(inv.cards_in_play[0].owner, Some(InvestigatorId(1)));
+        assert_eq!(inv.investigator_card.owner, Some(InvestigatorId(1)));
+    }
+
+    /// An owner already named is left alone: the stamp fills a blank, it does
+    /// not overwrite, so a card owned by somebody other than the investigator
+    /// holding it keeps what it was given. **A deliberately scenario-owned card
+    /// in a play area cannot be expressed here** — `None` is what the stamp
+    /// fills — and nothing needs to: a scenario-owned card reaches a play area
+    /// only through `Effect::TakeControl`, long after `build()`.
+    #[test]
+    fn build_does_not_overwrite_an_owner_that_is_already_set() {
+        let mut inv = crate::test_support::test_investigator(1);
+        inv.cards_in_play.push(
+            crate::state::CardInPlay::enter_play(
+                crate::state::CardCode::new("_asset"),
+                crate::state::CardInstanceId(1),
+            )
+            .owned_by(Some(InvestigatorId(7))),
+        );
+        let state = GameStateBuilder::new().with_investigator(inv).build();
+        assert_eq!(
+            state.investigators[&InvestigatorId(1)].cards_in_play[0].owner,
+            Some(InvestigatorId(7)),
+        );
     }
 }

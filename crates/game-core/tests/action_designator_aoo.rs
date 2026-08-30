@@ -39,6 +39,7 @@
 //! is `crates/cards/tests/activate_ability_aoo.rs`. The predicate's own
 //! exhaustive table over the six designators is `provokes_aoo`'s unit test.
 
+use game_core::state::AbilityAddress;
 use std::sync::OnceLock;
 
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
@@ -196,7 +197,7 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
     TurnAction::ActivateAbility {
         investigator: MINE,
         source,
-        ability_index,
+        address: AbilityAddress::Printed(ability_index),
     }
 }
 

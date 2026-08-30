@@ -42,6 +42,7 @@ use game_core::dsl::{
 };
 use game_core::engine::{legal_actions, EngineOutcome, TurnAction};
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, Act, Agenda, CardCode, GameState, InvestigatorId, LocationId, Phase,
 };
@@ -138,7 +139,7 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
     TurnAction::ActivateAbility {
         investigator: MINE,
         source,
-        ability_index,
+        address: AbilityAddress::Printed(ability_index),
     }
 }
 
@@ -225,7 +226,7 @@ fn the_activation_event_names_the_board_card_it_came_from() {
             investigator,
             source: AbilitySource::Act,
             code,
-            ability_index: LIVE,
+            address: AbilityAddress::Printed(LIVE),
         } if *investigator == MINE && code.as_str() == ACT_ONE
     );
 }

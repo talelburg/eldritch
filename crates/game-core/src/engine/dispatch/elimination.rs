@@ -239,6 +239,31 @@ pub(super) fn drive_elimination(cx: &mut Cx) -> EngineOutcome {
 /// investigator whose `status` has just been flipped to a defeated
 /// variant. Synchronous: the step-3 re-engagement tie auto-picks the
 /// lead rather than suspending (see `reengage_at_location`).
+/// Take every card of `investigator`'s that is in **no zone** off the frames
+/// holding it, split by owner: `(theirs, the scenario's)`.
+///
+/// Split out of [`run_elimination_steps`] to keep it under the function-size
+/// lint; the *why* — a card mid-play or in limbo is reachable by no zone drain —
+/// is at the call site.
+fn take_limbo_cards(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+) -> (Vec<crate::state::CardCode>, Vec<crate::state::CardCode>) {
+    let mut theirs = Vec::new();
+    let mut scenarios = Vec::new();
+    for frame in &mut cx.state.continuations {
+        if let Some((card, owner)) = frame.take_play_in_progress(investigator) {
+            if owner == Some(investigator) {
+                theirs.push(card);
+            } else {
+                scenarios.push(card);
+            }
+        }
+        theirs.extend(frame.take_committed_cards(investigator));
+    }
+    (theirs, scenarios)
+}
+
 fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // The location the investigator was at "when eliminated" — read once
     // before any mutations; step 2 deposits clues here.
@@ -263,13 +288,13 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // frame's own disposal, whenever it runs, finds nothing left to place
     // instead of pushing the card into a discard pile that step 1 has already
     // removed from the game.
-    let mut in_limbo: Vec<crate::state::CardCode> = Vec::new();
-    for frame in &mut cx.state.continuations {
-        if let Some(card) = frame.take_play_in_progress(investigator) {
-            in_limbo.push(card);
-        }
-        in_limbo.extend(frame.take_committed_cards(investigator));
-    }
+    //
+    // A card in limbo comes back with its **owner**, and is filed by it for the
+    // same reason a card leaving play is (#772): the eliminated investigator's
+    // own pile is for their own deck's cards, and a card mid-take-control on a
+    // `SlotDiscard` frame is the scenario's. A committed skill card is always
+    // its own player's — it came from their hand.
+    let (in_limbo, scenario_owned_limbo) = take_limbo_cards(cx, investigator);
 
     // Step 1, part two: remove every card this investigator controls in play and
     // owns in out-of-play areas (hand/deck/discard) from the game.
@@ -301,7 +326,19 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // by the borrow checker).
     let mut removed = std::mem::take(&mut inv.removed_from_game);
     removed.extend(in_limbo);
-    removed.extend(inv.cards_in_play.drain(..).map(|c| c.code));
+    // *"The cards he or she **controls** in play … are removed from the game"* —
+    // so every card in the play area leaves it, whoever owns it. **Which pile it
+    // is removed to is the ownership question** (#772): this investigator's own
+    // pile is for their own deck's cards, and a card they merely control —
+    // Lita Chantler 01117 after a Parley — is the scenario's, so it goes to
+    // `GameState::removed_from_game` beside the victory display. The two piles
+    // wear the same words and mean different things; see **Removed from game**
+    // in `CONTEXT.md`.
+    let (owned, controlled_only): (Vec<CardInPlay>, Vec<CardInPlay>) = inv
+        .cards_in_play
+        .drain(..)
+        .partition(|card| card.owner == Some(investigator));
+    removed.extend(owned.into_iter().map(|c| c.code));
     // Partition the threat area: owned weaknesses leave with their owner here;
     // the rest stay for step 4. No registry installed (engine-only tests with
     // synthetic threat-area cards) ⇒ not a weakness ⇒ step 4.
@@ -315,6 +352,10 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     removed.append(&mut inv.deck);
     removed.append(&mut inv.discard);
     inv.removed_from_game = removed;
+    cx.state
+        .removed_from_game
+        .extend(controlled_only.into_iter().map(|c| c.code));
+    cx.state.removed_from_game.extend(scenario_owned_limbo);
 
     // Step 2: place possessed clues at the location; return resources to
     // the (unmodeled, infinite) token pool by zeroing them.

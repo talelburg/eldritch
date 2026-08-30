@@ -22,23 +22,20 @@
 //! The **reverse** is a Forced on-advance ability that fires via
 //! `ForcedTriggerPoint::ActAdvanced` when the act advances
 //! (Rules Reference p.3: flip the card, follow the reverse). It reveals
-//! the Parlor (01115) and spawns the set-aside Ghoul Priest (01116) in the
-//! Hallway (01112), making act 3's "If the Ghoul Priest is Defeated,
-//! advance" objective reachable in real play.
+//! the Parlor (01115), puts the set-aside Lita Chantler (01117) into play there,
+//! and spawns the set-aside Ghoul Priest (01116) in the Hallway (01112), making
+//! act 3's "If the Ghoul Priest is Defeated, advance" objective reachable in
+//! real play.
 //!
-//! # Module gap
-//!
-//! **Line 2 of the reverse — *"Put the set-aside Lita Chantler into play in the
-//! Parlor"* — is not shipped.** Everything else on the card is. The engine can
-//! now do it: `put_set_aside_card_into_play` dispatches a set-aside asset into a
-//! location's `cards_at_location` zone (#771), and Lita 01117 is set aside at
-//! setup. What is missing is everything that would make her *matter* once she is
-//! there — an uncontrolled card is not yet reachable as an ability source, so
-//! neither the Parlor's *"While Lita Chantler is not controlled by a player, she
-//! gains: \[action\] **Parley.** …"* nor her own controlled-side buffs exist
-//! (#772, #773). Putting her into play now would seat an inert, unreachable card
-//! in the Parlor, which is a worse board than not having her, so the line waits
-//! for the granting hook rather than being approximated. Tracked by **#772**.
+//! **All three lines ship as of #772.** Line 2 waited on the granting hook
+//! rather than being approximated: `put_set_aside_card_into_play` could seat her
+//! in the Parlor's `cards_at_location` zone from #771 onward, but until the
+//! grant sweep existed she would have arrived inert — an uncontrolled card
+//! nobody could reach, with neither the Parlor's *"While Lita Chantler is not
+//! controlled by a player, she gains: \[action\] **Parley.** …"* nor her own
+//! controlled-side buffs. The Parley lands with #772, and her controlled-side
+//! buffs with **#773**; she is worth putting on the board the moment the first
+//! of the two exists, because the Parley is what a player does with her.
 //!
 //! Like 01108's board build, the reverse is board-dependent, single-use
 //! scenario logic, so it lives card-locally as a [`card_dsl::dsl::Effect::Native`]
@@ -112,6 +109,7 @@ const CAN_ADVANCE: &str = "01109:can_advance";
 /// Printed codes the reverse touches.
 const GHOUL_PRIEST: &str = "01116";
 const HALLWAY: &str = "01112";
+const LITA_CHANTLER: &str = "01117";
 const PARLOR: &str = "01115";
 
 /// 01109's two abilities:
@@ -175,10 +173,9 @@ fn advance_via_clue_spend(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     round_end_advance(cx, HALLWAY)
 }
 
-/// Resolve the reverse **in printed order**: reveal the Parlor (01115),
-/// then spawn the set-aside Ghoul Priest (01116) in the Hallway (01112).
-/// Line 2 of the three — *"Put the set-aside Lita Chantler into play in the
-/// Parlor"* — is `TODO(#772)`; see the note below.
+/// Resolve the reverse **in printed order**: reveal the Parlor (01115), put the
+/// set-aside Lita Chantler (01117) into play there, then spawn the set-aside
+/// Ghoul Priest (01116) in the Hallway (01112).
 ///
 /// Validate-first is an explicit **up-front check of every precondition**,
 /// not a consequence of the ordering: the Parlor must be in play, the Priest
@@ -189,16 +186,12 @@ fn advance_via_clue_spend(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
 /// the reveal first, a spawn that rejected halfway would leave the barrier
 /// lifted on a board the reverse never finished. `put_set_aside_card_into_play`
 /// re-validates the same two conditions internally, and it is that check —
-/// not the ordering — that keeps the board safe.
+/// not the ordering — that keeps the board safe. Lita's own precondition joins
+/// the up-front block for the same reason.
 ///
-/// **TODO(#772): line 2, "Put the set-aside Lita Chantler into play in the
-/// Parlor."** The engine can now do it — `put_set_aside_card_into_play`
-/// dispatches assets into a location's `cards_at_location` zone (#771) — but an
-/// uncontrolled card is not yet reachable as an ability *source*, and neither
-/// 01115's Parley ("take control of Lita Chantler") nor Lita's own granted
-/// buffs exist. Putting her into play now would seat an inert, unreachable card
-/// in the Parlor, which is a worse board than not having her, so the line waits
-/// for the granting hook.
+/// She lands in the Parlor **under nobody's control**, which is what the
+/// Parlor's own printed grant is written against: *"While Lita Chantler is not
+/// controlled by a player, she gains: '\[action\]: **Parley.** …'"* (#772).
 fn reverse(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     let Some(parlor) = location_id_by_code(cx.state, PARLOR) else {
         return EngineOutcome::Rejected {
@@ -215,6 +208,16 @@ fn reverse(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
             reason: "01109 reverse: Ghoul Priest (01116) is not set aside".into(),
         };
     }
+    if !cx
+        .state
+        .set_aside_cards
+        .iter()
+        .any(|c| c.as_str() == LITA_CHANTLER)
+    {
+        return EngineOutcome::Rejected {
+            reason: "01109 reverse: Lita Chantler (01117) is not set aside".into(),
+        };
+    }
     if location_id_by_code(cx.state, HALLWAY).is_none() {
         return EngineOutcome::Rejected {
             reason: "01109 reverse: Hallway (01112) not in play".into(),
@@ -222,6 +225,10 @@ fn reverse(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     }
     // All checks passed — mutate, in the order the card prints.
     reveal_location(cx, parlor);
+    let lita = put_set_aside_card_into_play(cx, LITA_CHANTLER, Some(PARLOR));
+    if !matches!(lita, EngineOutcome::Done) {
+        return lita;
+    }
     put_set_aside_card_into_play(cx, GHOUL_PRIEST, Some(HALLWAY))
 }
 

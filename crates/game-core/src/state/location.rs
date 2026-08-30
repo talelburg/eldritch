@@ -74,8 +74,8 @@ pub struct Location {
     ///
     /// # Leaving the zone
     ///
-    /// Two exits, and neither is implemented yet — the zone has exactly one
-    /// occupant today, and she leaves it only through #772's take-control
+    /// Two exits, both shipped with #772. The zone has exactly one occupant
+    /// today, and she leaves it through the Parlor 01115's granted take-control
     /// Parley.
     ///
     /// **Take control** moves the *same* [`CardInPlay`] out of here and into
@@ -85,7 +85,10 @@ pub struct Location {
     /// and a card that changes hands is the same card — *"When you 'take
     /// control' of a card, it enters your play area (not your hand)"*
     /// (<https://arkhamdb.com/card/01117>). The play-card path's
-    /// mint-on-entry is therefore the wrong shape to reuse.
+    /// mint-on-entry is therefore the wrong shape to reuse, which is why
+    /// `slots::enter_asset_making_room` takes a [`CardInPlay`] and the
+    /// play-from-hand caller mints before calling it
+    /// (`engine::dispatch::control`).
     ///
     /// **Leaving play** goes to the same destination the card's own type
     /// dictates, except where the scenario overrides it — for Lita, held

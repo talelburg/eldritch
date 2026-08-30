@@ -478,6 +478,45 @@ pub enum Event {
         /// Where the card came from before landing in discard.
         from: Zone,
     },
+    /// A card left play and was **removed from the game** rather than discarded
+    /// (#772) — `glossary/Removed_from_Game.md`: *"A card that has been removed
+    /// from the game is placed away from the game area and has no further
+    /// interaction with the game in any manner for the duration of its
+    /// removal."*
+    ///
+    /// The discard mirror of [`CardDiscarded`](Event::CardDiscarded), for the
+    /// case where the card's **owner** has no discard pile to route it to: a
+    /// scenario-owned card a player merely controls. Lita Chantler 01117 after
+    /// a Parley is the corpus's one occupant — *"remove her from the game (do
+    /// not place her into any discard pile)"*
+    /// (<https://arkhamdb.com/card/01117>).
+    ///
+    /// Names the *controller* the card left, not an owner: the owner is by
+    /// construction not a player here.
+    CardRemovedFromGame {
+        /// The investigator who controlled the card as it left play.
+        investigator: InvestigatorId,
+        /// The removed card code.
+        code: CardCode,
+        /// Where the card came from before leaving the game.
+        from: Zone,
+    },
+    /// An investigator **took control** of an in-play card (#772) — the Parlor
+    /// 01115's Parley moving Lita Chantler 01117 out of the location she was
+    /// put into play at and into the parleying investigator's play area.
+    ///
+    /// `glossary/Ownership_and_Control.md`: *"Some abilities may cause cards to
+    /// change control during a game."* The card's **owner** is untouched, which
+    /// is why the event names only the new controller.
+    ControlTaken {
+        /// The investigator who now controls the card.
+        investigator: InvestigatorId,
+        /// The card that changed hands.
+        code: CardCode,
+        /// The instance that moved — the *same* instance, carrying its damage,
+        /// horror, uses and usage counters with it.
+        instance_id: CardInstanceId,
+    },
     /// `amount` of `kind` (damage or horror) was healed from `investigator`
     /// (First Aid 01019, Medical Texts 01035). The inverse of the damage/horror
     /// events; emitted only when something was actually healed.
@@ -551,8 +590,8 @@ pub enum Event {
         source: crate::state::AbilitySource,
         /// The source card's code.
         code: CardCode,
-        /// Which ability on the card fired.
-        ability_index: u8,
+        /// Which ability fired, named by where it is printed (#772).
+        address: crate::state::AbilityAddress,
     },
     /// A scenario ended — at a resolution point, or at none. Emitted by
     /// [`apply`](crate::engine::apply) when the scenario's *ending* finishes —

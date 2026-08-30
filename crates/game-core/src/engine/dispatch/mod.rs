@@ -15,6 +15,8 @@ use crate::state::CardCode;
 use super::outcome::EngineOutcome;
 use super::Cx;
 
+pub(crate) use control::take_control;
+
 mod abilities;
 pub(crate) mod act_agenda;
 pub(crate) mod actions;
@@ -33,6 +35,7 @@ pub(super) mod emit;
 // pub(crate): engine/mod.rs re-exports `deal_damage_to_enemy` for the
 // `cards` crate (Guard Dog 01021's retaliate native, C5b #237).
 pub(crate) mod combat;
+mod control;
 pub(super) mod coordinator;
 mod cursor;
 // pub(super): evaluator reaches take_damage/take_horror via the full path
@@ -95,8 +98,8 @@ pub(crate) fn dispatch_turn_action(
         TurnAction::ActivateAbility {
             investigator,
             source,
-            ability_index,
-        } => abilities::activate_ability(cx, *investigator, *source, *ability_index),
+            address,
+        } => abilities::activate_ability(cx, *investigator, *source, address),
         TurnAction::AdvanceAct { investigator } => {
             act_agenda::advance_act_action(cx, *investigator)
         }

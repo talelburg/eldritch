@@ -4481,7 +4481,7 @@ mod tests {
     // The registry-backed activation flow lives in
     // crates/game-core/tests/activate_ability.rs.
 
-    use crate::state::CardInstanceId;
+    use crate::state::{AbilityAddress, CardInstanceId};
 
     fn activate_ability_state(active: bool) -> (GameState, InvestigatorId, CardInstanceId) {
         let id = InvestigatorId(1);
@@ -4519,7 +4519,7 @@ mod tests {
             &TurnAction::ActivateAbility {
                 investigator: id,
                 source: AbilitySource::InPlay(instance_id),
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
             },
         );
         assert!(
@@ -4537,7 +4537,7 @@ mod tests {
             &TurnAction::ActivateAbility {
                 investigator: id,
                 source: AbilitySource::InPlay(instance_id),
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
             },
         );
         assert!(
@@ -4555,7 +4555,7 @@ mod tests {
             &TurnAction::ActivateAbility {
                 investigator: id,
                 source: AbilitySource::InPlay(CardInstanceId(9999)),
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
             },
         );
         assert!(
@@ -4585,7 +4585,7 @@ mod tests {
             &TurnAction::ActivateAbility {
                 investigator: id,
                 source: AbilitySource::InPlay(instance_id),
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
             },
         );
         assert!(
