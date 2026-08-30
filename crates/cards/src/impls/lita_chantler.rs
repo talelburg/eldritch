@@ -120,7 +120,7 @@
 //! Special 01006) runs a `SkillTestKind::Fight` test and qualifies — the ruling
 //! scopes to the Fight action, and a designator *performs* one. Dynamite Blast
 //! 01024 and Sneak Attack 01052 never construct that follow-up, so they get
-//! nothing. (The issue named Dynamite Blast 01023; that code is **Dodge**.)
+//! nothing.
 //!
 //! Her three other rulings — that taking control puts her in the play area, that
 //! the control is temporary, and that she is removed from the game if she leaves

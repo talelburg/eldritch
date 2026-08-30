@@ -23,7 +23,7 @@
 //!
 //! **Dynamite Blast (01024)**, `text` verbatim: *"Choose either your location or
 //! a connecting location. Deal 3 damage to each enemy and to each investigator
-//! at the chosen location."* (The issue named it 01023; that code is **Dodge**.)
+//! at the chosen location."*
 //!
 //! ## Ruling (`data/arkhamdb-faq/core/01117.md`, <https://arkhamdb.com/card/01117>)
 //!
