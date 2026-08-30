@@ -49,6 +49,7 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
+use game_core::action::EngineRecord;
 use game_core::assert_event;
 use game_core::card_registry;
 use game_core::event::Event;
@@ -57,10 +58,10 @@ use game_core::state::{
     GameState, InvestigatorId, LocationId, Phase, Zone,
 };
 use game_core::test_support::{
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
+    drive, take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
     ScriptedResolver, TestSession,
 };
-use game_core::{legal_actions, TurnAction};
+use game_core::{legal_actions, Action, TurnAction};
 
 /// Lita Chantler — the `Ally` the Parlor grants to.
 const LITA: &str = "01117";
@@ -71,6 +72,9 @@ const BEAT_COP: &str = "01018";
 /// Daisy Walker 01002 — intellect 5, so a `[intellect]` (4) test turns on the
 /// chaos token rather than on the investigator.
 const DAISY: &str = "01002";
+/// Grasping Hands 01162 — *"**Revelation** - Test \[agility\] (3). For each
+/// point you fail by, take 1 damage."* The soak-defeat exit's driver.
+const GRASPING_HANDS: &str = "01162";
 
 const INV: InvestigatorId = InvestigatorId(1);
 const PARLOR_ID: LocationId = LocationId(1);
@@ -333,6 +337,95 @@ fn taking_control_makes_room_in_the_ally_slot() {
         inv.discard.contains(&CardCode::new(BEAT_COP)),
         "Beat Cop is Daisy's own card, so it goes to her discard; got {:?}",
         inv.discard,
+    );
+}
+
+/// The **other** leaving-play exit: soak defeat. `glossary/Asset_Cards.md`
+/// makes an asset an eligible soak target for the investigator who *controls*
+/// it, and RR p.7 sends a defeated one to *"its owner's discard pile"* — which
+/// for Lita is nowhere, so she is removed from the game by the same derivation
+/// the slot exit uses. Driven through Grasping Hands 01162 (*"Test
+/// \[agility\] (3). For each point you fail by, take 1 damage."*), soaking its
+/// damage onto her.
+#[test]
+fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
+    let mut state = drive_parley(board(ChaosToken::Numeric(0))).state;
+    {
+        let inv = state
+            .investigators
+            .get_mut(&INV)
+            .expect("investigator present");
+        // Health 3: one damage already on her, so the two soaked points defeat
+        // her.
+        inv.cards_in_play[0].accumulated_damage = 1;
+        inv.actions_remaining = 3;
+    }
+    // Agility 3 against Grasping Hands' printed 3, minus 2 — a failure by 2,
+    // so the treachery deals 2 damage.
+    state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];
+    state
+        .encounter_deck
+        .push_back(CardCode::new(GRASPING_HANDS));
+
+    let mut resolver = ScriptedResolver::new();
+    resolver.commit_cards(&[]);
+    // Option 0 is the investigator, option 1 the one controlled soaker; both
+    // points go to her.
+    resolver.pick_single(game_core::engine::OptionId(1));
+    resolver.pick_single(game_core::engine::OptionId(1));
+    let r = drive(
+        state,
+        Action::Engine(EngineRecord::EncounterCardRevealed { investigator: INV }),
+        resolver,
+    );
+
+    let inv = &r.state.investigators[&INV];
+    assert!(
+        inv.cards_in_play.is_empty(),
+        "she soaked her third damage and left play, got {:?}",
+        inv.cards_in_play,
+    );
+    assert!(
+        !inv.discard.contains(&CardCode::new(LITA)),
+        "she is not placed into any discard pile, got {:?}",
+        inv.discard,
+    );
+    assert!(
+        r.state.removed_from_game.contains(&CardCode::new(LITA)),
+        "the soak-defeat exit removes her from the game too, got {:?}",
+        r.state.removed_from_game,
+    );
+}
+
+/// **Elimination removes her, but not into her controller's pile.**
+/// `glossary/Elimination.md` step 1: *"The cards he or she **controls** in play
+/// and all of the cards in his or her out-of-play areas (such as hand, deck,
+/// discard pile) are removed from the game."* — so she leaves play with her
+/// controller. Which pile she is removed *to* is the ownership question: the
+/// per-investigator `removed_from_game` is that investigator's own deck's
+/// cards, which she explicitly is not.
+#[test]
+fn eliminating_her_controller_removes_her_to_the_scenarios_pile() {
+    let mut state = drive_parley(board(ChaosToken::Numeric(0))).state;
+    let mut events = Vec::new();
+    // Daisy Walker 01002 has 5 health; 5 damage defeats her outright.
+    game_core::test_support::eliminate_by_damage(&mut state, &mut events, INV, 5);
+
+    let inv = &state.investigators[&INV];
+    assert!(
+        inv.cards_in_play.is_empty(),
+        "every card she controlled left play, got {:?}",
+        inv.cards_in_play,
+    );
+    assert!(
+        !inv.removed_from_game.contains(&CardCode::new(LITA)),
+        "she is not one of the eliminated investigator's own cards, got {:?}",
+        inv.removed_from_game,
+    );
+    assert!(
+        state.removed_from_game.contains(&CardCode::new(LITA)),
+        "she is removed to the scenario's pile, got {:?}",
+        state.removed_from_game,
     );
 }
 

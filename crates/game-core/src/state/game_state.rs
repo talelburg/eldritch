@@ -1453,7 +1453,17 @@ impl Continuation {
     /// [`SlotDiscard`](Self::SlotDiscard) frame is emptied by elimination alone,
     /// which is what lets their resume paths treat "emptied" and "controller is
     /// no longer `Active`" as the same condition.
-    pub fn take_play_in_progress(&mut self, investigator: InvestigatorId) -> Option<CardCode> {
+    ///
+    /// **The card comes back with its owner**, because where a card in no zone
+    /// is finally placed is a question about its owner rather than about the
+    /// frame that was holding it (#772). A card being played from hand is the
+    /// player's own; a card riding a [`SlotDiscard`](Self::SlotDiscard) frame
+    /// may be one a [`TakeControl`](crate::dsl::Effect::TakeControl) lifted off
+    /// the board, and that one is the scenario's — `None`.
+    pub fn take_play_in_progress(
+        &mut self,
+        investigator: InvestigatorId,
+    ) -> Option<(CardCode, Option<InvestigatorId>)> {
         match self {
             Continuation::ActionResolution {
                 investigator: owner,
@@ -1462,12 +1472,12 @@ impl Continuation {
             | Continuation::PlayFromHand {
                 investigator: owner,
                 card,
-            } if *owner == investigator => card.take(),
+            } if *owner == investigator => card.take().map(|code| (code, Some(investigator))),
             Continuation::SlotDiscard {
                 investigator: owner,
                 card,
                 ..
-            } if *owner == investigator => card.take().map(|c| c.code),
+            } if *owner == investigator => card.take().map(|c| (c.code, c.owner)),
             _ => None,
         }
     }

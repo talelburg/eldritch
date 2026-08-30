@@ -145,17 +145,7 @@ pub(crate) fn for_source(
     if printed.is_none() && granted.is_empty() {
         return None;
     }
-    let mut out: Vec<(AbilityAddress, Ability)> = printed
-        .unwrap_or_default()
-        .into_iter()
-        .enumerate()
-        .map(|(idx, ability)| {
-            (
-                AbilityAddress::Printed(u8::try_from(idx).unwrap_or(u8::MAX)),
-                ability,
-            )
-        })
-        .collect();
+    let mut out = addressed_as_printed(printed.unwrap_or_default());
     out.extend(granted);
     Some(out)
 }
@@ -172,19 +162,25 @@ pub(crate) fn for_candidate_source(
 ) -> Option<Vec<(AbilityAddress, Ability)>> {
     match source {
         CandidateSource::Ability(source) => for_source(state, source, code),
-        CandidateSource::Hand => Some(
+        CandidateSource::Hand => Some(addressed_as_printed(
             (card_registry::current()?.abilities_for)(code)?
-                .into_iter()
-                .enumerate()
-                .map(|(idx, ability)| {
-                    (
-                        AbilityAddress::Printed(u8::try_from(idx).unwrap_or(u8::MAX)),
-                        ability,
-                    )
-                })
-                .collect(),
-        ),
+        )),
     }
+}
+
+/// Pair each of a card's printed abilities with the address that names it.
+#[must_use]
+fn addressed_as_printed(abilities: Vec<Ability>) -> Vec<(AbilityAddress, Ability)> {
+    abilities
+        .into_iter()
+        .enumerate()
+        .map(|(idx, ability)| {
+            (
+                AbilityAddress::Printed(u8::try_from(idx).unwrap_or(u8::MAX)),
+                ability,
+            )
+        })
+        .collect()
 }
 
 /// **The one place an [`AbilityAddress`] becomes an [`Ability`].**
@@ -383,9 +379,9 @@ fn try_condition(
         // Board-global: no "you" to bind, so it is answerable for an
         // uncontrolled recipient — which is the whole case the Parlor 01115's
         // grant serves.
-        Condition::CardControlledByAPlayer { code } => {
-            Some(card_controlled_by_a_player(state, code))
-        }
+        Condition::CardControlledByAPlayer { code } => Some(
+            crate::engine::evaluator::card_controlled_by_a_player(state, code),
+        ),
         other => {
             let you = you?;
             let eval_ctx =
@@ -399,25 +395,4 @@ fn try_condition(
             Some(crate::engine::evaluator::eval_condition(state, &eval_ctx, other).unwrap_or(false))
         }
     }
-}
-
-/// Whether the card printed with `code` is in play and **controlled by a
-/// player** — [`Condition::CardControlledByAPlayer`]'s reader.
-///
-/// Reads `cards_in_play` only. `glossary/Ownership_and_Control.md` gives
-/// control to *"the player whose … game area"* holds a card, against *"The
-/// scenario controls the cards in its out-of-play game areas"*; an encounter
-/// card sitting in a threat area is in that investigator's play area but is the
-/// scenario's card, and a card put into play *at* a location is under nobody's
-/// control at all (#825). So the Parlor's *"While Lita Chantler is not
-/// controlled by a player"* is true for as long as Lita sits in
-/// `Location::cards_at_location`, and false the instant her Parley moves her
-/// into a player's `cards_in_play`.
-#[must_use]
-pub(crate) fn card_controlled_by_a_player(state: &GameState, code: &str) -> bool {
-    state
-        .investigators
-        .values()
-        .flat_map(|inv| inv.cards_in_play.iter())
-        .any(|card| card.code.as_str() == code)
 }

@@ -514,8 +514,11 @@ mod owner_stamp_tests {
     }
 
     /// An owner already named is left alone: the stamp fills a blank, it does
-    /// not overwrite. A card whose owner is deliberately somebody else — or
-    /// deliberately the scenario — keeps what it was given.
+    /// not overwrite, so a card owned by somebody other than the investigator
+    /// holding it keeps what it was given. **A deliberately scenario-owned card
+    /// in a play area cannot be expressed here** — `None` is what the stamp
+    /// fills — and nothing needs to: a scenario-owned card reaches a play area
+    /// only through `Effect::TakeControl`, long after `build()`.
     #[test]
     fn build_does_not_overwrite_an_owner_that_is_already_set() {
         let mut inv = crate::test_support::test_investigator(1);
