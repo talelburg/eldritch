@@ -37,6 +37,12 @@
 //! The condition under test is `SkillTestResolved` (RR ST.6), picked because
 //! both its forced and its reaction scan read the investigator's own controlled
 //! instances, so one synthetic card in the threat area is the whole fixture.
+//! Since #773 it is **coordinator-owned** — a bare milestone, since a
+//! determination mutates nothing and ST.7 applies the results on the re-exposed
+//! `SkillTest` frame — so all three of its cells are walked here. The
+//! caller-owned `when`-cell *reject* moved with it, and lives on a condition
+//! that has not migrated (`PhaseEnded { Upkeep }`, in
+//! `game-core/tests/timing_resolve_step.rs`).
 
 use card_dsl::dsl::{
     forced_on_event, gain_resources, reaction_on_event, Ability, Effect, EventPattern, EventTiming,
@@ -44,7 +50,6 @@ use card_dsl::dsl::{
 };
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::CardRegistry;
-use game_core::engine::EngineOutcome;
 use game_core::engine::OptionId;
 use game_core::event::Event;
 use game_core::state::{
@@ -60,8 +65,8 @@ use game_core::test_support::{
 const AT: &str = "_tc_at";
 /// `after`-tagged forced: +2 resources.
 const AFTER: &str = "_tc_after";
-/// `when`-tagged forced — declared on a caller-owned condition, so it is
-/// rejected rather than silently dropped.
+/// `when`-tagged forced: +4 resources. Reachable since #773 made
+/// `SkillTestResolved` coordinator-owned; before that it was rejected.
 const WHEN: &str = "_tc_when";
 /// `at`-tagged *reaction*: +7 resources.
 const REACT: &str = "_tc_react";
@@ -163,10 +168,17 @@ fn gains(events: &[Event]) -> Vec<u8> {
         .collect()
 }
 
-/// Whether the condition's own impact — the skill test resolving, logged as
-/// `SkillTestSucceeded` — precedes the first ability the sequence fired. Every
-/// cell in these tests is `at` or `after`, both of which sit past the resolve
-/// step, so this must hold for all of them.
+/// Whether the test's determination — RR ST.6, logged as `SkillTestSucceeded`
+/// — precedes the first ability the sequence fired. True of every cell,
+/// including `when`: the verdict is stashed and logged *before* the condition
+/// is emitted at all, which is why a `when` ability on this condition reads a
+/// resolved test.
+///
+/// This is therefore not the *impact* ordering. The condition's impact is ST.7
+/// — *"Apply skill test results"* — which a bare plain test has none of, so the
+/// `when`-before-impact claim is pinned where it is observable: Lita Chantler
+/// 01117's `crates/cards/tests/lita_chantler.rs`, where the `when` cell raises
+/// an attack's damage before ST.7 deals it.
 fn resolved_before_first_gain(events: &[Event]) -> bool {
     let position = |pred: fn(&Event) -> bool| events.iter().position(pred);
     let resolved = position(|e| matches!(e, Event::SkillTestSucceeded { .. }));
@@ -267,24 +279,24 @@ fn each_cell_is_scanned_fresh() {
     );
 }
 
-/// The caller-owned `when`-cell reject, now reachable: before #702 only the
-/// round end walked its cells, and the round end is coordinator-owned, so no
-/// ability could ever hit this path. An interrupt declared on a caller-owned
-/// condition fails loudly rather than resolving in the wrong cell — the
-/// scaffolding ADR 0008 describes, deleted when the last condition migrates.
+/// **All three cells, in order.** Until #773 this condition was caller-owned
+/// and the `when` card here was *rejected* rather than resolved; migrating it
+/// to a coordinator-owned bare milestone opened the cell, and the sequence is
+/// now the whole of `glossary/Nested_Sequences.md`'s walk.
+///
+/// The reject itself is still live scaffolding and still covered — on
+/// `PhaseEnded { Upkeep }`, which has not migrated, in
+/// `game-core/tests/timing_resolve_step.rs`.
 #[test]
-fn an_interrupt_on_a_caller_owned_condition_is_rejected() {
-    let r = perform_skill_test_no_commits(board_with(&[WHEN]), INV, SkillKind::Intellect, 0);
-    let EngineOutcome::Rejected { reason } = &r.outcome else {
-        panic!("expected a rejection, got {:?}", r.outcome);
-    };
-    assert!(
-        reason.contains("caller-owned") && reason.contains("0008"),
-        "the reason must name the condition's ownership and the ADR: {reason}"
-    );
+fn every_cell_resolves_in_order_when_at_after() {
+    let r =
+        perform_skill_test_no_commits(board_with(&[AFTER, WHEN, AT]), INV, SkillKind::Intellect, 0);
     assert_eq!(
         gains(&r.events),
-        Vec::<u8>::new(),
-        "a rejected apply leaves no events behind"
+        vec![4, 1, 2],
+        "declaration order is after/when/at and resolution order must be \
+         when/at/after regardless; events = {:?}",
+        r.events
     );
+    assert_eq!(r.state.investigators[&INV].resources, 7);
 }

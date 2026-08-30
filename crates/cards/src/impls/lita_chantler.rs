@@ -48,31 +48,28 @@
 //! *"\[reaction\] **When** an investigator at your location successfully
 //! attacks a \[\[Monster\]\] enemy: That investigator deals +1 damage."*
 //!
-//! **Cell: the `at` cell of the `SkillTestResolved` condition — and the printed
-//! word is "When".** `glossary/Ability.md`:
+//! **Cell: the `when` cell of the `SkillTestResolved` condition.** The printed
+//! word is *"When"*, and `glossary/Ability.md` says what that buys:
 //!
 //! > A \[reaction\] ability with a triggering condition beginning with the word
 //! > "when..." may be used after the specified triggering condition initiates,
 //! > but before its impact upon the game state resolves.
 //!
-//! So the `when` cell is where she belongs, and the engine will not take her
-//! there: `SkillTestResolved` is still a **caller-owned** condition, and the
-//! timing coordinator *rejects* an ability declaring `when` on one — the
-//! condition has already resolved by the time it is emitted, so there is
-//! nothing left to interrupt (ADR 0008; the migration to a coordinator-owned
-//! arm is the same one #703 did for clue discovery and #704 for enemy attacks,
-//! and is tracked as #831).
+//! **She is why that cell exists on this condition.** `SkillTestResolved` was
+//! caller-owned until #773, so its `when` cell was not walked and an ability
+//! declaring interrupt timing on it was *rejected* — and `standards.md` is
+//! explicit that migrating the condition is the fix rather than retagging the
+//! card. So the condition migrated, as a **bare milestone**: RR ST.6 is
+//! *"Determine success/failure of skill test"*, and a determination mutates
+//! nothing — the verdict is stashed on the in-flight test and logged, and no
+//! card, enemy, location or investigator moves. The impact is ST.7, *"Apply
+//! skill test results"*, which the `SkillTest` frame runs on its own resume
+//! after the whole sequence has drained.
 //!
-//! **Nothing observable turns on the difference today.** Positionally the two
-//! cells are the same place: `SkillTestResolved` is queued in tail position at
-//! `DetermineOutcome` (RR ST.5-6) and every cell it opens runs before the
-//! driver resumes — so before `ApplyFollowUp` deals the attack's damage, which
-//! is the ordering *"before its impact upon the game state resolves"* asks for.
-//! `when` and `at` differ only when two abilities **on the same condition**
-//! contest an order, and no other corpus ability declares either cell on
-//! `SkillTestResolved`: Dr. Milan 01033 and Obscuring Fog 01168 are both
-//! `after`. When the condition migrates, this ability moves to `when` and the
-//! integration test below is the regression cover for the move.
+//! That is exactly the ordering this ability needs: the boost is written before
+//! `ApplyFollowUp` deals the attack's damage, which is *"before its impact upon
+//! the game state resolves"*. ADR 0008 carries the classification and the four
+//! migrations before this one.
 //!
 //! **"That investigator" needs no targeting.** [`Effect::BoostAttackDamage`](card_dsl::dsl::Effect::BoostAttackDamage)
 //! writes the *in-flight* test's accumulator, and the in-flight test **is** the
@@ -173,7 +170,7 @@ pub fn abilities() -> Vec<Ability> {
                     kind: Some(SkillTestKind::Fight),
                     by_controller: false,
                 },
-                EventTiming::At,
+                EventTiming::When,
                 boost_attack_damage(1),
             )
             .with_eligibility(MONSTER_ATTACKED_HERE_TAG),
@@ -313,13 +310,13 @@ mod tests {
                     kind: Some(SkillTestKind::Fight),
                     by_controller: false,
                 },
-                timing: EventTiming::At,
+                timing: EventTiming::When,
                 kind: TriggerKind::Reaction,
             },
             "\"[reaction] When an investigator ... successfully attacks\": the \
-             `at` cell (see the module doc — `SkillTestResolved` is still \
-             caller-owned, so its `when` cell is not walked), and unqualified \
-             — \"an investigator\", not \"you\"",
+             `when` cell, which #773 opened on this condition by migrating it \
+             to coordinator-owned — and unqualified, \"an investigator\", not \
+             \"you\"",
         );
         assert_eq!(granted[1].effect, Effect::BoostAttackDamage(1));
         assert_eq!(

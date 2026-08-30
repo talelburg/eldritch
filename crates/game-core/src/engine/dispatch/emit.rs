@@ -359,10 +359,27 @@ impl TimingEvent {
             //   *"also formalizes the beginning of a new game round"*
             //   (`Appendix_II_Timing_and_Gameplay.md`), so an ability firing at
             //   this milestone must already read the new round.
+            // - `SkillTestResolved` — RR ST.6 is *"Determine success/failure
+            //   of skill test"*, and a determination is not a mutation: the
+            //   verdict is stashed on `InFlightSkillTest::resolved` and the
+            //   `SkillTestSucceeded`/`SkillTestFailed` events are logged, and no
+            //   card, enemy, location or investigator moves. What *looks* like
+            //   the impact is ST.7, *"Apply skill test results"* — the
+            //   success/failure effect, the `OnSkillTestResolution` abilities,
+            //   and the action follow-up that discovers the clue or deals the
+            //   attack's damage — and every one of those belongs to the
+            //   `SkillTest` frame, which advances its own cursor to
+            //   `AcknowledgeOutcome` *before* emitting and so runs them once the
+            //   whole sequence has drained. Migrated by #773, for Lita Chantler
+            //   01117's *"[reaction] **When** an investigator at your
+            //   location successfully attacks a [[Monster]] enemy: That
+            //   investigator deals +1 damage."* — a `when` whose whole point is
+            //   to raise the damage before ST.7 applies it.
             TimingEvent::PhaseStarted { .. }
             | TimingEvent::RoundEnded
             | TimingEvent::GameEnd
             | TimingEvent::EliminationGameEnd { .. }
+            | TimingEvent::SkillTestResolved { .. }
             | TimingEvent::DamageAssigned { .. } => {
                 ConditionResolution::Coordinator(resolve_bare_milestone)
             }
@@ -420,7 +437,6 @@ impl TimingEvent {
             | TimingEvent::AgendaAdvanced { .. }
             | TimingEvent::EnemyDefeated { .. }
             | TimingEvent::EndOfTurn { .. }
-            | TimingEvent::SkillTestResolved { .. }
             | TimingEvent::EnteredPlay { .. } => ConditionResolution::Caller,
         }
     }
@@ -487,7 +503,7 @@ pub(crate) type ResolveConditionFn = fn(&mut Cx, &TimingEvent) -> EngineOutcome;
 /// A milestone is bare when the teardown that follows it belongs to the frame
 /// that emitted it rather than to the condition: it runs after the whole
 /// sequence, on a resume, not between the `when` and `at` cells. See the arm in
-/// [`TimingEvent::condition_resolution`] for that argument on each of the four
+/// [`TimingEvent::condition_resolution`] for that argument on each of its
 /// members, and
 /// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
 fn resolve_bare_milestone(_cx: &mut Cx, _event: &TimingEvent) -> EngineOutcome {

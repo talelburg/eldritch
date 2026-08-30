@@ -36,6 +36,17 @@
 //! action, and Dynamite Blast does not because it constructs no
 //! `SkillTestFollowUp::Fight` for the bonus to ride on.
 //!
+//! ## The `when` cell
+//!
+//! `a_co_located_attack_on_a_monster_deals_one_more_damage` is the regression
+//! cover for #773's engine half: `SkillTestResolved` migrated from caller-owned
+//! to a coordinator-owned **bare milestone** so its `when` cell could be walked
+//! at all. The `2` it asserts is the boost landing between RR ST.6's
+//! determination and ST.7's application — *"before its impact upon the game
+//! state resolves"* (`glossary/Ability.md`) — which is observable here and
+//! nowhere in `timing_cells.rs`, whose tests drive a bare plain test with no
+//! ST.7 of its own.
+//!
 //! ## One asymmetry worth naming
 //!
 //! *"Moving away from Lita"* is something only a **second** investigator can do.
