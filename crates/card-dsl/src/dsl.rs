@@ -1900,6 +1900,18 @@ pub enum Condition {
     /// "Jazz" Mulligan 02060 prints 01115's clause about himself, and Clover
     /// Club Lounge/Bar/Cardroom 02071-73 print 01117's, so the near backlog
     /// wants both statuses too.
+    ///
+    /// **`code` rather than an instance, and the corpus says that is enough.**
+    /// The question is answered by a board scan for the code, so two copies of
+    /// one card cannot be told apart — which would matter only to a card saying
+    /// *"while you control **this**"* while able to have two copies in play.
+    /// Every card in the snapshot that both prints a grant and gates it on
+    /// control is quantity 1 (01115, 01117, 02060, 02068, 02069, 10051, 70040,
+    /// 05038); the two multi-copy entries — Well-Funded 10051 and Able Bodied
+    /// 05038 — gate on *other* cards' traits rather than on themselves, and
+    /// their conditions already bind the recipient's own controller and source
+    /// instance through the sweep. [`GrantTarget::SelfCard`] is instance-scoped
+    /// regardless, so only the condition is code-keyed.
     ControlStatus {
         /// Printed `ArkhamDB` code of the card whose control is being asked
         /// about.
