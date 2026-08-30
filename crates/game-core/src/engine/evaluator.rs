@@ -689,6 +689,14 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                      never executed"
                 .into(),
         },
+        Effect::Grant { .. } => EngineOutcome::Rejected {
+            reason: "Effect::Grant is a constant marker — swept off the board by \
+                     engine::abilities_in_effect, never executed"
+                .into(),
+        },
+        Effect::TakeControl { code } => {
+            crate::engine::dispatch::take_control(cx, eval_ctx.controller, code)
+        }
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
         Effect::DiscoverAdditionalClues(amount) => discover_additional_clues_effect(cx, *amount),
         Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, *count),
@@ -1170,12 +1178,18 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
 /// Returns `Err` for conditions that aren't expressible yet (the
 /// state shape they'd query against doesn't exist) — the caller
 /// turns those into [`EngineOutcome::Rejected`].
-fn eval_condition(
+pub(crate) fn eval_condition(
     state: &GameState,
     eval_ctx: &EvalContext,
     condition: &Condition,
 ) -> Result<bool, String> {
     match condition {
+        Condition::Not(inner) => eval_condition(state, eval_ctx, inner).map(|held| !held),
+        // Board-global: it reads no "you", which is what lets the grant sweep
+        // ask it on behalf of a recipient nobody controls (ADR 0014).
+        Condition::CardControlledByAPlayer { code } => {
+            Ok(crate::engine::abilities_in_effect::card_controlled_by_a_player(state, code))
+        }
         Condition::SkillTestKind(kind) => {
             let t = state.current_skill_test().ok_or_else(|| {
                 "Condition::SkillTestKind but no skill test is in flight".to_owned()

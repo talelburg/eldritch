@@ -83,6 +83,7 @@ use game_core::card_registry::{self, CardRegistry};
 use game_core::dsl::{activated, gain_resources, Ability, InvestigatorTarget};
 use game_core::engine::{EngineOutcome, InputKind, OptionTarget, TurnAction};
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     Continuation, EnemyId, GameState, InvestigatorId, LocationId, MythosResume, Phase, SkillKind,
@@ -265,7 +266,7 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
     TurnAction::ActivateAbility {
         investigator: MINE,
         source,
-        ability_index,
+        address: AbilityAddress::Printed(ability_index),
     }
 }
 
@@ -292,7 +293,7 @@ fn assert_offered_and_usable(source: AbilitySource, target: &OptionTarget, why: 
     );
     assert_event!(
         result.events,
-        Event::AbilityActivated { investigator, source: s, ability_index: ZERO_ACTION_ABILITY, .. }
+        Event::AbilityActivated { investigator, source: s, address: AbilityAddress::Printed(ZERO_ACTION_ABILITY), .. }
             if *investigator == MINE && *s == source
     );
     assert_eq!(

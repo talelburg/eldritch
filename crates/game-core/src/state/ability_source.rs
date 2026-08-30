@@ -104,6 +104,66 @@ impl AbilitySource {
     }
 }
 
+/// **How an ability is named across a suspension.**
+///
+/// An ability has no id: a scan mints a candidate naming one, and a resolve
+/// looks it back up, possibly several suspensions later. Through #774 that name
+/// was a bare index into the card's ability vector, and that worked only while
+/// the vector was a pure function of the card.
+///
+/// It is not, once anything grants abilities to it (ADR 0014). **So an address
+/// points at where the ability is *printed*, never at where it currently
+/// appears.** Lita Chantler 01117 is the proof: taking control of her removes
+/// her granted Parley and adds her two granted buffs *in the same instant,
+/// inside the Parley's own resolution*, so a merged index 1 means
+/// `[action] Parley` at scan time and a combat modifier at resolve time.
+///
+/// The address rides `GameState` across the wire — `ResolutionCandidate` sits
+/// on an open window frame, and `protocol::ServerMessage::Hello` carries
+/// `state: Box<GameState>` — so this is part of the serialized shape.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum AbilityAddress {
+    /// The ability at this index of the card's **printed** abilities, on the
+    /// side of it that is in effect (#774).
+    Printed(u8),
+    /// An ability another card grants to this one — addressed by the
+    /// *granter's* printed text, which is what stays put.
+    ///
+    /// The recipient is already named by the candidate's own source, and the
+    /// granter's clause means the same thing whichever copy of the granter is
+    /// in play, so the granter is a [`CardCode`](crate::state::CardCode) rather
+    /// than an [`AbilitySource`].
+    Granted {
+        /// Printed code of the card declaring the grant.
+        granter: super::card::CardCode,
+        /// Index of the granter's printed `Effect::Grant` ability, on the side
+        /// of the granter that is in effect.
+        ability: u8,
+        /// Position within that grant's `abilities` list.
+        sub: u8,
+    },
+}
+
+impl AbilityAddress {
+    /// The printed index this address names, or `None` for a granted ability.
+    ///
+    /// The per-instance usage counter (`CardInPlay::ability_usage`) is keyed by
+    /// printed index — a `BTreeMap<u8, _>`, because JSON object keys are
+    /// strings and an enum key does not survive the wire. A granted ability
+    /// therefore has nowhere to record a *"Limit X per \[period\]"* cap, which
+    /// is why `reject_untrackable_usage_limit` refuses one before any cost is
+    /// paid. No corpus card grants an ability with a printed limit; the Parlor
+    /// 01115's Parley has none.
+    #[must_use]
+    pub fn printed_index(&self) -> Option<u8> {
+        match self {
+            AbilityAddress::Printed(index) => Some(*index),
+            AbilityAddress::Granted { .. } => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,5 +267,43 @@ mod tests {
                 source,
             );
         }
+    }
+
+    /// The address rides `GameState` across the wire — a `ResolutionCandidate`
+    /// on an open window frame, inside the `state: Box<GameState>` that
+    /// `protocol::ServerMessage::Hello` carries — so both kinds want pinning.
+    #[test]
+    fn every_address_kind_round_trips_through_serialization() {
+        for address in [
+            AbilityAddress::Printed(3),
+            AbilityAddress::Granted {
+                granter: super::super::card::CardCode::new("01115"),
+                ability: 1,
+                sub: 0,
+            },
+        ] {
+            let json = serde_json::to_string(&address).expect("serializes");
+            assert_eq!(
+                serde_json::from_str::<AbilityAddress>(&json).expect("deserializes"),
+                address,
+            );
+        }
+    }
+
+    /// Only a printed address has an index the per-instance usage counter can
+    /// be keyed by; a granted one is refused a *"Limit X per \[period\]"* cap
+    /// rather than silently uncapped (`reject_untrackable_usage_limit`).
+    #[test]
+    fn only_a_printed_address_has_an_index_to_key_a_usage_limit_by() {
+        assert_eq!(AbilityAddress::Printed(2).printed_index(), Some(2));
+        assert_eq!(
+            AbilityAddress::Granted {
+                granter: super::super::card::CardCode::new("01115"),
+                ability: 1,
+                sub: 0,
+            }
+            .printed_index(),
+            None,
+        );
     }
 }

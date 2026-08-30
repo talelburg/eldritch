@@ -7,8 +7,8 @@ use crate::card_registry;
 use crate::dsl::{ActionDesignator, Cost, Trigger};
 use crate::event::Event;
 use crate::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState, Investigator, InvestigatorId,
-    UseKind,
+    AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInPlay, CardInstanceId,
+    GameState, Investigator, InvestigatorId, UseKind,
 };
 
 use super::super::evaluator::{push_effect, EvalContext};
@@ -92,7 +92,7 @@ pub(super) fn activate_ability(
     cx: &mut Cx,
     investigator: InvestigatorId,
     source: AbilitySource,
-    ability_index: u8,
+    address: &AbilityAddress,
 ) -> EngineOutcome {
     let super::ActivateCheckResult {
         source_code,
@@ -106,7 +106,7 @@ pub(super) fn activate_ability(
         cx.state,
         investigator,
         source,
-        ability_index,
+        address,
     ) {
         Ok(r) => r,
         Err(reason) => return EngineOutcome::Rejected { reason },
@@ -132,7 +132,7 @@ pub(super) fn activate_ability(
         investigator,
         source,
         code: source_code,
-        ability_index,
+        address: address.clone(),
     });
 
     // RR p.5 "Attack of Opportunity": activating an action-cost ability while
@@ -485,9 +485,8 @@ pub(super) struct ActivatedAbility {
     pub(super) usage_limit: Option<crate::dsl::UsageLimit>,
 }
 
-/// Resolve the activated ability at `(code, ability_index)` on the side of the
-/// card behind `source` that is in effect, returning its [`ActivatedAbility`]
-/// or the rejection reason.
+/// Resolve the activated ability `address` names on the card behind `source`,
+/// returning its [`ActivatedAbility`] or the rejection reason.
 ///
 /// Split out so [`activate_ability`] stays under the function-size
 /// lint, and to mirror [`resolve_play_target`]'s role for
@@ -496,7 +495,7 @@ pub(super) fn resolve_activated_ability(
     state: &GameState,
     source: AbilitySource,
     code: &CardCode,
-    ability_index: u8,
+    address: &AbilityAddress,
 ) -> Result<ActivatedAbility, EngineOutcome> {
     if card_registry::current().is_none() {
         return Err(EngineOutcome::Rejected {
@@ -504,22 +503,21 @@ pub(super) fn resolve_activated_ability(
                 .into(),
         });
     }
-    // Indexed against the side in effect (#774), which is the same side the
-    // enumerator counted from — so an `ability_index` means the same ability
-    // on both ends of the round trip.
-    let Some(abilities) = crate::engine::abilities_in_effect::for_source(state, source, code)
-    else {
-        return Err(EngineOutcome::Rejected {
-            reason: format!("ActivateAbility: card {code} has no effect implementation").into(),
-        });
-    };
-    let idx = usize::from(ability_index);
-    let Some(ability) = abilities.get(idx) else {
+    // Re-derived from the address (#772), against the side in effect (#774) and
+    // the grants currently on the board — which is what the enumerator listed
+    // from, so an address means the same ability on both ends of the round
+    // trip. A granted ability whose granter has left play or whose condition
+    // has flipped is simply not there, and rejects like an unknown one.
+    let Some(ability) = crate::engine::abilities_in_effect::resolve(
+        state,
+        CandidateSource::Ability(source),
+        code,
+        address,
+    ) else {
         return Err(EngineOutcome::Rejected {
             reason: format!(
-                "ActivateAbility: ability_index {ability_index} out of bounds for {code} \
-                 (has {} abilities)",
-                abilities.len(),
+                "ActivateAbility: {address:?} names no ability in effect on {code} \
+                 (unimplemented card, or a grant that no longer applies)"
             )
             .into(),
         });
@@ -531,7 +529,7 @@ pub(super) fn resolve_activated_ability(
     else {
         return Err(EngineOutcome::Rejected {
             reason: format!(
-                "ActivateAbility: ability {ability_index} on {code} is not an Activated \
+                "ActivateAbility: {address:?} on {code} is not an Activated \
                  trigger (got {:?})",
                 ability.trigger,
             )

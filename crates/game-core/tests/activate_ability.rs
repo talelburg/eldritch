@@ -19,6 +19,7 @@ use game_core::dsl::{
 };
 use game_core::engine::{apply, legal_actions, EngineOutcome};
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId,
     Lifetime, Phase, RecordedModifierKind, SkillKind, Status, TokenModifiers,
@@ -134,7 +135,7 @@ fn fast_resource_loop_activates_and_resolves_effect() {
         &TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(instance_id),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     let inv = &result.state.investigators[&id];
@@ -157,7 +158,7 @@ fn fast_resource_loop_activates_and_resolves_effect() {
         1,
         Event::AbilityActivated {
             investigator,
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
             code,
             ..
         } if *investigator == id && code.as_str() == FAST_RESOURCE_LOOP
@@ -179,7 +180,7 @@ fn action_exhaust_gain_exhausts_source_and_blocks_reactivation() {
         &TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(instance_id),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     let inv = &after_first.state.investigators[&id];
@@ -202,7 +203,7 @@ fn action_exhaust_gain_exhausts_source_and_blocks_reactivation() {
         &TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(instance_id),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(matches!(
@@ -222,7 +223,7 @@ fn insufficient_resources_reject_without_payment() {
         &TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(instance_id),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
@@ -241,7 +242,7 @@ fn insufficient_actions_reject_action_cost_ability() {
         &TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(instance_id),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
@@ -261,7 +262,7 @@ fn ability_index_pointing_at_non_activated_trigger_rejects() {
         &TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(instance_id),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
@@ -277,7 +278,7 @@ fn ability_index_out_of_bounds_rejects() {
         &TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(instance_id),
-            ability_index: 9,
+            address: AbilityAddress::Printed(9),
         },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
@@ -293,7 +294,7 @@ fn discard_card_from_hand_cost_rejects_with_todo() {
         &TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(instance_id),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
@@ -326,7 +327,7 @@ fn activating_with_defeated_status_doesnt_need_registry() {
         &TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(instance_id),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
@@ -437,7 +438,7 @@ fn activating_a_test_scoped_modifier_outside_a_test_is_rejected() {
     let action = TurnAction::ActivateAbility {
         investigator: id,
         source: AbilitySource::InPlay(instance_id),
-        ability_index: 0,
+        address: AbilityAddress::Printed(0),
     };
 
     assert!(

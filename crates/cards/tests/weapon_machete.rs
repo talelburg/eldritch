@@ -17,6 +17,7 @@
 use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId,
     InvestigatorId, LocationId, Phase, TokenModifiers,
@@ -91,7 +92,7 @@ fn activate_machete(state: game_core::GameState) -> game_core::engine::ApplyResu
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(MACHETE_INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         })
         .resolve_choices(|c| {
             c.commit_cards(&[]);
@@ -123,7 +124,7 @@ fn two_enemies_engaged_suspends_for_pick_then_attacks_chosen() {
         &TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(MACHETE_INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(
@@ -175,7 +176,7 @@ fn activate_and_pick(state: game_core::GameState, option: u32) -> game_core::eng
         &TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(MACHETE_INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(
@@ -305,7 +306,7 @@ fn no_co_located_enemy_activation_is_rejected_precost() {
         &TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(MACHETE_INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(

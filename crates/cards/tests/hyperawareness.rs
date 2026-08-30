@@ -24,6 +24,7 @@
 
 use game_core::engine::{ApplyResult, EngineOutcome, TurnAction};
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState,
     InvestigatorId, Phase, SkillKind, TokenModifiers,
@@ -176,7 +177,7 @@ fn activation_with_no_test_in_flight_is_rejected_and_buffs_nothing_later() {
     let action = TurnAction::ActivateAbility {
         investigator: id,
         source: AbilitySource::InPlay(instance_id),
-        ability_index: 0,
+        address: AbilityAddress::Printed(0),
     };
 
     assert!(
@@ -227,7 +228,7 @@ fn activation_rejects_when_controller_lacks_a_resource() {
         &TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(instance_id),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));

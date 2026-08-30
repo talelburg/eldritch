@@ -14,6 +14,7 @@
 //! without colliding with the real-corpus binaries. Prior art:
 //! `reject_rollback.rs`.
 
+use game_core::state::AbilityAddress;
 use std::sync::OnceLock;
 
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Uses};
@@ -144,7 +145,7 @@ fn cost_after_the_source_leaves_play_rejects_rather_than_hitting_another_card() 
         &TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(DEPLETER_INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
 
@@ -196,7 +197,7 @@ fn costs_land_on_the_source_when_it_is_not_first_in_play() {
         &TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(DEPLETER_INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
 

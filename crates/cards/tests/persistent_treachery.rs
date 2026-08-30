@@ -6,6 +6,7 @@
 
 use game_core::action::{EngineRecord, InputResponse, PlayerAction};
 use game_core::engine::OptionId;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     Continuation, EnemyId, InvestigatorId, Location, LocationId, Phase, TokenModifiers,
@@ -559,7 +560,7 @@ fn fire_weapon(state: game_core::GameState) -> game_core::ApplyResult {
         .take(&TurnAction::ActivateAbility {
             investigator: InvestigatorId(1),
             source: AbilitySource::InPlay(CardInstanceId(1)),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         })
         .resolve_choices(|c| {
             c.commit_cards(&[]);
@@ -641,7 +642,7 @@ fn the_action_menu_hides_a_designated_fight_the_surcharge_makes_unaffordable() {
     let activation = TurnAction::ActivateAbility {
         investigator: InvestigatorId(1),
         source: AbilitySource::InPlay(CardInstanceId(1)),
-        ability_index: 0,
+        address: AbilityAddress::Printed(0),
     };
     assert!(
         game_core::engine::enumerate::legal_actions(&state).contains(&activation),

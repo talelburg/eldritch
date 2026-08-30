@@ -54,6 +54,7 @@ use game_core::event::{Event, FailureReason};
 use game_core::scenario::{
     ScenarioId, ScenarioModule, ScenarioRegistry, SymbolCtx, SymbolOutcome, TokenEffect,
 };
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState,
     InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers, TokenResolution, Zone,
@@ -508,7 +509,7 @@ fn latching_a_determination_outside_a_test_is_rejected() {
     let action = TurnAction::ActivateAbility {
         investigator: id,
         source: AbilitySource::InPlay(instance_id),
-        ability_index: 0,
+        address: AbilityAddress::Printed(0),
     };
 
     assert!(
@@ -539,7 +540,7 @@ fn an_unrelated_activation_is_still_offered_outside_a_test() {
         legal_actions(&state).contains(&TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(instance_id),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         })
     );
 }

@@ -21,8 +21,8 @@ use crate::engine::TimingEvent;
 use crate::event::{Event, LapseReason};
 use crate::state::TimingMode;
 use crate::state::{
-    AbilitySource, CandidateSource, CardCode, Continuation, FastActorScope, FastWindowKind,
-    GameState, InvestigatorId, Phase, ResolutionCandidate, Status,
+    AbilityAddress, AbilitySource, CandidateSource, CardCode, Continuation, FastActorScope,
+    FastWindowKind, GameState, InvestigatorId, Phase, ResolutionCandidate, Status,
 };
 
 use super::super::evaluator::{ability_can_initiate, push_effect, EvalContext};
@@ -165,9 +165,9 @@ fn scan_pending_triggers(
     event: &TimingEvent,
     bucket: EventTiming,
 ) -> Vec<ResolutionCandidate> {
-    let Some(reg) = card_registry::current() else {
+    if card_registry::current().is_none() {
         return Vec::new();
-    };
+    }
     // Active investigator first, then the rest of turn_order in their
     // listed order. Investigators not in turn_order are skipped
     // entirely — a bare plain skill-test path can run without a
@@ -241,10 +241,16 @@ fn scan_pending_triggers(
                     continue;
                 }
             }
-            let Some(abilities) = (reg.abilities_for)(&card.code) else {
+            // The funnel (#774/#772): the side in effect, plus whatever the
+            // board grants this instance.
+            let Some(abilities) = abilities_in_effect::for_source(
+                state,
+                AbilitySource::InPlay(card.instance_id),
+                &card.code,
+            ) else {
                 continue;
             };
-            for (idx, ability) in abilities.iter().enumerate() {
+            for (address, ability) in &abilities {
                 let Trigger::OnEvent {
                     pattern,
                     timing,
@@ -264,12 +270,15 @@ fn scan_pending_triggers(
                 if !trigger_matches(event, pattern, id) {
                     continue;
                 }
-                let ability_index = u8::try_from(idx)
-                    .expect("abilities vec exceeds u8::MAX — card-impl bug, abilities are tiny");
                 // "Limit X per [period]" — skip triggers whose per-
                 // instance counter has already reached the cap this
-                // round. Rules Reference page 14.
-                if card.is_usage_exhausted(ability_index, ability.usage_limit, state.round) {
+                // round. Rules Reference page 14. A **granted** ability has no
+                // printed index to key the counter by, so it is never counted
+                // out here; `reject_untrackable_usage_limit` refuses one that
+                // prints a cap rather than silently ignoring it.
+                if address.printed_index().is_some_and(|idx| {
+                    card.is_usage_exhausted(idx, ability.usage_limit, state.round)
+                }) {
                     continue;
                 }
                 // Eligibility gate (RR p.2): suppress a reaction whose effect
@@ -290,7 +299,7 @@ fn scan_pending_triggers(
                 pending.push(ResolutionCandidate {
                     code: card.code.clone(),
                     controller: id,
-                    ability_index,
+                    address: address.clone(),
                     source: CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
                 });
             }
@@ -314,9 +323,9 @@ fn scan_act_agenda_reactions(
     event: &TimingEvent,
     bucket: EventTiming,
 ) -> Vec<ResolutionCandidate> {
-    let Some(reg) = card_registry::current() else {
+    if card_registry::current().is_none() {
         return Vec::new();
-    };
+    }
     let Some(lead) = state.turn_order.first().copied() else {
         return Vec::new();
     };
@@ -336,10 +345,10 @@ fn scan_act_agenda_reactions(
     .into_iter()
     .flatten()
     {
-        let Some(abilities) = (reg.abilities_for)(code) else {
+        let Some(abilities) = abilities_in_effect::for_source(state, source, code) else {
             continue;
         };
-        for (idx, ability) in abilities.iter().enumerate() {
+        for (address, ability) in &abilities {
             let Trigger::OnEvent {
                 pattern,
                 timing,
@@ -360,12 +369,10 @@ fn scan_act_agenda_reactions(
             if !ability_can_initiate(state, ability, CandidateSource::Ability(source), lead) {
                 continue;
             }
-            let ability_index = u8::try_from(idx)
-                .expect("abilities vec exceeds u8::MAX — card-impl bug, abilities are tiny");
             hits.push(ResolutionCandidate {
                 code: code.clone(),
                 controller: lead,
-                ability_index,
+                address: address.clone(),
                 source: CandidateSource::Ability(source),
             });
         }
@@ -464,7 +471,8 @@ fn scan_hand_fast_events(
                 plays.push(ResolutionCandidate {
                     code: code.clone(),
                     controller: id,
-                    ability_index,
+                    // A card in hand is not in play, so nothing grants to it.
+                    address: AbilityAddress::Printed(ability_index),
                     source: CandidateSource::Hand,
                 });
                 // One option per card: a card with two matching abilities is
@@ -824,8 +832,7 @@ fn lapse_reason(state: &GameState, candidate: &ResolutionCandidate) -> LapseReas
         return LapseReason::CostUnpayable;
     }
     let still_eligible =
-        abilities_in_effect::for_candidate_source(state, candidate.source, &candidate.code)
-            .and_then(|abilities| abilities.get(usize::from(candidate.ability_index)).cloned())
+        abilities_in_effect::resolve(state, candidate.source, &candidate.code, &candidate.address)
             .is_some_and(|ability| {
                 ability_can_initiate(state, &ability, candidate.source, candidate.controller)
             });
@@ -1066,29 +1073,20 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // Abilities resolve by code (works for in-play instances and scenario
     // board cards alike); `source` is the firing instance, when any.
     let code = trigger.code.clone();
-    let Some(abilities) =
-        abilities_in_effect::for_candidate_source(cx.state, trigger.source, &code)
+    let Some(ability) =
+        abilities_in_effect::resolve(cx.state, trigger.source, &code, &trigger.address)
     else {
         return EngineOutcome::Rejected {
             reason: format!(
                 "ResolveInput: reaction-window PickSingle(OptionId({i})) names {code}, which no \
-                 longer has abilities on the side in effect — the card was scanned on one side \
-                 and fired on another. Re-read the current option list."
+                 longer has the ability at {address:?} — the card was scanned on one side and \
+                 fired on another, or a grant lapsed between the two. Re-read the current option \
+                 list.",
+                address = trigger.address,
             )
             .into(),
         };
     };
-    let ability = abilities
-        .get(usize::from(trigger.ability_index))
-        .unwrap_or_else(|| {
-            unreachable!(
-                "fire_pending_trigger: ability_index {idx} out of range for card {code:?} \
-                 with {n} abilities; state-corruption invariant violation",
-                idx = trigger.ability_index,
-                n = abilities.len(),
-            )
-        })
-        .clone();
 
     // Thread the source instance (if any) into the EvalContext so effects
     // that self-reference (`DiscardSelf`) or push source-attributed state
@@ -1220,12 +1218,19 @@ fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcom
             candidate.code,
         )
     });
+    let index = candidate.address.printed_index().unwrap_or_else(|| {
+        unreachable!(
+            "play_fast_event: {:?} is a granted address on a hand candidate {:?}; nothing \
+             grants to a card that is not in play",
+            candidate.address, candidate.code,
+        )
+    });
     let effect = abilities
-        .get(usize::from(candidate.ability_index))
+        .get(usize::from(index))
         .unwrap_or_else(|| {
             unreachable!(
-                "play_fast_event: ability_index {} out of range for {:?}",
-                candidate.ability_index, candidate.code,
+                "play_fast_event: printed index {index} out of range for {:?}",
+                candidate.code,
             )
         })
         .effect
@@ -1358,7 +1363,13 @@ fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
                         ctl = trigger.controller,
                     )
                 });
-            card.bump_ability_usage(trigger.ability_index, current_round);
+            // A granted ability has no printed index to key the counter by, so
+            // there is nothing to bump — `reject_untrackable_usage_limit`
+            // refuses one that prints a *"Limit X per \[period\]"* cap before
+            // any cost is paid, so nothing is silently uncapped here.
+            if let Some(index) = trigger.address.printed_index() {
+                card.bump_ability_usage(index, current_round);
+            }
         }
         // Listed kind by kind rather than wildcarded: a sixth `AbilitySource`
         // kind *that carries an instance* must break this build rather than
@@ -2063,9 +2074,27 @@ fn reject_incompatible_costs(costs: &[crate::dsl::Cost]) -> Result<(), Cow<'stat
 fn reject_untrackable_usage_limit(
     source: AbilitySource,
     code: &CardCode,
+    address: &AbilityAddress,
     usage_limit: Option<crate::dsl::UsageLimit>,
 ) -> Result<(), Cow<'static, str>> {
-    if usage_limit.is_none() || source.instance().is_some() {
+    if usage_limit.is_none() {
+        return Ok(());
+    }
+    // The second untrackable shape (#772): a **granted** ability. The counter is
+    // keyed by printed index — `BTreeMap<u8, _>`, because a JSON object key is a
+    // string and an enum key does not survive the wire — so a granted ability
+    // has nowhere to record a use. Refused for the same reason as the first
+    // shape: silently uncapping a printed limit is worse than saying so. No
+    // corpus grant prints one; the Parlor 01115's Parley is unlimited.
+    if address.printed_index().is_none() {
+        return Err(format!(
+            "ActivateAbility: {code}'s granted ability at {address:?} carries a usage limit, but \
+             the per-instance usage counter is keyed by printed index; TODO(#829): a granted \
+             ability with a printed limit needs its own counter key"
+        )
+        .into());
+    }
+    if source.instance().is_some() {
         return Ok(());
     }
     Err(format!(
@@ -2122,7 +2151,7 @@ pub(crate) fn check_activate_ability(
     state: &GameState,
     investigator: InvestigatorId,
     source: AbilitySource,
-    ability_index: u8,
+    address: &AbilityAddress,
 ) -> Result<super::ActivateCheckResult, Cow<'static, str>> {
     let Some(inv) = state.investigators.get(&investigator) else {
         return Err(
@@ -2159,19 +2188,14 @@ pub(crate) fn check_activate_ability(
         costs,
         effect,
         usage_limit,
-    } = match super::abilities::resolve_activated_ability(
-        state,
-        source,
-        &source_code,
-        ability_index,
-    ) {
+    } = match super::abilities::resolve_activated_ability(state, source, &source_code, address) {
         Ok(v) => v,
         Err(EngineOutcome::Rejected { reason }) => return Err(reason),
         Err(other) => {
             unreachable!("resolve_activated_ability returned non-Rejected outcome: {other:?}")
         }
     };
-    reject_untrackable_usage_limit(source, &source_code, usage_limit)?;
+    reject_untrackable_usage_limit(source, &source_code, address, usage_limit)?;
 
     // Gate: branch on action_cost now that we have it.
     // Fast abilities (action_cost == 0) may be used at any player window.
@@ -2338,18 +2362,15 @@ pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
             let Some(abilities) = abilities_in_effect::for_source(state, source, &code) else {
                 continue;
             };
-            for (ab_idx, ability) in abilities.iter().enumerate() {
+            for (address, ability) in abilities {
                 let Trigger::Activated { action_cost: 0, .. } = ability.trigger else {
                     continue;
                 };
-                let Ok(ability_index) = u8::try_from(ab_idx) else {
-                    break;
-                };
-                if check_activate_ability(state, inv_id, source, ability_index).is_ok() {
+                if check_activate_ability(state, inv_id, source, &address).is_ok() {
                     out.push(TurnAction::ActivateAbility {
                         investigator: inv_id,
                         source,
-                        ability_index,
+                        address,
                     });
                 }
             }
@@ -2577,7 +2598,7 @@ mod check_activate_ability_tests {
             &state,
             InvestigatorId(1),
             AbilitySource::InPlay(CardInstanceId(999)),
-            0,
+            &AbilityAddress::Printed(0),
         )
         .expect_err("a source the investigator cannot reach should reject");
         assert!(
@@ -2593,7 +2614,7 @@ mod check_activate_ability_tests {
             &state,
             InvestigatorId(99),
             AbilitySource::InPlay(CardInstanceId(1)),
-            0,
+            &AbilityAddress::Printed(0),
         )
         .expect_err("missing investigator should reject");
         assert!(
@@ -2635,19 +2656,19 @@ mod resolution_option_anchor_tests {
             ResolutionCandidate {
                 code: CardCode::new("_inplay"),
                 controller: InvestigatorId(1),
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
                 source: CandidateSource::Ability(AbilitySource::InPlay(CardInstanceId(9))),
             },
             ResolutionCandidate {
                 code: CardCode::new("01022"),
                 controller: InvestigatorId(1),
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
                 source: CandidateSource::Hand,
             },
             ResolutionCandidate {
                 code: CardCode::new("01109"),
                 controller: InvestigatorId(1),
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
                 source: CandidateSource::Ability(AbilitySource::Act),
             },
         ];
@@ -2688,7 +2709,7 @@ mod resolution_option_anchor_tests {
             candidate_anchor(&ResolutionCandidate::new(
                 CardCode::new("_code"),
                 InvestigatorId(2),
-                0,
+                AbilityAddress::Printed(0),
                 source,
             ))
         };
@@ -2792,7 +2813,12 @@ mod candidate_source_present_tests {
     const SOME_CODE: &str = "_synth_card";
 
     fn candidate(source: CandidateSource) -> ResolutionCandidate {
-        ResolutionCandidate::new(CardCode::new(SOME_CODE), INV, 0, source)
+        ResolutionCandidate::new(
+            CardCode::new(SOME_CODE),
+            INV,
+            AbilityAddress::Printed(0),
+            source,
+        )
     }
 
     #[test]
@@ -2872,7 +2898,7 @@ mod candidate_source_present_tests {
         let cand = ResolutionCandidate::new(
             CardCode::new(SOME_CODE),
             INV,
-            0,
+            AbilityAddress::Printed(0),
             CandidateSource::Ability(AbilitySource::Act),
         );
         assert!(candidate_source_present(&state, &cand));
@@ -2905,7 +2931,7 @@ mod candidate_source_present_tests {
         let cand = ResolutionCandidate::new(
             CardCode::new(SOME_CODE),
             INV,
-            0,
+            AbilityAddress::Printed(0),
             CandidateSource::Ability(AbilitySource::Agenda),
         );
         assert!(candidate_source_present(&state, &cand));
@@ -2933,7 +2959,7 @@ mod candidate_source_present_tests {
             ResolutionCandidate::new(
                 CardCode::new(SOME_CODE),
                 INV,
-                0,
+                AbilityAddress::Printed(0),
                 CandidateSource::Ability(AbilitySource::Enemy(id)),
             )
         };
@@ -3014,7 +3040,7 @@ mod withdraw_suppressed_candidates_tests {
             candidates: vec![ResolutionCandidate::new(
                 CardCode::new(CODE),
                 INV,
-                0,
+                AbilityAddress::Printed(0),
                 CandidateSource::Ability(AbilitySource::InPlay(CardInstanceId(1))),
             )],
         });

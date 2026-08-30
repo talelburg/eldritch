@@ -40,6 +40,7 @@
 
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Enemy, EnemyId,
     InvestigatorId, LocationId, Phase, UseKind,
@@ -158,7 +159,7 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
         &TurnAction::ActivateAbility {
             investigator: inv_id,
             source: AbilitySource::InPlay(kit),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     // The AoO provokes a soak distribution prompt (Guard Dog has capacity, #44/
@@ -256,7 +257,7 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
         &TurnAction::ActivateAbility {
             investigator: inv_id,
             source: AbilitySource::InPlay(blade),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     let state = result.state;
@@ -325,7 +326,7 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
         &TurnAction::ActivateAbility {
             investigator: inv_id,
             source: AbilitySource::InPlay(cop),
-            ability_index: 1,
+            address: AbilityAddress::Printed(1),
         },
     );
 
@@ -405,7 +406,7 @@ fn activating_an_investigate_designated_ability_while_engaged_provokes_an_aoo() 
         &TurnAction::ActivateAbility {
             investigator: inv_id,
             source: AbilitySource::InPlay(torch),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
 
@@ -482,7 +483,7 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
         &TurnAction::ActivateAbility {
             investigator: inv_id,
             source: AbilitySource::InPlay(kit),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     let state = result.state;
@@ -572,7 +573,7 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
         &TurnAction::ActivateAbility {
             investigator: inv_id,
             source: AbilitySource::InPlay(kit),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
 

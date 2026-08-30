@@ -37,6 +37,7 @@ use game_core::assert_event;
 use game_core::engine::{legal_actions, EngineOutcome, TurnAction};
 use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, GameState,
     InvestigationResume, InvestigatorId, LocationId, Phase, Status,
@@ -116,7 +117,7 @@ fn resign_action() -> TurnAction {
     TurnAction::ActivateAbility {
         investigator: RESIGNER,
         source: AbilitySource::Location(PARLOR),
-        ability_index: RESIGN,
+        address: AbilityAddress::Printed(RESIGN),
     }
 }
 

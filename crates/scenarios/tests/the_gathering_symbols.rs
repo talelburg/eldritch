@@ -283,7 +283,10 @@ const COP_INST: CardInstanceId = CardInstanceId(7);
 /// `cop_damage` damage already.
 fn beat_cop_board(cop_damage: u8) -> game_core::state::GameState {
     let mut state = gathering_state(ChaosToken::Tablet, 1);
-    let mut cop = CardInPlay::enter_play(CardCode::new(BEAT_COP), COP_INST);
+    // Pushed after `build()`, so it names its own owner: a player card leaving
+    // play goes to its owner's discard pile (#772).
+    let mut cop =
+        CardInPlay::enter_play(CardCode::new(BEAT_COP), COP_INST).owned_by(Some(InvestigatorId(1)));
     cop.accumulated_damage = cop_damage;
     state
         .investigators

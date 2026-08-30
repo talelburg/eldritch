@@ -13,6 +13,7 @@
 use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Phase,
 };
@@ -63,7 +64,7 @@ fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
         &TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(BOOK_INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     )
 }
@@ -133,7 +134,7 @@ fn an_empty_deck_cannot_be_searched() {
         !legal_actions(&state).contains(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(BOOK_INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         }),
         "the turn menu does not offer an activation the validator would reject",
     );
@@ -142,7 +143,7 @@ fn an_empty_deck_cannot_be_searched() {
         &TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(BOOK_INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(

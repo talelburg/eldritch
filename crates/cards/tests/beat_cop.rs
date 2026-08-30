@@ -6,6 +6,7 @@
 use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId,
     Phase, Zone,
@@ -53,7 +54,7 @@ fn board(enemy_present: bool) -> game_core::GameState {
 const ACTIVATE_ABILITY: TurnAction = TurnAction::ActivateAbility {
     investigator: INV,
     source: AbilitySource::InPlay(COP_INST),
-    ability_index: 1, // index 1 = the [fast] discard-damage ability
+    address: AbilityAddress::Printed(1), // index 1 = the [fast] discard-damage ability
 };
 
 #[test]

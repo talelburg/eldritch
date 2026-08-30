@@ -8,6 +8,7 @@ use game_core::dsl::{
 };
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase,
 };
@@ -170,7 +171,7 @@ fn discard_self_removes_source_from_play_and_runs_the_effect() {
             a == &TurnAction::ActivateAbility {
                 investigator: id,
                 source: AbilitySource::InPlay(inst),
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
             }
         })
         .expect("ability must be legal");
@@ -228,7 +229,7 @@ fn discard_self_deal_damage_rejects_with_no_enemy_and_keeps_source_in_play() {
         &TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(inst),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
@@ -257,7 +258,7 @@ fn discard_self_combined_with_exhaust_rejects_before_paying() {
         &TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(inst),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
@@ -277,7 +278,7 @@ fn discard_self_deal_damage_discards_source_and_damages_the_enemy() {
             a == &TurnAction::ActivateAbility {
                 investigator: id,
                 source: AbilitySource::InPlay(inst),
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
             }
         })
         .expect("ability must be legal");
@@ -324,7 +325,7 @@ fn spending_last_use_discards_a_discard_when_empty_asset() {
             a == &TurnAction::ActivateAbility {
                 investigator: id,
                 source: AbilitySource::InPlay(inst),
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
             }
         })
         .expect("ability must be legal");
@@ -357,7 +358,7 @@ fn spending_last_use_keeps_a_non_discarding_asset_in_play() {
             a == &TurnAction::ActivateAbility {
                 investigator: id,
                 source: AbilitySource::InPlay(inst),
-                ability_index: 0,
+                address: AbilityAddress::Printed(0),
             }
         })
         .expect("ability must be legal");

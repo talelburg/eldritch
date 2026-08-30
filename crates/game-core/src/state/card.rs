@@ -76,6 +76,15 @@ pub enum Zone {
     /// location (Obscuring Fog 01168). Used as the `from` zone when an
     /// attachment is discarded.
     LocationAttachment,
+    /// Out of the game entirely.
+    /// `glossary/Removed_from_Game.md`: *"A card that has been removed from the
+    /// game is placed away from the game area and has no further interaction
+    /// with the game in any manner for the duration of its removal."* Used as
+    /// the `to` zone of
+    /// [`Event::CardRemovedFromGame`](crate::Event::CardRemovedFromGame) — the
+    /// zone the field docs above already anticipated (*"out-of-game zones land
+    /// when they're needed"*).
+    RemovedFromGame,
 }
 
 crate::state::define_id! {
@@ -156,6 +165,35 @@ pub struct CardInPlay {
     ///
     /// [`UsageLimit`]: crate::dsl::UsageLimit
     pub ability_usage: BTreeMap<u8, AbilityUsageRecord>,
+    /// **Who owns this card**, as distinct from who controls it. `None` means
+    /// scenario-owned (#772).
+    ///
+    /// `glossary/Ownership_and_Control.md`: *"A card's owner is the player
+    /// whose deck (or game area) held the card at the start of the game."*, and
+    /// separately *"The scenario controls the cards in its out-of-play game
+    /// areas"*. Control is **where the instance sits** — which collection holds
+    /// it — and it moves when a card changes hands. Ownership does not:
+    /// *"Cards by default enter play under their owner's control. Some
+    /// abilities may cause cards to change control during a game."*
+    ///
+    /// **Where a card goes when it leaves play is a question about its owner.**
+    /// That is the field's one consumer today, and it is what makes Lita
+    /// Chantler 01117's removal *derive* rather than be special-cased — her
+    /// ruling states the derivation outright
+    /// (<https://arkhamdb.com/card/01117>): *"If Lita leaves play while a
+    /// player controls her temporarily during 'The Gathering' scenario **(i.e.
+    /// while she is technically not a part of that player's deck)**, remove her
+    /// from the game (do not place her into any discard pile)."* The
+    /// parenthetical is the premise; encoding only the conclusion would throw it
+    /// away.
+    ///
+    /// Written at the single construction point
+    /// (`engine::dispatch::threat_area::new_in_play_instance`) and read by
+    /// `engine::dispatch::cards::discard_card_from_play`. Implicitly optional on
+    /// the wire: a missing field is the genuine absent-by-design case
+    /// (scenario-owned), the same #453 carve-out `usage_limit` takes.
+    #[serde(default)]
+    pub owner: Option<super::investigator::InvestigatorId>,
 }
 
 /// One ability's firing record for "Limit X per \[period\]" tracking.
@@ -250,7 +288,18 @@ impl CardInPlay {
             accumulated_horror: 0,
             clues: 0,
             ability_usage: BTreeMap::new(),
+            owner: None,
         }
+    }
+
+    /// Set this instance's [`owner`](Self::owner) — the player whose deck it
+    /// came from. Builder-style sugar for the mint site, since the struct is
+    /// `#[non_exhaustive]` and cannot be built by literal from outside the
+    /// crate.
+    #[must_use]
+    pub fn owned_by(mut self, owner: Option<super::investigator::InvestigatorId>) -> Self {
+        self.owner = owner;
+        self
     }
 
     /// Returns `true` if the ability at `ability_index` has already
@@ -283,6 +332,32 @@ impl CardInPlay {
 #[cfg(test)]
 mod tests {
     use super::{CardCode, CardInPlay, CardInstanceId};
+
+    /// `owner` is implicitly optional on the wire (#453's absent-by-design
+    /// carve-out): a payload that omits it is a scenario-owned card, which is
+    /// the meaning `None` already carries.
+    #[test]
+    fn owner_defaults_to_scenario_owned_and_survives_the_wire() {
+        let c = CardInPlay::enter_play(CardCode("_x".into()), CardInstanceId(1));
+        assert_eq!(c.owner, None, "a fresh instance is owned by nobody yet");
+        let owned = c.owned_by(Some(crate::state::InvestigatorId(2)));
+        let json = serde_json::to_value(&owned).expect("serialize");
+        assert_eq!(
+            serde_json::from_value::<CardInPlay>(json.clone()).expect("deserialize"),
+            owned,
+        );
+        let mut without = json;
+        without
+            .as_object_mut()
+            .expect("a card serializes to a JSON object")
+            .remove("owner");
+        assert_eq!(
+            serde_json::from_value::<CardInPlay>(without)
+                .expect("an omitted owner deserializes")
+                .owner,
+            None,
+        );
+    }
 
     #[test]
     fn enter_play_defaults_clues_to_zero() {

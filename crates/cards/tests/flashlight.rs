@@ -14,6 +14,7 @@ use game_core::assert_event;
 use game_core::engine::EngineOutcome;
 use game_core::engine::TurnAction;
 use game_core::event::Event;
+use game_core::state::AbilityAddress;
 use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId,
     LocationId, Phase, SkillKind, TokenModifiers, UseKind,
@@ -72,7 +73,7 @@ fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(TORCH_INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         })
         .resolve_choices(|c| {
             c.commit_cards(&[]);
@@ -121,7 +122,7 @@ fn rejects_without_a_revealed_location_before_spending_a_supply() {
         &TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(TORCH_INST),
-            ability_index: 0,
+            address: AbilityAddress::Printed(0),
         },
     );
     assert!(matches!(r.outcome, EngineOutcome::Rejected { .. }));

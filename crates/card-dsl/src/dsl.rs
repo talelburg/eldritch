@@ -1282,6 +1282,111 @@ pub enum Effect {
     /// by-code form + an optional per-location limit) so Obscuring Fog 01168's
     /// bespoke `limit1-attach` native collapses onto it.
     AttachSelfToLocation,
+    /// **Grant abilities to a card.** A constant effect, *inspected* by the
+    /// grant sweep (`game_core::engine::abilities_in_effect`) rather than
+    /// executed by the evaluator — resolving one rejects, as
+    /// [`Restrict`](Self::Restrict) does.
+    ///
+    /// `glossary/Gains.md`: *"If a card gains a characteristic (such as an
+    /// icon, a trait, a keyword, or ability text), the card functions as if it
+    /// possesses the gained characteristic."* — and *"'Gained' characteristics
+    /// are not considered to be 'printed' on the card."* So the recipient
+    /// **has** the granted ability: it is the source an activation names, and
+    /// it is the recipient's ability that resolves. It is simply not printed
+    /// there, which is why the sweep merges it in one layer above the registry
+    /// and why the engine's `AbilityAddress` names the *granter*.
+    ///
+    /// The two Core consumers, verbatim
+    /// (`data/arkhamdb-snapshot/pack/core/core_encounter.json`):
+    ///
+    /// > \[Parlor 01115\] While Lita Chantler is not controlled by a player,
+    /// > she gains: "\[action\]: **Parley.** Test \[intellect\] (4). If you
+    /// > succeed, take control of Lita Chantler."
+    ///
+    /// > \[Lita Chantler 01117\] While you control Lita Chantler, she gains:
+    /// > "Each investigator at your location gets +1 \[combat\]. …"
+    ///
+    /// # The condition is a field, not an `Effect::If` around it
+    ///
+    /// **`Effect::If { then: Grant }` is silently invisible to the sweep.** A
+    /// `Trigger::Constant` effect is inspected, never executed, so it cannot
+    /// borrow the evaluator's control flow: there is no resolution in flight
+    /// and the "else" of *"this ability applies"* is silence. A constant effect
+    /// that wants a condition carries it as data. The alternative — teaching a
+    /// sweep to see through `Effect::If` — is the gap **#679** already tracks
+    /// for [`Modify`](Self::Modify), and two sweeps with different traversal
+    /// power would give two answers to *"does this constant effect apply"*.
+    /// Each granting card's own test pins the bare shape.
+    ///
+    /// # Who "you" is
+    ///
+    /// The sweep evaluates `condition` against the **recipient's** controller,
+    /// which is `None` for a card in play under nobody's control. A condition
+    /// that needs a "you" does not hold against `None`; a board-global one
+    /// ([`Condition::CardControlledByAPlayer`], and a
+    /// [`Condition::Not`] of one) is answered anyway.
+    Grant {
+        /// Which card receives the abilities.
+        to: GrantTarget,
+        /// When the grant applies. `None` grants unconditionally.
+        condition: Option<Condition>,
+        /// The granted abilities, in printed order. The engine's
+        /// `AbilityAddress::Granted { sub }` indexes this vector, so its order
+        /// is part of the addressing.
+        abilities: Vec<Ability>,
+    },
+    /// **Take control of the in-play card printed with `code`**, moving that
+    /// card's *same* instance into the resolving controller's play area.
+    ///
+    /// The Parlor 01115's Parley — *"If you succeed, take control of Lita
+    /// Chantler."* — is the corpus's first consumer; ~129 cards print the
+    /// verb, with "Jazz" Mulligan 02060, All In 02068 and Fold 02069 next in
+    /// the near backlog.
+    ///
+    /// **The instance moves; it is not re-minted.** The ruling is explicit
+    /// (<https://arkhamdb.com/card/01117>): *"When you 'take control' of a
+    /// card, it enters your play area (not your hand)."* — so the card's
+    /// accumulated damage and horror, its uses pool and its per-ability usage
+    /// counters all travel with it.
+    ///
+    /// **Control is not ownership.** Taking control leaves the card's owner
+    /// alone, which is the whole content of *"You take control of Lita only
+    /// **temporarily**, until the end of the scenario. Taking control of her
+    /// doesn't make her a part of your deck."* Where the card goes when it
+    /// later leaves play is a question about its **owner**, and that is what
+    /// makes Lita's removal derive rather than be special-cased.
+    ///
+    /// **Slot pressure applies.** `glossary/Slots.md`: *"If playing **or
+    /// gaining control** of an asset would put an investigator above his or her
+    /// slot limit for that type of asset, the investigator must choose and
+    /// discard other assets under his or her control simultaneously with the
+    /// new asset entering the slot."* — the same make-room prompt a play from
+    /// hand raises.
+    ///
+    /// `TODO(#824)`: the corpus's other entry path is a **set-aside** card —
+    /// Harold Walsted 02124's *"Choose an investigator to take control of the
+    /// set-aside Harold Walsted"* — which both names a chosen controller and
+    /// pulls from out of play. Out of scope: *"take control of 1 of the clues
+    /// on …"* (03076a), a different verb on a different noun.
+    TakeControl {
+        /// Printed `ArkhamDB` code of the card to take control of.
+        code: String,
+    },
+}
+
+/// Which card an [`Effect::Grant`] gives its abilities to.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum GrantTarget {
+    /// The granting card itself — Lita Chantler 01117's *"While you control
+    /// Lita Chantler, **she** gains …"*, printed on Lita.
+    SelfCard,
+    /// The in-play card printed with this code — the Parlor 01115's *"While
+    /// Lita Chantler is not controlled by a player, **she** gains …"*, printed
+    /// on the Parlor and naming a different card.
+    ///
+    /// A `CardCode` in spirit; a bare `String` because `card-dsl` is the bottom
+    /// of the crate stack and the newtype lives in `game-core`.
+    Card(String),
 }
 
 /// Which region of a deck an [`Effect::SearchDeck`] looks at.
@@ -1738,6 +1843,45 @@ pub enum Condition {
     /// candidates that will fire it (Oops! 02113, Esoteric Formula 02254,
     /// Springfield M1903 02226 — all Dunwich).
     Native { tag: String },
+    /// Negation: holds exactly when the inner condition does not.
+    ///
+    /// The first combinator in the vocabulary, and it arrives with the first
+    /// card that prints a negated clause — the Parlor 01115's *"While Lita
+    /// Chantler is **not** controlled by a player"*. Kept as a wrapper rather
+    /// than folded into
+    /// [`CardControlledByAPlayer`](Self::CardControlledByAPlayer) as a `bool`
+    /// so the negation composes with every later variant instead of once with
+    /// this one.
+    ///
+    /// **A negation is only as board-global as what it wraps** — see
+    /// [`CardControlledByAPlayer`](Self::CardControlledByAPlayer) for what that
+    /// buys a constant-effect sweep.
+    Not(Box<Condition>),
+    /// Whether the card printed with `code` is in play **and controlled by a
+    /// player** — `glossary/Ownership_and_Control.md`: *"A player controls the
+    /// cards located in his or her out-of-play game areas"*, against *"The
+    /// scenario controls the cards in its out-of-play game areas"*. A card in
+    /// play at a location under nobody's control is not controlled by a player,
+    /// and neither is a card that is not in play at all.
+    ///
+    /// **Board-global: it reads no "you".** That is the whole reason it is a
+    /// declarative variant rather than a card-local
+    /// [`Native`](Self::Native) tag, which the one-card threshold in
+    /// `docs/agents/standards.md` would otherwise call for. A native predicate
+    /// is `fn(&GameState, &EvalContext) -> bool` and an `EvalContext` names a
+    /// controller, so a native cannot be asked anything at all on behalf of an
+    /// **uncontrolled** card — which is exactly the case the Parlor 01115's
+    /// grant exists to serve: *"While Lita Chantler is not controlled by a
+    /// player, she gains …"* is evaluated by the grant sweep with Lita as the
+    /// recipient and no controller to bind. See ADR 0014.
+    ///
+    /// "Jazz" Mulligan 02060 prints the same clause about himself and is the
+    /// second consumer waiting in the near backlog.
+    CardControlledByAPlayer {
+        /// Printed `ArkhamDB` code of the card whose control is being asked
+        /// about.
+        code: String,
+    },
 }
 
 /// A non-negative count read off game state, usable as a value
@@ -2308,6 +2452,40 @@ pub fn investigate(shroud_modifier: impl Into<IntExpr>) -> ActionDesignator {
 #[must_use]
 pub fn restrict(restriction: Restriction) -> Effect {
     Effect::Restrict(restriction)
+}
+
+/// Build an [`Effect::Grant`] — the constant *"X gains: '…'"* clause.
+///
+/// A **bare** `Grant` under [`Trigger::Constant`] is the only shape the grant
+/// sweep sees; wrapping one in an [`Effect::If`] makes it silently inert. Pass
+/// the gate as `condition` instead, which is what this builder's second
+/// argument is for.
+#[must_use]
+pub fn grant(to: GrantTarget, condition: Option<Condition>, abilities: Vec<Ability>) -> Effect {
+    Effect::Grant {
+        to,
+        condition,
+        abilities,
+    }
+}
+
+/// Build an [`Effect::TakeControl`] of the in-play card printed with `code`.
+#[must_use]
+pub fn take_control(code: impl Into<String>) -> Effect {
+    Effect::TakeControl { code: code.into() }
+}
+
+/// Build a [`Condition::Not`] — the negation of `condition`.
+#[must_use]
+pub fn not(condition: Condition) -> Condition {
+    Condition::Not(Box::new(condition))
+}
+
+/// Build a [`Condition::CardControlledByAPlayer`] for the card printed with
+/// `code`.
+#[must_use]
+pub fn card_controlled_by_a_player(code: impl Into<String>) -> Condition {
+    Condition::CardControlledByAPlayer { code: code.into() }
 }
 
 /// Build an [`Effect::SkillTest`] initiating a `skill` test against
