@@ -1529,7 +1529,9 @@ mod tests {
                 },
                 delta: 1,
             }],
-            "the contribution is attributed to the card that has the ability,              which is the recipient — the granter is named by the address,              and a modifier read carries no address",
+            "the contribution is attributed to the card that has the ability, \
+             which is the recipient — the granter is named by the address, and \
+             a modifier read carries no address",
         );
         assert_eq!(breakdown.total(), 4);
     }
@@ -1551,7 +1553,9 @@ mod tests {
         );
         assert!(
             breakdown.contributions.is_empty(),
-            "the card is at the investigator's location and its audience is              location-scoped, so only the failed `ByAPlayer` condition can be              keeping the modifier out",
+            "the card is at the investigator's location and its audience is \
+             location-scoped, so only the failed `ByAPlayer` condition can be \
+             keeping the modifier out",
         );
         assert_eq!(breakdown.total(), 3);
     }

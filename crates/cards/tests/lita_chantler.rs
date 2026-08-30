@@ -278,9 +278,9 @@ fn drive(
         .run()
 }
 
-/// The script a basic **Fight** opens: commit nothing, then either fire Lita's
-/// reaction (the window's only option) or decline it.
-fn fight_script(fire: bool) -> impl FnOnce(&mut ScriptedResolver) {
+/// The script for a Fight that **does** open Lita's reaction window: commit
+/// nothing, then either fire the window's only option or decline it.
+fn fight_and_answer_window(fire: bool) -> impl FnOnce(&mut ScriptedResolver) {
     move |c: &mut ScriptedResolver| {
         c.commit_cards(&[]);
         if fire {
@@ -289,6 +289,17 @@ fn fight_script(fire: bool) -> impl FnOnce(&mut ScriptedResolver) {
             c.skip();
         }
     }
+}
+
+/// The script for a Fight that must open **no** reaction window at all: the
+/// commit prompt and nothing after it.
+///
+/// This is what distinguishes *"never offered"* from *"offered and declined"*,
+/// which is the whole of RR p.2's potential gate. `ScriptedResolver` panics on
+/// a prompt it has no scripted answer for, so a window opening here fails the
+/// test rather than being silently skipped.
+fn fight_expecting_no_window(c: &mut ScriptedResolver) {
+    c.commit_cards(&[]);
 }
 
 fn fight(actor: InvestigatorId, enemy: EnemyId) -> TurnAction {
@@ -310,7 +321,7 @@ fn a_co_located_attack_on_a_monster_deals_one_more_damage() {
     let result = drive(
         Board::new().build(),
         &fight(OTHER, GHOUL),
-        fight_script(true),
+        fight_and_answer_window(true),
     );
     assert_event!(
         result.events,
@@ -330,7 +341,7 @@ fn declining_the_reaction_leaves_the_attack_at_one_damage() {
     let result = drive(
         Board::new().build(),
         &fight(OTHER, GHOUL),
-        fight_script(false),
+        fight_and_answer_window(false),
     );
     assert_eq!(result.state.enemies[&GHOUL].damage, 1);
 }
@@ -345,9 +356,13 @@ fn against_a_non_monster_the_reaction_is_never_offered() {
     let result = drive(
         Board::new().build(),
         &fight(OTHER, NON_MONSTER),
-        fight_script(false),
+        fight_expecting_no_window,
     );
-    assert_eq!(result.state.enemies[&NON_MONSTER].damage, 1);
+    assert_eq!(
+        result.state.enemies[&NON_MONSTER].damage, 1,
+        "and `fight_expecting_no_window` scripts no answer for a reaction \
+         prompt, so reaching this line at all is the \"never offered\" half",
+    );
 }
 
 /// *"at **your** location"*: an investigator fighting the same `[[Monster]]`
@@ -360,7 +375,22 @@ fn an_attack_away_from_her_gets_no_bonus() {
         ..Board::new()
     }
     .build();
-    let result = drive(state, &fight(OTHER, GHOUL), fight_script(false));
+    let result = drive(state, &fight(OTHER, GHOUL), fight_expecting_no_window);
+    assert_eq!(result.state.enemies[&GHOUL].damage, 1);
+}
+
+/// The reaction half of *"while uncontrolled, neither ability applies"*. She is
+/// in play at the Parlor, the `[[Monster]]` is attacked there, and the grant's
+/// `ByAPlayer` condition is the only thing standing between the two — so no
+/// window opens and the attack deals its base 1.
+#[test]
+fn while_uncontrolled_the_reaction_does_not_apply() {
+    let state = Board {
+        controlled: false,
+        ..Board::new()
+    }
+    .build();
+    let result = drive(state, &fight(OTHER, GHOUL), fight_expecting_no_window);
     assert_eq!(result.state.enemies[&GHOUL].damage, 1);
 }
 

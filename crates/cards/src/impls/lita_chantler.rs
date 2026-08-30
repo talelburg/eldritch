@@ -48,8 +48,8 @@
 //! *"\[reaction\] **When** an investigator at your location successfully
 //! attacks a \[\[Monster\]\] enemy: That investigator deals +1 damage."*
 //!
-//! **The cell is the `at` cell of `SkillTestResolved { Success, Fight }`, and
-//! the printed word is "When".** `glossary/Ability.md`:
+//! **Cell: the `at` cell of the `SkillTestResolved` condition — and the printed
+//! word is "When".** `glossary/Ability.md`:
 //!
 //! > A \[reaction\] ability with a triggering condition beginning with the word
 //! > "when..." may be used after the specified triggering condition initiates,
@@ -122,8 +122,8 @@
 //! designated **Fight** (Machete 01020, .45 Automatic 01016, Roland's .38
 //! Special 01006) runs a `SkillTestKind::Fight` test and qualifies — the ruling
 //! scopes to the Fight action, and a designator *performs* one. Dynamite Blast
-//! 01023 and Sneak Attack 01052 never construct that follow-up, so they get
-//! nothing.
+//! 01024 and Sneak Attack 01052 never construct that follow-up, so they get
+//! nothing. (The issue named Dynamite Blast 01023; that code is **Dodge**.)
 //!
 //! Her three other rulings — that taking control puts her in the play area, that
 //! the control is temporary, and that she is removed from the game if she leaves
@@ -337,7 +337,6 @@ mod tests {
     fn board(attacker_here: bool, monster: bool, with_fight: bool) -> GameState {
         const HERE: LocationId = LocationId(1);
         const ELSEWHERE: LocationId = LocationId(2);
-        let controller = InvestigatorId(1);
         let attacker = InvestigatorId(2);
 
         let mut lita_controller = test_investigator(1);
@@ -372,7 +371,6 @@ mod tests {
             .with_enemy(ghoul)
             .with_enemy(acolyte)
             .build();
-        let _ = controller;
 
         if with_fight {
             let mut test = test_skill_test(
@@ -391,6 +389,26 @@ mod tests {
         state
     }
 
+    /// A `[[Monster]]` attacked by an investigator standing with Lita.
+    fn co_located_monster_fight() -> GameState {
+        board(true, true, true)
+    }
+
+    /// The same attack against Silver Twilight Acolyte 01102.
+    fn co_located_non_monster_fight() -> GameState {
+        board(true, false, true)
+    }
+
+    /// A `[[Monster]]` attacked from the Hallway, away from her.
+    fn monster_fight_elsewhere() -> GameState {
+        board(false, true, true)
+    }
+
+    /// The same board with no test in flight at all.
+    fn no_test_in_flight() -> GameState {
+        board(true, true, false)
+    }
+
     fn eligible(state: &GameState) -> bool {
         let pred =
             super::native_eligibility_for(super::MONSTER_ATTACKED_HERE_TAG).expect("registered");
@@ -402,13 +420,13 @@ mod tests {
 
     #[test]
     fn a_co_located_attack_on_a_monster_is_eligible() {
-        assert!(eligible(&board(true, true, true)));
+        assert!(eligible(&co_located_monster_fight()));
     }
 
     #[test]
     fn a_co_located_attack_on_a_non_monster_is_not() {
         assert!(
-            !eligible(&board(true, false, true)),
+            !eligible(&co_located_non_monster_fight()),
             "Silver Twilight Acolyte 01102 is Humanoid. Cultist. Silver \
              Twilight. — no [[Monster]], so the reaction is never offered",
         );
@@ -417,14 +435,14 @@ mod tests {
     #[test]
     fn an_attack_on_a_monster_elsewhere_is_not() {
         assert!(
-            !eligible(&board(false, true, true)),
+            !eligible(&monster_fight_elsewhere()),
             "\"an investigator **at your location**\"",
         );
     }
 
     #[test]
     fn with_no_fight_in_flight_nothing_is_eligible() {
-        assert!(!eligible(&board(true, true, false)));
+        assert!(!eligible(&no_test_in_flight()));
     }
 
     #[test]
