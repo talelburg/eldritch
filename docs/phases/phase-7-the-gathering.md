@@ -180,38 +180,12 @@ the Tablet came out.
   session settled five things and changed the cluster's shape, so the bullets below are
   the design rather than the finding. **The wave runs #774, #820, #771, #772, #773**, with
   #774 first because it is independent of the other four and gets the Parlor correct before
-  anything is put into it. #774, #820 and #771 have shipped; the mechanism #774 added — a location's
-  `back_text` abilities apply while it is unrevealed — is documented at
+  anything is put into it. #774, #820 and #771 have shipped; the mechanism #774 added —
+  a location's `back_text` abilities apply while it is unrevealed — is documented at
   `game_core::engine::abilities_in_effect`, and the two survey findings the rest of the
   cluster wants are that **Sentinel Peak 02284**'s back is a movement *cost* rather than a
   restriction, and **Museum Halls 02127**'s back grants an ability to a *different*
   location (#772's shape, not #821's).
-- **#771 — set-aside assets, and an uncontrolled card in play at a location — has
-  shipped.** The zone is **`Location.cards_at_location: Vec<CardInPlay>` + a
-  `Placement::AtLocation` arm in the modifier sweep**, and the argument for it being a
-  zone of its own rather than a reuse of `Location.attachments` — which would have been
-  free, since reachability, the sweep and both instance walks already cover attachments —
-  lives on the field's own doc-comment, where the next author to touch it will read it.
-  No ADR: the choice is load-bearing, but it is discoverable by reading the field, which
-  is the test `docs/phases/README.md` sets. The reachability arm is
-  `colocated_sources`, the sixth arm of #708's predicate, and it is what makes an
-  uncontrolled card reachable at all. Rejected alternative, for the record: a global
-  in-play collection with an `Option<InvestigatorId>` controller, which inverts the
-  controlled-collections addressing model for one card.
-  Two smaller decisions rode along. **The act-2 reverse now resolves in printed order** —
-  reveal the Parlor, spawn the Priest — behind an explicit up-front check of all three
-  preconditions; it used to invert reveal and spawn on the grounds that they *"touch
-  disjoint state"*, which stopped being true once #774 made `revealed` the barrier's gate.
-  And **01109's Lita line stays behind a `TODO(#772)`**, documented as a `# Module gap` on
-  the card, because #771 alone would put an inert, unreachable card in the Parlor — a worse
-  board state than not having her. So the act-2 advance still leaves her set aside; #772 is
-  what puts her on the board.
-  One arm was deliberately left out of the copy: `movement.rs`'s attachment scan, which
-  answers *"does anything here block movement"*. No card put into play at a location
-  carries a movement restriction, so the divergence is unreachable rather than latent-wrong,
-  and #772/#773 are where a card that changes that would arrive.
-  Spun out: **#824**, for the set-aside cardtypes still unimplemented (Treachery, Event,
-  Skill, Investigator) — the catch-all reject's `TODO` points at it.
 - **#772 — an uncontrolled asset is an unreachable ability source, and *"she gains"* has no
   DSL.** Two gaps on one card pair. `glossary/Triggered_Abilities.md` bullet 2 reaches Lita
   01117; #708's implementation walks the location, its attachments, co-located enemies and
