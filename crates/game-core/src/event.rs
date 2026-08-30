@@ -451,6 +451,20 @@ pub enum Event {
         /// The minted in-play instance id.
         instance_id: CardInstanceId,
     },
+    /// A card was **put into play at** a location, under no
+    /// investigator's control — act 01109b's *"Put the set-aside Lita
+    /// Chantler into play in the Parlor"*. Distinct from
+    /// [`CardAttachedToLocation`](Event::CardAttachedToLocation): the card
+    /// lands in the location's `cards_at_location` zone, which carries
+    /// neither an attachment's lifetime nor its audience.
+    CardPutIntoPlayAtLocation {
+        /// The location the card was put into play at.
+        location: LocationId,
+        /// The card code that entered play.
+        code: CardCode,
+        /// The minted in-play instance id.
+        instance_id: CardInstanceId,
+    },
     /// A card was discarded — moved from `from` to the investigator's
     /// discard pile. Fires for played events after their on-play
     /// effects resolve; future card effects ("discard a card from

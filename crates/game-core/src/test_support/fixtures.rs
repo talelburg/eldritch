@@ -86,6 +86,7 @@ pub fn test_location(id: u32, name: impl Into<String>) -> Location {
         revealed: true,
         connections: Vec::new(),
         attachments: Vec::new(),
+        cards_at_location: Vec::new(),
     }
 }
 

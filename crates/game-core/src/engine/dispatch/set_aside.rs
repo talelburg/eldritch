@@ -21,6 +21,7 @@
 use crate::card_data::CardKind;
 use crate::card_registry;
 use crate::engine::dispatch::encounter::spawn_enemy_at;
+use crate::engine::dispatch::threat_area::put_into_play_at_location;
 use crate::engine::{location_id_by_code, Cx, EngineOutcome};
 use crate::scenario::scenario_layout;
 use crate::state::{CardCode, GameState, LocationId};
@@ -34,6 +35,13 @@ use crate::state::{CardCode, GameState, LocationId};
 /// - **Enemy** — spawned at the location named by `at`, minting its stats
 ///   from the corpus so per-investigator health scales by the live
 ///   investigator count.
+/// - **Asset** — put into play **at** the location named by `at`, in that
+///   location's `cards_at_location` zone and under **no investigator's
+///   control**. Act 01109b's *"Put the set-aside Lita Chantler into play in
+///   the Parlor"* is the shape; `glossary/In_Play_and_Out_of_Play.md`
+///   counts *"each encounter card in a investigator's threat area **or at a
+///   location**"* as in play, so she is in play with no controller until
+///   somebody takes control of her.
 ///
 /// Validate-first: rejects, mutating nothing, if `code` isn't in the
 /// set-aside zone, no card registry is installed, the code has no
@@ -100,10 +108,33 @@ pub fn put_set_aside_card_into_play(cx: &mut Cx, code: &str, at: Option<&str>) -
             cx.state.set_aside_cards.remove(pos);
             spawn_enemy_at(cx, CardCode::new(code), metadata, location_id)
         }
+        CardKind::Asset { .. } => {
+            let Some(location_code) = at else {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "put_set_aside_card_into_play: asset {code} needs a location to be put \
+                         into play at"
+                    )
+                    .into(),
+                };
+            };
+            let Some(location_id) = location_id_by_code(cx.state, location_code) else {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "put_set_aside_card_into_play: location {location_code} not in play"
+                    )
+                    .into(),
+                };
+            };
+            // All checks passed — mutate.
+            cx.state.set_aside_cards.remove(pos);
+            put_into_play_at_location(cx, location_id, CardCode::new(code));
+            EngineOutcome::Done
+        }
         ref kind => EngineOutcome::Rejected {
             reason: format!(
-                "TODO(#771): a set-aside {kind:?} ({code}) has no put-into-play path \
-                 (assets land with #771)"
+                "TODO(#824): a set-aside {kind:?} ({code}) needs a put-into-play path \
+                 (lands with #824)"
             )
             .into(),
         },

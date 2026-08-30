@@ -21,15 +21,17 @@
 //!
 //! Most modifiers are true exactly while a card sits somewhere, so the
 //! sweep over those places *is* the population and there is nothing to
-//! keep in sync. Six collections carry them:
+//! keep in sync. Seven collections carry them:
 //!
 //! 1. every investigator's controlled instances (investigator card,
 //!    cards in play, threat area),
 //! 2. every location's own card,
 //! 3. every location's attachments,
-//! 4. every enemy's own card,
-//! 5. every enemy's attachments,
-//! 6. the current act and the current agenda.
+//! 4. every location's cards put into play *at* it, controlled by
+//!    nobody (Lita Chantler 01117 in the Parlor),
+//! 5. every enemy's own card,
+//! 6. every enemy's attachments,
+//! 7. the current act and the current agenda.
 //!
 //! Narrower is wrong rather than merely incomplete: Whippoorwill 02090
 //! is an *enemy* modifying investigators, Whateley Ruins 02250 a
@@ -509,6 +511,12 @@ enum Placement {
     Location(LocationId),
     /// A card attached to a location.
     LocationAttachment(LocationId),
+    /// A card put into play **at** a location, controlled by nobody
+    /// (Lita Chantler 01117 in the Parlor). Its location is that
+    /// location, so a location-scoped audience resolves from there —
+    /// but it is not an attachment, so
+    /// [`ModifierAudience::AttachedCard`] does not reach through it.
+    AtLocation(LocationId),
     /// An enemy's own card.
     Enemy(EnemyId),
     /// A card attached to an enemy.
@@ -518,7 +526,7 @@ enum Placement {
     ActAgenda,
 }
 
-/// Sweep the six collections, pushing every active modifier that
+/// Sweep the seven collections, pushing every active modifier that
 /// reaches `target`.
 ///
 /// Matches a **bare** `Effect::Modify` under `Trigger::Constant`. A
@@ -586,21 +594,25 @@ fn sweep(
             visit(&card.code, Some(card), Placement::Controlled(inv.id));
         }
     }
-    // 2 and 3. Every location and its attachments.
+    // 2, 3 and 4. Every location, its attachments, and the cards put into
+    //    play at it.
     for (id, loc) in &state.locations {
         visit(&loc.code, None, Placement::Location(*id));
         for att in &loc.attachments {
             visit(&att.code, Some(att), Placement::LocationAttachment(*id));
         }
+        for card in &loc.cards_at_location {
+            visit(&card.code, Some(card), Placement::AtLocation(*id));
+        }
     }
-    // 4 and 5. Every enemy and its attachments.
+    // 5 and 6. Every enemy and its attachments.
     for (id, enemy) in &state.enemies {
         visit(&enemy.code, None, Placement::Enemy(*id));
         for att in &enemy.attachments {
             visit(&att.code, Some(att), Placement::EnemyAttachment(*id));
         }
     }
-    // 6. The current act and agenda.
+    // 7. The current act and agenda.
     if let Some(act) = state.act_deck.get(state.act_index) {
         visit(&act.code, None, Placement::ActAgenda);
     }
@@ -755,16 +767,19 @@ fn audience_reaches(
 }
 
 /// The location a source card counts as being at: its controller's for a
-/// controlled card, the location itself for a location or its
-/// attachments, the enemy's for an enemy or its attachments. The act and
-/// agenda are nowhere, and so reach no location-scoped audience.
+/// controlled card, the location itself for a location, its attachments
+/// or a card put into play at it, the enemy's for an enemy or its
+/// attachments. The act and agenda are nowhere, and so reach no
+/// location-scoped audience.
 fn source_location(state: &GameState, placement: Placement) -> Option<LocationId> {
     match placement {
         Placement::Controlled(id) => state
             .investigators
             .get(&id)
             .and_then(|inv| inv.current_location),
-        Placement::Location(id) | Placement::LocationAttachment(id) => Some(id),
+        Placement::Location(id) | Placement::LocationAttachment(id) | Placement::AtLocation(id) => {
+            Some(id)
+        }
         Placement::Enemy(id) | Placement::EnemyAttachment(id) => state
             .enemies
             .get(&id)

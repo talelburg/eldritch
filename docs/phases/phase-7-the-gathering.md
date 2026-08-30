@@ -119,7 +119,7 @@ the Tablet came out.
 | #805 ✅ PR #819 | An `ActionDesignator` is a pure tag that performs nothing, so a **Fight** ability and `Effect::Fight` are linked by convention alone |
 | #774 ✅ PR #822 | The Parlor movement barrier — mandatory printed behaviour that was inheriting optional content's deferral |
 | #820 ✅ PR #823 | Set-aside locations are pre-built `Location`s while set-aside enemies are codes, so the zone cannot be one collection |
-| #771 | Set-aside is enemies-only, so act 01109b's *"Put the set-aside Lita Chantler into play"* has nowhere to go |
+| #771 ✅ PR #825 | Set-aside is enemies-only, so act 01109b's *"Put the set-aside Lita Chantler into play"* has nowhere to go |
 | #772 | Lita 01117 is an ability source nobody controls, so #708's walk never reaches her — and neither 01115's Parley nor her buffs are printed on the card that has them |
 | #773 | Lita 01117's controlled-side grants are location-scoped and reaction-driven; both collapse to one investigator in 1p |
 | #775 | 01110b asks the lead investigator to choose the ending; the act's reverse reaches R1 unconditionally, so R2 is unreachable |
@@ -180,37 +180,12 @@ the Tablet came out.
   session settled five things and changed the cluster's shape, so the bullets below are
   the design rather than the finding. **The wave runs #774, #820, #771, #772, #773**, with
   #774 first because it is independent of the other four and gets the Parlor correct before
-  anything is put into it. #774 has shipped; the mechanism it added — a location's
-  `back_text` abilities apply while it is unrevealed — is documented at
+  anything is put into it. #774, #820 and #771 have shipped; the mechanism #774 added —
+  a location's `back_text` abilities apply while it is unrevealed — is documented at
   `game_core::engine::abilities_in_effect`, and the two survey findings the rest of the
   cluster wants are that **Sentinel Peak 02284**'s back is a movement *cost* rather than a
   restriction, and **Museum Halls 02127**'s back grants an ability to a *different*
   location (#772's shape, not #821's).
-- **#771 — set-aside assets, and an uncontrolled card in play at a location.**
-  `put_set_aside_card_into_play` dispatches Location and Enemy only, so act 01109b's *"Put the
-  set-aside Lita Chantler into play in the Parlor"* has nowhere to go while its neighbour
-  *"Spawn the set-aside Ghoul Priest in the Hallway"* works (#231). Her home is
-  **`Location.cards_at_location: Vec<CardInPlay>` + `Placement::AtLocation`**, not
-  `Location.attachments` — which would have been free, since reachability, the modifier
-  sweep and both instance walks already cover attachments, but `glossary/Attach_To.md` gives
-  the word semantics she does not have (*"an attachment remains attached until either the
-  attachment or the game element to which it is attached leaves play (in which case the
-  attachment is discarded)"*, plus `ModifierAudience::AttachedCard` and FAQ 1.14's
-  attachment-control rules). She is *put into play in* the Parlor, and the rules already
-  name that zone — `glossary/In_Play_and_Out_of_Play.md`: *"each encounter card in a
-  investigator's threat area **or at a location**, are all considered in play."* Rejected:
-  a global in-play collection with an `Option<InvestigatorId>` controller, which inverts the
-  controlled-collections addressing model for one card. Mechanically the new collection is
-  the attachment arm copied at ~6 sites — `instance_in_play` / `instance_in_play_mut`,
-  `colocated_sources` (the sixth arm of #708's predicate, and what makes her reachable),
-  `sweep` / `source_location`, and protocol/rendering.
-  Two smaller decisions ride along. **The act-2 reverse resolves in printed order** —
-  reveal the Parlor, put Lita in it, spawn the Priest — with validate-first moved to an
-  up-front check of all three preconditions; `the_barrier.rs` currently inverts reveal and
-  spawn on the grounds that they *"touch disjoint state"*, which stops being true once #774
-  makes `revealed` the barrier's gate. And **01109's Lita line stays behind its `TODO`
-  until #772**, because #771 alone would put an inert, unreachable card in the Parlor —
-  a worse board state than not having her.
 - **#772 — an uncontrolled asset is an unreachable ability source, and *"she gains"* has no
   DSL.** Two gaps on one card pair. `glossary/Triggered_Abilities.md` bullet 2 reaches Lita
   01117; #708's implementation walks the location, its attachments, co-located enemies and

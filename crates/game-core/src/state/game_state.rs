@@ -2978,6 +2978,7 @@ impl GameState {
             printed_clues,
             connections: Vec::new(),
             attachments: Vec::new(),
+            cards_at_location: Vec::new(),
         }
     }
 

@@ -110,6 +110,48 @@ pub fn attach_to_location(
     Some(instance_id)
 }
 
+/// Put `code` into play **at** `location` as a fresh in-play instance
+/// under no investigator's control, minting an instance id from the
+/// per-state counter, and emit [`Event::CardPutIntoPlayAtLocation`].
+/// Returns the minted id, or `None` if the location isn't in state.
+///
+/// The zone sibling of [`attach_to_location`], and deliberately not it:
+/// `glossary/In_Play_and_Out_of_Play.md` counts *"each encounter card in a
+/// investigator's threat area **or at a location**"* as in play, while
+/// `glossary/Attach_To.md` gives an attachment a host-bound lifetime that a
+/// card put into play in a place does not have. Act 01109b's *"Put the
+/// set-aside Lita Chantler into play in the Parlor"* is the one caller
+/// shape (#771).
+///
+/// # Panics
+///
+/// Does not panic in practice: the `get_mut` re-fetches the location just
+/// confirmed present, with no intervening mutation, so the `expect` is a
+/// state-corruption invariant guard.
+pub(super) fn put_into_play_at_location(
+    cx: &mut Cx,
+    location: LocationId,
+    code: CardCode,
+) -> Option<CardInstanceId> {
+    if !cx.state.locations.contains_key(&location) {
+        return None;
+    }
+    let card = new_in_play_instance(cx, code.clone());
+    let instance_id = card.instance_id;
+    let loc = cx
+        .state
+        .locations
+        .get_mut(&location)
+        .expect("existence checked above");
+    loc.cards_at_location.push(card);
+    cx.events.push(Event::CardPutIntoPlayAtLocation {
+        location,
+        code,
+        instance_id,
+    });
+    Some(instance_id)
+}
+
 /// Remove the threat-area instance `instance_id` from `investigator`,
 /// push its code onto the encounter discard pile, and emit
 /// [`Event::CardDiscarded`] with `from: Zone::ThreatArea`. Returns

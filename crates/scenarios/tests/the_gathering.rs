@@ -66,6 +66,15 @@ fn roster_seating_places_investigator_at_study() {
     assert_eq!(study_loc.clues, 2, "1 investigator × 2 per-investigator");
 }
 
+/// The set-aside zone as printed codes, in order.
+fn set_aside_codes(state: &game_core::GameState) -> Vec<String> {
+    state
+        .set_aside_cards
+        .iter()
+        .map(|c| c.as_str().to_owned())
+        .collect()
+}
+
 #[test]
 fn drives_act_1_then_act_2_via_round_end_window() {
     let inv = InvestigatorId(1);
@@ -161,11 +170,9 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     // Act 2's reverse (#280) fired on advance: the set-aside Ghoul Priest
     // (01116) is now in play in the Hallway (01112), and the Parlor (01115)
     // is revealed. This makes act 3's "Ghoul Priest defeated" objective
-    // reachable in real play.
-    assert!(
-        r.state.set_aside_cards.is_empty(),
-        "the Ghoul Priest was the last card in the set-aside zone, and it left",
-    );
+    // reachable in real play. Lita Chantler (01117) stays set aside until
+    // #772 unblocks 01109b's second line.
+    assert_eq!(set_aside_codes(&r.state), ["01117"]);
     let priest = r
         .state
         .enemies
@@ -301,14 +308,10 @@ fn advancing_act_1_rebuilds_the_board() {
             .collect()
     );
     assert_eq!(
-        result
-            .state
-            .set_aside_cards
-            .iter()
-            .map(|c| c.as_str().to_owned())
-            .collect::<Vec<_>>(),
-        ["01116"],
-        "only the Ghoul Priest is still set aside (Act 2 spawns it)",
+        set_aside_codes(&result.state),
+        ["01116", "01117"],
+        "the Ghoul Priest (Act 2 spawns it) and Lita Chantler (#772) are still \
+         set aside",
     );
 
     // The layout table wired the rooms as they entered: Hallway hub,
