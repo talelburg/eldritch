@@ -35,6 +35,11 @@
 //! **unrevealed back**, which is why the location's own side is selected
 //! through [`abilities_in_effect`](crate::engine::abilities_in_effect) rather
 //! than read straight off `abilities_for`.
+//!
+//! Those two are not every per-location collection: #771 added a third,
+//! `Location::cards_at_location`, and this module does **not** read it. See the
+//! `TODO(#826)` on [`location_carries_restriction`] for why that is a choice
+//! rather than an oversight.
 
 use crate::card_registry;
 use crate::dsl::{Effect, Restriction, Trigger};
@@ -47,6 +52,19 @@ use crate::state::{Enemy, GameState, LocationId};
 /// Read the way `play_is_prohibited` reads constant restrictions: a
 /// `Trigger::Constant` ability whose effect is exactly `Effect::Restrict(r)`.
 /// `false` with no registry installed.
+///
+/// **TODO(#826): this does not read
+/// [`Location::cards_at_location`](crate::state::Location::cards_at_location).**
+/// #771 gave a location a third per-location `Vec<CardInPlay>` — cards put into
+/// play *at* it under no controller — and copied the attachment arm at
+/// reachability, the modifier sweep and both instance walks, but not here. It is
+/// unreachable rather than latent-wrong: the zone's only occupant is Lita
+/// Chantler 01117, who carries no [`Effect::Restrict`], so no board state exists
+/// in which the two collections disagree about an answer anyone asks for. The
+/// open question #826 settles is whether a movement restriction is
+/// attachment-shaped by nature — Barricade 01038 is the corpus's only instance —
+/// or whether this walk should simply chain both collections. The first card
+/// that puts a restriction-carrying card into play at a location forces it.
 fn location_carries_restriction(state: &GameState, loc: LocationId, r: &Restriction) -> bool {
     let carries = |abilities: &[crate::dsl::Ability]| {
         abilities.iter().any(|a| {
