@@ -416,10 +416,23 @@ pub(super) fn collect_forced_hits(
             };
             // Match the card-facing narrowing: same outcome, and either an
             // unnarrowed (`None`) or kind-matching listener.
+            //
+            // `by_controller` is not read here, and the scan is why: the two
+            // loops below walk *this* investigator's controlled instances and
+            // the investigated location, so every card reached is already one
+            // whose "you" is the testing investigator. `true` is therefore
+            // satisfied and `false` — an unqualified *"after a skill test is
+            // resolved"* — is satisfied for the cards the scan reaches and
+            // simply not offered to a bystander's card, which is the scan's
+            // pre-existing shape rather than a decision this field makes. The
+            // one corpus card wanting the wider reach (Lita Chantler 01117) is
+            // a **reaction**, and `reaction_windows::trigger_matches` does read
+            // the field.
             let want = |p: &EventPattern| {
                 let EventPattern::SkillTestResolved {
                     outcome: o,
                     kind: k,
+                    by_controller: _,
                 } = p
                 else {
                     return false;

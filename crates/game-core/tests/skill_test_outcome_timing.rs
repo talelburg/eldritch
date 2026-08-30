@@ -43,6 +43,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             EventPattern::SkillTestResolved {
                 outcome: TestOutcome::Success,
                 kind: None,
+                by_controller: true,
             },
             EventTiming::After,
             deal_horror(InvestigatorTarget::You, 1u8),

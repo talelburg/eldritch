@@ -75,6 +75,7 @@ fn succeeded() -> EventPattern {
     EventPattern::SkillTestResolved {
         outcome: TestOutcome::Success,
         kind: None,
+        by_controller: true,
     }
 }
 

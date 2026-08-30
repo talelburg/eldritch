@@ -88,7 +88,7 @@
 //!
 //! [`Location::revealed`]: crate::state::Location::revealed
 
-use crate::card_registry;
+use crate::card_registry::{self, CardRegistry};
 use crate::dsl::{Ability, Condition, Effect, GrantTarget, Trigger};
 use crate::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, GameState,
@@ -105,7 +105,23 @@ use crate::state::{
 /// callers that only want to scan.
 #[must_use]
 pub(crate) fn location_abilities(state: &GameState, id: LocationId) -> Option<Vec<Ability>> {
-    let reg = card_registry::current()?;
+    location_abilities_with(state, card_registry::current()?, id)
+}
+
+/// [`location_abilities`] against an explicitly supplied registry.
+///
+/// The installed registry is a process-global `OnceLock`, but
+/// [`modified_value`](crate::engine::modified_value) takes its registry **by
+/// argument** — a modified value is a pure query over `(state, registry)`, and
+/// its unit tests pass a mock rather than installing one. So the whole funnel
+/// has a registry-taking core with a global-reading wrapper over it, rather
+/// than two ways to find a card's abilities.
+#[must_use]
+pub(crate) fn location_abilities_with(
+    state: &GameState,
+    reg: &CardRegistry,
+    id: LocationId,
+) -> Option<Vec<Ability>> {
     let location = state.locations.get(&id)?;
     let lookup = if location.revealed {
         reg.abilities_for
@@ -140,8 +156,20 @@ pub(crate) fn for_source(
     source: AbilitySource,
     code: &CardCode,
 ) -> Option<Vec<(AbilityAddress, Ability)>> {
-    let printed = printed_in_effect(state, source, code);
-    let granted = granted_to(state, source, code);
+    for_source_with(state, card_registry::current()?, source, code)
+}
+
+/// [`for_source`] against an explicitly supplied registry — see
+/// [`location_abilities_with`] for why the funnel has this shape.
+#[must_use]
+pub(crate) fn for_source_with(
+    state: &GameState,
+    reg: &CardRegistry,
+    source: AbilitySource,
+    code: &CardCode,
+) -> Option<Vec<(AbilityAddress, Ability)>> {
+    let printed = printed_in_effect(state, reg, source, code);
+    let granted = granted_to(state, reg, source, code);
     if printed.is_none() && granted.is_empty() {
         return None;
     }
@@ -218,13 +246,13 @@ pub(crate) fn resolve(
 #[must_use]
 fn printed_in_effect(
     state: &GameState,
+    reg: &CardRegistry,
     source: AbilitySource,
     code: &CardCode,
 ) -> Option<Vec<Ability>> {
     if let AbilitySource::Location(id) = source {
-        return location_abilities(state, id);
+        return location_abilities_with(state, reg, id);
     }
-    let reg = card_registry::current()?;
     (reg.abilities_for)(code)
 }
 
@@ -246,6 +274,7 @@ fn printed_in_effect(
 #[must_use]
 fn granted_to(
     state: &GameState,
+    reg: &CardRegistry,
     recipient: AbilitySource,
     recipient_code: &CardCode,
 ) -> Vec<(AbilityAddress, Ability)> {
@@ -257,7 +286,7 @@ fn granted_to(
     let source_instance = recipient.instance();
     let mut out = Vec::new();
     let mut visit = |granter: AbilitySource, granter_code: &CardCode| {
-        let Some(abilities) = printed_in_effect(state, granter, granter_code) else {
+        let Some(abilities) = printed_in_effect(state, reg, granter, granter_code) else {
             return;
         };
         for (idx, ability) in abilities.iter().enumerate() {
