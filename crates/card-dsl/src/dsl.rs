@@ -586,6 +586,34 @@ pub enum EventPattern {
         outcome: TestOutcome,
         /// Narrow to a test type, or `None` for any.
         kind: Option<SkillTestKind>,
+        /// If `true`, only fires on a test **the controller of this ability is
+        /// performing** — the *"after **you** …"* the corpus overwhelmingly
+        /// prints (Dr. Milan 01033, Obscuring Fog 01168). If `false` the
+        /// pattern is unqualified: any investigator's test matches, and the
+        /// card narrows it itself.
+        ///
+        /// Mirrors [`EnemyDefeated`](Self::EnemyDefeated)'s field of the same
+        /// name, and exists because the narrowing cannot be pushed anywhere
+        /// else: the reaction matcher hard-requires *test investigator ==
+        /// controller* **before** a candidate is minted, so an eligibility
+        /// predicate — which runs afterwards — can never widen it back out.
+        ///
+        /// Two consumers clear `standards.md`'s threshold, both reacting to
+        /// somebody else's test: Lita Chantler 01117 (*"\[reaction\] When an
+        /// investigator at your location successfully attacks a
+        /// \[\[Monster\]\] enemy: That investigator deals +1 damage."*) and
+        /// Try and Try Again 02309 (*"\[reaction\] After a skill test is
+        /// failed, if a skill card you own is committed to that test…"*).
+        ///
+        /// **A bool, so the one thing it cannot say is *"another
+        /// investigator's test, excluding mine"*.** No corpus card as a
+        /// resolution trigger wants that: the variation the corpus does print
+        /// is entirely in **location scope** (Analytical Mind 03010's *"at
+        /// another location"*, Bestow Resolve 09032's *"or a connecting
+        /// location"*), which is deliberately not in the pattern — location
+        /// scoping is the card's own, whether in a scan filter or a native
+        /// eligibility predicate.
+        by_controller: bool,
     },
     /// An investigator discovers one or more clues — the **one** triggering
     /// condition for clue discovery, reaction-only in all three cells (#703; a
@@ -1872,6 +1900,18 @@ pub enum Condition {
     /// "Jazz" Mulligan 02060 prints 01115's clause about himself, and Clover
     /// Club Lounge/Bar/Cardroom 02071-73 print 01117's, so the near backlog
     /// wants both statuses too.
+    ///
+    /// **`code` rather than an instance, and the corpus says that is enough.**
+    /// The question is answered by a board scan for the code, so two copies of
+    /// one card cannot be told apart — which would matter only to a card saying
+    /// *"while you control **this**"* while able to have two copies in play.
+    /// Every card in the snapshot that both prints a grant and gates it on
+    /// control is quantity 1 (01115, 01117, 02060, 02068, 02069, 10051, 70040,
+    /// 05038); the two multi-copy entries — Well-Funded 10051 and Able Bodied
+    /// 05038 — gate on *other* cards' traits rather than on themselves, and
+    /// their conditions already bind the recipient's own controller and source
+    /// instance through the sweep. [`GrantTarget::SelfCard`] is instance-scoped
+    /// regardless, so only the condition is code-keyed.
     ControlStatus {
         /// Printed `ArkhamDB` code of the card whose control is being asked
         /// about.
@@ -3314,10 +3354,35 @@ mod tests {
         let p = EventPattern::SkillTestResolved {
             outcome: TestOutcome::Success,
             kind: Some(SkillTestKind::Investigate),
+            by_controller: true,
         };
         let json = serde_json::to_string(&p).expect("serialize");
         let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(p, back);
+    }
+
+    /// The unqualified form — Lita Chantler 01117's *"When **an investigator**
+    /// at your location successfully attacks…"* — round-trips as its own
+    /// value, so a `false` is carried rather than defaulted back to the
+    /// corpus-common `true`.
+    #[test]
+    fn skill_test_resolved_unqualified_round_trips() {
+        let p = EventPattern::SkillTestResolved {
+            outcome: TestOutcome::Success,
+            kind: Some(SkillTestKind::Fight),
+            by_controller: false,
+        };
+        let json = serde_json::to_string(&p).expect("serialize");
+        let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(p, back);
+        assert_ne!(
+            p,
+            EventPattern::SkillTestResolved {
+                outcome: TestOutcome::Success,
+                kind: Some(SkillTestKind::Fight),
+                by_controller: true,
+            }
+        );
     }
 
     #[test]

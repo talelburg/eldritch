@@ -121,7 +121,7 @@ the Tablet came out.
 | #820 ✅ PR #823 | Set-aside locations are pre-built `Location`s while set-aside enemies are codes, so the zone cannot be one collection |
 | #771 ✅ PR #825 | Set-aside is enemies-only, so act 01109b's *"Put the set-aside Lita Chantler into play"* has nowhere to go |
 | #772 ✅ PR #830 | Lita 01117 is an ability source nobody controls, so #708's walk never reaches her — and neither 01115's Parley nor her buffs are printed on the card that has them |
-| #773 | Lita 01117's controlled-side grants are location-scoped and reaction-driven; both collapse to one investigator in 1p |
+| #773 ✅ PR #833 | Lita 01117's controlled-side grants are location-scoped and reaction-driven; both collapse to one investigator in 1p |
 | #775 | 01110b asks the lead investigator to choose the ending; the act's reverse reaches R1 unconditionally, so R2 is unreachable |
 | #811 | Agenda 01107's Ghoul move **rejects the player's action** whenever the Parlor is not yet in play — which agenda 3 reaches on its own doom clock, independent of act progress |
 | #814 | `Status` carries `Killed` / `Insane` alongside `Defeated`, but the rules make killed and insane **campaign-log states derived from trauma totals** — so a first defeat by damage is recorded as a kill |
@@ -177,39 +177,15 @@ the Tablet came out.
   no destination, no move, no rejection. The same reading is already applied one
   line below to a Ghoul with no available step (#797).
 - **The Lita cluster was designed 2026-08-29** (`/grill-with-docs` over #771-#774). The
-  session settled five things and changed the cluster's shape, so the bullets below are
-  the design rather than the finding. **The wave runs #774, #820, #771, #772, #773**, with
+  session settled five things and changed the cluster's shape.
+  **The wave runs #774, #820, #771, #772, #773**, with
   #774 first because it is independent of the other four and gets the Parlor correct before
-  anything is put into it. #774, #820, #771 and #772 have shipped, leaving **#773**; the
-  mechanism #774 added —
+  anything is put into it. The mechanism #774 added —
   a location's `back_text` abilities apply while it is unrevealed — is documented at
   `game_core::engine::abilities_in_effect`, and the two survey findings the rest of the
   cluster wants are that **Sentinel Peak 02284**'s back is a movement *cost* rather than a
   restriction, and **Museum Halls 02127**'s back grants an ability to a *different*
   location (#772's shape, not #821's).
-- **#773 — Lita 01117's controlled-side grants**, both of which turned out to be **smaller
-  than the issue claimed**, because the machinery exists in each case. The `+1 [combat]`
-  premise that "existing skill modifiers are self-scoped" is stale:
-  `ModifierAudience::EachInvestigatorAtSourceLocation` exists
-  (`crates/card-dsl/src/dsl.rs:1364-1372`) and its doc-comment names this card by code, so
-  the half is a plain `modify(Stat::Combat, 1, WhileInPlay)` with that audience. **That
-  works only because #772's sweep evaluates the grant's own `condition` field and hands the
-  recipient a bare `Effect::Modify`** — `modified_value::sweep` skips
-  `Effect::If { then: Modify }`, the gap
-  tracked as **#679, which sits in phase-9**, and whose doc-comment names this exact card
-  (*"a decision about who 'you' is for a source with no controller"*). Wrapping the grant in
-  a condition would block this issue on a phase-9 issue. The `+1` damage needs no payload
-  either: `InFlightSkillTest::bonus_attack_damage` (Vicious Blow 01025's) is read at exactly
-  one site, `SkillTestFollowUp::Fight` (`dispatch/skill_test.rs:1607`) — which delivers her
-  ruling for free. *"Lita's +1 damage bonus only applies to **Fight** actions, not to any
-  other effects that deal damage (Sneak Attack, etc.)"* (<https://arkhamdb.com/card/01117>):
-  `ActionDesignator::Fight` performs a fight action, so Machete 01020 / .45 Automatic 01016
-  / .38 Special 01006 all qualify (the ruling scopes to any Fight *ability*, not the bare
-  action), while Dynamite Blast 01023 and Sneak Attack 01052 never construct that follow-up.
-  The work is the **trigger** — another investigator at her location successfully attacking
-  a `[[Monster]]` — not the payload. Implement the printed predicate (*each* investigator at
-  *her* location) rather than its 1p degenerate case, or the test asserts nothing. Earning
-  the Lita Chantler card at R1 stays **campaign-log driven and phase-9**.
 - **#775 — act 3's R1/R2 choice.** 01110b asks the lead investigator to choose the
   ending, and the act's resolution point is hardcoded to R1, so R2 is unreachable. Not
   a new finding: the 2026-08-22 sweep had already split it into **#766** as phase-9

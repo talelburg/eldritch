@@ -47,6 +47,7 @@ pub fn abilities() -> Vec<Ability> {
             EventPattern::SkillTestResolved {
                 outcome: TestOutcome::Success,
                 kind: Some(SkillTestKind::Investigate),
+                by_controller: true,
             },
             EventTiming::After,
             gain_resources(InvestigatorTarget::You, 1),
@@ -83,6 +84,7 @@ mod tests {
                 pattern: EventPattern::SkillTestResolved {
                     outcome: TestOutcome::Success,
                     kind: Some(SkillTestKind::Investigate),
+                    by_controller: true,
                 },
                 timing: EventTiming::After,
                 kind: card_dsl::dsl::TriggerKind::Reaction,

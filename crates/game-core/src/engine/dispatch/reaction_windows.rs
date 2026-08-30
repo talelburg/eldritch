@@ -542,9 +542,18 @@ fn trigger_matches(
         (TimingEvent::DamageAssigned { source, .. }, EventPattern::EnemyAttackDamagedSelf) => {
             matches!(source, crate::state::DamageSource::EnemyAttack { .. })
         }
-        // "after you succeed/fail a skill test" — scoped to the controller's
-        // own test ("after **you** …"), narrowed by outcome and (optionally)
-        // test kind. Dr. Milan 01033 is `{ Success, Some(Investigate) }`.
+        // "after you succeed/fail a skill test" — narrowed by outcome,
+        // (optionally) test kind, and whether the card says *"**you**"*. Dr.
+        // Milan 01033 is `{ Success, Some(Investigate), by_controller: true }`.
+        //
+        // `by_controller` is checked **here** rather than in an eligibility
+        // predicate because this matcher runs before a candidate is minted: a
+        // hard `*investigator == controller` would have made a reaction on
+        // somebody else's test unreachable, whatever the card said afterwards.
+        // With it `false` the pattern is unqualified and the card owns the
+        // narrowing — Lita Chantler 01117's *"an investigator at your
+        // location"* is her own native eligibility tag, since it is about the
+        // board rather than about the event.
         (
             TimingEvent::SkillTestResolved {
                 investigator,
@@ -554,9 +563,10 @@ fn trigger_matches(
             EventPattern::SkillTestResolved {
                 outcome: p_out,
                 kind: p_kind,
+                by_controller,
             },
         ) => {
-            *investigator == controller
+            (!*by_controller || *investigator == controller)
                 && outcome == p_out
                 && (p_kind.is_none() || *p_kind == Some(*kind))
         }

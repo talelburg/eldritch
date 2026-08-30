@@ -54,6 +54,12 @@
 //!   and the corpus's only **back-side** abilities (see [`back_abilities_for`]),
 //!   a `Trigger::Constant` `Restrict` that blocks investigator movement while
 //!   the location is unrevealed.
+//! - Lita Chantler (01117) — a `Trigger::Constant` `Effect::Grant` to
+//!   **herself**, gated on `ControlStatus::ByAPlayer`, holding the two
+//!   abilities she gains: a location-scoped `Modify` (the corpus's first
+//!   *granted* modifier) and an `OnEvent` reaction on another investigator's
+//!   test (`SkillTestResolved { by_controller: false }`) carrying a
+//!   card-local eligibility tag. The complement of the Parlor's grant above.
 //! - Deduction (01039) — `Trigger::OnSkillTestResolution` (Success-
 //!   gated) + `If(SkillTestKind(Investigate), DiscoverClue@TestedLocation)`.
 //! - Roland Banks (01001) — investigator. `Trigger::OnEvent`
@@ -92,6 +98,7 @@ pub mod guts;
 pub mod holy_rosary;
 pub mod hyperawareness;
 pub mod knife;
+pub mod lita_chantler;
 pub mod machete;
 pub mod magnifying_glass;
 pub mod manual_dexterity;
@@ -147,6 +154,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
         holy_rosary::CODE => Some(holy_rosary::abilities()),
         hyperawareness::CODE => Some(hyperawareness::abilities()),
         knife::CODE => Some(knife::abilities()),
+        lita_chantler::CODE => Some(lita_chantler::abilities()),
         machete::CODE => Some(machete::abilities()),
         magnifying_glass::CODE => Some(magnifying_glass::abilities()),
         manual_dexterity::CODE => Some(manual_dexterity::abilities()),
@@ -215,7 +223,9 @@ pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEf
 /// returns `None` for unregistered tags.
 #[must_use]
 pub fn native_eligibility_for(tag: &str) -> Option<game_core::card_registry::EligibilityFn> {
-    cover_up::native_eligibility_for(tag).or_else(|| the_barrier::native_eligibility_for(tag))
+    cover_up::native_eligibility_for(tag)
+        .or_else(|| the_barrier::native_eligibility_for(tag))
+        .or_else(|| lita_chantler::native_eligibility_for(tag))
 }
 
 /// Dispatch a [`Condition::Native`](card_dsl::dsl::Condition::Native) tag to its

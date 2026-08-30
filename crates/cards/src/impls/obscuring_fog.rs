@@ -56,6 +56,7 @@ pub fn abilities() -> Vec<Ability> {
             EventPattern::SkillTestResolved {
                 outcome: TestOutcome::Success,
                 kind: Some(SkillTestKind::Investigate),
+                by_controller: true,
             },
             EventTiming::After,
             discard_self(),
@@ -139,6 +140,7 @@ mod tests {
                 pattern: EventPattern::SkillTestResolved {
                     outcome: card_dsl::dsl::TestOutcome::Success,
                     kind: Some(card_dsl::dsl::SkillTestKind::Investigate),
+                    by_controller: true,
                 },
                 timing: EventTiming::After,
                 ..

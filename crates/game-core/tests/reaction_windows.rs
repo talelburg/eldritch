@@ -48,6 +48,11 @@ const TWO_REACTIONS: &str = "MOCK-OE-TWO";
 /// resource" — the Dr. Milan Christopher 01033 shape (C6a #241).
 const MILAN_REACTION: &str = "MOCK-OE-MILAN";
 
+/// Mock: optional reaction "after **a** skill test is successfully resolved,
+/// gain 1 resource" — `by_controller: false`, the unqualified form Lita
+/// Chantler 01117 needs (#773). Its controller reacts to somebody else's test.
+const BYSTANDER_TEST_REACTION: &str = "MOCK-OE-BYSTANDER-TEST";
+
 fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
     None
 }
@@ -92,6 +97,16 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             EventPattern::SkillTestResolved {
                 outcome: TestOutcome::Success,
                 kind: Some(SkillTestKind::Investigate),
+                by_controller: true,
+            },
+            EventTiming::After,
+            gain_resources(InvestigatorTarget::You, 1),
+        )]),
+        BYSTANDER_TEST_REACTION => Some(vec![reaction_on_event(
+            EventPattern::SkillTestResolved {
+                outcome: TestOutcome::Success,
+                kind: Some(SkillTestKind::Investigate),
+                by_controller: false,
             },
             EventTiming::After,
             gain_resources(InvestigatorTarget::You, 1),
@@ -1157,6 +1172,123 @@ fn investigate_to_success_scenario(
         .with_token_modifiers(TokenModifiers::default())
         .build();
     (id, loc, state)
+}
+
+/// [`investigate_to_success_scenario`] with a **second** investigator, who
+/// holds `bystander_card` and stands elsewhere. The first investigator takes
+/// the test; the second is the one whose card may or may not react to it.
+///
+/// The second is in `turn_order`, which is what `scan_pending_triggers` walks —
+/// an investigator outside it is skipped before any pattern is consulted, so
+/// leaving them out would have made both tests below pass for the wrong reason.
+fn investigate_with_a_bystander(
+    bystander_card: &str,
+) -> (InvestigatorId, InvestigatorId, game_core::GameState) {
+    let tester = InvestigatorId(1);
+    let bystander = InvestigatorId(2);
+    let loc = LocationId(10);
+    let elsewhere = LocationId(11);
+
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(loc);
+    inv.skills.intellect = 3;
+
+    let mut other = test_investigator(2);
+    other.current_location = Some(elsewhere);
+    other.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(bystander_card),
+        CardInstanceId(7),
+    ));
+
+    let mut loc_meta = test_location(10, "Study");
+    loc_meta.clues = 1;
+    let state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_active_investigator(tester)
+        .with_turn_order([tester, bystander])
+        .with_investigator_turn(tester)
+        .with_investigator(inv)
+        .with_investigator(other)
+        .with_location(loc_meta)
+        .with_location(test_location(11, "Hallway"))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_token_modifiers(TokenModifiers::default())
+        .build();
+    (tester, bystander, state)
+}
+
+/// Drive `state` through a successful Investigate by the active investigator,
+/// stopping at whatever the engine yields after the commit window closes.
+fn investigate_and_commit_nothing(
+    state: game_core::GameState,
+    inv: InvestigatorId,
+) -> game_core::engine::ApplyResult {
+    let target = TurnAction::Investigate { investigator: inv };
+    let idx = game_core::engine::enumerate::legal_actions(&state)
+        .iter()
+        .position(|a| a == &target)
+        .expect("Investigate must be legal");
+    let paused_commit = game_core::engine::apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
+        }),
+    );
+    game_core::engine::apply(paused_commit.state, commit_nothing())
+}
+
+/// `by_controller: false` is the whole point of the field: the matcher runs
+/// **before** a candidate is minted, so without it a reaction to another
+/// investigator's test is unreachable no matter what the card says afterwards.
+/// Here the bystander's card fires on a test they did not take (#773).
+#[test]
+fn an_unqualified_listener_reacts_to_another_investigators_test() {
+    let (tester, bystander, state) = investigate_with_a_bystander(BYSTANDER_TEST_REACTION);
+    let before = state.investigators[&bystander].resources;
+
+    let paused = investigate_and_commit_nothing(state, tester);
+    assert!(
+        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
+        "the unqualified listener must open a window on the other \
+         investigator's test, got {:?}",
+        paused.outcome,
+    );
+
+    let resumed = game_core::engine::apply(
+        paused.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(0)),
+        }),
+    );
+    assert_eq!(
+        resumed.state.investigators[&bystander].resources,
+        before + 1,
+        "the reaction resolved for its own controller, not for the tester",
+    );
+}
+
+/// The regression the field must not break: `by_controller: true` — every
+/// existing consumer, Dr. Milan 01033 and Obscuring Fog 01168 — still sees only
+/// its own controller's test. Same board, same event, opposite answer.
+#[test]
+fn a_by_controller_listener_ignores_another_investigators_test() {
+    let (tester, bystander, state) = investigate_with_a_bystander(MILAN_REACTION);
+    let before = state.investigators[&bystander].resources;
+
+    let resumed = investigate_and_commit_nothing(state, tester);
+    assert_eq!(
+        resumed.state.investigators[&bystander].resources, before,
+        "a \"after **you** …\" reaction must not fire on someone else's test",
+    );
+    assert!(
+        resumed
+            .state
+            .continuations
+            .last()
+            .and_then(Continuation::pending_candidates)
+            .is_none_or(Vec::is_empty),
+        "no candidate should have been minted at all",
+    );
 }
 
 fn commit_nothing() -> Action {

@@ -98,8 +98,8 @@ use crate::dsl::{
     Determination, Effect, ModifierAudience, ModifierScope, SkillTestKind, Stat, Trigger,
 };
 use crate::state::{
-    CardCode, CardInPlay, DifficultyBasis, EnemyId, GameState, InvestigatorId, LocationId,
-    RecordedModifierKind,
+    AbilitySource, CardCode, CardInPlay, DifficultyBasis, EnemyId, GameState, InvestigatorId,
+    LocationId, RecordedModifierKind,
 };
 
 /// Which entity's quantity is being asked about.
@@ -537,6 +537,32 @@ enum Placement {
 /// at every read. Wiring it needs `Condition` variants no card can
 /// express yet *and* a decision about who "you" is for a source with no
 /// controller, so it is **#679**.
+///
+/// # A granted modifier is a modifier (#773)
+///
+/// The abilities a card sits behind here come from
+/// [`abilities_in_effect::for_source`], the same funnel every *ability* path
+/// uses — so they are the printed ones on the side in effect **plus** whatever
+/// the board grants (ADR 0014). Lita Chantler 01117's *"Each investigator at
+/// your location gets +1 \[combat\]"* is granted to her by her own card while
+/// a player controls her, and a sweep reading `abilities_for` directly would
+/// have found her printing nothing and contributed nothing.
+///
+/// Two consequences of routing through it, both deliberate:
+///
+/// - **The walk is quadratic.** `for_source` runs its own board walk per
+///   source to find that source's granters, inside this walk over every
+///   source. The corpus is small enough (a board is tens of cards, and every
+///   read is already a full re-derivation) that measuring it would cost more
+///   than it saves; if it ever matters, the fix is to sweep grants once per
+///   read rather than once per source.
+/// - **A grant's condition is evaluated during a modifier read.** `granted_to`
+///   answers a non-board-global condition through `eval_condition`, which could
+///   in principle ask for a modified value and re-enter this sweep. It does not
+///   today: both corpus grants — Lita's and the Parlor 01115's — condition on
+///   `Condition::ControlStatus`, which is board-global and reads no modified
+///   quantity. A future grant conditioned on a *stat* is the case that would
+///   need a depth guard.
 fn sweep(
     state: &GameState,
     registry: &CardRegistry,
@@ -545,20 +571,21 @@ fn sweep(
     context: ReadContext,
     out: &mut Vec<Contribution>,
 ) {
-    let mut visit = |code: &CardCode, instance: Option<&CardInPlay>, placement: Placement| {
-        // A location contributes the side that is in effect — its back's
-        // constants while unrevealed, its front's while revealed (#774).
-        // Everything else in play shows one face, so it reads the front.
-        let abilities = match placement {
-            Placement::Location(id) => {
-                crate::engine::abilities_in_effect::location_abilities(state, id)
-            }
-            _ => (registry.abilities_for)(code),
-        };
-        let Some(abilities) = abilities else {
+    let mut visit = |code: &CardCode,
+                     instance: Option<&CardInPlay>,
+                     placement: Placement,
+                     source: AbilitySource| {
+        // The funnel: the side in effect — a location's back's constants while
+        // unrevealed, its front's while revealed (#774) — plus whatever the
+        // board grants this card (#772). The address each ability comes paired
+        // with names it across a suspension; a modifier is read fresh at every
+        // read and never suspended, so it is dropped here.
+        let Some(abilities) =
+            crate::engine::abilities_in_effect::for_source_with(state, registry, source, code)
+        else {
             return;
         };
-        for ability in &abilities {
+        for (_, ability) in &abilities {
             if ability.trigger != Trigger::Constant {
                 continue;
             }
@@ -591,33 +618,70 @@ fn sweep(
     //    target's, so Lita Chantler 01117 can reach a teammate.
     for inv in state.investigators.values() {
         for card in inv.controlled_card_instances() {
-            visit(&card.code, Some(card), Placement::Controlled(inv.id));
+            visit(
+                &card.code,
+                Some(card),
+                Placement::Controlled(inv.id),
+                AbilitySource::InPlay(card.instance_id),
+            );
         }
     }
     // 2, 3 and 4. Every location, its attachments, and the cards put into
     //    play at it.
     for (id, loc) in &state.locations {
-        visit(&loc.code, None, Placement::Location(*id));
+        visit(
+            &loc.code,
+            None,
+            Placement::Location(*id),
+            AbilitySource::Location(*id),
+        );
         for att in &loc.attachments {
-            visit(&att.code, Some(att), Placement::LocationAttachment(*id));
+            visit(
+                &att.code,
+                Some(att),
+                Placement::LocationAttachment(*id),
+                AbilitySource::InPlay(att.instance_id),
+            );
         }
         for card in &loc.cards_at_location {
-            visit(&card.code, Some(card), Placement::AtLocation(*id));
+            visit(
+                &card.code,
+                Some(card),
+                Placement::AtLocation(*id),
+                AbilitySource::InPlay(card.instance_id),
+            );
         }
     }
     // 5 and 6. Every enemy and its attachments.
     for (id, enemy) in &state.enemies {
-        visit(&enemy.code, None, Placement::Enemy(*id));
+        visit(
+            &enemy.code,
+            None,
+            Placement::Enemy(*id),
+            AbilitySource::Enemy(*id),
+        );
         for att in &enemy.attachments {
-            visit(&att.code, Some(att), Placement::EnemyAttachment(*id));
+            visit(
+                &att.code,
+                Some(att),
+                Placement::EnemyAttachment(*id),
+                AbilitySource::InPlay(att.instance_id),
+            );
         }
     }
-    // 7. The current act and agenda.
+    // 7. The current act and agenda. `Placement::ActAgenda` is one value
+    //    because neither is anywhere on the board, but the *ability source* is
+    //    two: a grant addressed to the act must not be found on the agenda.
     if let Some(act) = state.act_deck.get(state.act_index) {
-        visit(&act.code, None, Placement::ActAgenda);
+        visit(&act.code, None, Placement::ActAgenda, AbilitySource::Act);
     }
     if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
-        visit(&agenda.code, None, Placement::ActAgenda);
+        visit(
+            &agenda.code,
+            None,
+            Placement::ActAgenda,
+            AbilitySource::Agenda,
+        );
     }
 }
 
@@ -849,7 +913,10 @@ pub(crate) fn stat_for_skill(skill: SkillKind) -> Stat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dsl::{constant, elder_sign, modify, modify_for, on_play, Ability, IntExpr};
+    use crate::dsl::{
+        constant, control_status, elder_sign, grant, modify, modify_for, on_play, Ability,
+        ControlStatus, GrantTarget, IntExpr,
+    };
     use crate::state::{CardInstanceId, LocationId};
     use crate::test_support::{
         test_enemy, test_investigator, test_location, test_skill_test, GameStateBuilder,
@@ -916,6 +983,24 @@ mod tests {
             ))]),
             "elder-sign-clues-here" => Some(vec![elder_sign(IntExpr::Count(
                 crate::dsl::Quantity::CluesAtControllerLocation,
+            ))]),
+            // Lita Chantler 01117's exact shape (#773): the card prints no
+            // modifier of its own and **grants itself** one, gated on being
+            // controlled by a player. The audience is location-scoped so the
+            // same card can be asked from both placements — controlled, and
+            // sitting at a location under nobody's control.
+            "self-granting-combat" => Some(vec![constant(grant(
+                GrantTarget::SelfCard,
+                Some(control_status(
+                    "self-granting-combat",
+                    ControlStatus::ByAPlayer,
+                )),
+                vec![constant(modify_for(
+                    ModifierAudience::EachInvestigatorAtSourceLocation,
+                    Stat::Combat,
+                    1,
+                    ModifierScope::WhileInPlay,
+                ))],
             ))]),
             _ => None,
         }
@@ -1391,6 +1476,88 @@ mod tests {
         // invalidation step in between.
         state.locations.get_mut(&loc).unwrap().clues = 4;
         assert_eq!(skill(&state, id, SkillKind::Willpower), 7);
+    }
+
+    // ---- a granted modifier is a modifier (#773) -----------------
+
+    /// The board both granted-modifier tests read: one location, one
+    /// investigator standing in it, and the `self-granting-combat` card either
+    /// under that investigator's control or in play *at* the location under
+    /// nobody's.
+    fn granting_card_board(controlled: bool) -> (GameState, InvestigatorId) {
+        let id = InvestigatorId(1);
+        let loc = LocationId(3);
+        let card = CardInPlay::enter_play(CardCode::new("self-granting-combat"), CardInstanceId(0));
+        let mut inv = test_investigator(1);
+        inv.current_location = Some(loc);
+        let mut location = test_location(3, "Study");
+        if controlled {
+            inv.cards_in_play.push(card);
+        } else {
+            location.cards_at_location.push(card);
+        }
+        let state = GameStateBuilder::new()
+            .with_investigator(inv)
+            .with_location(location)
+            .build();
+        (state, id)
+    }
+
+    /// **ADR 0014's claim, for modifiers.** A granted ability is an ability, so
+    /// a bare `Effect::Modify` a card is *granted* must reach the sweep exactly
+    /// as a printed one does. Before #773 the two sweeps were parallel and
+    /// uncomposed: `abilities_in_effect::for_source` merged printed + granted
+    /// for every ability path, and this one read `abilities_for` — so the
+    /// granted modifier was found by nothing.
+    #[test]
+    fn a_granted_modifier_is_swept() {
+        let (state, id) = granting_card_board(true);
+        let breakdown = modified_value(
+            &state,
+            Some(&mock_registry()),
+            ModifierTarget::Investigator(id),
+            ModifiedQuantity::Skill(SkillKind::Combat),
+            ReadContext::DuringTest(SkillTestKind::Plain),
+        );
+        assert_eq!(breakdown.base, 3, "test_investigator's printed combat");
+        assert_eq!(
+            breakdown.contributions,
+            vec![Contribution {
+                source: ContributionSource::Card {
+                    code: CardCode::new("self-granting-combat"),
+                    instance: Some(CardInstanceId(0)),
+                },
+                delta: 1,
+            }],
+            "the contribution is attributed to the card that has the ability, \
+             which is the recipient — the granter is named by the address, and \
+             a modifier read carries no address",
+        );
+        assert_eq!(breakdown.total(), 4);
+    }
+
+    /// The other half: nothing is remembered, so flipping the grant's condition
+    /// removes the modifier with no invalidation step. Here the flip is the
+    /// card moving out of a player's control and into the location — the Parlor
+    /// 01115 / Lita Chantler 01117 transition, in the direction that turns her
+    /// buffs off.
+    #[test]
+    fn a_granted_modifier_vanishes_when_the_grants_condition_flips() {
+        let (state, id) = granting_card_board(false);
+        let breakdown = modified_value(
+            &state,
+            Some(&mock_registry()),
+            ModifierTarget::Investigator(id),
+            ModifiedQuantity::Skill(SkillKind::Combat),
+            ReadContext::DuringTest(SkillTestKind::Plain),
+        );
+        assert!(
+            breakdown.contributions.is_empty(),
+            "the card is at the investigator's location and its audience is \
+             location-scoped, so only the failed `ByAPlayer` condition can be \
+             keeping the modifier out",
+        );
+        assert_eq!(breakdown.total(), 3);
     }
 
     // ---- non-investigator targets --------------------------------
