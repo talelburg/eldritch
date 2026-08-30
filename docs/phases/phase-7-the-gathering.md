@@ -187,18 +187,6 @@ the Tablet came out.
   cluster wants are that **Sentinel Peak 02284**'s back is a movement *cost* rather than a
   restriction, and **Museum Halls 02127**'s back grants an ability to a *different*
   location (#772's shape, not #821's).
-- **#772 shipped as [ADR 0014](../adr/0014-a-granted-ability-is-a-constant-effect-swept-off-the-board.md)**,
-  which owns the *why*: a grant is a `Trigger::Constant` `Effect::Grant`, found by a board
-  sweep and merged into the recipient's abilities one layer above the registry, with its
-  condition as a **field** rather than an `Effect::If` wrapper. Two of the wave's design
-  bullets went stale before it started and the ADR records both reversals — the grant is a
-  **declarative variant, not a `native_grants_for` hook** (`standards.md`'s two-consumer
-  threshold is met on day one by 01115 and 01117), and #774 had already built the funnel the
-  bullet proposed. Three things #773 should read off it rather than off this doc: an ability
-  is now addressed by `AbilityAddress`, not by an index; `Effect::TakeControl`,
-  `CardInPlay::owner` and the instance-preserving `enter_asset_making_room` all shipped
-  with it; and act 01109b now puts Lita on the board, so #773's card has somewhere to be.
-  Deferred edges are **#829**.
 - **#773 — Lita 01117's controlled-side grants**, both of which turned out to be **smaller
   than the issue claimed**, because the machinery exists in each case. The `+1 [combat]`
   premise that "existing skill modifiers are self-scoped" is stale:
