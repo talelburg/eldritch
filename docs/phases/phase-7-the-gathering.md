@@ -25,8 +25,7 @@ twice, once as reconnaissance before the fixes and once as the run of record.
 added one issue to the wave and reordered it. **#820** — the set-aside zone is two
 collections in two representations, and cannot take a third card kind — is not one of
 #258's children. The wave runs **#774, #820, #771, #772, #773**. The session also spun out
-**#821** (a constant `Restrict` cannot carry a condition), unmilestoned. **The wave
-closed 2026-08-30** with #773.
+**#821** (a constant `Restrict` cannot carry a condition), unmilestoned.
 
 ## Goal
 
@@ -181,33 +180,43 @@ the Tablet came out.
   session settled five things and changed the cluster's shape, so the bullets below are
   the design rather than the finding. **The wave runs #774, #820, #771, #772, #773**, with
   #774 first because it is independent of the other four and gets the Parlor correct before
-  anything is put into it. All five have shipped; the
+  anything is put into it. #774, #820, #771 and #772 shipped ahead of #773; the
   mechanism #774 added —
   a location's `back_text` abilities apply while it is unrevealed — is documented at
   `game_core::engine::abilities_in_effect`, and the two survey findings the rest of the
   cluster wants are that **Sentinel Peak 02284**'s back is a movement *cost* rather than a
   restriction, and **Museum Halls 02127**'s back grants an ability to a *different*
-  location (#772's shape, not #821's).
-- **#773 — Lita 01117's controlled-side grants** cost three engine gaps, not the "no
-  payload work" the design predicted. The payload halves were indeed already there —
-  `ModifierAudience::EachInvestigatorAtSourceLocation` for the `+1 [combat]`, and
-  `InFlightSkillTest::bonus_attack_damage` read at the one `SkillTestFollowUp::Fight` site
-  for the damage, which delivers her ruling for free (*"Lita's +1 damage bonus only applies
-  to **Fight** actions"*, <https://arkhamdb.com/card/01117>: a designator *performs* a Fight
-  action, so Machete 01020 / .45 Automatic 01016 / .38 Special 01006 qualify, while Dynamite
-  Blast 01024 and Sneak Attack 01052 never construct that follow-up). What the design missed
-  was that **neither half could be reached**: `modified_value::sweep` read `abilities_for`
-  directly rather than the granted-abilities funnel, so a granted `Effect::Modify` reached no
-  stat at all; `EventPattern::SkillTestResolved` had no way to say *"an investigator"* rather
-  than *"you"*, and the narrowing could not be pushed into an eligibility predicate because
-  the matcher runs before a candidate is minted; and the condition was caller-owned, so the
-  `when` cell her text prints did not exist and had to be opened by migrating it to a bare
-  milestone ([ADR 0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md)).
-  The `#679` reasoning stands and was not needed: the grant carries its condition as a
-  field, so nothing here waits on conditional constants. Earning the Lita Chantler card at
-  R1 stays **campaign-log driven and phase-9**. Spun out **#832** — `Condition::ControlStatus`
-  is code-keyed, so it cannot say *"while you control **this** copy"*; no corpus card wants
-  it, and it is unmilestoned.
+  location (#772's shape, not #821's). #773 spun out **#832** —
+  `Condition::ControlStatus` is code-keyed, so it cannot say *"while you control **this**
+  copy"* — which no corpus card wants; also unmilestoned.
+- **#773 — Lita 01117's controlled-side grants.** The `+1 [combat]` premise that "existing
+  skill modifiers are self-scoped" is stale:
+  `ModifierAudience::EachInvestigatorAtSourceLocation` exists
+  (`crates/card-dsl/src/dsl.rs:1364-1372`) and its doc-comment names this card by code, so
+  the half is a plain `modify(Stat::Combat, 1, WhileInPlay)` with that audience. **#772's
+  sweep hands the recipient a bare `Effect::Modify`, and the modifier sweep did not see
+  it** — `modified_value::sweep` sourced abilities from `abilities_for` rather than from
+  the granted-abilities funnel `abilities_in_effect::for_source`, which is where every
+  *ability* path already read them, so a granted modifier reached no stat. Pointing the
+  sweep at the funnel is #773's work, and it leaves **#679** — the `Effect::If { then:
+  Modify }` gap, phase-9 — untouched, since the grant carries its condition as a field
+  rather than a wrapper. The `+1` damage needs no payload:
+  `InFlightSkillTest::bonus_attack_damage` (Vicious Blow 01025's) is read at exactly
+  one site, `SkillTestFollowUp::Fight` (`dispatch/skill_test.rs:1607`) — which delivers her
+  ruling for free. *"Lita's +1 damage bonus only applies to **Fight** actions, not to any
+  other effects that deal damage (Sneak Attack, etc.)"* (<https://arkhamdb.com/card/01117>):
+  `ActionDesignator::Fight` performs a fight action, so Machete 01020 / .45 Automatic 01016
+  / .38 Special 01006 all qualify (the ruling scopes to any Fight *ability*, not the bare
+  action), while Dynamite Blast 01024 and Sneak Attack 01052 never construct that follow-up.
+  The remaining work is the **trigger** — another investigator at her location successfully
+  attacking a `[[Monster]]` — which needs two things the corpus had not asked for before:
+  `EventPattern::SkillTestResolved` gains `by_controller`, since *"an investigator"* cannot
+  be narrowed after the matcher has already scoped the condition to the controller; and the
+  condition migrates to coordinator-owned, since her printed *"When"* has no cell until it
+  does ([ADR 0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md)).
+  Implement the printed predicate (*each* investigator at
+  *her* location) rather than its 1p degenerate case, or the test asserts nothing. Earning
+  the Lita Chantler card at R1 stays **campaign-log driven and phase-9**.
 - **#775 — act 3's R1/R2 choice.** 01110b asks the lead investigator to choose the
   ending, and the act's resolution point is hardcoded to R1, so R2 is unreachable. Not
   a new finding: the 2026-08-22 sweep had already split it into **#766** as phase-9
