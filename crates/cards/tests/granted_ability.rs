@@ -28,8 +28,8 @@
 
 use game_core::card_registry::{self, CardRegistry};
 use game_core::dsl::{
-    activated, card_controlled_by_a_player, constant, gain_resources, grant, not, Ability, CmpOp,
-    Condition, GrantTarget, InvestigatorTarget, Quantity,
+    activated, constant, control_status, gain_resources, grant, Ability, CmpOp, Condition,
+    ControlStatus, GrantTarget, InvestigatorTarget, Quantity,
 };
 use game_core::engine::{legal_actions, EngineOutcome, TurnAction};
 use game_core::state::{
@@ -74,7 +74,7 @@ fn probe_abilities(code: &CardCode) -> Option<Vec<Ability>> {
         GRANTER => Some(vec![
             constant(grant(
                 GrantTarget::Card(RECIPIENT.to_owned()),
-                Some(not(card_controlled_by_a_player(RECIPIENT))),
+                Some(control_status(RECIPIENT, ControlStatus::ByNoPlayer)),
                 vec![
                     granted_activation(),
                     // A **granted grant**. The sweep reads printed abilities only,

@@ -71,8 +71,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::card_registry::CardRegistry;
 use crate::dsl::{
-    Ability, CmpOp, Condition, Determination, Effect, EnemyTarget, HarmKind, IntExpr,
-    InvestigatorTarget, LocationTarget, ModifierScope, Quantity, Trigger,
+    Ability, CmpOp, Condition, ControlStatus, Determination, Effect, EnemyTarget, HarmKind,
+    IntExpr, InvestigatorTarget, LocationTarget, ModifierScope, Quantity, Trigger,
 };
 use crate::event::Event;
 use crate::state::{CandidateSource, GameState, InvestigatorId};
@@ -1173,9 +1173,9 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
 /// A `Rejected` returned by the branch passes through; any events
 /// the branch already pushed (and any state it mutated) are rolled
 /// back by `apply_via`'s snapshot-restore at the apply boundary.
-/// Whether the card printed with `code` is in play and **controlled by a
-/// player** — [`Condition::CardControlledByAPlayer`]'s reader, and the one the
-/// grant sweep asks on behalf of a recipient nobody controls.
+/// Which side of the control split the card printed with `code` is on —
+/// [`Condition::ControlStatus`]'s reader, and the one the grant sweep asks on
+/// behalf of a recipient nobody controls.
 ///
 /// Reads `cards_in_play` only. `glossary/Ownership_and_Control.md` splits the
 /// two out-of-play cases — *"A player controls the cards located in his or her
@@ -1189,12 +1189,17 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
 /// Lita sits in `Location::cards_at_location`, and false the instant her Parley
 /// moves her into a player's `cards_in_play`.
 #[must_use]
-pub(crate) fn card_controlled_by_a_player(state: &GameState, code: &str) -> bool {
-    state
+pub(crate) fn card_control_status(state: &GameState, code: &str) -> ControlStatus {
+    let controlled = state
         .investigators
         .values()
         .flat_map(|inv| inv.cards_in_play.iter())
-        .any(|card| card.code.as_str() == code)
+        .any(|card| card.code.as_str() == code);
+    if controlled {
+        ControlStatus::ByAPlayer
+    } else {
+        ControlStatus::ByNoPlayer
+    }
 }
 
 /// Resolve a [`Condition`] against the current state.
@@ -1208,10 +1213,11 @@ pub(crate) fn eval_condition(
     condition: &Condition,
 ) -> Result<bool, String> {
     match condition {
-        Condition::Not(inner) => eval_condition(state, eval_ctx, inner).map(|held| !held),
         // Board-global: it reads no "you", which is what lets the grant sweep
         // ask it on behalf of a recipient nobody controls (ADR 0014).
-        Condition::CardControlledByAPlayer { code } => Ok(card_controlled_by_a_player(state, code)),
+        Condition::ControlStatus { code, status } => {
+            Ok(card_control_status(state, code) == *status)
+        }
         Condition::SkillTestKind(kind) => {
             let t = state.current_skill_test().ok_or_else(|| {
                 "Condition::SkillTestKind but no skill test is in flight".to_owned()

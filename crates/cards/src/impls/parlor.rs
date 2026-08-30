@@ -40,7 +40,8 @@
 //!   Lita and about nobody's "you" — which is what lets it be answered at all,
 //!   since the sweep evaluates a grant's condition against the *recipient's*
 //!   controller and Lita has none until the Parley succeeds. Hence
-//!   `Condition::CardControlledByAPlayer` rather than a card-local native tag.
+//!   `Condition::ControlStatus` rather than a card-local native tag, whose
+//!   predicate could not be asked without a controller to bind.
 //! - **The two grants are complements, and nothing enforces it.** Lita's own
 //!   card grants her a different pair *while* a player controls her (#773), so
 //!   exactly one of the two applies at a time. That is the two cards agreeing,
@@ -98,8 +99,8 @@
 
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{
-    activated_as, card_controlled_by_a_player, constant, grant, not, restrict, seq, skill_test,
-    take_control, Ability, ActionDesignator, GrantTarget, Restriction,
+    activated_as, constant, control_status, grant, restrict, seq, skill_test, take_control,
+    Ability, ActionDesignator, ControlStatus, GrantTarget, Restriction,
 };
 
 /// `ArkhamDB` code for the Parlor.
@@ -117,7 +118,7 @@ pub fn abilities() -> Vec<Ability> {
         activated_as(ActionDesignator::Resign, 1, vec![], seq([])),
         constant(grant(
             GrantTarget::Card(LITA_CHANTLER.to_owned()),
-            Some(not(card_controlled_by_a_player(LITA_CHANTLER))),
+            Some(control_status(LITA_CHANTLER, ControlStatus::ByNoPlayer)),
             vec![lita_parley()],
         )),
     ]
@@ -155,7 +156,9 @@ pub fn back_abilities() -> Vec<Ability> {
 #[cfg(test)]
 mod tests {
     use card_dsl::card_data::SkillKind;
-    use card_dsl::dsl::{ActionDesignator, Condition, Effect, GrantTarget, Restriction, Trigger};
+    use card_dsl::dsl::{
+        ActionDesignator, Condition, ControlStatus, Effect, GrantTarget, Restriction, Trigger,
+    };
 
     #[test]
     fn abilities_are_one_action_costed_resign_then_the_lita_grant() {
@@ -180,7 +183,8 @@ mod tests {
     /// the same trap a gated `Effect::Modify` falls into (#679). The gate is the
     /// variant's own `condition` field, and it is board-global: it asks about
     /// Lita, not about any investigator's "you", which is what lets it be
-    /// answered while nobody controls her.
+    /// answered while nobody controls her. The status is the **negative** one —
+    /// 01117's own grant asks for the other, and the two are complements.
     #[test]
     fn the_lita_grant_is_bare_and_gated_on_nobody_controlling_her() {
         let abilities = super::abilities();
@@ -198,11 +202,10 @@ mod tests {
         assert_eq!(*to, GrantTarget::Card("01117".to_owned()));
         assert_eq!(
             *condition,
-            Some(Condition::Not(Box::new(
-                Condition::CardControlledByAPlayer {
-                    code: "01117".to_owned(),
-                }
-            ))),
+            Some(Condition::ControlStatus {
+                code: "01117".to_owned(),
+                status: ControlStatus::ByNoPlayer,
+            }),
         );
         assert_eq!(abilities.len(), 1, "the card grants exactly one ability");
     }

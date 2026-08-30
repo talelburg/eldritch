@@ -1323,8 +1323,7 @@ pub enum Effect {
     /// The sweep evaluates `condition` against the **recipient's** controller,
     /// which is `None` for a card in play under nobody's control. A condition
     /// that needs a "you" does not hold against `None`; a board-global one
-    /// ([`Condition::CardControlledByAPlayer`], and a
-    /// [`Condition::Not`] of one) is answered anyway.
+    /// ([`Condition::ControlStatus`]) is answered anyway.
     Grant {
         /// Which card receives the abilities.
         to: GrantTarget,
@@ -1843,45 +1842,65 @@ pub enum Condition {
     /// candidates that will fire it (Oops! 02113, Esoteric Formula 02254,
     /// Springfield M1903 02226 — all Dunwich).
     Native { tag: String },
-    /// Negation: holds exactly when the inner condition does not.
+    /// **Whether the card printed with `code` is in the named control status.**
     ///
-    /// The first combinator in the vocabulary, and it arrives with the first
-    /// card that prints a negated clause — the Parlor 01115's *"While Lita
-    /// Chantler is **not** controlled by a player"*. Kept as a wrapper rather
-    /// than folded into
-    /// [`CardControlledByAPlayer`](Self::CardControlledByAPlayer) as a `bool`
-    /// so the negation composes with every later variant instead of once with
-    /// this one.
+    /// `glossary/Ownership_and_Control.md` makes control a two-sided thing —
+    /// *"A player controls the cards located in his or her out-of-play game
+    /// areas"* against *"The scenario controls the cards in its out-of-play
+    /// game areas"* — and cards print clauses on **both** sides of it. This
+    /// variant asks which side a card is on rather than asserting one, because
+    /// its two corpus consumers are complements on the same card:
     ///
-    /// **A negation is only as board-global as what it wraps** — see
-    /// [`CardControlledByAPlayer`](Self::CardControlledByAPlayer) for what that
-    /// buys a constant-effect sweep.
-    Not(Box<Condition>),
-    /// Whether the card printed with `code` is in play **and controlled by a
-    /// player** — `glossary/Ownership_and_Control.md`: *"A player controls the
-    /// cards located in his or her out-of-play game areas"*, against *"The
-    /// scenario controls the cards in its out-of-play game areas"*. A card in
-    /// play at a location under nobody's control is not controlled by a player,
-    /// and neither is a card that is not in play at all.
+    /// > \[Parlor 01115\] While Lita Chantler is **not** controlled by a
+    /// > player, she gains: …
     ///
-    /// **Board-global: it reads no "you".** That is the whole reason it is a
-    /// declarative variant rather than a card-local
-    /// [`Native`](Self::Native) tag, which the one-card threshold in
-    /// `docs/agents/standards.md` would otherwise call for. A native predicate
-    /// is `fn(&GameState, &EvalContext) -> bool` and an `EvalContext` names a
-    /// controller, so a native cannot be asked anything at all on behalf of an
-    /// **uncontrolled** card — which is exactly the case the Parlor 01115's
-    /// grant exists to serve: *"While Lita Chantler is not controlled by a
-    /// player, she gains …"* is evaluated by the grant sweep with Lita as the
-    /// recipient and no controller to bind. See ADR 0014.
+    /// > \[Lita Chantler 01117\] While **you control** Lita Chantler, she
+    /// > gains: …
     ///
-    /// "Jazz" Mulligan 02060 prints the same clause about himself and is the
-    /// second consumer waiting in the near backlog.
-    CardControlledByAPlayer {
+    /// 01117's is self-reducing: it is a self-grant, and the sweep binds "you"
+    /// to the recipient's own controller, so *"you control Lita"* and *"Lita is
+    /// controlled by a player"* are the same question. The two clauses
+    /// therefore differ only in the [`ControlStatus`] they ask for, which is
+    /// why the polarity is a **named field rather than a wrapping negation**.
+    ///
+    /// **Board-global: it reads no "you".** That is what lets a constant-effect
+    /// sweep ask it on behalf of a card **nobody controls**, which is exactly
+    /// the Parlor's case — a card-local [`Native`](Self::Native) predicate is
+    /// `fn(&GameState, &EvalContext) -> bool`, and an `EvalContext` names a
+    /// controller, so it could not be asked at all. See ADR 0014.
+    ///
+    /// "Jazz" Mulligan 02060 prints 01115's clause about himself, and Clover
+    /// Club Lounge/Bar/Cardroom 02071-73 print 01117's, so the near backlog
+    /// wants both statuses too.
+    ControlStatus {
         /// Printed `ArkhamDB` code of the card whose control is being asked
         /// about.
         code: String,
+        /// The status the card must be in for the condition to hold.
+        status: ControlStatus,
     },
+}
+
+/// Which side of `glossary/Ownership_and_Control.md`'s control split a card is
+/// on, for [`Condition::ControlStatus`].
+///
+/// Two named states rather than a `bool`, so a card's printed polarity is
+/// legible at the declaration site and at the read site alike: `status: false`
+/// says nothing about *what* is false.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ControlStatus {
+    /// In play and controlled by a player — Lita Chantler 01117's *"While
+    /// **you control** Lita Chantler"*.
+    ByAPlayer,
+    /// Controlled by no player: in play under nobody's control (the Parlor
+    /// 01115's Lita before a Parley), or not in play at all. The Parlor's
+    /// *"While Lita Chantler is **not** controlled by a player"*.
+    ///
+    /// **Not the same as "controlled by the scenario"**, which is the narrower
+    /// thing `Ownership_and_Control.md` names for the scenario's own out-of-play
+    /// areas. No card prints that distinction yet; the day one does, it is a
+    /// third status rather than a re-reading of this one.
+    ByNoPlayer,
 }
 
 /// A non-negative count read off game state, usable as a value
@@ -2475,17 +2494,14 @@ pub fn take_control(code: impl Into<String>) -> Effect {
     Effect::TakeControl { code: code.into() }
 }
 
-/// Build a [`Condition::Not`] — the negation of `condition`.
+/// Build a [`Condition::ControlStatus`] asking whether the card printed with
+/// `code` is in `status`.
 #[must_use]
-pub fn not(condition: Condition) -> Condition {
-    Condition::Not(Box::new(condition))
-}
-
-/// Build a [`Condition::CardControlledByAPlayer`] for the card printed with
-/// `code`.
-#[must_use]
-pub fn card_controlled_by_a_player(code: impl Into<String>) -> Condition {
-    Condition::CardControlledByAPlayer { code: code.into() }
+pub fn control_status(code: impl Into<String>, status: ControlStatus) -> Condition {
+    Condition::ControlStatus {
+        code: code.into(),
+        status,
+    }
 }
 
 /// Build an [`Effect::SkillTest`] initiating a `skill` test against

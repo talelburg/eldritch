@@ -365,9 +365,11 @@ fn condition_holds(
 /// [`condition_holds`]'s three-valued core: `None` means *"this condition needs
 /// a 'you' and there is none"*.
 ///
-/// Three-valued rather than two so [`Condition::Not`] **propagates** the
-/// unanswerable case instead of inverting it — a negated condition that cannot
-/// be asked must not come back `true`.
+/// Three-valued rather than two because *"cannot be asked"* and *"asked and
+/// false"* are the same answer **only while no condition inverts another**. A
+/// `Condition::Not`-style combinator would have to propagate the `None` rather
+/// than invert it, or a negated unanswerable condition would come back `true`;
+/// keeping the shape three-valued is what leaves that trap already sprung.
 fn try_condition(
     state: &GameState,
     condition: &Condition,
@@ -375,13 +377,12 @@ fn try_condition(
     source: Option<CardInstanceId>,
 ) -> Option<bool> {
     match condition {
-        Condition::Not(inner) => try_condition(state, inner, you, source).map(|held| !held),
         // Board-global: no "you" to bind, so it is answerable for an
         // uncontrolled recipient — which is the whole case the Parlor 01115's
         // grant serves.
-        Condition::CardControlledByAPlayer { code } => Some(
-            crate::engine::evaluator::card_controlled_by_a_player(state, code),
-        ),
+        Condition::ControlStatus { code, status } => {
+            Some(crate::engine::evaluator::card_control_status(state, code) == *status)
+        }
         other => {
             let you = you?;
             let eval_ctx =
