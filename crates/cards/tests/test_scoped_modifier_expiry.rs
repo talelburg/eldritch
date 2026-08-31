@@ -130,7 +130,7 @@ fn a_row_expires_when_its_test_is_abandoned_on_the_testers_elimination() {
     assert_eq!(result.outcome, EngineOutcome::Done, "abandoned cleanly");
     assert_eq!(
         result.state.investigators[&InvestigatorId(1)].status,
-        Status::Killed,
+        Status::Defeated,
     );
     assert_event_count!(result.events, 1, Event::SkillTestEnded { .. });
     assert_eq!(

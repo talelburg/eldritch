@@ -310,7 +310,7 @@ fn activating_with_defeated_status_doesnt_need_registry() {
     let id = InvestigatorId(1);
     let instance_id = CardInstanceId(0);
     let mut inv = test_investigator(1);
-    inv.status = Status::Killed;
+    inv.status = Status::Defeated;
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(FAST_RESOURCE_LOOP),
         instance_id,

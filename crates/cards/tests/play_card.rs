@@ -440,7 +440,7 @@ fn play_card_after_defeat_is_rejected() {
     let id = InvestigatorId(1);
     let mut inv = test_investigator(1);
     inv.hand = vec![CardCode::new(HOLY_ROSARY)];
-    inv.status = Status::Killed;
+    inv.status = Status::Defeated;
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)

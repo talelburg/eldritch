@@ -596,7 +596,7 @@ fn rotate_to_active(cx: &mut Cx, id: InvestigatorId) {
 /// [`resume_hunter_choice`] once all hunters resolve.
 ///
 /// Seeds the cursor to the first Active investigator in `turn_order`.
-/// Eliminated investigators (Killed / Insane / Resigned) are skipped per
+/// Eliminated investigators (Defeated / Resigned) are skipped per
 /// Rules Reference p.10 (Elimination); [`cursor::first_active_investigator`] is
 /// the shared helper used by Mythos 1.4 (#69) for the same semantics.
 /// The loop body runs in [`anchor_on_child_pop`]'s arms.
@@ -1801,7 +1801,7 @@ mod investigation_phase_tests {
             .investigators
             .get_mut(&InvestigatorId(1))
             .unwrap()
-            .status = Status::Killed;
+            .status = Status::Defeated;
         state.active_investigator = None;
 
         let mut events = Vec::new();
@@ -2232,7 +2232,7 @@ mod mythos_phase_tests {
             .investigators
             .get_mut(&InvestigatorId(1))
             .unwrap()
-            .status = Status::Killed;
+            .status = Status::Defeated;
         let mut events = Vec::new();
 
         mythos_phase(&mut Cx {
@@ -2273,7 +2273,7 @@ mod mythos_phase_tests {
             .investigators
             .get_mut(&InvestigatorId(1))
             .unwrap()
-            .status = Status::Killed;
+            .status = Status::Defeated;
         let mut events = Vec::new();
 
         mythos_phase(&mut Cx {
@@ -2316,7 +2316,7 @@ mod mythos_phase_tests {
             .investigators
             .get_mut(&InvestigatorId(2))
             .unwrap()
-            .status = Status::Killed;
+            .status = Status::Defeated;
         let mut events = Vec::new();
 
         // inv1 has just completed their draw chain: advance drops inv1 and must
@@ -2349,12 +2349,12 @@ mod mythos_phase_tests {
             .investigators
             .get_mut(&InvestigatorId(1))
             .unwrap()
-            .status = Status::Killed;
+            .status = Status::Defeated;
         state
             .investigators
             .get_mut(&InvestigatorId(2))
             .unwrap()
-            .status = Status::Insane;
+            .status = Status::Defeated;
 
         assert_eq!(
             super::super::cursor::first_active_investigator(&state),
@@ -2373,7 +2373,7 @@ mod mythos_phase_tests {
             .investigators
             .get_mut(&InvestigatorId(1))
             .unwrap()
-            .status = Status::Killed;
+            .status = Status::Defeated;
 
         assert_eq!(
             super::super::cursor::first_active_investigator(&state),
@@ -2408,7 +2408,7 @@ mod mythos_phase_tests {
             .investigators
             .get_mut(&InvestigatorId(2))
             .unwrap()
-            .status = Status::Killed;
+            .status = Status::Defeated;
 
         assert_eq!(
             super::super::cursor::next_active_investigator_after(&state, InvestigatorId(1)),
@@ -2454,7 +2454,7 @@ mod mythos_phase_tests {
             .investigators
             .get_mut(&InvestigatorId(1))
             .unwrap()
-            .status = Status::Killed;
+            .status = Status::Defeated;
 
         assert_eq!(
             super::super::cursor::next_active_investigator_after(&state, InvestigatorId(1)),
@@ -2797,7 +2797,7 @@ mod upkeep_phase_tests {
         inv_a.actions_remaining = 0;
         let mut inv_b = test_investigator(2);
         inv_b.actions_remaining = 0;
-        inv_b.status = Status::Killed;
+        inv_b.status = Status::Defeated;
         let mut state = GameStateBuilder::default()
             .with_investigator(inv_a)
             .with_investigator(inv_b)
@@ -3406,7 +3406,7 @@ mod enemy_phase_tests {
         crate::assert_no_event!(events, Event::EnemyExhausted { .. });
 
         // Investigator was defeated.
-        assert_eq!(state.investigators[&inv_id].status, Status::Killed);
+        assert_eq!(state.investigators[&inv_id].status, Status::Defeated);
     }
 
     #[test]
@@ -3548,7 +3548,7 @@ mod enemy_phase_tests {
             .build();
         state.turn_order = vec![id1, id2, id3];
         state.active_investigator = None;
-        state.investigators.get_mut(&id2).unwrap().status = Status::Insane;
+        state.investigators.get_mut(&id2).unwrap().status = Status::Defeated;
         let mut events = Vec::new();
 
         step_phase(&mut Cx {
@@ -3585,7 +3585,7 @@ mod enemy_phase_tests {
             .build();
         state.turn_order = vec![id1];
         state.active_investigator = None;
-        state.investigators.get_mut(&id1).unwrap().status = Status::Killed;
+        state.investigators.get_mut(&id1).unwrap().status = Status::Defeated;
         let mut events = Vec::new();
 
         step_phase(&mut Cx {

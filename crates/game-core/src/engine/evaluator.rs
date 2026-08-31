@@ -5303,7 +5303,7 @@ mod tests {
             EvalContext::for_controller(id),
         );
         assert_eq!(outcome, EngineOutcome::Done);
-        assert_eq!(state.investigators[&id].status, Status::Killed);
+        assert_eq!(state.investigators[&id].status, Status::Defeated);
         assert_event!(
             events,
             Event::InvestigatorEliminated { investigator, .. } if *investigator == id

@@ -12,9 +12,19 @@ use crate::state::{
 #[cfg(test)]
 use crate::state::{CardCode, LocationId, Phase};
 
-/// Flip an Active investigator's status to the variant `cause` implies and emit
-/// [`Event::InvestigatorEliminated`]. No-op if the investigator is already
-/// non-Active — an investigator is eliminated once, and only once.
+/// Flip an Active investigator's status to the variant `cause` implies —
+/// [`Status::Resigned`] for a resignation, [`Status::Defeated`] for every
+/// defeat — and emit [`Event::InvestigatorEliminated`]. No-op if the
+/// investigator is already non-Active: an investigator is eliminated once, and
+/// only once.
+///
+/// **The three defeat causes all land on [`Status::Defeated`]** (#814). Killed
+/// and driven insane are campaign-log states derived from accumulated trauma
+/// totals, not from how one scenario defeat happened —
+/// `glossary/Campaign_Play.md`: *"If an investigator has physical trauma equal
+/// to his or her printed health, the investigator is killed."* The cause is not
+/// lost: it rides `cause` on the event, which is the campaign log's input
+/// (#766).
 ///
 /// **Elimination, not defeat.** `glossary/Elimination.md` opens *"A player is
 /// eliminated from a scenario any time his or her investigator is defeated, **or
@@ -39,8 +49,6 @@ use crate::state::{CardCode, LocationId, Phase};
 ///   only such caller today and gates on [`Status`] for exactly this reason.
 ///
 /// [`Status`]: crate::state::Status
-/// [`Status::Killed`]: crate::state::Status::Killed
-/// [`Status::Insane`]: crate::state::Status::Insane
 pub(super) fn apply_investigator_elimination(
     cx: &mut Cx,
     investigator: InvestigatorId,
@@ -59,10 +67,10 @@ pub(super) fn apply_investigator_elimination(
         return;
     }
     inv.status = match cause {
-        EliminationCause::Damage => Status::Killed,
-        EliminationCause::Horror => Status::Insane,
         EliminationCause::Resigned => Status::Resigned,
-        EliminationCause::CardAbility => Status::Defeated,
+        EliminationCause::Damage | EliminationCause::Horror | EliminationCause::CardAbility => {
+            Status::Defeated
+        }
     };
     cx.events.push(Event::InvestigatorEliminated {
         investigator,
@@ -453,7 +461,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
 }
 
 /// Apply `amount` horror to an investigator. If their accumulated
-/// horror reaches `max_sanity`, flip status to [`Status::Insane`],
+/// horror reaches `max_sanity`, flip status to [`Status::Defeated`],
 /// emit [`Event::InvestigatorEliminated`], and (if no `Active`
 /// investigators remain) emit [`Event::AllInvestigatorsDefeated`].
 ///
@@ -471,7 +479,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
 /// from one source) reach the same entry via
 /// [`enemy_attack`](super::combat::enemy_attack).
 ///
-/// [`Status::Insane`]: crate::state::Status::Insane
+/// [`Status::Defeated`]: crate::state::Status::Defeated
 pub(crate) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
     // Route through the shared soak entry (#44/K5a) so a controlled sanity-bearing
     // asset (Beat Cop, Holy Rosary) absorbs non-attack horror; `place_assignment`
@@ -564,8 +572,8 @@ pub(crate) fn resign_investigator(cx: &mut Cx, investigator: InvestigatorId) {
 /// investigator remains.
 ///
 /// **Contract for callers:** *any* code path that flips a
-/// `Status::Active` investigator to a non-`Active` status (Killed,
-/// Insane, Resigned) must call this helper afterwards. Currently the
+/// `Status::Active` investigator to a non-`Active` status (Defeated,
+/// Resigned) must call this helper afterwards. Currently the
 /// only status-flipping path is [`apply_investigator_elimination`], so
 /// that one helper is the only caller; future paths that flip status
 /// outside this helper (a scenario effect that bypasses the standard
@@ -872,7 +880,7 @@ mod elimination_tests {
             EliminationCause::Horror,
         );
 
-        assert_eq!(state.investigators[&dead].status, Status::Insane);
+        assert_eq!(state.investigators[&dead].status, Status::Defeated);
         assert_eq!(state.locations[&loc].clues, 1, "clue placed at location");
         assert_eq!(
             state.enemies[&EnemyId(1)].engaged_with,
@@ -1164,12 +1172,49 @@ mod elimination_tests {
         assert_eq!(turn_frame(&state), Some((resigner, true)));
     }
 
-    /// `glossary/Defeat.md`: *"An investigator might also be defeated by a card
-    /// ability."* That defeat is neither killed nor driven insane — the same
-    /// entry makes those two consequences of **trauma** — so it carries its own
-    /// cause and its own status.
+    /// Every defeat cause lands on the same status; only the event's cause
+    /// separates them (#814).
+    ///
+    /// `glossary/Campaign_Play.md`: *"If an investigator is defeated by taking
+    /// damage equal to his or her health, he or she suffers 1 physical trauma
+    /// (recorded in the campaign log). … If an investigator has physical trauma
+    /// equal to his or her printed health, the investigator is killed."* So a
+    /// defeat by damage at zero prior trauma leaves the investigator
+    /// **defeated**, owing one trauma — not killed. The engine used to assert
+    /// the kill here; the derivation belongs to the campaign log (#766), which
+    /// reads the recorded totals.
     #[test]
-    fn a_card_ability_defeat_is_neither_killed_nor_insane() {
+    fn damage_and_horror_defeats_both_land_on_defeated() {
+        crate::test_support::install_test_registry();
+        for cause in [EliminationCause::Damage, EliminationCause::Horror] {
+            let a = InvestigatorId(1);
+            let mut state = two_investigator_open_turn(a);
+            let mut events = Vec::new();
+
+            apply_investigator_elimination(
+                &mut Cx {
+                    state: &mut state,
+                    events: &mut events,
+                },
+                a,
+                cause,
+            );
+
+            assert_eq!(
+                state.investigators[&a].status,
+                Status::Defeated,
+                "{cause:?} defeat is a defeat, not a kill or an insanity",
+            );
+            assert_event!(events, Event::InvestigatorEliminated { investigator, cause: c }
+                if *investigator == a && *c == cause);
+        }
+    }
+
+    /// `glossary/Defeat.md`: *"An investigator might also be defeated by a card
+    /// ability."* It lands on the one defeat status, and the cause it carries on
+    /// the event is what distinguishes it from a damage or horror defeat.
+    #[test]
+    fn a_card_ability_defeat_lands_on_defeated_and_carries_its_cause() {
         crate::test_support::install_test_registry();
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
         let mut state = two_investigator_open_turn(a);
@@ -1186,7 +1231,7 @@ mod elimination_tests {
         assert_eq!(
             state.investigators[&a].status,
             Status::Defeated,
-            "not Killed (damage) and not Insane (horror)",
+            "the one defeat status; the cause rides the event",
         );
         assert_event!(events, Event::InvestigatorEliminated { investigator, cause }
             if *investigator == a && *cause == EliminationCause::CardAbility);

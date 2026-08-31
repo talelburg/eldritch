@@ -158,7 +158,7 @@ fn resigning_eliminates_by_resignation() {
     assert_eq!(
         result.state.investigators[&RESIGNER].status,
         Status::Resigned,
-        "resigned, not killed / insane / defeated",
+        "resigned, not defeated",
     );
 }
 
