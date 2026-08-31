@@ -3779,14 +3779,10 @@ mod enemy_phase_tests {
         );
     }
 
-    // TODO(#842): pause-on-Fast-eligibility test — needs a
-    // tractable Fast-eligibility fixture at the engine layer (Fast
-    // event card in hand + resources + card-registry install, which
-    // would push this into the cards crate's integration tests). The
-    // Skip-resume test above proves the resume path is correct; the
-    // pause shape is exercised indirectly via the existing
-    // any_fast_play_eligible-driven open_fast_window tests at
-    // dispatch.rs's open_fast_window_tests block.
+    // The companion pause-on-Fast-eligibility path is covered at
+    // `crates/cards/tests/enemy_phase_fast_window.rs` (#842): making anything
+    // Fast-eligible needs `cards::REGISTRY` installed, which this crate cannot
+    // reach by crate-dependency direction.
 }
 
 #[cfg(test)]
