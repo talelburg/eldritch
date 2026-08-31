@@ -87,8 +87,16 @@ async fn map_renders_location_name_shroud_clues() {
     let html = render_state(state).await;
 
     assert!(html.contains("Rivertown"), "location name missing: {html}");
-    assert!(html.contains("shroud 3"), "shroud missing: {html}");
-    assert!(html.contains("clues 2"), "location clues missing: {html}");
+    // The header prints numerals in fixed, colour-coded slots rather than
+    // labels (#848); the words survive only as the badges' `title`.
+    assert!(
+        html.contains(r#"title="shroud 3""#),
+        "shroud badge missing: {html}"
+    );
+    assert!(
+        html.contains(r#"title="clues 2""#),
+        "clue badge missing: {html}"
+    );
 }
 
 #[wasm_bindgen_test]

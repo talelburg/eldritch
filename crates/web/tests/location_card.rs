@@ -38,7 +38,7 @@ async fn revealed_location_shows_metadata_text_and_victory() {
     leptos::task::tick().await;
 
     let text = node_text("Attic");
-    assert!(text.contains("Victory 1"), "victory chip missing: {text}");
+    assert!(text.contains("\u{2605}1"), "victory pip missing: {text}");
     assert!(text.contains("horror"), "ability text missing: {text}");
 }
 
@@ -65,22 +65,23 @@ async fn unrevealed_location_withholds_metadata() {
     let mut attic = test_location(3, "Hidden Attic");
     attic.code = CardCode::new("01113");
     attic.revealed = false;
+    attic.shroud = 7;
+    attic.clues = 9;
     let game = GameStateBuilder::new().with_location(attic).build();
     leptos::mount::mount_to_body(move || web::map::location_map(&game));
     leptos::task::tick().await;
 
     let text = node_text("Hidden Attic");
     assert!(
-        text.contains("unrevealed"),
-        "unrevealed label missing: {text}"
-    );
-    assert!(
-        !text.contains("Victory"),
+        !text.contains('\u{2605}'),
         "victory must be withheld: {text}"
     );
     assert!(
         !text.contains("horror"),
         "ability text must be withheld: {text}"
     );
-    assert!(!text.contains("shroud"), "shroud must be withheld: {text}");
+    // An unrevealed location has no shroud or clue value to print at all
+    // (RR glossary, "Location Cards"): the header shows `?` placeholders.
+    assert!(!text.contains('7'), "shroud value must be withheld: {text}");
+    assert!(!text.contains('9'), "clue value must be withheld: {text}");
 }

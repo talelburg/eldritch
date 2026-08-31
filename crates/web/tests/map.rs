@@ -41,44 +41,29 @@ async fn mount_state(state: game_core::state::GameState) {
     leptos::task::tick().await;
 }
 
-/// `textContent` of the map node whose `data-loc` equals `loc_name`, scoped to
-/// the LAST mounted `<section class="map">` so that DOM accumulation across tests
-/// does not make an earlier test's node shadow this one (same pattern as the
-/// `board.rs` wasm tests).
+/// The LAST mounted `<section class="map">`. Every mount in this binary appends
+/// to the same document body, so an earlier test's nodes would otherwise shadow
+/// the one under assertion.
+fn last_map() -> Element {
+    let maps = document().query_selector_all(".map").expect("query ok");
+    maps.item(maps.length() - 1)
+        .and_then(|n| n.dyn_into::<Element>().ok())
+        .expect("a .map section")
+}
+
+/// `textContent` of the map node whose `data-loc` equals `loc_name`, in the
+/// last-mounted map.
 fn node_text(loc_name: &str) -> String {
-    let maps = document()
-        .query_selector_all(".map")
-        .expect("query_selector_all ok");
-    let len = maps.length();
-    if len == 0 {
-        return String::new();
-    }
-    let last_map = maps
-        .item(len - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
-        .expect("last .map is an Element");
-    let sel = format!(".map-location[data-loc=\"{loc_name}\"]");
-    last_map
-        .query_selector(&sel)
+    last_map()
+        .query_selector(&format!(".map-location[data-loc=\"{loc_name}\"]"))
         .expect("query ok")
         .and_then(|el| el.text_content())
         .unwrap_or_default()
 }
 
-/// Count of `<line class="map-line">` elements in the LAST mounted `.map`
-/// section. Scoped to the last section so that DOM accumulation from earlier
-/// test mounts does not carry over stale lines into a fresh assertion.
+/// Count of `<line class="map-line">` elements in the last-mounted map.
 fn line_count() -> u32 {
-    let maps = document().query_selector_all(".map").expect("query ok");
-    let len = maps.length();
-    if len == 0 {
-        return 0;
-    }
-    let last_map = maps
-        .item(len - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("last .map is an Element");
-    last_map
+    last_map()
         .query_selector_all("line.map-line")
         .expect("query ok")
         .length()
@@ -162,70 +147,34 @@ async fn engaged_enemy_renders_in_detail_panel_not_in_node() {
     );
 }
 
-#[wasm_bindgen_test]
-async fn revealed_location_shows_revealed_not_unrevealed() {
-    let mut loc = test_location(20, "Study Revealed");
-    loc.revealed = true; // default, but explicit
-    let state = GameStateBuilder::new()
-        .with_location(loc)
-        .with_investigator(test_investigator(1))
-        .build();
-    mount_state(state).await;
-    let text = node_text("Study Revealed");
-    assert!(
-        text.contains("revealed"),
-        "revealed location must contain 'revealed'; text = {text:?}"
-    );
-    assert!(
-        !text.contains("unrevealed"),
-        "revealed location must NOT contain 'unrevealed'; text = {text:?}"
-    );
+/// The `class` attribute of the shroud / clue badge in the last-mounted node
+/// named `loc_name`. The header prints numerals only (#848), so what a badge
+/// *is* lives in its class, not in its text.
+fn badge_class(loc_name: &str, which: &str) -> String {
+    let sel = format!(".map-location[data-loc=\"{loc_name}\"] .loc-head .badge:{which}-child");
+    last_map()
+        .query_selector(&sel)
+        .expect("query")
+        .and_then(|el| el.get_attribute("class"))
+        .unwrap_or_default()
+}
+
+/// Text of the shroud badge (first header column) and the clue badge (last).
+fn header_badges(loc_name: &str) -> (String, String) {
+    let sel = format!(".map-location[data-loc=\"{loc_name}\"] .loc-head .badge");
+    let badges = last_map().query_selector_all(&sel).expect("query");
+    assert_eq!(badges.length(), 2, "a header carries exactly two badges");
+    let text = |i| {
+        badges
+            .item(i)
+            .and_then(|n| n.text_content())
+            .unwrap_or_default()
+    };
+    (text(0), text(1))
 }
 
 #[wasm_bindgen_test]
-async fn unrevealed_location_shows_unrevealed() {
-    let mut loc = test_location(21, "Parlor Unrevealed");
-    loc.revealed = false;
-    let state = GameStateBuilder::new()
-        .with_location(loc)
-        .with_investigator(test_investigator(1))
-        .build();
-    mount_state(state).await;
-    let text = node_text("Parlor Unrevealed");
-    assert!(
-        text.contains("unrevealed"),
-        "unrevealed location must contain 'unrevealed'; text = {text:?}"
-    );
-}
-
-#[wasm_bindgen_test]
-async fn unrevealed_location_hides_shroud_and_clues() {
-    let mut loc = test_location(30, "Cellar Unrevealed");
-    loc.revealed = false;
-    loc.shroud = 4;
-    loc.clues = 3;
-    let state = GameStateBuilder::new()
-        .with_location(loc)
-        .with_investigator(test_investigator(1))
-        .build();
-    mount_state(state).await;
-    let text = node_text("Cellar Unrevealed");
-    assert!(
-        text.contains("unrevealed"),
-        "unrevealed location must contain 'unrevealed'; text = {text:?}"
-    );
-    assert!(
-        !text.contains("shroud"),
-        "unrevealed location must NOT contain 'shroud'; text = {text:?}"
-    );
-    assert!(
-        !text.contains("clues"),
-        "unrevealed location must NOT contain 'clues'; text = {text:?}"
-    );
-}
-
-#[wasm_bindgen_test]
-async fn revealed_location_shows_shroud_and_clues() {
+async fn revealed_location_shows_shroud_and_clues_as_badges() {
     let mut loc = test_location(31, "Attic Revealed");
     loc.revealed = true;
     loc.shroud = 2;
@@ -235,14 +184,99 @@ async fn revealed_location_shows_shroud_and_clues() {
         .with_investigator(test_investigator(1))
         .build();
     mount_state(state).await;
-    let text = node_text("Attic Revealed");
-    assert!(
-        text.contains("shroud"),
-        "revealed location must contain 'shroud'; text = {text:?}"
+    assert_eq!(
+        header_badges("Attic Revealed"),
+        ("2".to_string(), "5".to_string()),
+        "shroud is the left badge and clues the right",
     );
     assert!(
-        text.contains("clues"),
-        "revealed location must contain 'clues'; text = {text:?}"
+        badge_class("Attic Revealed", "first").contains("badge--shroud"),
+        "the left badge is the shroud badge",
+    );
+    assert!(
+        badge_class("Attic Revealed", "last").contains("badge--clues"),
+        "the right badge is the clue badge",
+    );
+    // The words are gone from the card's face — the badges carry them as titles.
+    let text = node_text("Attic Revealed");
+    assert!(
+        !text.contains("shroud"),
+        "shroud label not deleted: {text:?}"
+    );
+    assert!(!text.contains("clues"), "clues label not deleted: {text:?}");
+}
+
+/// A location with no clues keeps its badge — faded — so the slot never moves
+/// and "no clues here" never looks like "no clue slot".
+#[wasm_bindgen_test]
+async fn a_revealed_location_with_no_clues_keeps_a_faded_clue_badge() {
+    let mut loc = test_location(32, "Empty Hallway");
+    loc.revealed = true;
+    loc.clues = 0;
+    let state = GameStateBuilder::new()
+        .with_location(loc)
+        .with_investigator(test_investigator(1))
+        .build();
+    mount_state(state).await;
+    assert_eq!(header_badges("Empty Hallway").1, "0");
+    let class = badge_class("Empty Hallway", "last");
+    assert!(
+        class.contains("badge--clues") && class.contains("is-zero"),
+        "a zero clue count keeps a faded clue badge; class = {class:?}",
+    );
+}
+
+/// An unrevealed location has NO shroud or clue value to show — the printed
+/// unrevealed side is "the side with no shroud value and/or clue value"
+/// (RR glossary, "Location Cards"). Both badges are `?` placeholders, never the
+/// revealed side's numbers.
+#[wasm_bindgen_test]
+async fn unrevealed_location_shows_placeholders_not_its_values() {
+    let mut loc = test_location(30, "Cellar Unrevealed");
+    loc.revealed = false;
+    loc.shroud = 4;
+    loc.clues = 3;
+    let state = GameStateBuilder::new()
+        .with_location(loc)
+        .with_investigator(test_investigator(1))
+        .build();
+    mount_state(state).await;
+    assert_eq!(
+        header_badges("Cellar Unrevealed"),
+        ("?".to_string(), "?".to_string()),
+        "an unrevealed location shows placeholders in both slots",
+    );
+    for which in ["first", "last"] {
+        let class = badge_class("Cellar Unrevealed", which);
+        assert!(
+            class.contains("badge--unknown"),
+            "the {which} badge is an unknown placeholder; class = {class:?}",
+        );
+    }
+    let text = node_text("Cellar Unrevealed");
+    assert!(!text.contains('4'), "shroud value leaked: {text:?}");
+    assert!(!text.contains('3'), "clue value leaked: {text:?}");
+}
+
+/// The node is styled face-down by class, not by a printed "unrevealed" word.
+#[wasm_bindgen_test]
+async fn unrevealed_location_is_marked_by_class() {
+    let mut loc = test_location(21, "Parlor Unrevealed");
+    loc.revealed = false;
+    let state = GameStateBuilder::new()
+        .with_location(loc)
+        .with_investigator(test_investigator(1))
+        .build();
+    mount_state(state).await;
+    assert!(
+        node_class("Parlor Unrevealed").contains("unrevealed"),
+        "unrevealed node must carry the class; class = {:?}",
+        node_class("Parlor Unrevealed"),
+    );
+    assert!(
+        !node_text("Parlor Unrevealed").contains("unrevealed"),
+        "the 'unrevealed' text label is gone; text = {:?}",
+        node_text("Parlor Unrevealed"),
     );
 }
 
@@ -313,13 +347,9 @@ fn study_game() -> game_core::state::GameState {
 
 /// The `class` attribute of the last-mounted map node named `loc_name`.
 fn node_class(loc_name: &str) -> String {
-    let maps = document().query_selector_all(".map").expect("query");
-    let last = maps
-        .item(maps.length() - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("last .map");
     let sel = format!(".map-location[data-loc=\"{loc_name}\"]");
-    last.query_selector(&sel)
+    last_map()
+        .query_selector(&sel)
         .expect("query")
         .and_then(|el| el.get_attribute("class"))
         .unwrap_or_default()
@@ -341,11 +371,7 @@ async fn actionable_location_glows_opens_menu_and_submits() {
 
     // Clicking the node's hit-layer opens its menu (events bubble up, so the
     // hit-layer — not the node — carries the open handler).
-    let maps = document().query_selector_all(".map").expect("query");
-    let last = maps
-        .item(maps.length() - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("last .map");
+    let last = last_map();
     last.query_selector(".map-location[data-loc=\"Study\"] .menu-hit")
         .expect("query")
         .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
