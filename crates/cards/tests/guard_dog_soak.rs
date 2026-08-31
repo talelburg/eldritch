@@ -949,7 +949,7 @@ fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
 // Case 7 — investigator-card overflow triggers investigator elimination,
 // not asset discard (#448 cp2b). The defeat half of the unification: the
 // investigator card uses the same `accumulated >= printed capacity` rule
-// as an asset, but the consequence is elimination (Status::Killed) rather
+// as an asset, but the consequence is elimination (Status::Defeated) rather
 // than discard-to-owner.
 // ---------------------------------------------------------------------
 
@@ -961,7 +961,7 @@ fn investigator_card_overflow_eliminates_the_investigator() {
     // Skids O'Toole (01003) has 8 health. Pre-load the investigator card
     // with 7 damage (survived prior harm). A 4-damage attack: Guard Dog
     // soaks 3 (defeated), the remaining 1 lands on the investigator card →
-    // 8 >= 8 → the investigator is eliminated (Killed), not the card
+    // 8 >= 8 → the investigator is eliminated (Defeated), not the card
     // discarded to a pile.
     let (mut state, inv_id, _) = soak_state(
         vec![(GUARD_DOG, dog)],
@@ -981,11 +981,11 @@ fn investigator_card_overflow_eliminates_the_investigator() {
     state = result.state;
 
     // The investigator card reached its printed health → elimination, with
-    // the damage cause (Killed). The InvestigatorEliminated event fired.
+    // the damage cause. The InvestigatorEliminated event fired.
     assert_eq!(
         state.investigators[&inv_id].status,
-        Status::Killed,
-        "investigator-card overflow eliminates (Killed), not asset-discards"
+        Status::Defeated,
+        "investigator-card overflow eliminates (Defeated), not asset-discards"
     );
     assert!(
         result.events.iter().any(|e| matches!(
@@ -1051,10 +1051,10 @@ fn co_overflowing_asset_is_removed_from_game_not_discarded_when_investigator_eli
     let result = fire_retaliate(result.state);
     state = result.state;
 
-    // Investigator eliminated (Killed).
+    // Investigator eliminated (Defeated).
     assert_eq!(
         state.investigators[&inv_id].status,
-        Status::Killed,
+        Status::Defeated,
         "investigator card overflow eliminates the investigator"
     );
     // Elimination step 1 removed all controlled cards from the game: the

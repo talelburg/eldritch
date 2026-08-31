@@ -168,7 +168,7 @@ fn elimination_fires_an_owned_weaknesss_game_end_ability_before_removing_it() {
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
         state.investigators[&InvestigatorId(1)].status,
-        Status::Killed
+        Status::Defeated
     );
     assert_event!(events, Event::TraumaSuffered {
         investigator, kind: TraumaKind::Mental, amount: 1
@@ -201,7 +201,7 @@ fn elimination_does_not_fire_a_non_weaknesss_game_end_ability() {
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
         state.investigators[&InvestigatorId(1)].status,
-        Status::Killed
+        Status::Defeated
     );
     assert_no_event!(events, Event::TraumaSuffered { .. });
 }
@@ -229,7 +229,7 @@ fn a_weakness_whose_condition_fails_suffers_nothing() {
 
     assert_eq!(
         state.investigators[&InvestigatorId(1)].status,
-        Status::Killed
+        Status::Defeated
     );
     assert_no_event!(events, Event::TraumaSuffered { .. });
 }
@@ -257,7 +257,7 @@ fn elimination_without_a_step_zero_ability_still_runs_its_steps() {
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
         state.investigators[&InvestigatorId(1)].status,
-        Status::Killed
+        Status::Defeated
     );
     assert_no_event!(events, Event::TraumaSuffered { .. });
     // Step 2 still deposited the possessed clues at the location.
@@ -297,7 +297,7 @@ fn interactive_elimination_acknowledges_step_zero_before_running_the_steps() {
     // Mid-sequence: already eliminated, but step 1 has not run — the weakness is
     // still in play for its own ability to read.
     let inv = &state.investigators[&InvestigatorId(1)];
-    assert_eq!(inv.status, Status::Killed, "status flips before step 0");
+    assert_eq!(inv.status, Status::Defeated, "status flips before step 0");
     assert!(
         inv.threat_area.iter().any(|c| c.code.as_str() == WEAKNESS),
         "the weakness is still in play while its ability is pending",

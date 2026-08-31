@@ -22,7 +22,7 @@ pub(super) fn active_investigators_at(state: &GameState, loc: LocationId) -> Vec
 
 /// `turn_order` entries whose status is `Active`, in turn order. Shared
 /// by per-investigator Upkeep steps (4.2 reset, 4.4 draw + resource).
-/// Eliminated investigators (Killed / Insane / Resigned) are excluded
+/// Eliminated investigators (Defeated / Resigned) are excluded
 /// per Rules Reference p.10.
 pub(super) fn active_investigators_in_turn_order(state: &GameState) -> Vec<InvestigatorId> {
     state
@@ -40,8 +40,8 @@ pub(super) fn active_investigators_in_turn_order(state: &GameState) -> Vec<Inves
 
 /// First investigator in [`turn_order`] whose status is
 /// [`Status::Active`]. Eliminated investigators
-/// ([`Status::Killed`] / [`Status::Insane`] / [`Status::Resigned`])
-/// are skipped per Rules Reference p.10 (Elimination).
+/// ([`Status::Defeated`] / [`Status::Resigned`]) are skipped per Rules
+/// Reference p.10 (Elimination).
 ///
 /// Used by per-investigator phase loops to seed their cursor:
 /// Mythos 1.4 draws ([`mythos_phase`] seeds `mythos_draw_pending`),
@@ -138,12 +138,12 @@ mod tests {
     #[test]
     fn active_investigators_in_turn_order_excludes_eliminated() {
         // The setup mulligan queue (phases.rs) is seeded from this filter, so a
-        // Killed/Insane/Resigned investigator is structurally excluded — it never
-        // gets prompted. inv1 is Killed, inv2 is Active; only inv2 survives.
+        // Defeated/Resigned investigator is structurally excluded — it never
+        // gets prompted. inv1 is Defeated, inv2 is Active; only inv2 survives.
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
         let mut a = test_investigator(1);
-        a.status = Status::Killed;
+        a.status = Status::Defeated;
         let b = test_investigator(2);
         let state = GameStateBuilder::new()
             .with_investigator(a)

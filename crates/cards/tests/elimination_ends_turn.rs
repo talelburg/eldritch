@@ -110,7 +110,7 @@ fn defeat_mid_turn_hands_the_turn_to_the_next_investigator() {
     let result = play_into_the_lethal_aoo(board(&[DYING, SURVIVOR]));
     let state = &result.state;
 
-    assert_eq!(state.investigators[&DYING].status, Status::Killed);
+    assert_eq!(state.investigators[&DYING].status, Status::Defeated);
     // 2.2.2 "return to 2.2": the next investigator who has not yet taken a turn.
     assert_eq!(
         state.active_investigator,
@@ -173,7 +173,7 @@ fn defeat_on_the_last_turn_of_the_round_ends_the_investigation_phase() {
     // `turn_order`), so 2.2.2 finds nobody left and proceeds to 2.3 → Enemy.
     let result = play_into_the_lethal_aoo(board(&[SURVIVOR, DYING]));
 
-    assert_eq!(result.state.investigators[&DYING].status, Status::Killed);
+    assert_eq!(result.state.investigators[&DYING].status, Status::Defeated);
     assert_ne!(
         result.state.phase,
         Phase::Investigation,
@@ -197,7 +197,7 @@ fn solo_defeat_ends_the_scenario_instead_of_rotating() {
     // resuming it, so the arming never rotates a table with nobody left.
     let result = play_into_the_lethal_aoo(board(&[DYING]));
 
-    assert_eq!(result.state.investigators[&DYING].status, Status::Killed);
+    assert_eq!(result.state.investigators[&DYING].status, Status::Defeated);
     assert!(
         matches!(
             result.state.ending,

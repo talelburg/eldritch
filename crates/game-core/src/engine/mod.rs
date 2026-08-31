@@ -2573,12 +2573,12 @@ mod tests {
             .with_phase(Phase::Investigation)
             .with_investigator({
                 let mut i = test_investigator(1);
-                i.status = Status::Killed;
+                i.status = Status::Defeated;
                 i
             })
             .with_active_investigator(inv_id)
             .build();
-        // Killed status → Resource is not legal.
+        // Defeated status → Resource is not legal.
         assert!(!crate::engine::enumerate::legal_actions(&state).iter().any(
             |a| matches!(a, TurnAction::Resource { investigator } if *investigator == inv_id)
         ));
@@ -2826,13 +2826,13 @@ mod tests {
             .with_investigator({
                 let mut i = test_investigator(1);
                 i.current_location = Some(loc);
-                i.status = Status::Insane;
+                i.status = Status::Defeated;
                 i
             })
             .with_active_investigator(inv_id)
             .with_enemy(enemy)
             .build();
-        // Insane status → Engage is not legal.
+        // Defeated status → Engage is not legal.
         assert!(!crate::engine::enumerate::legal_actions(&state)
             .iter()
             .any(|a| matches!(a, TurnAction::Engage { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
@@ -3265,8 +3265,8 @@ mod tests {
                 cause: EliminationCause::Damage,
             } if *investigator == inv_id
         );
-        // Status flipped to Killed.
-        assert_eq!(result.state.investigators[&inv_id].status, Status::Killed);
+        // Status flipped to Defeated.
+        assert_eq!(result.state.investigators[&inv_id].status, Status::Defeated);
         // Action point still spent (the action declaration stays).
         assert_eq!(result.state.investigators[&inv_id].actions_remaining, 2);
         // Move suppressed: no InvestigatorMoved event; enemy stays at
@@ -3323,7 +3323,7 @@ mod tests {
                 cause: EliminationCause::Horror,
             } if *investigator == inv_id
         );
-        assert_eq!(result.state.investigators[&inv_id].status, Status::Insane);
+        assert_eq!(result.state.investigators[&inv_id].status, Status::Defeated);
         // Skill test suppressed: no SkillTestStarted event.
         assert_no_event!(result.events, Event::SkillTestStarted { .. });
         assert_no_event!(result.events, Event::CluePlaced { .. });
@@ -3459,7 +3459,7 @@ mod tests {
                 cause: EliminationCause::Damage,
             } if *investigator == inv_id
         );
-        assert_eq!(result.state.investigators[&inv_id].status, Status::Killed);
+        assert_eq!(result.state.investigators[&inv_id].status, Status::Defeated);
     }
 
     #[test]
@@ -3506,7 +3506,7 @@ mod tests {
                 cause: EliminationCause::Horror,
             } if *investigator == inv_id
         );
-        assert_eq!(result.state.investigators[&inv_id].status, Status::Insane);
+        assert_eq!(result.state.investigators[&inv_id].status, Status::Defeated);
     }
 
     #[test]
@@ -3552,7 +3552,7 @@ mod tests {
                 cause: EliminationCause::Damage,
             } if *investigator == inv_id
         );
-        assert_eq!(result.state.investigators[&inv_id].status, Status::Killed);
+        assert_eq!(result.state.investigators[&inv_id].status, Status::Defeated);
     }
 
     #[test]
@@ -3609,15 +3609,15 @@ mod tests {
             Event::InvestigatorEliminated { investigator, .. } if *investigator == inv1
         );
         assert_no_event!(result.events, Event::AllInvestigatorsDefeated);
-        assert_eq!(result.state.investigators[&inv1].status, Status::Killed);
+        assert_eq!(result.state.investigators[&inv1].status, Status::Defeated);
         assert_eq!(result.state.investigators[&inv2].status, Status::Active);
     }
 
     #[test]
     fn defeated_investigator_cannot_move() {
         let (inv_id, _, b, _, mut state) = move_scenario_with_engaged_enemy();
-        state.investigators.get_mut(&inv_id).unwrap().status = Status::Killed;
-        // Killed status → Move is not legal.
+        state.investigators.get_mut(&inv_id).unwrap().status = Status::Defeated;
+        // Defeated status → Move is not legal.
         assert!(!crate::engine::enumerate::legal_actions(&state)
             .iter()
             .any(|a| matches!(a, TurnAction::Move { investigator, destination } if *investigator == inv_id && *destination == b)));
@@ -3626,8 +3626,8 @@ mod tests {
     #[test]
     fn defeated_investigator_cannot_investigate() {
         let (inv_id, _, mut state) = investigate_scenario(2, 2);
-        state.investigators.get_mut(&inv_id).unwrap().status = Status::Insane;
-        // Insane status → Investigate is not legal.
+        state.investigators.get_mut(&inv_id).unwrap().status = Status::Defeated;
+        // Defeated status → Investigate is not legal.
         assert!(!crate::engine::enumerate::legal_actions(&state).iter().any(
             |a| matches!(a, TurnAction::Investigate { investigator } if *investigator == inv_id)
         ));
@@ -3636,8 +3636,8 @@ mod tests {
     #[test]
     fn defeated_investigator_cannot_fight() {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
-        state.investigators.get_mut(&inv_id).unwrap().status = Status::Killed;
-        // Killed status → Fight is not legal.
+        state.investigators.get_mut(&inv_id).unwrap().status = Status::Defeated;
+        // Defeated status → Fight is not legal.
         assert!(!crate::engine::enumerate::legal_actions(&state)
             .iter()
             .any(|a| matches!(a, TurnAction::Fight { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
@@ -3646,8 +3646,8 @@ mod tests {
     #[test]
     fn defeated_investigator_cannot_evade() {
         let (inv_id, enemy_id, mut state) = fight_evade_scenario();
-        state.investigators.get_mut(&inv_id).unwrap().status = Status::Insane;
-        // Insane status → Evade is not legal.
+        state.investigators.get_mut(&inv_id).unwrap().status = Status::Defeated;
+        // Defeated status → Evade is not legal.
         assert!(!crate::engine::enumerate::legal_actions(&state)
             .iter()
             .any(|a| matches!(a, TurnAction::Evade { investigator, enemy } if *investigator == inv_id && *enemy == enemy_id)));
@@ -3657,7 +3657,7 @@ mod tests {
     fn defeated_investigator_cannot_perform_skill_test() {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
-        inv.status = Status::Killed;
+        inv.status = Status::Defeated;
         let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_chaos_bag(bag_only_zero())
@@ -3830,8 +3830,8 @@ mod tests {
     #[test]
     fn draw_by_defeated_investigator_is_rejected() {
         let (id, mut state) = draw_scenario();
-        state.investigators.get_mut(&id).unwrap().status = Status::Killed;
-        // Killed status → Draw is not legal.
+        state.investigators.get_mut(&id).unwrap().status = Status::Defeated;
+        // Defeated status → Draw is not legal.
         assert!(!crate::engine::enumerate::legal_actions(&state)
             .iter()
             .any(|a| matches!(a, TurnAction::Draw { investigator } if *investigator == id)));
@@ -3861,7 +3861,7 @@ mod tests {
                 cause: EliminationCause::Horror,
             } if *investigator == id
         );
-        assert_eq!(result.state.investigators[&id].status, Status::Insane);
+        assert_eq!(result.state.investigators[&id].status, Status::Defeated);
     }
 
     // ------------------------------------------------------------------
@@ -4417,7 +4417,7 @@ mod tests {
         let id = InvestigatorId(1);
         let mut inv = test_investigator(1);
         inv.hand = vec![CardCode::new("01059")];
-        inv.status = Status::Killed;
+        inv.status = Status::Defeated;
         let state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_investigator(inv)
@@ -4570,7 +4570,7 @@ mod tests {
         let id = InvestigatorId(1);
         let instance_id = CardInstanceId(0);
         let mut inv = test_investigator(1);
-        inv.status = Status::Killed;
+        inv.status = Status::Defeated;
         inv.cards_in_play.push(crate::state::CardInPlay::enter_play(
             CardCode::new("01059"),
             instance_id,

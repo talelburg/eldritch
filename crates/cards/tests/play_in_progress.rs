@@ -180,7 +180,7 @@ fn dodging_the_aoo_of_a_non_fast_event_does_not_erase_it() {
 /// removed from the game. A mid-play card is in no zone, so the hand/deck/discard
 /// drain cannot reach it — elimination sweeps it off the frame carrying it
 /// instead. Before that sweep the card was flushed into the *already drained*
-/// discard pile of a `Killed` investigator.
+/// discard pile of a `Defeated` investigator.
 #[test]
 fn defeated_by_its_own_aoo_the_mid_play_event_is_removed_not_discarded() {
     let mut state = board(&[DYNAMITE], 6); // no Dodge — the AoO must land

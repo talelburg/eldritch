@@ -139,7 +139,7 @@ fn tester_eliminated_mid_test_abandons_the_test_without_panicking() {
     let inv = &r.state.investigators[&InvestigatorId(1)];
     assert_eq!(
         inv.status,
-        Status::Killed,
+        Status::Defeated,
         "lethal damage eliminated Roland"
     );
 
@@ -196,7 +196,7 @@ fn elimination_removes_a_player_owned_weakness_from_the_game() {
     let r = reveal_committing(board_at_lethal_range(8, &[], &[(COVER_UP, 3)]), &[]);
 
     let inv = &r.state.investigators[&InvestigatorId(1)];
-    assert_eq!(inv.status, Status::Killed);
+    assert_eq!(inv.status, Status::Defeated);
     assert!(inv.threat_area.is_empty(), "threat area drained");
     assert!(
         inv.removed_from_game.iter().any(|c| c.as_str() == COVER_UP),
@@ -219,7 +219,7 @@ fn elimination_discards_an_encounter_treachery_to_the_encounter_discard() {
     let r = reveal_committing(board_at_lethal_range(8, &[], &[(DISSONANT_VOICES, 0)]), &[]);
 
     let inv = &r.state.investigators[&InvestigatorId(1)];
-    assert_eq!(inv.status, Status::Killed);
+    assert_eq!(inv.status, Status::Defeated);
     assert!(inv.threat_area.is_empty(), "threat area drained");
     assert!(
         r.state
@@ -317,7 +317,7 @@ fn cover_ups_trauma_fires_on_elimination_while_the_scenario_continues() {
 
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].status,
-        Status::Killed
+        Status::Defeated
     );
     assert_eq!(
         r.state.investigators[&InvestigatorId(2)].status,
@@ -344,7 +344,7 @@ fn eliminated_investigator_with_a_clueless_cover_up_suffers_no_trauma() {
 
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].status,
-        Status::Killed,
+        Status::Defeated,
         "the elimination still happened",
     );
     assert_no_event!(r.events, Event::TraumaSuffered { .. });
@@ -402,7 +402,7 @@ fn interactive_elimination_with_a_clueless_cover_up_raises_no_acknowledge() {
 
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].status,
-        Status::Killed,
+        Status::Defeated,
         "the elimination still happened",
     );
     assert_no_event!(r.events, Event::TraumaSuffered { .. });
@@ -421,7 +421,7 @@ fn eliminated_investigator_fires_no_further_round_end_forced() {
     let mut r = reveal_committing(board_at_lethal_range(8, &[], &[(DISSONANT_VOICES, 0)]), &[]);
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].status,
-        Status::Killed
+        Status::Defeated
     );
     let before = r.state.encounter_discard.len();
 
@@ -448,7 +448,7 @@ fn elimination_does_not_drain_the_investigator_card() {
     let r = reveal_committing(board_at_lethal_range(8, &[], &[]), &[]);
 
     let inv = &r.state.investigators[&InvestigatorId(1)];
-    assert_eq!(inv.status, Status::Killed);
+    assert_eq!(inv.status, Status::Defeated);
     assert_eq!(
         inv.investigator_card.code.as_str(),
         ROLAND,

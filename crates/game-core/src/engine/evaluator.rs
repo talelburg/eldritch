@@ -5285,7 +5285,7 @@ mod tests {
     fn deal_damage_at_max_health_defeats_investigator() {
         use crate::state::Status;
         // Apply damage that exactly reaches max_health (8 from TEST_INV) via
-        // Effect::Deal and assert the investigator is Killed and
+        // Effect::Deal and assert the investigator is Defeated and
         // InvestigatorEliminated is emitted. Pre-load 5 accumulated_damage so
         // 5 + 3 = 8 = defeated with a 3-damage deal.
         crate::test_support::install_test_registry();
@@ -5303,7 +5303,7 @@ mod tests {
             EvalContext::for_controller(id),
         );
         assert_eq!(outcome, EngineOutcome::Done);
-        assert_eq!(state.investigators[&id].status, Status::Killed);
+        assert_eq!(state.investigators[&id].status, Status::Defeated);
         assert_event!(
             events,
             Event::InvestigatorEliminated { investigator, .. } if *investigator == id

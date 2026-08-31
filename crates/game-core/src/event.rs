@@ -325,7 +325,7 @@ pub enum Event {
     },
     /// An investigator was eliminated from the scenario. The investigator's
     /// [`Status`](crate::state::Status) has been flipped from `Active` to
-    /// `Killed` / `Insane` / `Defeated` / `Resigned`. The investigator entry
+    /// `Defeated` / `Resigned`. The investigator entry
     /// stays in `state.investigators` so consumers can still identify them by
     /// id; they just can't take actions or be targeted as "active."
     ///

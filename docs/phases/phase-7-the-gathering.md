@@ -126,31 +126,9 @@ the Tablet came out.
 | #555 ✅ PR #835 | An effect-internal `ChooseOne`'s branches carry no label and anchor nowhere, so a printed choice renders as `Debug`-printed DSL variants in the prompt banner |
 | #834 ✅ PR #836 | `EvalContext` carries its source twice after #775 — an `AbilitySource` and its own lossy `CardInstanceId` projection — and nothing enforces that a future setter keeps them consistent |
 | #811 ✅ PR #837 | Agenda 01107's Ghoul move **rejects the player's action** whenever the Parlor is not yet in play — which agenda 3 reaches on its own doom clock, independent of act progress |
-| #814 | `Status` carries `Killed` / `Insane` alongside `Defeated`, but the rules make killed and insane **campaign-log states derived from trauma totals** — so a first defeat by damage is recorded as a kill |
+| #814 ✅ PR #838 | `Status` carries `Killed` / `Insane` alongside `Defeated`, but the rules make killed and insane **campaign-log states derived from trauma totals** — so a first defeat by damage is recorded as a kill |
 | #816 | `Event::AllInvestigatorsDefeated` and `check_all_defeated` keep the word #644 renamed away from, and now fire for a scenario nobody was defeated in — everyone resigned |
 
-- **#814 — `Status` conflates the scenario's defeat/resign partition with the
-  campaign's killed/insane record.** `apply_investigator_elimination` maps
-  `EliminationCause::Damage => Status::Killed` and `Horror => Insane`, but killed and insane
-  are neither scenario states nor consequences of *how* a defeat happened.
-  `glossary/Campaign_Play.md` derives them from **accumulated trauma totals**: *"If an
-  investigator has physical trauma equal to his or her printed health, the investigator
-  is **killed**."* So an investigator defeated by damage at zero prior trauma is
-  defeated and suffers 1 physical trauma — the engine marks them `Killed` on their first
-  defeat of the campaign. The rules' partition is `Active` / defeated / resigned, with
-  `Resigned` the one genuine non-defeat (`glossary/Resign.md`: *"An investigator who
-  resigns is not considered to have been defeated."*), and `EliminationCause` already
-  rides `Event::InvestigatorEliminated` to carry the flavour. Surveying every `text` /
-  `back_text` in the snapshot: cards read **eliminated** (the union — Threads of Time
-  04315, Dark Pact 04038) and **undefeated** (defeat vs. resignation — All In 02068),
-  and impose killed/insane explicitly where they mean them (Chaos Incarnate 06289: *"Each
-  investigator is defeated **and driven insane**."*). **No card reads a defeat
-  sub-status**, so three of the five variants answer a question no card asks. Found while
-  naming #809's new status, which landed as `Status::Defeated` — the variant this
-  collapses the other two into — with a `TODO(#814)` on each. Not blocked on the campaign
-  log: deleting the two variants loses nothing an observer needs today, and it clears the
-  scenario layer so #766's *derivation* has one honest input rather than a field already
-  claiming the answer.
 - **#816 — the half of the elimination rename #644 left behind.** #644 renamed
   `Event::InvestigatorDefeated` / `DefeatCause` to `InvestigatorEliminated` /
   `EliminationCause`, because `glossary/Resign.md` says a resigner *"is not considered
