@@ -92,8 +92,8 @@ pub(super) fn apply_investigator_elimination(
     }
 
     // Rules Reference p.10 Elimination steps 1–5 run here, between the
-    // elimination event and the step-6 check. See the
-    // design doc 2026-05-31-144 for the full breakdown.
+    // elimination event and the step-6 check. See the design doc
+    // 2026-05-31-144 for the full breakdown.
     run_elimination_steps(cx, investigator);
 
     check_all_eliminated(cx);

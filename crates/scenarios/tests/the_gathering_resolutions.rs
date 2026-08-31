@@ -78,7 +78,7 @@ fn solo_roland_is_seated_in_the_study_ready_to_act() {
     assert!(state.ending.is_none(), "no resolution latched at setup");
 }
 
-/// Ended with *no resolution reached* via the real all-investigators-defeated
+/// Ended with *no resolution reached* via the real all-investigators-eliminated
 /// latch: Roland is seeded one hit from death with an engaged Ghoul Minion,
 /// then a real Enemy-phase attack defeats him and `check_all_eliminated` latches
 /// [`ScenarioEnding::NoResolution`] — Rules Reference `Elimination` step 6,
