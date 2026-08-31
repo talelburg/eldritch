@@ -3278,9 +3278,9 @@ mod tests {
             "eliminated investigator has no location (left play)"
         );
         assert_eq!(result.state.enemies[&enemy_id].current_location, Some(a));
-        // Single-investigator scenario, so AllInvestigatorsDefeated
+        // Single-investigator scenario, so AllInvestigatorsEliminated
         // also fires.
-        assert_event!(result.events, Event::AllInvestigatorsDefeated);
+        assert_event!(result.events, Event::AllInvestigatorsEliminated);
     }
 
     #[test]
@@ -3556,9 +3556,9 @@ mod tests {
     }
 
     #[test]
-    fn all_investigators_defeated_fires_only_when_last_active_falls() {
+    fn all_investigators_eliminated_fires_only_when_last_active_falls() {
         // Two investigators, one defeated, then the second defeated.
-        // AllInvestigatorsDefeated should fire only on the second.
+        // AllInvestigatorsEliminated should fire only on the second.
         // Registry needed for max_health()/max_sanity() after cp2a.
         crate::test_support::install_test_registry();
         let inv1 = InvestigatorId(1);
@@ -3608,7 +3608,7 @@ mod tests {
             result.events,
             Event::InvestigatorEliminated { investigator, .. } if *investigator == inv1
         );
-        assert_no_event!(result.events, Event::AllInvestigatorsDefeated);
+        assert_no_event!(result.events, Event::AllInvestigatorsEliminated);
         assert_eq!(result.state.investigators[&inv1].status, Status::Defeated);
         assert_eq!(result.state.investigators[&inv2].status, Status::Active);
     }

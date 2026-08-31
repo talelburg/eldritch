@@ -1,5 +1,5 @@
 //! Investigator elimination helpers: defeat application, elimination
-//! steps, horror application, and all-defeated detection.
+//! steps, horror application, and no-remaining-players detection.
 
 use super::super::outcome::EngineOutcome;
 use super::Cx;
@@ -37,14 +37,14 @@ use crate::state::{CardCode, LocationId, Phase};
 /// # Then one of two paths (#638)
 ///
 /// - **No step-0 weakness ability** (every elimination but a Roland holding
-///   clues on Cover Up): [`run_elimination_steps`] and [`check_all_defeated`]
+///   clues on Cover Up): [`run_elimination_steps`] and [`check_all_eliminated`]
 ///   run inline before this returns, as they always have.
 /// - **A step-0 weakness ability**: a [`Continuation::Elimination`] frame is
 ///   pushed and this returns immediately. Steps 1–6 *and*
-///   [`check_all_defeated`] run later, from [`drive_elimination`], once the
+///   [`check_all_eliminated`] run later, from [`drive_elimination`], once the
 ///   queued abilities have drained — so on this path a caller that resumes
 ///   after this function sees an elimination still **in progress**: status
-///   flipped, but cards not yet removed and no `AllInvestigatorsDefeated` /
+///   flipped, but cards not yet removed and no `AllInvestigatorsEliminated` /
 ///   `ScenarioEnding` latch yet. [`super::combat::place_assignment`] is the
 ///   only such caller today and gates on [`Status`] for exactly this reason.
 ///
@@ -92,11 +92,11 @@ pub(super) fn apply_investigator_elimination(
     }
 
     // Rules Reference p.10 Elimination steps 1–5 run here, between the
-    // defeat event and the all-defeated check (step 6 signal). See the
-    // design doc 2026-05-31-144 for the full breakdown.
+    // elimination event and the step-6 check. See the design doc
+    // 2026-05-31-144 for the full breakdown.
     run_elimination_steps(cx, investigator);
 
-    check_all_defeated(cx);
+    check_all_eliminated(cx);
 }
 
 /// End the active investigator's turn when elimination takes them out of it
@@ -156,13 +156,14 @@ pub(super) fn apply_investigator_elimination(
 /// driver. The turn is over the moment the status flips, so the log reads
 /// `InvestigatorEliminated` → `TurnEnded` → the teardown that follows.
 ///
-/// # All investigators defeated
+/// # All investigators eliminated
 ///
-/// The armed frame is never resumed: `check_all_defeated` latches
+/// The armed frame is never resumed: `check_all_eliminated` latches
 /// `ScenarioEnding::NoResolution`, and an `InvestigatorTurn` is
 /// [cancelled by a latched resolution](Continuation::cancelled_by_scenario_end),
-/// so `drive` pops it rather than rotating (ADR 0004). Solo defeat therefore
-/// ends the scenario, and this arming is what keeps a *surviving* table moving.
+/// so `drive` pops it rather than rotating (ADR 0004). A solo elimination —
+/// defeat or resignation alike — therefore ends the scenario, and this arming is
+/// what keeps a *surviving* table moving.
 fn end_turn_on_elimination(cx: &mut Cx, investigator: InvestigatorId) {
     let Some(ending) = super::cursor::turn_frame_ending_mut(cx.state, investigator) else {
         return;
@@ -237,7 +238,7 @@ pub(super) fn drive_elimination(cx: &mut Cx) -> EngineOutcome {
             // is step 1's threat-area partition, which removes every owned
             // weakness whether or not it fired.
             run_elimination_steps(cx, investigator);
-            check_all_defeated(cx);
+            check_all_eliminated(cx);
             EngineOutcome::Done
         }
     }
@@ -440,7 +441,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // is deferred (Phase 8, #151) alongside the re-engagement-tie pick.
 
     // Step 6 (no remaining players => scenario ends) is signaled by
-    // `check_all_defeated` (caller) emitting AllInvestigatorsDefeated
+    // `check_all_eliminated` (caller) emitting AllInvestigatorsEliminated
     // and latching ScenarioEnding::NoResolution; the `apply` hook turns that latch
     // into ScenarioResolved + apply_resolution.
 
@@ -463,7 +464,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
 /// Apply `amount` horror to an investigator. If their accumulated
 /// horror reaches `max_sanity`, flip status to [`Status::Defeated`],
 /// emit [`Event::InvestigatorEliminated`], and (if no `Active`
-/// investigators remain) emit [`Event::AllInvestigatorsDefeated`].
+/// investigators remain) emit [`Event::AllInvestigatorsEliminated`].
 ///
 /// No-ops when `amount == 0` or the investigator is already defeated.
 ///
@@ -556,7 +557,7 @@ pub fn defeat_investigator(cx: &mut Cx, investigator: InvestigatorId) {
 ///   so walking out of the Parlor 01115 leaves those clues on the board for act
 ///   1 to keep counting.
 /// - Step 6 — *"If there are no remaining players, the scenario ends"* — is
-///   reached through [`check_all_defeated`], so the last investigator resigning
+///   reached through [`check_all_eliminated`], so the last investigator resigning
 ///   ends the scenario at
 ///   [`ScenarioEnding::NoResolution`](crate::scenario::ScenarioEnding::NoResolution)
 ///   rather than at a resolution point. That ending is **not** a loss; see the
@@ -568,8 +569,14 @@ pub(crate) fn resign_investigator(cx: &mut Cx, investigator: InvestigatorId) {
     apply_investigator_elimination(cx, investigator, EliminationCause::Resigned);
 }
 
-/// Emit [`Event::AllInvestigatorsDefeated`] when no `Active`
-/// investigator remains.
+/// Emit [`Event::AllInvestigatorsEliminated`] when no `Active`
+/// investigator remains — Rules Reference p.10 Elimination step 6,
+/// *"If there are no remaining players, the scenario ends."*
+///
+/// The question is *remaining*, not *defeated*: an investigator who resigned is
+/// gone from the scenario without ever having been defeated
+/// (`glossary/Resign.md`), and the last one doing so ends it just as a defeat
+/// would.
 ///
 /// **Contract for callers:** *any* code path that flips a
 /// `Status::Active` investigator to a non-`Active` status (Defeated,
@@ -577,12 +584,12 @@ pub(crate) fn resign_investigator(cx: &mut Cx, investigator: InvestigatorId) {
 /// only status-flipping path is [`apply_investigator_elimination`], so
 /// that one helper is the only caller; future paths that flip status
 /// outside this helper (a scenario effect that bypasses the standard
-/// defeat-cause routing) need to add a call too — otherwise the event
-/// silently fails to fire when those paths cause the last `Active`
-/// to fall.
+/// elimination-cause routing) need to add a call too — otherwise the event
+/// silently fails to fire when those paths take the last `Active`
+/// investigator out of the scenario.
 ///
-/// Idempotent on subsequent defeats: the predicate becomes true at the
-/// first all-defeated transition and stays true. Callers only invoke it
+/// Idempotent on subsequent eliminations: the predicate becomes true at the
+/// first no-remaining-players transition and stays true. Callers only invoke it
 /// after a status flip, so the event fires exactly once per scenario in
 /// practice; the scenario-ending latch is likewise transition-bounded
 /// (first-writer-wins).
@@ -594,17 +601,17 @@ pub(crate) fn resign_investigator(cx: &mut Cx, investigator: InvestigatorId) {
 /// resolution point, which is not the same thing as losing it. The `apply`
 /// hook turns that latch into [`Event::ScenarioResolved`] +
 /// `apply_resolution`.
-pub(super) fn check_all_defeated(cx: &mut Cx) {
+pub(super) fn check_all_eliminated(cx: &mut Cx) {
     let any_active = cx
         .state
         .investigators
         .values()
         .any(|inv| inv.status == Status::Active);
     // Empty-investigators is nonsense scenario state; suppress the
-    // event so we don't emit a meaningless "all defeated" when there
-    // was nobody to defeat in the first place.
+    // event so we don't emit a meaningless "all eliminated" when there
+    // was nobody in the scenario in the first place.
     if !any_active && !cx.state.investigators.is_empty() {
-        cx.events.push(Event::AllInvestigatorsDefeated);
+        cx.events.push(Event::AllInvestigatorsEliminated);
         // Rules Reference p.10 step 6: "If there are no remaining players,
         // the scenario ends. Refer to 'no resolution was reached' entry
         // for that scenario in the campaign guide." That is the third
@@ -831,7 +838,7 @@ mod elimination_tests {
             1,
         );
 
-        assert_event!(events, Event::AllInvestigatorsDefeated);
+        assert_event!(events, Event::AllInvestigatorsEliminated);
         // RR Elimination step 6 is the *third* ending, not a loss: the
         // scenario ended without a resolution point being reached, and the
         // campaign guide answers it under "If no resolution was reached".
@@ -1264,7 +1271,7 @@ mod elimination_tests {
         defeat_investigator(&mut cx, a);
         defeat_investigator(&mut cx, b);
 
-        assert_event!(events, Event::AllInvestigatorsDefeated);
+        assert_event!(events, Event::AllInvestigatorsEliminated);
         assert_eq!(
             state.ending,
             Some(crate::scenario::ScenarioEnding::NoResolution),

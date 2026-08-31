@@ -127,22 +127,7 @@ the Tablet came out.
 | #834 ✅ PR #836 | `EvalContext` carries its source twice after #775 — an `AbilitySource` and its own lossy `CardInstanceId` projection — and nothing enforces that a future setter keeps them consistent |
 | #811 ✅ PR #837 | Agenda 01107's Ghoul move **rejects the player's action** whenever the Parlor is not yet in play — which agenda 3 reaches on its own doom clock, independent of act progress |
 | #814 ✅ PR #838 | `Status` carries `Killed` / `Insane` alongside `Defeated`, but the rules make killed and insane **campaign-log states derived from trauma totals** — so a first defeat by damage is recorded as a kill |
-| #816 | `Event::AllInvestigatorsDefeated` and `check_all_defeated` keep the word #644 renamed away from, and now fire for a scenario nobody was defeated in — everyone resigned |
-
-- **#816 — the half of the elimination rename #644 left behind.** #644 renamed
-  `Event::InvestigatorDefeated` / `DefeatCause` to `InvestigatorEliminated` /
-  `EliminationCause`, because `glossary/Resign.md` says a resigner *"is not considered
-  to have been defeated"* and the old names asserted what the rules deny.
-  `Event::AllInvestigatorsDefeated` and `check_all_defeated` kept theirs, and now fire
-  for a board where **nobody was defeated at all** — every investigator walked out
-  through a Resign ability (`crates/cards/tests/resign.rs` is the live case). The rules
-  supply the word twice: `glossary/Elimination.md` step 6 asks about *"no remaining
-  players"*, and `glossary/Winning_and_Losing.md` names the ending *"if all
-  investigators have been eliminated **or have resigned**"*. #644 scoped its rename to
-  the two symbols its own section 3 named rather than widen the wave's largest blast
-  radius, so this is the second rename; `CONTEXT.md`'s new **Elimination** entry is the
-  standard it currently breaks. Blast radius is `game-core` plus the `cards` and
-  `scenarios` integration tests — neither `protocol` nor `web` names it.
+| #816 ✅ PR #839 | `Event::AllInvestigatorsDefeated` and `check_all_defeated` keep the word #644 renamed away from, and now fire for a scenario nobody was defeated in — everyone resigned |
 
 - **The Lita cluster was designed 2026-08-29** (`/grill-with-docs` over #771-#774). The
   session settled five things and changed the cluster's shape.

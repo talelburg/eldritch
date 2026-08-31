@@ -404,16 +404,17 @@ pub enum Event {
     /// Fires immediately after the [`InvestigatorEliminated`] that
     /// flipped the last active investigator.
     ///
-    /// `TODO(#816)`: **the name outlived the rule.** Since #644 this fires for a
-    /// scenario nobody was defeated in — every investigator resigned — and
-    /// `glossary/Elimination.md` step 6 asks about *"no remaining players"*, not
-    /// about defeat. Renaming it is #816's; `CONTEXT.md`'s **Elimination** entry
-    /// is the standard it currently breaks. Scenario-resolution
-    /// flow (#74) consumes this when it lands; for now, downstream
-    /// listeners can use it as a "scenario lost" trigger.
+    /// **Elimination, not defeat.** The predicate is the one
+    /// `glossary/Elimination.md` step 6 asks — *"If there are no remaining
+    /// players, the scenario ends."* — so this fires just as well for a
+    /// scenario nobody was defeated in, every investigator having walked out
+    /// through a Resign ability (`glossary/Resign.md`: an investigator who
+    /// resigns *"is not considered to have been defeated"*). Scenario-resolution
+    /// flow (#74) consumes this when it lands; for now, downstream listeners can
+    /// use it as a "the scenario ended with nobody left" trigger.
     ///
     /// [`InvestigatorEliminated`]: Event::InvestigatorEliminated
-    AllInvestigatorsDefeated,
+    AllInvestigatorsEliminated,
     /// An investigator played a card from their hand. Fires before
     /// any `Trigger::OnPlay` effects resolve (the play *causes* the
     /// effects), and before the card lands in its destination zone.

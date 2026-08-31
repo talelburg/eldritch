@@ -53,13 +53,13 @@
 //! loop and the body it fans out to each have one consumer, so both fail the
 //! DSL-primitive threshold independently. **Turn order rather than map order**
 //! because the order is observable on a defeat body: Elimination step 5
-//! reassigns the lead when the lead is eliminated, and step 6's all-defeated
-//! check fires on whoever falls last. **One caveat on that order**: an
-//! investigator holding an in-play weakness with a *"when the game ends"* ability
-//! (Cover Up 01007) routes Elimination onto a `Continuation::Elimination` frame
-//! (#638), so their steps 1–6 run after this synchronous loop rather than inside
-//! it. The ending is the same either way — the frame drains before anything reads
-//! it — but the teardown interleaves. Pre-existing to this card, and the shape
+//! reassigns the lead when the lead is eliminated, and step 6's
+//! no-remaining-players check fires on whoever falls last. **One caveat on that
+//! order**: an investigator holding an in-play weakness with a *"when the game
+//! ends"* ability (Cover Up 01007) routes Elimination onto a
+//! `Continuation::Elimination` frame (#638), so their steps 1–6 run after this
+//! synchronous loop rather than inside it. The ending is the same either way —
+//! the frame drains before anything reads it — but the teardown interleaves. Pre-existing to this card, and the shape
 //! `Effect::ForEach` will have to answer for whenever #363 lands.
 //!
 //! **The ending is reached by the rules' route, not latched.** Each defeat runs
@@ -500,7 +500,7 @@ mod tests {
         }
         assert!(events
             .iter()
-            .any(|e| matches!(e, Event::AllInvestigatorsDefeated)));
+            .any(|e| matches!(e, Event::AllInvestigatorsEliminated)));
         assert_eq!(
             state.ending,
             Some(game_core::ScenarioEnding::NoResolution),

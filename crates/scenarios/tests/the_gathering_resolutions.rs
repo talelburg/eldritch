@@ -78,9 +78,9 @@ fn solo_roland_is_seated_in_the_study_ready_to_act() {
     assert!(state.ending.is_none(), "no resolution latched at setup");
 }
 
-/// Ended with *no resolution reached* via the real all-investigators-defeated
+/// Ended with *no resolution reached* via the real all-investigators-eliminated
 /// latch: Roland is seeded one hit from death with an engaged Ghoul Minion,
-/// then a real Enemy-phase attack defeats him and `check_all_defeated` latches
+/// then a real Enemy-phase attack defeats him and `check_all_eliminated` latches
 /// [`ScenarioEnding::NoResolution`] — Rules Reference `Elimination` step 6,
 /// which the campaign guide answers under "If no resolution was reached (each
 /// investigator resigned or was defeated)". Not a loss: in campaign play the
@@ -112,10 +112,10 @@ fn enemy_attack_defeats_roland_and_latches_no_resolution() {
     state.enemies.insert(enemy_id, minion);
 
     // Drive: end Roland's turn → tick into the Enemy phase → the engaged
-    // enemy attacks → Roland defeated → all-defeated → NoResolution.
+    // enemy attacks → Roland defeated → no remaining players → NoResolution.
     let result = take_turn_action(state, &TurnAction::EndTurn);
 
-    assert_event!(result.events, Event::AllInvestigatorsDefeated);
+    assert_event!(result.events, Event::AllInvestigatorsEliminated);
     assert_event!(result.events, Event::ScenarioResolved { .. });
     assert_eq!(
         result.state.ending,
@@ -514,7 +514,7 @@ fn dooming_out_the_terminal_agenda_at_act_3_defeats_the_table_and_reaches_no_res
         Event::TraumaSuffered { investigator, kind, amount }
             if *investigator == INV && *kind == TraumaKind::Physical && *amount == 1
     );
-    assert_event!(result.events, Event::AllInvestigatorsDefeated);
+    assert_event!(result.events, Event::AllInvestigatorsEliminated);
     assert_eq!(
         result.state.ending,
         Some(ScenarioEnding::NoResolution),
