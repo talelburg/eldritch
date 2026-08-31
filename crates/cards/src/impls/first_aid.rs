@@ -104,8 +104,16 @@ mod tests {
             heal_horror(expected_target, 1),
             "branch 1 heals 1 horror from an investigator at your location",
         );
-        assert_eq!(branches[0].label, HEAL_DAMAGE_LABEL);
-        assert_eq!(branches[1].label, HEAL_HORROR_LABEL);
+        // The literal, not the const: asserting a const against itself would
+        // pass through a typo in the split.
+        assert_eq!(
+            branches[0].label,
+            "Heal 1 damage from an investigator at your location"
+        );
+        assert_eq!(
+            branches[1].label,
+            "Heal 1 horror from an investigator at your location"
+        );
     }
 
     /// Catches a `pub mod` rename or a fat-fingered match arm in

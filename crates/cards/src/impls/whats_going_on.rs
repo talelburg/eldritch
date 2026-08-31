@@ -142,9 +142,13 @@ mod tests {
             "branch B is the lead taking 2 horror",
         );
         // The labels are what the lead reads; before #775 this rendered the
-        // branches' `Debug` form, tag and all.
-        assert_eq!(branches[0].label, super::DISCARD_EACH_LABEL);
-        assert_eq!(branches[1].label, super::LEAD_TAKES_HORROR_LABEL);
+        // branches' `Debug` form, tag and all. Asserted as literals — a const
+        // checked against itself would pass through a typo in the split.
+        assert_eq!(
+            branches[0].label,
+            "Each investigator discards 1 card at random from his or her hand"
+        );
+        assert_eq!(branches[1].label, "The lead investigator takes 2 horror");
         assert!(super::native_effect_for(super::RANDOM_DISCARD_EACH).is_some());
         assert!(super::native_effect_for("nope").is_none());
     }

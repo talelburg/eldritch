@@ -165,7 +165,7 @@ pub struct EvalContext {
     pub choice: Option<ChoiceBinding>,
     /// The ability source this effect is *printed on*, when the dispatch site
     /// knows it — the board home an effect-internal [`Effect::ChooseOne`]
-    /// anchors its options to (#555). Read via [`Self::ability_source`].
+    /// anchors its options to (#555).
     ///
     /// Strictly wider than [`source`](Self::source), which is this value's
     /// [`AbilitySource::instance`](crate::state::AbilitySource::instance)
@@ -286,12 +286,6 @@ impl EvalContext {
     #[must_use]
     pub fn chosen_option(&self) -> Option<crate::engine::OptionId> {
         self.choice.and_then(|c| c.option)
-    }
-    /// The ability source this effect is printed on, if the dispatch site knew
-    /// it (see [`Self::ability_source`]).
-    #[must_use]
-    pub fn ability_source(&self) -> Option<crate::state::AbilitySource> {
-        self.ability_source
     }
 
     /// Bind the skill-test failure margin (see [`Self::failed_by`]).
@@ -824,7 +818,7 @@ fn step_choose_one(
                 push_branch(cx, branch)
             } else {
                 let anchor = eval_ctx
-                    .ability_source()
+                    .ability_source
                     .map(crate::engine::OptionTarget::from);
                 let options = live
                     .iter()
