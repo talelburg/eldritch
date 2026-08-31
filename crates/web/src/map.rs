@@ -352,10 +352,12 @@ pub fn location_map(game: &GameState) -> impl IntoView {
             // of the map's `z-index: 1` band is a separate class, because a rail
             // token can be the only actionable surface in the node, and its menu
             // renders inside whichever band the node sits in.
-            let node_class = match (actionable, actionable || rail_has_options(loc, &pending)) {
-                (true, _) => format!("{base} actionable has-menu"),
-                (false, true) => format!("{base} has-menu"),
-                (false, false) => base.to_string(),
+            let node_class = if actionable {
+                format!("{base} actionable has-menu")
+            } else if rail_has_options(loc, &pending) {
+                format!("{base} has-menu")
+            } else {
+                base.to_string()
             };
             // Corpus metadata (traits / ability text / victory) only for a
             // revealed location — the unrevealed side is hidden information —
