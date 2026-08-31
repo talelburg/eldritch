@@ -5,7 +5,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use game_core::card_data::CardKind;
-use game_core::state::{CardCode, GameState, Location, LocationId};
+use game_core::state::{CardCode, CardInPlay, GameState, Location, LocationId};
+use game_core::ChoiceOption;
 use leptos::prelude::*;
 
 /// Authored grid cell `(col, row)` for a known location code — the layout the
@@ -205,6 +206,65 @@ fn map_extent(positions: &BTreeMap<LocationId, (u16, u16)>) -> (u16, u16) {
     ((max_col + 1) * CELL_W, (max_row + 1) * CELL_H)
 }
 
+/// One rail token for a [`CardInPlay`] sitting at a location — an uncontrolled
+/// card in `cards_at_location` or one of the location's `attachments`. Unlike
+/// the investigator and enemy tokens beside it this box is *interactive*: the
+/// engine anchors an ability granted to such a card to the card's own instance
+/// (`AbilitySource::InPlay(instance)` → `OptionTarget::CardInstance(instance)`),
+/// and while nothing on the board carried that anchor the Parlor's granted
+/// Parley on Lita Chantler 01117 was unreachable — the deadlock ADR 0011 names,
+/// *"an option the engine anchors to a surface the client does not render is
+/// unreachable rather than merely misplaced"* (#847). Mirrors
+/// [`InPlayCardView`](crate::card::InPlayCardView), the play-area surface with
+/// the same anchor.
+///
+/// `class` is the token's hue class and `note` the parenthetical that says which
+/// zone it is in.
+fn card_token(
+    card: &CardInPlay,
+    class: &'static str,
+    note: &'static str,
+    pending: &[ChoiceOption],
+) -> impl IntoView {
+    let name = crate::names::card_name(&card.code);
+    let exhausted = card.exhausted;
+    let menu_opts = crate::interaction::options_for(
+        pending,
+        game_core::OptionTarget::CardInstance(card.instance_id),
+    );
+    let actionable = !menu_opts.is_empty();
+    #[cfg(target_arch = "wasm32")]
+    let open = RwSignal::new(None::<(i32, i32)>);
+    view! {
+        <div class=class class:actionable=actionable>
+            {name} {note}
+            {exhausted.then(|| view! { <span>" (exhausted)"</span> })}
+            {
+                // wasm-only: the trigger + menu read/submit via web_sys / the
+                // wasm-only OutboundTx. On host the block is empty; `menu_opts`
+                // is still used above by `actionable`, so no unused-var warning.
+                #[cfg(target_arch = "wasm32")]
+                actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
+            }
+        </div>
+    }
+}
+
+/// Whether any option is anchored to a card in `loc`'s rail — the predicate the
+/// node's `has-menu` lift reads. Pure.
+fn rail_has_options(loc: &Location, pending: &[ChoiceOption]) -> bool {
+    loc.cards_at_location
+        .iter()
+        .chain(loc.attachments.iter())
+        .any(|c| {
+            !crate::interaction::options_for(
+                pending,
+                game_core::OptionTarget::CardInstance(c.instance_id),
+            )
+            .is_empty()
+        })
+}
+
 /// The map panel: one absolutely-positioned container node per in-play location,
 /// holding the investigators and unengaged enemies in it. Connection lines are
 /// drawn by a private helper; SVG lines sit behind the nodes. Read-only —
@@ -263,15 +323,14 @@ pub fn location_map(game: &GameState) -> impl IntoView {
             let at_location: Vec<_> = loc
                 .cards_at_location
                 .iter()
-                .map(|c| {
-                    let name = crate::names::card_name(&c.code);
-                    view! {
-                        <div class="at-location-token">
-                            {name} " (uncontrolled)"
-                            {c.exhausted.then(|| view! { <span>" (exhausted)"</span> })}
-                        </div>
-                    }
-                })
+                .map(|c| card_token(c, "at-location-token", " (uncontrolled)", &pending))
+                .collect();
+            // The location's own attachments (Obscuring Fog 01168). Same zone
+            // shape, same reason the node has to show them.
+            let attachments: Vec<_> = loc
+                .attachments
+                .iter()
+                .map(|c| card_token(c, "attachment-token", " (attached)", &pending))
                 .collect();
             let style = format!(
                 "left:{left}px;top:{top}px;width:{NODE_W}px;\
@@ -289,10 +348,14 @@ pub fn location_map(game: &GameState) -> impl IntoView {
             } else {
                 "map-location unrevealed"
             };
-            let node_class = if actionable {
-                format!("{base} actionable")
-            } else {
-                base.to_string()
+            // `actionable` is the node's *card* — its own options. The lift out
+            // of the map's `z-index: 1` band is a separate class, because a rail
+            // token can be the only actionable surface in the node, and its menu
+            // renders inside whichever band the node sits in.
+            let node_class = match (actionable, actionable || rail_has_options(loc, &pending)) {
+                (true, _) => format!("{base} actionable has-menu"),
+                (false, true) => format!("{base} has-menu"),
+                (false, false) => base.to_string(),
             };
             // Corpus metadata (traits / ability text / victory) only for a
             // revealed location — the unrevealed side is hidden information —
@@ -353,6 +416,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                         {invs}
                         {enemies}
                         {at_location}
+                        {attachments}
                     </div>
                     {
                         // wasm-only: the menu trigger + menu read/submit via web_sys /
@@ -378,8 +442,10 @@ pub fn location_map(game: &GameState) -> impl IntoView {
 
 #[cfg(test)]
 mod tests {
-    use super::{layout_positions, location_grid_pos};
-    use game_core::state::{CardCode, LocationId};
+    use super::{layout_positions, location_grid_pos, rail_has_options};
+    use game_core::state::{CardCode, CardInPlay, CardInstanceId, LocationId};
+    use game_core::test_support::fixtures::test_location;
+    use game_core::{ChoiceOption, OptionId, OptionTarget};
 
     #[test]
     fn known_gathering_codes_have_authored_cells() {
@@ -440,5 +506,41 @@ mod tests {
             pos[&LocationId(1)].0 + 1,
             "relative column offset not preserved: {pos:?}"
         );
+    }
+
+    /// The Parlor's granted Parley is anchored to Lita's instance, so the node
+    /// holding her has to lift its band even though its own card is inert.
+    #[test]
+    fn a_rail_card_anchored_option_is_seen_by_the_node() {
+        let lita = CardInstanceId(60);
+        let mut parlor = test_location(5, "Parlor");
+        parlor
+            .cards_at_location
+            .push(CardInPlay::enter_play(CardCode::new("01117"), lita));
+        let anchored =
+            vec![ChoiceOption::new(OptionId(0), "Parley").at(OptionTarget::CardInstance(lita))];
+        assert!(rail_has_options(&parlor, &anchored));
+        // An option anchored to the location itself is the node's own, not the
+        // rail's, and an option anchored to a different instance is nobody's.
+        let elsewhere = vec![
+            ChoiceOption::new(OptionId(0), "Investigate").at(OptionTarget::Location(parlor.id)),
+            ChoiceOption::new(OptionId(1), "Activate")
+                .at(OptionTarget::CardInstance(CardInstanceId(61))),
+        ];
+        assert!(!rail_has_options(&parlor, &elsewhere));
+    }
+
+    /// An attachment is the same rail, so it is read the same way.
+    #[test]
+    fn an_attachment_anchored_option_is_seen_too() {
+        let fog = CardInstanceId(61);
+        let mut parlor = test_location(5, "Parlor");
+        parlor
+            .attachments
+            .push(CardInPlay::enter_play(CardCode::new("01168"), fog));
+        let anchored =
+            vec![ChoiceOption::new(OptionId(0), "Discard").at(OptionTarget::CardInstance(fog))];
+        assert!(rail_has_options(&parlor, &anchored));
+        assert!(!rail_has_options(&parlor, &[]));
     }
 }
