@@ -761,6 +761,18 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
 /// ability source leaves the options un-anchored, which renders them in the
 /// prompt banner exactly as every `ChooseOne` did before.
 ///
+/// **The anchor is liveness-checked, because this one is a snapshot** (#845).
+/// `ability_source` is fixed when the ability is activated, but this prompt is
+/// built after the costs are paid and after the `AoO` loop — so the source may
+/// have left play in between. First Aid 01019 spending its *last* supply is the
+/// case that bites: the depletion-discard fires during cost payment, and the
+/// damage-or-horror prompt then anchored to a card in the discard pile, which no
+/// board surface renders and no player could answer (ADR 0011 makes that a
+/// deadlock, not a misplacement). [`OptionTarget::for_live_source`] degrades the
+/// anchor to `None` in that case and the banner takes it. The ability itself
+/// still resolves — RR Appendix I, *"the sequence does not stop from completing
+/// if that card leaves play during the sequence"*.
+///
 /// **Filtered-to-empty is a skip, not a reject** — the convention
 /// [`ground_investigator_choice`] established for the same reason. An
 /// activation cannot reach here with every mode dead (the initiation gate
@@ -816,7 +828,7 @@ fn step_choose_one(
             } else {
                 let anchor = eval_ctx
                     .ability_source
-                    .map(crate::engine::OptionTarget::from);
+                    .and_then(|s| crate::engine::OptionTarget::for_live_source(s, cx.state));
                 let options = live
                     .iter()
                     .map(|&i| (branches[i].label.clone(), anchor.clone()))
