@@ -78,16 +78,26 @@ fn advance_cell((col, row): (u16, u16)) -> (u16, u16) {
     }
 }
 
-/// Pixel geometry for the grid. A node occupies `NODE_W`×`NODE_H`; cells are
-/// larger to leave gaps for the connection lines.
-const CELL_W: u16 = 260;
+/// Pixel geometry for the grid. A node is `CARD_W` of location card plus a
+/// token rail beside it, `NODE_W` wide in total; cells are larger again to
+/// leave gaps for the connection lines. Node *height* is deliberately absent:
+/// the node grows with its tokens rather than clipping them (#848).
+const CELL_W: u16 = 400;
 const CELL_H: u16 = 250;
-const NODE_W: u16 = 230;
-const NODE_H: u16 = 220;
+const NODE_W: u16 = 360;
+/// Width of the `.loc-card` inside a node — mirrored from `style.css`, where it
+/// is the value that actually lays the card out.
+const CARD_W: u16 = 200;
+/// Nominal card height, used only to place the connection-line anchor a card's
+/// half-height down. The card's real height is content-driven, so this is an
+/// anchor point, not a box.
+const CARD_H: u16 = 130;
 
-/// Center pixel of a node at grid cell `(col, row)`.
+/// Anchor pixel for a node's connection lines: the middle of its *card*, not of
+/// the node. The node spans card + token rail, so its own center falls in the
+/// gap between the two and every line would end in empty space.
 fn node_center((col, row): (u16, u16)) -> (u16, u16) {
-    (col * CELL_W + NODE_W / 2, row * CELL_H + NODE_H / 2)
+    (col * CELL_W + CARD_W / 2, row * CELL_H + CARD_H / 2)
 }
 
 /// One `<line>` per undirected pair of connected, in-play locations, between
@@ -196,7 +206,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                     }
                 })
                 .collect();
-            let style = format!("left:{left}px;top:{top}px;width:{NODE_W}px;height:{NODE_H}px;");
+            let style = format!("left:{left}px;top:{top}px;width:{NODE_W}px;");
             let menu_opts = crate::interaction::options_for(
                 &pending,
                 game_core::OptionTarget::Location(loc.id),
@@ -214,61 +224,105 @@ pub fn location_map(game: &GameState) -> impl IntoView {
             } else {
                 base.to_string()
             };
-            let revealed_label = if loc.revealed {
-                "revealed"
-            } else {
-                "unrevealed"
-            };
-            // Revealed: a location card (name + shroud chip, traits, ability
-            // text, clues + victory chip), with traits/text/victory from the
-            // corpus by code (absent when no metadata — synthetic registry /
-            // unknown code). Unrevealed: name only (hidden info withheld).
-            let detail = loc.revealed.then(|| {
-                let meta =
-                    game_core::card_registry::current().and_then(|r| (r.metadata_for)(&loc.code));
-                let traits = meta
-                    .map(|m| {
-                        if m.traits.is_empty() {
-                            String::new()
-                        } else {
-                            format!("{}.", m.traits.join(". "))
-                        }
-                    })
-                    .unwrap_or_default();
-                let text_view = meta
-                    .and_then(|m| m.text.as_deref())
-                    .map(|t| crate::card::render_segments(crate::card::parse_card_text(t)));
-                let victory = meta.and_then(|m| match &m.kind {
+            // Corpus metadata (traits / ability text / victory) only for a
+            // revealed location — the unrevealed side is hidden information —
+            // and only when the registry knows the code (a synthetic registry
+            // or an unknown code yields none).
+            let meta = loc
+                .revealed
+                .then(|| {
+                    game_core::card_registry::current().and_then(|r| (r.metadata_for)(&loc.code))
+                })
+                .flatten();
+            let traits = meta
+                .map(|m| {
+                    if m.traits.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{}.", m.traits.join(". "))
+                    }
+                })
+                .unwrap_or_default();
+            let text_view = meta
+                .and_then(|m| m.text.as_deref())
+                .map(|t| crate::card::render_segments(crate::card::parse_card_text(t)));
+            let victory_pip = meta
+                .and_then(|m| match &m.kind {
                     CardKind::Location { victory, .. } => *victory,
                     _ => None,
+                })
+                .map(|n| {
+                    view! {
+                        <span class="victory-pip" title=format!("victory {n}")>
+                            {format!("\u{2605}{n}")}
+                        </span>
+                    }
                 });
-                let victory_chip =
-                    victory.map(|n| view! { <span class="chip">{format!("Victory {n}")}</span> });
-                view! {
+            // The header is `[shroud] Name victory [clues]` on a fixed
+            // three-column grid: each numeral is read by its position and its
+            // colour, so the words "shroud" and "clues" are gone from the face
+            // of the card and survive only as the badges' `title`.
+            //
+            // An UNREVEALED location has neither value to show. RR glossary
+            // "Location Cards": a location enters play unrevealed "so that the
+            // side with no shroud value and/or clue value is faceup" — the
+            // engine's `Location` carries the fields regardless, so both badges
+            // become dashed `?` placeholders rather than printing the revealed
+            // side's numbers on a face-down card.
+            let (shroud_class, shroud_text, shroud_title) = if loc.revealed {
+                (
+                    "badge badge--shroud",
+                    loc.shroud.to_string(),
+                    format!("shroud {}", loc.shroud),
+                )
+            } else {
+                (
+                    "badge badge--unknown",
+                    "?".to_string(),
+                    "unrevealed: no shroud value".to_string(),
+                )
+            };
+            // A zero clue count still renders, faded: drop the badge and "no
+            // clues here" would look exactly like "no clue slot", and the name
+            // column would shift between nodes.
+            let (clues_class, clues_text, clues_title) = if !loc.revealed {
+                (
+                    "badge badge--unknown",
+                    "?".to_string(),
+                    "unrevealed: no clue value".to_string(),
+                )
+            } else if loc.clues == 0 {
+                (
+                    "badge badge--clues is-zero",
+                    "0".to_string(),
+                    "no clues".to_string(),
+                )
+            } else {
+                (
+                    "badge badge--clues",
+                    loc.clues.to_string(),
+                    format!("clues {}", loc.clues),
+                )
+            };
+            view! {
+                <div class=node_class data-loc=loc.name.clone() style=style>
                     <div class="loc-card">
                         <div class="loc-head">
-                            {loc.name.clone()}
-                            <span class="chip">{format!("shroud {}", loc.shroud)}</span>
+                            <span class=shroud_class title=shroud_title>{shroud_text}</span>
+                            <span class="loc-name">{loc.name.clone()} {victory_pip}</span>
+                            <span class=clues_class title=clues_title>{clues_text}</span>
                         </div>
                         <div class="card-traits">{traits}</div>
                         <div class="card-text">{text_view}</div>
-                        <div class="loc-stats">
-                            <span>{format!("clues {}", loc.clues)}</span>
-                            {victory_chip}
-                        </div>
                     </div>
-                }
-            });
-            let unrevealed_head =
-                (!loc.revealed).then(|| view! { <div class="loc-head">{loc.name.clone()}</div> });
-            view! {
-                <div class=node_class data-loc=loc.name.clone() style=style>
-                    {detail}
-                    {unrevealed_head}
-                    <span class="loc-revealed">{revealed_label}</span>
-                    {invs}
-                    {enemies}
-                    {at_location}
+                    // The satellite rail: one bordered box per occupant, laid
+                    // out beside the card rather than inside it, so a long
+                    // printed text can never push a token out of view (#848).
+                    <div class="node-tokens">
+                        {invs}
+                        {enemies}
+                        {at_location}
+                    </div>
                     {
                         // wasm-only: the menu trigger + menu read/submit via web_sys /
                         // the wasm-only OutboundTx. On host the block is empty; `menu_opts`

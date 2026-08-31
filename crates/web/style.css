@@ -36,18 +36,63 @@
 .map { position: relative; margin: 1rem 0; }
 .map-lines { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; }
 .map-line { stroke: #999; stroke-width: 2; }
-.map-location { position: absolute; z-index: 1; box-sizing: border-box; border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.35rem; font-size: 0.8rem; overflow: hidden; display: flex; flex-direction: column; gap: 0.2rem; }
-.loc-card { display: flex; flex-direction: column; gap: 0.2rem; }
-.loc-stats { display: flex; gap: 0.4rem; align-items: baseline; }
+/* The node itself is a transparent, borderless ROW: the location card on the
+   left, the token rail on its right (#848). It has no height of its own and
+   does not clip — before this, a fixed-height `overflow: hidden` node silently
+   ate the tokens of any location whose printed text ran long (the Parlor). */
+.map-location {
+    position: absolute; z-index: 1; box-sizing: border-box; font-size: 0.8rem;
+    display: flex; flex-direction: row; align-items: flex-start; gap: 0.4rem;
+}
+/* The card is the bordered surface, and the only fixed-width part; `map.rs`
+   mirrors this width as `CARD_W` to anchor the connection lines on it. */
+.loc-card {
+    flex: none; width: 200px; box-sizing: border-box;
+    border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.35rem;
+    display: flex; flex-direction: column; gap: 0.2rem;
+}
 /* Unrevealed locations read as dimmed/face-down WITHOUT element opacity —
    opacity would let the connection lines behind the node bleed through. A muted
-   opaque background + greyed text + dashed border keep the node solid. */
-.map-location.unrevealed { background: #ececec; color: #888; border-style: dashed; }
-.loc-head { font-weight: 600; margin-bottom: 0.15rem; }
+   opaque background + greyed text + dashed border keep the card solid. */
+.map-location.unrevealed .loc-card { background: #ececec; color: #888; border-style: dashed; }
+
+/* Header: `[shroud] Name ★victory [clues]` on three fixed columns, so both
+   numerals sit at the same x in every node and are read by position and colour
+   instead of by a label. */
+.loc-head {
+    display: grid; grid-template-columns: 1.35rem 1fr 1.35rem;
+    align-items: center; gap: 0.3rem; margin-bottom: 0.15rem;
+}
+.loc-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge {
+    width: 1.35rem; height: 1.35rem; box-sizing: border-box;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.75rem; font-weight: 700; font-variant-numeric: tabular-nums;
+    border-radius: 3px; border: 1px solid transparent;
+}
+/* Shroud — dark slate, hexagonal (the shape of the printed icon). Always left. */
+.badge--shroud {
+    background: #2b2b3a; color: #fff; border-color: #14141c; border-radius: 0;
+    clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+/* Clues — a tan circle, the colour of a clue token. Always right. A zero value
+   keeps its slot but fades, so "no clues here" never looks like "no clue slot". */
+.badge--clues { background: #d9a441; color: #3a2a08; border-color: #a87b23; border-radius: 999px; }
+.badge--clues.is-zero { background: #f0ece4; color: #a9a297; border-color: #ddd6c9; }
+/* Unrevealed: the side with no shroud/clue value at all — a dashed placeholder,
+   never a numeral. */
+.badge--unknown { background: #fff; color: #aaa; border: 1px dashed #bbb; border-radius: 3px; }
+.victory-pip { color: #b8860b; font-size: 0.72rem; font-weight: 700; margin-left: 0.25rem; }
+
+/* The satellite rail beside the card. Each occupant is its own bordered box, so
+   each can carry its own glow and its own context menu. */
+.node-tokens { flex: none; width: 150px; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.78rem; }
+.node-tokens > * { background: #fff; border: 1px solid #ddd; border-radius: 3px; padding: 0.1rem 0.25rem; }
+.node-tokens:empty { display: none; }
 .inv-token { color: #157a3a; }
 .enemy-token { color: #a3261b; }
 /* A card put into play at a location, controlled by nobody (Lita Chantler
-   01117 in the Parlor) — in play, but in no investigator's play area. */
+   01117 in the Parlor). They are in play, but in no investigator's play area. */
 .at-location-token { color: #6a4c93; }
 /* Column direction stacks the map above the investigators panel: the map's
    location nodes are absolutely positioned, so a flex *row* would let a shrunk
@@ -156,6 +201,9 @@
 .card--enemy    { border-color: #a3261b; }
 .card--unknown, .card--generic { border-style: dashed; }
 .act-agenda { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }
+/* The act/agenda advance threshold. (Named for the location node, which is
+   where the class started; the node's stats moved into its header in #848.) */
+.loc-stats { display: flex; gap: 0.4rem; align-items: baseline; }
 .card--act { border-color: #c8a020; }
 .card--agenda { border-color: #7a2f2f; }
 /* Advance-flip (#558): the reverse ("1b") face of an advancing act/agenda —
@@ -174,9 +222,15 @@
    modal still sit above the board, and removing layout code on a reasoning chain
    is how the map band breaks silently. Cards (`.card.actionable`) set no
    z-index, so their menu escapes to the root context. */
-.map-location.actionable { box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; z-index: 20; }
+.map-location.actionable { cursor: pointer; z-index: 20; }
+/* The container is transparent, so the glow goes on the card it wraps. */
+.map-location.actionable > .loc-card { box-shadow: 0 0 0 2px #e0b84c; }
 .card.actionable { position: relative; box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; }
 .menu-hit { position: absolute; inset: 0; z-index: 5; }
+/* A map node's own hit-layer covers only its card: the token rail beside it
+   holds separate surfaces, which carry their own menus. Width mirrors
+   `.loc-card`. */
+.map-location > .menu-hit { right: auto; width: 200px; }
 .menu-backdrop { position: fixed; inset: 0; z-index: 15; }
 .context-menu {
     position: fixed; z-index: 20;

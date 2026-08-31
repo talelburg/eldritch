@@ -162,70 +162,43 @@ async fn engaged_enemy_renders_in_detail_panel_not_in_node() {
     );
 }
 
-#[wasm_bindgen_test]
-async fn revealed_location_shows_revealed_not_unrevealed() {
-    let mut loc = test_location(20, "Study Revealed");
-    loc.revealed = true; // default, but explicit
-    let state = GameStateBuilder::new()
-        .with_location(loc)
-        .with_investigator(test_investigator(1))
-        .build();
-    mount_state(state).await;
-    let text = node_text("Study Revealed");
-    assert!(
-        text.contains("revealed"),
-        "revealed location must contain 'revealed'; text = {text:?}"
-    );
-    assert!(
-        !text.contains("unrevealed"),
-        "revealed location must NOT contain 'unrevealed'; text = {text:?}"
-    );
+/// The `class` attribute of the shroud / clue badge in the last-mounted node
+/// named `loc_name`. The header prints numerals only (#848), so what a badge
+/// *is* lives in its class, not in its text.
+fn badge_class(loc_name: &str, which: &str) -> String {
+    let maps = document().query_selector_all(".map").expect("query");
+    let last = maps
+        .item(maps.length() - 1)
+        .and_then(|n| n.dyn_into::<Element>().ok())
+        .expect("last .map");
+    let sel = format!(".map-location[data-loc=\"{loc_name}\"] .loc-head .badge:{which}-child");
+    last.query_selector(&sel)
+        .expect("query")
+        .and_then(|el| el.get_attribute("class"))
+        .unwrap_or_default()
+}
+
+/// Text of the shroud badge (first header column) and the clue badge (last).
+fn header_badges(loc_name: &str) -> (String, String) {
+    let maps = document().query_selector_all(".map").expect("query");
+    let last = maps
+        .item(maps.length() - 1)
+        .and_then(|n| n.dyn_into::<Element>().ok())
+        .expect("last .map");
+    let sel = format!(".map-location[data-loc=\"{loc_name}\"] .loc-head .badge");
+    let badges = last.query_selector_all(&sel).expect("query");
+    assert_eq!(badges.length(), 2, "a header carries exactly two badges");
+    let text = |i| {
+        badges
+            .item(i)
+            .and_then(|n| n.text_content())
+            .unwrap_or_default()
+    };
+    (text(0), text(1))
 }
 
 #[wasm_bindgen_test]
-async fn unrevealed_location_shows_unrevealed() {
-    let mut loc = test_location(21, "Parlor Unrevealed");
-    loc.revealed = false;
-    let state = GameStateBuilder::new()
-        .with_location(loc)
-        .with_investigator(test_investigator(1))
-        .build();
-    mount_state(state).await;
-    let text = node_text("Parlor Unrevealed");
-    assert!(
-        text.contains("unrevealed"),
-        "unrevealed location must contain 'unrevealed'; text = {text:?}"
-    );
-}
-
-#[wasm_bindgen_test]
-async fn unrevealed_location_hides_shroud_and_clues() {
-    let mut loc = test_location(30, "Cellar Unrevealed");
-    loc.revealed = false;
-    loc.shroud = 4;
-    loc.clues = 3;
-    let state = GameStateBuilder::new()
-        .with_location(loc)
-        .with_investigator(test_investigator(1))
-        .build();
-    mount_state(state).await;
-    let text = node_text("Cellar Unrevealed");
-    assert!(
-        text.contains("unrevealed"),
-        "unrevealed location must contain 'unrevealed'; text = {text:?}"
-    );
-    assert!(
-        !text.contains("shroud"),
-        "unrevealed location must NOT contain 'shroud'; text = {text:?}"
-    );
-    assert!(
-        !text.contains("clues"),
-        "unrevealed location must NOT contain 'clues'; text = {text:?}"
-    );
-}
-
-#[wasm_bindgen_test]
-async fn revealed_location_shows_shroud_and_clues() {
+async fn revealed_location_shows_shroud_and_clues_as_badges() {
     let mut loc = test_location(31, "Attic Revealed");
     loc.revealed = true;
     loc.shroud = 2;
@@ -235,14 +208,99 @@ async fn revealed_location_shows_shroud_and_clues() {
         .with_investigator(test_investigator(1))
         .build();
     mount_state(state).await;
-    let text = node_text("Attic Revealed");
-    assert!(
-        text.contains("shroud"),
-        "revealed location must contain 'shroud'; text = {text:?}"
+    assert_eq!(
+        header_badges("Attic Revealed"),
+        ("2".to_string(), "5".to_string()),
+        "shroud is the left badge and clues the right",
     );
     assert!(
-        text.contains("clues"),
-        "revealed location must contain 'clues'; text = {text:?}"
+        badge_class("Attic Revealed", "first").contains("badge--shroud"),
+        "the left badge is the shroud badge",
+    );
+    assert!(
+        badge_class("Attic Revealed", "last").contains("badge--clues"),
+        "the right badge is the clue badge",
+    );
+    // The words are gone from the card's face — the badges carry them as titles.
+    let text = node_text("Attic Revealed");
+    assert!(
+        !text.contains("shroud"),
+        "shroud label not deleted: {text:?}"
+    );
+    assert!(!text.contains("clues"), "clues label not deleted: {text:?}");
+}
+
+/// A location with no clues keeps its badge — faded — so the slot never moves
+/// and "no clues here" never looks like "no clue slot".
+#[wasm_bindgen_test]
+async fn a_revealed_location_with_no_clues_keeps_a_faded_clue_badge() {
+    let mut loc = test_location(32, "Empty Hallway");
+    loc.revealed = true;
+    loc.clues = 0;
+    let state = GameStateBuilder::new()
+        .with_location(loc)
+        .with_investigator(test_investigator(1))
+        .build();
+    mount_state(state).await;
+    assert_eq!(header_badges("Empty Hallway").1, "0");
+    let class = badge_class("Empty Hallway", "last");
+    assert!(
+        class.contains("badge--clues") && class.contains("is-zero"),
+        "a zero clue count keeps a faded clue badge; class = {class:?}",
+    );
+}
+
+/// An unrevealed location has NO shroud or clue value to show — the printed
+/// unrevealed side is "the side with no shroud value and/or clue value"
+/// (RR glossary, "Location Cards"). Both badges are `?` placeholders, never the
+/// revealed side's numbers.
+#[wasm_bindgen_test]
+async fn unrevealed_location_shows_placeholders_not_its_values() {
+    let mut loc = test_location(30, "Cellar Unrevealed");
+    loc.revealed = false;
+    loc.shroud = 4;
+    loc.clues = 3;
+    let state = GameStateBuilder::new()
+        .with_location(loc)
+        .with_investigator(test_investigator(1))
+        .build();
+    mount_state(state).await;
+    assert_eq!(
+        header_badges("Cellar Unrevealed"),
+        ("?".to_string(), "?".to_string()),
+        "an unrevealed location shows placeholders in both slots",
+    );
+    for which in ["first", "last"] {
+        let class = badge_class("Cellar Unrevealed", which);
+        assert!(
+            class.contains("badge--unknown"),
+            "the {which} badge is an unknown placeholder; class = {class:?}",
+        );
+    }
+    let text = node_text("Cellar Unrevealed");
+    assert!(!text.contains('4'), "shroud value leaked: {text:?}");
+    assert!(!text.contains('3'), "clue value leaked: {text:?}");
+}
+
+/// The node is styled face-down by class, not by a printed "unrevealed" word.
+#[wasm_bindgen_test]
+async fn unrevealed_location_is_marked_by_class() {
+    let mut loc = test_location(21, "Parlor Unrevealed");
+    loc.revealed = false;
+    let state = GameStateBuilder::new()
+        .with_location(loc)
+        .with_investigator(test_investigator(1))
+        .build();
+    mount_state(state).await;
+    assert!(
+        node_class("Parlor Unrevealed").contains("unrevealed"),
+        "unrevealed node must carry the class; class = {:?}",
+        node_class("Parlor Unrevealed"),
+    );
+    assert!(
+        !node_text("Parlor Unrevealed").contains("unrevealed"),
+        "the 'unrevealed' text label is gone; text = {:?}",
+        node_text("Parlor Unrevealed"),
     );
 }
 
