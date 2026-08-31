@@ -113,6 +113,15 @@ impl From<crate::state::AbilitySource> for OptionTarget {
     /// The `match` is exhaustive on purpose: a sixth
     /// [`AbilitySource`](crate::state::AbilitySource) kind should stop this
     /// compiling rather than quietly anchor itself somewhere wrong.
+    ///
+    /// **This map says nothing about whether the source is still on the board**,
+    /// and a caller may only use it when it holds that guarantee itself. Two do:
+    /// the turn menu enumerates from `ability_source::reachable_sources`, and the
+    /// forced / reaction candidates are re-probed against
+    /// `ability_source::source_card` by the #568 lapse sweep at every prompt
+    /// site. A caller holding an anchor that was **snapshotted before arbitrary
+    /// mutation** has no such guarantee and must use the crate-internal
+    /// `OptionTarget::for_live_source` instead (#845).
     fn from(source: crate::state::AbilitySource) -> Self {
         use crate::state::AbilitySource;
         match source {
@@ -122,6 +131,34 @@ impl From<crate::state::AbilitySource> for OptionTarget {
             AbilitySource::Act => OptionTarget::Act,
             AbilitySource::Agenda => OptionTarget::Agenda,
         }
+    }
+}
+
+impl OptionTarget {
+    /// The board surface `source` renders on, or `None` when `source` has left
+    /// the board — the **liveness-checked** form of the `From<AbilitySource>`
+    /// map above (#845).
+    ///
+    /// ADR 0011 makes an unrenderable anchor a deadlock rather than a cosmetic
+    /// slip: *"an option the engine anchors to a surface the client does not
+    /// render is unreachable rather than merely misplaced"*, and the obligation
+    /// it puts on the engine is to *"either anchor it to a surface that exists,
+    /// or leave it un-anchored and accept the banner"*. `None` is that second
+    /// branch, and the prompt banner is what renders it.
+    ///
+    /// The gate is `ability_source::source_card`, the same board-wide
+    /// existence probe the reaction path's `SourceGone`
+    /// lapse uses — *existence, not reachability*, which is the right question
+    /// here: an ability resolves to completion even from a source its controller
+    /// could no longer legally activate (RR Appendix I, *"the sequence does not
+    /// stop from completing if that card leaves play during the sequence"*), so
+    /// the prompt is still owed a home.
+    pub(crate) fn for_live_source(
+        source: crate::state::AbilitySource,
+        state: &crate::GameState,
+    ) -> Option<Self> {
+        crate::engine::ability_source::source_card(state, source)?;
+        Some(source.into())
     }
 }
 

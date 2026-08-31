@@ -449,3 +449,59 @@ fn the_damage_or_horror_choice_anchors_to_the_asset_it_is_printed_on() {
         );
     }
 }
+
+/// **The choice survives its own card's depletion-discard** (#845).
+///
+/// Spending the *last* supply discards First Aid during cost payment, so the
+/// damage-or-horror prompt that follows is built with its source already in the
+/// discard pile. Anchoring it to that card left it unrenderable: ADR 0011 —
+/// *"an option the engine anchors to a surface the client does not render is
+/// unreachable rather than merely misplaced"* — so the prompt was unanswerable
+/// and the game could not advance. The anchor now degrades to `None`, taking
+/// ADR 0011's other branch (*"leave it un-anchored and accept the banner"*).
+///
+/// The ability still resolves in full: RR Appendix I step 4, *"If the ability
+/// being initiated is on an in-play card, the sequence does not stop from
+/// completing if that card leaves play during the sequence."*
+#[test]
+fn the_choice_offered_after_the_last_supply_is_answerable() {
+    let r = activate(board(1));
+    assert!(
+        r.state.investigators[&INV].cards_in_play.is_empty(),
+        "First Aid left play during cost payment",
+    );
+
+    let options = offered(&r, "the damage-or-horror choice").to_vec();
+    assert_eq!(options.len(), 2, "both modes still live: {options:?}");
+    for option in &options {
+        assert_eq!(
+            option.target, None,
+            "un-anchored, so the prompt banner renders it: {option:?}",
+        );
+    }
+
+    // Un-anchored is not merely cosmetic here — the pick has to land.
+    let r = pick(r.state, 1);
+    assert_eq!(
+        r.state.investigators[&INV].horror(),
+        1,
+        "the horror branch resolved from a source that had left play",
+    );
+}
+
+/// The control for [`the_choice_offered_after_the_last_supply_is_answerable`]:
+/// with supplies to spare First Aid is still in play when the prompt is built,
+/// so the anchor is kept. Without this the liveness gate could return `None`
+/// unconditionally and the sibling test would not notice.
+#[test]
+fn the_choice_keeps_its_anchor_while_first_aid_is_still_in_play() {
+    let r = activate(board(2));
+    let options = offered(&r, "the damage-or-horror choice");
+    for option in options {
+        assert_eq!(
+            option.target,
+            Some(game_core::engine::OptionTarget::CardInstance(KIT_INST)),
+            "still in play, so still anchored to the asset",
+        );
+    }
+}
