@@ -3779,7 +3779,7 @@ mod enemy_phase_tests {
         );
     }
 
-    // TODO(#71 follow-up): pause-on-Fast-eligibility test — needs a
+    // TODO(#842): pause-on-Fast-eligibility test — needs a
     // tractable Fast-eligibility fixture at the engine layer (Fast
     // event card in hand + resources + card-registry install, which
     // would push this into the cards crate's integration tests). The

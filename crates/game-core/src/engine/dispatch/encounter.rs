@@ -362,9 +362,9 @@ fn spawn_enemy(
             // refusal, matching how `PlayCard` treats an unimplemented card.
             return EngineOutcome::Rejected {
                 reason: format!(
-                    "TODO(#635): card {code} prints spawn instruction {clause:?}, which \
+                    "TODO(#670): card {code} prints spawn instruction {clause:?}, which \
                      needs a modelled SpawnLocation variant and the spawning \
-                     investigator's choice among valid locations (lands with #670)",
+                     investigator's choice among valid locations",
                 )
                 .into(),
             };

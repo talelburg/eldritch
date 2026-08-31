@@ -2011,13 +2011,14 @@ pub enum SkillTestStep {
     /// **no** total, margin, or verdict: those are ST.5/ST.6 and belong after
     /// the symbol effects have resolved (#674, #684, #685).
     ///
-    /// **TODO(#687):** the reveal is unconditional. A determination already
-    /// latched when the driver arrives here should skip ST.3 and ST.4
-    /// outright — *"No chaos token(s) are revealed from the chaos bag, and
-    /// the investigator immediately moves to Step 5"*
-    /// (`glossary/Automatic_Failure_Success.md`). Unreachable today: only
-    /// the `[auto_fail]` token latches a determination, and it does so *at*
-    /// this step, which the same entry says skips nothing.
+    /// **The reveal is conditional (#687).** A determination already latched
+    /// when the driver arrives here skips ST.3 and ST.4 outright — *"No chaos
+    /// token(s) are revealed from the chaos bag, and the investigator
+    /// immediately moves to Step 5"* (`glossary/Automatic_Failure_Success.md`)
+    /// — while the `[auto_fail]` token's own determination, latched *at* this
+    /// step, skips nothing, per the same entry. Both clauses are the one
+    /// question asked at two moments (ADR 0007); the driver arm is documented
+    /// on `dispatch::skill_test`.
     Resolving,
     /// RR ST.5–ST.7 boundary. Sum the modified skill value (ST.5) from the
     /// board as it stands *now* — after the ST.4 symbol effects — compare it

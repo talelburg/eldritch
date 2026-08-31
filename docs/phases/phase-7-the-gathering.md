@@ -1107,10 +1107,10 @@ retaliate / soak resolving with proper player agency, skill-test windows open, a
 Roland's signature firing.
 
 Since the 2026-08-23 recharter, **"a resolution" means all three** — #769 runs to
-**Won** (R1 *or* R2, once #775 offers the choice), to **Lost**, and to **Resigned**
-— the last of which #644 made reachable, tagging the Parlor 01115's `[action]`
-**Resign** and giving it `Effect::Resign` to resolve to. R2 is still unreachable
-until #775, which is why the optional content came into the gate.
+**Won** (R1 *or* R2), to **Lost**, and to **Resigned** — the last of which #644 made
+reachable, tagging the Parlor 01115's `[action]` **Resign** and giving it
+`Effect::Resign` to resolve to. R2 was unreachable until #775 offered act 01110's
+printed choice, which is why the optional content came into the gate.
 
 Difficulty and solo-2 are Future slices. Investigator breadth is
 [phase 7.5](phase-7.5-investigator-breadth.md).
