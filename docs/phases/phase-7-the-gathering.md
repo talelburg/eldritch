@@ -167,21 +167,17 @@ the Tablet came out.
   `scenarios` integration tests — neither `protocol` nor `web` names it.
 
 - **#811 — 01107's Ghoul move rejects the player's action with no Parlor ✅ shipped (PR #837).**
-  `move_ghouls_toward_parlor` resolved its destination first and returned
+  `move_ghouls_toward_parlor` resolves its destination first and returns
   `Rejected` when the Parlor (01115) is not in play — and since a rejection rolls
-  the whole apply back (#161), that took the *player's* action with it. The
+  the whole apply back (#161), that takes the *player's* action with it. The
   Parlor enters only via act 2's reverse, while agenda 3 becomes current at doom
   7 on a clock that does not read act progress, so a group still on act 1 or 2
-  when the agenda deck turns over was stuck every enemy phase. Found while writing
-  #808's terminal-agenda test, which worked around it by seeding the Parlor. Not a
+  when the agenda deck turns over is stuck every enemy phase. Found while writing
+  #808's terminal-agenda test, which works around it by seeding the Parlor. Not a
   card-text condition: `glossary/Ability.md` says *"If a forced ability does not
   have the potential to change the game state, the ability does not initiate."* —
-  no destination, no move, no rejection. The same reading was already applied one
-  line below to a Ghoul with no available step (#797), and the fix returns `Done`
-  to match it. Scope stayed at this one native: 01109's reverse rejects on the
-  same missing Parlor and must keep doing so, since revealing it is that
-  ability's own job. The `with_parlor_in_play` fixture the workaround added is
-  gone, so the resolution tests now run the board the scenario actually reaches.
+  no destination, no move, no rejection. The same reading is already applied one
+  line below to a Ghoul with no available step (#797).
 - **The Lita cluster was designed 2026-08-29** (`/grill-with-docs` over #771-#774). The
   session settled five things and changed the cluster's shape.
   **The wave runs #774, #820, #771, #772, #773**, with
