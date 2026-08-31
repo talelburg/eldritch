@@ -129,27 +129,6 @@ the Tablet came out.
 | #814 ✅ PR #838 | `Status` carries `Killed` / `Insane` alongside `Defeated`, but the rules make killed and insane **campaign-log states derived from trauma totals** — so a first defeat by damage is recorded as a kill |
 | #816 ✅ PR #839 | `Event::AllInvestigatorsDefeated` and `check_all_defeated` keep the word #644 renamed away from, and now fire for a scenario nobody was defeated in — everyone resigned |
 
-- **#816 — the half of the elimination rename #644 left behind.** #644 renamed
-  `Event::InvestigatorDefeated` / `DefeatCause` to `InvestigatorEliminated` /
-  `EliminationCause`, because `glossary/Resign.md` says a resigner *"is not considered
-  to have been defeated"* and the old names asserted what the rules deny, but scoped
-  itself to the two symbols its own section 3 named rather than widen the wave's
-  largest blast radius. `Event::AllInvestigatorsDefeated` and `check_all_defeated`
-  kept theirs, and fired for a board where **nobody was defeated at all** — every
-  investigator walked out through a Resign ability
-  (`crates/cards/tests/resign.rs` was the live case). They are now
-  `AllInvestigatorsEliminated` / `check_all_eliminated`, named for the rule they
-  implement: `glossary/Elimination.md` step 6, *"If there are no remaining players,
-  the scenario ends."* Naming and doc-comments only — the predicate, the
-  `ScenarioEnding::NoResolution` latch, its first-writer-wins ordering and the
-  empty-investigators suppression are untouched, and `protocol` and `web` never named
-  the symbol. The event's `TODO(#816)` is replaced by the affirmative rule rather than
-  left as history residue. **Where the rename stopped:** present-tense prose describing
-  what the engine does today was folded (ADR 0013, which also still named the long-gone
-  `apply_investigator_defeat`); the dated records under `docs/superpowers/`,
-  `docs/audits/` and ADR 0012 narrate the past and were left, since rewriting them
-  would falsify the record.
-
 - **The Lita cluster was designed 2026-08-29** (`/grill-with-docs` over #771-#774). The
   session settled five things and changed the cluster's shape.
   **The wave runs #774, #820, #771, #772, #773**, with
