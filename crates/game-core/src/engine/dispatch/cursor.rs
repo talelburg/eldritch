@@ -138,7 +138,7 @@ mod tests {
     #[test]
     fn active_investigators_in_turn_order_excludes_eliminated() {
         // The setup mulligan queue (phases.rs) is seeded from this filter, so a
-        // A Defeated/Resigned investigator is structurally excluded — it never
+        // Defeated/Resigned investigator is structurally excluded — it never
         // gets prompted. inv1 is Defeated, inv2 is Active; only inv2 survives.
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);

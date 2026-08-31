@@ -917,8 +917,8 @@ fn advance_phase_entry(
 /// any encounter is drawn (RR order).
 fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
     set_mythos_resume(cx, crate::state::MythosResume::AfterDraws);
-    // Per Rules Reference p.10 (Elimination), eliminated investigators (Killed,
-    // Insane, Resigned) do not draw — seed Active only.
+    // Per Rules Reference p.10 (Elimination), eliminated investigators (Defeated,
+    // Resigned) do not draw — seed Active only.
     let remaining = super::cursor::active_investigators_in_turn_order(cx.state);
     if remaining.is_empty() {
         // No Active drawers: open + auto-skip the post-1.4 window inline (its
@@ -1789,7 +1789,7 @@ mod investigation_phase_tests {
 
     #[test]
     fn investigation_phase_skips_defeated_lead_and_picks_first_active() {
-        // Investigator 1 (lead) is Killed; investigator 2 is Active.
+        // Investigator 1 (lead) is Defeated; investigator 2 is Active.
         // investigation_phase must skip Id(1) and rotate to Id(2).
         let mut state = GameStateBuilder::default()
             .with_investigator(test_investigator(1))
@@ -1815,7 +1815,7 @@ mod investigation_phase_tests {
         assert_eq!(
             state.active_investigator,
             Some(InvestigatorId(2)),
-            "investigation_phase must skip the Killed lead and rotate to the first Active investigator"
+            "investigation_phase must skip the Defeated lead and rotate to the first Active investigator"
         );
     }
 
@@ -2251,7 +2251,7 @@ mod mythos_phase_tests {
         assert_eq!(
             state.current_encounter_drawer(),
             Some(InvestigatorId(2)),
-            "the queue must prompt the first Active investigator, not the Killed lead"
+            "the queue must prompt the first Active investigator, not the Defeated lead"
         );
     }
 
@@ -2300,7 +2300,7 @@ mod mythos_phase_tests {
 
     /// Site 2 fix (Rules Reference p.10): when advancing the encounter-draw
     /// queue after a completed draw, eliminated investigators in the middle of
-    /// the queue must be skipped. Here inv2 is Killed; the queue must advance
+    /// the queue must be skipped. Here inv2 is Defeated; the queue must advance
     /// from inv1 to inv3.
     #[test]
     fn advance_encounter_draw_skips_eliminated_middle_investigator() {
@@ -2320,7 +2320,7 @@ mod mythos_phase_tests {
         let mut events = Vec::new();
 
         // inv1 has just completed their draw chain: advance drops inv1 and must
-        // skip the Killed inv2, landing on inv3.
+        // skip the Defeated inv2, landing on inv3.
         let outcome = super::super::encounter::advance_encounter_draw(&mut super::super::Cx {
             state: &mut state,
             events: &mut events,
@@ -2333,7 +2333,7 @@ mod mythos_phase_tests {
         assert_eq!(
             state.current_encounter_drawer(),
             Some(InvestigatorId(3)),
-            "the queue must skip the Killed inv2 and land on Active inv3"
+            "the queue must skip the Defeated inv2 and land on Active inv3"
         );
     }
 
@@ -2413,7 +2413,7 @@ mod mythos_phase_tests {
         assert_eq!(
             super::super::cursor::next_active_investigator_after(&state, InvestigatorId(1)),
             Some(InvestigatorId(3)),
-            "advance from 1 skips Killed 2, lands on 3"
+            "advance from 1 skips Defeated 2, lands on 3"
         );
         assert_eq!(
             super::super::cursor::next_active_investigator_after(&state, InvestigatorId(3)),
@@ -2442,7 +2442,7 @@ mod mythos_phase_tests {
 
     #[test]
     fn next_active_investigator_after_works_when_current_is_non_active() {
-        // Defeated-mid-loop semantics: `current` may be Killed by the
+        // Defeated-mid-loop semantics: `current` may be Defeated by the
         // time we advance from them. The cursor still finds the right
         // successor.
         let mut state = GameStateBuilder::default()
@@ -3523,7 +3523,7 @@ mod enemy_phase_tests {
     #[test]
     fn enemy_phase_skips_eliminated_investigator_in_advance() {
         // All three investigators are engaged with a ready enemy, but id2 is
-        // Insane (eliminated). The per-investigator attack step must skip id2 —
+        // Defeated (eliminated). The per-investigator attack step must skip id2 —
         // observable as DamageTaken for id1 and id3 only, none for id2.
         let id1 = InvestigatorId(1);
         let id2 = InvestigatorId(2);
@@ -3572,7 +3572,7 @@ mod enemy_phase_tests {
             !events.iter().any(
                 |e| matches!(e, Event::DamageTaken { investigator, .. } if *investigator == id2)
             ),
-            "Insane id2 must be skipped (no attack against it); events = {events:?}"
+            "Defeated id2 must be skipped (no attack against it); events = {events:?}"
         );
     }
 

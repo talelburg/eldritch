@@ -242,8 +242,8 @@ fn investigator_capacity(code: &CardCode) -> (u8, u8) {
 /// belongs to the campaign log (#766), which reads the recorded totals — not
 /// to the defeat that ended the scenario.
 ///
-/// Nor does the corpus ask for it. Cards read *eliminated* (33 of them, e.g.
-/// Threads of Time 04315) and *undefeated* (35, e.g. All In 02068 *"If each
+/// Nor does the corpus ask for it. Cards read *eliminated* (33 cards, e.g.
+/// Threads of Time 04315) and *undefeated* (38, e.g. All In 02068 *"If each
 /// undefeated investigator has resigned, advance."*); killed and insane appear
 /// only as outcomes a card **imposes**, never as a state a card tests. Chaos
 /// Incarnate 06289 is the proof — *"Each investigator is defeated **and driven
@@ -267,7 +267,7 @@ pub enum Status {
     /// status that carries no defeat, and phase 9's campaign log reads that
     /// distinction — trauma is owed for defeat, not for walking out.
     Resigned,
-    /// Investigator was defeated, with no campaign-log consequence implied.
+    /// Investigator was defeated — however it happened.
     ///
     /// Every defeat lands here, whatever caused it: damage reaching
     /// `max_health`, horror reaching `max_sanity`, or a card ability defeating
