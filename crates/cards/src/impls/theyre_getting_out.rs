@@ -543,6 +543,24 @@ mod tests {
         assert!(native_effect_for("01107:other").is_none());
     }
 
+    /// No Parlor on the board is a **no-op**, not a rejection: `Done`, no
+    /// events, nothing moved. The reachable case is agenda 3 turning up while
+    /// the act deck is still on act 1 or 2 — see the function's own doc for why
+    /// (#811). `cx_apply` already asserts the `Done`.
+    #[test]
+    fn no_parlor_in_play_moves_nothing_and_does_not_reject() {
+        let mut state = star_board();
+        state.locations.remove(&LocationId(5)); // the Parlor
+        state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
+        let events = cx_apply(&mut state, move_ghouls_toward_parlor);
+        assert!(events.is_empty(), "no events: {events:?}");
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(3)),
+            "the Ghoul stays put — there is no destination to step toward",
+        );
+    }
+
     #[test]
     fn unengaged_ghoul_in_attic_steps_to_hallway() {
         let mut state = star_board();

@@ -19,6 +19,8 @@ use game_core::test_support::take_turn_action;
 use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
 
 const ROLAND: &str = "01001";
+/// The Parlor, which enters play only via act 2 (01109)'s reverse.
+const PARLOR: &str = "01115";
 const INV: InvestigatorId = InvestigatorId(1);
 
 #[ctor::ctor(unsafe)]
@@ -351,18 +353,13 @@ fn pick_single(state: GameState) -> game_core::engine::ApplyResult {
     )
 }
 
-/// The Parlor enters play only via **act 2 (01109)'s** reverse, but agenda 3
-/// becomes current at agenda 2's doom threshold — which does not read the act
-/// deck at all. So a group still on act 1 or 2 meets 01107's enemy-phase-end
-/// Forced with no Parlor on the board, every enemy phase, and the ability has
-/// no destination to move toward.
-///
-/// `glossary/Ability.md`, Forced Abilities: *"If a forced ability does not have
-/// the potential to change the game state, the ability does not initiate."* So
-/// the Forced is a faithful no-op, and the player's `EndTurn` proceeds. Before
-/// #811 it returned `Rejected`, and because a rejection rolls the whole apply
-/// back (#161) that landed on the *player's* action: the scenario was
-/// unplayable from the moment agenda 3 turned up (#811).
+/// Agenda 3 turns up on a doom clock that does not read the act deck, so a group
+/// still on act 1 or 2 meets 01107's enemy-phase-end Forced with no Parlor on
+/// the board. That is a no-op — `move_ghouls_toward_parlor`'s own doc carries the
+/// rules argument — and what this pins is the part only a full turn can show:
+/// because a rejection rolls the whole apply back (#161), the old `Rejected`
+/// landed on the *player's* action, and the scenario was unplayable from the
+/// moment agenda 3 turned up (#811). The no-op itself is pinned at the unit.
 #[test]
 fn the_terminal_agendas_ghoul_move_is_a_no_op_when_the_parlor_is_not_in_play() {
     let mut state = seated_roland();
@@ -371,7 +368,7 @@ fn the_terminal_agendas_ghoul_move_is_a_no_op_when_the_parlor_is_not_in_play() {
     state.agenda_index = 2;
     assert_eq!(state.act_index, 0, "still act 1: act 2's reverse never ran");
     assert!(
-        !state.locations.values().any(|l| l.code.as_str() == "01115"),
+        !state.locations.values().any(|l| l.code.as_str() == PARLOR),
         "the Parlor is not in play",
     );
     state.encounter_deck.clear();
