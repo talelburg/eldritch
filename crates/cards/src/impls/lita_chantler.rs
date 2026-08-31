@@ -232,8 +232,8 @@ mod tests {
     };
     use game_core::card_data::SkillKind;
     use game_core::state::{
-        CardCode, CardInPlay, CardInstanceId, Continuation, EnemyId, GameState, GameStateBuilder,
-        InvestigatorId, LocationId, SkillTestFollowUp, SkillTestId,
+        AbilitySource, CardCode, CardInPlay, CardInstanceId, Continuation, EnemyId, GameState,
+        GameStateBuilder, InvestigatorId, LocationId, SkillTestFollowUp, SkillTestId,
     };
     use game_core::test_support::{test_enemy, test_investigator, test_location, test_skill_test};
     use game_core::EvalContext;
@@ -411,7 +411,10 @@ mod tests {
             super::native_eligibility_for(super::MONSTER_ATTACKED_HERE_TAG).expect("registered");
         pred(
             state,
-            &EvalContext::for_controller_with_source(InvestigatorId(1), CardInstanceId(9)),
+            &EvalContext::for_controller_with_source(
+                InvestigatorId(1),
+                AbilitySource::InPlay(CardInstanceId(9)),
+            ),
         )
     }
 

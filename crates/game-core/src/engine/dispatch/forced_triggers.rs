@@ -714,8 +714,7 @@ fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> EngineOutcome {
     // — the act's reverse (01110) and the agenda's (01105) both fire here, and
     // both have `instance() == None` (#555).
     let ctx =
-        EvalContext::for_controller_with_optional_source(hit.controller, hit.source.instance())
-            .with_ability_source(hit.source.ability());
+        EvalContext::for_controller_with_optional_source(hit.controller, hit.source.ability());
     push_effect(cx, &effect, ctx);
     EngineOutcome::Done
 }

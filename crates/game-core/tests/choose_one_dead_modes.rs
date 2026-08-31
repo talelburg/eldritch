@@ -149,3 +149,49 @@ fn every_mode_dead_under_a_skill_test_skips_rather_than_rejecting() {
         "the action was spent — the test resolved and stands",
     );
 }
+
+/// **The anchor survives the chaos-token suspension** (#834).
+///
+/// The eval context that runs the `on_success` is not the one that started the
+/// test — it is rebuilt at `apply_result_effect_step` from the source parked on
+/// `InFlightSkillTest`. Park the `AbilitySource::instance()` projection there
+/// instead of the whole descriptor and this still passes for an in-play card
+/// while silently un-anchoring every board source (an act's `on_fail`), which
+/// is the half-fix #834 exists to rule out. ADR 0011: *"the client never
+/// decides where a control belongs — it reads the anchor the engine attached"*.
+#[test]
+fn a_modal_on_success_keeps_the_activating_cards_anchor_across_the_test() {
+    // Both modes live, so the ChooseOne suspends instead of auto-resolving.
+    let started = game_core::test_support::take_turn_action(
+        board(2, 2),
+        &TurnAction::ActivateAbility {
+            investigator: INV,
+            source: AbilitySource::InPlay(INST),
+            address: AbilityAddress::Printed(0),
+        },
+    );
+    let r = game_core::apply(
+        started.state,
+        game_core::Action::Player(game_core::PlayerAction::ResolveInput {
+            response: game_core::InputResponse::PickMultiple { selected: vec![] },
+        }),
+    );
+    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
+        panic!("expected the on_success ChooseOne, got {:?}", r.outcome);
+    };
+    assert_eq!(
+        request
+            .options
+            .iter()
+            .map(|o| o.label.as_str())
+            .collect::<Vec<_>>(),
+        ["Heal 1 damage", "Heal 1 horror"],
+    );
+    for option in &request.options {
+        assert_eq!(
+            option.target,
+            Some(game_core::engine::OptionTarget::CardInstance(INST)),
+            "still anchored to the activated card after the test resolved",
+        );
+    }
+}

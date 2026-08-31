@@ -742,9 +742,14 @@ fn collect_recorded(
         {
             continue;
         }
+        // `AbilitySource::InPlay` is an **address** — *"any card instance in
+        // play, wherever it sits"* — not a record that an ability was
+        // activated, so a recorded row's origin instance is one honestly. The
+        // row itself stays instance-valued (#834): widening it would push the
+        // same narrowing one layer down onto `ContributionSource::Recorded`.
         let eval_ctx = crate::engine::evaluator::EvalContext::for_controller_with_optional_source(
             row.investigator,
-            row.source,
+            row.source.map(crate::state::AbilitySource::InPlay),
         );
         let Ok(delta) = crate::engine::evaluator::eval_int_expr(state, &eval_ctx, delta) else {
             continue;

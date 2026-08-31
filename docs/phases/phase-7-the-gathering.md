@@ -124,7 +124,7 @@ the Tablet came out.
 | #773 ✅ PR #833 | Lita 01117's controlled-side grants are location-scoped and reaction-driven; both collapse to one investigator in 1p |
 | #775 ✅ PR #835 | 01110b asks the lead investigator to choose the ending; the act's reverse reaches R1 unconditionally, so R2 is unreachable |
 | #555 ✅ PR #835 | An effect-internal `ChooseOne`'s branches carry no label and anchor nowhere, so a printed choice renders as `Debug`-printed DSL variants in the prompt banner |
-| #834 | `EvalContext` carries its source twice after #775 — an `AbilitySource` and its own lossy `CardInstanceId` projection — and nothing enforces that a future setter keeps them consistent |
+| #834 ✅ PR #836 | `EvalContext` carries its source twice after #775 — an `AbilitySource` and its own lossy `CardInstanceId` projection — and nothing enforces that a future setter keeps them consistent |
 | #811 | Agenda 01107's Ghoul move **rejects the player's action** whenever the Parlor is not yet in play — which agenda 3 reaches on its own doom clock, independent of act progress |
 | #814 | `Status` carries `Killed` / `Insane` alongside `Defeated`, but the rules make killed and insane **campaign-log states derived from trauma totals** — so a first defeat by damage is recorded as a kill |
 | #816 | `Event::AllInvestigatorsDefeated` and `check_all_defeated` keep the word #644 renamed away from, and now fire for a scenario nobody was defeated in — everyone resigned |
