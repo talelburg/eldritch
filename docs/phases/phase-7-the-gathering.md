@@ -107,6 +107,7 @@ the Tablet came out.
 | #541 ✅ PR #801 | End turn, Gain resource, Draw and the Mythos draw live in a sticky `.action-bar`, so the board is not the input surface and every anchored `PickSingle` renders twice — closes **#206** |
 | #787 ✅ PR #802 | The skill-test result panel renders the chaos token as `—` whenever a symbol token's ST.4 effect suspends and splits the event batch |
 | #770 ✅ PR #803 | A terminal version mismatch surfaces as one status line under a live-looking board, indistinguishable from an engine stall |
+| #848 ✅ PR #849 | A map node is a fixed-height `overflow: hidden` box, so the Parlor's printed text pushes its own occupancy tokens out of sight — Lita Chantler is invisible to a player standing next to her |
 
 ### Wave 3 — optional content (#258's children)
 
@@ -147,6 +148,14 @@ the Tablet came out.
 
 **#769, second half.** The run of record: **Won** (R1 or R2), **Lost**, and
 **Resigned**. Then the phase-doc commit and the milestone.
+
+**Pulled into the gate by a browser run at act 3 (2026-08-31):** #848, placed in
+wave 2 above — the same class as #787, a state the player cannot read. Its sibling
+**#847 is open**: Lita's granted Parley is anchored to `OptionTarget::CardInstance`,
+and the map builds menus only for `OptionTarget::Location`, so the option is
+unreachable wherever her token sits. #848 gave each occupant its own bordered box in
+a rail beside the card, which is the surface #847 hangs a menu off; the run of record
+needs #847 to reach the Parley.
 
 ### The arcs behind it (retrospective)
 
