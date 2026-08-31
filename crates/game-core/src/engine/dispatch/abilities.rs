@@ -157,8 +157,7 @@ pub(super) fn activate_ability(
 
     // Fast (not an action), or an AoO-exempt designator: push both halves for
     // the drive loop (Slice D, #423) — no enclosing frame, no post-logic.
-    let eval_ctx =
-        EvalContext::for_controller_with_optional_source(investigator, source.instance());
+    let eval_ctx = EvalContext::for_controller_with_source(investigator, source);
     push_activation_resolution(cx, designator.as_ref(), &effect, eval_ctx);
     EngineOutcome::Done
 }
@@ -253,8 +252,7 @@ pub(super) fn resume_activate_ability(
     designator: Option<&ActionDesignator>,
     effect: &crate::dsl::Effect,
 ) -> EngineOutcome {
-    let eval_ctx =
-        EvalContext::for_controller_with_optional_source(investigator, source.instance());
+    let eval_ctx = EvalContext::for_controller_with_source(investigator, source);
     push_activation_resolution(cx, designator, effect, eval_ctx);
     EngineOutcome::Done
 }

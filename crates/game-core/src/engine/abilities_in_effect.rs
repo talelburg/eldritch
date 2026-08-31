@@ -91,8 +91,7 @@
 use crate::card_registry::{self, CardRegistry};
 use crate::dsl::{Ability, Condition, Effect, GrantTarget, Trigger};
 use crate::state::{
-    AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, GameState,
-    InvestigatorId, LocationId,
+    AbilityAddress, AbilitySource, CandidateSource, CardCode, GameState, InvestigatorId, LocationId,
 };
 
 /// The abilities in effect on the location `id`: its back's while it is
@@ -283,7 +282,6 @@ fn granted_to(
     // condition needing a "you" does not hold against `None`; a board-global
     // one is answered anyway. (ADR 0014.)
     let you = controller_of(state, recipient);
-    let source_instance = recipient.instance();
     let mut out = Vec::new();
     let mut visit = |granter: AbilitySource, granter_code: &CardCode| {
         let Some(abilities) = printed_in_effect(state, reg, granter, granter_code) else {
@@ -309,7 +307,7 @@ fn granted_to(
                 continue;
             }
             if let Some(condition) = condition {
-                if !condition_holds(state, condition, you, source_instance) {
+                if !condition_holds(state, condition, you, recipient) {
                     continue;
                 }
             }
@@ -386,7 +384,7 @@ fn condition_holds(
     state: &GameState,
     condition: &Condition,
     you: Option<InvestigatorId>,
-    source: Option<CardInstanceId>,
+    source: AbilitySource,
 ) -> bool {
     try_condition(state, condition, you, source).unwrap_or(false)
 }
@@ -403,7 +401,7 @@ fn try_condition(
     state: &GameState,
     condition: &Condition,
     you: Option<InvestigatorId>,
-    source: Option<CardInstanceId>,
+    source: AbilitySource,
 ) -> Option<bool> {
     match condition {
         // Board-global: no "you" to bind, so it is answerable for an
@@ -415,9 +413,7 @@ fn try_condition(
         other => {
             let you = you?;
             let eval_ctx =
-                crate::engine::evaluator::EvalContext::for_controller_with_optional_source(
-                    you, source,
-                );
+                crate::engine::evaluator::EvalContext::for_controller_with_source(you, source);
             // An unexpressible condition is card data, not an engine invariant,
             // and a constant sweep has no rejection channel — so it does not
             // hold, exactly as the modified-value sweep skips an `IntExpr` it

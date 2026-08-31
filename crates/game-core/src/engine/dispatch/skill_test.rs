@@ -72,7 +72,7 @@ pub(in crate::engine) fn start_skill_test(
     follow_up: SkillTestFollowUp,
     on_success: Option<card_dsl::dsl::Effect>,
     on_fail: Option<card_dsl::dsl::Effect>,
-    source: Option<crate::state::CardInstanceId>,
+    source: Option<crate::state::AbilitySource>,
     initiator_modifier: Option<InitiatorModifier>,
 ) -> EngineOutcome {
     // Validate-first: investigator must exist and be Active; chaos
@@ -173,7 +173,13 @@ pub(in crate::engine) fn start_skill_test(
                 modifier.stat,
                 modifier.delta,
                 crate::state::Lifetime::SkillTest(id),
-                source,
+                // A row names its origin as an instance, not as an ability
+                // source: it is provenance for a modifier, and the per-instance
+                // limit-keying it will feed (Fire Axe 02032's *"Limit three
+                // times per attack"*) has nothing to key on for a board source.
+                // Narrowing here rather than widening `RecordedModifier` keeps
+                // the projection at the row's own boundary (#834).
+                source.and_then(crate::state::AbilitySource::instance),
             ));
     }
     // The announced difficulty is the modified difficulty as it stands at
@@ -816,8 +822,9 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
         .current_skill_test_mut()
         .expect("the SkillTest frame must persist across driver steps")
         .continuation = SkillTestStep::ApplySymbolOnFail;
-    // Thread `source` so `Effect::DiscardSelf` finds itself across the
-    // suspend/resume boundary.
+    // Rebuild the context from the parked source: `Effect::DiscardSelf` finds
+    // itself across the suspend/resume boundary, and a `ChooseOne` in either
+    // branch keeps the anchor the activation gave it (#834).
     let card_ctx =
         |inv: InvestigatorId| EvalContext::for_controller_with_optional_source(inv, source);
     if succeeded {

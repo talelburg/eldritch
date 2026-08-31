@@ -153,7 +153,7 @@ pub(crate) fn perform_investigate(
     investigator: InvestigatorId,
     location_id: LocationId,
     shroud_modifier: Option<crate::dsl::IntExpr>,
-    source: Option<crate::state::CardInstanceId>,
+    source: Option<crate::state::AbilitySource>,
 ) -> EngineOutcome {
     super::skill_test::start_skill_test(
         cx,
@@ -1047,7 +1047,7 @@ pub(crate) fn perform_fight(
     enemy_id: EnemyId,
     combat_modifier: Option<crate::dsl::IntExpr>,
     extra_damage: u8,
-    source: Option<crate::state::CardInstanceId>,
+    source: Option<crate::state::AbilitySource>,
 ) -> EngineOutcome {
     super::skill_test::start_skill_test(
         cx,

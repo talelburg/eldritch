@@ -107,7 +107,7 @@ pub fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
 /// True while the Cover Up instance (the firing source) still holds clues to
 /// discard. Read-only mirror of [`discard_clues`]'s instance lookup.
 fn has_clues(state: &GameState, ctx: &EvalContext) -> bool {
-    let Some(source) = ctx.source else {
+    let Some(source) = ctx.source() else {
         return false;
     };
     state.investigators.get(&ctx.controller).is_some_and(|inv| {
@@ -134,7 +134,7 @@ fn discard_clues(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         "cover_up discard: clue_discovery_count not threaded"
     );
     let count = ctx.clue_discovery_count().unwrap_or(0);
-    let Some(source) = ctx.source else {
+    let Some(source) = ctx.source() else {
         return EngineOutcome::Rejected {
             reason: "cover_up discard: no source instance".into(),
         };
@@ -165,7 +165,7 @@ fn discard_clues(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 /// game-end hits resolve in a chosen order (#213), so a sibling could strip the
 /// clues between this one's collection and its resolution.
 fn trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    let Some(source) = ctx.source else {
+    let Some(source) = ctx.source() else {
         return EngineOutcome::Rejected {
             reason: "cover_up trauma: no source instance".into(),
         };
@@ -236,7 +236,9 @@ mod tests {
 
     #[test]
     fn has_clues_predicate_gates_on_source_instance_clues() {
-        use game_core::state::{CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId};
+        use game_core::state::{
+            AbilitySource, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId,
+        };
 
         // Both clue-conditional abilities carry the eligibility tag.
         let abilities = super::abilities();
@@ -260,7 +262,10 @@ mod tests {
         card.clues = 3;
         inv.threat_area.push(card);
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
-        let ctx = EvalContext::for_controller_with_source(InvestigatorId(1), CardInstanceId(0));
+        let ctx = EvalContext::for_controller_with_source(
+            InvestigatorId(1),
+            AbilitySource::InPlay(CardInstanceId(0)),
+        );
         assert!(pred(&state, &ctx), "3 clues → eligible");
 
         state

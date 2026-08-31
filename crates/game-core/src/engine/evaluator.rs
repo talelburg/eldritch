@@ -139,14 +139,6 @@ pub struct EvalContext {
     /// "you" in card text. Resolves [`InvestigatorTarget::You`]
     /// and [`LocationTarget::YourLocation`].
     pub controller: crate::state::InvestigatorId,
-    /// The in-play card-instance that triggered this effect, if any.
-    /// Set by [`activate_ability`](crate::engine) so recorded
-    /// [`RecordedModifier`](crate::state::RecordedModifier)
-    /// rows can name their source (for replay clarity and future
-    /// limit-once-per-test logic). `None` for evaluations not
-    /// originating from a specific in-play instance (events played
-    /// from hand, scenario forced effects, …).
-    pub source: Option<crate::state::CardInstanceId>,
     /// Skill-test margin binding, bound only while running an `on_fail` effect.
     /// Read via [`Self::failed_by`]. `None` outside that window.
     pub skill_test: Option<SkillTestBinding>,
@@ -163,30 +155,38 @@ pub struct EvalContext {
     /// [`Self::chosen_location`] / [`Self::chosen_enemy`] /
     /// [`Self::chosen_option`]. `None` outside a grounded choice.
     pub choice: Option<ChoiceBinding>,
-    /// The ability source this effect is *printed on*, when the dispatch site
-    /// knows it — the board home an effect-internal [`Effect::ChooseOne`]
-    /// anchors its options to (#555).
+    /// **The one source this evaluation has** — the ability source the effect
+    /// is *printed on*, when the dispatch site knows it.
     ///
-    /// Strictly wider than [`source`](Self::source), which is this value's
-    /// [`AbilitySource::instance`](crate::state::AbilitySource::instance)
-    /// projection and is therefore `None` for exactly the board sources — the
-    /// act, the agenda, a location, an enemy — that had no anchor to begin
-    /// with. The two coexist rather than collapsing because 17 of the 19
-    /// construction sites hold a bare `CardInstanceId` and deciding *which*
-    /// `AbilitySource` each one is does not fail to compile when wrong; see
-    /// #834.
+    /// Two things read it, and they read it at different widths. The board home
+    /// an effect-internal [`Effect::ChooseOne`] anchors its options to (#555)
+    /// wants the whole descriptor, act and agenda included; the in-play
+    /// instance [`Effect::DiscardSelf`] removes, and that a
+    /// [`RecordedModifier`](crate::state::RecordedModifier) names as its
+    /// origin, wants the [`source`](Self::source) projection. Through #775
+    /// those were two fields, and the narrow one was the wide one with the
+    /// board sources thrown away — a one-way function nothing enforced. #834
+    /// collapsed them, which is why there is **no setter**: a field you can
+    /// assign after construction is a field a later caller can desync.
+    ///
+    /// A dispatch site that does not know its source leaves this `None` and its
+    /// choices stay un-anchored, rendering in the prompt banner. One case is
+    /// not a missing anchor but a missing *address*: a card played from hand
+    /// (`play_fast_event`, `complete_play`) has no descriptor to carry, because
+    /// [`OptionTarget::HandCard`](crate::engine::OptionTarget::HandCard) needs
+    /// a `hand_index` and neither [`AbilitySource`](crate::state::AbilitySource)
+    /// nor `CandidateSource` carries one.
     pub ability_source: Option<crate::state::AbilitySource>,
 }
 
 impl EvalContext {
     /// Construct a context for the given controller with no source
     /// card. Use [`for_controller_with_source`](Self::for_controller_with_source)
-    /// when the effect originates from a specific in-play instance.
+    /// when the effect originates from a known ability source.
     #[must_use]
     pub fn for_controller(controller: crate::state::InvestigatorId) -> Self {
         Self {
             controller,
-            source: None,
             skill_test: None,
             discovery: None,
             enemy_attack: None,
@@ -195,59 +195,57 @@ impl EvalContext {
         }
     }
 
-    /// Construct a context for an effect triggered from a specific
-    /// in-play card instance. Used by
-    /// [`activate_ability`](crate::engine) so recorded
-    /// `RecordedModifier`s carry their source.
+    /// Construct a context for an effect resolving from a known
+    /// [`AbilitySource`](crate::state::AbilitySource) — the activation, forced
+    /// and reaction paths, which all hold one. The source is what a nested
+    /// [`Effect::ChooseOne`] anchors to and what [`Self::source`] projects for
+    /// `DiscardSelf` and recorded-modifier provenance.
     #[must_use]
     pub fn for_controller_with_source(
         controller: crate::state::InvestigatorId,
-        source: crate::state::CardInstanceId,
+        source: crate::state::AbilitySource,
     ) -> Self {
         Self {
-            controller,
-            source: Some(source),
-            skill_test: None,
-            discovery: None,
-            enemy_attack: None,
-            choice: None,
-            ability_source: None,
+            ability_source: Some(source),
+            ..Self::for_controller(controller)
         }
     }
 
     /// Construct a context for `controller`, threading `source` when present.
     /// The common shape where a candidate / pending suspension carries an
-    /// *optional* firing instance (in-play reaction or weapon ⇒ `Some`;
-    /// scenario board card or hand-played event ⇒ `None`). Collapses the
-    /// `match source { Some => with_source, None => for_controller }` repeated
-    /// at the skill-test, choice-resume, forced-run, and reaction-window
-    /// dispatch sites. Pair with
-    /// [`CandidateSource::instance`](crate::state::CandidateSource::instance)
+    /// *optional* source (an ability ⇒ `Some`; a hand-played event ⇒ `None`).
+    /// Pair with
+    /// [`CandidateSource::ability`](crate::state::CandidateSource::ability)
     /// when the source is a `CandidateSource`.
     #[must_use]
     pub fn for_controller_with_optional_source(
         controller: crate::state::InvestigatorId,
-        source: Option<crate::state::CardInstanceId>,
+        source: Option<crate::state::AbilitySource>,
     ) -> Self {
-        match source {
-            Some(src) => Self::for_controller_with_source(controller, src),
-            None => Self::for_controller(controller),
+        Self {
+            ability_source: source,
+            ..Self::for_controller(controller)
         }
-    }
-
-    /// Record the [`AbilitySource`](crate::state::AbilitySource) whose ability
-    /// is being resolved (see [`ability_source`](Self::ability_source)). Set by
-    /// the forced run and the reaction window, the two dispatch sites that hold
-    /// a `CandidateSource`; every other site leaves it `None` and its choices
-    /// stay un-anchored, exactly as before #555.
-    #[must_use]
-    pub fn with_ability_source(mut self, source: Option<crate::state::AbilitySource>) -> Self {
-        self.ability_source = source;
-        self
     }
 }
 
 impl EvalContext {
+    /// The in-play instance this evaluation's source names, if any — the
+    /// [`ability_source`](Self::ability_source) narrowed through
+    /// [`AbilitySource::instance`](crate::state::AbilitySource::instance).
+    ///
+    /// `None` for exactly the board sources (a location, an enemy, the act, the
+    /// agenda), which carry no [`CardInstanceId`](crate::state::CardInstanceId)
+    /// — so a reader wanting *"the card this effect is printed on, as a thing
+    /// with per-instance state"* gets an honest `None` rather than a fabricated
+    /// id. Read by [`Effect::DiscardSelf`] and by the recorded-modifier rows
+    /// that name their origin.
+    #[must_use]
+    pub fn source(&self) -> Option<crate::state::CardInstanceId> {
+        self.ability_source
+            .and_then(crate::state::AbilitySource::instance)
+    }
+
     /// Just-resolved skill test's failure margin (bound only while running an
     /// `on_fail` effect). Consumed by `IntExpr::Count(Quantity::SkillTestFailedBy)`.
     #[must_use]
@@ -491,7 +489,7 @@ fn perform_designated(
                 eval_ctx.controller,
                 location_id,
                 Some(shroud_modifier.clone()),
-                eval_ctx.source,
+                eval_ctx.ability_source,
             )
         }
         D::Resign => {
@@ -555,7 +553,7 @@ fn perform_designated_fight(
         enemy_id,
         Some(combat_modifier.clone()),
         extra_damage_n,
-        eval_ctx.source,
+        eval_ctx.ability_source,
     )
 }
 
@@ -688,7 +686,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             crate::state::SkillTestFollowUp::None,
             on_success.as_ref().map(|b| (**b).clone()),
             on_fail.as_ref().map(|b| (**b).clone()),
-            eval_ctx.source,
+            eval_ctx.ability_source,
             None,
         ),
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
@@ -1102,7 +1100,7 @@ fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Resolve [`Effect::DiscardSelf`]: remove `eval_ctx.source` from
+/// Resolve [`Effect::DiscardSelf`]: remove `eval_ctx.source()` from
 /// whichever threat area or location attachment holds it, push its code
 /// to `encounter_discard`, and emit
 /// [`Event::CardDiscarded`](crate::Event::CardDiscarded) with the
@@ -1116,7 +1114,7 @@ fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
 fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
     use crate::event::Event;
     use crate::state::Zone;
-    let Some(source) = eval_ctx.source else {
+    let Some(source) = eval_ctx.source() else {
         return EngineOutcome::Rejected {
             reason: "DiscardSelf: no source instance in context".into(),
         };
@@ -1445,7 +1443,7 @@ fn modify(
                     // read time, not at push time.
                     crate::dsl::IntExpr::Lit(delta),
                     lifetime,
-                    eval_ctx.source,
+                    eval_ctx.source(),
                 ));
             EngineOutcome::Done
         }
@@ -1523,12 +1521,12 @@ fn auto_resolve(cx: &mut Cx, eval_ctx: EvalContext, determination: Determination
             investigator,
             determination,
             crate::state::Lifetime::SkillTest(test_id),
-            eval_ctx.source,
+            eval_ctx.source(),
         ));
     cx.events.push(Event::SkillTestDeterminationLatched {
         investigator,
         determination,
-        source: eval_ctx.source,
+        source: eval_ctx.source(),
     });
     EngineOutcome::Done
 }
@@ -2302,7 +2300,7 @@ pub(crate) fn ability_can_initiate(
     source: CandidateSource,
     controller: InvestigatorId,
 ) -> bool {
-    let ctx = EvalContext::for_controller_with_optional_source(controller, source.instance());
+    let ctx = EvalContext::for_controller_with_optional_source(controller, source.ability());
     if !effect_can_change_state(state, ctx, &ability.effect) {
         return false;
     }
@@ -3042,6 +3040,43 @@ mod tests {
         assert_eq!(back.chosen_investigator(), Some(InvestigatorId(2)));
         assert_eq!(back.attacking_enemy(), None);
         assert_eq!(back.chosen_option(), None);
+    }
+
+    /// The context rides `GameState` inside a `Continuation::Effect` frame, so
+    /// the collapsed source is part of the serialized shape. #834 broke that
+    /// payload deliberately and without a migration — the #707 / #709 / #735
+    /// posture, since persisted games are discarded and schema versioning is
+    /// #581 — which is what makes the shape worth pinning.
+    ///
+    /// A **board** source is the case the collapse exists for: an act carries
+    /// no `CardInstanceId`, so before #834 it was thrown away on the way in and
+    /// `source` came back `None`.
+    #[test]
+    fn eval_context_round_trips_a_board_source_the_instance_projection_would_lose() {
+        let ctx = EvalContext::for_controller_with_source(
+            InvestigatorId(1),
+            crate::state::AbilitySource::Act,
+        );
+        let json = serde_json::to_string(&ctx).expect("serialize");
+        let back: EvalContext = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.ability_source, Some(crate::state::AbilitySource::Act));
+        assert_eq!(
+            back.source(),
+            None,
+            "the act has no card instance, and the projection says so rather than inventing one",
+        );
+    }
+
+    /// The in-play case: the projection is the instance the descriptor names,
+    /// so `DiscardSelf` and recorded-modifier provenance read exactly what they
+    /// read before the collapse.
+    #[test]
+    fn an_in_play_source_projects_to_its_own_instance() {
+        let ctx = EvalContext::for_controller_with_source(
+            InvestigatorId(1),
+            crate::state::AbilitySource::InPlay(CardInstanceId(7)),
+        );
+        assert_eq!(ctx.source(), Some(CardInstanceId(7)));
     }
 
     #[test]
@@ -3985,7 +4020,8 @@ mod tests {
         let src = CardInstanceId(42);
         let mut state = state_during_test(crate::state::SkillTestId(0));
         let mut events = Vec::new();
-        let ctx_with_src = EvalContext::for_controller_with_source(id, src);
+        let ctx_with_src =
+            EvalContext::for_controller_with_source(id, crate::state::AbilitySource::InPlay(src));
         let outcome = run(
             &mut Cx {
                 state: &mut state,
@@ -5033,8 +5069,10 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            let mut c = EvalContext::for_controller(InvestigatorId(1));
-            c.source = Some(inst);
+            let c = EvalContext::for_controller_with_source(
+                InvestigatorId(1),
+                crate::state::AbilitySource::InPlay(inst),
+            );
             run(&mut cx, &super::Effect::DiscardSelf, c)
         };
         assert_eq!(outcome, EngineOutcome::Done);
@@ -5068,8 +5106,10 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            let mut c = EvalContext::for_controller(InvestigatorId(1));
-            c.source = Some(CardInstanceId(9));
+            let c = EvalContext::for_controller_with_source(
+                InvestigatorId(1),
+                crate::state::AbilitySource::InPlay(CardInstanceId(9)),
+            );
             run(&mut cx, &super::Effect::DiscardSelf, c)
         };
         assert_eq!(outcome, EngineOutcome::Done);

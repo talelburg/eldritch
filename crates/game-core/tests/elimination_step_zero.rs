@@ -101,7 +101,7 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
 
 /// "If there are any clues on it: you suffer 1 mental trauma."
 fn trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    let Some(source) = ctx.source else {
+    let Some(source) = ctx.source() else {
         return EngineOutcome::Rejected {
             reason: "test trauma: no source instance".into(),
         };

@@ -1104,9 +1104,8 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // have no source; hand candidates were handled above.
     let mut eval_ctx = EvalContext::for_controller_with_optional_source(
         trigger.controller,
-        trigger.source.instance(),
-    )
-    .with_ability_source(trigger.source.ability());
+        trigger.source.ability(),
+    );
     // For a `DamageAssigned` window whose source is an enemy attack, bind the
     // attacking enemy into the context so Guard Dog's native retaliate
     // (`Effect::Native("01021:retaliate")`) can name the attacker via
@@ -2031,7 +2030,7 @@ fn check_activation_changes_state(
     if designator.is_some_and(|d| !matches!(d, ActionDesignator::Parley)) {
         return Ok(());
     }
-    let ctx = EvalContext::for_controller_with_optional_source(investigator, source.instance());
+    let ctx = EvalContext::for_controller_with_source(investigator, source);
     if crate::engine::evaluator::effect_can_change_state(state, ctx, effect) {
         return Ok(());
     }

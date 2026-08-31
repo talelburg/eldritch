@@ -1839,11 +1839,18 @@ pub struct InFlightSkillTest {
     /// end-of-turn willpower test discards the card on success. `None` for
     /// action tests and failure-only card tests.
     pub on_success: Option<card_dsl::dsl::Effect>,
-    /// The firing card instance, threaded so the `on_success` / `on_fail`
-    /// eval-contexts can resolve [`Effect::DiscardSelf`](card_dsl::dsl::Effect::DiscardSelf) across the
-    /// suspend/resume boundary. `None` for action tests and effects with
-    /// no originating instance.
-    pub source: Option<CardInstanceId>,
+    /// The firing ability's source, parked so the `on_success` / `on_fail`
+    /// eval-contexts are rebuilt with it after the suspension. `None` for basic
+    /// action tests and for effects with no originating source.
+    ///
+    /// The whole [`AbilitySource`] rides here, not its
+    /// [`instance`](AbilitySource::instance) projection, because the anchor
+    /// would otherwise be destroyed at exactly this boundary: an act's
+    /// `on_fail: ChooseOne` would be anchored before the chaos draw and
+    /// un-anchored after it (#834). The projection is what
+    /// [`Effect::DiscardSelf`](card_dsl::dsl::Effect::DiscardSelf) reads back
+    /// out to find itself.
+    pub source: Option<AbilitySource>,
     /// Where the resolution driver should resume on the next call to
     /// `advance`. Initialized to
     /// [`SkillTestStep::AwaitingCommit`] at
@@ -2428,7 +2435,8 @@ impl CandidateSource {
     /// [`instance`](Self::instance) this keeps the board sources (the act, the
     /// agenda, a location, an enemy), which is what lets a choice inside the
     /// effect anchor to the card it is printed on (#555). Feeds
-    /// [`EvalContext::with_ability_source`](crate::engine::EvalContext::with_ability_source).
+    /// [`EvalContext::for_controller_with_optional_source`](crate::engine::EvalContext::for_controller_with_optional_source),
+    /// which since #834 is the *only* source an eval context carries.
     #[must_use]
     pub fn ability(self) -> Option<AbilitySource> {
         match self {
@@ -3125,6 +3133,28 @@ mod open_window_tests {
         let json = serde_json::to_string(&window).expect("serialize");
         let back: Continuation = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, window);
+    }
+
+    /// The parked source rides the wire as the whole descriptor, not its
+    /// instance projection — an act's `on_fail` would otherwise come back
+    /// un-anchored on the far side of the chaos draw (#834). Same
+    /// break-without-migration posture as #707 / #709 / #735.
+    #[test]
+    fn an_in_flight_tests_parked_board_source_round_trips_through_serde() {
+        let test = InFlightSkillTest {
+            source: Some(AbilitySource::Act),
+            ..crate::test_support::test_skill_test(
+                SkillTestId(0),
+                InvestigatorId(1),
+                SkillKind::Willpower,
+                SkillTestKind::Plain,
+                3,
+            )
+        };
+        let json = serde_json::to_string(&test).expect("serialize");
+        let back: InFlightSkillTest = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.source, Some(AbilitySource::Act));
+        assert_eq!(back, test);
     }
 
     #[test]

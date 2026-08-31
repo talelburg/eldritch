@@ -426,3 +426,26 @@ fn the_offered_index_names_the_live_mode_not_the_printed_one() {
         }
     );
 }
+
+/// **The damage-or-horror choice anchors to the First Aid asset** (#834).
+///
+/// #775 gave a `ChooseOne` inside a *forced* or *reaction* ability its card's
+/// anchor, but the activation path narrowed its `AbilitySource` to a bare
+/// `CardInstanceId` on the way into the evaluator and left the anchor unset —
+/// so this prompt rendered in the banner. Collapsing `EvalContext` onto the one
+/// source field carries the activation's own source through, and ADR 0011 is
+/// why that matters: *"the client never decides where a control belongs — it
+/// reads the anchor the engine attached"*.
+#[test]
+fn the_damage_or_horror_choice_anchors_to_the_asset_it_is_printed_on() {
+    let r = activate(board(3));
+    let options = offered(&r, "the damage-or-horror choice");
+    assert_eq!(options.len(), 2, "both modes live: {options:?}");
+    for option in options {
+        assert_eq!(
+            option.target,
+            Some(game_core::engine::OptionTarget::CardInstance(KIT_INST)),
+            "anchored to the First Aid asset the ability is printed on",
+        );
+    }
+}
