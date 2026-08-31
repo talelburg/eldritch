@@ -204,3 +204,66 @@ async fn a_tall_node_does_not_overlap_the_row_above_it() {
         parlor.offset_height(),
     );
 }
+
+/// Connection lines anchor on the *card*, not on the node — the node spans card
+/// plus rail, so its own centre falls in the gap between them. The short-card
+/// case is the one that bites: an unrevealed location is barely a header tall,
+/// so without a card min-height its line would end below the card in empty
+/// space. Asserted by measurement: every endpoint lands inside some card's box.
+#[wasm_bindgen_test]
+async fn every_connection_line_ends_inside_a_card() {
+    let mut hallway = test_location(6, "Hallway");
+    hallway.code = CardCode::new("01112");
+    hallway.revealed = false; // the short card
+    let mut state = parlor_state(1);
+    state.locations.insert(LocationId(6), hallway);
+    state.connect(PARLOR, LocationId(6));
+    let root = mount(state).await;
+
+    // Card boxes, in the coordinate space the SVG lines are drawn in (the `.map`
+    // section): a card is positioned inside its node, and the node inside `.map`.
+    let nodes = root.query_selector_all(".map-location").expect("query");
+    let mut cards = Vec::new();
+    for i in 0..nodes.length() {
+        let node: web_sys::HtmlElement = nodes
+            .item(i)
+            .and_then(|n| n.dyn_into().ok())
+            .expect("HtmlElement node");
+        let card: web_sys::HtmlElement = node
+            .query_selector(".loc-card")
+            .expect("query")
+            .expect("every node has a card")
+            .dyn_into()
+            .expect("HtmlElement");
+        let (left, top) = (
+            node.offset_left() + card.offset_left(),
+            node.offset_top() + card.offset_top(),
+        );
+        cards.push((
+            left,
+            top,
+            left + card.offset_width(),
+            top + card.offset_height(),
+        ));
+    }
+
+    let lines = root.query_selector_all("line.map-line").expect("query");
+    assert_eq!(lines.length(), 1, "the connected pair draws one line");
+    let line = lines.item(0).expect("the line");
+    let coord = |name: &str| -> i32 {
+        line.dyn_ref::<web_sys::Element>()
+            .expect("Element")
+            .get_attribute(name)
+            .expect("the attribute")
+            .parse()
+            .expect("a number")
+    };
+    for (x, y) in [(coord("x1"), coord("y1")), (coord("x2"), coord("y2"))] {
+        assert!(
+            cards
+                .iter()
+                .any(|&(l, t, r, b)| x >= l && x <= r && y >= t && y <= b),
+            "line endpoint ({x}, {y}) lands outside every card; cards = {cards:?}",
+        );
+    }
+}

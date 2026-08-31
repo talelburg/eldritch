@@ -44,10 +44,12 @@
     position: absolute; z-index: 1; box-sizing: border-box; font-size: 0.8rem;
     display: flex; flex-direction: row; align-items: flex-start; gap: 0.4rem;
 }
-/* The card is the bordered surface, and the only fixed-width part; `map.rs`
-   mirrors this width as `CARD_W` to anchor the connection lines on it. */
+/* The card is the bordered surface, and the only sized part. Its box comes from
+   `map.rs` as `--loc-card-w` / `--loc-card-h` (its `CARD_W` / `CARD_H`), which
+   is also where the connection lines anchor — the min-height keeps a short card
+   (an unrevealed node is barely a header tall) reaching its own anchor. */
 .loc-card {
-    flex: none; width: 200px; box-sizing: border-box;
+    flex: none; width: var(--loc-card-w); min-height: var(--loc-card-h); box-sizing: border-box;
     border: 1px solid #333; border-radius: 4px; background: #fff; padding: 0.35rem;
     display: flex; flex-direction: column; gap: 0.2rem;
 }
@@ -63,6 +65,9 @@
     display: grid; grid-template-columns: 1.35rem 1fr 1.35rem;
     align-items: center; gap: 0.3rem; margin-bottom: 0.15rem;
 }
+/* The name yields first when the header is tight; the victory pip is its
+   sibling, not its content, so an ellipsis can never swallow the star. */
+.loc-title { display: flex; align-items: baseline; min-width: 0; }
 .loc-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge {
     width: 1.35rem; height: 1.35rem; box-sizing: border-box;
@@ -201,9 +206,8 @@
 .card--enemy    { border-color: #a3261b; }
 .card--unknown, .card--generic { border-style: dashed; }
 .act-agenda { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }
-/* The act/agenda advance threshold. (Named for the location node, which is
-   where the class started; the node's stats moved into its header in #848.) */
-.loc-stats { display: flex; gap: 0.4rem; align-items: baseline; }
+/* The act/agenda advance threshold. */
+.threshold-stats { display: flex; gap: 0.4rem; align-items: baseline; }
 .card--act { border-color: #c8a020; }
 .card--agenda { border-color: #7a2f2f; }
 /* Advance-flip (#558): the reverse ("1b") face of an advancing act/agenda —
@@ -228,9 +232,8 @@
 .card.actionable { position: relative; box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; }
 .menu-hit { position: absolute; inset: 0; z-index: 5; }
 /* A map node's own hit-layer covers only its card: the token rail beside it
-   holds separate surfaces, which carry their own menus. Width mirrors
-   `.loc-card`. */
-.map-location > .menu-hit { right: auto; width: 200px; }
+   holds separate surfaces, which carry their own menus. */
+.map-location > .menu-hit { right: auto; width: var(--loc-card-w); }
 .menu-backdrop { position: fixed; inset: 0; z-index: 15; }
 .context-menu {
     position: fixed; z-index: 20;

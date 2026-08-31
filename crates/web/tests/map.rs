@@ -41,44 +41,29 @@ async fn mount_state(state: game_core::state::GameState) {
     leptos::task::tick().await;
 }
 
-/// `textContent` of the map node whose `data-loc` equals `loc_name`, scoped to
-/// the LAST mounted `<section class="map">` so that DOM accumulation across tests
-/// does not make an earlier test's node shadow this one (same pattern as the
-/// `board.rs` wasm tests).
+/// The LAST mounted `<section class="map">`. Every mount in this binary appends
+/// to the same document body, so an earlier test's nodes would otherwise shadow
+/// the one under assertion.
+fn last_map() -> Element {
+    let maps = document().query_selector_all(".map").expect("query ok");
+    maps.item(maps.length() - 1)
+        .and_then(|n| n.dyn_into::<Element>().ok())
+        .expect("a .map section")
+}
+
+/// `textContent` of the map node whose `data-loc` equals `loc_name`, in the
+/// last-mounted map.
 fn node_text(loc_name: &str) -> String {
-    let maps = document()
-        .query_selector_all(".map")
-        .expect("query_selector_all ok");
-    let len = maps.length();
-    if len == 0 {
-        return String::new();
-    }
-    let last_map = maps
-        .item(len - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
-        .expect("last .map is an Element");
-    let sel = format!(".map-location[data-loc=\"{loc_name}\"]");
-    last_map
-        .query_selector(&sel)
+    last_map()
+        .query_selector(&format!(".map-location[data-loc=\"{loc_name}\"]"))
         .expect("query ok")
         .and_then(|el| el.text_content())
         .unwrap_or_default()
 }
 
-/// Count of `<line class="map-line">` elements in the LAST mounted `.map`
-/// section. Scoped to the last section so that DOM accumulation from earlier
-/// test mounts does not carry over stale lines into a fresh assertion.
+/// Count of `<line class="map-line">` elements in the last-mounted map.
 fn line_count() -> u32 {
-    let maps = document().query_selector_all(".map").expect("query ok");
-    let len = maps.length();
-    if len == 0 {
-        return 0;
-    }
-    let last_map = maps
-        .item(len - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("last .map is an Element");
-    last_map
+    last_map()
         .query_selector_all("line.map-line")
         .expect("query ok")
         .length()
@@ -166,13 +151,9 @@ async fn engaged_enemy_renders_in_detail_panel_not_in_node() {
 /// named `loc_name`. The header prints numerals only (#848), so what a badge
 /// *is* lives in its class, not in its text.
 fn badge_class(loc_name: &str, which: &str) -> String {
-    let maps = document().query_selector_all(".map").expect("query");
-    let last = maps
-        .item(maps.length() - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("last .map");
     let sel = format!(".map-location[data-loc=\"{loc_name}\"] .loc-head .badge:{which}-child");
-    last.query_selector(&sel)
+    last_map()
+        .query_selector(&sel)
         .expect("query")
         .and_then(|el| el.get_attribute("class"))
         .unwrap_or_default()
@@ -180,13 +161,8 @@ fn badge_class(loc_name: &str, which: &str) -> String {
 
 /// Text of the shroud badge (first header column) and the clue badge (last).
 fn header_badges(loc_name: &str) -> (String, String) {
-    let maps = document().query_selector_all(".map").expect("query");
-    let last = maps
-        .item(maps.length() - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("last .map");
     let sel = format!(".map-location[data-loc=\"{loc_name}\"] .loc-head .badge");
-    let badges = last.query_selector_all(&sel).expect("query");
+    let badges = last_map().query_selector_all(&sel).expect("query");
     assert_eq!(badges.length(), 2, "a header carries exactly two badges");
     let text = |i| {
         badges
@@ -371,13 +347,9 @@ fn study_game() -> game_core::state::GameState {
 
 /// The `class` attribute of the last-mounted map node named `loc_name`.
 fn node_class(loc_name: &str) -> String {
-    let maps = document().query_selector_all(".map").expect("query");
-    let last = maps
-        .item(maps.length() - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("last .map");
     let sel = format!(".map-location[data-loc=\"{loc_name}\"]");
-    last.query_selector(&sel)
+    last_map()
+        .query_selector(&sel)
         .expect("query")
         .and_then(|el| el.get_attribute("class"))
         .unwrap_or_default()
@@ -399,11 +371,7 @@ async fn actionable_location_glows_opens_menu_and_submits() {
 
     // Clicking the node's hit-layer opens its menu (events bubble up, so the
     // hit-layer — not the node — carries the open handler).
-    let maps = document().query_selector_all(".map").expect("query");
-    let last = maps
-        .item(maps.length() - 1)
-        .and_then(|n| n.dyn_into::<Element>().ok())
-        .expect("last .map");
+    let last = last_map();
     last.query_selector(".map-location[data-loc=\"Study\"] .menu-hit")
         .expect("query")
         .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())

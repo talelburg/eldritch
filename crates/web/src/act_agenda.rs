@@ -99,7 +99,7 @@ pub fn ActCard(act: Act, face: Face) -> impl IntoView {
                 // side prints the on-advance effect, not the advance cost (#558).
                 (face == Face::Front).then(|| {
                     view! {
-                        <div class="loc-stats">
+                        <div class="threshold-stats">
                             <span>{format!("clues to advance: {threshold}")}</span>
                         </div>
                     }
@@ -152,7 +152,7 @@ pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
                 // prints the on-advance effect, not the doom track (#558).
                 (face == Face::Front).then(|| {
                     view! {
-                        <div class="loc-stats">
+                        <div class="threshold-stats">
                             <span>{format!("doom {doom}/{threshold}")}</span>
                         </div>
                     }
