@@ -12,20 +12,20 @@
 //! Faithful where it can be (agenda doom 3/7/10; the verified Standard
 //! chaos bag; Study shroud/clues); structural stand-in where the rest of
 //! Group C owns fidelity (act 01110 advances via its Forced `EnemyDefeated`
-//! objective (01116; in `cards`) — its R1/R2 resolution choice is #775;
-//! symbol-token effects on reference card 01104 are C2). C1a does
+//! objective (01116; in `cards`); symbol-token effects on reference card
+//! 01104 are C2). C1a does
 //! not claim faithful win/lose semantics — only structural reachability,
 //! proven by `tests/the_gathering.rs`.
 //!
 //! **The two terminal cards carry no resolution point here.** A resolution
 //! point is a printed *effect* on a card's reverse, not a datum on the deck
-//! entry (ADR 0013), so 01107's `(→R3)` and 01110's `(→R1)` live in
+//! entry (ADR 0013), so 01107's `(→R3)` and 01110's `(→R1)`/`(→R2)` live in
 //! `cards::theyre_getting_out` and `cards::what_have_you_done`. Both are the
 //! last card in their deck, which is the only thing that makes them terminal.
-//! Their remaining fidelity gaps are recorded on the cards: 01107's reverse
-//! branches on the current act and this scenario still reaches R3
-//! unconditionally (#809); 01110's asks the lead to choose between R1 and R2
-//! and this scenario still reaches R1 unconditionally (#775).
+//! Both reverses are faithful now — 01107 branches on the current act (#809)
+//! and 01110 asks the lead to choose (#775). What each ending *means* is the
+//! remaining gap, recorded on the cards: the trauma, the campaign log, and
+//! Lita Chantler at R1 are campaign machinery and stay with #766.
 
 use game_core::card_data::CardKind;
 use game_core::event::Event;
@@ -246,17 +246,18 @@ pub fn setup() -> GameState {
         },
         Act {
             // 01110 advances via its Forced EnemyDefeated objective (01116; in cards::what_have_you_done), not a clue spend.
-            // Terminal because it is last here; its reverse — which reaches the
-            // resolution point, R1 until #775 wires the printed choice — is an
-            // ability on the card (cards::what_have_you_done).
+            // Terminal because it is last here; its reverse — which asks the
+            // lead to choose between R1 and R2 — is an ability on the card
+            // (cards::what_have_you_done).
             code: CardCode("01110".into()),
             clue_threshold: act_clue_threshold("01110"),
         },
     ];
 
     // Agenda deck 01105 -> 01106 -> 01107. Doom thresholds read from the
-    // corpus. 01107 is terminal because it is last; its reverse reaches the
-    // printed (→R#) — R3 until #809 wires the act-1/2-vs-act-3 branch.
+    // corpus. 01107 is terminal because it is last; its reverse branches on
+    // the current act: (→R3) at acts 1-2, and no resolution point at act 3
+    // (cards::theyre_getting_out).
     state.agenda_deck = vec![
         Agenda {
             code: CardCode("01105".into()),

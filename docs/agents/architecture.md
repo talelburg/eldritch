@@ -50,8 +50,6 @@ Cards are **Rust source** (typed, compiler-checked), not JSON: each is a module 
 
 A card is **playable** iff it has an `abilities()` impl (`cards::is_playable(code)`); unimplemented cards appear in deckbuilding but are refused by the deck-import gate (Phase 9). `PlayCard` on an unimplemented card rejects loudly. On play: assets land in `cards_in_play` and stay (their `Trigger::Constant` abilities contribute via the registry while in play); events run their `OnPlay` effects then move to `discard` (emit `CardDiscarded { from: Zone::Hand, … }`). Every other `CardType` rejects.
 
-**Horror soak isn't modeled by the DSL yet** — tracked in #44, and this paragraph goes when #44 lands.
-
 ## Card-data pipeline
 
 `data/arkhamdb-snapshot/` is a manually-pinned subset of upstream `Kamalisk/arkhamdb-json-data`. **Never auto-sync** — a malformed upstream entry can't surprise the build. What it holds versus what the build compiles is the **Snapshot** / **Corpus** distinction in [`CONTEXT.md`](../../CONTEXT.md).

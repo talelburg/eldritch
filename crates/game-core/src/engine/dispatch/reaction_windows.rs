@@ -1893,7 +1893,7 @@ fn payable_play_cost(play_cost: Option<i8>, code: &CardCode) -> Result<u8, Cow<'
         Some(cost) => u8::try_from(cost).map_err(|_| {
             Cow::from(format!(
                 "PlayCard: {code} has an X cost, which is not yet modeled \
-                 (TODO(#501): X needs a player-chosen amount)."
+                 (TODO(#577): X needs a player-chosen amount)."
             ))
         }),
         None => Err(format!(
@@ -2452,7 +2452,7 @@ mod check_play_card_tests {
         let err = payable_play_cost(Some(-2), &CardCode::new("02010"))
             .expect_err("an X cost is not yet modeled");
         assert!(
-            err.contains("X cost") && err.contains("TODO(#501)"),
+            err.contains("X cost") && err.contains("TODO(#577)"),
             "the reject should name X and the deferral: {err}"
         );
     }
