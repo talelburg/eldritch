@@ -259,7 +259,7 @@ fn an_engaged_enemy_is_left_at_the_parlor_and_takes_no_parting_shot() {
 fn the_last_investigator_resigning_ends_the_scenario_at_no_resolution() {
     let result = resign(board(true));
 
-    assert_event!(result.events, Event::AllInvestigatorsDefeated);
+    assert_event!(result.events, Event::AllInvestigatorsEliminated);
     assert_eq!(
         result.state.ending,
         Some(ScenarioEnding::NoResolution),

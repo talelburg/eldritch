@@ -53,7 +53,7 @@
 //! loop and the body it fans out to each have one consumer, so both fail the
 //! DSL-primitive threshold independently. **Turn order rather than map order**
 //! because the order is observable on a defeat body: Elimination step 5
-//! reassigns the lead when the lead is eliminated, and step 6's all-defeated
+//! reassigns the lead when the lead is eliminated, and step 6's no-remaining-players
 //! check fires on whoever falls last. **One caveat on that order**: an
 //! investigator holding an in-play weakness with a *"when the game ends"* ability
 //! (Cover Up 01007) routes Elimination onto a `Continuation::Elimination` frame
@@ -500,7 +500,7 @@ mod tests {
         }
         assert!(events
             .iter()
-            .any(|e| matches!(e, Event::AllInvestigatorsDefeated)));
+            .any(|e| matches!(e, Event::AllInvestigatorsEliminated)));
         assert_eq!(
             state.ending,
             Some(game_core::ScenarioEnding::NoResolution),

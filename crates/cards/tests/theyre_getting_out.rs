@@ -435,7 +435,7 @@ fn agenda_01107_reverse_at_act_3_defeats_the_unresigned_in_turn_order() {
     );
     assert!(events
         .iter()
-        .any(|e| matches!(e, Event::AllInvestigatorsDefeated)));
+        .any(|e| matches!(e, Event::AllInvestigatorsEliminated)));
     assert_eq!(
         state.ending,
         Some(ScenarioEnding::NoResolution),

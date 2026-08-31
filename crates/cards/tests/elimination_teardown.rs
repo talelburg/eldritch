@@ -324,7 +324,7 @@ fn cover_ups_trauma_fires_on_elimination_while_the_scenario_continues() {
         Status::Active,
         "the survivor keeps the scenario running",
     );
-    assert_no_event!(r.events, Event::AllInvestigatorsDefeated);
+    assert_no_event!(r.events, Event::AllInvestigatorsEliminated);
     assert_no_event!(r.events, Event::ScenarioResolved { .. });
 
     assert_event!(r.events, Event::TraumaSuffered {

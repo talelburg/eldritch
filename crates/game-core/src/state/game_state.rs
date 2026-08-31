@@ -1002,7 +1002,7 @@ pub enum Continuation {
     /// The two paths are **not** equivalent for a caller that resumes after
     /// `apply_investigator_elimination` returns. On this frame's path the investigator
     /// is already off `Status::Active`, but their cards are still in play and
-    /// `check_all_defeated` has not run — so no `AllInvestigatorsDefeated` and no
+    /// `check_all_eliminated` has not run — so no `AllInvestigatorsEliminated` and no
     /// `ScenarioEnding` latch yet. Post-defeat bookkeeping must therefore key
     /// off `Status`, never off a zone having been drained;
     /// `combat::place_assignment`'s asset sweep is the one such caller today and

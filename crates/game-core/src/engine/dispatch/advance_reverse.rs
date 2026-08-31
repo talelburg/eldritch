@@ -122,7 +122,7 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
 /// where it is. What must have happened instead is that the reverse *ended the
 /// scenario*: either by running
 /// [`Effect::ReachResolution`](crate::dsl::Effect::ReachResolution), or by
-/// draining the last active investigator into `check_all_defeated`. Asserting
+/// draining the last active investigator into `check_all_eliminated`. Asserting
 /// that here is the inverse of the past-the-end guard this replaced, and it fails
 /// at the card whose reverse forgot to reach an ending rather than at a cursor
 /// that has run off the end of the deck.
