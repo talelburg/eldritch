@@ -11,7 +11,18 @@
 //! from `advance_agenda` (the mirror of the act path).
 //!
 //! **Interactive choice (Axis A, #334).** The lead-investigator "choose one"
-//! is an `Effect::ChooseOne` over the two printed branches. The choice
+//! is an `Effect::ChooseOne` over the two printed branches, each carrying the
+//! label the lead reads. **Those labels split one printed sentence** — 01105
+//! prints its options in prose, `back_text` verbatim
+//! (`data/arkhamdb-snapshot/pack/core/core_encounter.json`):
+//!
+//! > The lead investigator must decide (choose one): Either each investigator
+//! > discards 1 card at random from his or her hand, or the lead investigator
+//! > takes 2 horror.
+//!
+//! — so labelling means dividing it at its own *"Either …, or …"*, into *"Each
+//! investigator discards 1 card at random from his or her hand"* and *"The lead
+//! investigator takes 2 horror"*. Nothing is added. The choice
 //! suspends inside the Forced run (auto-resolving only if one branch is the
 //! sole legal option — both always are here, so it round-trips), and the
 //! Axis-B reentrant forced loop resumes after the lead picks.
@@ -49,6 +60,11 @@ pub const CODE: &str = "01105";
 
 const RANDOM_DISCARD_EACH: &str = "01105:random-discard-each";
 
+/// Label for the first half of the printed *"Either …, or …"* sentence.
+const DISCARD_EACH_LABEL: &str = "Each investigator discards 1 card at random from his or her hand";
+/// Label for its second half.
+const LEAD_TAKES_HORROR_LABEL: &str = "The lead investigator takes 2 horror";
+
 /// 01105's Forced on-advance reverse: the lead's "choose one" between each
 /// investigator discarding 1 random card or the lead taking 2 horror.
 #[must_use]
@@ -56,12 +72,18 @@ pub fn abilities() -> Vec<Ability> {
     vec![forced_on_event(
         EventPattern::AgendaAdvanced,
         EventTiming::After,
+        // The labels split the one printed sentence quoted in the module doc:
+        // its "Either …, or …" is the division, so each branch's label is one
+        // of the two halves.
         choose_one(vec![
             // Branch A: each investigator discards 1 card at random.
-            native(RANDOM_DISCARD_EACH),
+            (DISCARD_EACH_LABEL, native(RANDOM_DISCARD_EACH)),
             // Branch B: the lead (`You`, bound to the lead by `AgendaAdvanced`)
             // takes 2 horror.
-            deal_horror(InvestigatorTarget::You, 2u8),
+            (
+                LEAD_TAKES_HORROR_LABEL,
+                deal_horror(InvestigatorTarget::You, 2u8),
+            ),
         ]),
     )]
 }
@@ -105,12 +127,12 @@ mod tests {
         };
         assert_eq!(branches.len(), 2, "random-discard-each vs. lead 2 horror");
         assert!(
-            matches!(&branches[0], Effect::Native { tag } if tag == super::RANDOM_DISCARD_EACH),
+            matches!(&branches[0].effect, Effect::Native { tag } if tag == super::RANDOM_DISCARD_EACH),
             "branch A is the random-discard native",
         );
         assert!(
             matches!(
-                &branches[1],
+                &branches[1].effect,
                 Effect::Deal {
                     kind: HarmKind::Horror,
                     target: card_dsl::dsl::InvestigatorTarget::You,
@@ -119,6 +141,14 @@ mod tests {
             ),
             "branch B is the lead taking 2 horror",
         );
+        // The labels are what the lead reads; before #775 this rendered the
+        // branches' `Debug` form, tag and all. Asserted as literals — a const
+        // checked against itself would pass through a typo in the split.
+        assert_eq!(
+            branches[0].label,
+            "Each investigator discards 1 card at random from his or her hand"
+        );
+        assert_eq!(branches[1].label, "The lead investigator takes 2 horror");
         assert!(super::native_effect_for(super::RANDOM_DISCARD_EACH).is_some());
         assert!(super::native_effect_for("nope").is_none());
     }

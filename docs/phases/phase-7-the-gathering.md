@@ -122,7 +122,9 @@ the Tablet came out.
 | #771 ✅ PR #825 | Set-aside is enemies-only, so act 01109b's *"Put the set-aside Lita Chantler into play"* has nowhere to go |
 | #772 ✅ PR #830 | Lita 01117 is an ability source nobody controls, so #708's walk never reaches her — and neither 01115's Parley nor her buffs are printed on the card that has them |
 | #773 ✅ PR #833 | Lita 01117's controlled-side grants are location-scoped and reaction-driven; both collapse to one investigator in 1p |
-| #775 | 01110b asks the lead investigator to choose the ending; the act's reverse reaches R1 unconditionally, so R2 is unreachable |
+| #775 ✅ PR #835 | 01110b asks the lead investigator to choose the ending; the act's reverse reaches R1 unconditionally, so R2 is unreachable |
+| #555 ✅ PR #835 | An effect-internal `ChooseOne`'s branches carry no label and anchor nowhere, so a printed choice renders as `Debug`-printed DSL variants in the prompt banner |
+| #834 | `EvalContext` carries its source twice after #775 — an `AbilitySource` and its own lossy `CardInstanceId` projection — and nothing enforces that a future setter keeps them consistent |
 | #811 | Agenda 01107's Ghoul move **rejects the player's action** whenever the Parlor is not yet in play — which agenda 3 reaches on its own doom clock, independent of act progress |
 | #814 | `Status` carries `Killed` / `Insane` alongside `Defeated`, but the rules make killed and insane **campaign-log states derived from trauma totals** — so a first defeat by damage is recorded as a kill |
 | #816 | `Event::AllInvestigatorsDefeated` and `check_all_defeated` keep the word #644 renamed away from, and now fire for a scenario nobody was defeated in — everyone resigned |
@@ -186,18 +188,6 @@ the Tablet came out.
   cluster wants are that **Sentinel Peak 02284**'s back is a movement *cost* rather than a
   restriction, and **Museum Halls 02127**'s back grants an ability to a *different*
   location (#772's shape, not #821's).
-- **#775 — act 3's R1/R2 choice.** 01110b asks the lead investigator to choose the
-  ending, and the act's resolution point is hardcoded to R1, so R2 is unreachable. Not
-  a new finding: the 2026-08-22 sweep had already split it into **#766** as phase-9
-  campaign work, and it moves here on the reading #766 itself offered — *"the 01110
-  choice can land earlier as a plain prompt if #75 is not yet there."* The **prompt** is
-  in the gate because it is what makes both printed endings reachable; the
-  **consequences** (trauma, campaign log, earning the Lita Chantler card) stay in #766,
-  so `apply_resolution` grows a match arm per id and nothing more. **Unblocked by
-  #808**, which shrank this to one change: 01110's reverse now carries an unconditional
-  `reach_resolution(1)` (a `# Module gap` on the card records that R2 is unreachable
-  until this lands), and this swaps it for an `Effect::ChooseOne` of the two printed
-  options, anchored to `OptionTarget::Act`.
 
 `[action]: **Parley.**` needs no new action type — #696 shipped the designator.
 #231 and #257, named in #258 as neighbours, are both closed.
@@ -722,8 +712,8 @@ the now-stable set of input shapes:
       agenda and offers "Resolve" there — single-hit ack and the ordered run both anchor. Web: an
       interactive `AgendaCard` mirrors `ActCard`. Timing verified: the `AgendaAdvanced` forced fires at
       `FireReverse`, before `Finalize` bumps `agenda_index`, so the equality anchor holds for the advance.
-      The effect-internal `ChooseOne` on such agendas (01105's discard-vs-horror) stays `Global` — the
-      general effect-source-anchor machinery is deferred to #555. Plan:
+      The effect-internal `ChooseOne` on such agendas (01105's discard-vs-horror) stays un-anchored here —
+      the general effect-source-anchor machinery is deferred to #555 (closed by #775). Plan:
       `docs/superpowers/plans/2026-07-16-agenda-forced-anchor.md`.
     - **Advance-flip slice 1 — reverse-side ingestion (#558, PR #559).** First of three slices turning
       an act/agenda advance into an on-card flip → resolve. This slice is pure data: `CardMetadata` gains
@@ -787,6 +777,7 @@ attack whose target leaves play mid-test resolves against difficulty 0), #763
 (zero-icon commits accepted) and #764 (a defeated active investigator's turn
 does not end). The same sweep moved #353, #366, #367 and #555 *out* of the
 milestone: each one's own body or ADR (0008/0009) defers it until a card wants it.
+#555 returned when a card wanted it (act 01110's choice) and closed with #775.
 
 **#797 joined wave 1 on 2026-08-24**, out of #651's PR rather than a sweep. #651 had
 scoped agenda 01107's forced Ghoul move out because it names a *fixed* destination, so

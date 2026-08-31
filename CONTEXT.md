@@ -122,6 +122,12 @@ _Avoid_: Calling it a defeat, or a loss. It is neither: the resigner is explicit
 The third way a scenario ends: not at a resolution point at all. *"Should the scenario end with no resolution being reached (for example, if all investigators have been eliminated or have resigned), instructions for resolving the scenario can be found in the 'do not read until end of game' section of the campaign guide."* Our `ScenarioEnding::NoResolution`, latched by `check_all_defeated` for Rules Reference `Elimination` step 6. The campaign guide gives it its own untitled entry alongside the numbered ones — The Gathering's reads *"If no resolution was reached (each investigator resigned or was defeated)"*.
 _Avoid_: Calling it a loss, or a defeat. An investigator who reached it by resigning is *"not considered to have been defeated"* (`glossary/Resign.md`), and it is a distinct campaign-guide entry from every numbered resolution, not a synonym for the darkest one.
 
+**Lead investigator**:
+The player who makes a scenario's *"the lead investigator must decide"* calls — What Have You Done? 01110's choice of resolution point, What's Going On?! 01105's discard-vs-horror. `glossary/Lead_Investigator.md`: *"At the beginning of a scenario, the investigators choose a lead investigator … If the lead investigator is eliminated, the remaining players (if any) choose a new lead investigator."*
+
+**We do not model it. `turn_order.first()` is the proxy**, and it is what the engine binds as the controller of a Forced ability declared on the act or the agenda (`dispatch/forced_triggers.rs`). The two coincide in solo — one investigator is both — and they are not the same concept in multiplayer: `turn_order` is the order *"as decided by the lead investigator each round"*, so the lead *decides* the order and need not be first in it, and a lead who is eliminated is replaced by a choice the proxy has no way to represent. Closing the gap is multiplayer work.
+_Avoid_: Writing "the lead investigator" in a doc comment or test name where the code actually reads `turn_order.first()` without saying which you mean — the card text says one thing and the binding does another, and only the solo case hides it.
+
 ## Project vocabulary
 
 **Project phase**:

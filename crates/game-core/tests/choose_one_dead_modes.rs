@@ -53,8 +53,8 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
                 SkillKind::Intellect,
                 2,
                 Some(choose_one([
-                    heal_damage(InvestigatorTarget::You, 1),
-                    heal_horror(InvestigatorTarget::You, 1),
+                    ("Heal 1 damage", heal_damage(InvestigatorTarget::You, 1)),
+                    ("Heal 1 horror", heal_horror(InvestigatorTarget::You, 1)),
                 ])),
                 None,
             ),

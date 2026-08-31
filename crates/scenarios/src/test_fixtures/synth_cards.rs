@@ -346,8 +346,14 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         // resource-gain branches), unlike Crypt Chill's choice nested inside a
         // skill test.
         SYNTH_CHOICE_TREACHERY_CODE => Some(vec![revelation(choose_one([
-            gain_resources(InvestigatorTarget::You, 2),
-            gain_resources(InvestigatorTarget::You, 5),
+            (
+                "Gain 2 resources",
+                gain_resources(InvestigatorTarget::You, 2),
+            ),
+            (
+                "Gain 5 resources",
+                gain_resources(InvestigatorTarget::You, 5),
+            ),
         ]))]),
         SYNTH_FAST_EVENT_CODE => Some(vec![on_play(gain_resources(InvestigatorTarget::You, 1))]),
         SYNTH_COVER_UP_CODE => Some(vec![

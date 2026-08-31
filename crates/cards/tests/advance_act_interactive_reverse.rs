@@ -25,8 +25,8 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             EventTiming::After,
             // Two always-legal branches ⇒ the choice suspends.
             choose_one(vec![
-                deal_horror(InvestigatorTarget::You, 1u8),
-                deal_horror(InvestigatorTarget::You, 2u8),
+                ("Take 1 horror", deal_horror(InvestigatorTarget::You, 1u8)),
+                ("Take 2 horror", deal_horror(InvestigatorTarget::You, 2u8)),
             ]),
         )]
     })

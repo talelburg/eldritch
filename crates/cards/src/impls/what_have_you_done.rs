@@ -7,8 +7,8 @@
 //!
 //! Forced (no "may" — Rules Reference p.3; the bare "advance" with no
 //! clue threshold cannot be the optional clue-spend ability): the act
-//! advances when the Ghoul Priest (01116) is defeated, firing its terminal
-//! Won/R1 resolution. Wired via `ForcedTriggerPoint::EnemyDefeated` from the
+//! advances when the Ghoul Priest (01116) is defeated, flipping it to the
+//! terminal reverse below. Wired via `ForcedTriggerPoint::EnemyDefeated` from the
 //! defeat path; narrowed to 01116 so other ghouls' defeats don't advance it.
 //!
 //! **Cell: the `at` cell of the `EnemyDefeated` condition.** The printed word
@@ -35,7 +35,20 @@
 //! It reaches its resolution point by *running an effect* — `reach_resolution`
 //! (ADR 0013). This is 01110 being terminal in the ordinary way: it is the last
 //! card in the act deck, so advancing it flips it and its reverse ends the
-//! scenario.
+//! scenario. **Which** point it reaches is the lead investigator's to decide,
+//! so the reverse is an `Effect::ChooseOne` of the two printed bullets. Each is
+//! copied verbatim as its branch's label, `(→R1)` / `(→R2)` markers included —
+//! a player choosing an ending should see which ending it is — and the two
+//! branches are `reach_resolution(1)` and `reach_resolution(2)` (#775).
+//!
+//! The controller of a Forced ability declared on the act is
+//! `turn_order.first()`, which stands in for the printed *"lead investigator"*;
+//! the two coincide in solo. See **Lead investigator** in `CONTEXT.md` for
+//! where the proxy diverges in multiplayer.
+//!
+//! The options anchor to `OptionTarget::Act`, so the host renders them on the
+//! act card — whose reverse face is already what the advance shows at
+//! `FireReverse` (#558) — rather than in the prompt banner (#555).
 //!
 //! **Cell: the `after` cell of the `ActAdvanced` condition**, for the reverse.
 //! The reverse prints no trigger word, because it is not a triggered ability: it
@@ -55,24 +68,29 @@
 //!
 //! # Module gap
 //!
-//! **The reverse's choice is not modelled; this module reaches R1
-//! unconditionally (#775).** The card prints two resolution points and asks the
-//! lead investigator to pick between them, so R2 is unreachable and the lead is
-//! never asked. Unchanged from what shipped when the point was a `resolution`
-//! field on the act (ADR 0012), and deliberately so: #808 is the mechanism,
-//! and **#775** is the choice — an `Effect::ChooseOne` of the two printed
-//! options, anchored to `OptionTarget::Act`. Its consequences (trauma, the
-//! campaign log, earning the Lita Chantler card) stay with #766.
+//! **What each ending *means* is not modelled.** Both branches end the scenario
+//! at their printed point and nothing else: the trauma, the campaign log, and
+//! the lead investigator earning the Lita Chantler card at R1 are campaign
+//! machinery and stay with #766, which is why `apply_resolution` is still a
+//! stub. The board tells the two apart today — ADR 0012 put the win/loss
+//! projection at the display boundary, so the banner reads *"Scenario ended —
+//! Resolution 1"* or *"— Resolution 2"* off `GameState.ending`.
 
 use card_dsl::dsl::{
-    advance_current_act, forced_on_event, reach_resolution, Ability, EventPattern, EventTiming,
+    advance_current_act, choose_one, forced_on_event, reach_resolution, Ability, EventPattern,
+    EventTiming,
 };
 
 /// `ArkhamDB` code for Act 3, "What Have You Done?".
 pub const CODE: &str = "01110";
 
+/// The first printed bullet of 01110's reverse, verbatim.
+const BURN_IT_DOWN_LABEL: &str = "It was never much of a home. Burn it down! (→R1)";
+/// The second printed bullet, verbatim.
+const MY_HOME_LABEL: &str = "This hell-pit is my home! No way are we burning it! (→R2)";
+
 /// 01110's Forced objective (advance when the Ghoul Priest is defeated) and its
-/// on-advance reverse (reach Resolution 1 — see the module doc on #775).
+/// on-advance reverse (the lead investigator's choice of resolution point).
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
@@ -87,7 +105,12 @@ pub fn abilities() -> Vec<Ability> {
         forced_on_event(
             EventPattern::ActAdvanced,
             EventTiming::After,
-            reach_resolution(1),
+            // The bullets are printed as a list, so each label is one of them
+            // copied verbatim rather than derived.
+            choose_one([
+                (BURN_IT_DOWN_LABEL, reach_resolution(1)),
+                (MY_HOME_LABEL, reach_resolution(2)),
+            ]),
         ),
     ]
 }
@@ -114,12 +137,11 @@ mod tests {
         assert!(matches!(abilities[0].effect, Effect::AdvanceCurrentAct));
     }
 
-    /// The reverse reaches R1 by *running an effect* on the `after` cell of the
-    /// act's own advance (ADR 0013). Unconditional: the printed `ChooseOne` of
-    /// R1/R2 is #775, and until it lands this is behaviour-identical to the
-    /// deleted `Act.resolution` field.
+    /// The reverse offers the lead investigator the two printed resolution
+    /// points on the `after` cell of the act's own advance (ADR 0013). Both
+    /// bullets are reachable; the labels are the printed text, markers and all.
     #[test]
-    fn reverse_reaches_resolution_one_after_the_act_advances() {
+    fn reverse_offers_both_printed_resolution_points_after_the_act_advances() {
         let abilities = super::abilities();
         assert_eq!(
             abilities[1].trigger,
@@ -129,10 +151,22 @@ mod tests {
                 kind: card_dsl::dsl::TriggerKind::Forced,
             }
         );
-        assert!(
-            matches!(abilities[1].effect, Effect::ReachResolution(1)),
-            "the reverse reaches R1, got {:?}",
-            abilities[1].effect
+        let Effect::ChooseOne(branches) = &abilities[1].effect else {
+            panic!(
+                "expected the R1/R2 ChooseOne, got {:?}",
+                abilities[1].effect
+            );
+        };
+        assert_eq!(branches.len(), 2);
+        assert_eq!(
+            branches[0].label,
+            "It was never much of a home. Burn it down! (→R1)"
         );
+        assert!(matches!(branches[0].effect, Effect::ReachResolution(1)));
+        assert_eq!(
+            branches[1].label,
+            "This hell-pit is my home! No way are we burning it! (→R2)"
+        );
+        assert!(matches!(branches[1].effect, Effect::ReachResolution(2)));
     }
 }

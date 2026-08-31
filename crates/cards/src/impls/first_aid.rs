@@ -10,7 +10,19 @@
 //! heal 1 damage **or** horror from a chosen investigator at the controller's
 //! location. The damage-or-horror choice is an `Effect::ChooseOne` over the
 //! two `Effect::Heal` branches (#302), each targeting the keystone's
-//! `InvestigatorTarget::Chosen(At(your location))` (#349). The `Uses (3
+//! `InvestigatorTarget::Chosen(At(your location))` (#349).
+//!
+//! **The branch labels split one printed sentence.** 01019 prints the two modes
+//! in a single clause, verbatim (`data/arkhamdb-snapshot/pack/core/core.json`):
+//!
+//! > \[action\] Spend 1 supply: Heal 1 damage or horror from an investigator
+//! > at your location.
+//!
+//! so unlike a card that prints its options as bullets, labelling means
+//! dividing that clause — *"Heal 1 damage from an investigator at your
+//! location"* and *"Heal 1 horror from an investigator at your location"*.
+//! The division is the sentence's own *"damage or horror"*; nothing is added.
+//! 01019 has no rulings (`data/arkhamdb-faq/no-rulings.txt`). The `Uses (3
 //! supplies)` pool and the "if no supplies, discard it" depletion-discard are
 //! corpus metadata (`CardKind::Asset.uses` + `Uses.discard_when_empty`,
 //! pipeline-parsed, #302) — `abilities()` declares only the action; the engine
@@ -24,6 +36,11 @@ use card_dsl::dsl::{
 /// `ArkhamDB` code for First Aid (original-Core printing).
 pub const CODE: &str = "01019";
 
+/// Label for the damage mode of the printed *"Heal 1 damage or horror"* choice.
+const HEAL_DAMAGE_LABEL: &str = "Heal 1 damage from an investigator at your location";
+/// Label for the horror mode of the same printed clause.
+const HEAL_HORROR_LABEL: &str = "Heal 1 horror from an investigator at your location";
+
 /// First Aid's `[action] Spend 1 supply: heal 1 damage or horror` ability.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
@@ -33,9 +50,18 @@ pub fn abilities() -> Vec<Ability> {
             kind: UseKind::Supplies,
             count: 1,
         }],
+        // Labels split the one printed sentence quoted in the module doc: the
+        // card names both modes in a single "damage or horror" clause, so each
+        // branch's label is that clause narrowed to its own mode.
         choose_one([
-            heal_damage(InvestigatorTarget::chosen_at_your_location(), 1),
-            heal_horror(InvestigatorTarget::chosen_at_your_location(), 1),
+            (
+                HEAL_DAMAGE_LABEL,
+                heal_damage(InvestigatorTarget::chosen_at_your_location(), 1),
+            ),
+            (
+                HEAL_HORROR_LABEL,
+                heal_horror(InvestigatorTarget::chosen_at_your_location(), 1),
+            ),
         ]),
     )]
 }
@@ -69,14 +95,24 @@ mod tests {
         assert_eq!(branches.len(), 2);
         let expected_target = InvestigatorTarget::chosen_at_your_location();
         assert_eq!(
-            branches[0],
+            branches[0].effect,
             heal_damage(expected_target, 1),
             "branch 0 heals 1 damage from an investigator at your location",
         );
         assert_eq!(
-            branches[1],
+            branches[1].effect,
             heal_horror(expected_target, 1),
             "branch 1 heals 1 horror from an investigator at your location",
+        );
+        // The literal, not the const: asserting a const against itself would
+        // pass through a typo in the split.
+        assert_eq!(
+            branches[0].label,
+            "Heal 1 damage from an investigator at your location"
+        );
+        assert_eq!(
+            branches[1].label,
+            "Heal 1 horror from an investigator at your location"
         );
     }
 

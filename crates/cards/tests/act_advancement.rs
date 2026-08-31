@@ -1,12 +1,13 @@
 //! Act-3 objective: defeating the Ghoul Priest (01116) advances Act 3
-//! (01110) to its terminal Won resolution. The Ghoul Priest enemy + its
-//! spawn land in C3 (#231); here we drive the forced dispatch directly
-//! with the real registry. End-to-end defeat->Won via a real Fight is
-//! C7b (#245).
+//! (01110), whose reverse asks the lead investigator which of the two printed
+//! resolution points to reach (#775). The Ghoul Priest enemy + its spawn land
+//! in C3 (#231); here we drive the forced dispatch directly with the real
+//! registry. End-to-end defeat->ending via a real Fight is C7b (#245).
 
 use card_dsl::dsl::EventTiming;
-use game_core::engine::{EngineOutcome, TurnAction};
-use game_core::scenario::ScenarioEnding;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::{EngineOutcome, OptionId, OptionTarget, TurnAction};
+use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{Act, CardCode, InvestigatorId, Phase};
 use game_core::test_support::{
     dispatch_turn_action_unchecked, test_investigator, GameStateBuilder,
@@ -28,8 +29,9 @@ fn act3_state() -> game_core::state::GameState {
     state
 }
 
-#[test]
-fn defeating_ghoul_priest_advances_act_3_to_won() {
+/// Fire 01110's objective and return the prompt its reverse suspends on,
+/// together with the state carrying the suspended choice.
+fn defeat_the_ghoul_priest() -> (game_core::state::GameState, game_core::engine::InputRequest) {
     let mut state = act3_state();
     let mut events = Vec::new();
     let out = game_core::test_support::fire_forced_on_enemy_defeat(
@@ -39,11 +41,58 @@ fn defeating_ghoul_priest_advances_act_3_to_won() {
         // The `at` cell — 01110 prints *"If the Ghoul Priest is Defeated"*.
         EventTiming::At,
     );
-    assert_eq!(out, EngineOutcome::Done);
-    assert!(
-        matches!(state.ending, Some(ScenarioEnding::Resolution(_))),
-        "Ghoul Priest defeat should set resolution to Won"
+    let EngineOutcome::AwaitingInput { request, .. } = out else {
+        panic!("expected 01110's reverse to ask for the resolution point, got {out:?}");
+    };
+    (state, request)
+}
+
+/// The printed reverse offers both resolution points, verbatim, and anchors
+/// them to the act — the card the choice is printed on, whose reverse face the
+/// advance is already showing (#555 / ADR 0011). Before #775 the act latched R1
+/// without asking.
+#[test]
+fn defeating_ghoul_priest_offers_the_lead_both_printed_resolution_points() {
+    let (state, request) = defeat_the_ghoul_priest();
+    assert!(state.ending.is_none(), "nothing latches before the pick");
+    let labels: Vec<&str> = request.options.iter().map(|o| o.label.as_str()).collect();
+    assert_eq!(
+        labels,
+        [
+            "It was never much of a home. Burn it down! (→R1)",
+            "This hell-pit is my home! No way are we burning it! (→R2)",
+        ],
     );
+    for option in &request.options {
+        assert_eq!(
+            option.target,
+            Some(OptionTarget::Act),
+            "the choice is printed on the act, so it renders there",
+        );
+    }
+}
+
+/// Picking the first bullet reaches R1; the second, R2. Both are the *same*
+/// prompt — the only difference is the pick — and each lands on its own
+/// `ScenarioEnding`, which is what the board's ending banner renders off
+/// (ADR 0012).
+#[test]
+fn each_printed_bullet_reaches_its_own_resolution() {
+    for (pick, expected) in [(0u32, 1u8), (1, 2)] {
+        let (state, _) = defeat_the_ghoul_priest();
+        let result = game_core::engine::apply(
+            state,
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(OptionId(pick)),
+            }),
+        );
+        assert_eq!(
+            result.state.ending,
+            Some(ScenarioEnding::Resolution(ResolutionId::new(expected))),
+            "pick {pick} should reach Resolution {expected}, got {:?}",
+            result.state.ending,
+        );
+    }
 }
 
 #[test]

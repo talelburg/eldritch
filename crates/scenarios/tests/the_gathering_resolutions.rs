@@ -193,7 +193,25 @@ fn advance_to_the_terminal_act(state: GameState) -> GameState {
 /// the one necessary shortcut). The encounter deck is emptied so round-2's
 /// Mythos draw doesn't inject random interference.
 #[test]
-fn act_progression_and_ghoul_priest_defeat_latches_won() {
+fn act_progression_and_ghoul_priest_defeat_reaches_r1() {
+    drive_the_ghoul_priest_defeat_and_pick(0, 1);
+}
+
+/// The second printed bullet — *"This hell-pit is my home! No way are we
+/// burning it! (→R2)"* — down the same real path. Before #775 no sequence of
+/// play could reach it: the act's reverse latched R1 unconditionally.
+///
+/// The banner the player ends on is a pure function of this `ResolutionId`
+/// (`crates/web/tests/board.rs::resolution_banner_names_the_resolution_point`),
+/// so pinning the id here is what pins the two endings apart on screen.
+#[test]
+fn picking_the_second_bullet_reaches_r2_down_the_same_path() {
+    drive_the_ghoul_priest_defeat_and_pick(1, 2);
+}
+
+/// Drive solo Roland to the Ghoul Priest's defeat, answer act 01110's printed
+/// choice with `pick`, and assert the scenario ends at Resolution `expected`.
+fn drive_the_ghoul_priest_defeat_and_pick(pick: u32, expected: u8) {
     let mut state = seated_roland();
     {
         // Seed: clues for both thresholds (act 1 = 2, act 2 = 3).
@@ -252,11 +270,46 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
     // holds its cursor because there is no next act (ADR 0013).
     assert_event!(result.events, Event::ActAdvanced { from } if *from == 2);
     assert_eq!(result.state.act_index, 2, "terminal: cursor does not bump");
+
+    // The flipped act asks the lead investigator which printed point to reach
+    // (#775) — the scenario has not ended yet.
+    let EngineOutcome::AwaitingInput { request, .. } = &result.outcome else {
+        panic!("expected 01110's R1/R2 choice, got {:?}", result.outcome);
+    };
+    assert_eq!(
+        request
+            .options
+            .iter()
+            .map(|o| o.label.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "It was never much of a home. Burn it down! (→R1)",
+            "This hell-pit is my home! No way are we burning it! (→R2)",
+        ],
+    );
+    assert!(
+        request
+            .options
+            .iter()
+            .all(|o| o.target == Some(game_core::engine::OptionTarget::Act)),
+        "the choice renders on the act card it is printed on (#555): {request:?}",
+    );
+    assert!(
+        result.state.ending.is_none(),
+        "nothing latches before the pick"
+    );
+
+    let result = apply(
+        result.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(game_core::engine::OptionId(pick)),
+        }),
+    );
     assert_event!(result.events, Event::ScenarioResolved { .. });
     assert_eq!(
         result.state.ending,
-        Some(ScenarioEnding::Resolution(ResolutionId::new(1))),
-        "act 01110's reverse reaches the campaign guide's (→R1)",
+        Some(ScenarioEnding::Resolution(ResolutionId::new(expected))),
+        "act 01110's reverse reaches the campaign guide's (→R{expected})",
     );
 
     // #566: advancing act 3 reaches a resolution point, so the scenario ends
@@ -372,7 +425,7 @@ fn dooming_out_the_terminal_agenda_advances_it_and_its_reverse_reaches_r3() {
 /// Act **2** is the other half of the card's first bullet — *"If the
 /// investigators are at Act 1 or 2"* — so it reaches the same printed `(→R3)`.
 /// Seeded rather than driven: the act-progression path is
-/// [`act_progression_and_ghoul_priest_defeat_latches_won`]'s subject, and what
+/// [`act_progression_and_ghoul_priest_defeat_reaches_r1`]'s subject, and what
 /// this pins is the branch predicate's boundary, one index below the act-3 arm.
 #[test]
 fn dooming_out_the_terminal_agenda_at_act_2_also_reaches_r3() {
