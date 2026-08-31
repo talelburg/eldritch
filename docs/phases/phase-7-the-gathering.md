@@ -108,6 +108,7 @@ the Tablet came out.
 | #787 ✅ PR #802 | The skill-test result panel renders the chaos token as `—` whenever a symbol token's ST.4 effect suspends and splits the event batch |
 | #770 ✅ PR #803 | A terminal version mismatch surfaces as one status line under a live-looking board, indistinguishable from an engine stall |
 | #848 ✅ PR #849 | A map node is a fixed-height `overflow: hidden` box, so the Parlor's printed text pushes its own occupancy tokens out of sight — Lita Chantler is invisible to a player standing next to her |
+| #847 ✅ PR #850 | A card at a location renders as an inert `<div>`, so the Parlor's granted Parley — anchored to Lita's card instance — has no surface to hang a menu off and cannot be activated at all |
 
 ### Wave 3 — optional content (#258's children)
 
@@ -149,13 +150,20 @@ the Tablet came out.
 **#769, second half.** The run of record: **Won** (R1 or R2), **Lost**, and
 **Resigned**. Then the phase-doc commit and the milestone.
 
-**Pulled into the gate by a browser run at act 3 (2026-08-31):** #848, placed in
-wave 2 above — the same class as #787, a state the player cannot read. Its sibling
-**#847 is open**: Lita's granted Parley is anchored to `OptionTarget::CardInstance`,
-and the map builds menus only for `OptionTarget::Location`, so the option is
-unreachable wherever her token sits. #848 gave each occupant its own bordered box in
-a rail beside the card, which is the surface #847 hangs a menu off; the run of record
-needs #847 to reach the Parley.
+**Pulled into the gate by a browser run at act 3 (2026-08-31):** #848 and its sibling
+#847, both placed in wave 2 above. #848 is the same class as #787 — a state the player
+cannot read; #847 is the harder one, an option the player cannot reach at all. #848 gave
+each occupant its own bordered box in a rail beside the card, and #847 hung the menu off
+it: a rail token now carries `options_for(CardInstance)` + `menu_layer`, mirroring
+`InPlayCardView`. A location's `attachments` had the same hole — rendered by nobody — and
+got the same token in the same pass. The run of record can now reach the Parley.
+
+The one design decision worth keeping: the node's `z-index` lift moved off `.actionable`
+onto its own `.has-menu` class. A rail token can be the node's *only* actionable surface,
+and its `position: fixed` menu renders inside whichever band the node sits in, so keying
+the lift on the node's own options would leave that menu at `z-index: 1` to be overpainted
+by the nodes drawn after it. `.actionable` keeps its old, narrower meaning — the node's
+card glows only for the location's own options.
 
 ### The arcs behind it (retrospective)
 
