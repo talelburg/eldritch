@@ -271,7 +271,7 @@ fn synth_cover_up_discard(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         "synth_cover_up_discard: clue_discovery_count not threaded"
     );
     let count = ctx.clue_discovery_count().unwrap_or(0);
-    let Some(source) = ctx.source() else {
+    let Some(source) = ctx.source_instance() else {
         return EngineOutcome::Rejected {
             reason: "synth_cover_up_discard: no source instance".into(),
         };
@@ -295,7 +295,7 @@ fn synth_cover_up_discard(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 /// Native: at game end, if the source card holds any clues, suffer 1
 /// mental trauma (Cover Up 01007's Forced).
 fn synth_cover_up_trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    let Some(source) = ctx.source() else {
+    let Some(source) = ctx.source_instance() else {
         return EngineOutcome::Rejected {
             reason: "synth_cover_up_trauma: no source instance".into(),
         };
@@ -404,7 +404,7 @@ fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
 /// True while the synthetic Cover Up instance (the firing source) still holds
 /// clues to discard — read-only mirror of [`synth_cover_up_discard`]'s lookup.
 fn synth_cover_up_has_clues(state: &game_core::state::GameState, ctx: &EvalContext) -> bool {
-    let Some(source) = ctx.source() else {
+    let Some(source) = ctx.source_instance() else {
         return false;
     };
     state.investigators.get(&ctx.controller).is_some_and(|inv| {

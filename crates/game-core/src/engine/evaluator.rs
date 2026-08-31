@@ -163,11 +163,9 @@ pub struct EvalContext {
     /// wants the whole descriptor, act and agenda included; the in-play
     /// instance [`Effect::DiscardSelf`] removes, and that a
     /// [`RecordedModifier`](crate::state::RecordedModifier) names as its
-    /// origin, wants the [`source`](Self::source) projection. Through #775
-    /// those were two fields, and the narrow one was the wide one with the
-    /// board sources thrown away — a one-way function nothing enforced. #834
-    /// collapsed them, which is why there is **no setter**: a field you can
-    /// assign after construction is a field a later caller can desync.
+    /// origin, wants the [`source_instance`](Self::source_instance) projection.
+    /// One field carries both because the narrow reading is a function of the
+    /// wide one (#834).
     ///
     /// A dispatch site that does not know its source leaves this `None` and its
     /// choices stay un-anchored, rendering in the prompt banner. One case is
@@ -198,17 +196,14 @@ impl EvalContext {
     /// Construct a context for an effect resolving from a known
     /// [`AbilitySource`](crate::state::AbilitySource) — the activation, forced
     /// and reaction paths, which all hold one. The source is what a nested
-    /// [`Effect::ChooseOne`] anchors to and what [`Self::source`] projects for
+    /// [`Effect::ChooseOne`] anchors to and what [`Self::source_instance`] projects for
     /// `DiscardSelf` and recorded-modifier provenance.
     #[must_use]
     pub fn for_controller_with_source(
         controller: crate::state::InvestigatorId,
         source: crate::state::AbilitySource,
     ) -> Self {
-        Self {
-            ability_source: Some(source),
-            ..Self::for_controller(controller)
-        }
+        Self::for_controller_with_optional_source(controller, Some(source))
     }
 
     /// Construct a context for `controller`, threading `source` when present.
@@ -230,9 +225,13 @@ impl EvalContext {
 }
 
 impl EvalContext {
-    /// The in-play instance this evaluation's source names, if any — the
+    /// **The source's instance** — this evaluation's
     /// [`ability_source`](Self::ability_source) narrowed through
     /// [`AbilitySource::instance`](crate::state::AbilitySource::instance).
+    /// Named for the narrow reading rather than for the descriptor, which
+    /// `CONTEXT.md`'s *Ability source* entry keeps the bare word for, and
+    /// mirroring the two sibling accessors that already spell the narrowing
+    /// this way.
     ///
     /// `None` for exactly the board sources (a location, an enemy, the act, the
     /// agenda), which carry no [`CardInstanceId`](crate::state::CardInstanceId)
@@ -241,7 +240,7 @@ impl EvalContext {
     /// id. Read by [`Effect::DiscardSelf`] and by the recorded-modifier rows
     /// that name their origin.
     #[must_use]
-    pub fn source(&self) -> Option<crate::state::CardInstanceId> {
+    pub fn source_instance(&self) -> Option<crate::state::CardInstanceId> {
         self.ability_source
             .and_then(crate::state::AbilitySource::instance)
     }
@@ -1100,7 +1099,7 @@ fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Resolve [`Effect::DiscardSelf`]: remove `eval_ctx.source()` from
+/// Resolve [`Effect::DiscardSelf`]: remove `eval_ctx.source_instance()` from
 /// whichever threat area or location attachment holds it, push its code
 /// to `encounter_discard`, and emit
 /// [`Event::CardDiscarded`](crate::Event::CardDiscarded) with the
@@ -1114,7 +1113,7 @@ fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
 fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
     use crate::event::Event;
     use crate::state::Zone;
-    let Some(source) = eval_ctx.source() else {
+    let Some(source) = eval_ctx.source_instance() else {
         return EngineOutcome::Rejected {
             reason: "DiscardSelf: no source instance in context".into(),
         };
@@ -1443,7 +1442,7 @@ fn modify(
                     // read time, not at push time.
                     crate::dsl::IntExpr::Lit(delta),
                     lifetime,
-                    eval_ctx.source(),
+                    eval_ctx.source_instance(),
                 ));
             EngineOutcome::Done
         }
@@ -1521,12 +1520,12 @@ fn auto_resolve(cx: &mut Cx, eval_ctx: EvalContext, determination: Determination
             investigator,
             determination,
             crate::state::Lifetime::SkillTest(test_id),
-            eval_ctx.source(),
+            eval_ctx.source_instance(),
         ));
     cx.events.push(Event::SkillTestDeterminationLatched {
         investigator,
         determination,
-        source: eval_ctx.source(),
+        source: eval_ctx.source_instance(),
     });
     EngineOutcome::Done
 }
@@ -3061,7 +3060,7 @@ mod tests {
         let back: EvalContext = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.ability_source, Some(crate::state::AbilitySource::Act));
         assert_eq!(
-            back.source(),
+            back.source_instance(),
             None,
             "the act has no card instance, and the projection says so rather than inventing one",
         );
@@ -3076,7 +3075,7 @@ mod tests {
             InvestigatorId(1),
             crate::state::AbilitySource::InPlay(CardInstanceId(7)),
         );
-        assert_eq!(ctx.source(), Some(CardInstanceId(7)));
+        assert_eq!(ctx.source_instance(), Some(CardInstanceId(7)));
     }
 
     #[test]
