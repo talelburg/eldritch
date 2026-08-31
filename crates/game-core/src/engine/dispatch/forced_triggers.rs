@@ -709,8 +709,13 @@ fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> EngineOutcome {
     let effect = ability.effect;
     // A forced run holds only in-play / board candidates (`Hand` ⇒ `None` is
     // harmless — hand Fast events are reaction-window plays, never forced).
+    // The source rides along as an `AbilitySource` too, so an effect-internal
+    // `ChooseOne` can anchor its options to the card the ability is printed on
+    // — the act's reverse (01110) and the agenda's (01105) both fire here, and
+    // both have `instance() == None` (#555).
     let ctx =
-        EvalContext::for_controller_with_optional_source(hit.controller, hit.source.instance());
+        EvalContext::for_controller_with_optional_source(hit.controller, hit.source.instance())
+            .with_ability_source(hit.source.ability());
     push_effect(cx, &effect, ctx);
     EngineOutcome::Done
 }

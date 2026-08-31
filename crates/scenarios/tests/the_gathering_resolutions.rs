@@ -252,6 +252,37 @@ fn act_progression_and_ghoul_priest_defeat_latches_won() {
     // holds its cursor because there is no next act (ADR 0013).
     assert_event!(result.events, Event::ActAdvanced { from } if *from == 2);
     assert_eq!(result.state.act_index, 2, "terminal: cursor does not bump");
+
+    // The flipped act asks the lead investigator which printed point to reach
+    // (#775) — the scenario has not ended yet.
+    let EngineOutcome::AwaitingInput { request, .. } = &result.outcome else {
+        panic!("expected 01110's R1/R2 choice, got {:?}", result.outcome);
+    };
+    assert_eq!(
+        request
+            .options
+            .iter()
+            .map(|o| o.label.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "It was never much of a home. Burn it down! (→R1)",
+            "This hell-pit is my home! No way are we burning it! (→R2)",
+        ],
+    );
+    assert!(
+        request
+            .options
+            .iter()
+            .all(|o| o.target == Some(game_core::engine::OptionTarget::Act)),
+        "the choice renders on the act card it is printed on (#555): {request:?}",
+    );
+    assert!(
+        result.state.ending.is_none(),
+        "nothing latches before the pick"
+    );
+
+    // Pick the first bullet — "Burn it down! (→R1)".
+    let result = pick_single(result.state);
     assert_event!(result.events, Event::ScenarioResolved { .. });
     assert_eq!(
         result.state.ending,

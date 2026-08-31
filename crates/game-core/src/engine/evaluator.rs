@@ -163,6 +163,19 @@ pub struct EvalContext {
     /// [`Self::chosen_location`] / [`Self::chosen_enemy`] /
     /// [`Self::chosen_option`]. `None` outside a grounded choice.
     pub choice: Option<ChoiceBinding>,
+    /// The ability source this effect is *printed on*, when the dispatch site
+    /// knows it — the board home an effect-internal [`Effect::ChooseOne`]
+    /// anchors its options to (#555). Read via [`Self::ability_source`].
+    ///
+    /// Strictly wider than [`source`](Self::source), which is this value's
+    /// [`AbilitySource::instance`](crate::state::AbilitySource::instance)
+    /// projection and is therefore `None` for exactly the board sources — the
+    /// act, the agenda, a location, an enemy — that had no anchor to begin
+    /// with. The two coexist rather than collapsing because 17 of the 19
+    /// construction sites hold a bare `CardInstanceId` and deciding *which*
+    /// `AbilitySource` each one is does not fail to compile when wrong; see
+    /// #834.
+    pub ability_source: Option<crate::state::AbilitySource>,
 }
 
 impl EvalContext {
@@ -178,6 +191,7 @@ impl EvalContext {
             discovery: None,
             enemy_attack: None,
             choice: None,
+            ability_source: None,
         }
     }
 
@@ -197,6 +211,7 @@ impl EvalContext {
             discovery: None,
             enemy_attack: None,
             choice: None,
+            ability_source: None,
         }
     }
 
@@ -218,6 +233,17 @@ impl EvalContext {
             Some(src) => Self::for_controller_with_source(controller, src),
             None => Self::for_controller(controller),
         }
+    }
+
+    /// Record the [`AbilitySource`](crate::state::AbilitySource) whose ability
+    /// is being resolved (see [`ability_source`](Self::ability_source)). Set by
+    /// the forced run and the reaction window, the two dispatch sites that hold
+    /// a `CandidateSource`; every other site leaves it `None` and its choices
+    /// stay un-anchored, exactly as before #555.
+    #[must_use]
+    pub fn with_ability_source(mut self, source: Option<crate::state::AbilitySource>) -> Self {
+        self.ability_source = source;
+        self
     }
 }
 
@@ -260,6 +286,12 @@ impl EvalContext {
     #[must_use]
     pub fn chosen_option(&self) -> Option<crate::engine::OptionId> {
         self.choice.and_then(|c| c.option)
+    }
+    /// The ability source this effect is printed on, if the dispatch site knew
+    /// it (see [`Self::ability_source`]).
+    #[must_use]
+    pub fn ability_source(&self) -> Option<crate::state::AbilitySource> {
+        self.ability_source
     }
 
     /// Bind the skill-test failure margin (see [`Self::failed_by`]).
@@ -729,6 +761,15 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
 /// from the same pure-over-`&GameState` predicate before the branch mutates
 /// anything, so replay is unaffected.
 ///
+/// **Each option is offered under its branch's own label, anchored to the card
+/// the effect is printed on** (#775 / #555). The label comes from
+/// [`ChoiceBranch::label`](crate::dsl::ChoiceBranch::label) — authored from the
+/// printed text — and the anchor from [`EvalContext::ability_source`], mapped
+/// through the one `AbilitySource → OptionTarget` map. A dispatch site that
+/// does not know its
+/// ability source leaves the options un-anchored, which renders them in the
+/// prompt banner exactly as every `ChooseOne` did before.
+///
 /// **Filtered-to-empty is a skip, not a reject** — the convention
 /// [`ground_investigator_choice`] established for the same reason. An
 /// activation cannot reach here with every mode dead (the initiation gate
@@ -738,17 +779,17 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
 /// effect, not a board state.
 fn step_choose_one(
     cx: &mut Cx,
-    branches: &[Effect],
+    branches: &[crate::dsl::ChoiceBranch],
     eval_ctx: EvalContext,
     node: &Effect,
 ) -> EngineOutcome {
     use crate::engine::dispatch::choice::{
-        awaiting_choice, resolve_choice_count, ChoiceResolution,
+        awaiting_choice_anchored, resolve_choice_count, ChoiceResolution,
     };
     let live: Vec<usize> = branches
         .iter()
         .enumerate()
-        .filter(|(_, branch)| effect_can_change_state(cx.state, eval_ctx, branch))
+        .filter(|(_, branch)| effect_can_change_state(cx.state, eval_ctx, &branch.effect))
         .map(|(i, _)| i)
         .collect();
     if live.is_empty() && !branches.is_empty() {
@@ -758,7 +799,7 @@ fn step_choose_one(
         cx.state
             .continuations
             .push(crate::state::Continuation::Effect(frame_of(
-                &branches[i],
+                &branches[i].effect,
                 {
                     let mut ctx = eval_ctx;
                     ctx.set_chosen_option(None);
@@ -782,9 +823,15 @@ fn step_choose_one(
                 };
                 push_branch(cx, branch)
             } else {
-                let labels = live.iter().map(|&i| branch_label(&branches[i])).collect();
+                let anchor = eval_ctx
+                    .ability_source()
+                    .map(crate::engine::OptionTarget::from);
+                let options = live
+                    .iter()
+                    .map(|&i| (branches[i].label.clone(), anchor.clone()))
+                    .collect();
                 suspend_leaf_in_place(cx, node, eval_ctx);
-                awaiting_choice("Choose one", labels)
+                awaiting_choice_anchored("Choose one", options)
             }
         }
     }
@@ -1899,13 +1946,6 @@ fn apply_place_doom_on_current_agenda(
     EngineOutcome::Done
 }
 
-/// A render label for one [`Effect::ChooseOne`] branch. The `Debug` form is
-/// adequate for v0 host rendering; refine only when a card needs prettier
-/// text.
-fn branch_label(effect: &Effect) -> String {
-    format!("{effect:?}")
-}
-
 /// Ground any `Chosen` target carried by `effect` before its
 /// handler runs (Axis A): enumerate candidates, apply the resolve convention
 /// (auto 0/1, suspend on 2+, replay from `cursor`), and bind the choice into
@@ -2359,7 +2399,7 @@ pub(crate) fn effect_can_change_state(
         // A choice changes state iff some branch can (the controller could pick it).
         Effect::ChooseOne(branches) => branches
             .iter()
-            .any(|branch| effect_can_change_state(state, ctx, branch)),
+            .any(|branch| effect_can_change_state(state, ctx, &branch.effect)),
         // Conservative default: anything not provably inert is assumed to change
         // state, so meaningful abilities are never suppressed.
         _ => true,
@@ -2583,7 +2623,7 @@ pub fn location_id_by_code(state: &GameState, code: &str) -> Option<crate::state
 mod tests {
     use crate::card_registry::CardRegistry;
     use crate::dsl::{
-        boost_attack_damage, constant, deal_damage, deal_damage_to_enemy, deal_horror,
+        boost_attack_damage, choose_one, constant, deal_damage, deal_damage_to_enemy, deal_horror,
         discover_clue, draw_cards, gain_resources, heal, modify, on_play, search_deck, seq,
         Ability, Choose, Effect, EnemyTarget, HarmKind, InvestigatorTarget, LocationSet,
         LocationTarget, ModifierScope, SkillTestKind, Stat,
@@ -2658,9 +2698,15 @@ mod tests {
     #[test]
     fn choose_one_can_change_state_iff_any_branch_can() {
         let no_clues = state_with_clues_at_location(0);
-        let choice = Effect::ChooseOne(vec![
-            discover_clue(LocationTarget::YourLocation, 1),
-            gain_resources(InvestigatorTarget::You, 1),
+        let choice = choose_one([
+            (
+                "Discover 1 clue",
+                discover_clue(LocationTarget::YourLocation, 1),
+            ),
+            (
+                "Gain 1 resource",
+                gain_resources(InvestigatorTarget::You, 1),
+            ),
         ]);
         assert!(effect_can_change_state(&no_clues, ctx(1), &choice));
     }
@@ -3995,7 +4041,10 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &Effect::ChooseOne(vec![gain_resources(InvestigatorTarget::You, 2)]),
+            &choose_one([(
+                "Gain 2 resources",
+                gain_resources(InvestigatorTarget::You, 2),
+            )]),
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4016,9 +4065,15 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &Effect::ChooseOne(vec![
-                discover_clue(LocationTarget::YourLocation, 1),
-                gain_resources(InvestigatorTarget::You, 2),
+            &choose_one([
+                (
+                    "Discover 1 clue",
+                    discover_clue(LocationTarget::YourLocation, 1),
+                ),
+                (
+                    "Gain 2 resources",
+                    gain_resources(InvestigatorTarget::You, 2),
+                ),
             ]),
             ctx(1),
         );
@@ -4045,9 +4100,15 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &Effect::ChooseOne(vec![
-                discover_clue(LocationTarget::YourLocation, 1),
-                discover_clue(LocationTarget::YourLocation, 1),
+            &choose_one([
+                (
+                    "Discover 1 clue",
+                    discover_clue(LocationTarget::YourLocation, 1),
+                ),
+                (
+                    "Discover 1 clue again",
+                    discover_clue(LocationTarget::YourLocation, 1),
+                ),
             ]),
             ctx(1),
         );
@@ -4089,9 +4150,15 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &Effect::ChooseOne(vec![
-                gain_resources(InvestigatorTarget::You, 1),
-                gain_resources(InvestigatorTarget::You, 3),
+            &choose_one([
+                (
+                    "Gain 1 resource",
+                    gain_resources(InvestigatorTarget::You, 1),
+                ),
+                (
+                    "Gain 3 resources",
+                    gain_resources(InvestigatorTarget::You, 3),
+                ),
             ]),
             ctx(1),
         );
@@ -4116,9 +4183,15 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &Effect::ChooseOne(vec![
-                gain_resources(InvestigatorTarget::You, 1),
-                gain_resources(InvestigatorTarget::You, 3),
+            &choose_one([
+                (
+                    "Gain 1 resource",
+                    gain_resources(InvestigatorTarget::You, 1),
+                ),
+                (
+                    "Gain 3 resources",
+                    gain_resources(InvestigatorTarget::You, 3),
+                ),
             ]),
             ctx(1),
         );
@@ -4141,9 +4214,15 @@ mod tests {
         let before = state.investigators[&id].resources;
         let effect = Effect::Seq(vec![
             gain_resources(InvestigatorTarget::You, 1),
-            Effect::ChooseOne(vec![
-                gain_resources(InvestigatorTarget::You, 1),
-                gain_resources(InvestigatorTarget::You, 3),
+            choose_one([
+                (
+                    "Gain 1 resource",
+                    gain_resources(InvestigatorTarget::You, 1),
+                ),
+                (
+                    "Gain 3 resources",
+                    gain_resources(InvestigatorTarget::You, 3),
+                ),
             ]),
         ]);
         let mut events = Vec::new();
@@ -4243,9 +4322,15 @@ mod tests {
             .build();
         let before1 = state.investigators[&InvestigatorId(1)].resources;
         let before2 = state.investigators[&InvestigatorId(2)].resources;
-        let effect = Effect::ChooseOne(vec![
-            gain_resources(InvestigatorTarget::chosen_anywhere(), 1),
-            gain_resources(InvestigatorTarget::chosen_anywhere(), 9),
+        let effect = choose_one([
+            (
+                "Gain 1 resource",
+                gain_resources(InvestigatorTarget::chosen_anywhere(), 1),
+            ),
+            (
+                "Gain 9 resources",
+                gain_resources(InvestigatorTarget::chosen_anywhere(), 9),
+            ),
         ]);
         let mut events = Vec::new();
 
@@ -4393,9 +4478,15 @@ mod tests {
             .with_investigator(test_investigator(2))
             .build();
         let before2 = state.investigators[&InvestigatorId(2)].resources;
-        let effect = Effect::ChooseOne(vec![
-            gain_resources(InvestigatorTarget::chosen_anywhere(), 1),
-            gain_resources(InvestigatorTarget::chosen_anywhere(), 9),
+        let effect = choose_one([
+            (
+                "Gain 1 resource",
+                gain_resources(InvestigatorTarget::chosen_anywhere(), 1),
+            ),
+            (
+                "Gain 9 resources",
+                gain_resources(InvestigatorTarget::chosen_anywhere(), 9),
+            ),
         ]);
         let mut events = Vec::new();
 
@@ -5546,7 +5637,7 @@ mod tests {
             may_advance: true,
         };
         assert_eq!(
-            run(&mut cx, &Effect::ChooseOne(vec![place(1)]), ctx),
+            run(&mut cx, &choose_one([("Place 1 doom", place(1))]), ctx),
             EngineOutcome::Done
         );
         assert_eq!(

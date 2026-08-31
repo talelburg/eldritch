@@ -942,6 +942,25 @@ impl Ability {
 
 // ---- effects ---------------------------------------------------
 
+/// One alternative of an [`Effect::ChooseOne`]: the effect, and the label the
+/// controller reads when picking it.
+///
+/// The label is authored from the card's printed text. Where the printing is
+/// already a list of options — What Have You Done? 01110's two bullets — it is
+/// copied verbatim, `(→R1)` / `(→R2)` markers included, since a player choosing
+/// an ending should see which ending it is. Where the printing is one sentence
+/// covering both options — First Aid 01019's *"Heal 1 damage or horror from an
+/// investigator at your location."* — labelling means **splitting** it, so the
+/// card's module doc quotes the full printed sentence directly above the
+/// derived labels and the split stays auditable.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChoiceBranch {
+    /// What the controller reads when offered this branch.
+    pub label: String,
+    /// What resolves if they pick it.
+    pub effect: Effect,
+}
+
 /// What an ability does when it resolves.
 ///
 /// Effects compose: [`Effect::Seq`] runs a list in order,
@@ -1061,9 +1080,17 @@ pub enum Effect {
         body: Box<Effect>,
     },
     /// Present alternatives to the controller. Resolves to the chosen
-    /// branch's effect. Requires an `AwaitingInput` round-trip; the
-    /// evaluator stub for this lands in Phase 3 alongside skill tests.
-    ChooseOne(Vec<Effect>),
+    /// branch's effect. Requires an `AwaitingInput` round-trip.
+    ///
+    /// **Each branch carries the label the controller reads** — a
+    /// [`ChoiceBranch`], not a bare `Effect`. Through #775 the evaluator
+    /// rendered `format!("{effect:?}")`, so What's Going On?! 01105 offered the
+    /// lead investigator `Native { tag: "01105:random-discard-each" }`. A label
+    /// is authored per card, from the printed text, and there is no position in
+    /// which a branch does not need one — hence a mandatory `String` on the
+    /// branch rather than an `Option`, or an `Effect::Labeled` wrapper node
+    /// that would compile anywhere and mean something in one place.
+    ChooseOne(Vec<ChoiceBranch>),
     /// Advance the current act one step: the cursor moves and the act's
     /// on-advance reverse fires. Used by act objectives like 01110 ("If the
     /// Ghoul Priest is Defeated, advance."). A *terminal* act advances the
@@ -2391,18 +2418,26 @@ pub fn for_each(targets: InvestigatorTargetSet, body: Effect) -> Effect {
     }
 }
 
-/// Build an [`Effect::ChooseOne`] from any iterable of effects.
+/// Build an [`Effect::ChooseOne`] from `(label, effect)` pairs — the label
+/// each branch is offered under (see [`ChoiceBranch`]).
 ///
 /// Empty `choose_one([])` is meaningless — there's nothing to pick —
-/// and the evaluator (when it lands in Phase 3) will treat it as a
-/// programmer error / log corruption rather than a silent no-op. The
-/// DSL doesn't validate emptiness at construction time because card
-/// declarations are constants and any card author writing
-/// `choose_one([])` is making a typo we want to catch in tests
+/// and the evaluator treats it as a programmer error / log corruption
+/// rather than a silent no-op. The DSL doesn't validate emptiness at
+/// construction time because card declarations are constants and any card
+/// author writing `choose_one([])` is making a typo we want to catch in tests
 /// rather than silently swallow.
 #[must_use]
-pub fn choose_one(effects: impl IntoIterator<Item = Effect>) -> Effect {
-    Effect::ChooseOne(effects.into_iter().collect())
+pub fn choose_one<S: Into<String>>(branches: impl IntoIterator<Item = (S, Effect)>) -> Effect {
+    Effect::ChooseOne(
+        branches
+            .into_iter()
+            .map(|(label, effect)| ChoiceBranch {
+                label: label.into(),
+                effect,
+            })
+            .collect(),
+    )
 }
 
 /// Build an [`Effect::AdvanceCurrentAct`].
@@ -2762,11 +2797,21 @@ mod tests {
     #[test]
     fn choose_one_collects_alternatives() {
         let effect = choose_one([
-            gain_resources(InvestigatorTarget::You, 2),
-            discover_clue(LocationTarget::YourLocation, 1),
+            (
+                "Gain 2 resources",
+                gain_resources(InvestigatorTarget::You, 2),
+            ),
+            (
+                "Discover 1 clue",
+                discover_clue(LocationTarget::YourLocation, 1),
+            ),
         ]);
         match effect {
-            Effect::ChooseOne(alts) => assert_eq!(alts.len(), 2),
+            Effect::ChooseOne(alts) => {
+                assert_eq!(alts.len(), 2);
+                assert_eq!(alts[0].label, "Gain 2 resources");
+                assert_eq!(alts[1].label, "Discover 1 clue");
+            }
             _ => panic!("expected ChooseOne"),
         }
     }
@@ -2801,8 +2846,14 @@ mod tests {
                 modify(Stat::Intellect, -1, ModifierScope::ThisSkillTest),
             ),
             choose_one([
-                discover_clue(LocationTarget::YourLocation, 1),
-                gain_resources(InvestigatorTarget::You, 2),
+                (
+                    "Discover 1 clue",
+                    discover_clue(LocationTarget::YourLocation, 1),
+                ),
+                (
+                    "Gain 2 resources",
+                    gain_resources(InvestigatorTarget::You, 2),
+                ),
             ]),
         ]);
         let json = serde_json::to_string(&original).expect("serialize");
@@ -3423,8 +3474,14 @@ mod tests {
                 modify(Stat::Intellect, -1, ModifierScope::ThisSkillTest),
             ),
             choose_one([
-                discover_clue(LocationTarget::YourLocation, 1),
-                gain_resources(InvestigatorTarget::You, 2),
+                (
+                    "Discover 1 clue",
+                    discover_clue(LocationTarget::YourLocation, 1),
+                ),
+                (
+                    "Gain 2 resources",
+                    gain_resources(InvestigatorTarget::You, 2),
+                ),
             ]),
         ]);
         let cloned = original.clone();

@@ -15,10 +15,10 @@
 use game_core::card_data::CardMetadata;
 use game_core::card_registry::CardRegistry;
 use game_core::dsl::{
-    discover_clue, gain_resources, reaction_on_event, Ability, EventPattern, EventTiming,
-    InvestigatorTarget, LocationTarget, SkillTestKind, TestOutcome,
+    choose_one, discover_clue, gain_resources, reaction_on_event, Ability, EventPattern,
+    EventTiming, InvestigatorTarget, LocationTarget, SkillTestKind, TestOutcome,
 };
-use game_core::engine::{EngineOutcome, OptionId};
+use game_core::engine::{EngineOutcome, OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::AbilityAddress;
 use game_core::state::{
@@ -53,12 +53,34 @@ const MILAN_REACTION: &str = "MOCK-OE-MILAN";
 /// Chantler 01117 needs (#773). Its controller reacts to somebody else's test.
 const BYSTANDER_TEST_REACTION: &str = "MOCK-OE-BYSTANDER-TEST";
 
+/// Mock: the Roland-shape reaction whose effect is a two-branch `ChooseOne`.
+/// Pins the *other* half of #555's anchor threading — a reaction fired from an
+/// in-play instance, where `fire_pending_trigger` is the setter site.
+const MODAL_REACTION: &str = "MOCK-OE-MODAL";
+
 fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
     None
 }
 
 fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     match code.as_str() {
+        MODAL_REACTION => Some(vec![reaction_on_event(
+            EventPattern::EnemyDefeated {
+                by_controller: true,
+                code: None,
+            },
+            EventTiming::After,
+            choose_one([
+                (
+                    "Gain 1 resource",
+                    gain_resources(InvestigatorTarget::You, 1),
+                ),
+                (
+                    "Gain 3 resources",
+                    gain_resources(InvestigatorTarget::You, 3),
+                ),
+            ]),
+        )]),
         ROLAND_REACTION => Some(vec![reaction_on_event(
             EventPattern::EnemyDefeated {
                 by_controller: true,
@@ -336,6 +358,50 @@ fn pick_index_fires_pending_trigger_and_closes_window() {
         .last()
         .and_then(Continuation::pending_candidates)
         .is_none_or(Vec::is_empty));
+}
+
+/// A `ChooseOne` inside a reaction's effect offers its branches' authored
+/// labels, anchored to the in-play card the ability is printed on (#555 /
+/// ADR 0011: *"the client never decides where a control belongs — it reads the
+/// anchor the engine attached"*). The anchor comes from the pending trigger's
+/// own `AbilitySource`, threaded through `EvalContext::ability_source` by
+/// `fire_pending_trigger`; drop that and the options silently fall back to the
+/// prompt banner, which is why this is pinned.
+#[test]
+fn a_choose_one_inside_a_reaction_anchors_to_the_firing_card() {
+    let (inv_id, enemy_id, _loc_id, state) = fight_to_defeat_scenario(&[(MODAL_REACTION, 1)]);
+    let action = fight_action(&state, inv_id, enemy_id);
+    let paused = fight_through_commit_window(state, action);
+
+    // Pick the reaction out of its window; its effect's ChooseOne is next.
+    let resumed = game_core::engine::apply(
+        paused.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(0)),
+        }),
+    );
+    let EngineOutcome::AwaitingInput { request, .. } = &resumed.outcome else {
+        panic!(
+            "expected the reaction's ChooseOne, got {:?}",
+            resumed.outcome
+        );
+    };
+    assert_eq!(
+        request
+            .options
+            .iter()
+            .map(|o| o.label.as_str())
+            .collect::<Vec<_>>(),
+        ["Gain 1 resource", "Gain 3 resources"],
+        "branches are offered under their authored labels, not their Debug form",
+    );
+    for option in &request.options {
+        assert_eq!(
+            option.target,
+            Some(OptionTarget::CardInstance(CardInstanceId(1))),
+            "anchored to the in-play card the reaction is printed on",
+        );
+    }
 }
 
 #[test]

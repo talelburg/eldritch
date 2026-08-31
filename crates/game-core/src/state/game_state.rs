@@ -2422,6 +2422,20 @@ impl CandidateSource {
             CandidateSource::Hand => None,
         }
     }
+
+    /// The [`AbilitySource`] this candidate fires from — `None` only for
+    /// [`Hand`](Self::Hand), which is a *play*, not an ability. Unlike
+    /// [`instance`](Self::instance) this keeps the board sources (the act, the
+    /// agenda, a location, an enemy), which is what lets a choice inside the
+    /// effect anchor to the card it is printed on (#555). Feeds
+    /// [`EvalContext::with_ability_source`](crate::engine::EvalContext::with_ability_source).
+    #[must_use]
+    pub fn ability(self) -> Option<AbilitySource> {
+        match self {
+            CandidateSource::Ability(source) => Some(source),
+            CandidateSource::Hand => None,
+        }
+    }
 }
 
 /// A single pending ability/play waiting to resolve in a

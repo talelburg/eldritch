@@ -5,12 +5,14 @@
 //! Drives What's Going On?! (01105)'s `AgendaAdvanced` forced with
 //! `interactive_acknowledge` on, so the one-option "Resolve" acknowledge surfaces
 //! *before* the effect (the #466 confirm-before-effect pause) — and asserts its
-//! anchor is `OptionTarget::Agenda`. The subsequent discard-vs-horror `ChooseOne`
-//! is a separate evaluator prompt whose non-entity branches stay `Global`
-//! (tracked in #555); this test covers only the forced-ack anchor.
+//! anchor is `OptionTarget::Agenda`. The subsequent discard-vs-horror
+//! `ChooseOne` is a separate evaluator prompt, and since #775 closed #555 it
+//! anchors to the agenda too; the second test below pins that, because an
+//! un-anchored option is silently rendered in the banner instead.
 
-use game_core::engine::{EngineOutcome, OptionTarget};
-use game_core::state::{Agenda, CardCode, InvestigatorId};
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::{EngineOutcome, OptionId, OptionTarget};
+use game_core::state::{Agenda, CardCode, GameState, InvestigatorId};
 use game_core::test_support::{fire_forced_on_agenda_advance, test_investigator, GameStateBuilder};
 
 #[ctor::ctor(unsafe)]
@@ -18,8 +20,7 @@ fn install_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
 }
 
-#[test]
-fn agenda_01105_forced_ack_anchors_to_the_agenda_card() {
+fn state_on_agenda_01105() -> GameState {
     let lead = InvestigatorId(1);
     // A real investigator code so any registry-backed lookup resolves; Skids
     // O'Toole (01003) has no implemented abilities (mirrors agenda_reverses.rs).
@@ -38,7 +39,12 @@ fn agenda_01105_forced_ack_anchors_to_the_agenda_card() {
     }];
     state.agenda_index = 0;
     state.interactive_acknowledge = true;
+    state
+}
 
+#[test]
+fn agenda_01105_forced_ack_anchors_to_the_agenda_card() {
+    let mut state = state_on_agenda_01105();
     let mut events = Vec::new();
     let out = fire_forced_on_agenda_advance(&mut state, &mut events, CardCode::new("01105"));
     match out {
@@ -56,5 +62,43 @@ fn agenda_01105_forced_ack_anchors_to_the_agenda_card() {
             );
         }
         other => panic!("expected the forced-acknowledge suspend, got {other:?}"),
+    }
+}
+
+/// 01105's printed *"choose one"* renders on the agenda card, under the two
+/// labels split from its printed sentence — not in the prompt banner under the
+/// branches' `Debug` form, which is what shipped until #775.
+#[test]
+fn agenda_01105_choose_one_anchors_to_the_agenda_card_under_its_printed_labels() {
+    let mut state = state_on_agenda_01105();
+    let mut events = Vec::new();
+    let out = fire_forced_on_agenda_advance(&mut state, &mut events, CardCode::new("01105"));
+    assert!(
+        matches!(out, EngineOutcome::AwaitingInput { .. }),
+        "the interactive forced-ack comes first: {out:?}",
+    );
+    // Acknowledge, so the effect — and its ChooseOne — resolves.
+    let resumed = game_core::engine::apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(0)),
+        }),
+    );
+    let EngineOutcome::AwaitingInput { request, .. } = &resumed.outcome else {
+        panic!("expected 01105's ChooseOne, got {:?}", resumed.outcome);
+    };
+    assert_eq!(
+        request
+            .options
+            .iter()
+            .map(|o| o.label.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "Each investigator discards 1 card at random from his or her hand",
+            "The lead investigator takes 2 horror",
+        ],
+    );
+    for option in &request.options {
+        assert_eq!(option.target, Some(OptionTarget::Agenda), "{request:?}");
     }
 }

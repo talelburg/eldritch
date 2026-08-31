@@ -1105,7 +1105,8 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     let mut eval_ctx = EvalContext::for_controller_with_optional_source(
         trigger.controller,
         trigger.source.instance(),
-    );
+    )
+    .with_ability_source(trigger.source.ability());
     // For a `DamageAssigned` window whose source is an enemy attack, bind the
     // attacking enemy into the context so Guard Dog's native retaliate
     // (`Effect::Native("01021:retaliate")`) can name the attacker via
