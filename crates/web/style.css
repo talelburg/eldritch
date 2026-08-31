@@ -226,9 +226,14 @@
    modal still sit above the board, and removing layout code on a reasoning chain
    is how the map band breaks silently. Cards (`.card.actionable`) set no
    z-index, so their menu escapes to the root context. */
-.map-location.actionable { cursor: pointer; z-index: 20; }
-/* The container is transparent, so the glow goes on the card it wraps. */
+.map-location.actionable { z-index: 20; }
+/* Glow and cursor go on the card and its hit-layer, never on the node: the node
+   also spans the token rail, and a rail token that shows a pointer while the
+   hit-layer doesn't reach it is advertising a click that does nothing. Rail
+   tokens become clickable when they carry their own options (#847). */
 .map-location.actionable > .loc-card { box-shadow: 0 0 0 2px #e0b84c; }
+.map-location.actionable > .loc-card,
+.map-location.actionable > .menu-hit { cursor: pointer; }
 .card.actionable { position: relative; box-shadow: 0 0 0 2px #e0b84c; cursor: pointer; }
 .menu-hit { position: absolute; inset: 0; z-index: 5; }
 /* A map node's own hit-layer covers only its card: the token rail beside it

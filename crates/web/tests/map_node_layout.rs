@@ -14,8 +14,9 @@
 #![cfg(target_arch = "wasm32")]
 
 use game_core::state::{CardCode, CardInPlay, CardInstanceId, GameStateBuilder, LocationId};
+use game_core::test_support::fixtures::awaiting_pick_single_with;
 use game_core::test_support::fixtures::{test_investigator, test_location};
-use game_core::EngineOutcome;
+use game_core::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use leptos::prelude::*;
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
@@ -76,6 +77,14 @@ fn parlor_state(investigators: usize) -> game_core::state::GameState {
 /// Mount `BoardView` with `state`, tick, and return the wrapper this mount put
 /// the board in (each test mounts into the same document body).
 async fn mount(state: game_core::state::GameState) -> web_sys::Element {
+    mount_with(state, EngineOutcome::Done).await
+}
+
+/// As [`mount`], but with a live `outcome` so the board has options to anchor.
+async fn mount_with(
+    state: game_core::state::GameState,
+    outcome: EngineOutcome,
+) -> web_sys::Element {
     let _ = game_core::card_registry::install(cards::REGISTRY);
     inject_style();
     let store = RwSignal::new(ClientState::default());
@@ -90,7 +99,7 @@ async fn mount(state: game_core::state::GameState) -> web_sys::Element {
             s,
             ServerMessage::Hello {
                 state: Box::new(state),
-                outcome: EngineOutcome::Done,
+                outcome,
                 events: Vec::new(),
             },
         );
@@ -266,4 +275,44 @@ async fn every_connection_line_ends_inside_a_card() {
             "line endpoint ({x}, {y}) lands outside every card; cards = {cards:?}",
         );
     }
+}
+
+/// Reported live: a token in the rail showed the pointer cursor but did nothing
+/// when clicked. The node carries the `actionable` class and spans card *and*
+/// rail, while its hit-layer covers only the card — so a cursor set on the node
+/// promises a click the rail can't take. Glow and cursor belong on the card.
+#[wasm_bindgen_test]
+async fn only_the_card_advertises_the_location_menu() {
+    let outcome = awaiting_pick_single_with(
+        "Choose an action",
+        vec![ChoiceOption::new(OptionId(0), "Investigate").at(OptionTarget::Location(PARLOR))],
+    );
+    let root = mount_with(parlor_state(1), outcome).await;
+    let node = root
+        .query_selector(".map-location[data-loc=\"Parlor\"]")
+        .expect("query")
+        .expect("the Parlor node");
+    assert!(
+        node.class_name().contains("actionable"),
+        "the Parlor is actionable for a location-anchored option",
+    );
+    let cursor = |sel: &str| -> String {
+        let el = node
+            .query_selector(sel)
+            .expect("query")
+            .unwrap_or_else(|| panic!("a {sel} in the node"));
+        window()
+            .get_computed_style(&el)
+            .expect("computed style")
+            .expect("a style declaration")
+            .get_property_value("cursor")
+            .expect("the cursor property")
+    };
+    assert_eq!(cursor(".loc-card"), "pointer", "the card takes the click");
+    assert_eq!(
+        cursor(".at-location-token"),
+        "auto",
+        "a rail token must not advertise a click the hit-layer can't take",
+    );
+    assert_eq!(cursor(".inv-token"), "auto", "nor an investigator token");
 }
