@@ -351,18 +351,46 @@ fn pick_single(state: GameState) -> game_core::engine::ApplyResult {
     )
 }
 
-/// Reveal the Parlor (01115) so 01107's own enemy-phase-end forced can run.
+/// The Parlor enters play only via **act 2 (01109)'s** reverse, but agenda 3
+/// becomes current at agenda 2's doom threshold — which does not read the act
+/// deck at all. So a group still on act 1 or 2 meets 01107's enemy-phase-end
+/// Forced with no Parlor on the board, every enemy phase, and the ability has
+/// no destination to move toward.
 ///
-/// That ability moves each unengaged Ghoul *toward the Parlor* and rejects when
-/// the Parlor is not in play, and the Parlor only enters via act 2's reverse — so
-/// a fixture that sits on agenda 3 while still at act 1 has to put it there. Off
-/// the path under test either way: there are no Ghouls on this board, so the move
-/// is a no-op once it can run at all.
-fn with_parlor_in_play(state: &mut GameState) {
-    let mut parlor = game_core::test_support::test_location(115, "Parlor");
-    parlor.code = CardCode::new("01115");
-    parlor.revealed = true;
-    state.locations.insert(parlor.id, parlor);
+/// `glossary/Ability.md`, Forced Abilities: *"If a forced ability does not have
+/// the potential to change the game state, the ability does not initiate."* So
+/// the Forced is a faithful no-op, and the player's `EndTurn` proceeds. Before
+/// #811 it returned `Rejected`, and because a rejection rolls the whole apply
+/// back (#161) that landed on the *player's* action: the scenario was
+/// unplayable from the moment agenda 3 turned up (#811).
+#[test]
+fn the_terminal_agendas_ghoul_move_is_a_no_op_when_the_parlor_is_not_in_play() {
+    let mut state = seated_roland();
+    // Agenda 3 current while the act deck is still on act 1 — the reachable
+    // board state, and the one the Parlor is absent on.
+    state.agenda_index = 2;
+    assert_eq!(state.act_index, 0, "still act 1: act 2's reverse never ran");
+    assert!(
+        !state.locations.values().any(|l| l.code.as_str() == "01115"),
+        "the Parlor is not in play",
+    );
+    state.encounter_deck.clear();
+
+    let result = take_turn_action(state, &TurnAction::EndTurn);
+
+    assert!(
+        !matches!(result.outcome, EngineOutcome::Rejected { .. }),
+        "the missing Parlor is a no-op, not a rejected player action: {:?}",
+        result.outcome,
+    );
+    assert!(
+        !result
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::EnemyMoved { .. })),
+        "no Ghoul moved — there was nowhere to move: {:?}",
+        result.events,
+    );
 }
 
 /// Doomed out on the **terminal agenda** (01107): the agenda advances like any
@@ -400,7 +428,6 @@ fn dooming_out_the_terminal_agenda_advances_it_and_its_reverse_reaches_r3() {
     state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
     // No encounter draws to interfere; the ending cancels 1.4 anyway.
     state.encounter_deck.clear();
-    with_parlor_in_play(&mut state);
 
     let result = take_turn_action(state, &TurnAction::EndTurn);
 
@@ -434,7 +461,6 @@ fn dooming_out_the_terminal_agenda_at_act_2_also_reaches_r3() {
     state.agenda_index = 2;
     state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
     state.encounter_deck.clear();
-    with_parlor_in_play(&mut state);
 
     let result = take_turn_action(state, &TurnAction::EndTurn);
 
@@ -472,7 +498,6 @@ fn dooming_out_the_terminal_agenda_at_act_3_defeats_the_table_and_reaches_no_res
     state.agenda_index = 2;
     state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
     state.encounter_deck.clear();
-    with_parlor_in_play(&mut state);
 
     let result = take_turn_action(state, &TurnAction::EndTurn);
 
@@ -525,7 +550,6 @@ fn the_terminal_agendas_advance_flip_acknowledge_precedes_the_ending() {
     state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
     state.encounter_deck.clear();
     state.interactive_acknowledge = true;
-    with_parlor_in_play(&mut state);
 
     // Ending the round fires 01107's two Forced *fronts* first — the
     // enemy-phase-end Ghoul move and the round-end doom — each raising its own

@@ -237,11 +237,21 @@ fn is_ghoul(traits: &[String]) -> bool {
 }
 
 /// Each unengaged Ghoul moves one location toward the Parlor (01115).
+///
+/// **No Parlor in play is a no-op, not a rejection.** The Parlor enters play
+/// only via act 2 (01109)'s reverse, while this agenda becomes current at
+/// agenda 2's doom threshold — which does not read the act deck — so a group
+/// still at act 1 or 2 meets this Forced with no destination on the board,
+/// every enemy phase. `glossary/Ability.md`, Forced Abilities: *"If a forced
+/// ability does not have the potential to change the game state, the ability
+/// does not initiate."* Rejecting here would report malformed data for a board
+/// state the scenario reaches legitimately — and since a rejection rolls the
+/// whole apply back (#161), it landed on the *player's* action and made the
+/// scenario unplayable (#811). Same reading as the barricaded first step
+/// below: no move available means no move, never an error.
 fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     let Some(parlor) = location_id_by_code(cx.state, PARLOR) else {
-        return EngineOutcome::Rejected {
-            reason: "01107 move-ghouls: Parlor (01115) not in play".into(),
-        };
+        return EngineOutcome::Done;
     };
     // Scan first (shared borrows), then mutate. Deterministic lowest-
     // LocationId tie-break among shortest first steps.
