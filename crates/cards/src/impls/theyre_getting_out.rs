@@ -237,11 +237,21 @@ fn is_ghoul(traits: &[String]) -> bool {
 }
 
 /// Each unengaged Ghoul moves one location toward the Parlor (01115).
+///
+/// **No Parlor in play is a no-op, not a rejection.** The Parlor enters play
+/// only via act 2 (01109)'s reverse, while this agenda becomes current at
+/// agenda 2's doom threshold — which does not read the act deck — so a group
+/// still at act 1 or 2 meets this Forced with no destination on the board,
+/// every enemy phase. `glossary/Ability.md`, Forced Abilities: *"If a forced
+/// ability does not have the potential to change the game state, the ability
+/// does not initiate."* Rejecting here would report malformed data for a board
+/// state the scenario reaches legitimately — and since a rejection rolls the
+/// whole apply back (#161), it landed on the *player's* action and made the
+/// scenario unplayable (#811). Same reading as the barricaded first step
+/// below: no move available means no move, never an error.
 fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     let Some(parlor) = location_id_by_code(cx.state, PARLOR) else {
-        return EngineOutcome::Rejected {
-            reason: "01107 move-ghouls: Parlor (01115) not in play".into(),
-        };
+        return EngineOutcome::Done;
     };
     // Scan first (shared borrows), then mutate. Deterministic lowest-
     // LocationId tie-break among shortest first steps.
@@ -531,6 +541,24 @@ mod tests {
         assert!(native_effect_for(ROUND_END_DOOM).is_some());
         assert!(native_effect_for(GHOULS_RUN_RAMPANT).is_some());
         assert!(native_effect_for("01107:other").is_none());
+    }
+
+    /// No Parlor on the board is a **no-op**, not a rejection: `Done`, no
+    /// events, nothing moved. The reachable case is agenda 3 turning up while
+    /// the act deck is still on act 1 or 2 — see the function's own doc for why
+    /// (#811). `cx_apply` already asserts the `Done`.
+    #[test]
+    fn no_parlor_in_play_moves_nothing_and_does_not_reject() {
+        let mut state = star_board();
+        state.locations.remove(&LocationId(5)); // the Parlor
+        state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
+        let events = cx_apply(&mut state, move_ghouls_toward_parlor);
+        assert!(events.is_empty(), "no events: {events:?}");
+        assert_eq!(
+            state.enemies[&EnemyId(1)].current_location,
+            Some(LocationId(3)),
+            "the Ghoul stays put — there is no destination to step toward",
+        );
     }
 
     #[test]
