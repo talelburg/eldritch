@@ -659,3 +659,50 @@ fn the_action_menu_hides_a_designated_fight_the_surcharge_makes_unaffordable() {
         "1 action left cannot pay the surcharged cost of 2, so the menu omits it",
     );
 }
+
+#[test]
+fn dissonant_voices_keeps_a_fast_event_out_of_a_player_window() {
+    // Same restriction, asked of a *fast window's option list* rather than of
+    // the `PlayCard` handler: Working a Hunch 01037 ("Fast. Play only during
+    // your turn. / Discover 1 clue at your location.") is fast-eligible on this
+    // board, so an engine-opened ST.1 player window enumerates it — but
+    // Dissonant Voices forbids playing events, so it must not be offered.
+    let mut inv = test_investigator(1);
+    inv.current_location = Some(LocationId(101));
+    inv.resources = 5;
+    inv.hand = vec![CardCode::new("01037")];
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode::new("01165"),
+        CardInstanceId(0),
+    ));
+    let mut loc = test_location(101, "Study");
+    loc.clues = 2;
+    let mut state = GameStateBuilder::new()
+        .with_phase(Phase::Investigation)
+        .with_investigator(inv)
+        .with_active_investigator(InvestigatorId(1))
+        .with_location(loc)
+        .with_turn_order([InvestigatorId(1)])
+        .build();
+    state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
+
+    let result = game_core::test_support::perform_skill_test(
+        state,
+        InvestigatorId(1),
+        game_core::state::SkillKind::Willpower,
+        4,
+    );
+    if let EngineOutcome::AwaitingInput { ref request, .. } = result.outcome {
+        assert!(
+            request.options.is_empty(),
+            "Dissonant Voices forbids events, so the window must not offer \
+             Working a Hunch; got {:?}",
+            request.options,
+        );
+    }
+    assert!(
+        result.state.open_windows().is_empty(),
+        "with nothing eligible the window auto-skips; it stayed open: {:?}",
+        result.state.open_windows(),
+    );
+}
