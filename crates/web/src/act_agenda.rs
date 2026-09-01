@@ -26,7 +26,7 @@ pub enum Face {
 /// Which face an advancing act/agenda should show: `Reverse` once the advance has
 /// passed its acknowledge (`step` ≥ `FireReverse`), else `Front`. `Front` when the
 /// deck isn't advancing (#558).
-fn deck_face(game: &GameState, deck: AdvanceDeck) -> Face {
+pub(crate) fn deck_face(game: &GameState, deck: AdvanceDeck) -> Face {
     use game_core::state::{AdvanceStep, Continuation};
     for c in &game.continuations {
         if let Continuation::AdvanceReverse { deck: d, step, .. } = c {
@@ -41,11 +41,15 @@ fn deck_face(game: &GameState, deck: AdvanceDeck) -> Face {
     Face::Front
 }
 
-/// Name (printed, or the raw code when no metadata) + rendered ability text for
-/// an act/agenda card code, on the given [`Face`]. The reverse falls back to the
+/// Name (printed, or the raw code when no metadata) + raw ability text for an
+/// act/agenda card code, on the given [`Face`]. The reverse falls back to the
 /// front name if a card carries no `back_name` (defensive — a real advancing
 /// act/agenda always prints one).
-fn name_and_text(code: &CardCode, face: Face) -> (String, Option<Vec<AnyView>>) {
+///
+/// `pub(crate)` because the decision modal names its source card from the very
+/// same face the board is showing (ADR 0015) — the front/reverse choice is
+/// computed once, here, rather than re-derived per surface.
+pub(crate) fn name_and_text_src(code: &CardCode, face: Face) -> (String, Option<String>) {
     let meta = game_core::card_registry::current().and_then(|r| (r.metadata_for)(code));
     let (name_src, text_src) = match face {
         Face::Front => (
@@ -58,9 +62,13 @@ fn name_and_text(code: &CardCode, face: Face) -> (String, Option<Vec<AnyView>>) 
             meta.and_then(|m| m.back_text.clone()),
         ),
     };
-    let name = name_src.unwrap_or_else(|| code.to_string());
-    let text = text_src.map(|t| render_segments(parse_card_text(&t)));
-    (name, text)
+    (name_src.unwrap_or_else(|| code.to_string()), text_src)
+}
+
+/// [`name_and_text_src`] with the text rendered to views, for the card itself.
+fn name_and_text(code: &CardCode, face: Face) -> (String, Option<Vec<AnyView>>) {
+    let (name, text) = name_and_text_src(code, face);
+    (name, text.map(|t| render_segments(parse_card_text(&t))))
 }
 
 /// The current act as a card. Glows and opens an "Advance act" context menu when
@@ -78,6 +86,10 @@ pub fn ActCard(act: Act, face: Face) -> impl IntoView {
         .unwrap_or_default();
     let menu_opts = crate::interaction::options_for(&pending, game_core::OptionTarget::Act);
     let actionable = !menu_opts.is_empty();
+    // Glow, but no menu, while a decision modal is up — the modal is its sole
+    // surface (#856).
+    #[cfg(target_arch = "wasm32")]
+    let opens_a_menu = actionable && !crate::decision::menus_are_suppressed();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
     let mut root_class = String::from("card card--act");
@@ -109,7 +121,7 @@ pub fn ActCard(act: Act, face: Face) -> impl IntoView {
                 // wasm-only trigger + menu; host build: empty, `menu_opts` consumed
                 // above by `actionable` (no unused-var warning).
                 #[cfg(target_arch = "wasm32")]
-                actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
+                opens_a_menu.then(|| crate::interaction::menu_layer(menu_opts, open))
             }
         </article>
     }
@@ -131,6 +143,10 @@ pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
         .unwrap_or_default();
     let menu_opts = crate::interaction::options_for(&pending, game_core::OptionTarget::Agenda);
     let actionable = !menu_opts.is_empty();
+    // Glow, but no menu, while a decision modal is up — the modal is its sole
+    // surface (#856).
+    #[cfg(target_arch = "wasm32")]
+    let opens_a_menu = actionable && !crate::decision::menus_are_suppressed();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
     let mut root_class = String::from("card card--agenda");
@@ -162,7 +178,7 @@ pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
                 // wasm-only trigger + menu; host build: empty, `menu_opts` consumed
                 // above by `actionable` (no unused-var warning).
                 #[cfg(target_arch = "wasm32")]
-                actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
+                opens_a_menu.then(|| crate::interaction::menu_layer(menu_opts, open))
             }
         </article>
     }

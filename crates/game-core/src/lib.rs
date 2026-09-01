@@ -50,8 +50,8 @@ pub use engine::{
     round_end_advance, round_end_advance_affordable, seat_and_open, shortest_first_steps,
     suspend_for_native_choice, take_damage, ApplyResult, ChoiceOption, ChoiceResolution,
     Contribution, ContributionSource, Cx, EngineOutcome, EvalContext, InputKind, InputRequest,
-    ModifiedQuantity, ModifierBreakdown, ModifierTarget, OptionId, OptionTarget, ReadContext,
-    ResumeToken, TurnAction,
+    ModifiedQuantity, ModifierBreakdown, ModifierTarget, OptionId, OptionTarget, PromptNature,
+    ReadContext, ResumeToken, TurnAction,
 };
 pub use event::{Event, FailureReason, TraumaKind};
 pub use rng::RngState;

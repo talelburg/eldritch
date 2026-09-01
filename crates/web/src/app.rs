@@ -20,6 +20,12 @@ pub fn App() -> impl IntoView {
     let confirm_anchor = Signal::derive(move || store.with(crate::interaction::confirm_anchor));
     provide_context(crate::interaction::ConfirmAnchor(confirm_anchor));
 
+    // "A decision modal is up" — the board's cards read it to keep their glow
+    // while giving up their context menu, since the modal is a decision's sole
+    // surface (#856).
+    let decision_live = Signal::derive(move || store.with(crate::decision::modal_is_live));
+    provide_context(crate::decision::DecisionLive(decision_live));
+
     // Multi-select (PickMultiple) selection state, shared by the hand cards and
     // the prompt banner; cleared whenever a PickMultiple isn't live (#538).
     let selected = RwSignal::new(std::collections::BTreeSet::<u32>::new());
@@ -60,7 +66,8 @@ pub fn App() -> impl IntoView {
 }
 
 /// Everything the app layers over the board: the pre-game picker, the skill-test
-/// result modal, the prompt banner and the version-mismatch overlay.
+/// result modal, the decision modal, the prompt banner and the version-mismatch
+/// overlay.
 ///
 /// A component rather than four inline tags so a headless test can mount the
 /// exact set the app does — which is how "`.action-bar` is absent from the DOM"
@@ -77,6 +84,7 @@ pub fn Overlays() -> impl IntoView {
             { view! {
                 <crate::picker::PickerView/>
                 <crate::skill_test_result::SkillTestResultView/>
+                <crate::decision::DecisionView/>
                 <crate::prompt_banner::PromptBanner/>
                 <crate::version_mismatch::VersionMismatchView/>
             }.into_any() }

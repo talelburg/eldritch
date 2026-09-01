@@ -227,14 +227,36 @@ pub enum InputKind {
     Confirm,
 }
 
+/// What a prompt is asking the player to choose *between* — never how it looks.
+///
+/// ADR 0011's claim one layer in: the engine names the nature, the host maps
+/// nature to presentation. A `Presentation::Modal` on the wire would put UI
+/// vocabulary in the kernel, and a host re-deriving the nature from the prompt's
+/// shape ("all options anchored to the same card") is the same re-derivation
+/// ADR 0011 rejected when it refused to read targets off `label` strings.
+///
+/// [`Selection`](Self::Selection) is the default every constructor reaches, so a
+/// builder that never considered its nature produces the status quo. The type
+/// will not catch an omission — tests do (ADR 0015).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum PromptNature {
+    /// Options are board entities; the anchor disambiguates which one.
+    #[default]
+    Selection,
+    /// Options are alternatives printed on one card; the anchor is provenance.
+    Decision,
+}
+
 /// A prompt the engine emits when it needs player input.
 ///
 /// Carries free-form [`prompt`](Self::prompt) text, a [`kind`](Self::kind)
 /// discriminator naming the [`InputResponse`](crate::action::InputResponse) the
 /// host must send back, an optional structured [`options`](Self::options) list
 /// (for [`PickSingle`](InputKind::PickSingle)), a
-/// [`skippable`](Self::skippable) flag for windows that may also be passed, and
-/// the board [`target`](Self::target) the prompt itself renders on.
+/// [`skippable`](Self::skippable) flag for windows that may also be passed, the
+/// board [`target`](Self::target) the prompt itself renders on, and the
+/// [`nature`](Self::nature) of what is being chosen between.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct InputRequest {
@@ -259,6 +281,15 @@ pub struct InputRequest {
     /// per-option, except that the banner reads it to suppress the open-turn
     /// menu's text.
     pub target: Option<OptionTarget>,
+    /// What this prompt asks the player to choose between (ADR 0015).
+    ///
+    /// It rides on the request rather than on each option because every branch
+    /// of one choice shares it. `#[serde(default)]` so a seed outcome persisted
+    /// before this field existed still deserializes — and lands on
+    /// [`Selection`](PromptNature::Selection), which is the behaviour it was
+    /// written under.
+    #[serde(default)]
+    pub nature: PromptNature,
 }
 
 impl InputRequest {
@@ -272,6 +303,7 @@ impl InputRequest {
             kind: InputKind::PickSingle,
             skippable: false,
             target: None,
+            nature: PromptNature::Selection,
         }
     }
 
@@ -294,6 +326,7 @@ impl InputRequest {
             kind: InputKind::PickMultiple,
             skippable: false,
             target: None,
+            nature: PromptNature::Selection,
         }
     }
 
@@ -307,6 +340,7 @@ impl InputRequest {
             kind: InputKind::Confirm,
             skippable: false,
             target: None,
+            nature: PromptNature::Selection,
         }
     }
 
@@ -324,6 +358,27 @@ impl InputRequest {
     #[must_use]
     pub fn at(mut self, target: OptionTarget) -> Self {
         self.target = Some(target);
+        self
+    }
+
+    /// Anchor this prompt to `target` when there is one. The request-level twin
+    /// of [`ChoiceOption::maybe_at`], for a caller holding an anchor that may
+    /// have degraded to `None` because its source left play (#845).
+    #[must_use]
+    pub fn maybe_at(self, target: Option<OptionTarget>) -> Self {
+        match target {
+            Some(target) => self.at(target),
+            None => self,
+        }
+    }
+
+    /// Mark this prompt a [`Decision`](PromptNature::Decision) — its options are
+    /// alternatives printed on one card, not board entities to disambiguate
+    /// between. The same opt-in builder idiom as [`at`](Self::at), and for the
+    /// same reason: the default is the status quo (ADR 0015).
+    #[must_use]
+    pub fn deciding(mut self) -> Self {
+        self.nature = PromptNature::Decision;
         self
     }
 }
@@ -366,6 +421,45 @@ mod tests {
         assert_eq!(req.kind, InputKind::Confirm);
         assert!(!req.skippable);
         assert!(req.options.is_empty());
+    }
+
+    #[test]
+    fn every_constructor_defaults_to_selection_and_deciding_opts_in() {
+        // The silent default is the status quo: a prompt whose author never
+        // considered its nature renders as today's context menu (ADR 0015).
+        assert_eq!(
+            InputRequest::pick_single("w", vec![]).nature,
+            PromptNature::Selection
+        );
+        assert_eq!(
+            InputRequest::pick_multiple("w").nature,
+            PromptNature::Selection
+        );
+        assert_eq!(InputRequest::confirm("w").nature, PromptNature::Selection);
+        assert_eq!(
+            InputRequest::pick_single("w", vec![]).deciding().nature,
+            PromptNature::Decision
+        );
+    }
+
+    #[test]
+    fn request_maybe_at_anchors_only_when_there_is_an_anchor() {
+        let req = InputRequest::pick_single("w", vec![]);
+        assert_eq!(req.clone().maybe_at(None).target, None);
+        assert_eq!(
+            req.maybe_at(Some(OptionTarget::Agenda)).target,
+            Some(OptionTarget::Agenda)
+        );
+    }
+
+    /// A seed outcome persisted before `nature` existed still deserializes, and
+    /// lands on the behaviour it was written under.
+    #[test]
+    fn a_request_serialized_without_a_nature_reads_back_as_selection() {
+        let json =
+            r#"{"prompt":"w","options":[],"kind":"PickSingle","skippable":false,"target":null}"#;
+        let back: InputRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(back.nature, PromptNature::Selection);
     }
 
     #[test]
