@@ -9,6 +9,7 @@
 //! Since #541 it is a centred modal carrying **its own** Confirm — the
 //! acknowledge pause's only one — rather than a panel beside a button in the
 //! retired action bar.
+
 use game_core::state::{ChaosToken, TokenResolution};
 use game_core::{Event, FailureReason};
 use leptos::prelude::*;
@@ -36,9 +37,9 @@ pub struct SkillTestSummary {
 /// **Every input is a latch, and none is read off the live batch.** A resolution
 /// can span several apply batches, and the batch carrying the outcome is not
 /// reliably the one the panel renders on: an ST.4 effect that suspends for input
-/// strands the reveal an earlier batch back (#787), and a reaction in the `when`
-/// cell of `SkillTestResolved` — Lita Chantler 01117 — fires in the same apply as
-/// the outcome, so the acknowledge pause arrives on an *empty* batch (#853).
+/// strands the reveal an earlier batch back (#787), and a reaction on
+/// `SkillTestResolved` — Lita Chantler 01117 — fires in the same apply as the
+/// outcome, so the acknowledge pause arrives on an *empty* batch (#853).
 /// [`crate::store::reduce`] owns holding all three across those boundaries and
 /// releasing them at `SkillTestEnded`. `None` for the token means no token was
 /// drawn at all, and renders the em dash.

@@ -53,10 +53,13 @@ pub struct ClientState {
     /// The most recent skill test's resolution — the `SkillTestSucceeded` or
     /// `SkillTestFailed` event itself — held from the batch that determined it
     /// until the batch that tears the test down. Latched for the same reason as
-    /// the token, and for a sharper case (#853): a reaction in the `when` cell of
-    /// `SkillTestResolved` (Lita Chantler 01117, Dr. Milan 01033) suspends in the
-    /// *same* batch as the outcome, so by the time the acknowledge pause arrives
-    /// the live batch is empty and the result panel had nothing to render.
+    /// the token, and for a sharper case (#853): a reaction on `SkillTestResolved`
+    /// suspends in the *same* batch as the outcome, so by the time the acknowledge
+    /// pause arrives the live batch is empty and the result panel had nothing to
+    /// render. Lita Chantler 01117 fires from that condition's `when` cell and Dr.
+    /// Milan 01033 from its `after` cell; both cells are walked at
+    /// `SkillTestStep::DetermineOutcome`, before `AcknowledgeOutcome`, so either
+    /// splits the batch.
     /// Cleared by `SkillTestEnded`, by a new test's `SkillTestStarted`, and by
     /// `Hello`.
     pub last_skill_test_result: Option<game_core::Event>,
@@ -112,9 +115,9 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             // reveal, nor the one the acknowledge pause arrives on. Two known
             // splitters — an ST.4 effect that suspends for input, The
             // Gathering's Tablet dealing damage with a soak target in play
-            // (#787), and a reaction in the `when` cell of `SkillTestResolved`,
-            // which fires in the same apply as the outcome and pushes the
-            // acknowledge into a batch of its own (#853).
+            // (#787), and a reaction on `SkillTestResolved`, which fires in the
+            // same apply as the outcome and pushes the acknowledge into a batch
+            // of its own (#853).
             for event in &events {
                 match event {
                     // The difficulty announced at ST.1. Exact in current scope:
@@ -193,8 +196,34 @@ pub fn use_store() -> StoreSignal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use game_core::state::GameStateBuilder;
+    use game_core::state::{GameStateBuilder, InvestigatorId, SkillKind};
     use game_core::test_support::fixtures::test_investigator;
+    use game_core::Event;
+
+    /// An `Applied` frame carrying `events` and nothing else of interest.
+    fn applied(events: Vec<game_core::Event>) -> ServerMessage {
+        ServerMessage::Applied {
+            state: Box::new(sample_state()),
+            events,
+            outcome: EngineOutcome::Done,
+        }
+    }
+
+    fn started(difficulty: i8) -> game_core::Event {
+        game_core::Event::SkillTestStarted {
+            investigator: InvestigatorId(1),
+            skill: SkillKind::Willpower,
+            difficulty,
+        }
+    }
+
+    fn succeeded(margin: i8) -> game_core::Event {
+        game_core::Event::SkillTestSucceeded {
+            investigator: InvestigatorId(1),
+            skill: SkillKind::Willpower,
+            margin,
+        }
+    }
 
     fn sample_state() -> GameState {
         GameStateBuilder::new()
@@ -374,6 +403,7 @@ mod tests {
         let mut s = ClientState {
             last_skill_test_difficulty: Some(3),
             last_revealed_token: Some((ChaosToken::Tablet, TokenResolution::Modifier(-2))),
+            last_skill_test_result: Some(succeeded(1)),
             ..Default::default()
         };
         reduce(
@@ -391,6 +421,83 @@ mod tests {
         assert_eq!(
             s.last_revealed_token, None,
             "Hello clears the retained token, so a reconnect mid-pause shows no stale draw"
+        );
+        assert_eq!(
+            s.last_skill_test_result, None,
+            "and the retained result, for the same reason"
+        );
+    }
+
+    /// #853: the resolution outlives the batch that determined it, because a
+    /// reaction on `SkillTestResolved` puts the acknowledge pause in a batch of
+    /// its own — an *empty* one, on the board that found this.
+    #[test]
+    fn applied_latches_the_resolution_across_batches() {
+        let mut s = ClientState::default();
+        reduce(&mut s, applied(vec![started(3), succeeded(0)]));
+        assert_eq!(s.last_skill_test_result, Some(succeeded(0)));
+        reduce(&mut s, applied(Vec::new()));
+        assert_eq!(
+            s.last_skill_test_result,
+            Some(succeeded(0)),
+            "the acknowledge pause's empty batch leaves the latch alone"
+        );
+    }
+
+    /// ST.8 teardown releases it: past the end of its own test the result is no
+    /// longer the one the panel would render, and the modal's other guard — an
+    /// un-anchored `Confirm` (ADR 0011) — should not be all that stands between
+    /// a stale result and the next acknowledge-shaped pause.
+    #[test]
+    fn the_end_of_a_test_clears_its_result() {
+        let mut s = ClientState::default();
+        reduce(&mut s, applied(vec![started(3), succeeded(0)]));
+        reduce(
+            &mut s,
+            applied(vec![Event::SkillTestEnded {
+                investigator: InvestigatorId(1),
+            }]),
+        );
+        assert_eq!(s.last_skill_test_result, None);
+    }
+
+    /// A new test clears the previous one's result, as it clears its token: the
+    /// panel must never pair this test's difficulty with the last one's outcome.
+    #[test]
+    fn a_new_test_clears_the_previous_tests_result() {
+        let mut s = ClientState {
+            last_skill_test_result: Some(succeeded(4)),
+            ..Default::default()
+        };
+        reduce(&mut s, applied(vec![started(2)]));
+        assert_eq!(s.last_skill_test_result, None);
+    }
+
+    /// The batch walk is ordered, which is what lets one batch carry the end of
+    /// one test and the start of the next: the teardown clears, and then the new
+    /// test's difficulty lands rather than being wiped by an earlier-in-batch
+    /// event processed later.
+    #[test]
+    fn one_batch_can_end_a_test_and_start_the_next() {
+        let mut s = ClientState::default();
+        reduce(&mut s, applied(vec![started(3), succeeded(0)]));
+        reduce(
+            &mut s,
+            applied(vec![
+                Event::SkillTestEnded {
+                    investigator: InvestigatorId(1),
+                },
+                started(5),
+            ]),
+        );
+        assert_eq!(
+            s.last_skill_test_result, None,
+            "the first test's result is gone"
+        );
+        assert_eq!(
+            s.last_skill_test_difficulty,
+            Some(5),
+            "and the second test's difficulty is the live one"
         );
     }
 

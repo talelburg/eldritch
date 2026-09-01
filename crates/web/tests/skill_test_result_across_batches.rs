@@ -22,9 +22,13 @@
 //!
 //! She is the *occasion*, not the subject: her reaction sits in the `when` cell
 //! of `SkillTestResolved`, which the engine walks at `DetermineOutcome` — in the
-//! same apply as `SkillTestSucceeded` and before `AcknowledgeOutcome`. Any card
-//! in that cell (Dr. Milan 01033 on a successful Investigate, Obscuring Fog
-//! 01168's forced) splits the result away from the acknowledge the same way.
+//! same apply as `SkillTestSucceeded` and before `AcknowledgeOutcome`. The cell
+//! is not what matters, though: the `after` cell is walked at the same step, so
+//! Dr. Milan 01033 (*"\[reaction\] After you successfully investigate: Gain 1
+//! resource."*, an `after` reaction) splits the batch exactly the same way. What
+//! is load-bearing is that the ability **suspends for input** at all — a forced
+//! trigger that prompts for nothing, like Obscuring Fog 01168's, leaves the
+//! result and the acknowledge in one batch and never showed the bug.
 //!
 //! Own test binary: it installs the real `cards::REGISTRY`, which is first-wins
 //! per process.
