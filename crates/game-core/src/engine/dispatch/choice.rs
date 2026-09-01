@@ -47,7 +47,17 @@ pub(crate) fn awaiting_choice_anchored(
     prompt: impl Into<String>,
     options: Vec<(String, Option<OptionTarget>)>,
 ) -> EngineOutcome {
-    let options: Vec<ChoiceOption> = options
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::pick_single(prompt, choice_options(options)),
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// One `(label, anchor)` per offered option to the `ChoiceOption` list a request
+/// carries, `OptionId(i)` being the offered index. Shared by the two builders
+/// above and below so the index convention has one home.
+fn choice_options(options: Vec<(String, Option<OptionTarget>)>) -> Vec<ChoiceOption> {
+    options
         .into_iter()
         .enumerate()
         .map(|(i, (label, target))| {
@@ -57,11 +67,7 @@ pub(crate) fn awaiting_choice_anchored(
             )
             .maybe_at(target)
         })
-        .collect();
-    EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(prompt, options),
-        resume_token: ResumeToken(0),
-    }
+        .collect()
 }
 
 /// Build the `AwaitingInput` for a **decision** — a choice among alternatives
@@ -87,17 +93,11 @@ pub(crate) fn awaiting_decision(
         .into_iter()
         .map(|label| (label, anchor.clone()))
         .collect();
-    match awaiting_choice_anchored(prompt, options) {
-        EngineOutcome::AwaitingInput {
-            request,
-            resume_token,
-        } => EngineOutcome::AwaitingInput {
-            request: request.maybe_at(anchor).deciding(),
-            resume_token,
-        },
-        // `awaiting_choice_anchored` returns nothing else; a future variant
-        // should surface rather than be silently re-labelled a decision.
-        other => other,
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::pick_single(prompt, choice_options(options))
+            .maybe_at(anchor)
+            .deciding(),
+        resume_token: ResumeToken(0),
     }
 }
 

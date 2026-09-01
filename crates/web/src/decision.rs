@@ -210,7 +210,20 @@ mod tests {
 
     const FIRST_AID: &str = "01019";
     const AGENDA_1: &str = "01105";
+    const ACT_3: &str = "01110";
     const KIT: CardInstanceId = CardInstanceId(7);
+
+    /// The continuation the engine pushes while `deck`'s advance fires its
+    /// reverse — the step a decision printed on that reverse arises from.
+    fn advancing(deck: AdvanceDeck, code: CardCode) -> game_core::state::Continuation {
+        game_core::state::Continuation::AdvanceReverse {
+            deck,
+            from: 0,
+            leaving_code: code,
+            step: game_core::state::AdvanceStep::FireReverse,
+            trigger: game_core::state::AdvanceTrigger::Forced,
+        }
+    }
 
     fn install_registry() {
         // Idempotent (`OnceLock`, first-wins) and safe in the web lib test
@@ -300,13 +313,7 @@ mod tests {
         }];
         game.agenda_index = 0;
         game.continuations
-            .push(game_core::state::Continuation::AdvanceReverse {
-                deck: AdvanceDeck::Agenda,
-                from: 0,
-                leaving_code: CardCode::new(AGENDA_1),
-                step: game_core::state::AdvanceStep::FireReverse,
-                trigger: game_core::state::AdvanceTrigger::Forced,
-            });
+            .push(advancing(AdvanceDeck::Agenda, CardCode::new(AGENDA_1)));
         let state = awaiting(
             Some(game),
             InputRequest::pick_single("Choose one", branches())
@@ -317,6 +324,11 @@ mod tests {
             .expect("a live decision")
             .source
             .expect("the agenda is named");
+        assert_eq!(
+            source.name.trim(),
+            "A Lapse in Time",
+            "the reverse's own name, not the front's",
+        );
         assert!(
             source
                 .text
@@ -395,6 +407,50 @@ mod tests {
         );
     }
 
+    /// Act 3, What Have You Done? 01110 — the decision fires from the reverse
+    /// the player has just flipped to, so the modal must name *that* face:
+    /// `back_name` "Defending the Home" and the two printed bullets, not the
+    /// front's Objective. The advance sits at `FireReverse`, which is the only
+    /// step an act decision can arise from.
+    #[test]
+    fn an_advancing_act_is_named_and_quoted_by_its_reverse() {
+        install_registry();
+        let mut game = GameStateBuilder::new()
+            .with_investigator(test_investigator(1))
+            .build();
+        game.act_deck = vec![Act {
+            code: CardCode::new(ACT_3),
+            clue_threshold: 2,
+        }];
+        game.act_index = 0;
+        game.continuations
+            .push(advancing(AdvanceDeck::Act, CardCode::new(ACT_3)));
+        let state = awaiting(
+            Some(game),
+            InputRequest::pick_single("Choose one", branches())
+                .at(OptionTarget::Act)
+                .deciding(),
+        );
+        let source = live_decision(&state)
+            .expect("a live decision")
+            .source
+            .expect("the act is named");
+        assert_eq!(
+            source.name.trim(),
+            "Defending the Home",
+            "the reverse's own name, not the front's",
+        );
+        let text = source.text.expect("the reverse prints the choice");
+        assert!(
+            text.contains("The lead investigator must decide (choose one):")
+                && text.contains("Burn it down!"),
+            "the modal quotes the reverse's printed choice: {text:?}",
+        );
+    }
+
+    /// The control for the test above: with no advance in flight the act shows
+    /// its front, so the face selection is doing real work rather than always
+    /// reaching for the reverse.
     #[test]
     fn an_act_anchor_resolves_to_the_current_act() {
         install_registry();

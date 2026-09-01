@@ -504,11 +504,6 @@ pub fn InPlayCardView(instance: CardInPlay) -> impl IntoView {
         game_core::OptionTarget::CardInstance(instance_id),
     );
     let actionable = !menu_opts.is_empty();
-    // A live decision takes the menu away but leaves the glow: the modal is the
-    // sole surface, and the glow is what says which card the choice came from
-    // (#856). Offering the same branches here too is #541's double render.
-    #[cfg(target_arch = "wasm32")]
-    let opens_a_menu = actionable && !crate::decision::menus_are_suppressed();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
     view! {
@@ -517,7 +512,7 @@ pub fn InPlayCardView(instance: CardInPlay) -> impl IntoView {
             {
                 // wasm-only Activate/Trigger trigger + menu (web_sys / OutboundTx).
                 #[cfg(target_arch = "wasm32")]
-                opens_a_menu.then(|| crate::interaction::menu_layer(menu_opts, open))
+                actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
             }
         </div>
     }

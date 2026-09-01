@@ -86,10 +86,6 @@ pub fn ActCard(act: Act, face: Face) -> impl IntoView {
         .unwrap_or_default();
     let menu_opts = crate::interaction::options_for(&pending, game_core::OptionTarget::Act);
     let actionable = !menu_opts.is_empty();
-    // Glow, but no menu, while a decision modal is up — the modal is its sole
-    // surface (#856).
-    #[cfg(target_arch = "wasm32")]
-    let opens_a_menu = actionable && !crate::decision::menus_are_suppressed();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
     let mut root_class = String::from("card card--act");
@@ -121,7 +117,7 @@ pub fn ActCard(act: Act, face: Face) -> impl IntoView {
                 // wasm-only trigger + menu; host build: empty, `menu_opts` consumed
                 // above by `actionable` (no unused-var warning).
                 #[cfg(target_arch = "wasm32")]
-                opens_a_menu.then(|| crate::interaction::menu_layer(menu_opts, open))
+                actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
             }
         </article>
     }
@@ -143,10 +139,6 @@ pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
         .unwrap_or_default();
     let menu_opts = crate::interaction::options_for(&pending, game_core::OptionTarget::Agenda);
     let actionable = !menu_opts.is_empty();
-    // Glow, but no menu, while a decision modal is up — the modal is its sole
-    // surface (#856).
-    #[cfg(target_arch = "wasm32")]
-    let opens_a_menu = actionable && !crate::decision::menus_are_suppressed();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
     let mut root_class = String::from("card card--agenda");
@@ -178,7 +170,7 @@ pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
                 // wasm-only trigger + menu; host build: empty, `menu_opts` consumed
                 // above by `actionable` (no unused-var warning).
                 #[cfg(target_arch = "wasm32")]
-                opens_a_menu.then(|| crate::interaction::menu_layer(menu_opts, open))
+                actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
             }
         </article>
     }
