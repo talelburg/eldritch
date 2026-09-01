@@ -38,22 +38,28 @@ pub struct ClientState {
     pub outcome: Option<EngineOutcome>,
     pub status: ConnStatus,
     pub last_rejection: Option<String>,
-    /// The most recent `Applied` batch's events, retained for views that render
-    /// from event history (the #478 skill-test result panel). Cleared by `Hello`.
-    pub last_events: Vec<game_core::Event>,
     /// Difficulty of the most recently *started* skill test, captured from
     /// `Event::SkillTestStarted` (which arrives in an earlier batch than the
-    /// resolution). The result panel pairs it with the resolution batch's
+    /// resolution). The result panel pairs it with the latched
     /// `SkillTestSucceeded`/`Failed` margin to show total-vs-difficulty.
     /// Cleared by `Hello`.
     pub last_skill_test_difficulty: Option<i8>,
     /// The chaos token drawn by the most recent reveal, captured from
     /// `Event::ChaosTokenRevealed` with how it resolved. Latched for the same
     /// reason as the difficulty: a symbol token whose ST.4 effect suspends for
-    /// input puts the reveal in an earlier batch than the outcome, and the
-    /// result panel renders against the outcome's batch (#787). Cleared by
-    /// `Hello`.
+    /// input puts the reveal in an earlier batch than the outcome (#787).
+    /// Cleared by a new test's `SkillTestStarted` and by `Hello`.
     pub last_revealed_token: Option<(ChaosToken, TokenResolution)>,
+    /// The most recent skill test's resolution — the `SkillTestSucceeded` or
+    /// `SkillTestFailed` event itself — held from the batch that determined it
+    /// until the batch that tears the test down. Latched for the same reason as
+    /// the token, and for a sharper case (#853): a reaction in the `when` cell of
+    /// `SkillTestResolved` (Lita Chantler 01117, Dr. Milan 01033) suspends in the
+    /// *same* batch as the outcome, so by the time the acknowledge pause arrives
+    /// the live batch is empty and the result panel had nothing to render.
+    /// Cleared by `SkillTestEnded`, by a new test's `SkillTestStarted`, and by
+    /// `Hello`.
+    pub last_skill_test_result: Option<game_core::Event>,
     /// Full accumulated event history, grouped per applied submit, oldest
     /// first. Cleared by `Hello`. The event-log panel (#505) renders this.
     pub log: Vec<LogBatch>,
@@ -76,9 +82,9 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
             state.game = Some(*s);
             state.outcome = Some(outcome);
             state.last_rejection = None;
-            state.last_events = Vec::new();
             state.last_skill_test_difficulty = None;
             state.last_revealed_token = None;
+            state.last_skill_test_result = None;
             state.log = Vec::new();
             state.pending_label = None;
             if !events.is_empty() {
@@ -95,49 +101,67 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
         } => {
             state.game = Some(*s);
             state.outcome = Some(outcome);
-            // Capture difficulty from `SkillTestStarted` (an earlier batch than the
-            // resolution). Exact in current scope: since #677 the difficulty is a
-            // live query rather than a stored number, so the announced value is the
-            // difficulty *at ST.1* and the margin is computed against the ST.6
-            // re-read — but no in-corpus card changes an investigated location's
-            // shroud or an attacked enemy's fight or evade mid-test, so the two
-            // agree. The alternative is reading the modified difficulty off the
-            // still-live in-flight frame; that would be immune to (a) a reconnect
-            // mid-pause (`Hello` clears this cache) and (b) the first card that
-            // does move it mid-test. Revisit when either lands.
-            if let Some(difficulty) = events.iter().find_map(|e| match e {
-                game_core::Event::SkillTestStarted { difficulty, .. } => Some(*difficulty),
-                _ => None,
-            }) {
-                state.last_skill_test_difficulty = Some(difficulty);
-                // A new test invalidates the previous test's token. The difficulty
-                // needs no such clear — every test re-announces its own — but a
-                // test whose determination is already known draws no token at all
-                // (ST.3 and ST.4 do not happen), so without this the panel would
-                // name the *previous* test's token instead of the em dash (#787).
-                state.last_revealed_token = None;
-            }
-            // Latch the reveal for the same cross-batch reason (#787): the panel
-            // renders against the batch holding the outcome, which need not be the
-            // one holding the reveal. Scanned after the clear above, so a batch
-            // carrying both the start and the reveal still latches.
-            if let Some(revealed) = events.iter().find_map(|e| match e {
-                game_core::Event::ChaosTokenRevealed { token, resolution } => {
-                    Some((*token, *resolution))
+            // Walk the batch in order, latching what the result panel renders
+            // from. Order matters within a batch as much as across batches:
+            // `SkillTestStarted` clears the *previous* test's token and result,
+            // and a batch may legitimately carry the end of one test and the
+            // start of the next.
+            //
+            // Why latch at all: a resolution can span several apply batches, so
+            // the batch holding the outcome need not be the one holding the
+            // reveal, nor the one the acknowledge pause arrives on. Two known
+            // splitters — an ST.4 effect that suspends for input, The
+            // Gathering's Tablet dealing damage with a soak target in play
+            // (#787), and a reaction in the `when` cell of `SkillTestResolved`,
+            // which fires in the same apply as the outcome and pushes the
+            // acknowledge into a batch of its own (#853).
+            for event in &events {
+                match event {
+                    // The difficulty announced at ST.1. Exact in current scope:
+                    // since #677 the difficulty is a live query rather than a
+                    // stored number, so this is the difficulty *at ST.1* and the
+                    // margin is computed against the ST.6 re-read — but no
+                    // in-corpus card changes an investigated location's shroud or
+                    // an attacked enemy's fight or evade mid-test, so the two
+                    // agree. The alternative is reading the modified difficulty
+                    // off the still-live in-flight frame; that would be immune to
+                    // (a) a reconnect mid-pause (`Hello` clears this cache) and
+                    // (b) the first card that does move it mid-test. Revisit when
+                    // either lands.
+                    game_core::Event::SkillTestStarted { difficulty, .. } => {
+                        state.last_skill_test_difficulty = Some(*difficulty);
+                        // A new test invalidates the previous test's token and
+                        // result. The difficulty needs no such clear — every test
+                        // re-announces its own — but a test whose determination is
+                        // already known draws no token at all (ST.3 and ST.4 do
+                        // not happen), so without this the panel would name the
+                        // *previous* test's token instead of the em dash (#787).
+                        state.last_revealed_token = None;
+                        state.last_skill_test_result = None;
+                    }
+                    game_core::Event::ChaosTokenRevealed { token, resolution } => {
+                        state.last_revealed_token = Some((*token, *resolution));
+                    }
+                    game_core::Event::SkillTestSucceeded { .. }
+                    | game_core::Event::SkillTestFailed { .. } => {
+                        state.last_skill_test_result = Some(event.clone());
+                    }
+                    // ST.8 teardown: the test is over, so its result stops being
+                    // the one the panel would render. Without this the modal's
+                    // other guard — an un-anchored `Confirm` (ADR 0011) — would be
+                    // all that stands between a stale result and the next
+                    // acknowledge-shaped pause.
+                    game_core::Event::SkillTestEnded { .. } => {
+                        state.last_skill_test_result = None;
+                    }
+                    _ => {}
                 }
-                _ => None,
-            }) {
-                state.last_revealed_token = Some(revealed);
             }
             let header = state
                 .pending_label
                 .take()
                 .unwrap_or_else(|| "(action)".into());
-            state.log.push(LogBatch {
-                header,
-                events: events.clone(),
-            });
-            state.last_events = events;
+            state.log.push(LogBatch { header, events });
         }
         ServerMessage::Rejected { reason } => {
             state.last_rejection = Some(reason);
@@ -219,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn applied_retains_events_and_captures_difficulty() {
+    fn applied_logs_the_batch_and_captures_difficulty() {
         use game_core::state::{InvestigatorId, SkillKind};
         use game_core::Event;
 
@@ -237,7 +261,7 @@ mod tests {
             },
         );
         assert_eq!(s.last_skill_test_difficulty, Some(3));
-        assert_eq!(s.last_events.len(), 1);
+        assert_eq!(s.log.len(), 1, "the batch is logged");
     }
 
     /// #787: the reveal and the outcome can land in different batches when an
@@ -346,14 +370,12 @@ mod tests {
     }
 
     #[test]
-    fn hello_clears_retained_events_and_difficulty() {
+    fn hello_clears_the_retained_latches() {
         let mut s = ClientState {
             last_skill_test_difficulty: Some(3),
             last_revealed_token: Some((ChaosToken::Tablet, TokenResolution::Modifier(-2))),
             ..Default::default()
         };
-        // seed a non-empty last_events too
-        s.last_events.push(game_core::Event::ScenarioStarted);
         reduce(
             &mut s,
             ServerMessage::Hello {
@@ -361,10 +383,6 @@ mod tests {
                 outcome: EngineOutcome::Done,
                 events: Vec::new(),
             },
-        );
-        assert!(
-            s.last_events.is_empty(),
-            "Hello clears the retained event batch"
         );
         assert_eq!(
             s.last_skill_test_difficulty, None,
