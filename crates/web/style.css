@@ -99,6 +99,15 @@
 /* A card put into play at a location, controlled by nobody (Lita Chantler
    01117 in the Parlor). They are in play, but in no investigator's play area. */
 .at-location-token { color: #6a4c93; }
+/* An encounter card attached to the location itself (Obscuring Fog 01168). */
+.attachment-token { color: #8a6a1b; }
+/* Both zones are interactive surfaces (#847): an ability granted to the card is
+   anchored to its instance, so the token holds the hit-layer and the glow, and
+   `position: relative` is what the hit-layer's `inset: 0` resolves against. */
+.at-location-token, .attachment-token { position: relative; }
+.at-location-token.actionable, .attachment-token.actionable {
+    box-shadow: 0 0 0 2px #e0b84c; cursor: pointer;
+}
 /* Column direction stacks the map above the investigators panel: the map's
    location nodes are absolutely positioned, so a flex *row* would let a shrunk
    map overflow them onto the panel. The map reserves its inline height; the
@@ -225,8 +234,10 @@
    gone (#541), but the `z-index:20` lift stays: the banner (25) and the result
    modal still sit above the board, and removing layout code on a reasoning chain
    is how the map band breaks silently. Cards (`.card.actionable`) set no
-   z-index, so their menu escapes to the root context. */
-.map-location.actionable { z-index: 20; }
+   z-index, so their menu escapes to the root context. The lift is keyed on
+   `.has-menu` rather than on `.actionable`, because a rail token can be the
+   node's only actionable surface and its menu needs the same band (#847). */
+.map-location.has-menu { z-index: 20; }
 /* Glow and cursor go on the card and its hit-layer, never on the node: the node
    also spans the token rail, and a rail token that shows a pointer while the
    hit-layer doesn't reach it is advertising a click that does nothing. Rail
