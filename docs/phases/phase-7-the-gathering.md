@@ -109,6 +109,7 @@ the Tablet came out.
 | #770 ✅ PR #803 | A terminal version mismatch surfaces as one status line under a live-looking board, indistinguishable from an engine stall |
 | #848 ✅ PR #849 | A map node is a fixed-height `overflow: hidden` box, so the Parlor's printed text pushes its own occupancy tokens out of sight — Lita Chantler is invisible to a player standing next to her |
 | #847 ✅ PR #850 | A card at a location renders as an inert `<div>`, so the Parlor's granted Parley — anchored to Lita's card instance — has no surface to hang a menu off and cannot be activated at all |
+| #851 ✅ PR #852 | A constant play-ban is enforced by the `play_card` handler and copied into the open-turn menu, so the fast-window enumerator has neither — a player window offers Working a Hunch 01037 with Dissonant Voices 01165 in the threat area, and the pick is then rejected |
 
 ### Wave 3 — optional content (#258's children)
 

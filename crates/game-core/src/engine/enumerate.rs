@@ -232,38 +232,32 @@ fn push_act_actions(state: &GameState, investigator: InvestigatorId, out: &mut V
 /// `ActivateAbility` (slice 2a-ii-3, #393). Both need card data, so they yield
 /// nothing without a registry (matching the handlers, which reject on `None`).
 /// Fidelity is by delegation: the enumerator calls the same `check_play_card` /
-/// `check_activate_ability` the handlers call, plus the `PlayCard` handler's
-/// inline `play_is_prohibited` guard.
+/// `check_activate_ability` the handlers call.
 fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut Vec<TurnAction>) {
-    let Some(reg) = crate::card_registry::current() else {
+    if crate::card_registry::current().is_none() {
         return;
-    };
+    }
     let Some(inv) = state.investigators.get(&investigator) else {
         return;
     };
 
-    // PlayCard: one option per hand card the handler would accept — playable
-    // (`check_play_card`) and not forbidden by a constant restriction
-    // (`play_is_prohibited`, e.g. Dissonant Voices 01165).
+    // PlayCard: one option per hand card the handler would accept —
+    // `check_play_card` is the whole predicate, constant play-bans included
+    // (Dissonant Voices 01165).
     let hand_len = inv.hand.len();
     for idx in 0..hand_len {
         let hand_index = u8::try_from(idx).unwrap_or(u8::MAX);
-        if let Ok(check) = crate::engine::dispatch::reaction_windows::check_play_card(
+        if crate::engine::dispatch::reaction_windows::check_play_card(
             state,
             investigator,
             hand_index,
-        ) {
-            if !crate::engine::evaluator::play_is_prohibited(
-                state,
-                reg,
+        )
+        .is_ok()
+        {
+            out.push(TurnAction::PlayCard {
                 investigator,
-                check.card_type,
-            ) {
-                out.push(TurnAction::PlayCard {
-                    investigator,
-                    hand_index,
-                });
-            }
+                hand_index,
+            });
         }
     }
 

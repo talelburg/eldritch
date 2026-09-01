@@ -1627,6 +1627,33 @@ fn check_play_slot_satisfiable(
     Ok(())
 }
 
+/// A constant restriction may forbid playing this card type outright
+/// (Dissonant Voices 01165: *"You cannot play assets or events"*). Asked from
+/// [`check_play_card`] rather than from the `play_card` handler so every
+/// consumer of the validator agrees with it: the open-turn menu
+/// (`push_card_actions`), the fast-window enumerator ([`enumerate_fast_plays`])
+/// and the handler all read one predicate, and a forbidden card is never
+/// *offered* — not merely refused on submission. (The defect this closes:
+/// Working a Hunch 01037 was offered by a player window with Dissonant Voices
+/// in the threat area, because only the handler carried the guard.)
+fn check_play_not_prohibited(
+    state: &GameState,
+    investigator: InvestigatorId,
+    card_type: CardType,
+) -> Result<(), Cow<'static, str>> {
+    let Some(reg) = card_registry::current() else {
+        return Ok(());
+    };
+    if crate::engine::evaluator::play_is_prohibited(state, reg, investigator, card_type) {
+        return Err(format!(
+            "PlayCard: {investigator:?} cannot play a {card_type:?} \
+             (a constant restriction forbids it)"
+        )
+        .into());
+    }
+    Ok(())
+}
+
 pub(crate) fn check_play_card(
     state: &GameState,
     investigator: InvestigatorId,
@@ -1710,6 +1737,7 @@ pub(crate) fn check_play_card(
     // RR p.11 initiation gate (#495): an event can't be played if its OnPlay
     // effect can't change game state — open-turn menu OR Fast window route here.
     check_event_play_changes_state(state, investigator, &code, card_type, &abilities)?;
+    check_play_not_prohibited(state, investigator, card_type)?;
     // RR p.19 slots (#498): reject only when the card needs more of a slot type
     // than the investigator has capacity for — unsatisfiable even after discarding
     // every occupying asset. A merely-full slot is NOT rejected here; the play
