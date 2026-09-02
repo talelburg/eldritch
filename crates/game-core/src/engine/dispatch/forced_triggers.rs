@@ -191,7 +191,7 @@ pub(crate) fn queue_forced_triggers(
     );
     match hits.first() {
         Some(hit) => {
-            let out = resolve_one(cx, hit);
+            let (out, effect) = resolve_one(cx, hit);
             // #466: in interactive play, surface the lone forced effect as a
             // one-option pick *before* it resolves. resolve_one already pushed the
             // effect root frame and returned Done; push the ack *above* it so the
@@ -201,7 +201,13 @@ pub(crate) fn queue_forced_triggers(
             // single-hit path: the 2+ ordered run resolves via the forced-window's
             // own path (never `resolve_one`), so its ordering pick is the only
             // confirmation (no per-effect ack).
-            if cx.state.interactive_acknowledge && matches!(out, EngineOutcome::Done) {
+            //
+            // …except when the effect *is* an advance (#558's slice 4, #562).
+            // See `is_only_an_advance`.
+            if cx.state.interactive_acknowledge
+                && matches!(out, EngineOutcome::Done)
+                && !effect.as_ref().is_some_and(is_only_an_advance)
+            {
                 cx.state
                     .continuations
                     .push(crate::state::Continuation::AcknowledgeForced {
@@ -690,21 +696,62 @@ fn push_matching(
     }
 }
 
-fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> EngineOutcome {
+/// Whether a forced ability's effect does nothing but advance the act — in which
+/// case the ability raises **no** #466 acknowledge of its own. This is #558's
+/// deferred slice 4 (#562), and it is the fire-once rule that design already
+/// stated: *"a forced ability whose effect is only an act/agenda advance
+/// suppresses its `#466` confirm — the advance's `AwaitAck` is the single
+/// flip-click"*.
+///
+/// **The advance already has a click, and it is the better one.** The advance's
+/// own [`AwaitAck`](crate::state::AdvanceStep::AwaitAck) flip pick is anchored to
+/// the act and reads "Advance"; a `#466` ack in front of it is a second prompt
+/// saying the same thing, from the same card, under a prompt text that on 01110
+/// is *identical* to the one its reverse raises a moment later. The objective
+/// (*"If the Ghoul Priest is Defeated, advance."*) and the reverse are both
+/// printed on What Have You Done?, so the player met *"Forced — What Have You
+/// Done?"* twice with the flip in between and no way to tell which was which.
+///
+/// **Only a bare advance qualifies.** An ability that advances *and* does
+/// something else keeps its acknowledge: the other half is a real effect the
+/// player should confirm before it lands, and #466's rule is about effects, not
+/// about advances. No corpus card has that shape today; the predicate is written
+/// so that one arriving inherits the acknowledge rather than losing it silently.
+///
+/// The agenda has no counterpart to suppress — an agenda advances from the doom
+/// threshold, which is engine machinery rather than a forced ability, so its flip
+/// pick was never stacked on top of one.
+fn is_only_an_advance(effect: &crate::dsl::Effect) -> bool {
+    matches!(effect, crate::dsl::Effect::AdvanceCurrentAct)
+}
+
+/// Push `hit`'s effect root frame for the `drive` loop to resolve, and hand the
+/// effect back so the caller can decide whether it warrants a #466 acknowledge.
+fn resolve_one(
+    cx: &mut Cx,
+    hit: &ResolutionCandidate,
+) -> (EngineOutcome, Option<crate::dsl::Effect>) {
     if card_registry::current().is_none() {
-        return EngineOutcome::Rejected {
-            reason: "queue_forced_triggers: registry vanished between collect and resolve".into(),
-        };
+        return (
+            EngineOutcome::Rejected {
+                reason: "queue_forced_triggers: registry vanished between collect and resolve"
+                    .into(),
+            },
+            None,
+        );
     }
     let Some(ability) = abilities_in_effect::resolve(cx.state, hit.source, &hit.code, &hit.address)
     else {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "queue_forced_triggers: {} no longer has the ability at {:?} at resolve time",
-                hit.code, hit.address,
-            )
-            .into(),
-        };
+        return (
+            EngineOutcome::Rejected {
+                reason: format!(
+                    "queue_forced_triggers: {} no longer has the ability at {:?} at resolve time",
+                    hit.code, hit.address,
+                )
+                .into(),
+            },
+            None,
+        );
     };
     let effect = ability.effect;
     // A forced run holds only in-play / board candidates (`Hand` ⇒ `None` is
@@ -716,7 +763,7 @@ fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> EngineOutcome {
     let ctx =
         EvalContext::for_controller_with_optional_source(hit.controller, hit.source.ability());
     push_effect(cx, &effect, ctx);
-    EngineOutcome::Done
+    (EngineOutcome::Done, Some(effect))
 }
 
 /// Display name for the card a forced ability is printed on, for the
@@ -731,8 +778,8 @@ fn forced_source_name(code: &CardCode) -> String {
 
 /// Drive a [`Continuation::AcknowledgeForced`](crate::state::Continuation::AcknowledgeForced)
 /// frame (#466): suspend with a one-option `PickSingle` naming the source. The
-/// pick precedes the forced effect's resolution ("confirm before the effect").
-/// Mirrors `advance_reverse::drive`'s `AwaitAck` suspend.
+/// pick precedes the forced effect's resolution ("confirm before the effect"),
+/// and for an act/agenda reverse it is the whole of what an advance asks (#858).
 pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
     use crate::engine::{ChoiceOption, InputRequest, OptionId, ResumeToken};
     let Some(crate::state::Continuation::AcknowledgeForced { candidate }) =

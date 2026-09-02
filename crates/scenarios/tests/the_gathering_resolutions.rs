@@ -335,6 +335,156 @@ fn drive_the_ghoul_priest_defeat_and_pick(pick: u32, expected: u8) {
     );
 }
 
+/// Drive solo Roland to the Ghoul Priest's defeat with `interactive_acknowledge`
+/// **on**, answering the Fight's own skill-test result acknowledge on the way.
+/// Returns the result the defeat produced, so the caller's assertions start at
+/// the first prompt the *advance* raises.
+///
+/// Acts 1 and 2 run through `advance_to_the_terminal_act` with the flag still
+/// off: their prompts are not what the act-3 click count is about, and leaving
+/// them interactive would put the whole scenario's acknowledges in front of it.
+fn interactive_ghoul_priest_defeat() -> game_core::engine::ApplyResult {
+    let mut state = seated_roland();
+    {
+        // Same two seeds as the non-interactive walk, for the same reasons.
+        let roland = state.investigators.get_mut(&INV).expect("Roland seated");
+        roland.clues = 5;
+    }
+    state.encounter_deck.clear();
+    state.encounter_deck.push_back(CardCode::new("01166"));
+    let mut state = advance_to_the_terminal_act(state);
+
+    state.interactive_acknowledge = true;
+    let priest_id = {
+        let priest = state
+            .enemies
+            .values_mut()
+            .find(|e| e.code.as_str() == "01116")
+            .expect("act 2's reverse spawned the real Ghoul Priest");
+        priest.damage = priest.max_health - 1;
+        priest.engaged_with = Some(INV);
+        priest.id
+    };
+    state
+        .investigators
+        .get_mut(&INV)
+        .expect("Roland seated")
+        .actions_remaining = 3;
+
+    let paused = take_turn_action(
+        state,
+        &TurnAction::Fight {
+            investigator: INV,
+            enemy: priest_id,
+        },
+    );
+    let r = apply(
+        paused.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        }),
+    );
+    // The Fight's own result acknowledge — the skill test's, not the advance's.
+    assert_eq!(prompt_of(&r), "Acknowledge the skill-test result.");
+    apply(
+        r.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }),
+    )
+}
+
+/// Act 3 (01110) advances in **two** clicks — the flip, then the reverse — and
+/// its printed choice follows the second without a third (#562).
+///
+/// The flip pick (#558) is the click that advances: the act glows, you click it,
+/// and it turns over. The reverse's own `#466` acknowledge is the click that
+/// resolves what you have just read. What sat in front of both was a *third*
+/// prompt, the `#466` acknowledge for 01110's Objective — a forced ability whose
+/// entire effect is the advance — and on this card it renders under the very same
+/// text as the reverse's, because both are printed on What Have You Done?. The
+/// suppression removes it, leaving 01110 with the agenda's shape.
+///
+/// The non-interactive walk of this same path is
+/// `act_progression_and_ghoul_priest_defeat_reaches_r1`; this one turns the flag
+/// on and counts what the player is asked.
+#[test]
+fn act_3_advances_in_two_clicks_and_its_choice_follows_the_second() {
+    use game_core::engine::OptionTarget;
+    use game_core::state::{AdvanceDeck, AdvanceStep, Continuation};
+
+    let r = interactive_ghoul_priest_defeat();
+
+    // Click 1 — the flip. The Objective fired and raised nothing of its own, so
+    // the first thing the player meets is the advance's own on-card pick, with
+    // the act still showing its front (the client reads `AwaitAck`).
+    assert_event!(r.events, Event::EnemyDefeated { .. });
+    assert_event!(r.events, Event::ActAdvanced { from } if *from == 2);
+    assert_eq!(prompt_of(&r), "Act 3 advanced — acknowledge.");
+    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
+        unreachable!("prompt_of would have panicked")
+    };
+    assert_eq!(request.options.len(), 1, "one option: {request:?}");
+    assert_eq!(
+        request.options[0].target,
+        Some(OptionTarget::Act),
+        "the flip pick anchors to the act card",
+    );
+    assert!(
+        matches!(
+            r.state.continuations.last(),
+            Some(Continuation::AdvanceReverse {
+                deck: AdvanceDeck::Act,
+                step: AdvanceStep::AwaitAck,
+                ..
+            })
+        ),
+        "the Objective's own acknowledge is suppressed, so nothing sits above the \
+         advance: {:?}",
+        r.state.continuations,
+    );
+    assert!(r.state.ending.is_none(), "nothing latched before the flip");
+
+    // Click 2 — the flipped reverse's own acknowledge, on the reverse face.
+    let r = pick_single(r.state);
+    assert_eq!(prompt_of(&r), "Forced — What Have You Done?", "the reverse");
+    assert!(r.state.ending.is_none(), "nor before the reverse runs");
+
+    // …and its ChooseOne follows immediately, with no third click in between.
+    let r = pick_single(r.state);
+    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
+        panic!("expected 01110's R1/R2 choice, got {:?}", r.outcome);
+    };
+    assert_eq!(
+        request
+            .options
+            .iter()
+            .map(|o| o.label.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "It was never much of a home. Burn it down! (\u{2192}R1)",
+            "This hell-pit is my home! No way are we burning it! (\u{2192}R2)",
+        ],
+        "the choice itself is unchanged",
+    );
+    assert_eq!(
+        request.nature,
+        game_core::engine::PromptNature::Decision,
+        "and it presents itself as a decision, so the modal is the surface (ADR 0015)",
+    );
+
+    let done = apply(
+        r.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+        }),
+    );
+    assert_eq!(
+        done.state.ending,
+        Some(ScenarioEnding::Resolution(ResolutionId::new(1))),
+    );
+}
+
 /// The open prompt's text. Panics with the outcome if nothing is awaiting input.
 fn prompt_of(r: &game_core::engine::ApplyResult) -> &str {
     match &r.outcome {
