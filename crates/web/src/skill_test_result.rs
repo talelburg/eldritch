@@ -127,15 +127,13 @@ pub fn modal_is_live(state: &crate::store::ClientState) -> bool {
 #[component]
 pub fn SkillTestResultView() -> impl IntoView {
     let store = use_store();
-    let drag = crate::drag::Drag::new();
-    // This component mounts once for the app's lifetime, so the offset is
-    // re-centred as each prompt opens rather than left where the last one was
-    // dragged to (#857).
-    let live = Memo::new(move |_| modal_is_live(&store.get()));
-    Effect::new(move |_| {
-        if live.get() {
-            drag.reset();
-        }
+    // The prompt's fingerprint: which applied batch a live modal is up for. The
+    // batch count is what tells one prompt from the next when neither liveness
+    // nor the rendered content does — two identical tests running back to back
+    // (#857).
+    let drag = crate::drag::Drag::per_prompt(move || {
+        let st = store.get();
+        modal_is_live(&st).then_some(st.log.len())
     });
     view! {
         {move || {
@@ -148,7 +146,7 @@ pub fn SkillTestResultView() -> impl IntoView {
             };
             view! {
                 // No `on:click` on the backdrop: dismissal is engine input.
-                <div class="str-backdrop" style=move || drag.scrim_style(0.45)></div>
+                <div class="str-backdrop" style=move || drag.scrim_style()></div>
                 <section
                     class="skill-test-result"
                     style=move || drag.transform_style()

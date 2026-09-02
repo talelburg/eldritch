@@ -15,7 +15,7 @@
 //! ```text
 //! let drag = Drag::new();
 //! view! {
-//!     <div class="scrim" style=move || drag.scrim_style(0.45)></div>
+//!     <div class="scrim" style=move || drag.scrim_style()></div>
 //!     <section
 //!         style=move || drag.transform_style()
 //!         on:pointerdown=move |ev| drag.down(&ev)
@@ -31,9 +31,11 @@
 //! tint so the board still reads as inert, and it keeps having no click
 //! handler: moving the modal is not dismissing it.
 //!
-//! **Drag state is per-mount**, so each newly-opened modal appears centred: a
+//! **Drag state is per prompt**, so each newly-opened modal appears centred: a
 //! position persisted across prompts can strand a modal half off-screen after a
-//! window resize, which then needs its own affordance to dig out of.
+//! window resize, which then needs its own affordance to dig out of. Both views
+//! mount once for the app's lifetime, so [`Drag::per_prompt`] is what ties the
+//! offset to the prompt rather than to the mount.
 //!
 //! # Two targets, one piece of markup
 //!
@@ -102,20 +104,25 @@ pub fn transform_style(offset: (f64, f64)) -> String {
     format!("transform: translate(calc(-50% + {x}px), calc(-50% + {y}px));")
 }
 
-/// The alpha a scrim of strength `full` shows at `offset`: full while the modal
-/// is centred, and a light tint once it has been moved. Pure.
+/// The alpha a modal's scrim shows at `offset`: [`FULL`] while the modal is
+/// centred, [`FADED`] once it has been moved. Pure.
 #[must_use]
-pub fn scrim_alpha(offset: (f64, f64), full: f64) -> f64 {
+pub fn scrim_alpha(offset: (f64, f64)) -> f64 {
     if moved_off_centre(offset) {
         FADED
     } else {
-        full
+        FULL
     }
 }
 
+/// The scrim's alpha under a centred modal. Both scrims are styled inline from
+/// here rather than from `style.css`, so the alpha has one home: it is a
+/// function of how far the modal has been dragged, not a constant.
+pub const FULL: f64 = 0.45;
+
 /// The scrim's alpha once its modal has been moved: enough tint that the board
 /// still reads as inert, little enough that it reads at all.
-const FADED: f64 = 0.12;
+pub const FADED: f64 = 0.12;
 
 /// Drag state for one modal: its offset from the centred position, and the
 /// gesture in flight, if any.
@@ -145,29 +152,49 @@ impl Drag {
         }
     }
 
-    /// True once the player has moved the modal off centre. Reactive.
-    #[must_use]
-    pub fn moved(self) -> bool {
-        moved_off_centre(self.offset.get())
-    }
-
     /// The modal's `transform`, offset included. Reactive.
     #[must_use]
     pub fn transform_style(self) -> String {
         transform_style(self.offset.get())
     }
 
-    /// The scrim's `background` at `full` alpha, faded once moved. Reactive.
+    /// The scrim's `background`, faded once the modal has been moved. Reactive.
     #[must_use]
-    pub fn scrim_style(self, full: f64) -> String {
-        let alpha = scrim_alpha(self.offset.get(), full);
+    pub fn scrim_style(self) -> String {
+        let alpha = scrim_alpha(self.offset.get());
         format!("background: rgba(0, 0, 0, {alpha});")
     }
 
-    /// Put the modal back at the centre, cancelling any gesture. Called when a
-    /// modal opens: drag state is per-prompt, and a position carried over from a
-    /// previous prompt can strand a modal off-screen.
-    pub fn reset(self) {
+    /// A handle that re-centres its modal whenever `prompt` reports a different
+    /// prompt — a fingerprint that changes as one prompt gives way to the next,
+    /// and that both views build from the store.
+    ///
+    /// **Liveness alone is not that fingerprint.** A view mounts once for the
+    /// app's lifetime, and answering one prompt into another of the same kind
+    /// never takes liveness false in between — so a modal keyed on liveness
+    /// would open the second prompt wherever the player left the first, exactly
+    /// the stranding this is here to prevent.
+    #[must_use]
+    pub fn per_prompt<T>(prompt: impl Fn() -> T + Send + Sync + 'static) -> Self
+    where
+        T: Clone + PartialEq + Send + Sync + 'static,
+    {
+        let drag = Self::new();
+        // The effect is handed what it returned last time, which is the whole
+        // comparison: no previous fingerprint means the first run, and a
+        // different one means a different prompt is up.
+        Effect::new(move |previous: Option<T>| {
+            let current = prompt();
+            if previous.as_ref() != Some(&current) {
+                drag.reset();
+            }
+            current
+        });
+        drag
+    }
+
+    /// Put the modal back at the centre, cancelling any gesture.
+    fn reset(self) {
         self.offset.set((0.0, 0.0));
         self.gesture.set(None);
     }
@@ -272,14 +299,14 @@ mod tests {
 
     #[test]
     fn the_scrim_is_at_full_strength_until_the_modal_is_moved() {
-        assert!((scrim_alpha((0.0, 0.0), 0.45) - 0.45).abs() < f64::EPSILON);
+        assert!((scrim_alpha((0.0, 0.0)) - FULL).abs() < f64::EPSILON);
     }
 
     /// Faded, not cleared: the board must still read as inert.
     #[test]
     fn the_scrim_fades_but_keeps_its_tint_once_moved() {
-        let faded = scrim_alpha((40.0, 0.0), 0.45);
-        assert!(faded < 0.45, "fades: {faded}");
+        let faded = scrim_alpha((40.0, 0.0));
+        assert!(faded < FULL, "fades: {faded}");
         assert!(faded > 0.0, "keeps a tint: {faded}");
     }
 }

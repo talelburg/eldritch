@@ -401,8 +401,12 @@ async fn a_press_on_confirm_does_not_drag_the_modal() {
     );
 }
 
-/// Drag state is per prompt, not per mount: a modal parked off-screen must not
-/// strand the next prompt where the player cannot see it.
+/// Drag state belongs to the prompt, not to the mount: a modal parked aside must
+/// not strand the next prompt where the player cannot see it.
+///
+/// The second test resolves in the same update as the first is acknowledged, so
+/// the modal never goes away in between — the case a reset keyed on liveness
+/// alone would miss.
 #[wasm_bindgen_test]
 async fn a_newly_opened_modal_is_centred_again() {
     let (store, _rx) = mount_modal();
@@ -412,20 +416,6 @@ async fn a_newly_opened_modal_is_centred_again() {
     leptos::task::tick().await;
     assert!(style_of(&section).contains("120px"), "moved first");
 
-    // The player acknowledges: the pause ends, and a later test resolves.
-    store.update(|s| {
-        reduce(
-            s,
-            ServerMessage::Applied {
-                state: Box::new(base_game()),
-                events: vec![Event::SkillTestEnded {
-                    investigator: InvestigatorId(1),
-                }],
-                outcome: EngineOutcome::Done,
-            },
-        );
-    });
-    leptos::task::tick().await;
     resolve_a_test(store, acknowledge_pause()).await;
 
     let section = last_section().expect("the second prompt's modal renders");
