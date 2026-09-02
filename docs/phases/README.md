@@ -19,7 +19,7 @@ When starting work on a new issue, read the relevant phase doc first. It's faste
 | 4 | Scenario plumbing | ✅ closed | [phase-4-scenario-plumbing.md](phase-4-scenario-plumbing.md) |
 | 5 | Server + persistence | ✅ closed | [phase-5-server-and-persistence.md](phase-5-server-and-persistence.md) |
 | 6 | Web client v0 | ✅ closed | [phase-6-web-client-v0.md](phase-6-web-client-v0.md) |
-| 7 | The Gathering | 🟡 in progress | [phase-7-the-gathering.md](phase-7-the-gathering.md) |
+| 7 | The Gathering | ✅ closed | [phase-7-the-gathering.md](phase-7-the-gathering.md) |
 | 7.5 | Investigator breadth | ⏳ planned | [phase-7.5-investigator-breadth.md](phase-7.5-investigator-breadth.md) |
 | 8 | Multiplayer + auth | ⏳ planned | [phase-8-multiplayer-and-auth.md](phase-8-multiplayer-and-auth.md) |
 | 9 | Campaign + Night of the Zealot | ⏳ planned | [phase-9-campaign-and-night-of-the-zealot.md](phase-9-campaign-and-night-of-the-zealot.md) |

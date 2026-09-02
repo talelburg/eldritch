@@ -146,9 +146,9 @@ fn ghoul_count_at_investigator_location(cx: &SymbolCtx) -> u8 {
 /// is at your location. The Gathering's Standard bag has no Elder Thing
 /// token. The Hard/Expert back (skull −2; cultist "reveal another token";
 /// tablet −4, 1 damage AND 1 horror) is unimplemented — when difficulty
-/// selection lands (phase-7 Future slices) this fn needs a difficulty
-/// parameter, and the Hard/Expert cultist needs a token-re-draw shape
-/// `SymbolOutcome` can't express yet.
+/// selection lands (`TODO(#862)`) this fn needs a difficulty parameter, and
+/// the Hard/Expert cultist needs a token-re-draw shape `SymbolOutcome` can't
+/// express yet.
 fn resolve_symbol(token: ChaosToken, cx: &SymbolCtx) -> SymbolOutcome {
     let ghouls = ghoul_count_at_investigator_location(cx);
     match token {

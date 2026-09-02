@@ -11,7 +11,9 @@ authoritative): #65 (other-investigator commits), #146 (turn-order choice),
 windows scoped to the controller), #409 (failed Fight redirects damage), #573
 (acts drop `clues_fixed`), #581 (no seat/identity on the wire), #650 (no-Spawn
 enemy prey-resolves), #654 (*Prey – Bearer only*), #662 (barricade-stranded
-enemy re-engagement). Scoping proper happens when Phase 7 closes.
+enemy re-engagement). A thirteenth is not a deferral but the design ticket that
+unblocks several of them — #863, solo-with-2 UX, filed when Phase 7 closed.
+**Scoping proper is now due**: Phase 7 closed 2026-09-03.
 
 ## Goal
 
@@ -29,7 +31,10 @@ From the 2026-05-01/02 strategy phase:
 
 ## Open questions
 
-⏳ **Scoping TBD.** When Phase 7 closes, file:
+⏳ **Scoping due.** Phase 7 closed 2026-09-03, which is this section's trigger.
+The first item is already filed — **[#863](https://github.com/talelburg/eldritch/issues/863)**,
+solo-with-2 UX, which asks the *Cross-investigator UI* question below with one
+client instead of two and should be settled first. The rest still need filing:
 
 - **Session/group model.** A "group" is a stable set of players; a "session" is one scenario play. Database tables for both.
 - **Lobby UX.** How do players gather before starting a scenario? Pre-game-share-link? Group-saved-state?
