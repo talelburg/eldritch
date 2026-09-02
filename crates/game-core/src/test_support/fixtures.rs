@@ -198,6 +198,18 @@ pub fn awaiting_skippable_commit_input(prompt: impl Into<String>) -> EngineOutco
     }
 }
 
+/// An [`AwaitingInput`](EngineOutcome::AwaitingInput) around an arbitrary
+/// `request`, for a UI fixture that needs a prompt shape the named helpers do
+/// not build — an anchored decision, say. [`ResumeToken`]'s field is
+/// `pub(crate)`, so a host crate cannot wrap its own request without this.
+#[must_use]
+pub fn awaiting_request(request: InputRequest) -> EngineOutcome {
+    EngineOutcome::AwaitingInput {
+        request,
+        resume_token: ResumeToken(0),
+    }
+}
+
 /// A sample structured [`PickSingle`](crate::InputResponse::PickSingle)
 /// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome, for client/UI
 /// fixtures (#447). Carries two options:

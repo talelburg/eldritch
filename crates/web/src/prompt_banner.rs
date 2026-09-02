@@ -39,6 +39,13 @@ pub fn PromptBanner() -> impl IntoView {
                 return ().into_any();
             };
             let is_multi = request.kind == InputKind::PickMultiple;
+            // A decision has its own modal, and that modal is its *sole* surface
+            // (#856): the banner renders neither its text nor its branches. The
+            // predicate lives with the view it governs, exactly as the skill-test
+            // result modal's does below. The banner's other controls stay — it is
+            // still the floor, and a Pass with nowhere else to go must not vanish
+            // with the text.
+            let decision_is_live = crate::decision::modal_is_live(&state);
             // The open-turn menu is the one prompt whose *text* the banner
             // swallows — identified by its anchor rather than by its string (ADR
             // 0011), because "Choose an action" every turn would spend the one
@@ -49,10 +56,11 @@ pub fn PromptBanner() -> impl IntoView {
             // location, EndTurn off-frame — has no board home, and suppressing
             // the whole banner would make it unreachable rather than merely
             // misplaced.
-            let suppress_text = matches!(
-                crate::interaction::prompt_anchor(&state),
-                Some(OptionTarget::TurnControl(_))
-            );
+            let suppress_text = decision_is_live
+                || matches!(
+                    crate::interaction::prompt_anchor(&state),
+                    Some(OptionTarget::TurnControl(_))
+                );
             let prompt = (!suppress_text).then(|| request.prompt.clone());
 
             // Option buttons — the live prompt's **un-anchored** options only;
@@ -60,10 +68,14 @@ pub fn PromptBanner() -> impl IntoView {
             // twice (#541). With the flat bar gone this is the only home an
             // un-anchored option has: evaluator `ChooseOne` branches, the
             // skill-substitution pick, a soak point taken by the investigator.
+            //
+            // A decision's branches are excluded whatever their anchor: they are
+            // un-anchored whenever #845 degrades the source, and the modal is
+            // carrying them regardless.
             let option_btns: Vec<_> = request
                 .options
                 .iter()
-                .filter(|opt| opt.target.is_none())
+                .filter(|opt| !decision_is_live && opt.target.is_none())
                 .cloned()
                 .map(|opt: ChoiceOption| {
                     let ChoiceOption { id, label, .. } = opt;

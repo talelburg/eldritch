@@ -205,12 +205,22 @@ pub fn ContextMenu(
 /// coords into `open`; the [`ContextMenu`] renders there. Embedded by each entity
 /// under `#[cfg(target_arch = "wasm32")]` so no `web_sys` touches the host build;
 /// the anchor supplies the `actionable` glow class + `position: relative`.
+///
+/// **Renders nothing while a decision modal is up** (#856). That modal is the
+/// sole surface for the choice it carries, and the rule belongs here rather than
+/// at each of the seven entities that embed a menu: an entity decides whether it
+/// has options, not whether a menu is how they are offered. The glow is
+/// untouched — it stays on the anchor, and on the source card it is the
+/// provenance signal saying where the choice came from.
 #[cfg(target_arch = "wasm32")]
 pub fn menu_layer(
     options: Vec<ChoiceOption>,
     open: leptos::prelude::RwSignal<Option<(i32, i32)>>,
 ) -> impl leptos::prelude::IntoView {
     use leptos::prelude::*;
+    if crate::decision::menus_are_suppressed() {
+        return ().into_any();
+    }
     view! {
         <div
             class="menu-hit"
@@ -221,6 +231,7 @@ pub fn menu_layer(
         ></div>
         <ContextMenu options=options open=open/>
     }
+    .into_any()
 }
 
 #[cfg(test)]

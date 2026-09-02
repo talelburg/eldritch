@@ -505,3 +505,56 @@ fn the_choice_keeps_its_anchor_while_first_aid_is_still_in_play() {
         );
     }
 }
+
+/// **The damage-or-horror choice is a *decision*, and the heal's target pick is
+/// a *selection*** (ADR 0015). One activation raises both, in that order, so the
+/// two natures are pinned against the same fixture.
+///
+/// The nature is what the client maps to a presentation: a decision presents
+/// itself the moment it arises, a selection keeps its context menu. Nothing in
+/// the type catches an omitted classification — `Selection` is the silent
+/// default — so this assertion is what stands in for the compiler (ADR 0011 made
+/// the identical trade for un-anchored options).
+#[test]
+fn the_damage_or_horror_choice_is_a_decision_and_the_heal_target_is_a_selection() {
+    use game_core::engine::PromptNature;
+
+    let mut state = board(3);
+    // Two co-located investigators, both hurt, so the heal's target grounding is
+    // a genuine multi-candidate selection rather than an auto-bind.
+    let mut other = test_investigator(2);
+    other.investigator_card.accumulated_damage = 2;
+    other.investigator_card.accumulated_horror = 2;
+    other.investigator_card.instance_id = CardInstanceId(50);
+    other.current_location = Some(LOC);
+    state.investigators.insert(InvestigatorId(2), other);
+
+    let r = activate(state);
+    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
+        panic!("expected the damage-or-horror choice: {:?}", r.outcome);
+    };
+    assert_eq!(
+        request.nature,
+        PromptNature::Decision,
+        "the two heal modes are alternatives printed on First Aid, not board \
+         entities to disambiguate between: {request:?}",
+    );
+
+    // Branch 0 = heal damage; grounding its `InvestigatorTarget::Chosen` offers
+    // the two co-located investigators — board entities, so a selection.
+    let r = pick(r.state, 0);
+    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
+        panic!("expected the heal-target pick: {:?}", r.outcome);
+    };
+    assert_eq!(
+        request.options.len(),
+        2,
+        "both investigators live: {request:?}"
+    );
+    assert_eq!(
+        request.nature,
+        PromptNature::Selection,
+        "picking which investigator to heal is a selection, and `Selection` is \
+         deliberate here rather than merely absent: {request:?}",
+    );
+}

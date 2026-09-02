@@ -353,6 +353,35 @@
     padding: 0.4rem 1.4rem; font-weight: bold; cursor: pointer;
 }
 
+/* Decision modal (#856): a choice among alternatives printed on one card
+   presents itself the moment it arises. The same scrim-and-card shape as the
+   skill-test result modal, and stacked in the same band — the two cannot be up
+   at once (a decision is a PickSingle, that pause is a Confirm), so they never
+   compete. No click handler on the scrim: every exit is engine input. */
+.decision-backdrop { position: fixed; inset: 0; z-index: 28; background: rgba(0, 0, 0, 0.45); }
+.decision-modal {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 29;
+    min-width: 20rem; max-width: 30rem; background: #fff; border: 2px solid #1a1a1a;
+    border-radius: 6px; padding: 1rem 1.5rem; text-align: center;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+}
+.decision-modal .decision-source {
+    font-weight: bold; font-size: 1.05rem; margin-bottom: 0.35rem;
+}
+/* The source card's own printed text, so the card the modal covers is
+   redundant rather than missed. `.card-text` supplies the symbol chips. */
+.decision-modal .decision-printed {
+    font-size: 0.85rem; text-align: left; margin-bottom: 0.75rem;
+    padding-bottom: 0.6rem; border-bottom: 1px solid #ddd;
+}
+.decision-modal .decision-prompt { margin: 0 0 0.6rem; font-weight: bold; }
+.decision-branches { display: flex; flex-direction: column; gap: 0.4rem; }
+.decision-branch {
+    background: #1a1a1a; color: #fff; border: none; border-radius: 4px;
+    padding: 0.5rem 1rem; font-weight: bold; cursor: pointer; text-align: left;
+}
+.decision-branch:hover { background: #333; }
+
 /* Version-mismatch overlay (#770): the same scrim-and-card shape as the
    skill-test modal, stacked above every other overlay (including the pre-game
    picker at 30). The state is terminal — the transport has stopped reconnecting

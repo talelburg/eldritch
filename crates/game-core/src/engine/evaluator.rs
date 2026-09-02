@@ -761,6 +761,14 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
 /// ability source leaves the options un-anchored, which renders them in the
 /// prompt banner exactly as every `ChooseOne` did before.
 ///
+/// **This is the one construction site that raises a
+/// [`Decision`](crate::engine::PromptNature::Decision)** (ADR 0015): its options
+/// are alternatives printed on one card, so the anchor records *where the text
+/// is printed* rather than *what is being selected*, and a host presents the
+/// branches the moment they arise instead of behind a click on that card. The
+/// other `PickSingle` sites keep the `Selection` default, which is the status
+/// quo. The engine names the nature and never the presentation.
+///
 /// **The anchor is liveness-checked, because this one is a snapshot** (#845).
 /// `ability_source` is fixed when the ability is activated, but this prompt is
 /// built after the costs are paid and after the `AoO` loop — so the source may
@@ -787,7 +795,7 @@ fn step_choose_one(
     node: &Effect,
 ) -> EngineOutcome {
     use crate::engine::dispatch::choice::{
-        awaiting_choice_anchored, resolve_choice_count, ChoiceResolution,
+        awaiting_decision, resolve_choice_count, ChoiceResolution,
     };
     let live: Vec<usize> = branches
         .iter()
@@ -829,12 +837,9 @@ fn step_choose_one(
                 let anchor = eval_ctx
                     .ability_source
                     .and_then(|s| crate::engine::OptionTarget::for_live_source(s, cx.state));
-                let options = live
-                    .iter()
-                    .map(|&i| (branches[i].label.clone(), anchor.clone()))
-                    .collect();
+                let labels = live.iter().map(|&i| branches[i].label.clone()).collect();
                 suspend_leaf_in_place(cx, node, eval_ctx);
-                awaiting_choice_anchored("Choose one", options)
+                awaiting_decision("Choose one", labels, anchor)
             }
         }
     }

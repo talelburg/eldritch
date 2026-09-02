@@ -47,7 +47,17 @@ pub(crate) fn awaiting_choice_anchored(
     prompt: impl Into<String>,
     options: Vec<(String, Option<OptionTarget>)>,
 ) -> EngineOutcome {
-    let options: Vec<ChoiceOption> = options
+    EngineOutcome::AwaitingInput {
+        request: InputRequest::pick_single(prompt, choice_options(options)),
+        resume_token: ResumeToken(0),
+    }
+}
+
+/// One `(label, anchor)` per offered option to the `ChoiceOption` list a request
+/// carries, `OptionId(i)` being the offered index. Shared by the two builders
+/// above and below so the index convention has one home.
+fn choice_options(options: Vec<(String, Option<OptionTarget>)>) -> Vec<ChoiceOption> {
+    options
         .into_iter()
         .enumerate()
         .map(|(i, (label, target))| {
@@ -57,9 +67,36 @@ pub(crate) fn awaiting_choice_anchored(
             )
             .maybe_at(target)
         })
+        .collect()
+}
+
+/// Build the `AwaitingInput` for a **decision** — a choice among alternatives
+/// printed on one card, rather than among board entities (ADR 0015). Every
+/// branch shares `anchor`, so it rides on the request as well as on each option:
+/// the options keep it because that is what makes the source card glow, and the
+/// request carries it because the surface presenting the choice reads one anchor
+/// to name where the text is printed.
+///
+/// `anchor` is already **liveness-checked** by the caller (#845) — `None` means
+/// the source left play during cost payment, and the prompt falls back to the
+/// banner like any un-anchored one.
+///
+/// The sole caller is the evaluator's `Effect::ChooseOne` step. Every other
+/// suspend goes through [`awaiting_choice_anchored`] and keeps the
+/// [`Selection`](crate::engine::PromptNature::Selection) default.
+pub(crate) fn awaiting_decision(
+    prompt: impl Into<String>,
+    labels: Vec<String>,
+    anchor: Option<OptionTarget>,
+) -> EngineOutcome {
+    let options = labels
+        .into_iter()
+        .map(|label| (label, anchor.clone()))
         .collect();
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(prompt, options),
+        request: InputRequest::pick_single(prompt, choice_options(options))
+            .maybe_at(anchor)
+            .deciding(),
         resume_token: ResumeToken(0),
     }
 }
@@ -307,6 +344,47 @@ mod tests {
             Some(OptionTarget::Enemy(EnemyId(1)))
         );
         assert_eq!(request.options[1].target, None);
+    }
+
+    #[test]
+    fn awaiting_decision_marks_the_request_and_anchors_both_levels() {
+        use crate::engine::{OptionTarget, PromptNature};
+        let out = awaiting_decision(
+            "Choose one",
+            vec!["Burn it down".into(), "Do not".into()],
+            Some(OptionTarget::Act),
+        );
+        let EngineOutcome::AwaitingInput { request, .. } = out else {
+            panic!("expected AwaitingInput");
+        };
+        assert_eq!(request.nature, PromptNature::Decision);
+        assert_eq!(
+            request.target,
+            Some(OptionTarget::Act),
+            "the request carries the anchor so one surface can name the source card",
+        );
+        assert!(
+            request
+                .options
+                .iter()
+                .all(|o| o.target == Some(OptionTarget::Act)),
+            "and each option keeps it, which is what makes the card glow",
+        );
+    }
+
+    /// #845's degradation reaching the request: a source discarded during cost
+    /// payment leaves the decision un-anchored at both levels rather than
+    /// pointing at a card no board surface renders.
+    #[test]
+    fn awaiting_decision_with_no_live_source_is_unanchored_but_still_a_decision() {
+        use crate::engine::PromptNature;
+        let out = awaiting_decision("Choose one", vec!["A".into(), "B".into()], None);
+        let EngineOutcome::AwaitingInput { request, .. } = out else {
+            panic!("expected AwaitingInput");
+        };
+        assert_eq!(request.nature, PromptNature::Decision);
+        assert_eq!(request.target, None);
+        assert!(request.options.iter().all(|o| o.target.is_none()));
     }
 
     #[test]

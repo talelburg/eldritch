@@ -102,3 +102,45 @@ fn agenda_01105_choose_one_anchors_to_the_agenda_card_under_its_printed_labels()
         assert_eq!(option.target, Some(OptionTarget::Agenda), "{request:?}");
     }
 }
+
+/// 01105's *"The lead investigator must decide (choose one)"* is a **decision**
+/// (ADR 0015): its branches are the two alternatives printed on the agenda's
+/// reverse, so the client presents them the moment they arise instead of asking
+/// for another click on the agenda card.
+#[test]
+fn agenda_01105_choose_one_is_a_decision_prompt() {
+    use game_core::engine::PromptNature;
+
+    let mut state = state_on_agenda_01105();
+    let mut events = Vec::new();
+    let out = fire_forced_on_agenda_advance(&mut state, &mut events, CardCode::new("01105"));
+    let EngineOutcome::AwaitingInput { request, .. } = &out else {
+        panic!("expected the forced-acknowledge suspend, got {out:?}");
+    };
+    assert_eq!(
+        request.nature,
+        PromptNature::Selection,
+        "the forced acknowledge offers the agenda's ability, a board entity: {request:?}",
+    );
+
+    let resumed = game_core::engine::apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(0)),
+        }),
+    );
+    let EngineOutcome::AwaitingInput { request, .. } = &resumed.outcome else {
+        panic!("expected 01105's ChooseOne, got {:?}", resumed.outcome);
+    };
+    assert_eq!(
+        request.nature,
+        PromptNature::Decision,
+        "the discard-vs-horror choice is printed on one card: {request:?}",
+    );
+    assert_eq!(
+        request.target,
+        Some(OptionTarget::Agenda),
+        "the decision carries its source anchor on the request too, so the modal \
+         can name the card the choice came from: {request:?}",
+    );
+}

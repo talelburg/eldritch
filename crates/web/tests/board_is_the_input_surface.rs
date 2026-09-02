@@ -105,6 +105,8 @@ impl Harness {
             let selected = RwSignal::new(std::collections::BTreeSet::<u32>::new());
             let active = Signal::derive(move || store.with(web::interaction::is_multi_select));
             provide_context(web::interaction::MultiSelect { active, selected });
+            let decision = Signal::derive(move || store.with(web::decision::modal_is_live));
+            provide_context(web::decision::DecisionLive(decision));
             view! { <div class="e2e-root"><BoardView/><Overlays/></div> }
         });
         store.update(|s| {
@@ -178,6 +180,11 @@ fn find(sel: &str) -> web_sys::HtmlElement {
         .unwrap_or_else(|| panic!("no `{sel}` on the board"))
 }
 
+/// True iff nothing under the mounted root matches `sel`.
+fn absent(sel: &str) -> bool {
+    root().query_selector(sel).expect("query").is_none()
+}
+
 fn is_disabled(sel: &str) -> bool {
     find(sel)
         .dyn_ref::<web_sys::HtmlButtonElement>()
@@ -247,5 +254,109 @@ async fn a_whole_turn_is_driven_from_the_board_alone() {
             .expect("query")
             .is_none(),
         "the sticky action bar is deleted (#541); it must not creep back via a merge"
+    );
+}
+
+const FIRST_AID: &str = "01019";
+const KIT: game_core::state::CardInstanceId = game_core::state::CardInstanceId(7);
+
+/// An open turn with First Aid 01019 in play and harm to heal, so its `[action]
+/// Spend 1 supply: Heal 1 damage or horror from an investigator at your
+/// location` is offered on the asset.
+fn open_turn_with_first_aid() -> GameState {
+    use game_core::state::UseKind;
+    let mut inv = test_investigator(1);
+    inv.actions_remaining = 2;
+    inv.investigator_card = CardInPlay::enter_play(
+        CardCode::new(ROLAND),
+        game_core::state::CardInstanceId(u32::MAX - 1),
+    );
+    inv.investigator_card.accumulated_damage = 2;
+    inv.investigator_card.accumulated_horror = 2;
+    let mut kit = CardInPlay::enter_play(CardCode::new(FIRST_AID), KIT);
+    kit.uses.insert(UseKind::Supplies, 3);
+    inv.cards_in_play.push(kit);
+    GameStateBuilder::default()
+        .with_phase(Phase::Investigation)
+        .with_investigator_at(inv, game_core::state::LocationId(10))
+        .with_location(game_core::test_support::fixtures::test_location(
+            10, "Study",
+        ))
+        .with_turn_order([INV])
+        .with_active_investigator(INV)
+        .with_round(1)
+        .with_phase_anchor(Continuation::InvestigationPhase {
+            resume: InvestigationResume::TurnBegins,
+        })
+        .with_investigator_turn(INV)
+        .build()
+}
+
+/// **A choice printed on one card arrives without a second click** (#856).
+///
+/// Activating First Aid pays the supply and then asks which mode. Before this,
+/// the answer was a context menu on the same asset the player had just clicked
+/// twice — so the game read as stalled at exactly the moment it was waiting on
+/// them. Now the branches present themselves, on one surface: the modal carries
+/// them, the card keeps its glow but opens no menu, and the banner stands down.
+#[wasm_bindgen_test]
+async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
+    // Spend an action through the engine to reach its own open-turn menu, so
+    // nothing about the anchors is reconstructed by the test.
+    let seeded = game_core::test_support::resolver::take_turn_action(
+        open_turn_with_first_aid(),
+        &game_core::TurnAction::Resource { investigator: INV },
+    );
+    let mut h = Harness::mount(seeded.state, seeded.outcome).await;
+
+    // 1. First Aid glows on the board and opens its Activate menu — a selection,
+    //    unchanged: the click is doing real work, naming which card.
+    find(".card-slot.actionable .menu-hit").click();
+    leptos::task::tick().await;
+    find(".context-menu .menu-item").click();
+    h.pump().await;
+
+    // 2. The choice is *there*. No second click on the asset, and both printed
+    //    modes are offered under their authored labels.
+    let branches = root()
+        .query_selector_all(".decision-modal .decision-branch")
+        .expect("query");
+    assert_eq!(branches.length(), 2, "both heal modes are offered at once");
+    assert_eq!(
+        find(".decision-modal .decision-source").text_content(),
+        Some("First Aid".to_string()),
+        "the modal names the card the choice came from",
+    );
+    assert!(
+        find(".decision-modal .decision-printed")
+            .text_content()
+            .is_some_and(|t| t.contains("Heal 1 damage or horror")),
+        "and carries that card's printed text",
+    );
+
+    // 3. The modal is the sole surface. The asset still glows — that is the
+    //    provenance signal — but it no longer opens a menu, and the banner
+    //    renders neither the prompt nor the branches (#541's double render).
+    assert!(
+        !absent(".card-slot.actionable"),
+        "the source card keeps its glow while the decision is live",
+    );
+    assert!(
+        absent(".card-slot .menu-hit"),
+        "but opens no context menu: the modal is the sole surface",
+    );
+    assert!(
+        absent(".prompt-banner .banner-option") && absent(".prompt-banner .prompt"),
+        "the banner renders neither the branches nor the prompt text",
+    );
+
+    // 4. The branch is real engine input, and it resolves.
+    find(".decision-modal .decision-branch").click();
+    h.pump().await;
+    assert!(absent(".decision-modal"), "answering closes the modal");
+    assert_eq!(
+        h.state().investigators[&INV].damage(),
+        1,
+        "the first branch healed 1 damage",
     );
 }
