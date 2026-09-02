@@ -98,7 +98,7 @@ the Tablet came out.
 | #651 ✅ PR #796 | Hunter pathfinding routes *around* a movement block instead of being stopped by it |
 | #797 ✅ PR #798 | Agenda 01107's Ghoul move reroutes around a movement block instead of being stopped by it |
 | #682 ✅ PR #799 | An attack whose target leaves play mid-test resolves against difficulty 0 |
-| #562 ❌ PR #800 | 01110's forced act-advance double-prompts (advance-flip slice 4) — not a defect; 01110 is terminal, so it prompts once |
+| #562 ✅ PR #861 | 01110's forced act-advance double-prompts (advance-flip slice 4) — closed ❌ on PR #800's reading that 01110, being terminal, latched its resolution instead of building an `AdvanceReverse` frame. ADR 0013 then made every terminal card advance like any other, which put the second prompt back; #858 fixed it |
 
 ### Wave 2 — the input surface
 
@@ -705,12 +705,14 @@ the now-stable set of input shapes:
       (`back_name`/`back_text`, tagged `card--reverse`) from `FireReverse`/`Finalize` on — via a
       `deck_face(game, deck)` pure fn. The glow/menu still come from `options_for(OptionTarget::Act/Agenda)`
       unchanged. **Advance-flip is shipped (slices 1–3):** a forced advance flips the card on-screen to its
-      1b face showing the effect, then resolves there. Slice 4 (01110 `#466` suppression — a forced
-      ability whose sole effect is an advance stacks a redundant `#466` ack over the flip's `AwaitAck`)
-      was deferred to #562 and **closed unfixed** — 01110 is terminal, so its advance latches the
-      resolution instead of building an `AdvanceReverse` frame, and there is no second prompt to
-      suppress. The advance pick double-rendered on-card *and* in the flat input bar (every anchored
-      `PickSingle` did), which S6/#541 reconciled by deleting the bar.
+      1b face showing the effect, then resolves there. The advance pick double-rendered on-card *and* in
+      the flat input bar (every anchored `PickSingle` did), which S6/#541 reconciled by deleting the bar.
+      **Slice 4 landed late, in #858 (PR #861)** — a forced ability whose sole effect is an advance
+      stacked a redundant `#466` ack over the flip's `AwaitAck`. It was deferred to #562 and closed
+      unfixed on the premise that 01110, being terminal, latched its resolution instead of building an
+      `AdvanceReverse` frame; ADR 0013 removed that premise and the second prompt came back. The flip
+      itself is untouched: an advance is still glow → click to flip → read the reverse → click to
+      resolve, and slice 4 only deletes the prompt that sat in front of the first click.
     - **S6 — globals + bar retirement (#541, PR #801), the closer; closes #206.** Homes for the
       three open-turn actions + an encounter-deck element for the draw `Confirm`, then
       **delete `.action-bar`** (folding picker + skill-test-result into their own surfaces).
