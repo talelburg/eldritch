@@ -339,11 +339,15 @@
 
 /* Skill-test result modal (#478 panel, made modal by #541): centred over an inert
    scrim. The scrim has no click handler on purpose — dismissal submits engine
-   input, so only the Confirm button may do it. */
-.str-backdrop { position: fixed; inset: 0; z-index: 28; background: rgba(0, 0, 0, 0.45); }
+   input, so only the Confirm button may do it. Both the scrim's background and
+   the modal's transform are set inline by drag.rs (#857): the scrim's alpha is a
+   function of how far the modal has been dragged rather than a constant, and the
+   drag offset rides inside this centring translate via calc, so there is one
+   transform rather than two properties fighting. */
+.str-backdrop { position: fixed; inset: 0; z-index: 28; }
 .skill-test-result {
     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 29;
-    min-width: 18rem; background: #fff; border: 2px solid #1a1a1a; border-radius: 6px;
+    cursor: grab; min-width: 18rem; background: #fff; border: 2px solid #1a1a1a; border-radius: 6px;
     padding: 1rem 1.5rem; text-align: center;
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
 }
@@ -357,11 +361,12 @@
    presents itself the moment it arises. The same scrim-and-card shape as the
    skill-test result modal, and stacked in the same band — the two cannot be up
    at once (a decision is a PickSingle, that pause is a Confirm), so they never
-   compete. No click handler on the scrim: every exit is engine input. */
-.decision-backdrop { position: fixed; inset: 0; z-index: 28; background: rgba(0, 0, 0, 0.45); }
+   compete. No click handler on the scrim: every exit is engine input, and
+   dragging the modal aside (#857) is not one of them. */
+.decision-backdrop { position: fixed; inset: 0; z-index: 28; }
 .decision-modal {
     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 29;
-    min-width: 20rem; max-width: 30rem; background: #fff; border: 2px solid #1a1a1a;
+    cursor: grab; min-width: 20rem; max-width: 30rem; background: #fff; border: 2px solid #1a1a1a;
     border-radius: 6px; padding: 1rem 1.5rem; text-align: center;
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
 }

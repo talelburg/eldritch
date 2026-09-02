@@ -118,9 +118,23 @@ pub fn modal_is_live(state: &crate::store::ClientState) -> bool {
 /// input, so a backdrop click or an Escape key would advance the game on the
 /// player's behalf; neither is wired, deliberately. The backdrop is inert —
 /// it exists to stop the player scrolling past the token that decided the test.
+///
+/// **Draggable** (#857, [`crate::drag`]). Since dismissal is engine input, a
+/// player who wants to check the board before acknowledging otherwise has no way
+/// to get the modal out of the way; dragging is that way, and the backdrop fades
+/// once the modal has been moved. The dismissal rule is untouched — moving the
+/// modal is not dismissing it, and a press that lands on Confirm starts no drag.
 #[component]
 pub fn SkillTestResultView() -> impl IntoView {
     let store = use_store();
+    // The prompt's fingerprint: which applied batch a live modal is up for. The
+    // batch count is what tells one prompt from the next when neither liveness
+    // nor the rendered content does — two identical tests running back to back
+    // (#857).
+    let drag = crate::drag::Drag::per_prompt(move || {
+        let st = store.get();
+        modal_is_live(&st).then_some(st.log.len())
+    });
     view! {
         {move || {
             let st = store.get();
@@ -132,8 +146,14 @@ pub fn SkillTestResultView() -> impl IntoView {
             };
             view! {
                 // No `on:click` on the backdrop: dismissal is engine input.
-                <div class="str-backdrop"></div>
-                <section class="skill-test-result">
+                <div class="str-backdrop" style=move || drag.scrim_style()></div>
+                <section
+                    class="skill-test-result"
+                    style=move || drag.transform_style()
+                    on:pointerdown=move |ev| drag.down(&ev)
+                    on:pointermove=move |ev| drag.movement(&ev)
+                    on:pointerup=move |ev| drag.up(&ev)
+                >
                     <p class="str-token">"Chaos token: " {s.token}</p>
                     <p class="str-total">
                         "Total " {s.total} " vs difficulty " {s.difficulty}

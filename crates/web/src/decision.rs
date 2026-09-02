@@ -133,11 +133,20 @@ fn decision_source(game: &GameState, target: &OptionTarget) -> Option<DecisionSo
 /// click or an Escape key would choose on the player's behalf; neither is wired,
 /// deliberately, the same rule the skill-test result modal follows.
 ///
-/// It ships un-draggable (#857 adds that), so between here and there a player
-/// choosing a First Aid mode cannot check who is at their location first.
+/// **Draggable** (#857, [`crate::drag`]): a player choosing a First Aid mode can
+/// park the modal aside — the backdrop fades once it has been moved — and read
+/// who is at their location before answering. Moving it is not answering it, and
+/// a press that lands on a branch button starts no drag.
 #[component]
 pub fn DecisionView() -> impl IntoView {
     let store = crate::store::use_store();
+    // The prompt's fingerprint: which applied batch a live modal is up for. The
+    // batch count is what tells one prompt from the next when liveness does not
+    // — one decision answered straight into another (#857).
+    let drag = crate::drag::Drag::per_prompt(move || {
+        let st = store.get();
+        modal_is_live(&st).then_some(st.log.len())
+    });
     view! {
         {move || {
             let st = store.get();
@@ -186,8 +195,14 @@ pub fn DecisionView() -> impl IntoView {
                 .collect();
             view! {
                 // No `on:click` on the backdrop: every exit is engine input.
-                <div class="decision-backdrop"></div>
-                <section class="decision-modal">
+                <div class="decision-backdrop" style=move || drag.scrim_style()></div>
+                <section
+                    class="decision-modal"
+                    style=move || drag.transform_style()
+                    on:pointerdown=move |ev| drag.down(&ev)
+                    on:pointermove=move |ev| drag.movement(&ev)
+                    on:pointerup=move |ev| drag.up(&ev)
+                >
                     {source}
                     <p class="decision-prompt">{decision.prompt}</p>
                     <div class="decision-branches">{branches}</div>

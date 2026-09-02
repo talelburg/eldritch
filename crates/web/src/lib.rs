@@ -10,6 +10,7 @@ pub mod board;
 pub mod card;
 pub mod controls;
 pub mod decision;
+pub mod drag;
 pub mod enemy_card;
 pub mod event_log;
 pub mod interaction;
