@@ -290,6 +290,152 @@ async fn the_backdrop_does_not_dismiss_it() {
     );
 }
 
+/// Dispatch one pointer event at `(x, y)` on `el`, as a real gesture would.
+///
+/// The gesture itself is synthesised, but pointer *capture* is not exercised —
+/// the events are dispatched straight at the modal, and the capture call the
+/// handler makes on a synthetic pointer id is allowed to fail. What is under
+/// test is this module's response to the gesture, not the browser's plumbing.
+fn pointer_at(el: &web_sys::Element, kind: &str, x: i32, y: i32) {
+    let init = web_sys::PointerEventInit::new();
+    init.set_bubbles(true);
+    init.set_client_x(x);
+    init.set_client_y(y);
+    let ev = web_sys::PointerEvent::new_with_event_init_dict(kind, &init)
+        .expect("construct a pointer event");
+    el.dispatch_event(&ev).expect("dispatch");
+}
+
+/// Drag `el` from `(from_x, from_y)` to `(to_x, to_y)`.
+fn drag(el: &web_sys::Element, from: (i32, i32), to: (i32, i32)) {
+    pointer_at(el, "pointerdown", from.0, from.1);
+    pointer_at(el, "pointermove", to.0, to.1);
+    pointer_at(el, "pointerup", to.0, to.1);
+}
+
+fn style_of(el: &web_sys::Element) -> String {
+    el.get_attribute("style").unwrap_or_default()
+}
+
+/// #857: the modal covers the board, and dismissing it submits engine input, so
+/// the only way to check the board first is to shove it aside. Dragging must not
+/// break the way out — the Confirm still submits after the modal has been moved.
+#[wasm_bindgen_test]
+async fn its_confirm_still_submits_after_the_modal_has_been_dragged() {
+    let (store, mut rx) = mount_modal();
+    resolve_a_test(store, acknowledge_pause()).await;
+    let section = last_section().expect("the modal renders");
+
+    drag(&section, (200, 200), (320, 140));
+    leptos::task::tick().await;
+    assert!(
+        style_of(&section).contains("calc(-50% + 120px)"),
+        "the modal stays where it was put: {}",
+        style_of(&section)
+    );
+
+    section
+        .query_selector(".str-confirm")
+        .expect("query")
+        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .expect("the modal carries its own Confirm")
+        .click();
+    leptos::task::tick().await;
+    match rx.try_recv().expect("a frame after tick") {
+        ClientMessage::Submit {
+            action: PlayerAction::ResolveInput { response },
+        } => assert_eq!(response, InputResponse::Confirm),
+        other @ ClientMessage::Submit { .. } => panic!("expected Confirm, got {other:?}"),
+    }
+}
+
+/// Dragging is a request to see the board underneath, so the scrim fades with
+/// the modal's move rather than needing a second gesture — but it keeps a tint,
+/// because the board is still inert.
+#[wasm_bindgen_test]
+async fn the_scrim_fades_once_the_modal_has_been_moved() {
+    let (store, _rx) = mount_modal();
+    resolve_a_test(store, acknowledge_pause()).await;
+    let section = last_section().expect("the modal renders");
+    let scrims = document()
+        .query_selector_all(".str-backdrop")
+        .expect("query");
+    let scrim = scrims
+        .item(scrims.length() - 1)
+        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .expect("a scrim renders behind the modal");
+
+    assert!(
+        style_of(&scrim).contains("0.45"),
+        "full strength while centred: {}",
+        style_of(&scrim)
+    );
+
+    drag(&section, (200, 200), (280, 200));
+    leptos::task::tick().await;
+    let faded = style_of(&scrim);
+    assert!(
+        !faded.contains("0.45") && faded.contains("rgba(0, 0, 0, 0."),
+        "fades to a lighter tint, but keeps one: {faded}"
+    );
+}
+
+/// A press that lands on the Confirm button starts no gesture: the button is the
+/// modal's only way out, and the drag surface must not swallow it.
+#[wasm_bindgen_test]
+async fn a_press_on_confirm_does_not_drag_the_modal() {
+    let (store, _rx) = mount_modal();
+    resolve_a_test(store, acknowledge_pause()).await;
+    let section = last_section().expect("the modal renders");
+    let confirm = section
+        .query_selector(".str-confirm")
+        .expect("query")
+        .expect("the modal carries its own Confirm");
+
+    drag(&confirm, (200, 200), (320, 140));
+    leptos::task::tick().await;
+    let style = style_of(&section);
+    assert!(
+        style.contains("calc(-50% + 0px)"),
+        "the modal has not moved: {style}"
+    );
+}
+
+/// Drag state is per prompt, not per mount: a modal parked off-screen must not
+/// strand the next prompt where the player cannot see it.
+#[wasm_bindgen_test]
+async fn a_newly_opened_modal_is_centred_again() {
+    let (store, _rx) = mount_modal();
+    resolve_a_test(store, acknowledge_pause()).await;
+    let section = last_section().expect("the modal renders");
+    drag(&section, (200, 200), (320, 140));
+    leptos::task::tick().await;
+    assert!(style_of(&section).contains("120px"), "moved first");
+
+    // The player acknowledges: the pause ends, and a later test resolves.
+    store.update(|s| {
+        reduce(
+            s,
+            ServerMessage::Applied {
+                state: Box::new(base_game()),
+                events: vec![Event::SkillTestEnded {
+                    investigator: InvestigatorId(1),
+                }],
+                outcome: EngineOutcome::Done,
+            },
+        );
+    });
+    leptos::task::tick().await;
+    resolve_a_test(store, acknowledge_pause()).await;
+
+    let section = last_section().expect("the second prompt's modal renders");
+    let style = style_of(&section);
+    assert!(
+        style.contains("calc(-50% + 0px), calc(-50% + 0px)"),
+        "the second prompt's modal is centred: {style}"
+    );
+}
+
 #[wasm_bindgen_test]
 async fn no_modal_without_a_live_acknowledge() {
     // A resolved test whose pause is off (or already answered) must not leave a
