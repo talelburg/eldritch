@@ -2,30 +2,32 @@
 
 ## Status
 
-**The engine foundation for the solo gate is complete.** Slice 1 (solo Roland
-playing The Gathering end-to-end to Won + Lost, kickoff #216 / gate #245 /
-PR #326) shipped, and so did every architectural arc the gate needed (see
-**What shipped** below). What remains is a **rules-correctness cluster**, the
-**browser capstone**, and the scenario's **optional content** — ordered into four
-waves under **Remaining gate work**.
+✅ **Closed 2026-09-03**, on #769's run of record. Phase 7 was the 1-player solo
+rules-correctness gate — **1 player, 1 investigator, Standard** — and the gate is
+met: a solo human picks Roland in the browser, sets up The Gathering, and plays it
+to **Won**, to **Lost**, and to **Resigned**, rules-correct at that scope.
 
-**Phase 7 is the 1-player solo rules-correctness gate.** Scope is deliberately
-narrow — **1 player, 1 investigator, Standard**. Difficulty selection and solo-2
-are **Future slices**; investigator breadth is its own milestone,
-[phase 7.5](phase-7.5-investigator-breadth.md).
+This doc is now a retrospective, in three registers. **What shipped** is the
+arc-level record of how the engine got here; **Gate work** is the issue-by-issue
+record of the four waves that closed the phase, kept because each row names the
+defect rather than the fix and that is what a later reader searches for;
+**Architecture to build on** is the part that is still load-bearing for phases 7.5
+and later.
 
-**Rechartered 2026-08-23** (`/grill-with-docs`), which changed three things this
-doc previously said. The scenario's **optional content is now in the gate** —
-Lita Chantler, the Parlor barrier and Resign were filed under *Future slices* and
-are now #258's six children. The **playthrough is now an issue** (#769) and runs
-twice, once as reconnaissance before the fixes and once as the run of record.
-**Investigator breadth left**, to `phase-7.5-investigator-breadth`.
+Two rechartering sessions shaped the end of the phase, and the wave tables read
+oddly without them. **2026-08-23** (`/grill-with-docs`) moved the scenario's
+optional content *into* the gate — Lita Chantler, the Parlor barrier and Resign
+had been Future slices and became #258's six children — made the playthrough an
+issue (#769) that runs twice, once as reconnaissance and once as the run of record,
+and spun investigator breadth out into
+[phase 7.5](phase-7.5-investigator-breadth.md). **2026-08-29** designed the Lita
+cluster over #771-#774: it added **#820** (the set-aside zone was two collections in
+two representations and could not take a third card kind — not one of #258's
+children), fixed the order at #774, #820, #771, #772, #773, and spun out **#821** (a
+constant `Restrict` cannot carry a condition), unmilestoned.
 
-**The Lita cluster was designed 2026-08-29** (`/grill-with-docs` over #771-#774), which
-added one issue to the wave and reordered it. **#820** — the set-aside zone is two
-collections in two representations, and cannot take a third card kind — is not one of
-#258's children. The wave runs **#774, #820, #771, #772, #773**. The session also spun out
-**#821** (a constant `Restrict` cannot carry a condition), unmilestoned.
+The two remaining Future slices — difficulty selection and solo-with-2 — are filed
+rather than captured; see **Future slices** below.
 
 ## Goal
 
@@ -62,10 +64,11 @@ in **Architecture to build on**. In dependency order, the arcs that landed:
    and **#566** (a latched resolution ends the scenario —
    [ADR 0004](../adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md)).
 
-## Remaining gate work
+## Gate work
 
-Four waves. Within a wave the issues are independent unless an arrow says
-otherwise; the waves themselves are ordered.
+Four waves, run in order; within a wave the issues were independent unless a note
+says otherwise. Every row names the **defect**, not the fix, because that is what a
+later reader searches for.
 
 ### Wave 0 — reconnaissance
 
@@ -149,23 +152,41 @@ the Tablet came out.
 
 ### Wave 4 — the gate-closer
 
-**#769, second half.** The run of record: **Won** (R1 or R2), **Lost**, and
-**Resigned**. Then the phase-doc commit and the milestone.
+**#769, second half — the run of record, and the gate is met.** It was not one
+sitting: the closer ran across several sessions between **2026-08-31 and 2026-09-03**,
+each one a full playthrough, each one filing what it found and stopping until the fix
+landed. All three endings were reached — **Won** (act 3, Ghoul Priest defeated, the
+lead investigator offered R1 or R2), **Lost** (the agenda-3 defeat), and **Resigned**
+(the Parlor 01115's `[action] Resign`). The last several runs found nothing.
 
-**Pulled into the gate by a browser run at act 3 (2026-08-31):** #848 and its sibling
-#847, both placed in wave 2 above. #848 is the same class as #787 — a state the player
-cannot read; #847 is the harder one, an option the player cannot reach at all. #848 gave
-each occupant its own bordered box in a rail beside the card, and #847 hung the menu off
-it: a rail token now carries `options_for(CardInstance)` + `menu_layer`, mirroring
-`InPlayCardView`. A location's `attachments` had the same hole — rendered by nobody — and
-got the same token in the same pass. The run of record can now reach the Parley.
+**What the runs found, in the order they found it.** Every one is a defect no
+code-reading pass had reached, which is the argument for the instrument:
 
-The one design decision worth keeping: the node's `z-index` lift moved off `.actionable`
-onto its own `.has-menu` class. A rail token can be the node's *only* actionable surface,
-and its `position: fixed` menu renders inside whichever band the node sits in, so keying
-the lift on the node's own options would leave that menu at `z-index: 1` to be overpainted
-by the nodes drawn after it. `.actionable` keeps its old, narrower meaning — the node's
-card glows only for the location's own options.
+| Issue | What a run had to do to find it |
+|---|---|
+| #845 ✅ PR #846 | Activate First Aid 01019 on its *last* supply: the cost discards the asset mid-payment, the damage-or-horror `ChooseOne` is anchored to a card that has left play, and the game deadlocks with the choice on screen and no way to pick it or back out |
+| #848 ✅ PR #849 | Stand next to Lita Chantler in the Parlor — the map node was a fixed-height `overflow: hidden` box, so the location's printed text pushed its own occupancy tokens out of sight |
+| #847 ✅ PR #850 | Then try to Parley for her: the ability is anchored to Lita's card instance, which rendered as an inert `<div>` with nowhere to hang a menu, so the option could not be reached at all |
+| #851 ✅ PR #852 | Draw Dissonant Voices 01165 and open a fast window with Working a Hunch 01037 in hand — the play-ban lived in the `play_card` handler, so the window offered a card the handler then rejected |
+| #853 ✅ PR #854 | Have Lita in play for a skill test: her `SkillTestResolved` reaction suspends and splits the batch, so the result panel showed an outcome one batch stale — #787's sibling |
+| #855 ✅ PRs #859, #860, #861 | Advance act 3. The count is a symptom; the defect is attention — after committing to an ability the board gave no signal that the game was waiting on you. Spec'd as three children: a printed choice presents itself without a second click (#856), a modal that covers the board can be dragged aside (#857), and the act advance stops asking three times (#858) |
+
+**Three hygiene issues fell out of the same period** and are unmilestoned rather than
+gate work: #840 and #843 (stale `TODO(#NNN)` anchors pointing at closed issues) and
+#842 (the Enemy phase's Fast-eligibility pause, deferred from #71 and never ticketed).
+
+**#848 and #847 are placed in wave 2 above**, with the rest of the input-surface work,
+because that is where a reader looking for the input surface will go. The one design
+decision from that pair worth keeping: the node's `z-index` lift moved off
+`.actionable` onto its own `.has-menu` class. A rail token can be the node's *only*
+actionable surface, and its `position: fixed` menu renders inside whichever band the
+node sits in, so keying the lift on the node's own options would leave that menu at
+`z-index: 1` to be overpainted by the nodes drawn after it. `.actionable` keeps its
+old, narrower meaning — the node's card glows only for the location's own options.
+
+**What closing the gate does not claim.** The scope was 1 player, 1 investigator,
+Standard, and the claim is bounded by it. More bugs will surface; they get filed and
+fixed like any other, without reopening the phase.
 
 ### The arcs behind it (retrospective)
 
@@ -1089,18 +1110,29 @@ seating).
 
 ## Future slices (after the gate)
 
-Captured but **unfiled** (no issues yet) — filed when the gate closes.
+Both were captured here unfiled, to be filed when the gate closed. It closed, and
+they are filed:
 
-- **Difficulty selection.** Add Easy / Hard / Expert chaos bags + a picker (Slice 1
-  is Standard only).
-- **Solo-with-2 UX.** One client driving two investigators (picker, whose-turn, two
-  boards vs. tabbed). Open design question; the Tier-2 correctness issues (#65, #381,
-  #359, #153, #371) land here.
+- **Difficulty selection** — [#862](https://github.com/talelburg/eldritch/issues/862),
+  milestoned to phase 9. Not just a picker: the campaign guide gives a different bag
+  composition per difficulty, and the scenario's reference card has an Easy/Standard
+  face and a Hard/Expert one that change what the symbol tokens *do*
+  (`the_gathering.rs`'s `resolve_symbol` implements the Easy/Standard face only). It
+  rides with the campaign machinery because the guide's instruction is *"assemble the
+  **campaign** chaos bag"* — chosen once, at the start of a campaign or a standalone
+  scenario.
+- **Solo-with-2 UX** — [#863](https://github.com/talelburg/eldritch/issues/863),
+  milestoned to phase 8. The engine already seats a roster; what was never decided is
+  what the player sees — two boards or one, and how each prompt says which
+  investigator it addresses. The Tier-2 correctness issues that land with it (#65,
+  #381, #359, #153, #371) were already milestoned to phase 8, and #863's design
+  decision should be made before any of them is picked up, because each needs a place
+  to put its prompt.
 
 **Investigator breadth left this section** on 2026-08-23 and is now
 [phase 7.5](phase-7.5-investigator-breadth.md), a filed milestone rather than a
 captured intent. **The deferred Gathering content left too**, in the other
-direction: #258 is in the gate, under **Wave 3** above.
+direction: #258 came *into* the gate, as **Wave 3** above.
 
 Campaign sequencing (The Midnight Masks, The Devourer Below, campaign log + `Fact`
 enum) is **Phase 9** — including the first real Peril/Surge cards (Hunting Shadow
@@ -1108,12 +1140,14 @@ enum) is **Phase 9** — including the first real Peril/Surge cards (Hunting Sha
 
 ## Open questions
 
-- **Solo-with-2 UX** — how one client presents two investigators. See Future slices.
+**None.** The phase closed with its questions answered rather than dropped:
 
-*(The Roland elder-sign DSL question was retired on 2026-08-23: #118, #448 and #453
-all shipped, so it is fully answered rather than "mostly". Its successor — three of
-the five elder signs need an on-success **effect**, which `Trigger::ElderSign` has no
-field for — is #776, in [phase 7.5](phase-7.5-investigator-breadth.md).)*
+- **Solo-with-2 UX** — no longer a question held here, but #863, milestoned to phase
+  8. It is still `needs-design`; the design happens there.
+- *(The Roland elder-sign DSL question was retired on 2026-08-23: #118, #448 and #453
+  all shipped. Its successor — three of the five elder signs need an on-success
+  **effect**, which `Trigger::ElderSign` has no field for — is #776, in
+  [phase 7.5](phase-7.5-investigator-breadth.md).)*
 
 ## Dependencies
 
@@ -1122,16 +1156,17 @@ Phase 3's Roland Banks (#55) shipped.
 
 ## What "done" looks like
 
-A solo human, in the browser, plays The Gathering to a resolution with **1-player
-Standard rules correctness**: every basic action available, attacks of opportunity /
-retaliate / soak resolving with proper player agency, skill-test windows open, and
-Roland's signature firing.
+*Met 2026-09-03.* A solo human, in the browser, plays The Gathering to a resolution
+with **1-player Standard rules correctness**: every basic action available, attacks
+of opportunity / retaliate / soak resolving with proper player agency, skill-test
+windows open, and Roland's signature firing.
 
-Since the 2026-08-23 recharter, **"a resolution" means all three** — #769 runs to
+Since the 2026-08-23 recharter, **"a resolution" meant all three** — #769 runs to
 **Won** (R1 *or* R2), to **Lost**, and to **Resigned** — the last of which #644 made
 reachable, tagging the Parlor 01115's `[action]` **Resign** and giving it
 `Effect::Resign` to resolve to. R2 was unreachable until #775 offered act 01110's
-printed choice, which is why the optional content came into the gate.
+printed choice, which is why the optional content came into the gate. All three were
+reached; see **Wave 4**.
 
-Difficulty and solo-2 are Future slices. Investigator breadth is
-[phase 7.5](phase-7.5-investigator-breadth.md).
+Difficulty (#862) and solo-2 (#863) were Future slices and are filed. Investigator
+breadth is [phase 7.5](phase-7.5-investigator-breadth.md).

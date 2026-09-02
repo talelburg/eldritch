@@ -155,5 +155,6 @@ open — that is the whole reason for the ordering.
 
 Five radios in the picker; picking any of the five seats that investigator with a
 legal deck and a random basic weakness, and plays The Gathering to a resolution.
-Difficulty stays Standard and the player count stays 1 — those are still phase-7's
-Future slices and phase 8's job respectively.
+Difficulty stays Standard and the player count stays 1 — those are #862 (phase 9)
+and #863 (phase 8) respectively, both spun out of phase-7's Future slices when that
+phase closed.
