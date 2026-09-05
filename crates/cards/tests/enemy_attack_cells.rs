@@ -27,7 +27,6 @@ use card_dsl::dsl::{
     forced_on_event, gain_resources, reaction_on_event, Ability, Effect, EventPattern, EventTiming,
     InvestigatorTarget,
 };
-use game_core::card_registry::CardRegistry;
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
@@ -35,7 +34,7 @@ use game_core::state::{
     Phase,
 };
 use game_core::test_support::{
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
+    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder, MockRegistry,
 };
 use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
 
@@ -70,37 +69,42 @@ fn on_attack(timing: EventTiming, amount: u8) -> Ability {
     )
 }
 
-fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        WHEN => Some(vec![on_attack(EventTiming::When, 4)]),
-        AT => Some(vec![on_attack(EventTiming::At, 1)]),
-        AFTER => Some(vec![on_attack(EventTiming::After, 2)]),
-        CANCEL => Some(vec![reaction_on_event(
-            EventPattern::EnemyAttacks,
-            EventTiming::When,
-            Effect::Cancel,
-        )]),
-        ENEMY_FORCED_AFTER => Some(vec![forced_on_event(
-            EventPattern::EnemyAttacks,
-            EventTiming::After,
-            gain_resources(InvestigatorTarget::You, 8),
-        )]),
-        ENEMY_FORCED_WHEN => Some(vec![forced_on_event(
-            EventPattern::EnemyAttacks,
-            EventTiming::When,
-            gain_resources(InvestigatorTarget::You, 16),
-        )]),
-        _ => None,
-    }
+/// The attacker card for the tests whose cells all sit on the *investigator's*
+/// side: an enemy printing nothing of its own, so nothing but the reactions
+/// under test contributes to the timeline.
+const PLAIN_ENEMY: &str = "_ea_plain";
+
+/// A forced ability in `timing`'s cell of the one condition under test, on the
+/// **enemy's** own card, gaining `amount` resources.
+fn enemy_forced(timing: EventTiming, amount: u8) -> Ability {
+    forced_on_event(
+        EventPattern::EnemyAttacks,
+        timing,
+        gain_resources(InvestigatorTarget::You, amount),
+    )
 }
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(CardRegistry {
-        metadata_for: |code| game_core::test_support::metadata_for_test_inv(code),
-        abilities_for,
-        ..CardRegistry::EMPTY
-    });
+    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`.
+    MockRegistry::new()
+        .with_abilities(WHEN, || vec![on_attack(EventTiming::When, 4)])
+        .with_abilities(AT, || vec![on_attack(EventTiming::At, 1)])
+        .with_abilities(AFTER, || vec![on_attack(EventTiming::After, 2)])
+        .with_abilities(CANCEL, || {
+            vec![reaction_on_event(
+                EventPattern::EnemyAttacks,
+                EventTiming::When,
+                Effect::Cancel,
+            )]
+        })
+        .with_abilities(ENEMY_FORCED_AFTER, || {
+            vec![enemy_forced(EventTiming::After, 8)]
+        })
+        .with_abilities(ENEMY_FORCED_WHEN, || {
+            vec![enemy_forced(EventTiming::When, 16)]
+        })
+        .install();
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -221,7 +225,7 @@ fn timeline(events: &[Event]) -> Vec<Option<u8>> {
 /// `after` cells did not exist for this condition at all.
 #[test]
 fn the_attack_resolves_between_the_when_and_at_cells() {
-    let r = end_turn_answering(board_with(&[WHEN, AT, AFTER], "_plain"), &fire(3));
+    let r = end_turn_answering(board_with(&[WHEN, AT, AFTER], PLAIN_ENEMY), &fire(3));
     assert_eq!(
         timeline(&r.events),
         vec![Some(4), None, None, Some(1), Some(2)],
@@ -242,7 +246,7 @@ fn the_attack_resolves_between_the_when_and_at_cells() {
 /// condition has fully resolved"*.
 #[test]
 fn an_after_ability_resolves_once_the_damage_and_horror_have_landed() {
-    let r = end_turn_answering(board_with(&[AFTER], "_plain"), &fire(1));
+    let r = end_turn_answering(board_with(&[AFTER], PLAIN_ENEMY), &fire(1));
     assert_eq!(
         timeline(&r.events),
         vec![None, None, Some(2)],
@@ -259,7 +263,7 @@ fn an_after_ability_resolves_once_the_damage_and_horror_have_landed() {
 /// the condition's impact lands.
 #[test]
 fn an_at_ability_resolves_after_the_impact_and_before_any_after_ability() {
-    let r = end_turn_answering(board_with(&[AT, AFTER], "_plain"), &fire(2));
+    let r = end_turn_answering(board_with(&[AT, AFTER], PLAIN_ENEMY), &fire(2));
     assert_eq!(
         timeline(&r.events),
         vec![None, None, Some(1), Some(2)],
@@ -275,7 +279,7 @@ fn an_at_ability_resolves_after_the_impact_and_before_any_after_ability() {
 #[test]
 fn a_cancelled_attack_suppresses_the_at_and_after_cells_but_still_exhausts() {
     // One prompt only: the `when` cell. The `at` and `after` cells never open.
-    let r = end_turn_answering(board_with(&[CANCEL, AT, AFTER], "_plain"), &fire(1));
+    let r = end_turn_answering(board_with(&[CANCEL, AT, AFTER], PLAIN_ENEMY), &fire(1));
     assert_eq!(
         timeline(&r.events),
         Vec::<Option<u8>>::new(),

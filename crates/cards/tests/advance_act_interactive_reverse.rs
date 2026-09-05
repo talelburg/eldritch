@@ -4,45 +4,32 @@
 //! so we install a mock registry that gives act code `_iact` a `ChooseOne` reverse.
 
 use card_dsl::dsl::{
-    choose_one, deal_horror, forced_on_event, Ability, EventPattern, EventTiming,
-    InvestigatorTarget,
+    choose_one, deal_horror, forced_on_event, EventPattern, EventTiming, InvestigatorTarget,
 };
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::CardRegistry;
 use game_core::engine::EngineOutcome;
 use game_core::state::{Act, CardCode, InvestigatorId};
 use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_investigator, GameStateBuilder,
+    dispatch_turn_action_unchecked, test_investigator, GameStateBuilder, MockRegistry,
 };
 use game_core::{InputKind, TurnAction};
 
 const IACT: &str = "_iact";
 
-fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    (code.as_str() == IACT).then(|| {
-        vec![forced_on_event(
-            EventPattern::ActAdvanced,
-            EventTiming::After,
-            // Two always-legal branches ⇒ the choice suspends.
-            choose_one(vec![
-                ("Take 1 horror", deal_horror(InvestigatorTarget::You, 1u8)),
-                ("Take 2 horror", deal_horror(InvestigatorTarget::You, 2u8)),
-            ]),
-        )]
-    })
-}
-
-fn metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
-}
-
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(CardRegistry {
-        metadata_for,
-        abilities_for,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_abilities(IACT, || {
+            vec![forced_on_event(
+                EventPattern::ActAdvanced,
+                EventTiming::After,
+                // Two always-legal branches ⇒ the choice suspends.
+                choose_one(vec![
+                    ("Take 1 horror", deal_horror(InvestigatorTarget::You, 1u8)),
+                    ("Take 2 horror", deal_horror(InvestigatorTarget::You, 2u8)),
+                ]),
+            )]
+        })
+        .install();
 }
 
 #[test]

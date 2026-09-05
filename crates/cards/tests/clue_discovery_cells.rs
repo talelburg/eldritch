@@ -12,7 +12,7 @@
 //! and there was no after-discovery condition at all: an ability declaring
 //! `at` or `after` on a discovery was never collected, never resolved and
 //! never rejected. No corpus card wants one yet, so the two new cells are
-//! proved with a hand-built registry (prior art: `timing_cells.rs`,
+//! proved with a mock registry (prior art: `timing_cells.rs`,
 //! `advance_act_interactive_reverse.rs`). Cover Up 01007 — the one card that
 //! *does* declare the `when` cell — is covered against the **real** corpus in
 //! `cover_up.rs`, which must not move.
@@ -29,15 +29,15 @@ use card_dsl::dsl::{
     gain_resources, reaction_on_event, Ability, Effect, EventPattern, EventTiming,
     InvestigatorTarget,
 };
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::CardRegistry;
 use game_core::engine::OptionId;
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId,
     LocationId, Phase,
 };
-use game_core::test_support::{test_investigator, test_location, GameStateBuilder, TestSession};
+use game_core::test_support::{
+    test_investigator, test_location, GameStateBuilder, MockRegistry, TestSession,
+};
 use game_core::{assert_event, ApplyResult, TurnAction};
 
 /// `when`-tagged reaction: +4 resources. Declaring interrupt timing on this
@@ -62,31 +62,20 @@ fn on_discovery(timing: EventTiming, amount: u8) -> Ability {
     )
 }
 
-fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        WHEN => Some(vec![on_discovery(EventTiming::When, 4)]),
-        AT => Some(vec![on_discovery(EventTiming::At, 1)]),
-        AFTER => Some(vec![on_discovery(EventTiming::After, 2)]),
-        CANCEL => Some(vec![reaction_on_event(
-            EventPattern::DiscoverClues,
-            EventTiming::When,
-            Effect::Cancel,
-        )]),
-        _ => None,
-    }
-}
-
-fn metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
-}
-
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(CardRegistry {
-        metadata_for,
-        abilities_for,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_abilities(WHEN, || vec![on_discovery(EventTiming::When, 4)])
+        .with_abilities(AT, || vec![on_discovery(EventTiming::At, 1)])
+        .with_abilities(AFTER, || vec![on_discovery(EventTiming::After, 2)])
+        .with_abilities(CANCEL, || {
+            vec![reaction_on_event(
+                EventPattern::DiscoverClues,
+                EventTiming::When,
+                Effect::Cancel,
+            )]
+        })
+        .install();
 }
 
 const INV: InvestigatorId = InvestigatorId(1);

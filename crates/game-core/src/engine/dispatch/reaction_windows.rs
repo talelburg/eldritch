@@ -2848,7 +2848,11 @@ mod candidate_source_present_tests {
     use crate::test_support::{test_investigator, test_location, GameStateBuilder};
 
     const INV: InvestigatorId = InvestigatorId(1);
-    const SOME_CODE: &str = "_synth_card";
+    /// Deliberately resolved by no registry — these tests install none.
+    /// `candidate_source_present` only compares this code for *identity*
+    /// against what the board holds; it never looks it up. The prefix is this
+    /// module's, per ADR 0016.
+    const SOME_CODE: &str = "_rw_card";
 
     fn candidate(source: CandidateSource) -> ResolutionCandidate {
         ResolutionCandidate::new(
@@ -3042,7 +3046,10 @@ mod withdraw_suppressed_candidates_tests {
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     const INV: InvestigatorId = InvestigatorId(1);
-    const CODE: &str = "_synth_reaction";
+    /// Deliberately resolved by no registry — these tests install none. The
+    /// withdrawal sweep moves candidates between frames and never looks a code
+    /// up. The prefix is this module's, per ADR 0016.
+    const CODE: &str = "_rw_reaction";
 
     fn discovery() -> TimingEvent {
         TimingEvent::DiscoverClues {

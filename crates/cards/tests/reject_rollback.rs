@@ -2,46 +2,27 @@
 //! state and then rejects mid-resolution leaves state AND events
 //! byte-identical to the pre-action state.
 //!
-//! Own integration-test binary so it can install a *hand-rolled*
-//! `CardRegistry` (a probe card whose `OnPlay` effect mutates then
-//! rejects) without colliding with `game-core`'s registry-free unit
-//! tests or the real-corpus `play_card.rs` binary.
-
-use std::sync::OnceLock;
+//! Own integration-test binary so it can install its own `MockRegistry` (a
+//! probe card whose `OnPlay` effect mutates then rejects) without colliding
+//! with `game-core`'s registry-free unit tests or the real-corpus
+//! `play_card.rs` binary.
 
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use game_core::card_registry::{self, CardRegistry};
-use game_core::dsl::{gain_resources, modify, on_play, seq, Ability};
+use game_core::dsl::{gain_resources, modify, on_play, seq};
 use game_core::dsl::{InvestigatorTarget, ModifierScope, Stat};
 use game_core::engine::{EngineOutcome, TurnAction};
 use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{
     dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
+    MockRegistry,
 };
 
-/// Code for the synthetic probe card. Not in the real corpus; only the
-/// hand-rolled registry below resolves it.
+/// Code for the synthetic probe card. Not in the real corpus; only the mock
+/// registry below resolves it.
 const PROBE: &str = "ROLLBACK1";
 
-/// `OnPlay` that gains 2 resources (mutates) then runs a `ThisTurn` Modify,
-/// which is an evaluator TODO stub that returns `Rejected` — producing a
-/// mid-resolution reject after a committed mutation.
-fn probe_abilities(code: &CardCode) -> Option<Vec<Ability>> {
-    if code.as_str() != PROBE {
-        return None;
-    }
-    Some(vec![on_play(seq([
-        gain_resources(InvestigatorTarget::Active, 2),
-        modify(Stat::Willpower, 1, ModifierScope::ThisTurn),
-    ]))])
-}
-
-fn probe_metadata(code: &CardCode) -> Option<&'static CardMetadata> {
-    static M: OnceLock<CardMetadata> = OnceLock::new();
-    if code.as_str() != PROBE {
-        return None;
-    }
-    Some(M.get_or_init(|| CardMetadata {
+fn probe_metadata() -> CardMetadata {
+    CardMetadata {
         code: PROBE.to_string(),
         name: "Rollback Probe".to_string(),
         text: None,
@@ -63,19 +44,26 @@ fn probe_metadata(code: &CardCode) -> Option<&'static CardMetadata> {
             uses: None,
             play_only_during_turn: false,
         },
-    }))
+    }
 }
 
-/// Install the hand-rolled probe registry before the test harness `main`, so
-/// it's present no matter which test runs first (#473). `install` is idempotent
-/// at the `OnceLock` level (first call wins; later calls return `Err`, ignored).
+/// Install the probe registry before the test harness `main`, so it's present
+/// no matter which test runs first (#473). `install` is idempotent at the
+/// `OnceLock` level (first call wins; later calls are a silent no-op).
 #[ctor::ctor(unsafe)]
 fn install_probe_registry() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: probe_metadata,
-        abilities_for: probe_abilities,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_card(probe_metadata())
+        // `OnPlay` that gains 2 resources (mutates) then runs a `ThisTurn`
+        // Modify, which is an evaluator TODO stub that returns `Rejected` —
+        // producing a mid-resolution reject after a committed mutation.
+        .with_abilities(PROBE, || {
+            vec![on_play(seq([
+                gain_resources(InvestigatorTarget::Active, 2),
+                modify(Stat::Willpower, 1, ModifierScope::ThisTurn),
+            ]))]
+        })
+        .install();
 }
 
 #[test]

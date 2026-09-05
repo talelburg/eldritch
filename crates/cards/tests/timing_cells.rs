@@ -32,7 +32,7 @@
 //! end-of-turn test, agenda 01107's enemy-phase-end move — are alone on their
 //! condition, so nothing orders against them and their own module tests pin
 //! the declaration and nothing more. So the walk itself is proved with a
-//! hand-built registry (prior art: `advance_act_interactive_reverse`).
+//! mock registry (prior art: `advance_act_interactive_reverse`).
 //!
 //! The condition under test is `SkillTestResolved` (RR ST.6), picked because
 //! both its forced and its reaction scan read the investigator's own controlled
@@ -48,8 +48,6 @@ use card_dsl::dsl::{
     forced_on_event, gain_resources, reaction_on_event, Ability, Effect, EventPattern, EventTiming,
     InvestigatorTarget, TestOutcome,
 };
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::CardRegistry;
 use game_core::engine::OptionId;
 use game_core::event::Event;
 use game_core::state::{
@@ -58,7 +56,7 @@ use game_core::state::{
 };
 use game_core::test_support::{
     drive_skill_test, perform_skill_test_no_commits, test_investigator, GameStateBuilder,
-    ScriptedResolver,
+    MockRegistry, ScriptedResolver,
 };
 
 /// `at`-tagged forced: +1 resource.
@@ -94,42 +92,33 @@ fn on_success(timing: EventTiming, amount: u8) -> Ability {
     )
 }
 
-fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        AT => Some(vec![on_success(EventTiming::At, 1)]),
-        AFTER => Some(vec![on_success(EventTiming::After, 2)]),
-        WHEN => Some(vec![on_success(EventTiming::When, 4)]),
-        REACT => Some(vec![reaction_on_event(
-            succeeded(),
-            EventTiming::At,
-            gain_resources(InvestigatorTarget::You, 7),
-        )]),
-        RESCAN => Some(vec![
-            forced_on_event(
-                succeeded(),
-                EventTiming::At,
-                Effect::Seq(vec![
-                    gain_resources(InvestigatorTarget::You, 1),
-                    Effect::DiscardSelf,
-                ]),
-            ),
-            on_success(EventTiming::After, 2),
-        ]),
-        _ => None,
-    }
-}
-
-fn metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
-}
-
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(CardRegistry {
-        metadata_for,
-        abilities_for,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_abilities(AT, || vec![on_success(EventTiming::At, 1)])
+        .with_abilities(AFTER, || vec![on_success(EventTiming::After, 2)])
+        .with_abilities(WHEN, || vec![on_success(EventTiming::When, 4)])
+        .with_abilities(REACT, || {
+            vec![reaction_on_event(
+                succeeded(),
+                EventTiming::At,
+                gain_resources(InvestigatorTarget::You, 7),
+            )]
+        })
+        .with_abilities(RESCAN, || {
+            vec![
+                forced_on_event(
+                    succeeded(),
+                    EventTiming::At,
+                    Effect::Seq(vec![
+                        gain_resources(InvestigatorTarget::You, 1),
+                        Effect::DiscardSelf,
+                    ]),
+                ),
+                on_success(EventTiming::After, 2),
+            ]
+        })
+        .install();
 }
 
 const INV: InvestigatorId = InvestigatorId(1);

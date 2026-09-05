@@ -54,7 +54,7 @@
 //! in play are offered and resolve unchanged — is `fast_play.rs`, which
 //! installs `cards::REGISTRY` in its own process.
 //!
-//! Own integration-test binary so it can install a hand-rolled `CardRegistry`.
+//! Own integration-test binary so it can install its own `MockRegistry`.
 //!
 //! # The player window these tests use
 //!
@@ -79,7 +79,6 @@
 //! under test.
 
 use game_core::action::{InputResponse, PlayerAction};
-use game_core::card_registry::{self, CardRegistry};
 use game_core::dsl::{activated, gain_resources, Ability, InvestigatorTarget};
 use game_core::engine::{EngineOutcome, InputKind, OptionTarget, TurnAction};
 use game_core::event::Event;
@@ -89,8 +88,8 @@ use game_core::state::{
     Continuation, EnemyId, GameState, InvestigatorId, LocationId, MythosResume, Phase, SkillKind,
 };
 use game_core::test_support::{
-    dispatch_turn_action_unchecked, metadata_for_test_inv, perform_skill_test, test_enemy,
-    test_investigator, test_location, GameStateBuilder,
+    dispatch_turn_action_unchecked, perform_skill_test, test_enemy, test_investigator,
+    test_location, GameStateBuilder, MockRegistry,
 };
 use game_core::{apply, Action, ApplyResult};
 use game_core::{assert_event, assert_no_event};
@@ -142,23 +141,23 @@ const ACTIONS: u8 = 3;
 /// source" and "not offered from that one" differ only in the source, and
 /// "offered in a window" and "not offered in a window" differ only in the
 /// action cost.
-fn probe_abilities(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        HALL | CULTIST | WARD | ACT | AGENDA => Some(vec![
-            activated(0, vec![], gain_resources(InvestigatorTarget::Active, 1)),
-            activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)),
-        ]),
-        _ => None,
-    }
+fn probe_abilities() -> Vec<Ability> {
+    vec![
+        activated(0, vec![], gain_resources(InvestigatorTarget::Active, 1)),
+        activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)),
+    ]
 }
 
 #[ctor::ctor(unsafe)]
 fn install_probe_registry() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: metadata_for_test_inv,
-        abilities_for: probe_abilities,
-        ..CardRegistry::EMPTY
-    });
+    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`.
+    MockRegistry::new()
+        .with_abilities(HALL, probe_abilities)
+        .with_abilities(CULTIST, probe_abilities)
+        .with_abilities(WARD, probe_abilities)
+        .with_abilities(ACT, probe_abilities)
+        .with_abilities(AGENDA, probe_abilities)
+        .install();
 }
 
 /// Three locations and three investigators.

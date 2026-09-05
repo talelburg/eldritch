@@ -9,16 +9,14 @@
 //! the later cost rejects and the apply boundary rolls the whole activation
 //! back.
 //!
-//! Own integration-test binary so it can install a hand-rolled `CardRegistry`
+//! Own integration-test binary so it can install its own `MockRegistry`
 //! (no corpus card pairs a depleting `SpendUses` with a later `Exhaust`)
 //! without colliding with the real-corpus binaries. Prior art:
 //! `reject_rollback.rs`.
 
 use game_core::state::AbilityAddress;
-use std::sync::OnceLock;
 
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Uses};
-use game_core::card_registry::{self, CardRegistry};
 use game_core::dsl::{activated, gain_resources, Ability, Cost, InvestigatorTarget};
 use game_core::engine::{EngineOutcome, TurnAction};
 use game_core::state::{
@@ -26,6 +24,7 @@ use game_core::state::{
 };
 use game_core::test_support::{
     dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
+    MockRegistry,
 };
 
 /// Synthetic asset: `Uses (1 supply)`, discards itself when they deplete, and
@@ -40,11 +39,8 @@ const LOC: LocationId = LocationId(10);
 const DEPLETER_INST: CardInstanceId = CardInstanceId(0);
 const BYSTANDER_INST: CardInstanceId = CardInstanceId(1);
 
-fn probe_abilities(code: &CardCode) -> Option<Vec<Ability>> {
-    if code.as_str() != DEPLETER {
-        return None;
-    }
-    Some(vec![activated(
+fn probe_abilities() -> Vec<Ability> {
+    vec![activated(
         0,
         vec![
             Cost::SpendUses {
@@ -54,7 +50,7 @@ fn probe_abilities(code: &CardCode) -> Option<Vec<Ability>> {
             Cost::Exhaust,
         ],
         gain_resources(InvestigatorTarget::Active, 1),
-    )])
+    )]
 }
 
 fn asset_metadata(code: &'static str, name: &'static str, uses: Option<Uses>) -> CardMetadata {
@@ -83,35 +79,21 @@ fn asset_metadata(code: &'static str, name: &'static str, uses: Option<Uses>) ->
     }
 }
 
-fn probe_metadata(code: &CardCode) -> Option<&'static CardMetadata> {
-    static DEPLETER_META: OnceLock<CardMetadata> = OnceLock::new();
-    static BYSTANDER_META: OnceLock<CardMetadata> = OnceLock::new();
-    match code.as_str() {
-        DEPLETER => Some(DEPLETER_META.get_or_init(|| {
-            asset_metadata(
-                DEPLETER,
-                "Depleter",
-                Some(Uses {
-                    kind: UseKind::Supplies,
-                    count: 1,
-                    discard_when_empty: true,
-                }),
-            )
-        })),
-        BYSTANDER => {
-            Some(BYSTANDER_META.get_or_init(|| asset_metadata(BYSTANDER, "Bystander", None)))
-        }
-        _ => None,
-    }
-}
-
 #[ctor::ctor(unsafe)]
 fn install_probe_registry() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: probe_metadata,
-        abilities_for: probe_abilities,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_card(asset_metadata(
+            DEPLETER,
+            "Depleter",
+            Some(Uses {
+                kind: UseKind::Supplies,
+                count: 1,
+                discard_when_empty: true,
+            }),
+        ))
+        .with_card(asset_metadata(BYSTANDER, "Bystander", None))
+        .with_abilities(DEPLETER, probe_abilities)
+        .install();
 }
 
 /// Depleter at position 0 with its last supply, bystander behind it at 1.
