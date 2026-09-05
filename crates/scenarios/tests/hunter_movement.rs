@@ -1,108 +1,26 @@
-//! #128 integration: spawn-engagement tie resolved through the real
-//! registry + Mythos draw path (option A), plus hunter-movement replay
-//! equality across a `PickSingle` round-trip.
+//! Hunter-movement replay equality across a `PickSingle` round-trip.
+//!
+//! The substrate is map **topology**, not a card: a symmetric diamond producing
+//! a genuine two-way tie in the hunter's first step. ADR 0016 permits a
+//! hand-built fixture that models an engine primitive, which a bare connection
+//! graph is.
+//!
+//! The spawn-engagement tie that also lived here moved to
+//! `crates/cards/tests/spawn_engagement_tie.rs` (#877), where it runs against
+//! Flesh-Eater 01118 and the real registry.
 
 use game_core::action::{InputResponse, PlayerAction};
-use game_core::engine::{apply, EngineOutcome, OptionId};
+use game_core::engine::{apply, OptionId};
 use game_core::state::{EnemyId, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{
     take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
 };
 use game_core::{Action, TurnAction};
-use scenarios::test_fixtures::synth_cards::{SYNTH_ENEMY_CODE, TEST_REGISTRY};
-use scenarios::test_fixtures::synthetic;
+use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 
 #[ctor::ctor(unsafe)]
 fn install_test_registry() {
     let _ = game_core::card_registry::install(TEST_REGISTRY);
-}
-
-#[test]
-fn multi_investigator_spawn_engagement_resolves_via_lead_pick() {
-    let inv1 = InvestigatorId(1);
-    let mut state = synthetic::setup();
-    // Manually seed both investigators at LocationId(10) — this test drives
-    // the Mythos draw path directly, not via seat_and_open.
-    {
-        let mut inv = test_investigator(1);
-        inv.current_location = Some(LocationId(10));
-        state.investigators.insert(inv1, inv);
-        state.turn_order = vec![inv1];
-        state.active_investigator = Some(inv1);
-    }
-    // Second investigator co-located at the synth spawn location (10).
-    let mut inv2 = test_investigator(2);
-    inv2.current_location = Some(LocationId(10));
-    state.investigators.insert(InvestigatorId(2), inv2);
-    state.turn_order.push(InvestigatorId(2));
-    // Drive through the real Mythos draw path: stage the EncounterDraw loop
-    // frame for inv1 so the ResolveInput(Confirm) below resumes it (#348).
-    state.phase = Phase::Mythos;
-    // Mythos anchor (slice 1a) sits beneath the EncounterDraw loop; the
-    // post-1.4 MythosAfterDraws close routes to it.
-    state
-        .continuations
-        .push(game_core::state::Continuation::MythosPhase {
-            resume: game_core::state::MythosResume::AfterDraws,
-        });
-    state
-        .continuations
-        .push(game_core::state::Continuation::EncounterDraw {
-            remaining: vec![InvestigatorId(1)],
-        });
-    state.encounter_deck.clear();
-    state
-        .encounter_deck
-        .push_back(game_core::state::CardCode(SYNTH_ENEMY_CODE.into()));
-
-    // 1) Drawing the enemy suspends for the lead's PickSingle.
-    let r1 = apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Confirm,
-        }),
-    );
-    assert!(
-        matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
-        "multi-investigator spawn suspends, got {:?}",
-        r1.outcome,
-    );
-    assert!(
-        matches!(
-            r1.state.continuations.last(),
-            Some(game_core::state::Continuation::SpawnEngage(_))
-        ),
-        "spawn engagement tie should be pending for the lead's pick",
-    );
-    let spawned = r1.state.enemies.values().next().expect("enemy placed");
-    assert_eq!(spawned.engaged_with, None, "engagement deferred until pick");
-
-    // 2) Lead picks investigator 2 (by its offered option id); engagement
-    //    resolves, draw chain ends.
-    let pick = {
-        let EngineOutcome::AwaitingInput { request, .. } = &r1.outcome else {
-            unreachable!("asserted AwaitingInput above");
-        };
-        request
-            .options
-            .iter()
-            .find(|o| o.label == format!("{:?}", InvestigatorId(2)))
-            .expect("InvestigatorId(2) among offered options")
-            .id
-    };
-    let r2 = apply(
-        r1.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(pick),
-        }),
-    );
-    assert!(matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }));
-    assert!(!matches!(
-        r2.state.continuations.last(),
-        Some(game_core::state::Continuation::SpawnEngage(_))
-    ));
-    let enemy = r2.state.enemies.values().next().expect("enemy in play");
-    assert_eq!(enemy.engaged_with, Some(InvestigatorId(2)));
 }
 
 #[test]
