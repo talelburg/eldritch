@@ -1,5 +1,7 @@
-//! Test-only support: fixtures, event-assertion macros, and a
-//! convenience re-export of the production [`GameStateBuilder`].
+//! Test-only support: fixtures, event-assertion macros, the
+//! [`MockRegistry`] builder a test binary installs its mock card
+//! registry through, and a convenience re-export of the production
+//! [`GameStateBuilder`].
 //!
 //! The macros are exported at the crate root via `#[macro_export]`,
 //! so callers see [`assert_event!`](crate::assert_event) regardless
@@ -11,6 +13,7 @@
 
 pub mod assertions;
 pub mod fixtures;
+pub mod mock_registry;
 pub mod resolver;
 
 /// Synthetic investigator-card code for unit tests. Registered by
@@ -198,6 +201,7 @@ pub use fixtures::{
     awaiting_commit_input, awaiting_pick_single_input, test_enemy, test_investigator,
     test_location, test_skill_test,
 };
+pub use mock_registry::MockRegistry;
 pub use resolver::{
     apply_no_commits, dispatch_turn_action_unchecked, drive, drive_skill_test, perform_skill_test,
     perform_skill_test_no_commits, take_turn_action, ChoiceResolver, ScriptedResolver,
