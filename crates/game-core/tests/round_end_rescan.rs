@@ -14,18 +14,16 @@
 //! the `at` forced does **not** fire (no clue gained). Skipping leaves `TESTX` in
 //! play, so the `at` forced fires (one clue). The difference is the re-scan.
 
-use card_dsl::dsl::{
-    forced_on_event, native, reaction_on_event, Ability, EventPattern, EventTiming,
-};
+use card_dsl::dsl::{forced_on_event, native, reaction_on_event, EventPattern, EventTiming};
 use game_core::action::{InputResponse, PlayerAction};
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::{self, CardRegistry, NativeEffectFn};
 use game_core::engine::OptionId;
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, Continuation, GameState, InvestigatorId, Phase,
     UpkeepResume,
 };
-use game_core::test_support::{run_upkeep_round_end, test_investigator, GameStateBuilder};
+use game_core::test_support::{
+    run_upkeep_round_end, test_investigator, GameStateBuilder, MockRegistry,
+};
 use game_core::{apply, Action, Cx, EngineOutcome, EvalContext};
 
 const TEST_ACT: &str = "TESTACT";
@@ -49,42 +47,26 @@ fn at_gain_clue(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        TEST_ACT => Some(vec![reaction_on_event(
-            EventPattern::RoundEnded,
-            EventTiming::When,
-            native("when:remove_x"),
-        )]),
-        TEST_X => Some(vec![forced_on_event(
-            EventPattern::RoundEnded,
-            EventTiming::At,
-            native("at:gain_clue"),
-        )]),
-        _ => None,
-    }
-}
-
-fn mock_native_for(tag: &str) -> Option<NativeEffectFn> {
-    match tag {
-        "when:remove_x" => Some(when_remove_x as NativeEffectFn),
-        "at:gain_clue" => Some(at_gain_clue as NativeEffectFn),
-        _ => None,
-    }
-}
-
-fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
-}
-
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        native_effect_for: mock_native_for,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_abilities(TEST_ACT, || {
+            vec![reaction_on_event(
+                EventPattern::RoundEnded,
+                EventTiming::When,
+                native("when:remove_x"),
+            )]
+        })
+        .with_abilities(TEST_X, || {
+            vec![forced_on_event(
+                EventPattern::RoundEnded,
+                EventTiming::At,
+                native("at:gain_clue"),
+            )]
+        })
+        .with_native_effect("when:remove_x", when_remove_x)
+        .with_native_effect("at:gain_clue", at_gain_clue)
+        .install();
 }
 
 /// Upkeep, the test act current, the lead holding `TESTX` (the `at`-forced

@@ -8,11 +8,8 @@
 //! `on_skill_test_resolution.rs`.
 
 use game_core::assert_event;
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::CardRegistry;
 use game_core::dsl::{
-    deal_horror, forced_on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
-    TestOutcome,
+    deal_horror, forced_on_event, EventPattern, EventTiming, InvestigatorTarget, TestOutcome,
 };
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -21,8 +18,7 @@ use game_core::state::{
     SkillKind, TokenModifiers,
 };
 use game_core::test_support::{
-    metadata_for_test_inv, perform_skill_test_no_commits, test_investigator, test_location,
-    GameStateBuilder,
+    perform_skill_test_no_commits, test_investigator, test_location, GameStateBuilder, MockRegistry,
 };
 
 /// Mock threat-area card: a **forced** ability keyed to *any* successful skill
@@ -31,33 +27,23 @@ use game_core::test_support::{
 /// reaction-window resolution needed to observe the timing point.
 const ANY_SUCCESS_FORCED: &str = "MOCK-STR-ANY-SUCCESS";
 
-/// Returns metadata for `TEST_INV` so capacity reads work when this registry
-/// is installed. All other codes return `None`.
-fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-    metadata_for_test_inv(code)
-}
-
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    (code.as_str() == ANY_SUCCESS_FORCED).then(|| {
-        vec![forced_on_event(
-            EventPattern::SkillTestResolved {
-                outcome: TestOutcome::Success,
-                kind: None,
-                by_controller: true,
-            },
-            EventTiming::After,
-            deal_horror(InvestigatorTarget::You, 1u8),
-        )]
-    })
-}
-
 #[ctor::ctor(unsafe)]
 fn install_mock_registry() {
-    let _ = game_core::card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        ..CardRegistry::EMPTY
-    });
+    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`, so capacity
+    // reads work under this registry.
+    MockRegistry::new()
+        .with_abilities(ANY_SUCCESS_FORCED, || {
+            vec![forced_on_event(
+                EventPattern::SkillTestResolved {
+                    outcome: TestOutcome::Success,
+                    kind: None,
+                    by_controller: true,
+                },
+                EventTiming::After,
+                deal_horror(InvestigatorTarget::You, 1u8),
+            )]
+        })
+        .install();
 }
 
 /// Build a state with the investigator at `LocationId(10)`, a single-`Numeric(0)`

@@ -1,4 +1,4 @@
-//! End-to-end reaction-window flow with a mock [`CardRegistry`] that
+//! End-to-end reaction-window flow with a mock `CardRegistry` that
 //! carries `Trigger::OnEvent` abilities.
 //!
 //! Lives at `crates/game-core/tests/` so it runs in its own integration-
@@ -12,8 +12,6 @@
 //! exercise edge cases (multi-controller defeats, two abilities on one
 //! card, `by_controller: false`) that no real Phase-3 card hits.
 
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::CardRegistry;
 use game_core::dsl::{
     choose_one, discover_clue, gain_resources, reaction_on_event, Ability, EventPattern,
     EventTiming, InvestigatorTarget, LocationTarget, SkillTestKind, TestOutcome,
@@ -26,7 +24,7 @@ use game_core::state::{
     InvestigatorId, LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{
-    apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder,
+    apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder, MockRegistry,
 };
 use game_core::{assert_event, assert_no_event, Action, InputResponse, PlayerAction, TurnAction};
 
@@ -58,92 +56,83 @@ const BYSTANDER_TEST_REACTION: &str = "MOCK-OE-BYSTANDER-TEST";
 /// in-play instance, where `fire_pending_trigger` is the setter site.
 const MODAL_REACTION: &str = "MOCK-OE-MODAL";
 
-fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
+/// The `EnemyDefeated` pattern every defeat reaction here keys off.
+fn enemy_defeated(by_controller: bool) -> EventPattern {
+    EventPattern::EnemyDefeated {
+        by_controller,
+        code: None,
+    }
 }
 
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        MODAL_REACTION => Some(vec![reaction_on_event(
-            EventPattern::EnemyDefeated {
-                by_controller: true,
-                code: None,
-            },
-            EventTiming::After,
-            choose_one([
-                (
-                    "Gain 1 resource",
-                    gain_resources(InvestigatorTarget::You, 1),
-                ),
-                (
-                    "Gain 3 resources",
-                    gain_resources(InvestigatorTarget::You, 3),
-                ),
-            ]),
-        )]),
-        ROLAND_REACTION => Some(vec![reaction_on_event(
-            EventPattern::EnemyDefeated {
-                by_controller: true,
-                code: None,
-            },
-            EventTiming::After,
-            discover_clue(LocationTarget::YourLocation, 1),
-        )]),
-        BYSTANDER_REACTION => Some(vec![reaction_on_event(
-            EventPattern::EnemyDefeated {
-                by_controller: false,
-                code: None,
-            },
-            EventTiming::After,
-            gain_resources(InvestigatorTarget::You, 1),
-        )]),
-        TWO_REACTIONS => Some(vec![
-            reaction_on_event(
-                EventPattern::EnemyDefeated {
-                    by_controller: true,
-                    code: None,
-                },
-                EventTiming::After,
-                discover_clue(LocationTarget::YourLocation, 1),
-            ),
-            reaction_on_event(
-                EventPattern::EnemyDefeated {
-                    by_controller: true,
-                    code: None,
-                },
-                EventTiming::After,
-                gain_resources(InvestigatorTarget::You, 1),
-            ),
-        ]),
-        MILAN_REACTION => Some(vec![reaction_on_event(
-            EventPattern::SkillTestResolved {
-                outcome: TestOutcome::Success,
-                kind: Some(SkillTestKind::Investigate),
-                by_controller: true,
-            },
-            EventTiming::After,
-            gain_resources(InvestigatorTarget::You, 1),
-        )]),
-        BYSTANDER_TEST_REACTION => Some(vec![reaction_on_event(
-            EventPattern::SkillTestResolved {
-                outcome: TestOutcome::Success,
-                kind: Some(SkillTestKind::Investigate),
-                by_controller: false,
-            },
-            EventTiming::After,
-            gain_resources(InvestigatorTarget::You, 1),
-        )]),
-        _ => None,
+/// The `SkillTestResolved` pattern the successful-investigate reactions key off.
+fn investigated(by_controller: bool) -> EventPattern {
+    EventPattern::SkillTestResolved {
+        outcome: TestOutcome::Success,
+        kind: Some(SkillTestKind::Investigate),
+        by_controller,
     }
+}
+
+/// "After you defeat an enemy, gain 1 resource" — the shape both
+/// investigate reactions and the bystander defeat reaction print.
+fn react_gaining_a_resource(pattern: EventPattern) -> Vec<Ability> {
+    vec![reaction_on_event(
+        pattern,
+        EventTiming::After,
+        gain_resources(InvestigatorTarget::You, 1),
+    )]
 }
 
 #[ctor::ctor(unsafe)]
 fn install_mock_registry() {
-    let _ = game_core::card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_abilities(MODAL_REACTION, || {
+            vec![reaction_on_event(
+                enemy_defeated(true),
+                EventTiming::After,
+                choose_one([
+                    (
+                        "Gain 1 resource",
+                        gain_resources(InvestigatorTarget::You, 1),
+                    ),
+                    (
+                        "Gain 3 resources",
+                        gain_resources(InvestigatorTarget::You, 3),
+                    ),
+                ]),
+            )]
+        })
+        .with_abilities(ROLAND_REACTION, || {
+            vec![reaction_on_event(
+                enemy_defeated(true),
+                EventTiming::After,
+                discover_clue(LocationTarget::YourLocation, 1),
+            )]
+        })
+        .with_abilities(BYSTANDER_REACTION, || {
+            react_gaining_a_resource(enemy_defeated(false))
+        })
+        .with_abilities(TWO_REACTIONS, || {
+            vec![
+                reaction_on_event(
+                    enemy_defeated(true),
+                    EventTiming::After,
+                    discover_clue(LocationTarget::YourLocation, 1),
+                ),
+                reaction_on_event(
+                    enemy_defeated(true),
+                    EventTiming::After,
+                    gain_resources(InvestigatorTarget::You, 1),
+                ),
+            ]
+        })
+        .with_abilities(MILAN_REACTION, || {
+            react_gaining_a_resource(investigated(true))
+        })
+        .with_abilities(BYSTANDER_TEST_REACTION, || {
+            react_gaining_a_resource(investigated(false))
+        })
+        .install();
 }
 
 /// Build a Fight-ready scenario with the investigator at a location,

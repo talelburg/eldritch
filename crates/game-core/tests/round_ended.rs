@@ -2,13 +2,11 @@
 //! Forced ability fires at the end of the round (step 4.6).
 
 use card_dsl::dsl::{
-    deal_horror, forced_on_event, native, Ability, EventPattern, EventTiming, InvestigatorTarget,
+    deal_horror, forced_on_event, native, EventPattern, EventTiming, InvestigatorTarget,
 };
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::{self, CardRegistry, NativeEffectFn};
 use game_core::state::{Agenda, CardCode, InvestigatorId};
 use game_core::test_support::{
-    fire_forced_on_round_end, metadata_for_test_inv, test_investigator, GameStateBuilder,
+    fire_forced_on_round_end, test_investigator, GameStateBuilder, MockRegistry,
 };
 use game_core::{Cx, EngineOutcome, EvalContext};
 
@@ -20,47 +18,32 @@ const AGENDA: &str = "TEST-AGENDA";
 /// Voices 01165's discard) so the lead orders both at round end (#213).
 const DISSONANT: &str = "TEST-DISSONANT";
 
-/// Returns metadata for `TEST_INV` so capacity reads work when this registry
-/// is installed. All other codes return `None`.
-fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-    metadata_for_test_inv(code)
-}
-
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    if code.as_str() == AGENDA {
-        Some(vec![forced_on_event(
-            EventPattern::RoundEnded,
-            EventTiming::At,
-            native("test:set-doom"),
-        )])
-    } else if code.as_str() == DISSONANT {
-        Some(vec![forced_on_event(
-            EventPattern::RoundEnded,
-            EventTiming::At,
-            deal_horror(InvestigatorTarget::You, 1u8),
-        )])
-    } else {
-        None
-    }
-}
-
 fn set_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     cx.state.agenda_doom = 5;
     EngineOutcome::Done
 }
 
-fn mock_native_for(tag: &str) -> Option<NativeEffectFn> {
-    (tag == "test:set-doom").then_some(set_doom as NativeEffectFn)
-}
-
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        native_effect_for: mock_native_for,
-        ..CardRegistry::EMPTY
-    });
+    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`, so capacity
+    // reads work under this registry.
+    MockRegistry::new()
+        .with_abilities(AGENDA, || {
+            vec![forced_on_event(
+                EventPattern::RoundEnded,
+                EventTiming::At,
+                native("test:set-doom"),
+            )]
+        })
+        .with_abilities(DISSONANT, || {
+            vec![forced_on_event(
+                EventPattern::RoundEnded,
+                EventTiming::At,
+                deal_horror(InvestigatorTarget::You, 1u8),
+            )]
+        })
+        .with_native_effect("test:set-doom", set_doom)
+        .install();
 }
 
 #[test]

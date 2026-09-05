@@ -11,15 +11,16 @@
 //! first; until then this mock skill exercises the full commit path.
 
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use game_core::dsl::{boost_attack_damage, on_commit, Ability};
+use game_core::dsl::{boost_attack_damage, on_commit};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+use game_core::test_support::{
+    test_enemy, test_investigator, test_location, GameStateBuilder, MockRegistry,
+};
 use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
-use std::sync::OnceLock;
 
 /// Mock skill: combat icon + `[OnCommit] that attack deals +1 damage`.
 const SKILL: &str = "VBLOW-MOCK";
@@ -50,29 +51,12 @@ fn skill_metadata() -> CardMetadata {
     }
 }
 
-fn skill_metadata_static() -> &'static CardMetadata {
-    static M: OnceLock<CardMetadata> = OnceLock::new();
-    M.get_or_init(skill_metadata)
-}
-
-fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-    (code.as_str() == SKILL).then(skill_metadata_static)
-}
-
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        SKILL => Some(vec![on_commit(boost_attack_damage(1))]),
-        _ => None,
-    }
-}
-
 #[ctor::ctor(unsafe)]
 fn install_mock_registry() {
-    let _ = game_core::card_registry::install(game_core::card_registry::CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        ..game_core::card_registry::CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_card(skill_metadata())
+        .with_abilities(SKILL, || vec![on_commit(boost_attack_damage(1))])
+        .install();
 }
 
 /// Board: the controller (combat 3) engaged with one enemy (fight 2,

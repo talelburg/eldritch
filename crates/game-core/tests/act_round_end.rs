@@ -5,13 +5,13 @@
 
 use card_dsl::dsl::{native, reaction_on_event, Ability, EventPattern, EventTiming};
 use game_core::action::{InputResponse, PlayerAction};
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::{self, CardRegistry, NativeEffectFn};
 use game_core::engine::{OptionId, TimingEvent};
 use game_core::state::{
     Act, CardCode, Continuation, GameState, InvestigatorId, Location, LocationId, Phase, TimingMode,
 };
-use game_core::test_support::{run_upkeep_round_end, test_investigator, GameStateBuilder};
+use game_core::test_support::{
+    run_upkeep_round_end, test_investigator, GameStateBuilder, MockRegistry,
+};
 use game_core::{apply, round_end_advance, Action, Cx, EngineOutcome, EvalContext};
 
 /// The advance logic lives in the registry (01109's `When`-`RoundEnded` reaction
@@ -21,32 +21,20 @@ fn advance_native(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     round_end_advance(cx, "01112") // the Hallway
 }
 
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    (code.as_str() == "01109").then(|| {
-        vec![reaction_on_event(
-            EventPattern::RoundEnded,
-            EventTiming::When,
-            native("test:advance"),
-        )]
-    })
-}
-
-fn mock_native_for(tag: &str) -> Option<NativeEffectFn> {
-    (tag == "test:advance").then_some(advance_native as NativeEffectFn)
-}
-
-fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
+fn advance_reaction() -> Vec<Ability> {
+    vec![reaction_on_event(
+        EventPattern::RoundEnded,
+        EventTiming::When,
+        native("test:advance"),
+    )]
 }
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        native_effect_for: mock_native_for,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_abilities("01109", advance_reaction)
+        .with_native_effect("test:advance", advance_native)
+        .install();
 }
 
 /// Act 2 (01109) current, a Hallway investigator with `clues`, phase Upkeep with

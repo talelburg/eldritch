@@ -14,10 +14,9 @@ use game_core::state::{
 };
 use game_core::test_support::{
     apply_no_commits, dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location,
-    GameStateBuilder,
+    GameStateBuilder, MockRegistry,
 };
 use game_core::{assert_event, Action, InputResponse, OptionId, PlayerAction, TurnAction};
-use std::sync::OnceLock;
 
 const TRINKET: &str = "TRNK1";
 const COP: &str = "MCOP1";
@@ -65,89 +64,66 @@ fn asset_metadata(code: &str, name: &str, text: &str) -> CardMetadata {
     }
 }
 
-fn trinket_static() -> &'static CardMetadata {
-    static M: OnceLock<CardMetadata> = OnceLock::new();
-    M.get_or_init(|| asset_metadata(TRINKET, "Mock Trinket", "[fast] Discard: gain 1 resource."))
-}
-
-fn cop_static() -> &'static CardMetadata {
-    static M: OnceLock<CardMetadata> = OnceLock::new();
-    M.get_or_init(|| {
-        asset_metadata(
-            COP,
-            "Mock Cop",
-            "[fast] Discard: deal 1 damage to an enemy at your location.",
-        )
-    })
-}
-
-fn combo_static() -> &'static CardMetadata {
-    static M: OnceLock<CardMetadata> = OnceLock::new();
-    M.get_or_init(|| asset_metadata(COMBO, "Mock Combo", "[fast] Exhaust, Discard: gain 1."))
-}
-
-fn kit_static() -> &'static CardMetadata {
-    static M: OnceLock<CardMetadata> = OnceLock::new();
-    M.get_or_init(|| kit_metadata(KIT, "Mock Kit", true))
-}
-
-fn kit_nodisc_static() -> &'static CardMetadata {
-    static M: OnceLock<CardMetadata> = OnceLock::new();
-    M.get_or_init(|| kit_metadata(KIT_NODISC, "Mock Kit (stays)", false))
-}
-
-fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-    match code.as_str() {
-        TRINKET => Some(trinket_static()),
-        COP => Some(cop_static()),
-        COMBO => Some(combo_static()),
-        KIT => Some(kit_static()),
-        KIT_NODISC => Some(kit_nodisc_static()),
-        _ => None,
-    }
-}
-
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        // [fast] Discard Mock Trinket: gain 1 resource.
-        TRINKET => Some(vec![activated(
-            0,
-            vec![Cost::DiscardSelf],
-            gain_resources(InvestigatorTarget::You, 1),
-        )]),
-        // [fast] Discard Mock Cop: deal 1 damage to an enemy at your location.
-        COP => Some(vec![activated(
-            0,
-            vec![Cost::DiscardSelf],
-            deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
-        )]),
-        // Illegal: DiscardSelf cannot combine with another source cost (Exhaust).
-        COMBO => Some(vec![activated(
-            0,
-            vec![Cost::DiscardSelf, Cost::Exhaust],
-            gain_resources(InvestigatorTarget::You, 1),
-        )]),
-        // [fast] Spend 1 supply: gain 1 resource (both kits share the ability;
-        // they differ only in the metadata discard_when_empty flag).
-        KIT | KIT_NODISC => Some(vec![activated(
-            0,
-            vec![Cost::SpendUses {
-                kind: UseKind::Supplies,
-                count: 1,
-            }],
-            gain_resources(InvestigatorTarget::You, 1),
-        )]),
-        _ => None,
-    }
+/// `[fast] Spend 1 supply: gain 1 resource` — both kits share the ability; they
+/// differ only in the metadata `discard_when_empty` flag.
+fn spend_a_supply() -> Vec<Ability> {
+    vec![activated(
+        0,
+        vec![Cost::SpendUses {
+            kind: UseKind::Supplies,
+            count: 1,
+        }],
+        gain_resources(InvestigatorTarget::You, 1),
+    )]
 }
 
 #[ctor::ctor(unsafe)]
 fn install_mock_registry() {
-    let _ = game_core::card_registry::install(game_core::card_registry::CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        ..game_core::card_registry::CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_card(asset_metadata(
+            TRINKET,
+            "Mock Trinket",
+            "[fast] Discard: gain 1 resource.",
+        ))
+        .with_card(asset_metadata(
+            COP,
+            "Mock Cop",
+            "[fast] Discard: deal 1 damage to an enemy at your location.",
+        ))
+        .with_card(asset_metadata(
+            COMBO,
+            "Mock Combo",
+            "[fast] Exhaust, Discard: gain 1.",
+        ))
+        .with_card(kit_metadata(KIT, "Mock Kit", true))
+        .with_card(kit_metadata(KIT_NODISC, "Mock Kit (stays)", false))
+        // [fast] Discard Mock Trinket: gain 1 resource.
+        .with_abilities(TRINKET, || {
+            vec![activated(
+                0,
+                vec![Cost::DiscardSelf],
+                gain_resources(InvestigatorTarget::You, 1),
+            )]
+        })
+        // [fast] Discard Mock Cop: deal 1 damage to an enemy at your location.
+        .with_abilities(COP, || {
+            vec![activated(
+                0,
+                vec![Cost::DiscardSelf],
+                deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
+            )]
+        })
+        // Illegal: DiscardSelf cannot combine with another source cost (Exhaust).
+        .with_abilities(COMBO, || {
+            vec![activated(
+                0,
+                vec![Cost::DiscardSelf, Cost::Exhaust],
+                gain_resources(InvestigatorTarget::You, 1),
+            )]
+        })
+        .with_abilities(KIT, spend_a_supply)
+        .with_abilities(KIT_NODISC, spend_a_supply)
+        .install();
 }
 
 #[test]

@@ -11,11 +11,9 @@
 //! follow-up issue (#39 Deduction) is the first consumer. Until then,
 //! mock cards are the only way to exercise the full path.
 
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::CardRegistry;
 use game_core::dsl::{
-    constant, discover_clue, modify, on_skill_test_resolution, Ability, LocationTarget,
-    ModifierScope, Stat, TestOutcome,
+    constant, discover_clue, modify, on_skill_test_resolution, LocationTarget, ModifierScope, Stat,
+    TestOutcome,
 };
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -24,7 +22,7 @@ use game_core::state::{
 };
 use game_core::test_support::{
     drive, drive_skill_test, perform_skill_test_no_commits, test_investigator, test_location,
-    GameStateBuilder, ScriptedResolver,
+    GameStateBuilder, MockRegistry, ScriptedResolver,
 };
 use game_core::{
     assert_event, assert_event_count, assert_no_event, Action, InputResponse, PlayerAction,
@@ -45,38 +43,31 @@ const BONUS_CLUE_FAILURE: &str = "MOCK-OSR-F";
 /// the constant ability must NOT fire as a resolution trigger.
 const MIXED_TRIGGERS: &str = "MOCK-OSR-MIXED";
 
-fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
-}
-
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        BONUS_CLUE_SUCCESS => Some(vec![on_skill_test_resolution(
-            TestOutcome::Success,
-            discover_clue(LocationTarget::TestedLocation, 1),
-        )]),
-        BONUS_CLUE_FAILURE => Some(vec![on_skill_test_resolution(
-            TestOutcome::Failure,
-            discover_clue(LocationTarget::TestedLocation, 1),
-        )]),
-        MIXED_TRIGGERS => Some(vec![
-            constant(modify(Stat::Intellect, 1, ModifierScope::WhileInPlay)),
-            on_skill_test_resolution(
-                TestOutcome::Success,
-                discover_clue(LocationTarget::TestedLocation, 1),
-            ),
-        ]),
-        _ => None,
-    }
-}
-
 #[ctor::ctor(unsafe)]
 fn install_mock_registry() {
-    let _ = game_core::card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_abilities(BONUS_CLUE_SUCCESS, || {
+            vec![on_skill_test_resolution(
+                TestOutcome::Success,
+                discover_clue(LocationTarget::TestedLocation, 1),
+            )]
+        })
+        .with_abilities(BONUS_CLUE_FAILURE, || {
+            vec![on_skill_test_resolution(
+                TestOutcome::Failure,
+                discover_clue(LocationTarget::TestedLocation, 1),
+            )]
+        })
+        .with_abilities(MIXED_TRIGGERS, || {
+            vec![
+                constant(modify(Stat::Intellect, 1, ModifierScope::WhileInPlay)),
+                on_skill_test_resolution(
+                    TestOutcome::Success,
+                    discover_clue(LocationTarget::TestedLocation, 1),
+                ),
+            ]
+        })
+        .install();
 }
 
 /// Build a state with the given hand, the investigator standing at

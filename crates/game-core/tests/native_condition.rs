@@ -10,23 +10,19 @@ use card_dsl::dsl::{
     forced_on_event, gain_resources, if_else, native_condition, Ability, EventPattern, EventTiming,
     InvestigatorTarget,
 };
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::{self, CardRegistry, NativeConditionFn};
 use game_core::state::{Agenda, CardCode, GameState, InvestigatorId, Phase};
-use game_core::test_support::{fire_forced_on_phase_end, test_investigator, GameStateBuilder};
+use game_core::test_support::{
+    fire_forced_on_phase_end, test_investigator, GameStateBuilder, MockRegistry,
+};
 use game_core::{EngineOutcome, EvalContext};
 
 const AGENDA: &str = "TEST-AGENDA";
 const AGENDA_BAD: &str = "TEST-AGENDA-BAD";
 const INV: InvestigatorId = InvestigatorId(1);
 
-fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
-}
-
 /// Forced at end of the enemy phase: gain 2 resources when the native
 /// predicate holds, 5 when it does not — two distinct observable branches.
-fn gated(tag: &str) -> Vec<Ability> {
+fn gated(tag: &'static str) -> Vec<Ability> {
     vec![forced_on_event(
         EventPattern::PhaseEnded {
             phase: card_dsl::dsl::Phase::Enemy,
@@ -40,35 +36,19 @@ fn gated(tag: &str) -> Vec<Ability> {
     )]
 }
 
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        AGENDA => Some(gated("test:has-doom")),
-        AGENDA_BAD => Some(gated("test:missing")),
-        _ => None,
-    }
-}
-
 /// Reads both arguments the predicate signature provides: board state and the
 /// evaluation context's controller.
 fn has_doom(state: &GameState, ctx: &EvalContext) -> bool {
     state.agenda_doom > 0 && state.investigators.contains_key(&ctx.controller)
 }
 
-fn mock_native_condition_for(tag: &str) -> Option<NativeConditionFn> {
-    match tag {
-        "test:has-doom" => Some(has_doom as NativeConditionFn),
-        _ => None,
-    }
-}
-
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        native_condition_for: mock_native_condition_for,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_abilities(AGENDA, || gated("test:has-doom"))
+        .with_abilities(AGENDA_BAD, || gated("test:missing"))
+        .with_native_condition("test:has-doom", has_doom)
+        .install();
 }
 
 fn state_with_agenda(code: &str, doom: u8) -> GameState {

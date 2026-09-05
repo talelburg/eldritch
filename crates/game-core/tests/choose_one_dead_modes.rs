@@ -15,8 +15,6 @@
 //! No corpus card carries a modal `on_success` yet, so a mock is the only way to
 //! reach the shape.
 
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::CardRegistry;
 use game_core::dsl::{
     activated, choose_one, heal_damage, heal_horror, skill_test, Ability, InvestigatorTarget,
 };
@@ -27,7 +25,9 @@ use game_core::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId,
     LocationId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{test_investigator, test_location, GameStateBuilder, TestSession};
+use game_core::test_support::{
+    test_investigator, test_location, GameStateBuilder, MockRegistry, TestSession,
+};
 use game_core::TurnAction;
 use game_core::{assert_event, assert_no_event};
 
@@ -40,36 +40,27 @@ const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(10);
 const INST: CardInstanceId = CardInstanceId(0);
 
-fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
-}
-
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        MODAL_HEAL_ON_SUCCESS => Some(vec![activated(
-            1,
-            vec![],
-            skill_test(
-                SkillKind::Intellect,
-                2,
-                Some(choose_one([
-                    ("Heal 1 damage", heal_damage(InvestigatorTarget::You, 1)),
-                    ("Heal 1 horror", heal_horror(InvestigatorTarget::You, 1)),
-                ])),
-                None,
-            ),
-        )]),
-        _ => None,
-    }
+fn modal_heal_abilities() -> Vec<Ability> {
+    vec![activated(
+        1,
+        vec![],
+        skill_test(
+            SkillKind::Intellect,
+            2,
+            Some(choose_one([
+                ("Heal 1 damage", heal_damage(InvestigatorTarget::You, 1)),
+                ("Heal 1 horror", heal_horror(InvestigatorTarget::You, 1)),
+            ])),
+            None,
+        ),
+    )]
 }
 
 #[ctor::ctor(unsafe)]
 fn install_mock_registry() {
-    let _ = game_core::card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_abilities(MODAL_HEAL_ON_SUCCESS, modal_heal_abilities)
+        .install();
 }
 
 /// Board: the mock asset in play, the investigator at `LOC` carrying `damage`

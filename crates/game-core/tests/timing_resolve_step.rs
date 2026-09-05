@@ -22,14 +22,14 @@
 //! real scenario ending.
 
 use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::{self, CardRegistry, NativeEffectFn};
 use game_core::engine::TimingEvent;
 use game_core::event::Event;
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId, Phase,
 };
-use game_core::test_support::{run_timing_sequence, test_investigator, GameStateBuilder};
+use game_core::test_support::{
+    run_timing_sequence, test_investigator, GameStateBuilder, MockRegistry,
+};
 use game_core::{Cx, EngineOutcome, EvalContext};
 
 /// Declares a `when`-timed forced on `PhaseEnded { Upkeep }` — a caller-owned
@@ -64,62 +64,43 @@ fn mark_at(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     mark(cx, ctx, 2)
 }
 
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        WHEN_ACT => Some(vec![forced_on_event(
-            EventPattern::PhaseEnded {
-                phase: card_dsl::dsl::Phase::Upkeep,
-            },
-            EventTiming::When,
-            native("mark:when"),
-        )]),
-        AT_ACT => Some(vec![forced_on_event(
-            EventPattern::PhaseEnded {
-                phase: card_dsl::dsl::Phase::Upkeep,
-            },
-            EventTiming::At,
-            native("mark:at"),
-        )]),
-        ROUND_ACT => Some(vec![
-            forced_on_event(
-                EventPattern::RoundEnded,
-                EventTiming::When,
-                native("mark:when"),
-            ),
-            forced_on_event(EventPattern::RoundEnded, EventTiming::At, native("mark:at")),
-        ]),
-        GAME_END_CARD => Some(vec![
-            forced_on_event(
-                EventPattern::GameEnd,
-                EventTiming::When,
-                native("mark:when"),
-            ),
-            forced_on_event(EventPattern::GameEnd, EventTiming::At, native("mark:at")),
-        ]),
-        _ => None,
-    }
+/// The `when`/`at` marker pair a bare milestone's card declares, so both cells
+/// are observable in order.
+fn both_cells(pattern: EventPattern) -> Vec<Ability> {
+    vec![
+        forced_on_event(pattern.clone(), EventTiming::When, native("mark:when")),
+        forced_on_event(pattern, EventTiming::At, native("mark:at")),
+    ]
 }
 
-fn mock_native_for(tag: &str) -> Option<NativeEffectFn> {
-    match tag {
-        "mark:when" => Some(mark_when as NativeEffectFn),
-        "mark:at" => Some(mark_at as NativeEffectFn),
-        _ => None,
+fn upkeep_ended() -> EventPattern {
+    EventPattern::PhaseEnded {
+        phase: card_dsl::dsl::Phase::Upkeep,
     }
-}
-
-fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
 }
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        native_effect_for: mock_native_for,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_abilities(WHEN_ACT, || {
+            vec![forced_on_event(
+                upkeep_ended(),
+                EventTiming::When,
+                native("mark:when"),
+            )]
+        })
+        .with_abilities(AT_ACT, || {
+            vec![forced_on_event(
+                upkeep_ended(),
+                EventTiming::At,
+                native("mark:at"),
+            )]
+        })
+        .with_abilities(ROUND_ACT, || both_cells(EventPattern::RoundEnded))
+        .with_abilities(GAME_END_CARD, || both_cells(EventPattern::GameEnd))
+        .with_native_effect("mark:when", mark_when)
+        .with_native_effect("mark:at", mark_at)
+        .install();
 }
 
 /// One investigator, one act — `act` is the card whose declared timing is on

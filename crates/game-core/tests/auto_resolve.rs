@@ -44,9 +44,8 @@
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::card_data::CardMetadata;
 use game_core::card_data::{CardKind, Class, SkillIcons};
-use game_core::card_registry::CardRegistry;
 use game_core::dsl::{
-    activated, auto_resolve, gain_resources, on_play, on_skill_test_resolution, seq, Ability, Cost,
+    activated, auto_resolve, gain_resources, on_play, on_skill_test_resolution, seq, Cost,
     Determination, InvestigatorTarget, TestOutcome,
 };
 use game_core::engine::{legal_actions, EngineOutcome, InputKind, InputRequest, OptionId};
@@ -60,9 +59,9 @@ use game_core::state::{
     InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers, TokenResolution, Zone,
 };
 use game_core::test_support::{
-    dispatch_turn_action_unchecked, drive, drive_skill_test, metadata_for_test_inv,
-    perform_skill_test_no_commits, test_investigator, test_location, ChoiceResolver,
-    GameStateBuilder, TakeOneFastPlay,
+    dispatch_turn_action_unchecked, drive, drive_skill_test, perform_skill_test_no_commits,
+    test_investigator, test_location, ChoiceResolver, GameStateBuilder, MockRegistry,
+    TakeOneFastPlay,
 };
 use game_core::TurnAction;
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -135,58 +134,6 @@ fn play_auto_succeed_metadata() -> CardMetadata {
     }
 }
 
-fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-    static M: std::sync::OnceLock<CardMetadata> = std::sync::OnceLock::new();
-    // `TEST_INV` first: the symbol token's damage reads the tester's
-    // `max_health()` through the registry, which would otherwise not know
-    // the fixture investigator's card.
-    metadata_for_test_inv(code).or_else(|| {
-        (code.as_str() == PLAY_AUTO_SUCCEED).then(|| M.get_or_init(play_auto_succeed_metadata))
-    })
-}
-
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        AUTO_FAIL => Some(vec![activated(
-            0,
-            vec![Cost::Resources(1)],
-            auto_resolve(Determination::AutomaticFailure),
-        )]),
-        AUTO_SUCCEED => Some(vec![activated(
-            0,
-            vec![Cost::Resources(1)],
-            auto_resolve(Determination::AutomaticSuccess),
-        )]),
-        FAIL_THEN_SUCCEED => Some(vec![activated(
-            0,
-            vec![Cost::Resources(1)],
-            seq([
-                auto_resolve(Determination::AutomaticFailure),
-                auto_resolve(Determination::AutomaticSuccess),
-            ]),
-        )]),
-        SUCCEED_THEN_FAIL => Some(vec![activated(
-            0,
-            vec![Cost::Resources(1)],
-            seq([
-                auto_resolve(Determination::AutomaticSuccess),
-                auto_resolve(Determination::AutomaticFailure),
-            ]),
-        )]),
-        PLAY_AUTO_SUCCEED => Some(vec![on_play(auto_resolve(Determination::AutomaticSuccess))]),
-        PLAIN_GAIN => Some(vec![activated(
-            0,
-            vec![Cost::Resources(1)],
-            gain_resources(InvestigatorTarget::You, 1),
-        )]),
-        ON_RESOLUTION_GAIN => Some(vec![on_skill_test_resolution(
-            TestOutcome::Success,
-            gain_resources(InvestigatorTarget::You, 1),
-        )]),
-        _ => None,
-    }
-}
-
 /// Mock symbol hook: a `[skull]` contributes nothing to the total and deals
 /// 1 damage at ST.4.
 fn mock_resolve_symbol(token: ChaosToken, _ctx: &SymbolCtx) -> SymbolOutcome {
@@ -224,11 +171,62 @@ fn mock_module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
 
 #[ctor::ctor(unsafe)]
 fn install_mock_registry() {
-    let _ = game_core::card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        ..CardRegistry::EMPTY
-    });
+    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`: the symbol
+    // token's damage reads the tester's `max_health()` through the registry,
+    // which would otherwise not know the fixture investigator's card.
+    MockRegistry::new()
+        .with_card(play_auto_succeed_metadata())
+        .with_abilities(AUTO_FAIL, || {
+            vec![activated(
+                0,
+                vec![Cost::Resources(1)],
+                auto_resolve(Determination::AutomaticFailure),
+            )]
+        })
+        .with_abilities(AUTO_SUCCEED, || {
+            vec![activated(
+                0,
+                vec![Cost::Resources(1)],
+                auto_resolve(Determination::AutomaticSuccess),
+            )]
+        })
+        .with_abilities(FAIL_THEN_SUCCEED, || {
+            vec![activated(
+                0,
+                vec![Cost::Resources(1)],
+                seq([
+                    auto_resolve(Determination::AutomaticFailure),
+                    auto_resolve(Determination::AutomaticSuccess),
+                ]),
+            )]
+        })
+        .with_abilities(SUCCEED_THEN_FAIL, || {
+            vec![activated(
+                0,
+                vec![Cost::Resources(1)],
+                seq([
+                    auto_resolve(Determination::AutomaticSuccess),
+                    auto_resolve(Determination::AutomaticFailure),
+                ]),
+            )]
+        })
+        .with_abilities(PLAY_AUTO_SUCCEED, || {
+            vec![on_play(auto_resolve(Determination::AutomaticSuccess))]
+        })
+        .with_abilities(PLAIN_GAIN, || {
+            vec![activated(
+                0,
+                vec![Cost::Resources(1)],
+                gain_resources(InvestigatorTarget::You, 1),
+            )]
+        })
+        .with_abilities(ON_RESOLUTION_GAIN, || {
+            vec![on_skill_test_resolution(
+                TestOutcome::Success,
+                gain_resources(InvestigatorTarget::You, 1),
+            )]
+        })
+        .install();
     let _ = game_core::scenario_registry::install(ScenarioRegistry {
         module_for: mock_module_for,
     });
