@@ -1137,7 +1137,7 @@ mod tests {
     // installing in one test would contaminate others). The full
     // round-cycle coverage — including DrawEncounterCard completing the
     // phase and transitioning to Investigation — lives in the T14
-    // integration tests at crates/scenarios/tests/mythos_phase.rs.
+    // integration tests at crates/cards/tests/mythos_phase.rs.
     //
     // These two tests verify the pause-at-Mythos shape: the last EndTurn
     // in a round must land in Mythos with mythos_draw_pending populated,
@@ -1274,7 +1274,7 @@ mod tests {
         // bump the round, prompt the encounter draw for id, and then
         // PAUSE. It does NOT complete the full cycle — that requires the
         // subsequent ResolveInput(Confirm) (needs registry, covered by
-        // crates/scenarios/tests/mythos_phase.rs).
+        // crates/cards/tests/mythos_phase.rs).
         crate::test_support::install_test_registry();
         let state = GameStateBuilder::new().build();
         let roster = vec![RosterEntry {

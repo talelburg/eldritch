@@ -15,13 +15,11 @@
 
 use std::sync::OnceLock;
 
-use game_core::card_data::{
-    CardKind, CardMetadata, Class, HealthValue, Prey, SkillIcons, Spawn, SpawnLocation,
-};
+use game_core::card_data::{CardKind, CardMetadata, HealthValue, Prey, Spawn, SpawnLocation};
 use game_core::card_registry::{CardRegistry, EligibilityFn, NativeEffectFn};
 use game_core::dsl::{
-    choose_one, forced_on_event, gain_resources, native, on_play, reaction_on_event, revelation,
-    Ability, Effect, EventPattern, EventTiming, InvestigatorTarget,
+    forced_on_event, gain_resources, native, reaction_on_event, revelation, Ability, Effect,
+    EventPattern, EventTiming, InvestigatorTarget,
 };
 use game_core::engine::{Cx, EngineOutcome, EvalContext};
 use game_core::event::{Event, TraumaKind};
@@ -47,33 +45,6 @@ pub const SYNTH_ENEMY_CODE: &str = "_synth_enemy";
 /// Code for the synthetic treachery. Underscore prefix guarantees no
 /// collision with `ArkhamDB`'s digit-prefixed five-char codes.
 pub const SYNTH_TREACHERY_CODE: &str = "_synth_treachery";
-
-/// Code for the synthetic surge-bearing treachery. Its Revelation
-/// is the same trivial "gain 1 resource" as [`SYNTH_TREACHERY_CODE`];
-/// the load-bearing difference is `surge: true` on the metadata,
-/// which drives the surge re-draw path in the per-card sub-sequence
-/// (Rules Reference p.19, p.24 1.4 step 5).
-pub const SYNTH_SURGE_TREACHERY_CODE: &str = "_synth_surge_treachery";
-
-/// Code for a synthetic treachery whose Revelation is a top-level
-/// [`Effect::ChooseOne`] (gain 2 vs gain 5 resources) — i.e. it suspends
-/// **directly** into a choice, *not* nested inside a skill test (the Crypt
-/// Chill 01167 shape). The #380 motivating case: before the `EncounterCard`
-/// frame, its disposal was stranded because the `pending_revelation_discard`
-/// slot was only flushed by the skill-test driver.
-pub const SYNTH_CHOICE_TREACHERY_CODE: &str = "_synth_choice_treachery";
-
-/// Code for the synthetic Fast event. Used to test the `MythosAfterDraws`
-/// window's push-then-scan ordering fix: a Fast event in hand during
-/// Mythos must keep the window open (not auto-skip) and must be
-/// closeable via `ResolveInput::Skip` after playing (or without
-/// playing, per the player's choice).
-///
-/// The card's `OnPlay` effect is trivially "gain 1 resource" — the
-/// effect itself is unimportant; what matters is `is_fast: true` and
-/// `card_type: Event` so `check_play_card`'s timing gate allows it
-/// inside a permissive window.
-pub const SYNTH_FAST_EVENT_CODE: &str = "_synth_fast_event";
 
 /// Code for the synthetic Cover-Up-shaped treachery (C5a #236). Carries a
 /// `DiscoverClues` `when`-cell interrupt + a `GameEnd` forced
@@ -119,27 +90,6 @@ fn synth_treachery_metadata_static() -> &'static CardMetadata {
     M.get_or_init(synth_treachery_metadata)
 }
 
-/// Metadata for the choice-Revelation treachery (#380). A one-shot treachery
-/// shell; the load-bearing part is its `Effect::ChooseOne` Revelation in
-/// [`abilities_for`].
-fn synth_choice_treachery_metadata() -> CardMetadata {
-    CardMetadata {
-        code: SYNTH_CHOICE_TREACHERY_CODE.to_owned(),
-        name: "Synthetic Choice Treachery".to_owned(),
-        text: Some(
-            "Revelation - Choose one: gain 2 resources; or gain 5 resources. \
-             (Synthetic; not a printed card.)"
-                .to_owned(),
-        ),
-        ..synth_treachery_metadata()
-    }
-}
-
-fn synth_choice_treachery_metadata_static() -> &'static CardMetadata {
-    static M: OnceLock<CardMetadata> = OnceLock::new();
-    M.get_or_init(synth_choice_treachery_metadata)
-}
-
 fn synth_enemy_metadata() -> CardMetadata {
     CardMetadata {
         code: SYNTH_ENEMY_CODE.to_owned(),
@@ -173,64 +123,6 @@ fn synth_enemy_metadata() -> CardMetadata {
 fn synth_enemy_metadata_static() -> &'static CardMetadata {
     static M: OnceLock<CardMetadata> = OnceLock::new();
     M.get_or_init(synth_enemy_metadata)
-}
-
-fn synth_surge_treachery_metadata() -> CardMetadata {
-    CardMetadata {
-        code: SYNTH_SURGE_TREACHERY_CODE.to_owned(),
-        name: "Synthetic Surge Treachery".to_owned(),
-        text: Some(
-            "Revelation - You gain 1 resource. Surge. \
-             (Synthetic; not a printed card.)"
-                .to_owned(),
-        ),
-        traits: Vec::new(),
-        back_name: None,
-        back_text: None,
-        pack_code: "_synth".to_owned(),
-        weakness: false,
-        kind: CardKind::Treachery {
-            surge: true,
-            peril: false,
-            quantity: 1,
-        },
-    }
-}
-
-fn synth_surge_treachery_metadata_static() -> &'static CardMetadata {
-    static M: OnceLock<CardMetadata> = OnceLock::new();
-    M.get_or_init(synth_surge_treachery_metadata)
-}
-
-fn synth_fast_event_metadata() -> CardMetadata {
-    CardMetadata {
-        code: SYNTH_FAST_EVENT_CODE.to_owned(),
-        name: "Synthetic Fast Event".to_owned(),
-        text: Some(
-            "Fast. Play at any player window. \
-             You gain 1 resource. (Synthetic; not a printed card.)"
-                .to_owned(),
-        ),
-        traits: Vec::new(),
-        back_name: None,
-        back_text: None,
-        pack_code: "_synth".to_owned(),
-        weakness: false,
-        kind: CardKind::Event {
-            class: Class::Neutral,
-            cost: Some(0),
-            xp: None,
-            skill_icons: SkillIcons::default(),
-            is_fast: true,
-            deck_limit: 3,
-            play_only_during_turn: false,
-        },
-    }
-}
-
-fn synth_fast_event_metadata_static() -> &'static CardMetadata {
-    static M: OnceLock<CardMetadata> = OnceLock::new();
-    M.get_or_init(synth_fast_event_metadata)
 }
 
 fn synth_cover_up_metadata() -> CardMetadata {
@@ -328,9 +220,6 @@ fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
     match code.as_str() {
         SYNTH_TREACHERY_CODE => Some(synth_treachery_metadata_static()),
         SYNTH_ENEMY_CODE => Some(synth_enemy_metadata_static()),
-        SYNTH_SURGE_TREACHERY_CODE => Some(synth_surge_treachery_metadata_static()),
-        SYNTH_CHOICE_TREACHERY_CODE => Some(synth_choice_treachery_metadata_static()),
-        SYNTH_FAST_EVENT_CODE => Some(synth_fast_event_metadata_static()),
         SYNTH_COVER_UP_CODE => Some(synth_cover_up_metadata_static()),
         _ => game_core::test_support::metadata_for_test_inv(code),
     }
@@ -339,23 +228,7 @@ fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
 /// `abilities_for` function pointer used by [`TEST_REGISTRY`].
 fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     match code.as_str() {
-        SYNTH_TREACHERY_CODE | SYNTH_SURGE_TREACHERY_CODE => {
-            Some(vec![revelation(gain_resources(InvestigatorTarget::You, 1))])
-        }
-        // #380: a Revelation that suspends *directly* into a choice (two
-        // resource-gain branches), unlike Crypt Chill's choice nested inside a
-        // skill test.
-        SYNTH_CHOICE_TREACHERY_CODE => Some(vec![revelation(choose_one([
-            (
-                "Gain 2 resources",
-                gain_resources(InvestigatorTarget::You, 2),
-            ),
-            (
-                "Gain 5 resources",
-                gain_resources(InvestigatorTarget::You, 5),
-            ),
-        ]))]),
-        SYNTH_FAST_EVENT_CODE => Some(vec![on_play(gain_resources(InvestigatorTarget::You, 1))]),
+        SYNTH_TREACHERY_CODE => Some(vec![revelation(gain_resources(InvestigatorTarget::You, 1))]),
         SYNTH_COVER_UP_CODE => Some(vec![
             reaction_on_event(
                 EventPattern::DiscoverClues,
