@@ -747,3 +747,207 @@ fn the_terminal_agendas_advance_flip_acknowledge_precedes_the_ending() {
         Some(ScenarioEnding::Resolution(ResolutionId::new(3))),
     );
 }
+
+/// The seeded start the replay-determinism walk below runs from. Both seeds are
+/// applied *before* the first logged action, so replaying the log rebuilds the
+/// identical starting point: clues to clear both act thresholds (as the R1 walk
+/// seeds them, and for the same reason), and an encounter deck of four Ancient
+/// Evils 01166. Four, not the R1 walk's benign one — the doom they place is
+/// load-bearing here, since it is what tips agenda 1 and ends the walk.
+fn walk_start() -> GameState {
+    let mut state = seated_roland();
+    state
+        .investigators
+        .get_mut(&INV)
+        .expect("Roland seated")
+        .clues = 5;
+    state.encounter_deck.clear();
+    for _ in 0..4 {
+        state.encounter_deck.push_back(CardCode::new("01166"));
+    }
+    state
+}
+
+/// Apply `action`, recording it in `log` and asserting it was not `Rejected` so a
+/// mis-ordered step fails here (naming the action) rather than later as a
+/// confusing state mismatch.
+fn apply_logged(
+    state: GameState,
+    action: Action,
+    log: &mut Vec<Action>,
+) -> game_core::engine::ApplyResult {
+    log.push(action.clone());
+    let r = apply(state, action);
+    assert!(
+        !matches!(r.outcome, EngineOutcome::Rejected { .. }),
+        "logged action {:?} was rejected: {:?}",
+        log.last(),
+        r.outcome,
+    );
+    r
+}
+
+/// Drive one open-turn action the way [`take_turn_action`] does — enumerate,
+/// find its option id — but record the resulting `ResolveInput(PickSingle)` wire
+/// action, which is what a replay actually re-sends. That recording is why this
+/// re-does the enumeration rather than calling `take_turn_action`, which
+/// discards the wire action it builds.
+fn logged_turn(
+    state: GameState,
+    action: &TurnAction,
+    log: &mut Vec<Action>,
+) -> game_core::engine::ApplyResult {
+    let legal = game_core::engine::legal_actions(&state);
+    let idx = legal
+        .iter()
+        .position(|a| a == action)
+        .unwrap_or_else(|| panic!("logged_turn: {action:?} is not legal; offered: {legal:?}"));
+    let wire = Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(game_core::engine::OptionId(
+            u32::try_from(idx).expect("action index fits u32"),
+        )),
+    });
+    apply_logged(state, wire, log)
+}
+
+/// Drive the walk once from [`walk_start`], recording every wire action. Returns
+/// the log, the index the round-trip splits at, and the state the walk ends in.
+///
+/// The walk is real Gathering content throughout: act 1 advances on spent clues,
+/// act 2 advances through the round-end clue-spend window and its reverse spawns
+/// the real Ghoul Priest 01116, round 2's Mythos draws the seeded Ancient Evils,
+/// and Roland then investigates the Hallway with the Priest engaged — provoking
+/// the Priest's attack of opportunity — before ending the round into another
+/// Enemy phase, Mythos draw, and turn.
+fn drive_the_walk() -> (Vec<Action>, usize, GameState) {
+    let commit_nothing = || {
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        })
+    };
+    let confirm = || {
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        })
+    };
+
+    let mut log: Vec<Action> = Vec::new();
+    let mut state = walk_start();
+
+    // --- Act 1: spend clues to advance; the reverse builds the board and moves
+    // Roland to the Hallway.
+    state = logged_turn(
+        state,
+        &TurnAction::AdvanceAct { investigator: INV },
+        &mut log,
+    )
+    .state;
+    assert_eq!(state.act_index, 1, "act 1 advanced to act 2");
+
+    // --- Act 2: end the round, then Confirm the round-end clue-spend window —
+    // act 2 advances and its reverse spawns the real Ghoul Priest.
+    state = logged_turn(state, &TurnAction::EndTurn, &mut log).state;
+    state = apply_logged(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+        }),
+        &mut log,
+    )
+    .state;
+    assert_eq!(state.act_index, 2, "act 2 advanced to the terminal act 3");
+
+    // --- Round 2 Mythos: draw the seeded Ancient Evils into Investigation.
+    state = apply_logged(state, confirm(), &mut log).state;
+
+    // --- The split point: Investigate opens a skill test and suspends inside its
+    // commit window, so the state serialized here carries an in-flight test.
+    state = logged_turn(
+        state,
+        &TurnAction::Investigate { investigator: INV },
+        &mut log,
+    )
+    .state;
+    let split = log.len();
+
+    // --- Continue past the split: resolve the test, then end the round. Doom
+    // tips agenda 1 (01105) at Mythos 1.2 and its reverse asks the card's
+    // printed ChooseOne, answered here with the second branch.
+    state = apply_logged(state, commit_nothing(), &mut log).state;
+    let ended = logged_turn(state, &TurnAction::EndTurn, &mut log);
+    let EngineOutcome::AwaitingInput { request, .. } = &ended.outcome else {
+        panic!("expected 01105's ChooseOne, got {:?}", ended.outcome);
+    };
+    assert_eq!(
+        request
+            .options
+            .iter()
+            .map(|o| o.label.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "Each investigator discards 1 card at random from his or her hand",
+            "The lead investigator takes 2 horror",
+        ],
+        "agenda 1 advanced and its reverse asked its printed choice",
+    );
+    state = apply_logged(
+        ended.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(game_core::engine::OptionId(1)),
+        }),
+        &mut log,
+    )
+    .state;
+
+    // That horror is Roland's sixth against 5 sanity — the Priest's attack of
+    // opportunity on the Investigate and its Enemy-phase attack dealt the first
+    // four — so the walk ends the way a real one can: driven insane, no
+    // investigator remaining, and the campaign guide's no-resolution entry.
+    assert_eq!(state.investigators[&INV].status, Status::Defeated);
+    assert_eq!(state.ending, Some(ScenarioEnding::NoResolution));
+
+    (log, split, state)
+}
+
+/// Replay determinism on real scenario content: the same action log, replayed
+/// from the same seeded start, ends in a byte-identical state — even when the
+/// replay is serialized to JSON and rebuilt from it partway through.
+///
+/// This is the one property the retired phase-4 closing demo uniquely held
+/// (#874). It held it on two synthetic full-cycle walks; this holds it on a real
+/// Gathering walk, which is the substrate ADR 0016 asks for. The serde step
+/// at the split is the *only* delta from a straight second drive of the log, so
+/// the comparison isolates round-trip fidelity — the property Phase 5's
+/// persistence depends on, since the server persists a seed state plus a
+/// `ResolveInput`-only action log — on top of the seeded-`rng` replay path both
+/// runs share.
+#[test]
+fn a_real_gathering_walk_replays_identically_across_a_serialize_round_trip() {
+    let (log, split, walked) = drive_the_walk();
+
+    let mut state = walk_start();
+    for action in &log[..split] {
+        state = apply(state, action.clone()).state;
+    }
+
+    // The split is genuinely in-flight, not a settled resting point: a skill test
+    // is suspended mid-resolution, so the round-trip exercises serde of the
+    // engine's continuation stack rather than only of a clean board.
+    assert!(
+        state.current_skill_test().is_some(),
+        "the split must land inside a suspended skill test: {:?}",
+        state.continuations,
+    );
+
+    let json = serde_json::to_string(&state).expect("serialize mid-walk state");
+    let mut state: GameState = serde_json::from_str(&json).expect("deserialize mid-walk state");
+
+    for action in &log[split..] {
+        state = apply(state, action.clone()).state;
+    }
+
+    assert_eq!(
+        walked, state,
+        "a real Gathering walk must replay identically across a serialize round-trip",
+    );
+}

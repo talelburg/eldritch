@@ -32,10 +32,9 @@ pub const ID: &str = "synthetic";
 /// The state is **playable to a resolution** once an investigator is
 /// seated via `seat_and_open`: placement + clues + a non-empty chaos
 /// bag are exactly what the Investigate → discover-clue → `AdvanceAct`
-/// (Won) path needs, which is what the browser demo and
-/// `tests/closing_demo.rs` exercise. A real scenario's setup does the
-/// same (seats investigators, prints clue counts on locations, fills the
-/// chaos bag); the bare `GameStateBuilder` / `test_location` defaults
+/// (Won) path needs, which is what the browser demo exercises. A real
+/// scenario's setup does the same (seats investigators, prints clue
+/// counts on locations, fills the chaos bag); the bare `GameStateBuilder` / `test_location` defaults
 /// (unplaced, 0 clues, empty bag) do not.
 ///
 /// The encounter-deck seeding gives the #126 / #127 integration

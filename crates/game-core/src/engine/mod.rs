@@ -4095,9 +4095,9 @@ mod tests {
         // RNG, so it has to stay on the replay contract: re-driving the action
         // log from a fresh copy of the same initial state must reproduce the
         // post-mulligan state exactly — including the RNG cursor, so every
-        // subsequent draw agrees too. Same shape as `closing_demo`'s
-        // `replay_with_roundtrip`: the caller holds the log and replays it
-        // against `make_initial()`.
+        // subsequent draw agrees too. Same shape as the real-Gathering replay
+        // check in `crates/scenarios/tests/the_gathering_resolutions.rs`: the
+        // caller holds the log and replays it against a fresh initial state.
         let id = InvestigatorId(1);
         let make_initial = || mulligan_scenario().1;
         // A draw after the mulligan is what makes the RNG-cursor check bite:
