@@ -36,11 +36,9 @@
 //! investigator on it. Prior art: `ability_source_control.rs`.
 
 use game_core::state::AbilityAddress;
-use std::sync::OnceLock;
 
 use game_core::assert_event;
 use game_core::card_data::{CardKind, CardMetadata};
-use game_core::card_registry::{self, CardRegistry};
 use game_core::dsl::{
     activated, gain_resources, heal_damage, Ability, InvestigatorTarget, UsageLimit, UsagePeriod,
 };
@@ -51,8 +49,8 @@ use game_core::state::{
     LocationId, Phase,
 };
 use game_core::test_support::{
-    dispatch_turn_action_unchecked, metadata_for_test_inv, test_enemy, test_investigator,
-    test_location, GameStateBuilder, TEST_INV,
+    dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location, GameStateBuilder,
+    MockRegistry, TEST_INV,
 };
 
 /// Synthetic **location** card, standing in for the Parlor 01115. Both
@@ -90,22 +88,19 @@ const LIMITED: u8 = 2;
 /// card, so the control bullet #707 shipped can be re-checked against the same
 /// probe — so "offered from this source" and "not offered from that one"
 /// differ only in the source.
-fn probe_abilities(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        TEST_INV | HALL | CULTIST | WARD => Some(vec![
-            activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)),
-            // Nobody is damaged on this board, so healing damage is provably
-            // inert (`effect_can_change_state`).
-            activated(1, vec![], heal_damage(InvestigatorTarget::Active, 1)),
-            activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)).with_usage_limit(
-                UsageLimit {
-                    count: 1,
-                    period: UsagePeriod::Round,
-                },
-            ),
-        ]),
-        _ => None,
-    }
+fn probe_abilities() -> Vec<Ability> {
+    vec![
+        activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)),
+        // Nobody is damaged on this board, so healing damage is provably
+        // inert (`effect_can_change_state`).
+        activated(1, vec![], heal_damage(InvestigatorTarget::Active, 1)),
+        activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)).with_usage_limit(
+            UsageLimit {
+                count: 1,
+                period: UsagePeriod::Round,
+            },
+        ),
+    ]
 }
 
 fn metadata(code: &'static str, name: &'static str, kind: CardKind) -> CardMetadata {
@@ -122,31 +117,25 @@ fn metadata(code: &'static str, name: &'static str, kind: CardKind) -> CardMetad
     }
 }
 
-fn probe_metadata(code: &CardCode) -> Option<&'static CardMetadata> {
-    static WARD_META: OnceLock<CardMetadata> = OnceLock::new();
-    metadata_for_test_inv(code).or_else(|| match code.as_str() {
-        WARD => Some(WARD_META.get_or_init(|| {
-            metadata(
-                WARD,
-                "Ward",
-                CardKind::Treachery {
-                    surge: false,
-                    peril: false,
-                    quantity: 1,
-                },
-            )
-        })),
-        _ => None,
-    })
-}
-
 #[ctor::ctor(unsafe)]
 fn install_probe_registry() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: probe_metadata,
-        abilities_for: probe_abilities,
-        ..CardRegistry::EMPTY
-    });
+    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`,
+    // which this binary used to name itself.
+    MockRegistry::new()
+        .with_card(metadata(
+            WARD,
+            "Ward",
+            CardKind::Treachery {
+                surge: false,
+                peril: false,
+                quantity: 1,
+            },
+        ))
+        .with_abilities(TEST_INV, probe_abilities)
+        .with_abilities(HALL, probe_abilities)
+        .with_abilities(CULTIST, probe_abilities)
+        .with_abilities(WARD, probe_abilities)
+        .install();
 }
 
 /// Two locations printing the same card, an enemy on each, and three

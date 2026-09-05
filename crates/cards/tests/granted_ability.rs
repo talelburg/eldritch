@@ -26,7 +26,6 @@
 //! reaches (a granted grant, a grant conditioned on a "you" the recipient has
 //! not got, a granter that leaves play mid-window).
 
-use game_core::card_registry::{self, CardRegistry};
 use game_core::dsl::{
     activated, constant, control_status, gain_resources, grant, Ability, CmpOp, Condition,
     ControlStatus, GrantTarget, InvestigatorTarget, Quantity,
@@ -37,8 +36,8 @@ use game_core::state::{
     LocationId, Phase,
 };
 use game_core::test_support::{
-    dispatch_turn_action_unchecked, metadata_for_test_inv, test_investigator, test_location,
-    GameStateBuilder,
+    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
+    MockRegistry,
 };
 
 /// The **granter**: a location whose printed text grants an ability to
@@ -68,55 +67,55 @@ fn granted_activation() -> Ability {
     activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1))
 }
 
-fn probe_abilities(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        // "While RECIPIENT is not controlled by a player, it gains: <activation>."
-        GRANTER => Some(vec![
-            constant(grant(
-                GrantTarget::Card(RECIPIENT.to_owned()),
-                Some(control_status(RECIPIENT, ControlStatus::ByNoPlayer)),
-                vec![
-                    granted_activation(),
-                    // A **granted grant**. The sweep reads printed abilities only,
-                    // so this one never reaches SECOND_HAND.
-                    constant(grant(
-                        GrantTarget::Card(SECOND_HAND.to_owned()),
-                        None,
-                        vec![granted_activation()],
-                    )),
-                ],
-            )),
-            // Ability 1: a `Grant` sitting under an *activated* trigger, so the
-            // "inspected, never executed" contract can be driven from the menu.
-            activated(
-                1,
-                vec![],
-                grant(GrantTarget::SelfCard, None, vec![granted_activation()]),
-            ),
-        ]),
-        // "While you have a clue at your location, RECIPIENT gains: …" — a
-        // condition that needs a "you", which an uncontrolled recipient has not
-        // got.
-        NEEDS_YOU => Some(vec![constant(grant(
+/// "While RECIPIENT is not controlled by a player, it gains: <activation>."
+fn granter_abilities() -> Vec<Ability> {
+    vec![
+        constant(grant(
             GrantTarget::Card(RECIPIENT.to_owned()),
-            Some(Condition::Compare {
-                quantity: Quantity::CluesAtControllerLocation,
-                op: CmpOp::Gt,
-                value: 0,
-            }),
-            vec![granted_activation()],
-        ))]),
-        _ => None,
-    }
+            Some(control_status(RECIPIENT, ControlStatus::ByNoPlayer)),
+            vec![
+                granted_activation(),
+                // A **granted grant**. The sweep reads printed abilities only,
+                // so this one never reaches SECOND_HAND.
+                constant(grant(
+                    GrantTarget::Card(SECOND_HAND.to_owned()),
+                    None,
+                    vec![granted_activation()],
+                )),
+            ],
+        )),
+        // Ability 1: a `Grant` sitting under an *activated* trigger, so the
+        // "inspected, never executed" contract can be driven from the menu.
+        activated(
+            1,
+            vec![],
+            grant(GrantTarget::SelfCard, None, vec![granted_activation()]),
+        ),
+    ]
+}
+
+/// "While you have a clue at your location, RECIPIENT gains: …" — a condition
+/// that needs a "you", which an uncontrolled recipient has not got.
+fn needs_you_abilities() -> Vec<Ability> {
+    vec![constant(grant(
+        GrantTarget::Card(RECIPIENT.to_owned()),
+        Some(Condition::Compare {
+            quantity: Quantity::CluesAtControllerLocation,
+            op: CmpOp::Gt,
+            value: 0,
+        }),
+        vec![granted_activation()],
+    ))]
 }
 
 #[ctor::ctor(unsafe)]
 fn install_probe_registry() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: metadata_for_test_inv,
-        abilities_for: probe_abilities,
-        ..CardRegistry::EMPTY
-    });
+    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`, which this
+    // binary used to name itself.
+    MockRegistry::new()
+        .with_abilities(GRANTER, granter_abilities)
+        .with_abilities(NEEDS_YOU, needs_you_abilities)
+        .install();
 }
 
 /// The board: the investigator standing at [`HERE`], whose location card is

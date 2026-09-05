@@ -2848,7 +2848,7 @@ mod candidate_source_present_tests {
     use crate::test_support::{test_investigator, test_location, GameStateBuilder};
 
     const INV: InvestigatorId = InvestigatorId(1);
-    const SOME_CODE: &str = "_synth_card";
+    const SOME_CODE: &str = "_rw_card";
 
     fn candidate(source: CandidateSource) -> ResolutionCandidate {
         ResolutionCandidate::new(
@@ -3042,7 +3042,7 @@ mod withdraw_suppressed_candidates_tests {
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     const INV: InvestigatorId = InvestigatorId(1);
-    const CODE: &str = "_synth_reaction";
+    const CODE: &str = "_rw_reaction";
 
     fn discovery() -> TimingEvent {
         TimingEvent::DiscoverClues {

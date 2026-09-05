@@ -36,7 +36,6 @@
 //! `ability_source_colocation.rs`.
 
 use game_core::assert_event;
-use game_core::card_registry::{self, CardRegistry};
 use game_core::dsl::{
     activated, gain_resources, heal_damage, Ability, InvestigatorTarget, UsageLimit, UsagePeriod,
 };
@@ -47,8 +46,8 @@ use game_core::state::{
     AbilitySource, Act, Agenda, CardCode, GameState, InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{
-    dispatch_turn_action_unchecked, metadata_for_test_inv, test_investigator, test_location,
-    GameStateBuilder,
+    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
+    MockRegistry,
 };
 
 /// Synthetic **act**, standing in for Uncovering the Conspiracy 01123.
@@ -76,31 +75,30 @@ const LIMITED: u8 = 2;
 
 /// The same three abilities on every synthetic board card, so "offered from
 /// this source" and "not offered from that one" differ only in the source.
-fn probe_abilities(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        ACT_ONE | ACT_TWO | AGENDA => Some(vec![
-            activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)),
-            // Nobody is damaged on this board, so healing damage is provably
-            // inert (`effect_can_change_state`).
-            activated(1, vec![], heal_damage(InvestigatorTarget::Active, 1)),
-            activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)).with_usage_limit(
-                UsageLimit {
-                    count: 1,
-                    period: UsagePeriod::Round,
-                },
-            ),
-        ]),
-        _ => None,
-    }
+fn probe_abilities() -> Vec<Ability> {
+    vec![
+        activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)),
+        // Nobody is damaged on this board, so healing damage is provably
+        // inert (`effect_can_change_state`).
+        activated(1, vec![], heal_damage(InvestigatorTarget::Active, 1)),
+        activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)).with_usage_limit(
+            UsageLimit {
+                count: 1,
+                period: UsagePeriod::Round,
+            },
+        ),
+    ]
 }
 
 #[ctor::ctor(unsafe)]
 fn install_probe_registry() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: metadata_for_test_inv,
-        abilities_for: probe_abilities,
-        ..CardRegistry::EMPTY
-    });
+    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`, which this
+    // binary used to name itself.
+    MockRegistry::new()
+        .with_abilities(ACT_ONE, probe_abilities)
+        .with_abilities(ACT_TWO, probe_abilities)
+        .with_abilities(AGENDA, probe_abilities)
+        .install();
 }
 
 /// Two locations, two investigators — mine `HERE`, a neighbour `THERE` — and a

@@ -21,9 +21,9 @@ use crate::card_data::{ClueValue, Prey};
 use crate::dsl::SkillTestKind;
 use crate::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, GameState, HandSizeDiscard,
-    InFlightSkillTest, Investigator, InvestigatorId, Location, LocationId, SkillKind,
-    SkillTestFollowUp, SkillTestId, SkillTestStep, Skills, Status,
+    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, InFlightSkillTest, Investigator,
+    InvestigatorId, Location, LocationId, SkillKind, SkillTestFollowUp, SkillTestId, SkillTestStep,
+    Skills, Status,
 };
 
 /// A stock investigator with reasonable defaults.
@@ -285,18 +285,6 @@ pub fn awaiting_skippable_pick_single_with(
         request: InputRequest::pick_single(prompt, options).skippable(),
         resume_token: ResumeToken(0),
     }
-}
-
-/// Put `state` at the upkeep hand-size discard prompt by pushing a
-/// [`Continuation::HandSizeDiscard`] frame for `remaining`. A fixture because
-/// [`HandSizeDiscard`] is `#[non_exhaustive]`, so downstream test crates
-/// (the web client's wasm tests, #468) can't build the frame directly.
-#[must_use]
-pub fn at_hand_size_discard(mut state: GameState, remaining: Vec<InvestigatorId>) -> GameState {
-    state
-        .continuations
-        .push(Continuation::HandSizeDiscard(HandSizeDiscard { remaining }));
-    state
 }
 
 #[cfg(test)]

@@ -19,10 +19,8 @@
 //! `activation_cost_source.rs`.
 
 use game_core::state::AbilityAddress;
-use std::sync::OnceLock;
 
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use game_core::card_registry::{self, CardRegistry};
 use game_core::dsl::{activated, gain_resources, heal_damage, Ability, Cost, InvestigatorTarget};
 use game_core::engine::{legal_actions, EngineOutcome, TurnAction};
 use game_core::state::{
@@ -30,8 +28,8 @@ use game_core::state::{
     Phase,
 };
 use game_core::test_support::{
-    dispatch_turn_action_unchecked, metadata_for_test_inv, test_investigator, test_location,
-    GameStateBuilder, TEST_INV,
+    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
+    MockRegistry, TEST_INV,
 };
 
 /// Synthetic **treachery** sitting in an investigator's threat area — the card
@@ -65,26 +63,23 @@ const SELF_DISCARDING: u8 = 3;
 /// resolution of the effect has the potential to change the game state"* and
 /// that the cost *"can be paid"*. Widening which sources are addressable must
 /// not widen what is legal, so they stay unoffered from every source.
-fn probe_abilities(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        TEST_INV | WARD | THEIRS => Some(vec![
-            activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)),
-            activated(
-                1,
-                vec![Cost::Resources(99)],
-                gain_resources(InvestigatorTarget::Active, 1),
-            ),
-            // Nobody is damaged on this board, so healing damage is provably
-            // inert (`effect_can_change_state`).
-            activated(1, vec![], heal_damage(InvestigatorTarget::Active, 1)),
-            activated(
-                1,
-                vec![Cost::DiscardSelf],
-                gain_resources(InvestigatorTarget::Active, 1),
-            ),
-        ]),
-        _ => None,
-    }
+fn probe_abilities() -> Vec<Ability> {
+    vec![
+        activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)),
+        activated(
+            1,
+            vec![Cost::Resources(99)],
+            gain_resources(InvestigatorTarget::Active, 1),
+        ),
+        // Nobody is damaged on this board, so healing damage is provably
+        // inert (`effect_can_change_state`).
+        activated(1, vec![], heal_damage(InvestigatorTarget::Active, 1)),
+        activated(
+            1,
+            vec![Cost::DiscardSelf],
+            gain_resources(InvestigatorTarget::Active, 1),
+        ),
+    ]
 }
 
 fn metadata(code: &'static str, name: &'static str, kind: CardKind) -> CardMetadata {
@@ -125,23 +120,17 @@ fn treachery_kind() -> CardKind {
     }
 }
 
-fn probe_metadata(code: &CardCode) -> Option<&'static CardMetadata> {
-    static WARD_META: OnceLock<CardMetadata> = OnceLock::new();
-    static THEIRS_META: OnceLock<CardMetadata> = OnceLock::new();
-    metadata_for_test_inv(code).or_else(|| match code.as_str() {
-        WARD => Some(WARD_META.get_or_init(|| metadata(WARD, "Ward", treachery_kind()))),
-        THEIRS => Some(THEIRS_META.get_or_init(|| metadata(THEIRS, "Theirs", asset_kind()))),
-        _ => None,
-    })
-}
-
 #[ctor::ctor(unsafe)]
 fn install_probe_registry() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: probe_metadata,
-        abilities_for: probe_abilities,
-        ..CardRegistry::EMPTY
-    });
+    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`,
+    // which this binary used to name itself.
+    MockRegistry::new()
+        .with_card(metadata(WARD, "Ward", treachery_kind()))
+        .with_card(metadata(THEIRS, "Theirs", asset_kind()))
+        .with_abilities(TEST_INV, probe_abilities)
+        .with_abilities(WARD, probe_abilities)
+        .with_abilities(THEIRS, probe_abilities)
+        .install();
 }
 
 /// Two investigators at the same location: mine holds a threat-area card, theirs
