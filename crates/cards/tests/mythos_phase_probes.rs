@@ -208,6 +208,10 @@ fn draw_encounter_card(state: GameState) -> game_core::ApplyResult {
 
 #[test]
 fn mythos_phase_surge_chains_into_next_card() {
+    // PROVISIONAL against #138: the pipeline hardcodes `surge: false` for every
+    // treachery, so no corpus card can carry the keyword. When #138 lands, flip
+    // this test to a real Surge card — False Lead 01136 is the Core one — unless
+    // the probe is better tailored to what the test asks (ADR 0016).
     let mut state = setup_at_mythos_draw(board());
     assert_eq!(state.phase, Phase::Mythos);
 
@@ -249,6 +253,11 @@ fn mythos_phase_surge_chains_into_next_card() {
 #[test]
 #[allow(clippy::too_many_lines)] // end-to-end multi-investigator surge-isolation walkthrough
 fn mythos_phase_multi_investigator_surge_does_not_spill() {
+    // PROVISIONAL against #138: the pipeline hardcodes `surge: false` for every
+    // treachery, so no corpus card can carry the keyword. When #138 lands, flip
+    // this test to a real Surge card — False Lead 01136 is the Core one — unless
+    // the probe is better tailored to what the test asks (ADR 0016).
+    //
     // Verifies that a surge in inv1's draw chain resolves entirely within
     // inv1's DrawEncounterCard apply — consuming two cards from the shared
     // encounter deck — without disrupting inv2's subsequent draw.

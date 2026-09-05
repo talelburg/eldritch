@@ -31,7 +31,7 @@
 //!   `glossary/Ability.md` puts in *any* player window: *"A \[free\] triggered
 //!   ability may be triggered as a player ability during any player window."*
 //!   Its ruling — *"You cannot use Beat Cop's ability after you assign lethal
-//!   damage/horror to him"* (<https://arkhamdb.com/card/01018>) — scopes a
+//!   damage/horror to him …"* (<https://arkhamdb.com/card/01018>) — scopes a
 //!   damage-assignment window these tests never enter.
 //!
 //! **Why not a Fast card in hand for the window pair.** No printed event
@@ -51,6 +51,12 @@
 //! no agenda ever advances — the advance path is `issue_482_advance.rs`'s. No
 //! act deck: nothing here discovers a clue.
 //!
+//! "The lead" below always means `turn_order.first()`, the proxy the engine
+//! actually binds — not the chosen lead investigator of
+//! `glossary/Lead_Investigator.md`, which we do not model (`CONTEXT.md`, *Lead
+//! investigator*). The two coincide in the solo tests and are not guaranteed to
+//! in the two-investigator ones; nothing here turns on the difference.
+//!
 //! The two surge tests and the choice-Revelation probe that also lived in this
 //! group need card shapes the corpus cannot supply; they are in
 //! `mythos_phase_probes.rs` with their probes inline.
@@ -64,7 +70,7 @@ use game_core::state::{
     Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, Continuation, FastWindowKind, GameState,
     InvestigatorId, LocationId, Phase, PhaseStep,
 };
-use game_core::test_support::{take_turn_action, test_location, GameStateBuilder};
+use game_core::test_support::{take_turn_action, GameStateBuilder};
 use game_core::{assert_event, Action, InputKind, InputResponse, PlayerAction, TurnAction};
 
 /// Ancient Evils — *"**Revelation** - Place 1 doom on the current agenda. This
@@ -83,9 +89,6 @@ const RISE_OF_THE_GHOULS: &str = "01106";
 const ROLAND: &str = "01001";
 const DAISY: &str = "01002";
 
-/// The Attic's `LocationId` on this board.
-const ATTIC_ID: LocationId = LocationId(10);
-
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
@@ -103,21 +106,28 @@ fn agenda_doom_threshold(code: &str) -> u8 {
 
 /// The board every test starts from: the Attic in play as the starting
 /// location, a +0 chaos bag, and a one-card agenda deck. No investigators —
-/// callers supply the roster to [`seat_and_open`].
-fn board() -> GameState {
-    let mut attic = test_location(ATTIC_ID.0, "Attic");
-    attic.code = CardCode::new(ATTIC);
-
+/// callers supply the roster to [`seat_and_open`]. Returns the minted
+/// [`LocationId`] alongside, since `add_location` mints it.
+///
+/// The Attic is built **through the engine from its own corpus metadata**
+/// (`GameState::add_location`, the same call The Gathering's `setup` makes),
+/// not hand-stamped onto a `test_location`: shroud, printed clues and victory
+/// come off card 01113 rather than from a fixture wearing its code, which is
+/// the impersonation ADR 0016 forbids. Its *"**Forced** - After you enter the
+/// Attic: Take 1 horror."* is live in the installed registry and simply never
+/// fires — only `move_action` emits `EnteredLocation`, and `seat_and_open`
+/// *places* the roster rather than moving it.
+fn board() -> (GameState, LocationId) {
     let mut state = GameStateBuilder::new()
-        .with_location(attic)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
-    state.starting_location = Some(ATTIC_ID);
+    let attic = state.add_location(cards::by_code(ATTIC).expect("Attic 01113 in corpus"));
+    state.starting_location = Some(attic);
     state.agenda_deck = vec![Agenda {
         code: CardCode::new(RISE_OF_THE_GHOULS),
         doom_threshold: agenda_doom_threshold(RISE_OF_THE_GHOULS),
     }];
-    state
+    (state, attic)
 }
 
 /// Seed the encounter deck in draw order (top of deck = index 0), replacing
@@ -193,7 +203,7 @@ fn draw_encounter_card(state: GameState) -> game_core::ApplyResult {
 
 #[test]
 fn mythos_phase_resolves_single_treachery() {
-    let mut base = board();
+    let (mut base, _) = board();
     with_encounter_deck(&mut base, &[ANCIENT_EVILS]);
 
     let state = setup_at_mythos_draw(base);
@@ -258,7 +268,7 @@ fn mythos_phase_resolves_single_spawn_enemy() {
     // seat_and_open (called inside setup_at_mythos_draw) places the investigator
     // at starting_location = the Attic, which is where Flesh-Eater spawns, so
     // the spawned enemy engages them.
-    let mut base = board();
+    let (mut base, attic) = board();
     with_encounter_deck(&mut base, &[FLESH_EATER]);
 
     let state = setup_at_mythos_draw(base);
@@ -276,7 +286,7 @@ fn mythos_phase_resolves_single_spawn_enemy() {
         "one enemy must be in play after spawn",
     );
     let enemy = result.state.enemies.values().next().unwrap();
-    assert_eq!(enemy.current_location, Some(ATTIC_ID));
+    assert_eq!(enemy.current_location, Some(attic));
     assert_eq!(enemy.engaged_with, Some(InvestigatorId(1)));
     assert!(
         !result
@@ -292,7 +302,7 @@ fn mythos_phase_resolves_single_spawn_enemy() {
         result.events,
         Event::EnemySpawned { code, location, engaged_with, .. }
             if *code == CardCode::new(FLESH_EATER)
-                && *location == ATTIC_ID
+                && *location == attic
                 && *engaged_with == Some(InvestigatorId(1))
     );
 }
@@ -307,7 +317,7 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
     // advances the cursor to inv2 and stays in Mythos.
     // Both investigators are seated at the Attic (starting_location) by
     // seat_and_open; no pre-seating needed.
-    let mut state = setup_two_investigators_at_mythos_draw(board());
+    let mut state = setup_two_investigators_at_mythos_draw(board().0);
     assert_eq!(state.phase, Phase::Mythos);
     assert_eq!(state.current_encounter_drawer(), Some(InvestigatorId(1)));
 
@@ -402,7 +412,7 @@ fn mythos_phase_multi_investigator_player_order() {
     let inv2 = InvestigatorId(2);
 
     // Two treacheries — one per investigator.
-    let mut base = board();
+    let (mut base, _) = board();
     with_encounter_deck(&mut base, &[ANCIENT_EVILS, ANCIENT_EVILS]);
 
     let state = setup_two_investigators_at_mythos_draw(base);
@@ -442,7 +452,7 @@ fn mythos_phase_multi_investigator_player_order() {
 
 #[test]
 fn mythos_phase_full_round_chain() {
-    let mut base = board();
+    let (mut base, _) = board();
     with_encounter_deck(&mut base, &[ANCIENT_EVILS]);
 
     let state = setup_at_mythos_draw(base);
@@ -471,7 +481,7 @@ fn mythos_phase_full_round_chain() {
 #[test]
 fn mythos_draw_rejects_when_initial_deck_and_discard_both_empty() {
     // Deck and discard both empty from `board()`; nothing seeds either.
-    let state = setup_at_mythos_draw(board());
+    let state = setup_at_mythos_draw(board().0);
     assert_eq!(state.phase, Phase::Mythos);
     assert_eq!(state.current_encounter_drawer(), Some(InvestigatorId(1)));
 
@@ -516,7 +526,7 @@ fn mythos_draw_rejects_when_initial_deck_and_discard_both_empty() {
 /// location, which is what makes Beat Cop's `[fast]` ability pass its pre-cost
 /// target check and hold the window open.
 fn at_mythos_draw_with_beat_cop_in_play() -> GameState {
-    let mut state = setup_at_mythos_draw(board());
+    let mut state = setup_at_mythos_draw(board().0);
     // Minted rather than hand-picked: `seat_and_open` already gave the seated
     // investigator card instance 0, and a second card sharing that id resolves
     // to the investigator instead — the ability lookup then finds no printed
