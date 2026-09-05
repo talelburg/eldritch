@@ -40,7 +40,10 @@ real codes. And `crates/web/tests/board.rs:161` asserts
 the file installs `install_test_registry()` (`:33`),
 which knows only `TEST_INV` and the terminal act/agenda cards: the assertion
 passes **because** the code fails to resolve to a name. A test that appears to
-pin card rendering pins the unresolved-code fallback instead.
+pin card rendering pins the unresolved-code fallback instead. That last one is
+cited as evidence of the drift and is **not** fixed by this posture: it needs a
+rendering decision about what an unresolved code should display, which is
+[#868](https://github.com/talelburg/eldritch/issues/868).
 
 **A synthetic fixture may model an engine primitive. It may not impersonate a
 printed card.** The line is checkable against a diff, which is the property that
@@ -61,9 +64,10 @@ that catch real engine bugs.
 `test_enemy` — is not a shortcut around real cards. `Investigator` and `Location`
 are `#[non_exhaustive]`, so as the module's own doc says, *"downstream test
 crates cannot construct them via struct literal — they MUST go through these
-fixtures"* (`fixtures.rs:8-18`). roughly 1,300 call sites across 168 files depend on that,
-and the layering is why: `game-core` cannot reach `cards` by crate direction, so
-there is no real-card alternative at the kernel. These build entities, not cards.
+fixtures"* (`fixtures.rs:8-18`). Roughly 1,300 call-site lines across 168 files
+depend on that, and the layering is why:
+`game-core` cannot reach `cards` by crate direction, so there is no real-card
+alternative at the kernel. These build entities, not cards.
 
 **Probe cards are test-local.** A degenerate code that isolates one mechanism has
 one reader, and belongs in that reader's file. `crates/cards/tests/` already does
@@ -72,8 +76,10 @@ plus hand-written probes — `timing_cells.rs` (`_tc_when` / `_tc_at` / `_tc_aft
 `clue_discovery_cells.rs`, `enemy_attack_cells.rs`, `ability_source_*.rs`
 (`SRCCTL01`…), `zero_action_ability_sources.rs` — and never touch the corpus. Each
 probe exists to make one cell fire in isolation, which no printed card does
-cleanly. The remaining 70 install the real `cards::REGISTRY`. That split is the
-posture already working; this ADR names it rather than inventing it.
+cleanly. The other 70 run against the corpus: 68 install the real
+`cards::REGISTRY`, and `enemies.rs` and `registry_smoke.rs` read it directly
+through `cards::by_code` without installing anything. That split is the posture
+already working; this ADR names it rather than inventing it.
 
 **The toy scenario splits at the seam where sharing is real.** The
 `ScenarioModule` shell — a no-op `apply_resolution`, `resolve_symbol: None`,
@@ -111,9 +117,9 @@ them to do — they test the engine's resolution hook, not the crate's routing t
 ## One synthetic is transitional, and carries its terminal condition
 
 `_synth_surge_treachery` stays, and it is scaffolding. The corpus has no Surge card
-because `crates/card-data-pipeline/src/main.rs:955,970` hardcodes `surge: false`
-for every treachery — the comment at `:897` calls it the *"not-yet-parsed"*
-default (#138). The snapshot has 156 cards whose text carries Surge, including
+because `crates/card-data-pipeline/src/main.rs` hardcodes `surge: false` in both
+arms that can carry it — `:955` for enemies, `:970` for treacheries — and the
+comment at `:897` calls it the *"not-yet-parsed"* default (#138). The snapshot has 156 cards whose text carries Surge, including
 False Lead 01136 in the Core set. That parsing is
 [#138](https://github.com/talelburg/eldritch/issues/138), which already names
 this fixture in its own Context and is milestoned to phase 9. **When #138 lands,
@@ -160,6 +166,11 @@ PR #253 promoted it to `GameStateBuilder` for #251, and `standards.md` was never
 updated. Two dated phase docs still name it and keep it, since they record what
 shipped at the time; each gains the rename inline so the pointer does not dangle.
 `docs/superpowers/` is a dated archive and is not rewritten.
+
+The per-file disposition behind the consequences below is the table in
+[#864](https://github.com/talelburg/eldritch/issues/864), which is the contract the
+migration is reviewed against; what follows is the shape of the result, not a
+second copy to keep in sync.
 
 **`crates/scenarios/tests/` becomes scenario-level end-to-end only.** It goes from
 16 files to five: the three `the_gathering*` files plus `issue_476_fast_window.rs`
