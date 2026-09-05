@@ -2,7 +2,9 @@
 //!
 //! Drives full apply cycles through `seat_and_open` → `Mulligan` →
 //! `EndTurn` → `DrawEncounterCard`, verifying the per-card 5-step
-//! sub-sequence, surge chain, and post-1.4 window behavior end-to-end.
+//! sub-sequence and the surge chain end-to-end. The Fast-window pair that
+//! also lived here is gone (#871): `scenarios/tests/issue_476_fast_window.rs`
+//! proves that window against real cards.
 //!
 //! Lives in `crates/scenarios/tests/` because:
 //!

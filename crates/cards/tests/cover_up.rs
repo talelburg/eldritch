@@ -11,7 +11,7 @@ use game_core::event::{Event, TraumaKind};
 use game_core::scenario::ScenarioId;
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
-    InvestigatorId, LocationId, Phase, TimingMode,
+    InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{
     drive, take_turn_action, terminal_code, test_investigator, test_location, GameStateBuilder,
@@ -264,13 +264,7 @@ fn no_reaction_offered_when_cover_up_has_no_clues() {
     let (state, _) = investigate_to_interrupt(investigate_state(0));
 
     assert!(
-        !state.open_windows().iter().any(|w| matches!(
-            w,
-            Continuation::TimingPointWindow {
-                mode: TimingMode::Reaction,
-                ..
-            }
-        )),
+        state.open_windows().is_empty(),
         "a clueless Cover Up must not open a before-discover window: {:?}",
         state.open_windows(),
     );
@@ -306,6 +300,18 @@ fn deduction_discard_is_capped_at_the_clues_cover_up_holds() {
         r.state.open_windows().is_empty(),
         "no second before-discover window: {:?}",
         r.state.open_windows(),
+    );
+    // The synthetic this replaces asserted an empty stack; through a real
+    // Investigate the open turn is still on it, so the equivalent claim is that
+    // the discovery sequence itself drained — the coordinator walked its
+    // remaining cells and popped rather than stranding a cancelled emit.
+    assert!(
+        !r.state.continuations.iter().any(|c| matches!(
+            c,
+            Continuation::EmitEvent { .. } | Continuation::TimingPoint { .. }
+        )),
+        "no stranded discovery frames: {:?}",
+        r.state.continuations,
     );
 }
 
