@@ -12,7 +12,7 @@
 //! Parlor's Resign missing from the menu is as much the defect as its being
 //! refused on submission.
 //!
-//! Own integration-test binary so it can install a hand-rolled `CardRegistry`:
+//! Own integration-test binary so it can install its own `MockRegistry`:
 //! no corpus card carries an activated ability on an investigator card or on a
 //! threat-area card, and none can be shipped to fake one (Haunted 01098's
 //! discard has nowhere to go until #708/#644). Prior art:
@@ -122,8 +122,7 @@ fn treachery_kind() -> CardKind {
 
 #[ctor::ctor(unsafe)]
 fn install_probe_registry() {
-    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`,
-    // which this binary used to name itself.
+    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`.
     MockRegistry::new()
         .with_card(metadata(WARD, "Ward", treachery_kind()))
         .with_card(metadata(THEIRS, "Theirs", asset_kind()))

@@ -9,7 +9,7 @@
 //! the later cost rejects and the apply boundary rolls the whole activation
 //! back.
 //!
-//! Own integration-test binary so it can install a hand-rolled `CardRegistry`
+//! Own integration-test binary so it can install its own `MockRegistry`
 //! (no corpus card pairs a depleting `SpendUses` with a later `Exhaust`)
 //! without colliding with the real-corpus binaries. Prior art:
 //! `reject_rollback.rs`.

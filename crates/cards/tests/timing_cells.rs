@@ -32,7 +32,7 @@
 //! end-of-turn test, agenda 01107's enemy-phase-end move — are alone on their
 //! condition, so nothing orders against them and their own module tests pin
 //! the declaration and nothing more. So the walk itself is proved with a
-//! hand-built registry (prior art: `advance_act_interactive_reverse`).
+//! mock registry (prior art: `advance_act_interactive_reverse`).
 //!
 //! The condition under test is `SkillTestResolved` (RR ST.6), picked because
 //! both its forced and its reaction scan read the investigator's own controlled

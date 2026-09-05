@@ -2,10 +2,10 @@
 //! state and then rejects mid-resolution leaves state AND events
 //! byte-identical to the pre-action state.
 //!
-//! Own integration-test binary so it can install a *hand-rolled*
-//! `CardRegistry` (a probe card whose `OnPlay` effect mutates then
-//! rejects) without colliding with `game-core`'s registry-free unit
-//! tests or the real-corpus `play_card.rs` binary.
+//! Own integration-test binary so it can install its own `MockRegistry` (a
+//! probe card whose `OnPlay` effect mutates then rejects) without colliding
+//! with `game-core`'s registry-free unit tests or the real-corpus
+//! `play_card.rs` binary.
 
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use game_core::dsl::{gain_resources, modify, on_play, seq};

@@ -86,8 +86,7 @@ fn enemy_forced(timing: EventTiming, amount: u8) -> Ability {
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`, which this
-    // binary used to name itself.
+    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`.
     MockRegistry::new()
         .with_abilities(WHEN, || vec![on_attack(EventTiming::When, 4)])
         .with_abilities(AT, || vec![on_attack(EventTiming::At, 1)])

@@ -20,7 +20,7 @@
 //! `docs/adr/0014-a-granted-ability-is-a-constant-effect-swept-off-the-board.md`
 //! has the argument.
 //!
-//! Own integration-test binary so it can install a hand-rolled `CardRegistry`.
+//! Own integration-test binary so it can install its own `MockRegistry`.
 //! The corpus peer — the Parlor 01115 granting Lita Chantler 01117 her Parley,
 //! end to end — is `lita_parley.rs`; these cases are the ones no printed card
 //! reaches (a granted grant, a grant conditioned on a "you" the recipient has
@@ -110,8 +110,7 @@ fn needs_you_abilities() -> Vec<Ability> {
 
 #[ctor::ctor(unsafe)]
 fn install_probe_registry() {
-    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`, which this
-    // binary used to name itself.
+    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`.
     MockRegistry::new()
         .with_abilities(GRANTER, granter_abilities)
         .with_abilities(NEEDS_YOU, needs_you_abilities)

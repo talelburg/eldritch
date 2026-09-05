@@ -12,7 +12,7 @@
 //! and there was no after-discovery condition at all: an ability declaring
 //! `at` or `after` on a discovery was never collected, never resolved and
 //! never rejected. No corpus card wants one yet, so the two new cells are
-//! proved with a hand-built registry (prior art: `timing_cells.rs`,
+//! proved with a mock registry (prior art: `timing_cells.rs`,
 //! `advance_act_interactive_reverse.rs`). Cover Up 01007 — the one card that
 //! *does* declare the `when` cell — is covered against the **real** corpus in
 //! `cover_up.rs`, which must not move.

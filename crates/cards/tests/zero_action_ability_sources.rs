@@ -54,7 +54,7 @@
 //! in play are offered and resolve unchanged — is `fast_play.rs`, which
 //! installs `cards::REGISTRY` in its own process.
 //!
-//! Own integration-test binary so it can install a hand-rolled `CardRegistry`.
+//! Own integration-test binary so it can install its own `MockRegistry`.
 //!
 //! # The player window these tests use
 //!
@@ -150,8 +150,7 @@ fn probe_abilities() -> Vec<Ability> {
 
 #[ctor::ctor(unsafe)]
 fn install_probe_registry() {
-    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`, which this
-    // binary used to name itself.
+    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`.
     MockRegistry::new()
         .with_abilities(HALL, probe_abilities)
         .with_abilities(CULTIST, probe_abilities)

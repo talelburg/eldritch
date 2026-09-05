@@ -23,7 +23,7 @@
 //! checking that the widening did not turn the forced act and agenda abilities
 //! The Gathering ships into activations, is `enumerate_actions.rs`.
 //!
-//! Own integration-test binary so it can install a hand-rolled `CardRegistry`.
+//! Own integration-test binary so it can install its own `MockRegistry`.
 //! **No corpus card can exercise this**: the act and agenda abilities the
 //! corpus prints — the resigns on Predator or Prey? 01121a and Time Is Running
 //! Short 01122 (*"[action]: **Resign.** You don't want to risk taking too long,
@@ -92,8 +92,7 @@ fn probe_abilities() -> Vec<Ability> {
 
 #[ctor::ctor(unsafe)]
 fn install_probe_registry() {
-    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`, which this
-    // binary used to name itself.
+    // `TEST_INV`'s metadata rides `install`'s composed `metadata_for_test_inv`.
     MockRegistry::new()
         .with_abilities(ACT_ONE, probe_abilities)
         .with_abilities(ACT_TWO, probe_abilities)
