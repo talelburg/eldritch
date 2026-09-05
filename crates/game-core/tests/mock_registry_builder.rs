@@ -12,7 +12,7 @@
 //! ships no named ones.
 
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use game_core::card_registry;
+use game_core::card_registry::{self, NativeEffectFn};
 use game_core::dsl::{constant, modify, Ability, ModifierScope, Stat};
 use game_core::state::{CardCode, GameState};
 use game_core::test_support::{terminal_code, MockRegistry, TEST_INV};
@@ -71,8 +71,7 @@ fn back_ability() -> Vec<Ability> {
     ))]
 }
 
-fn probe_effect(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    cx.state.agenda_doom = 7;
+fn probe_effect(_cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     EngineOutcome::Done
 }
 
@@ -155,7 +154,11 @@ fn front_and_back_abilities_are_separate_slots() {
 
 #[test]
 fn native_tags_dispatch_per_slot() {
-    assert!((registry().native_effect_for)(EFFECT_TAG).is_some());
+    let served = (registry().native_effect_for)(EFFECT_TAG).expect("the tag is registered");
+    assert!(
+        std::ptr::fn_addr_eq(served, probe_effect as NativeEffectFn),
+        "the registered effect itself comes back, not merely some effect"
+    );
     assert!((registry().native_eligibility_for)(EFFECT_TAG).is_none());
     assert!((registry().native_eligibility_for)(ELIGIBILITY_TAG).is_some());
     assert!((registry().native_condition_for)(CONDITION_TAG).is_some());

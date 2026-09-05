@@ -1,37 +1,41 @@
 //! A builder for the mock [`CardRegistry`] a test binary installs.
 //!
-//! Thirty-two integration binaries across `game-core` and `cards` hand-roll the
-//! same thirty lines: a `OnceLock<CardMetadata>` per probe card so the lookup can
-//! hand back a `&'static`, an `abilities_for` match over a handful of invented
-//! codes, and a constructor-time install of a `CardRegistry` literal spread over
-//! [`CardRegistry::EMPTY`]. [`MockRegistry`] collapses that plumbing:
+//! Integration binaries across `game-core` and `cards` hand-roll the same
+//! plumbing: a `OnceLock<CardMetadata>` per probe card so the lookup can hand
+//! back a `&'static`, an `abilities_for` match over a handful of invented codes,
+//! and a constructor-time install of a `CardRegistry` literal spread over
+//! [`CardRegistry::EMPTY`]. [`MockRegistry`] collapses that plumbing.
 //!
-//! ```ignore
-//! #[ctor::ctor(unsafe)]
-//! fn install() {
-//!     MockRegistry::new()
-//!         .with_card(asset_metadata(TRINKET, "Mock Trinket", "…"))
-//!         .with_abilities(TRINKET, || vec![activated(Cost::DiscardSelf, gain_resources(1))])
-//!         .install();
-//! }
 //! ```
+//! use game_core::dsl::{constant, modify, ModifierScope, Stat};
+//! use game_core::test_support::MockRegistry;
+//!
+//! MockRegistry::new()
+//!     .with_abilities("_doc_probe", || {
+//!         vec![constant(modify(Stat::Willpower, 1, ModifierScope::WhileInPlay))]
+//!     })
+//!     .install();
+//! ```
+//!
+//! A card's metadata rides [`with_card`](MockRegistry::with_card), which takes a
+//! `CardMetadata` the caller builds — there is no shared constructor for one,
+//! deliberately.
 //!
 //! **It collapses plumbing only.** Per [ADR 0016] a synthetic fixture models an
 //! engine primitive and never impersonates a printed card, and probe cards stay
 //! test-local — one per reader, defined in the file that reads them. So this
 //! module exposes no named probe cards and no library of them: every code and
 //! every `CardMetadata` here comes from the caller. A shared probe library would
-//! recreate, in a new location, the shared-fixture problem the migration exists
-//! to undo.
+//! recreate, in a new location, the shared-fixture problem that the test-substrate
+//! migration ([#864]) exists to undo.
 //!
 //! [ADR 0016]: https://github.com/talelburg/eldritch/blob/main/docs/adr/0016-a-synthetic-fixture-models-a-primitive-never-a-printed-card.md
+//! [#864]: https://github.com/talelburg/eldritch/issues/864
 
 use std::sync::OnceLock;
 
 use crate::card_data::CardMetadata;
-use crate::card_registry::{
-    self, CardRegistry, EligibilityFn, NativeConditionFn, NativeEffectFn,
-};
+use crate::card_registry::{self, CardRegistry, EligibilityFn, NativeConditionFn, NativeEffectFn};
 use crate::dsl::Ability;
 use crate::state::CardCode;
 
@@ -46,6 +50,10 @@ type AbilitiesFn = Box<dyn Fn() -> Vec<Ability> + Send + Sync>;
 /// `fn(&CardCode) -> …` cannot capture, so the data it consults has to be
 /// reachable from a `static`. That the slot is global costs nothing here —
 /// [`card_registry::install`] is already process-global and first-install-wins.
+///
+/// Populated **only** by an [`install`](MockRegistry::install) that won the
+/// registry slot, so the invariant every lookup below relies on holds: if
+/// `TABLES` is set, the installed registry is this module's.
 static TABLES: OnceLock<MockRegistry> = OnceLock::new();
 
 /// Builder for a test binary's mock [`CardRegistry`]. See the [module
@@ -78,8 +86,9 @@ impl MockRegistry {
     /// Register `metadata` under its own [`CardMetadata::code`].
     ///
     /// The builder owns the value and the installed lookup hands out a
-    /// `&'static` borrow of it from [`TABLES`] — which is the whole reason the
-    /// hand-rolled version needed a `OnceLock<CardMetadata>` per card.
+    /// `&'static` borrow of it from the module's process-wide table — which is
+    /// the whole reason the hand-rolled version needed a
+    /// `OnceLock<CardMetadata>` per card.
     #[must_use]
     pub fn with_card(mut self, metadata: CardMetadata) -> Self {
         self.metadata.push(metadata);
@@ -136,6 +145,11 @@ impl MockRegistry {
 
     /// Register the condition predicate served for the
     /// [`Condition::Native`](crate::dsl::Condition::Native) `tag`.
+    ///
+    /// This method exists to carry the binaries that already mock the slot; it
+    /// is **not** an invitation to reach for it. `TODO(#609)`:
+    /// [`CardRegistry::native_condition_for`] is expected to be deleted along
+    /// with `Condition::Native`, and this method goes with it.
     #[must_use]
     pub fn with_native_condition(
         mut self,
@@ -154,27 +168,53 @@ impl MockRegistry {
     /// **First install wins**, matching
     /// [`card_registry::install`] and
     /// [`install_registry_with_terminal_cards`](super::install_registry_with_terminal_cards):
-    /// a second call is a silent no-op rather than a panic, so a `#[ctor]` and a
-    /// belt-and-braces call from a test body can coexist.
+    /// a later call is a silent no-op rather than a panic, so a `#[ctor]` and a
+    /// belt-and-braces call from a test body can coexist. That holds against
+    /// *any* earlier claimant, not just another `MockRegistry` — the tables are
+    /// stored only when this call won the slot, so a builder that lost leaves
+    /// nothing behind for a lookup to serve from a registry that isn't ours.
+    ///
+    /// The literal below names all six slots rather than spreading
+    /// [`CardRegistry::EMPTY`], so a slot added later is a compile error here —
+    /// which is what a builder wants, since every slot is one it must decide
+    /// whether to expose a `with_*` for. (`EMPTY` is the right base for a
+    /// *partial* literal; this one is total.)
+    ///
+    /// The winning call publishes the registry a step before its tables, so a
+    /// lookup racing the install proper would see an empty one. Nothing does:
+    /// an install runs from a `#[ctor]` or from the top of a test, both of them
+    /// ahead of any card lookup in the binary.
     pub fn install(self) {
-        let _ = TABLES.set(self);
-        let _ = card_registry::install(CardRegistry {
+        let won = card_registry::install(CardRegistry {
             metadata_for,
             abilities_for,
             back_abilities_for,
             native_effect_for,
             native_eligibility_for,
             native_condition_for,
-            ..CardRegistry::EMPTY
-        });
+        })
+        .is_ok();
+        if won {
+            let _ = TABLES.set(self);
+        }
     }
 }
 
-fn tables() -> Option<&'static MockRegistry> {
-    TABLES.get()
+/// Serve `tag` out of one of the `Copy`-valued native tables. The three native
+/// slots differ only in the function type they carry, so they share this scan.
+fn find_tag<T: Copy>(table: &[(String, T)], tag: &str) -> Option<T> {
+    table
+        .iter()
+        .find(|(registered, _)| registered == tag)
+        .map(|(_, value)| *value)
 }
 
-fn lookup(table: &'static [(CardCode, AbilitiesFn)], code: &CardCode) -> Option<Vec<Ability>> {
+/// Serve `code` out of one of the two abilities tables, building the
+/// `Vec<Ability>` fresh as `abilities_for`'s signature requires.
+fn find_abilities(
+    table: &'static [(CardCode, AbilitiesFn)],
+    code: &CardCode,
+) -> Option<Vec<Ability>> {
     table
         .iter()
         .find(|(registered, _)| registered == code)
@@ -183,7 +223,8 @@ fn lookup(table: &'static [(CardCode, AbilitiesFn)], code: &CardCode) -> Option<
 
 fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
     super::metadata_for_test_inv(code).or_else(|| {
-        tables()?
+        TABLES
+            .get()?
             .metadata
             .iter()
             .find(|metadata| metadata.code == code.as_str())
@@ -191,27 +232,21 @@ fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
 }
 
 fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    super::abilities_for_terminal(code).or_else(|| lookup(&tables()?.abilities, code))
+    super::abilities_for_terminal(code).or_else(|| find_abilities(&TABLES.get()?.abilities, code))
 }
 
 fn back_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    lookup(&tables()?.back_abilities, code)
+    find_abilities(&TABLES.get()?.back_abilities, code)
 }
 
 fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    let (_, effect) = tables()?.native_effects.iter().find(|(t, _)| t == tag)?;
-    Some(*effect)
+    find_tag(&TABLES.get()?.native_effects, tag)
 }
 
 fn native_eligibility_for(tag: &str) -> Option<EligibilityFn> {
-    let (_, eligibility) = tables()?
-        .native_eligibilities
-        .iter()
-        .find(|(t, _)| t == tag)?;
-    Some(*eligibility)
+    find_tag(&TABLES.get()?.native_eligibilities, tag)
 }
 
 fn native_condition_for(tag: &str) -> Option<NativeConditionFn> {
-    let (_, condition) = tables()?.native_conditions.iter().find(|(t, _)| t == tag)?;
-    Some(*condition)
+    find_tag(&TABLES.get()?.native_conditions, tag)
 }
