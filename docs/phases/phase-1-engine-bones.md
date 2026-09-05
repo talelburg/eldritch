@@ -22,7 +22,7 @@ Engine can apply actions and emit events; test harness ready.
 - **`apply(state, action) -> ApplyResult`** is the only entry point for state mutation. The action log is a flat `Vec<Action>`; replaying from initial state reproduces current state bit-for-bit.
 - **Validate-first / mutate-second** as the per-handler convention: every dispatch handler checks every precondition before any mutation. On rejection, neither state nor events should be touched. The apply loop has a belt-and-suspenders `events.clear()` on `Rejected`. (Convention, not yet structurally enforced; tracked in the `apply()` doc as a TODO.)
 - **Deterministic RNG** via `RngState { seed, draws }` + ChaCha8. Reconstructed on demand from the state; deck shuffles and chaos-token draws are reproducible from the action log.
-- **Fluent `TestGame` builder** as the single source of test-state-construction defaults. Adders are `with_*`; build is terminal. Fixtures `test_investigator(id)`, `test_location(id, name)`, `test_enemy(id, name)` provide reasonable defaults.
+- **Fluent `TestGame` builder** as the single source of test-state-construction defaults. (Promoted to the production `GameStateBuilder` in PR #253, for `#251`.) Adders are `with_*`; build is terminal. Fixtures `test_investigator(id)`, `test_location(id, name)`, `test_enemy(id, name)` provide reasonable defaults.
 - **Event-assertion macros** are order-insensitive by default: `assert_event!`, `assert_no_event!`, `assert_event_count!`. Plain `assert_eq!` on the events slice when exact contiguous order matters. (`assert_event_sequence!` for subsequence-in-order checks landed later, in PR `#95`.)
 
 ## Dependencies
