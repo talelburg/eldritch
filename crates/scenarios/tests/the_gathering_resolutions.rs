@@ -748,10 +748,12 @@ fn the_terminal_agendas_advance_flip_acknowledge_precedes_the_ending() {
     );
 }
 
-/// The seeded start the replay-determinism walk below runs from — the same two
-/// seeds the R1 walk uses (clues for both act thresholds; a benign Ancient Evils
-/// 01166 encounter deck), applied *before* the first logged action so a replay
-/// rebuilds the identical starting point.
+/// The seeded start the replay-determinism walk below runs from. Both seeds are
+/// applied *before* the first logged action, so replaying the log rebuilds the
+/// identical starting point: clues to clear both act thresholds (as the R1 walk
+/// seeds them, and for the same reason), and an encounter deck of four Ancient
+/// Evils 01166. Four, not the R1 walk's benign one — the doom they place is
+/// load-bearing here, since it is what tips agenda 1 and ends the walk.
 fn walk_start() -> GameState {
     let mut state = seated_roland();
     state
@@ -769,7 +771,7 @@ fn walk_start() -> GameState {
 /// Apply `action`, recording it in `log` and asserting it was not `Rejected` so a
 /// mis-ordered step fails here (naming the action) rather than later as a
 /// confusing state mismatch.
-fn logged(
+fn apply_logged(
     state: GameState,
     action: Action,
     log: &mut Vec<Action>,
@@ -787,7 +789,9 @@ fn logged(
 
 /// Drive one open-turn action the way [`take_turn_action`] does — enumerate,
 /// find its option id — but record the resulting `ResolveInput(PickSingle)` wire
-/// action, which is what a replay actually re-sends.
+/// action, which is what a replay actually re-sends. That recording is why this
+/// re-does the enumeration rather than calling `take_turn_action`, which
+/// discards the wire action it builds.
 fn logged_turn(
     state: GameState,
     action: &TurnAction,
@@ -803,7 +807,7 @@ fn logged_turn(
             u32::try_from(idx).expect("action index fits u32"),
         )),
     });
-    logged(state, wire, log)
+    apply_logged(state, wire, log)
 }
 
 /// Drive the walk once from [`walk_start`], recording every wire action. Returns
@@ -843,7 +847,7 @@ fn drive_the_walk() -> (Vec<Action>, usize, GameState) {
     // --- Act 2: end the round, then Confirm the round-end clue-spend window —
     // act 2 advances and its reverse spawns the real Ghoul Priest.
     state = logged_turn(state, &TurnAction::EndTurn, &mut log).state;
-    state = logged(
+    state = apply_logged(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
@@ -854,7 +858,7 @@ fn drive_the_walk() -> (Vec<Action>, usize, GameState) {
     assert_eq!(state.act_index, 2, "act 2 advanced to the terminal act 3");
 
     // --- Round 2 Mythos: draw the seeded Ancient Evils into Investigation.
-    state = logged(state, confirm(), &mut log).state;
+    state = apply_logged(state, confirm(), &mut log).state;
 
     // --- The split point: Investigate opens a skill test and suspends inside its
     // commit window, so the state serialized here carries an in-flight test.
@@ -869,7 +873,7 @@ fn drive_the_walk() -> (Vec<Action>, usize, GameState) {
     // --- Continue past the split: resolve the test, then end the round. Doom
     // tips agenda 1 (01105) at Mythos 1.2 and its reverse asks the card's
     // printed ChooseOne, answered here with the second branch.
-    state = logged(state, commit_nothing(), &mut log).state;
+    state = apply_logged(state, commit_nothing(), &mut log).state;
     let ended = logged_turn(state, &TurnAction::EndTurn, &mut log);
     let EngineOutcome::AwaitingInput { request, .. } = &ended.outcome else {
         panic!("expected 01105's ChooseOne, got {:?}", ended.outcome);
@@ -886,7 +890,7 @@ fn drive_the_walk() -> (Vec<Action>, usize, GameState) {
         ],
         "agenda 1 advanced and its reverse asked its printed choice",
     );
-    state = logged(
+    state = apply_logged(
         ended.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(game_core::engine::OptionId(1)),
@@ -909,9 +913,9 @@ fn drive_the_walk() -> (Vec<Action>, usize, GameState) {
 /// from the same seeded start, ends in a byte-identical state — even when the
 /// replay is serialized to JSON and rebuilt from it partway through.
 ///
-/// This is the one property `crates/scenarios/tests/closing_demo.rs` uniquely
-/// held (#874). It held it on two synthetic full-cycle walks; this holds it on a
-/// real Gathering walk, which is the substrate ADR 0016 asks for. The serde step
+/// This is the one property the retired phase-4 closing demo uniquely held
+/// (#874). It held it on two synthetic full-cycle walks; this holds it on a real
+/// Gathering walk, which is the substrate ADR 0016 asks for. The serde step
 /// at the split is the *only* delta from a straight second drive of the log, so
 /// the comparison isolates round-trip fidelity — the property Phase 5's
 /// persistence depends on, since the server persists a seed state plus a
