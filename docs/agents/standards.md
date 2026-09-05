@@ -43,10 +43,23 @@ It is pipeline output and carries a header comment saying so. Change the impl, o
 In order of importance:
 
 1. **Card tests** — per-card in `crates/cards/src/impls/<name>.rs`; **each card needs at least one.**
-2. **Engine unit tests** — `crates/game-core/src/engine/mod.rs` + per-module `#[cfg(test)]`. Use the `TestGame` builder (`.with_phase(…).with_investigator(…).with_active_investigator(…).build()`, with `test_investigator(id)` / `test_location(id, name)` / `test_enemy(id, name)` fixtures) and the **event-assertion macros** `assert_event!` / `assert_no_event!` / `assert_event_count!` / `assert_event_sequence!` (order-insensitive by default; `_sequence` for in-order subsequence). Use `assert_eq!` on the events slice only when you need exact contiguous order.
+2. **Engine unit tests** — `crates/game-core/src/engine/mod.rs` + per-module `#[cfg(test)]`. Use `GameStateBuilder` (`.with_phase(…).with_investigator(…).with_active_investigator(…).build()` — a production type in `game-core`'s state module, re-exported from `test_support`, with the `test_investigator(id)` / `test_location(id, name)` / `test_enemy(id, name)` fixtures) and the **event-assertion macros** `assert_event!` / `assert_no_event!` / `assert_event_count!` / `assert_event_sequence!` (order-insensitive by default; `_sequence` for in-order subsequence). Use `assert_eq!` on the events slice only when you need exact contiguous order.
 3. **Integration tests** — `crates/cards/tests/`; each file is its own cargo binary/process, so it can `install(cards::REGISTRY)` without colliding. The right home for anything needing real card metadata + abilities, which `game-core` can't reach by crate direction. Pattern: `crates/cards/tests/play_card.rs`.
+4. **Scenario end-to-end tests** — `crates/scenarios/tests/`; the same per-binary process isolation, and reserved for tests that exercise **real scenario data in situ** — a Gathering walk, its agenda's doom cascade, its reference card's symbol tokens. The line is *does it drive scenario content*, not *is it a full walk*. A test that needs no scenario content belongs at layer 2 or 3. (The directory does not match this yet — the migration that empties it of synthetic-toy tests is tracked by [#864](https://github.com/talelburg/eldritch/issues/864), with the per-file disposition in its body.)
 
 `game-core::test_support` is unconditionally `pub` (no feature flag).
+
+**A synthetic fixture may model an engine primitive; it may not impersonate a printed card.** If the thing you are hand-writing has a code in `data/arkhamdb-snapshot/pack/`, use the real card and the real `cards::REGISTRY`. Behind the line sits the criterion that decides what it doesn't reach: **a test's substrate is chosen by what its failure should mean.** A test asking *does the hunter-movement rule work* wants an enemy whose only interesting property is `Hunter`; a test asking *does The Gathering play* wants The Gathering. Realism is not the axis.
+
+Synthetic material sorts into three kinds, each with its own rule:
+
+- **Primitive builders are shared, unconditional and mandatory.** `game_core::test_support::fixtures` builds entities, not cards. `Investigator` and `Location` are `#[non_exhaustive]`, so downstream test crates cannot construct them by literal, and `game-core` cannot reach `cards` by crate direction — there is no real-card alternative at the kernel.
+- **Probe cards are test-local**, defined in the one binary that reads them, with a per-binary code prefix (`_tc_*`, `_cd_*`, `SRC*` — see `crates/cards/tests/timing_cells.rs`). A probe exists to fire one cell in isolation, which no printed card does cleanly. Never promote one into a shared fixture module.
+- **A mock scenario shares its module shell, never its state.** The no-op `ScenarioModule` is shared; the `setup()` state is composed per test with `GameStateBuilder`. `crates/server/tests/common/mod.rs:19-42` is the model.
+
+**A fixture that is transitional says so inline and names its terminal condition** — the ticket that retires it, and which tests flip when it lands.
+
+**Why:** [ADR 0016](../adr/0016-a-synthetic-fixture-models-a-primitive-never-a-printed-card.md), which carries the evidence. Short version: the synthetic Cover Up fixture cloned real 01007's eligibility predicate byte-for-byte and dropped the card's printed Revelation, so a later author hit the gap and documented it in a comment rather than fixing it. *"Never silently approximate a card"* below is the same rule on the production side; a fixture fails more quietly, by handing a reviewer a test that reads as evidence about a card and is evidence about somebody's approximation of one. Nothing checks a synthetic against the snapshot, because there is nothing to check it against.
 
 ### Stub deferred functionality with a TODO that names the issue
 
