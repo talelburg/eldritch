@@ -2,9 +2,9 @@
 //! `cards::REGISTRY` — the 3-clue threat-area Revelation, the before-timing
 //! clue-discovery interrupt, and the game-end mental-trauma forced point.
 //!
-//! Own process → installs `cards::REGISTRY`. The interrupt / game-end
-//! shapes mirror the C5a synthetic test (`scenarios::tests::cover_up_interrupt`),
-//! now driven through the real card.
+//! Own process → installs `cards::REGISTRY`. The interrupt / game-end shapes
+//! were first proved by the C5a synthetic fixture; that fixture's test binary is
+//! gone (#871, ADR 0016) and this file is its successor.
 
 use game_core::action::EngineRecord;
 use game_core::event::{Event, TraumaKind};
@@ -166,12 +166,12 @@ fn skip_discovers_normally() {
 // ---- Cover Up + Deduction: one discovery, capped ----------------------
 
 /// Investigation-phase state with **Deduction 01039 in hand**: active
-/// investigator at a `location_clues`-clue location, Cover Up holding 3 in the
-/// threat area. Intellect 3 + Deduction's 1 intellect icon + a +0 token vs the
-/// default shroud 2 → the Investigate always succeeds.
-fn investigate_state_with_deduction(location_clues: u8) -> GameState {
+/// investigator at a `location_clues`-clue location, Cover Up holding
+/// `held_clues` in the threat area. Intellect 3 + Deduction's 1 intellect icon
+/// + a +0 token vs the default shroud 2 → the Investigate always succeeds.
+fn investigate_state_with_deduction(location_clues: u8, held_clues: u8) -> GameState {
     let mut investigator = test_investigator(1);
-    investigator.threat_area.push(cover_up(3));
+    investigator.threat_area.push(cover_up(held_clues));
     investigator.hand = vec![CardCode::new(DEDUCTION)];
     let mut location = test_location(10, "Study");
     location.clues = location_clues;
@@ -208,7 +208,7 @@ fn investigate_with_deduction_and_play_cover_up(state: GameState) -> game_core::
 /// of 2, capped to 1, so Cover Up discards exactly 1.
 #[test]
 fn deduction_at_a_one_clue_location_discards_one_from_cover_up() {
-    let r = investigate_with_deduction_and_play_cover_up(investigate_state_with_deduction(1));
+    let r = investigate_with_deduction_and_play_cover_up(investigate_state_with_deduction(1, 3));
 
     assert_eq!(
         r.state.locations[&LOC].clues, 1,
@@ -234,7 +234,7 @@ fn deduction_at_a_one_clue_location_discards_one_from_cover_up() {
 /// discarded total alone cannot tell the shapes apart here.
 #[test]
 fn deduction_at_a_two_clue_location_discards_two_in_one_window() {
-    let r = investigate_with_deduction_and_play_cover_up(investigate_state_with_deduction(2));
+    let r = investigate_with_deduction_and_play_cover_up(investigate_state_with_deduction(2, 3));
 
     assert_eq!(r.state.locations[&LOC].clues, 2, "location untouched");
     assert_eq!(r.state.investigators[&INV].clues, 0, "discovered nothing");
@@ -248,6 +248,70 @@ fn deduction_at_a_two_clue_location_discards_two_in_one_window() {
         r.state.open_windows().is_empty(),
         "no second before-discover window: {:?}",
         r.state.open_windows(),
+    );
+}
+
+/// The reaction's RR p.2 potential gate, end-to-end: a Cover Up holding no clues
+/// has nothing to discard, so the before-discover window is never offered and the
+/// Investigate discovers normally. (`cards::impls::cover_up`'s unit test pins the
+/// `01007:has_clues` predicate itself; this pins what the window does with it.)
+///
+/// Ported from the C5a synthetic binary's `no_interrupt_when_cover_up_has_no_clues`
+/// under #871 — the behaviour had no real-card successor, so it moved rather than
+/// being deleted.
+#[test]
+fn no_reaction_offered_when_cover_up_has_no_clues() {
+    let (state, _) = investigate_to_interrupt(investigate_state(0));
+
+    assert!(
+        state.open_windows().is_empty(),
+        "a clueless Cover Up must not open a before-discover window: {:?}",
+        state.open_windows(),
+    );
+    assert_eq!(state.locations[&LOC].clues, 1, "location -1");
+    assert_eq!(state.investigators[&INV].clues, 1, "investigator +1");
+    assert_eq!(cover_up_clues(&state), 0, "nothing to discard");
+}
+
+/// The **held-clue cap** — `min(count, card.clues)` — distinct from the location
+/// cap the two Deduction tests above pin. Cover Up holds 1, the location holds 2,
+/// and Deduction makes the discovery 2: the discard is capped at the 1 clue Cover
+/// Up actually has (no underflow), and the discovery is still *fully* replaced,
+/// because the reaction cancels the triggering condition outright rather than
+/// paying for it clue by clue (`glossary/Instead.md`).
+///
+/// Ported from the C5a synthetic binary's
+/// `playing_cover_up_caps_discard_at_held_clue_count` under #871, which reached
+/// the same shape by pushing frames by hand with `count = 3`. Real cards reach it
+/// at `count = 2`.
+#[test]
+fn deduction_discard_is_capped_at_the_clues_cover_up_holds() {
+    let r = investigate_with_deduction_and_play_cover_up(investigate_state_with_deduction(2, 1));
+
+    assert_eq!(r.state.locations[&LOC].clues, 2, "location untouched");
+    assert_eq!(r.state.investigators[&INV].clues, 0, "discovered nothing");
+    assert_no_event!(r.events, Event::CluePlaced { .. });
+    assert_eq!(
+        cover_up_clues(&r.state),
+        0,
+        "the discard is capped at the 1 clue Cover Up held",
+    );
+    assert!(
+        r.state.open_windows().is_empty(),
+        "no second before-discover window: {:?}",
+        r.state.open_windows(),
+    );
+    // The synthetic this replaces asserted an empty stack; through a real
+    // Investigate the open turn is still on it, so the equivalent claim is that
+    // the discovery sequence itself drained — the coordinator walked its
+    // remaining cells and popped rather than stranding a cancelled emit.
+    assert!(
+        !r.state.continuations.iter().any(|c| matches!(
+            c,
+            Continuation::EmitEvent { .. } | Continuation::TimingPoint { .. }
+        )),
+        "no stranded discovery frames: {:?}",
+        r.state.continuations,
     );
 }
 
