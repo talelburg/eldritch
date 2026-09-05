@@ -73,8 +73,9 @@ fn investigated(by_controller: bool) -> EventPattern {
     }
 }
 
-/// "After you defeat an enemy, gain 1 resource" — the shape both
-/// investigate reactions and the bystander defeat reaction print.
+/// A reaction on `pattern` whose whole effect is gaining 1 resource — the shape
+/// both investigate reactions and the bystander defeat reaction print, differing
+/// only in the condition they key off.
 fn react_gaining_a_resource(pattern: EventPattern) -> Vec<Ability> {
     vec![reaction_on_event(
         pattern,

@@ -114,12 +114,21 @@ fn gated_on_enter(tag: &'static str) -> Vec<Ability> {
     vec![forced_horror(EventPattern::EnteredLocation, EventTiming::After, 1).with_eligibility(tag)]
 }
 
-/// A `LeftLocation` forced ability in `cell`, `count` of them — one card
-/// printing two opens a lead-ordered run that suspends mid-move (#569).
-fn left_location(cell: EventTiming, count: usize) -> Vec<Ability> {
-    (0..count)
-        .map(|_| forced_horror(EventPattern::LeftLocation, cell, 1))
-        .collect()
+/// A `LeftLocation` forced ability in `cell` — a card printing two of these
+/// opens a lead-ordered run that suspends mid-move (#569).
+fn left_location(cell: EventTiming) -> Ability {
+    forced_horror(EventPattern::LeftLocation, cell, 1)
+}
+
+/// The end-of-enemy-phase horror both [`DOOM_AGENDA`] and [`DOOM_ACT`] print.
+fn enemy_phase_end_horror() -> Vec<Ability> {
+    vec![forced_horror(
+        EventPattern::PhaseEnded {
+            phase: DslPhase::Enemy,
+        },
+        EventTiming::After,
+        1,
+    )]
 }
 
 fn always(_: &game_core::GameState, _: &game_core::engine::EvalContext) -> bool {
@@ -142,24 +151,8 @@ fn install_mock_registry() {
                 1,
             )]
         })
-        .with_abilities(DOOM_AGENDA, || {
-            vec![forced_horror(
-                EventPattern::PhaseEnded {
-                    phase: DslPhase::Enemy,
-                },
-                EventTiming::After,
-                1,
-            )]
-        })
-        .with_abilities(DOOM_ACT, || {
-            vec![forced_horror(
-                EventPattern::PhaseEnded {
-                    phase: DslPhase::Enemy,
-                },
-                EventTiming::After,
-                1,
-            )]
-        })
+        .with_abilities(DOOM_AGENDA, enemy_phase_end_horror)
+        .with_abilities(DOOM_ACT, enemy_phase_end_horror)
         // Two distinct forced `EnteredLocation` abilities at the same timing
         // point — exercises ordered multi-resolution (both fire in order).
         .with_abilities(DOUBLE_FORCED, || {
@@ -181,11 +174,19 @@ fn install_mock_registry() {
             vec![forced_horror(EventPattern::RoundEnded, EventTiming::At, 2)]
         })
         .with_abilities(DOUBLE_LEFT_LOCATION, || {
-            left_location(EventTiming::After, 2)
+            vec![
+                left_location(EventTiming::After),
+                left_location(EventTiming::After),
+            ]
         })
-        .with_abilities(WHEN_LEFT_LOCATION, || left_location(EventTiming::When, 1))
+        .with_abilities(WHEN_LEFT_LOCATION, || {
+            vec![left_location(EventTiming::When)]
+        })
         .with_abilities(DOUBLE_WHEN_LEFT_LOCATION, || {
-            left_location(EventTiming::When, 2)
+            vec![
+                left_location(EventTiming::When),
+                left_location(EventTiming::When),
+            ]
         })
         .with_abilities(END_OF_TURN_CARD, || {
             vec![forced_horror(
