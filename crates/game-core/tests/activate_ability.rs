@@ -11,11 +11,9 @@
 //! only way to exercise the full activation flow.
 
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::CardRegistry;
 use game_core::dsl::{
-    activated, constant, gain_resources, modify, Ability, Cost, IntExpr, InvestigatorTarget,
-    ModifierScope, Stat,
+    activated, constant, gain_resources, modify, Cost, IntExpr, InvestigatorTarget, ModifierScope,
+    Stat,
 };
 use game_core::engine::{apply, legal_actions, EngineOutcome};
 use game_core::event::Event;
@@ -27,7 +25,7 @@ use game_core::state::{
 use game_core::test_support::{
     dispatch_turn_action_unchecked, drive_skill_test, perform_skill_test,
     perform_skill_test_no_commits, take_turn_action, test_investigator, GameStateBuilder,
-    TakeOneFastPlay,
+    MockRegistry, TakeOneFastPlay,
 };
 use game_core::TurnAction;
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -56,48 +54,45 @@ const DISCARD_COST_ABILITY: &str = "MOCK4";
 /// `ThisSkillTest` push path + accumulator drain across resolution.
 const SKILL_BOOST: &str = "MOCK5";
 
-fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
-}
-
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        FAST_RESOURCE_LOOP => Some(vec![activated(
-            0,
-            vec![Cost::Resources(1)],
-            gain_resources(InvestigatorTarget::You, 1),
-        )]),
-        ACTION_EXHAUST_GAIN => Some(vec![activated(
-            1,
-            vec![Cost::Exhaust],
-            gain_resources(InvestigatorTarget::You, 1),
-        )]),
-        CONSTANT_ONLY => Some(vec![constant(modify(
-            Stat::Willpower,
-            1,
-            ModifierScope::WhileInPlay,
-        ))]),
-        DISCARD_COST_ABILITY => Some(vec![activated(
-            0,
-            vec![Cost::DiscardCardFromHand],
-            gain_resources(InvestigatorTarget::You, 1),
-        )]),
-        SKILL_BOOST => Some(vec![activated(
-            0,
-            vec![Cost::Resources(1)],
-            modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
-        )]),
-        _ => None,
-    }
-}
-
 #[ctor::ctor(unsafe)]
 fn install_mock_registry() {
-    let _ = game_core::card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_abilities(FAST_RESOURCE_LOOP, || {
+            vec![activated(
+                0,
+                vec![Cost::Resources(1)],
+                gain_resources(InvestigatorTarget::You, 1),
+            )]
+        })
+        .with_abilities(ACTION_EXHAUST_GAIN, || {
+            vec![activated(
+                1,
+                vec![Cost::Exhaust],
+                gain_resources(InvestigatorTarget::You, 1),
+            )]
+        })
+        .with_abilities(CONSTANT_ONLY, || {
+            vec![constant(modify(
+                Stat::Willpower,
+                1,
+                ModifierScope::WhileInPlay,
+            ))]
+        })
+        .with_abilities(DISCARD_COST_ABILITY, || {
+            vec![activated(
+                0,
+                vec![Cost::DiscardCardFromHand],
+                gain_resources(InvestigatorTarget::You, 1),
+            )]
+        })
+        .with_abilities(SKILL_BOOST, || {
+            vec![activated(
+                0,
+                vec![Cost::Resources(1)],
+                modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
+            )]
+        })
+        .install();
 }
 
 /// Build a state with one in-play instance of `code` (instance id 0),

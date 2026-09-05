@@ -4,40 +4,24 @@
 //! `apply_effect` is `pub(crate)`.
 
 use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::{self, CardRegistry, NativeEffectFn};
 use game_core::state::{Agenda, CardCode, GameState, InvestigatorId, Phase};
-use game_core::test_support::{fire_forced_on_phase_end, test_investigator, GameStateBuilder};
+use game_core::test_support::{
+    fire_forced_on_phase_end, test_investigator, GameStateBuilder, MockRegistry,
+};
 use game_core::{Cx, EngineOutcome, EvalContext};
 
 const AGENDA: &str = "TEST-AGENDA";
 const AGENDA_BAD: &str = "TEST-AGENDA-BAD";
 
-fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
-}
-
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    if code.as_str() == AGENDA {
-        // Forced at end of enemy phase -> a native effect tagged "test:set-doom".
-        Some(vec![forced_on_event(
-            EventPattern::PhaseEnded {
-                phase: card_dsl::dsl::Phase::Enemy,
-            },
-            EventTiming::After,
-            native("test:set-doom"),
-        )])
-    } else if code.as_str() == AGENDA_BAD {
-        Some(vec![forced_on_event(
-            EventPattern::PhaseEnded {
-                phase: card_dsl::dsl::Phase::Enemy,
-            },
-            EventTiming::After,
-            native("test:missing"),
-        )])
-    } else {
-        None
-    }
+/// Forced at end of enemy phase -> the native effect tagged `tag`.
+fn forced_native(tag: &'static str) -> Vec<Ability> {
+    vec![forced_on_event(
+        EventPattern::PhaseEnded {
+            phase: card_dsl::dsl::Phase::Enemy,
+        },
+        EventTiming::After,
+        native(tag),
+    )]
 }
 
 fn set_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
@@ -45,21 +29,13 @@ fn set_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-fn mock_native_for(tag: &str) -> Option<NativeEffectFn> {
-    match tag {
-        "test:set-doom" => Some(set_doom),
-        _ => None,
-    }
-}
-
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        native_effect_for: mock_native_for,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_abilities(AGENDA, || forced_native("test:set-doom"))
+        .with_abilities(AGENDA_BAD, || forced_native("test:missing"))
+        .with_native_effect("test:set-doom", set_doom)
+        .install();
 }
 
 fn state_with_agenda(code: &str) -> GameState {

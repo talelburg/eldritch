@@ -16,8 +16,6 @@ use game_core::action::InputResponse;
 use game_core::assert_event;
 use game_core::assert_event_sequence;
 use game_core::assert_no_event;
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::CardRegistry;
 use game_core::dsl::Phase as DslPhase;
 use game_core::dsl::{
     deal_horror, forced_on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
@@ -28,7 +26,7 @@ use game_core::event::Event;
 use game_core::state::{Act, Agenda, CardCode, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{
     fire_forced_at_end_of_turn, fire_forced_on_enter, fire_forced_on_phase_end, test_investigator,
-    test_location, GameStateBuilder,
+    test_location, GameStateBuilder, MockRegistry,
 };
 use game_core::{apply, Action, PlayerAction};
 
@@ -105,151 +103,115 @@ const ALWAYS_TAG: &str = "test:always";
 const NEVER_TAG: &str = "test:never";
 const UNKNOWN_TAG: &str = "test:unregistered";
 
-/// Returns metadata for `TEST_INV` (used by `test_investigator`) so that
-/// capacity reads (`max_health()` / `max_sanity()`) work when this registry
-/// is installed. All other codes return `None`.
-fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-    game_core::test_support::metadata_for_test_inv(code)
+/// One forced ability on `pattern` in `cell`, dealing `horror` to the
+/// investigator it fires for — the single shape every mock card here prints.
+fn forced_horror(pattern: EventPattern, cell: EventTiming, horror: u8) -> Ability {
+    forced_on_event(pattern, cell, deal_horror(InvestigatorTarget::You, horror))
 }
 
-/// The eligibility-gated half of [`mock_abilities_for`] (#786): the
-/// [`HORROR_ATTIC`] on-enter ability carrying one of the three tags.
-fn gated_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    let tag = match code.as_str() {
-        GATED_ELIGIBLE => ALWAYS_TAG,
-        GATED_INELIGIBLE => NEVER_TAG,
-        GATED_UNKNOWN_TAG => UNKNOWN_TAG,
-        _ => return None,
-    };
-    Some(vec![forced_on_event(
-        EventPattern::EnteredLocation,
+/// [`HORROR_ATTIC`]'s on-enter ability, carrying an eligibility `tag` (#786).
+fn gated_on_enter(tag: &'static str) -> Vec<Ability> {
+    vec![forced_horror(EventPattern::EnteredLocation, EventTiming::After, 1).with_eligibility(tag)]
+}
+
+/// A `LeftLocation` forced ability in `cell` — a card printing two of these
+/// opens a lead-ordered run that suspends mid-move (#569).
+fn left_location(cell: EventTiming) -> Ability {
+    forced_horror(EventPattern::LeftLocation, cell, 1)
+}
+
+/// The end-of-enemy-phase horror both [`DOOM_AGENDA`] and [`DOOM_ACT`] print.
+fn enemy_phase_end_horror() -> Vec<Ability> {
+    vec![forced_horror(
+        EventPattern::PhaseEnded {
+            phase: DslPhase::Enemy,
+        },
         EventTiming::After,
-        deal_horror(InvestigatorTarget::You, 1u8),
-    )
-    .with_eligibility(tag)])
+        1,
+    )]
 }
 
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    if code.as_str() == HORROR_ATTIC {
-        Some(vec![forced_on_event(
-            EventPattern::EnteredLocation,
-            EventTiming::After,
-            deal_horror(InvestigatorTarget::You, 1u8),
-        )])
-    } else if code.as_str() == DOOM_AGENDA || code.as_str() == DOOM_ACT {
-        Some(vec![forced_on_event(
-            EventPattern::PhaseEnded {
-                phase: DslPhase::Enemy,
-            },
-            EventTiming::After,
-            deal_horror(InvestigatorTarget::You, 1u8),
-        )])
-    } else if code.as_str() == DOUBLE_FORCED {
-        // Two distinct forced `EnteredLocation` abilities at the same timing
-        // point — exercises ordered multi-resolution (both fire in order).
-        Some(vec![
-            forced_on_event(
-                EventPattern::EnteredLocation,
-                EventTiming::After,
-                deal_horror(InvestigatorTarget::You, 1u8),
-            ),
-            forced_on_event(
-                EventPattern::EnteredLocation,
-                EventTiming::After,
-                deal_horror(InvestigatorTarget::You, 1u8),
-            ),
-        ])
-    } else if code.as_str() == UPKEEP_END_ACT {
-        Some(vec![forced_on_event(
-            EventPattern::PhaseEnded {
-                phase: DslPhase::Upkeep,
-            },
-            EventTiming::After,
-            deal_horror(InvestigatorTarget::You, 1u8),
-        )])
-    } else if code.as_str() == ROUND_END_AGENDA {
-        Some(vec![forced_on_event(
-            EventPattern::RoundEnded,
-            EventTiming::At,
-            deal_horror(InvestigatorTarget::You, 2u8),
-        )])
-    } else if code.as_str() == DOUBLE_LEFT_LOCATION {
-        Some(vec![
-            forced_on_event(
-                EventPattern::LeftLocation,
-                EventTiming::After,
-                deal_horror(InvestigatorTarget::You, 1u8),
-            ),
-            forced_on_event(
-                EventPattern::LeftLocation,
-                EventTiming::After,
-                deal_horror(InvestigatorTarget::You, 1u8),
-            ),
-        ])
-    } else if code.as_str() == WHEN_LEFT_LOCATION {
-        Some(vec![forced_on_event(
-            EventPattern::LeftLocation,
-            EventTiming::When,
-            deal_horror(InvestigatorTarget::You, 1u8),
-        )])
-    } else if code.as_str() == DOUBLE_WHEN_LEFT_LOCATION {
-        Some(vec![
-            forced_on_event(
-                EventPattern::LeftLocation,
-                EventTiming::When,
-                deal_horror(InvestigatorTarget::You, 1u8),
-            ),
-            forced_on_event(
-                EventPattern::LeftLocation,
-                EventTiming::When,
-                deal_horror(InvestigatorTarget::You, 1u8),
-            ),
-        ])
-    } else if code.as_str() == END_OF_TURN_CARD {
-        Some(vec![forced_on_event(
-            EventPattern::EndOfTurn,
-            EventTiming::After,
-            deal_horror(InvestigatorTarget::You, 1u8),
-        )])
-    } else if let Some(abilities) = gated_abilities_for(code) {
-        Some(abilities)
-    } else if code.as_str() == AFTER_INVESTIGATE_CARD {
-        Some(vec![forced_on_event(
-            EventPattern::SkillTestResolved {
-                outcome: TestOutcome::Success,
-                kind: Some(SkillTestKind::Investigate),
-                by_controller: true,
-            },
-            EventTiming::After,
-            deal_horror(InvestigatorTarget::You, 1u8),
-        )])
-    } else {
-        None
-    }
+fn always(_: &game_core::GameState, _: &game_core::engine::EvalContext) -> bool {
+    true
 }
 
-fn mock_native_eligibility_for(tag: &str) -> Option<game_core::card_registry::EligibilityFn> {
-    fn always(_: &game_core::GameState, _: &game_core::engine::EvalContext) -> bool {
-        true
-    }
-    fn never(_: &game_core::GameState, _: &game_core::engine::EvalContext) -> bool {
-        false
-    }
-    match tag {
-        ALWAYS_TAG => Some(always as game_core::card_registry::EligibilityFn),
-        NEVER_TAG => Some(never as game_core::card_registry::EligibilityFn),
-        _ => None,
-    }
+fn never(_: &game_core::GameState, _: &game_core::engine::EvalContext) -> bool {
+    false
 }
 
 #[ctor::ctor(unsafe)]
 fn install_mock_registry() {
-    let _ = game_core::card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        native_eligibility_for: mock_native_eligibility_for,
-        ..CardRegistry::EMPTY
-    });
+    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`, so capacity
+    // reads (`max_health()` / `max_sanity()`) work under this registry.
+    MockRegistry::new()
+        .with_abilities(HORROR_ATTIC, || {
+            vec![forced_horror(
+                EventPattern::EnteredLocation,
+                EventTiming::After,
+                1,
+            )]
+        })
+        .with_abilities(DOOM_AGENDA, enemy_phase_end_horror)
+        .with_abilities(DOOM_ACT, enemy_phase_end_horror)
+        // Two distinct forced `EnteredLocation` abilities at the same timing
+        // point — exercises ordered multi-resolution (both fire in order).
+        .with_abilities(DOUBLE_FORCED, || {
+            vec![
+                forced_horror(EventPattern::EnteredLocation, EventTiming::After, 1),
+                forced_horror(EventPattern::EnteredLocation, EventTiming::After, 1),
+            ]
+        })
+        .with_abilities(UPKEEP_END_ACT, || {
+            vec![forced_horror(
+                EventPattern::PhaseEnded {
+                    phase: DslPhase::Upkeep,
+                },
+                EventTiming::After,
+                1,
+            )]
+        })
+        .with_abilities(ROUND_END_AGENDA, || {
+            vec![forced_horror(EventPattern::RoundEnded, EventTiming::At, 2)]
+        })
+        .with_abilities(DOUBLE_LEFT_LOCATION, || {
+            vec![
+                left_location(EventTiming::After),
+                left_location(EventTiming::After),
+            ]
+        })
+        .with_abilities(WHEN_LEFT_LOCATION, || {
+            vec![left_location(EventTiming::When)]
+        })
+        .with_abilities(DOUBLE_WHEN_LEFT_LOCATION, || {
+            vec![
+                left_location(EventTiming::When),
+                left_location(EventTiming::When),
+            ]
+        })
+        .with_abilities(END_OF_TURN_CARD, || {
+            vec![forced_horror(
+                EventPattern::EndOfTurn,
+                EventTiming::After,
+                1,
+            )]
+        })
+        .with_abilities(GATED_ELIGIBLE, || gated_on_enter(ALWAYS_TAG))
+        .with_abilities(GATED_INELIGIBLE, || gated_on_enter(NEVER_TAG))
+        .with_abilities(GATED_UNKNOWN_TAG, || gated_on_enter(UNKNOWN_TAG))
+        .with_abilities(AFTER_INVESTIGATE_CARD, || {
+            vec![forced_horror(
+                EventPattern::SkillTestResolved {
+                    outcome: TestOutcome::Success,
+                    kind: Some(SkillTestKind::Investigate),
+                    by_controller: true,
+                },
+                EventTiming::After,
+                1,
+            )]
+        })
+        .with_native_eligibility(ALWAYS_TAG, always)
+        .with_native_eligibility(NEVER_TAG, never)
+        .install();
 }
 
 /// Submit the open-turn `Move` action via the enumeration round-trip (the typed

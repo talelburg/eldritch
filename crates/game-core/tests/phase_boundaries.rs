@@ -23,14 +23,11 @@
 use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
 use game_core::action::InputResponse;
 use game_core::card_data::{CardKind, CardMetadata};
-use game_core::card_registry::{self, CardRegistry, NativeEffectFn};
 use game_core::engine::enumerate::legal_actions;
 use game_core::engine::OptionId;
 use game_core::event::Event;
 use game_core::state::{Act, CardCode, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{
-    metadata_for_test_inv, test_investigator, test_location, GameStateBuilder,
-};
+use game_core::test_support::{test_investigator, test_location, GameStateBuilder, MockRegistry};
 use game_core::{apply, Action, Cx, EngineOutcome, EvalContext, PlayerAction, TurnAction};
 
 /// The act carrying one marker forced ability per phase boundary.
@@ -82,9 +79,8 @@ const END_UPKEEP: u8 = 24;
 /// discard pile without touching the board.
 const TREACHERY: &str = "TEST-BLANK-TREACHERY";
 
-fn blank_treachery_metadata() -> &'static CardMetadata {
-    static META: std::sync::OnceLock<CardMetadata> = std::sync::OnceLock::new();
-    META.get_or_init(|| CardMetadata {
+fn blank_treachery_metadata() -> CardMetadata {
+    CardMetadata {
         code: TREACHERY.into(),
         name: "Blank Treachery".into(),
         text: None,
@@ -98,14 +94,7 @@ fn blank_treachery_metadata() -> &'static CardMetadata {
             peril: false,
             quantity: 1,
         },
-    })
-}
-
-fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-    if code.as_str() == TREACHERY {
-        return Some(blank_treachery_metadata());
     }
-    metadata_for_test_inv(code)
 }
 
 fn started(phase: card_dsl::dsl::Phase, tag: &'static str) -> Ability {
@@ -124,45 +113,39 @@ fn ended(phase: card_dsl::dsl::Phase, tag: &'static str) -> Ability {
     )
 }
 
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
+fn boundary_markers() -> Vec<Ability> {
     use card_dsl::dsl::Phase as P;
-    (code.as_str() == ACT).then(|| {
-        vec![
-            started(P::Mythos, "mark:start-mythos"),
-            started(P::Investigation, "mark:start-investigation"),
-            started(P::Enemy, "mark:start-enemy"),
-            started(P::Upkeep, "mark:start-upkeep"),
-            ended(P::Mythos, "mark:end-mythos"),
-            ended(P::Investigation, "mark:end-investigation"),
-            ended(P::Enemy, "mark:end-enemy"),
-            ended(P::Upkeep, "mark:end-upkeep"),
-        ]
-    })
-}
-
-fn mock_native_for(tag: &str) -> Option<NativeEffectFn> {
-    let f: NativeEffectFn = match tag {
-        "mark:start-mythos" => |cx, ctx| mark(cx, ctx, START_MYTHOS),
-        "mark:start-investigation" => |cx, ctx| mark(cx, ctx, START_INVESTIGATION),
-        "mark:start-enemy" => |cx, ctx| mark(cx, ctx, START_ENEMY),
-        "mark:start-upkeep" => |cx, ctx| mark(cx, ctx, START_UPKEEP),
-        "mark:end-mythos" => |cx, ctx| mark(cx, ctx, END_MYTHOS),
-        "mark:end-investigation" => |cx, ctx| mark(cx, ctx, END_INVESTIGATION),
-        "mark:end-enemy" => |cx, ctx| mark(cx, ctx, END_ENEMY),
-        "mark:end-upkeep" => |cx, ctx| mark(cx, ctx, END_UPKEEP),
-        _ => return None,
-    };
-    Some(f)
+    vec![
+        started(P::Mythos, "mark:start-mythos"),
+        started(P::Investigation, "mark:start-investigation"),
+        started(P::Enemy, "mark:start-enemy"),
+        started(P::Upkeep, "mark:start-upkeep"),
+        ended(P::Mythos, "mark:end-mythos"),
+        ended(P::Investigation, "mark:end-investigation"),
+        ended(P::Enemy, "mark:end-enemy"),
+        ended(P::Upkeep, "mark:end-upkeep"),
+    ]
 }
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        native_effect_for: mock_native_for,
-        ..CardRegistry::EMPTY
-    });
+    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`.
+    MockRegistry::new()
+        .with_card(blank_treachery_metadata())
+        .with_abilities(ACT, boundary_markers)
+        .with_native_effect("mark:start-mythos", |cx, ctx| mark(cx, ctx, START_MYTHOS))
+        .with_native_effect("mark:start-investigation", |cx, ctx| {
+            mark(cx, ctx, START_INVESTIGATION)
+        })
+        .with_native_effect("mark:start-enemy", |cx, ctx| mark(cx, ctx, START_ENEMY))
+        .with_native_effect("mark:start-upkeep", |cx, ctx| mark(cx, ctx, START_UPKEEP))
+        .with_native_effect("mark:end-mythos", |cx, ctx| mark(cx, ctx, END_MYTHOS))
+        .with_native_effect("mark:end-investigation", |cx, ctx| {
+            mark(cx, ctx, END_INVESTIGATION)
+        })
+        .with_native_effect("mark:end-enemy", |cx, ctx| mark(cx, ctx, END_ENEMY))
+        .with_native_effect("mark:end-upkeep", |cx, ctx| mark(cx, ctx, END_UPKEEP))
+        .install();
 }
 
 /// The boundary markers in the order they fired, dropping the observed-phase

@@ -14,20 +14,16 @@
 
 use game_core::action::{Action, EngineRecord};
 use game_core::card_data::{CardKind, CardMetadata, HealthValue, Prey};
-use game_core::card_registry::{self, CardRegistry, NativeEffectFn};
-use game_core::dsl::Ability;
 use game_core::state::{CardCode, Continuation, InvestigatorId, LocationId};
 use game_core::test_support::{
-    drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
+    drive, test_investigator, test_location, GameStateBuilder, MockRegistry, ScriptedResolver,
 };
 use game_core::EngineOutcome;
-use std::sync::OnceLock;
 
 const ENEMY: &str = "_synth_enemy";
 
-fn synth_enemy_metadata() -> &'static CardMetadata {
-    static META: OnceLock<CardMetadata> = OnceLock::new();
-    META.get_or_init(|| CardMetadata {
+fn synth_enemy_metadata() -> CardMetadata {
+    CardMetadata {
         code: ENEMY.into(),
         name: "Synth Enemy".into(),
         text: None,
@@ -51,29 +47,14 @@ fn synth_enemy_metadata() -> &'static CardMetadata {
             prey: Prey::Default,
             quantity: 1,
         },
-    })
-}
-
-fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-    (code.as_str() == ENEMY).then(synth_enemy_metadata)
-}
-
-fn mock_abilities_for(_: &CardCode) -> Option<Vec<Ability>> {
-    None
-}
-
-fn mock_native_for(_: &str) -> Option<NativeEffectFn> {
-    None
+    }
 }
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        native_effect_for: mock_native_for,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_card(synth_enemy_metadata())
+        .install();
 }
 
 #[test]

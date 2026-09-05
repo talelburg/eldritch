@@ -24,7 +24,7 @@
 //! [`SATCHEL`] prints the *same residual effect* twice, once under a **Fight**
 //! designator and once under none, and only the designated one is exempt.
 //!
-//! Own integration-test binary so it can install a hand-rolled `CardRegistry`.
+//! Own integration-test binary so it can install its own mock registry.
 //! **No corpus card can exercise any of these shapes:** no shipped weapon
 //! prints a residual beside its designated Fight, and the Parley cards (the
 //! Midnight Masks cultists 01138-01140, Mob Enforcer 01101) have no ability
@@ -40,10 +40,8 @@
 //! exhaustive table over the six designators is `provokes_aoo`'s unit test.
 
 use game_core::state::AbilityAddress;
-use std::sync::OnceLock;
 
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use game_core::card_registry::{self, CardRegistry};
 use game_core::dsl::{
     activated, activated_as, fight, gain_resources, seq, Ability, ActionDesignator, Effect,
     InvestigatorTarget,
@@ -54,8 +52,8 @@ use game_core::state::{
     InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{
-    dispatch_turn_action_unchecked, metadata_for_test_inv, test_enemy, test_investigator,
-    test_location, GameStateBuilder,
+    dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location, GameStateBuilder,
+    MockRegistry,
 };
 use game_core::TurnAction;
 
@@ -92,69 +90,69 @@ fn residual() -> Effect {
     seq(vec![gain_resources(InvestigatorTarget::Active, 1)])
 }
 
-fn probe_abilities(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        SATCHEL => Some(vec![
-            activated_as(fight(0u8, 0u8), 1, vec![], residual()),
-            activated(1, vec![], residual()),
-        ]),
-        // The Parlor's Resign, in its real shape: the designator performs the
-        // elimination and nothing is printed beside it (#644, #805).
-        PARLOR => Some(vec![activated_as(
-            ActionDesignator::Resign,
-            1,
-            vec![],
-            seq(vec![]),
-        )]),
-        // Mob Enforcer's Parley, with the same stand-in effect (its printed
-        // effect discards the enemy, which is beside the point here).
-        ENFORCER => Some(vec![activated_as(
-            ActionDesignator::Parley,
-            1,
-            vec![],
-            gain_resources(InvestigatorTarget::Active, 1),
-        )]),
-        _ => None,
-    }
+fn satchel_abilities() -> Vec<Ability> {
+    vec![
+        activated_as(fight(0u8, 0u8), 1, vec![], residual()),
+        activated(1, vec![], residual()),
+    ]
 }
 
-fn probe_metadata(code: &CardCode) -> Option<&'static CardMetadata> {
-    static SATCHEL_META: OnceLock<CardMetadata> = OnceLock::new();
-    metadata_for_test_inv(code).or_else(|| match code.as_str() {
-        SATCHEL => Some(SATCHEL_META.get_or_init(|| CardMetadata {
-            code: SATCHEL.to_string(),
-            name: "Satchel".to_string(),
-            text: None,
-            traits: vec![],
-            back_name: None,
-            back_text: None,
-            pack_code: "test".to_string(),
-            weakness: false,
-            kind: CardKind::Asset {
-                class: Class::Neutral,
-                cost: Some(0),
-                xp: None,
-                slots: vec![],
-                health: None,
-                sanity: None,
-                skill_icons: SkillIcons::default(),
-                is_fast: false,
-                deck_limit: 1,
-                uses: None,
-                play_only_during_turn: false,
-            },
-        })),
-        _ => None,
-    })
+/// The Parlor's Resign, in its real shape: the designator performs the
+/// elimination and nothing is printed beside it (#644, #805).
+fn parlor_abilities() -> Vec<Ability> {
+    vec![activated_as(
+        ActionDesignator::Resign,
+        1,
+        vec![],
+        seq(vec![]),
+    )]
+}
+
+/// Mob Enforcer's Parley, with the same stand-in effect (its printed effect
+/// discards the enemy, which is beside the point here).
+fn enforcer_abilities() -> Vec<Ability> {
+    vec![activated_as(
+        ActionDesignator::Parley,
+        1,
+        vec![],
+        gain_resources(InvestigatorTarget::Active, 1),
+    )]
+}
+
+fn satchel_metadata() -> CardMetadata {
+    CardMetadata {
+        code: SATCHEL.to_string(),
+        name: "Satchel".to_string(),
+        text: None,
+        traits: vec![],
+        back_name: None,
+        back_text: None,
+        pack_code: "test".to_string(),
+        weakness: false,
+        kind: CardKind::Asset {
+            class: Class::Neutral,
+            cost: Some(0),
+            xp: None,
+            slots: vec![],
+            health: None,
+            sanity: None,
+            skill_icons: SkillIcons::default(),
+            is_fast: false,
+            deck_limit: 1,
+            uses: None,
+            play_only_during_turn: false,
+        },
+    }
 }
 
 #[ctor::ctor(unsafe)]
 fn install_probe_registry() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: probe_metadata,
-        abilities_for: probe_abilities,
-        ..CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_card(satchel_metadata())
+        .with_abilities(SATCHEL, satchel_abilities)
+        .with_abilities(PARLOR, parlor_abilities)
+        .with_abilities(ENFORCER, enforcer_abilities)
+        .install();
 }
 
 /// One location printing the Parlor's card, the acting investigator standing on

@@ -315,8 +315,9 @@ shipped card pairs those two in that order and because `reject_incompatible_cost
 doesn't know about uses-depletion. Costs now re-resolve the source by its
 `CardInstanceId` through a single `require_source_in_play` gate, and a source that has
 left play produces a rejection rather than silently addressing whichever card slid into
-the vacated slot — verified by a hand-rolled-registry test that, before the fix,
-exhausted the *neighbour*. Ordered first because every remaining ticket under #695 adds
+the vacated slot — verified by a mock-registry test (`crates/game-core/tests/discard_self.rs`)
+that, before the fix, exhausted the *neighbour*. It was hand-rolled when written and
+installs through the shared `MockRegistry` builder since #875. Ordered first because every remaining ticket under #695 adds
 a source with no position in any collection (a location, an enemy, the act, the
 agenda), each of which would otherwise have to work around the index separately.
 The rejection lands after the earlier costs have already mutated, which the handler

@@ -13,7 +13,7 @@
 //! then a mock card exercises the full path.
 
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
-use game_core::dsl::{activated_as, fight, seq, Ability, Cost, IntExpr};
+use game_core::dsl::{activated_as, fight, seq, Cost, IntExpr};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::AbilityAddress;
@@ -23,10 +23,9 @@ use game_core::state::{
 };
 use game_core::test_support::{
     apply_no_commits, dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location,
-    GameStateBuilder,
+    GameStateBuilder, MockRegistry,
 };
 use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction, TurnAction};
-use std::sync::OnceLock;
 
 /// Mock firearm: `Uses (4 ammo)`, `[action] Spend 1 ammo: Fight. +1
 /// [combat], +1 damage.`
@@ -67,14 +66,8 @@ fn weapon_metadata() -> CardMetadata {
     }
 }
 
-fn weapon_metadata_static() -> &'static CardMetadata {
-    static M: OnceLock<CardMetadata> = OnceLock::new();
-    M.get_or_init(weapon_metadata)
-}
-
-fn bare_metadata_static() -> &'static CardMetadata {
-    static M: OnceLock<CardMetadata> = OnceLock::new();
-    M.get_or_init(|| CardMetadata {
+fn bare_metadata() -> CardMetadata {
+    CardMetadata {
         code: BARE.to_owned(),
         name: "Mock Cudgel".to_owned(),
         text: Some("[action]: Fight.".to_owned()),
@@ -95,42 +88,31 @@ fn bare_metadata_static() -> &'static CardMetadata {
             other => other,
         },
         ..weapon_metadata()
-    })
-}
-
-fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-    match code.as_str() {
-        WEAPON => Some(weapon_metadata_static()),
-        BARE => Some(bare_metadata_static()),
-        _ => None,
-    }
-}
-
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        // [action] Spend 1 ammo: Fight. +1 [combat], +1 damage.
-        WEAPON => Some(vec![activated_as(
-            fight(IntExpr::Lit(1), 1u8),
-            1,
-            vec![Cost::SpendUses {
-                kind: UseKind::Ammo,
-                count: 1,
-            }],
-            seq([]),
-        )]),
-        // [action]: Fight. No modification at all.
-        BARE => Some(vec![activated_as(fight(0u8, 0u8), 1, vec![], seq([]))]),
-        _ => None,
     }
 }
 
 #[ctor::ctor(unsafe)]
 fn install_mock_registry() {
-    let _ = game_core::card_registry::install(game_core::card_registry::CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        ..game_core::card_registry::CardRegistry::EMPTY
-    });
+    MockRegistry::new()
+        .with_card(weapon_metadata())
+        .with_card(bare_metadata())
+        // [action] Spend 1 ammo: Fight. +1 [combat], +1 damage.
+        .with_abilities(WEAPON, || {
+            vec![activated_as(
+                fight(IntExpr::Lit(1), 1u8),
+                1,
+                vec![Cost::SpendUses {
+                    kind: UseKind::Ammo,
+                    count: 1,
+                }],
+                seq([]),
+            )]
+        })
+        // [action]: Fight. No modification at all.
+        .with_abilities(BARE, || {
+            vec![activated_as(fight(0u8, 0u8), 1, vec![], seq([]))]
+        })
+        .install();
 }
 
 /// The single location the controller and its enemies share. Co-location is

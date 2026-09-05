@@ -13,9 +13,7 @@
 //! mock cards shaped after them are the only way to exercise the sweep.
 //! Each mock below names the printed card it is shaped after.
 
-use game_core::card_data::CardMetadata;
-use game_core::card_registry::CardRegistry;
-use game_core::dsl::{constant, modify_for, Ability, ModifierAudience, ModifierScope, Stat};
+use game_core::dsl::{constant, modify_for, ModifierAudience, ModifierScope, Stat};
 use game_core::event::Event;
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
@@ -23,7 +21,7 @@ use game_core::state::{
 };
 use game_core::test_support::{
     apply_no_commits, perform_skill_test_no_commits, take_turn_action, test_enemy,
-    test_investigator, test_location, GameStateBuilder, TestSession,
+    test_investigator, test_location, GameStateBuilder, MockRegistry, TestSession,
 };
 use game_core::{
     assert_event, modified_value, Action, ContributionSource, InputResponse, ModifiedQuantity,
@@ -58,67 +56,66 @@ const TOWERING_BEASTS: &str = "MOCK-TOWERING";
 /// +1 evade."*
 const RITUAL_BEGINS: &str = "MOCK-RITUAL";
 
-fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
-    None
-}
-
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    match code.as_str() {
-        LITA => Some(vec![constant(modify_for(
-            ModifierAudience::EachInvestigatorAtSourceLocation,
-            Stat::Combat,
-            1,
-            ModifierScope::WhileInPlay,
-        ))]),
-        WHATELEY => Some(vec![constant(modify_for(
-            ModifierAudience::EachInvestigatorAtSourceLocation,
-            Stat::Willpower,
-            -1,
-            ModifierScope::WhileInPlay,
-        ))]),
-        FOG => Some(vec![constant(modify_for(
-            ModifierAudience::AttachedCard,
-            Stat::Shroud,
-            2,
-            ModifierScope::WhileInPlay,
-        ))]),
-        WHIPPOORWILL => Some(vec![constant(modify_for(
-            ModifierAudience::EachInvestigatorAtSourceLocation,
-            Stat::Intellect,
-            -1,
-            ModifierScope::WhileInPlay,
-        ))]),
-        TOWERING_BEASTS => Some(vec![constant(modify_for(
-            ModifierAudience::AttachedCard,
-            Stat::Fight,
-            1,
-            ModifierScope::WhileInPlay,
-        ))]),
-        RITUAL_BEGINS => Some(vec![
-            constant(modify_for(
-                ModifierAudience::EachEnemy,
+#[ctor::ctor(unsafe)]
+fn install_mock_registry() {
+    MockRegistry::new()
+        .with_abilities(LITA, || {
+            vec![constant(modify_for(
+                ModifierAudience::EachInvestigatorAtSourceLocation,
+                Stat::Combat,
+                1,
+                ModifierScope::WhileInPlay,
+            ))]
+        })
+        .with_abilities(WHATELEY, || {
+            vec![constant(modify_for(
+                ModifierAudience::EachInvestigatorAtSourceLocation,
+                Stat::Willpower,
+                -1,
+                ModifierScope::WhileInPlay,
+            ))]
+        })
+        .with_abilities(FOG, || {
+            vec![constant(modify_for(
+                ModifierAudience::AttachedCard,
+                Stat::Shroud,
+                2,
+                ModifierScope::WhileInPlay,
+            ))]
+        })
+        .with_abilities(WHIPPOORWILL, || {
+            vec![constant(modify_for(
+                ModifierAudience::EachInvestigatorAtSourceLocation,
+                Stat::Intellect,
+                -1,
+                ModifierScope::WhileInPlay,
+            ))]
+        })
+        .with_abilities(TOWERING_BEASTS, || {
+            vec![constant(modify_for(
+                ModifierAudience::AttachedCard,
                 Stat::Fight,
                 1,
                 ModifierScope::WhileInPlay,
-            )),
-            constant(modify_for(
-                ModifierAudience::EachEnemy,
-                Stat::Evade,
-                1,
-                ModifierScope::WhileInPlay,
-            )),
-        ]),
-        _ => None,
-    }
-}
-
-#[ctor::ctor(unsafe)]
-fn install_mock_registry() {
-    let _ = game_core::card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        ..CardRegistry::EMPTY
-    });
+            ))]
+        })
+        .with_abilities(RITUAL_BEGINS, || {
+            vec![
+                constant(modify_for(
+                    ModifierAudience::EachEnemy,
+                    Stat::Fight,
+                    1,
+                    ModifierScope::WhileInPlay,
+                )),
+                constant(modify_for(
+                    ModifierAudience::EachEnemy,
+                    Stat::Evade,
+                    1,
+                    ModifierScope::WhileInPlay,
+                )),
+            ]
+        })
+        .install();
 }
 
 const ME: InvestigatorId = InvestigatorId(1);

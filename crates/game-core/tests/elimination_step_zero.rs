@@ -19,14 +19,13 @@
 
 use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
 use game_core::card_data::{CardKind, CardMetadata};
-use game_core::card_registry::{self, CardRegistry, NativeEffectFn};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, GameState, InvestigatorId, LocationId,
     Status,
 };
 use game_core::test_support::{
-    eliminate_by_damage, test_investigator, test_location, GameStateBuilder,
+    eliminate_by_damage, test_investigator, test_location, GameStateBuilder, MockRegistry,
 };
 use game_core::{assert_event, assert_no_event, Cx, EngineOutcome, EvalContext};
 
@@ -71,32 +70,13 @@ fn metadata(code: &'static str, weakness: bool) -> CardMetadata {
     }
 }
 
-fn mock_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-    static WEAK: std::sync::OnceLock<CardMetadata> = std::sync::OnceLock::new();
-    static PLAIN: std::sync::OnceLock<CardMetadata> = std::sync::OnceLock::new();
-    match code.as_str() {
-        WEAKNESS => Some(WEAK.get_or_init(|| metadata(WEAKNESS, true))),
-        WEAKNESS_WHEN_CELL => {
-            static WHEN: std::sync::OnceLock<CardMetadata> = std::sync::OnceLock::new();
-            Some(WHEN.get_or_init(|| metadata(WEAKNESS_WHEN_CELL, true)))
-        }
-        NOT_A_WEAKNESS => Some(PLAIN.get_or_init(|| metadata(NOT_A_WEAKNESS, false))),
-        // `test_investigator`'s TEST_INV code, so `max_health()` resolves.
-        _ => game_core::test_support::metadata_for_test_inv(code),
-    }
-}
-
-fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    let cell = match code.as_str() {
-        WEAKNESS | NOT_A_WEAKNESS => EventTiming::After,
-        WEAKNESS_WHEN_CELL => EventTiming::When,
-        _ => return None,
-    };
-    Some(vec![forced_on_event(
+/// The `GameEnd` forced every mock card here prints, in `cell`.
+fn game_end_trauma(cell: EventTiming) -> Vec<Ability> {
+    vec![forced_on_event(
         EventPattern::GameEnd,
         cell,
         native(TRAUMA_TAG),
-    )])
+    )]
 }
 
 /// "If there are any clues on it: you suffer 1 mental trauma."
@@ -124,18 +104,19 @@ fn trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-fn mock_native_for(tag: &str) -> Option<NativeEffectFn> {
-    (tag == TRAUMA_TAG).then_some(trauma as NativeEffectFn)
-}
-
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(CardRegistry {
-        metadata_for: mock_metadata_for,
-        abilities_for: mock_abilities_for,
-        native_effect_for: mock_native_for,
-        ..CardRegistry::EMPTY
-    });
+    // `TEST_INV` rides `install`'s composed `metadata_for_test_inv`, so
+    // `max_health()` resolves for the fixture investigator.
+    MockRegistry::new()
+        .with_card(metadata(WEAKNESS, true))
+        .with_card(metadata(WEAKNESS_WHEN_CELL, true))
+        .with_card(metadata(NOT_A_WEAKNESS, false))
+        .with_abilities(WEAKNESS, || game_end_trauma(EventTiming::After))
+        .with_abilities(NOT_A_WEAKNESS, || game_end_trauma(EventTiming::After))
+        .with_abilities(WEAKNESS_WHEN_CELL, || game_end_trauma(EventTiming::When))
+        .with_native_effect(TRAUMA_TAG, trauma)
+        .install();
 }
 
 /// One investigator at a location, holding `code` (with `clues` clues on it) in
