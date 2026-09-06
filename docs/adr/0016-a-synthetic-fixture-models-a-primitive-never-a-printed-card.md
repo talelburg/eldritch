@@ -40,15 +40,21 @@ Two more instances, in two other crates. `crates/scenarios/tests/opening_hand_we
 pads a player deck with `01001`–`01004` — Roland Banks, Daisy Walker, "Skids"
 O'Toole and Agnes Baker, four real *investigator* cards, in a zone none of them
 can legally occupy — because the test needs four opaque tokens and reached for
-real codes. And `crates/web/tests/board.rs:161` asserts
+real codes. And `crates/web/tests/board.rs:161` asserted
 `html.contains("_synth_fast_event")` — over a hand seeded at `:119-122` — while
-the file installs `install_test_registry()` (`:33`),
+the file installed `install_test_registry()` (`:33`),
 which knows only `TEST_INV` and the terminal act/agenda cards: the assertion
-passes **because** the code fails to resolve to a name. A test that appears to
-pin card rendering pins the unresolved-code fallback instead. That last one is
-cited as evidence of the drift and is **not** fixed by this posture: it needs a
-rendering decision about what an unresolved code should display, which is
-[#868](https://github.com/talelburg/eldritch/issues/868).
+passed **because** the code failed to resolve to a name. A test that appears to
+pin card rendering pins the unresolved-code fallback instead. That last one was
+cited here as evidence of the drift rather than fixed by this posture, since it
+needed a rendering decision about what an unresolved code should display. That
+decision was taken in [#868](https://github.com/talelburg/eldritch/issues/868),
+and came out as neither option the issue proposed: rather than registering probe
+cards or asserting the fallback, the binary moved wholesale onto the real
+`cards::REGISTRY`, so no code it seeds can fail to resolve, and its
+`render_state` asserts `card--unknown` never renders. **Where a test's subject is
+rendering rather than an isolated mechanism, the real corpus is the substrate** —
+the probe exists to strip a mechanism down, and a renderer has none to strip.
 
 **A synthetic fixture may model an engine primitive. It may not impersonate a
 printed card.** The line is checkable against a diff, which is the property that
@@ -238,10 +244,6 @@ acceptance criterion — that the production `server` binary does not compile
 deleted outright rather than relocated to `crates/scenarios/tests/common/`, its
 readers having all been migrated by the four children ahead of it.*
 
-*Resolved since: [#868](https://github.com/talelburg/eldritch/issues/868) — the
-`crates/web/tests/board.rs` instance cited above as "not fixed by this posture"
-now is. The rendering decision it was waiting on came out as neither option in
-its issue body: rather than register probe cards or assert the fallback, the
-binary moved wholesale onto the real `cards::REGISTRY`, so no code it seeds can
-fail to resolve. `render_state` asserts `card--unknown` never renders, which
-makes the property structural rather than maintained.*
+*Folded in: [#868](https://github.com/talelburg/eldritch/issues/868) — the
+`board.rs` instance is resolved, and a rendering test's substrate is the real
+corpus.*

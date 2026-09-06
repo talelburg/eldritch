@@ -10,6 +10,14 @@
 //! rendering. Real codes make that structural: nothing here *can* ride the
 //! fallback, and [`render_state`] asserts as much on every render.
 //!
+//! Two of the three code→name paths the board can take are pinned here: the
+//! `Card` component's (hand / in play / threat area) and
+//! `act_agenda::name_and_text_src`'s. The third — `names::card_name`, reached
+//! only from the map's card-at-location token (`crates/web/src/map.rs`) — is
+//! *not*, because this file seeds no `cards_at_location` and no location
+//! attachments. `crates/web/tests/card_at_location.rs` and the unit tests in
+//! `crates/web/src/names.rs` own that one.
+//!
 //! Locations and enemies stay on `game_core::test_support::fixtures` — per
 //! ADR 0016 those are primitive builders, not card impersonations, and both
 //! carry their name and stats in `GameState` rather than reading the registry.
@@ -74,7 +82,7 @@ fn roland(id: u32) -> Investigator {
 
 /// The last mounted element matching `sel` (DOM accumulates across tests on the
 /// shared page — scope to the latest subtree).
-fn last(sel: &str) -> web_sys::Element {
+fn last_mounted(sel: &str) -> web_sys::Element {
     let nodes = leptos::prelude::document()
         .query_selector_all(sel)
         .expect("query_selector_all");
@@ -155,11 +163,12 @@ async fn act_agenda_cards_render_name_and_thresholds() {
 
     let html = render_state(state).await;
 
-    // Names come from the corpus via `act_agenda::name_and_text_src`, a
-    // different resolution path from `names::card_name` (it carries its own
-    // front/reverse `back_name` logic and its own raw-code fallback), so this
-    // is not a duplicate of `entity_names.rs` — which seeds no act deck.
-    let board = last(".board");
+    // Names come from the corpus via `act_agenda::name_and_text_src`, which
+    // `crates/web/tests/act_agenda.rs` already covers in more depth (including
+    // the reverse `back_name` face). These two assertions are here so the test
+    // earns its own name: it asserted only thresholds before (#868), which is
+    // how the file came to advertise coverage it did not have.
+    let board = last_mounted(".board");
     let text = board.text_content().unwrap_or_default();
     assert!(text.contains("Trapped"), "act name missing: {text}");
     assert!(
@@ -233,7 +242,7 @@ async fn investigators_panel_renders_stats_and_hand() {
     // too, a bare `html.contains(..)` shares the page with the printed text of
     // four cards — a false pass from a collision is the same failure mode #868
     // is about.
-    let inv_el = last(".investigator");
+    let inv_el = last_mounted(".investigator");
 
     // Identity + folded vitals (skills + hp/san) live in the investigator block.
     assert_eq!(text_of(&inv_el, ".inv-name"), "Roland Banks");
@@ -313,7 +322,7 @@ async fn empty_board_renders_placeholder_without_panels() {
 
     // Scope to only the last mounted <section class="board"> so that
     // accumulated DOM from earlier tests does not pollute this assertion.
-    let html = last(".board").inner_html();
+    let html = last_mounted(".board").inner_html();
 
     assert!(
         html.contains("&lt;no game&gt;"),
@@ -341,7 +350,7 @@ async fn resolution_banner_names_the_resolution_point() {
     // a win/loss verdict — R3 is agenda-invoked in The Gathering, and calling
     // that "lost" is the standalone-mode projection this client no longer
     // makes.
-    let html = last(".resolution").inner_html();
+    let html = last_mounted(".resolution").inner_html();
     assert!(
         html.contains("Resolution 3"),
         "banner must name the resolution point: {html}"
@@ -363,7 +372,7 @@ async fn resolution_banner_renders_no_resolution_reached() {
     // RR Elimination step 6's ending has its own campaign-guide entry ("If no
     // resolution was reached"), and an investigator who got here by resigning
     // is "not considered to have been defeated".
-    let html = last(".resolution").inner_html();
+    let html = last_mounted(".resolution").inner_html();
     assert!(
         html.contains("no resolution reached"),
         "no-resolution banner text missing: {html}"
@@ -384,7 +393,7 @@ async fn map_and_investigators_are_inside_board_main() {
 
     // Scope to the last mounted .game so DOM accumulation from earlier tests
     // does not pollute this assertion.
-    let last_game = last(".game");
+    let last_game = last_mounted(".game");
 
     assert!(
         last_game
@@ -420,7 +429,7 @@ async fn engaged_enemy_renders_as_card_in_threat_area() {
 
     let html = render_state(state).await;
 
-    let last_game = last(".game");
+    let last_game = last_mounted(".game");
     let card = last_game
         .query_selector(".threat .card-row .card")
         .expect("query_selector");
@@ -436,15 +445,16 @@ async fn threat_area_treachery_renders_as_card() {
     use game_core::state::{CardInPlay, CardInstanceId};
 
     let mut inv = roland(1);
-    inv.threat_area = vec![CardInPlay::enter_play(
-        CardCode::new(COVER_UP),
-        CardInstanceId(0),
-    )];
+    // Seeded the way its Revelation puts it into play — "with 3 clues on it" —
+    // so the state matches the card rather than merely occupying the zone.
+    let mut cover_up = CardInPlay::enter_play(CardCode::new(COVER_UP), CardInstanceId(0));
+    cover_up.clues = 3;
+    inv.threat_area = vec![cover_up];
     let state = GameStateBuilder::new().with_investigator(inv).build();
 
     let html = render_state(state).await;
 
-    let last_game = last(".game");
+    let last_game = last_mounted(".game");
     // A treachery has no bespoke face — `card_face` returns `None` for it, so
     // it renders the generic rectangle (`crates/web/src/card.rs:416-433`).
     // Asserting `card--generic` rather than the bare `.card` is what
@@ -457,8 +467,13 @@ async fn threat_area_treachery_renders_as_card() {
         card.is_some(),
         "threat-area treachery should render as a card: {html}"
     );
+    let treachery = text_of(&last_game, ".threat .card-row .card--generic");
     assert!(
-        text_of(&last_game, ".threat .card-row .card--generic").contains("Cover Up"),
+        treachery.contains("Cover Up"),
         "treachery name missing: {html}"
+    );
+    assert!(
+        treachery.contains("clues 3"),
+        "clues-on-card chip missing: {html}"
     );
 }
