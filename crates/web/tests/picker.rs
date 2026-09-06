@@ -19,7 +19,7 @@ async fn create_button_sends_a_roster() {
         ..Default::default()
     });
     let (tx, mut rx) = mpsc::unbounded::<CreateGameRequest>();
-    leptos::mount::mount_to_body(move || {
+    mount_to_body(move || {
         provide_context(store);
         provide_context::<CreateTx>(tx.clone());
         view! { <PickerView/> }

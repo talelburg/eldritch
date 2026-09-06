@@ -235,11 +235,7 @@ fn install_mock_registry() {
 /// The one board every test here builds on: the controller at willpower 5,
 /// holding `hand`, with an in-play instance of each code in `in_play`
 /// (instance ids ascending from 0), drawing from `bag`.
-fn board_with(
-    in_play: &[&str],
-    hand: &[&str],
-    bag: ChaosBag,
-) -> (game_core::GameState, InvestigatorId) {
+fn board_with(in_play: &[&str], hand: &[&str], bag: ChaosBag) -> (GameState, InvestigatorId) {
     let id = InvestigatorId(1);
     let mut inv = test_investigator(1);
     inv.skills.willpower = 5;
@@ -365,7 +361,7 @@ impl ChoiceResolver for FastPlayAndCommit {
 /// [`board_with`] for the common case: one in-play instance of `code`
 /// (instance 0), empty hand, and a single-`Numeric(0)` chaos bag so the token
 /// contributes nothing and every number below is the card's doing.
-fn board(code: &str) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
+fn board(code: &str) -> (GameState, InvestigatorId, CardInstanceId) {
     let (state, id) = board_with(&[code], &[], ChaosBag::new([ChaosToken::Numeric(0)]));
     (state, id, CardInstanceId(0))
 }
@@ -373,7 +369,7 @@ fn board(code: &str) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
 /// Run a willpower test against `difficulty`, taking the card's offered fast
 /// activation at the test's player window.
 fn test_taking_the_fast_play(
-    state: game_core::GameState,
+    state: GameState,
     id: InvestigatorId,
     difficulty: i8,
 ) -> game_core::ApplyResult {

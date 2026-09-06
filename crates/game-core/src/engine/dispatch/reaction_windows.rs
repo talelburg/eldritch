@@ -38,7 +38,7 @@ use super::Cx;
 /// `FastActorScope::Any` binding). Multi-window nesting is structural.
 fn push_reaction_window(
     cx: &mut Cx,
-    event: &crate::engine::TimingEvent,
+    event: &TimingEvent,
     bucket: EventTiming,
     candidates: Vec<ResolutionCandidate>,
 ) {
@@ -47,7 +47,7 @@ fn push_reaction_window(
         .push(Continuation::TimingPointWindow {
             event: event.clone(),
             bucket,
-            mode: crate::state::TimingMode::Reaction,
+            mode: TimingMode::Reaction,
             candidates,
         });
 }
@@ -59,7 +59,7 @@ fn push_reaction_window(
 /// whether a condition opens a reaction window at all).
 pub(super) fn scan_reactions_at(
     state: &GameState,
-    event: &crate::engine::TimingEvent,
+    event: &TimingEvent,
     bucket: EventTiming,
 ) -> Vec<ResolutionCandidate> {
     let mut candidates = scan_pending_triggers(state, event, bucket);
@@ -84,7 +84,7 @@ pub(super) fn scan_reactions_at(
 /// something.
 pub(super) fn open_reaction_run(
     cx: &mut Cx,
-    event: &crate::engine::TimingEvent,
+    event: &TimingEvent,
     bucket: EventTiming,
     candidates: Vec<ResolutionCandidate>,
 ) -> EngineOutcome {
@@ -118,7 +118,7 @@ pub(super) fn open_reaction_run(
 /// reads it back, to re-validate (#568 — and TODO(#607) for this path).
 pub(super) fn open_forced_resolution(
     cx: &mut Cx,
-    event: &crate::engine::TimingEvent,
+    event: &TimingEvent,
     bucket: EventTiming,
     candidates: Vec<ResolutionCandidate>,
 ) -> EngineOutcome {
@@ -127,7 +127,7 @@ pub(super) fn open_forced_resolution(
         .push(Continuation::TimingPointWindow {
             event: event.clone(),
             bucket,
-            mode: crate::state::TimingMode::Forced,
+            mode: TimingMode::Forced,
             candidates,
         });
     open_queued_reaction_window(cx)
@@ -1118,7 +1118,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         .last()
         .and_then(Continuation::window_timing_event)
     {
-        Some(crate::engine::TimingEvent::DamageAssigned {
+        Some(TimingEvent::DamageAssigned {
             source: crate::state::DamageSource::EnemyAttack { enemy },
             ..
         }) => {
@@ -1130,7 +1130,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         // count — `discover_clue` caps at the location's clues before emitting
         // (#471) — so "that many" is what would actually have been discovered,
         // not what was requested.
-        Some(crate::engine::TimingEvent::DiscoverClues { count, .. }) => {
+        Some(TimingEvent::DiscoverClues { count, .. }) => {
             eval_ctx.set_clue_discovery_count(*count);
         }
         _ => {}
@@ -1251,12 +1251,10 @@ fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcom
     // push its effect for the drive loop. On the effect's completion,
     // PlayFromHand disposal places the event in discard (RR Appendix I step 4)
     // and the window beneath resumes its candidate scan. (Slice D #423.)
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::PlayFromHand {
-            investigator: controller,
-            card: Some(card),
-        });
+    cx.state.continuations.push(Continuation::PlayFromHand {
+        investigator: controller,
+        card: Some(card),
+    });
     push_effect(cx, &effect, eval_ctx);
     EngineOutcome::Done
 }
@@ -1721,7 +1719,7 @@ pub(crate) fn check_play_card(
             matches!(
                 a.trigger,
                 Trigger::OnEvent {
-                    kind: crate::dsl::TriggerKind::Reaction,
+                    kind: TriggerKind::Reaction,
                     ..
                 }
             )
@@ -2374,7 +2372,7 @@ pub(super) fn drive_fast_window(cx: &mut Cx) -> EngineOutcome {
 /// that dispatch path verbatim. Empty when the registry isn't installed.
 pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
     let mut out = Vec::new();
-    if crate::card_registry::current().is_none() {
+    if card_registry::current().is_none() {
         return out;
     }
     for (&inv_id, inv) in &state.investigators {
@@ -2805,7 +2803,7 @@ mod open_fast_window_tests {
             .with_investigator(test_investigator(1))
             // The MythosAfterDraws window now closes onto the MythosPhase anchor
             // (slice 1a); stage it so the auto-skip continuation has its frame.
-            .with_phase_anchor(crate::state::Continuation::MythosPhase {
+            .with_phase_anchor(Continuation::MythosPhase {
                 resume: crate::state::MythosResume::AfterDraws,
             })
             .build();
@@ -2830,9 +2828,9 @@ mod open_fast_window_tests {
     /// because game-core's test registry exposes no playable cards.
     #[test]
     fn enumerate_fast_plays_empty_when_nothing_eligible() {
-        let inv = crate::state::InvestigatorId(1);
+        let inv = InvestigatorId(1);
         let state = GameStateBuilder::new()
-            .with_phase(crate::state::Phase::Investigation)
+            .with_phase(Phase::Investigation)
             .with_active_investigator(inv)
             .with_investigator(test_investigator(1))
             .build();
@@ -3184,7 +3182,7 @@ mod withdraw_suppressed_candidates_tests {
     #[test]
     fn a_caller_owned_conditions_window_is_untouched() {
         let entered = TimingEvent::EnteredPlay {
-            instance: crate::state::CardInstanceId(1),
+            instance: CardInstanceId(1),
             controller: INV,
         };
         debug_assert!(matches!(

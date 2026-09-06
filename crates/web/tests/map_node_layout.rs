@@ -88,7 +88,7 @@ async fn mount_with(
     let _ = game_core::card_registry::install(cards::REGISTRY);
     inject_style();
     let store = RwSignal::new(ClientState::default());
-    leptos::mount::mount_to_body(move || {
+    mount_to_body(move || {
         provide_context(store);
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));
         provide_context(web::interaction::PendingOptions(pending));

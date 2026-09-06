@@ -1600,7 +1600,7 @@ mod investigation_phase_tests {
 
         let mut events = Vec::new();
         let outcome = {
-            let mut cx = crate::engine::Cx {
+            let mut cx = Cx {
                 state: &mut state,
                 events: &mut events,
             };
@@ -1644,12 +1644,12 @@ mod investigation_phase_tests {
 
         let mut events = Vec::new();
         let outcome = apply_player_action(
-            &mut crate::engine::Cx {
+            &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
             &PlayerAction::ResolveInput {
-                response: crate::action::InputResponse::PickMultiple { selected: vec![] },
+                response: InputResponse::PickMultiple { selected: vec![] },
             },
         );
 
@@ -1724,7 +1724,7 @@ mod investigation_phase_tests {
             events: &mut events,
         };
         let outcome = investigation_phase(&mut cx);
-        super::drive_phase(&mut cx, outcome);
+        drive_phase(&mut cx, outcome);
 
         assert_eq!(
             state.active_investigator,
@@ -1810,7 +1810,7 @@ mod investigation_phase_tests {
             events: &mut events,
         };
         let outcome = investigation_phase(&mut cx);
-        super::drive_phase(&mut cx, outcome);
+        drive_phase(&mut cx, outcome);
 
         assert_eq!(
             state.active_investigator,
@@ -2321,7 +2321,7 @@ mod mythos_phase_tests {
 
         // inv1 has just completed their draw chain: advance drops inv1 and must
         // skip the Defeated inv2, landing on inv3.
-        let outcome = super::super::encounter::advance_encounter_draw(&mut super::super::Cx {
+        let outcome = super::super::encounter::advance_encounter_draw(&mut Cx {
             state: &mut state,
             events: &mut events,
         });
@@ -2485,7 +2485,7 @@ mod upkeep_phase_tests {
             .build();
         let mut events = Vec::new();
         let outcome = park_hand_size_discard(
-            &mut crate::engine::Cx {
+            &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
@@ -3083,7 +3083,7 @@ mod enemy_phase_tests {
             .expect("LocationId(2) among offered options")
             .id;
         let resumed = {
-            let mut cx = crate::engine::Cx {
+            let mut cx = Cx {
                 state: &mut state,
                 events: &mut ev2,
             };
@@ -3120,7 +3120,7 @@ mod enemy_phase_tests {
         let mut events = Vec::new();
 
         // The attack is queued on the timing coordinator (#704), so drive it out.
-        let mut cx = super::super::Cx {
+        let mut cx = Cx {
             state: &mut state,
             events: &mut events,
         };
@@ -3196,7 +3196,7 @@ mod enemy_phase_tests {
             .build();
         let mut events = Vec::new();
 
-        let mut cx = super::super::Cx {
+        let mut cx = Cx {
             state: &mut state,
             events: &mut events,
         };
@@ -3257,7 +3257,7 @@ mod enemy_phase_tests {
         let mut events = Vec::new();
 
         // 2 ready engaged enemies → suspend on the order pick (#143), not EnemyId order.
-        let mut cx = super::super::Cx {
+        let mut cx = Cx {
             state: &mut state,
             events: &mut events,
         };
@@ -3281,7 +3281,7 @@ mod enemy_phase_tests {
             "EnemyId(10) is option 1 in EnemyId order"
         );
 
-        let mut cx = super::super::Cx {
+        let mut cx = Cx {
             state: &mut state,
             events: &mut events,
         };
@@ -3354,7 +3354,7 @@ mod enemy_phase_tests {
         // 2 engaged → order pick first (#143). Pick EnemyId(1) (the killer) to
         // strike first; after it defeats the investigator, the active check at the
         // loop top early-breaks before any re-prompt, so EnemyId(2) never attacks.
-        let mut cx = super::super::Cx {
+        let mut cx = Cx {
             state: &mut state,
             events: &mut events,
         };
@@ -3369,7 +3369,7 @@ mod enemy_phase_tests {
             .find(|o| o.label == format!("{:?}", EnemyId(1)))
             .expect("EnemyId(1) offered")
             .id;
-        let mut cx = super::super::Cx {
+        let mut cx = Cx {
             state: &mut state,
             events: &mut events,
         };
@@ -3832,7 +3832,7 @@ mod hand_size_tests {
             events: &mut events,
         };
         let entry = upkeep_phase(&mut cx);
-        let outcome = super::drive_phase(&mut cx, entry);
+        let outcome = drive_phase(&mut cx, entry);
         assert!(
             matches!(outcome, EngineOutcome::AwaitingInput { .. }),
             "suspends at step 4.5 hand-size discard; got {outcome:?}",
@@ -3996,7 +3996,7 @@ mod hand_size_tests {
                 .filter(|e| matches!(
                     e,
                     Event::CardDiscarded {
-                        from: crate::state::Zone::Hand,
+                        from: Zone::Hand,
                         ..
                     }
                 ))
@@ -4224,7 +4224,7 @@ mod start_scenario_tests {
             for_skills: vec![SkillKind::Combat, SkillKind::Agility],
         });
         let mut events = Vec::new();
-        super::upkeep_round_end_teardown(&mut Cx {
+        upkeep_round_end_teardown(&mut Cx {
             state: &mut state,
             events: &mut events,
         });
@@ -4276,7 +4276,7 @@ mod start_scenario_tests {
             result.outcome,
             EngineOutcome::AwaitingInput { .. }
         ));
-        crate::assert_event!(result.events, crate::event::Event::EncounterDeckShuffled);
+        crate::assert_event!(result.events, Event::EncounterDeckShuffled);
         let mut after: Vec<&str> = result
             .state
             .encounter_deck

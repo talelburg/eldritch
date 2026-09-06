@@ -80,7 +80,7 @@ mod tests {
 
     /// Build a diamond: A(1) connects to B(2) and C(3); both connect to
     /// D(4). Bidirectional edges.
-    fn diamond() -> crate::state::GameState {
+    fn diamond() -> GameState {
         let mut a = test_location(1, "A");
         let mut b = test_location(2, "B");
         let mut c = test_location(3, "C");

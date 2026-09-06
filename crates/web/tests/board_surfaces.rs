@@ -25,7 +25,7 @@ async fn mount(state: game_core::state::GameState) -> web_sys::Element {
     // Panels read investigator-card capacity from the registry (#448).
     game_core::test_support::install_test_registry();
     let store = RwSignal::new(ClientState::default());
-    leptos::mount::mount_to_body(move || {
+    mount_to_body(move || {
         provide_context(store);
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));
         provide_context(web::interaction::PendingOptions(pending));

@@ -110,7 +110,7 @@ fn soak_state(
     }
     // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
     // InvestigationPhase anchor at investigation_phase_end.
-    builder = builder.with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
+    builder = builder.with_phase_anchor(Continuation::InvestigationPhase {
         resume: game_core::state::InvestigationResume::TurnBegins,
     });
     // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
@@ -134,7 +134,7 @@ fn guard_dog_card(
 
 /// From a suspended attack-order prompt (#143), the `PickSingle` `OptionId`
 /// whose label matches `enemy`'s debug repr.
-fn order_pick(outcome: &EngineOutcome, enemy: EnemyId) -> game_core::engine::OptionId {
+fn order_pick(outcome: &EngineOutcome, enemy: EnemyId) -> OptionId {
     let EngineOutcome::AwaitingInput { request, .. } = outcome else {
         panic!("expected an attack-order prompt, got {outcome:?}");
     };
@@ -147,7 +147,7 @@ fn order_pick(outcome: &EngineOutcome, enemy: EnemyId) -> game_core::engine::Opt
 }
 
 /// Resume a suspended prompt/window by selecting option `id`.
-fn resolve_pick(state: game_core::GameState, id: game_core::engine::OptionId) -> ApplyResult {
+fn resolve_pick(state: game_core::GameState, id: OptionId) -> ApplyResult {
     apply(
         state,
         Action::Player(PlayerAction::ResolveInput {

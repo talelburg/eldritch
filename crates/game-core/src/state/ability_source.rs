@@ -208,12 +208,12 @@ mod tests {
             Some(CardInstanceId(3)),
         );
         assert_eq!(
-            AbilitySource::Location(crate::state::LocationId(1)).instance(),
+            AbilitySource::Location(LocationId(1)).instance(),
             None,
             "a location has a LocationId and no card instance",
         );
         assert_eq!(
-            AbilitySource::Enemy(crate::state::EnemyId(1)).instance(),
+            AbilitySource::Enemy(EnemyId(1)).instance(),
             None,
             "an enemy has an EnemyId and no card instance",
         );
@@ -238,8 +238,8 @@ mod tests {
         use crate::state::CandidateSource;
         for source in [
             CandidateSource::Ability(AbilitySource::InPlay(CardInstanceId(7))),
-            CandidateSource::Ability(AbilitySource::Location(crate::state::LocationId(4))),
-            CandidateSource::Ability(AbilitySource::Enemy(crate::state::EnemyId(5))),
+            CandidateSource::Ability(AbilitySource::Location(LocationId(4))),
+            CandidateSource::Ability(AbilitySource::Enemy(EnemyId(5))),
             CandidateSource::Ability(AbilitySource::Act),
             CandidateSource::Ability(AbilitySource::Agenda),
             CandidateSource::Hand,
@@ -256,8 +256,8 @@ mod tests {
     #[test]
     fn the_location_enemy_act_and_agenda_kinds_round_trip_through_serialization() {
         for source in [
-            AbilitySource::Location(crate::state::LocationId(4)),
-            AbilitySource::Enemy(crate::state::EnemyId(5)),
+            AbilitySource::Location(LocationId(4)),
+            AbilitySource::Enemy(EnemyId(5)),
             AbilitySource::Act,
             AbilitySource::Agenda,
         ] {

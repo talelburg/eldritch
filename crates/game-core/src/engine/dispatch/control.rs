@@ -133,7 +133,7 @@ mod tests {
         state
     }
 
-    fn run(state: &mut crate::state::GameState, code: &str) -> (EngineOutcome, Vec<crate::Event>) {
+    fn run(state: &mut crate::state::GameState, code: &str) -> (EngineOutcome, Vec<Event>) {
         let mut events = Vec::new();
         let outcome = take_control(
             &mut Cx {

@@ -52,11 +52,11 @@ use crate::action::InputResponse;
 pub(in crate::engine) struct InitiatorModifier {
     /// What it modifies — the controller for a combat bonus, the
     /// investigated location for a shroud reduction.
-    pub target: crate::state::ModifierTarget,
+    pub target: ModifierTarget,
     /// Which quantity of that target.
     pub stat: crate::dsl::Stat,
     /// The signed magnitude, evaluated at every read.
-    pub delta: crate::dsl::IntExpr,
+    pub delta: IntExpr,
 }
 
 // Nine args: the skill-test parameters are genuinely independent axes
@@ -68,7 +68,7 @@ pub(in crate::engine) fn start_skill_test(
     investigator: InvestigatorId,
     skill: SkillKind,
     kind: SkillTestKind,
-    difficulty_basis: crate::state::DifficultyBasis,
+    difficulty_basis: DifficultyBasis,
     follow_up: SkillTestFollowUp,
     on_success: Option<card_dsl::dsl::Effect>,
     on_fail: Option<card_dsl::dsl::Effect>,
@@ -105,7 +105,7 @@ pub(in crate::engine) fn start_skill_test(
     // zero after every modifier — there is nothing to reject here, and
     // rejecting on the *unmodified* value would refuse a test a card is
     // entitled to make easy.
-    if let crate::state::DifficultyBasis::Fixed(n) = difficulty_basis {
+    if let DifficultyBasis::Fixed(n) = difficulty_basis {
         if n < 0 {
             return EngineOutcome::Rejected {
                 reason: format!("skill test: difficulty {n} must be >= 0").into(),
@@ -140,7 +140,7 @@ pub(in crate::engine) fn start_skill_test(
     // frame, which top-frame dispatch routes first.
     cx.state
         .continuations
-        .push(crate::state::Continuation::SkillTest(InFlightSkillTest {
+        .push(Continuation::SkillTest(InFlightSkillTest {
             id,
             investigator,
             skill,
@@ -167,12 +167,12 @@ pub(in crate::engine) fn start_skill_test(
     if let Some(modifier) = initiator_modifier {
         cx.state
             .recorded_modifiers
-            .push(crate::state::RecordedModifier::targeting(
+            .push(RecordedModifier::targeting(
                 modifier.target,
                 investigator,
                 modifier.stat,
                 modifier.delta,
-                crate::state::Lifetime::SkillTest(id),
+                Lifetime::SkillTest(id),
                 // A row names its origin as an instance, not as an ability
                 // source: it is provenance for a modifier, and the per-instance
                 // limit-keying it will feed (Fire Axe 02032's *"Limit three
@@ -202,7 +202,7 @@ pub(in crate::engine) fn start_skill_test(
     if substitution_covers(cx.state, investigator, skill) {
         cx.state
             .continuations
-            .push(crate::state::Continuation::SubstitutionPrompt { investigator });
+            .push(Continuation::SubstitutionPrompt { investigator });
         let use_skill = SkillKind::Intellect; // sole substitution in scope
         return EngineOutcome::AwaitingInput {
             request: InputRequest::pick_single(
@@ -1788,7 +1788,7 @@ pub(crate) fn perform_skill_test(
         investigator,
         skill,
         SkillTestKind::Plain,
-        crate::state::DifficultyBasis::Fixed(difficulty),
+        DifficultyBasis::Fixed(difficulty),
         SkillTestFollowUp::None,
         None,
         None,
@@ -1882,7 +1882,7 @@ mod tests {
             .build();
         state
             .continuations
-            .push(crate::state::Continuation::SkillTest(InFlightSkillTest {
+            .push(Continuation::SkillTest(InFlightSkillTest {
                 follow_up: SkillTestFollowUp::Fight {
                     enemy: EnemyId(7),
                     extra_damage: 1,
@@ -1936,7 +1936,7 @@ mod tests {
             .build();
         state
             .continuations
-            .push(crate::state::Continuation::SkillTest(InFlightSkillTest {
+            .push(Continuation::SkillTest(InFlightSkillTest {
                 tested_location: Some(loc),
                 follow_up: SkillTestFollowUp::Investigate,
                 bonus_clues_discovered: 1,
@@ -1956,7 +1956,7 @@ mod tests {
 
         apply_skill_test_follow_up(&mut cx, inv, SkillTestFollowUp::Investigate);
 
-        let Some(crate::state::Continuation::Effect(EffectFrame::Leaf { effect, .. })) =
+        let Some(Continuation::Effect(EffectFrame::Leaf { effect, .. })) =
             state.continuations.last()
         else {
             panic!(
@@ -1967,7 +1967,7 @@ mod tests {
         assert_eq!(
             **effect,
             crate::dsl::Effect::DiscoverClue {
-                from: crate::dsl::LocationTarget::TestedLocation,
+                from: LocationTarget::TestedLocation,
                 count: 2,
             },
             "one discovery of 1 base + 1 bonus, at the tested location",
@@ -1987,7 +1987,7 @@ mod tests {
             Some(Effect::Deal {
                 kind: HarmKind::Horror,
                 target: InvestigatorTarget::You,
-                amount: crate::dsl::IntExpr::Lit(1),
+                amount: IntExpr::Lit(1),
             }),
         );
 
@@ -2055,7 +2055,7 @@ mod tests {
             inv,
             SkillKind::Willpower,
             SkillTestKind::Plain,
-            crate::state::DifficultyBasis::Fixed(2),
+            DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
             Some(deal_horror(InvestigatorTarget::You, 1u8)),
             None,
@@ -2097,7 +2097,7 @@ mod tests {
             inv,
             SkillKind::Willpower,
             SkillTestKind::Plain,
-            crate::state::DifficultyBasis::Fixed(2),
+            DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
             None,
             None,
@@ -2193,7 +2193,7 @@ mod tests {
             inv,
             SkillKind::Willpower,
             SkillTestKind::Plain,
-            crate::state::DifficultyBasis::Fixed(2),
+            DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
             None,
             None,
@@ -2261,7 +2261,7 @@ mod tests {
             inv,
             SkillKind::Willpower,
             SkillTestKind::Plain,
-            crate::state::DifficultyBasis::Fixed(2),
+            DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
             None,
             None,
@@ -2349,7 +2349,7 @@ mod tests {
             inv,
             SkillKind::Willpower,
             SkillTestKind::Plain,
-            crate::state::DifficultyBasis::Fixed(2),
+            DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
             None,
             None,
@@ -2416,7 +2416,7 @@ mod tests {
             inv,
             SkillKind::Willpower,
             SkillTestKind::Plain,
-            crate::state::DifficultyBasis::Fixed(2),
+            DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
             None,
             None,
@@ -2491,21 +2491,21 @@ mod tests {
                 inv,
                 SkillKind::Combat,
                 SkillTestKind::Fight,
-                crate::state::DifficultyBasis::Fixed(3),
+                DifficultyBasis::Fixed(3),
                 SkillTestFollowUp::None,
                 None,
                 None,
                 None,
                 Some(InitiatorModifier {
-                    target: crate::state::ModifierTarget::Investigator(inv),
+                    target: ModifierTarget::Investigator(inv),
                     stat: crate::dsl::Stat::Combat,
-                    delta: crate::dsl::IntExpr::Lit(2),
+                    delta: IntExpr::Lit(2),
                 }),
             )
         };
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }), "prompt");
         assert!(
-            matches!(state.continuations.last(), Some(crate::state::Continuation::SubstitutionPrompt { investigator }) if *investigator == inv)
+            matches!(state.continuations.last(), Some(Continuation::SubstitutionPrompt { investigator }) if *investigator == inv)
         );
 
         let out = {
@@ -2554,7 +2554,7 @@ mod tests {
         );
         assert!(!matches!(
             state.continuations.last(),
-            Some(crate::state::Continuation::SubstitutionPrompt { .. })
+            Some(Continuation::SubstitutionPrompt { .. })
         ));
     }
 
@@ -2576,7 +2576,7 @@ mod tests {
                 inv,
                 SkillKind::Combat,
                 SkillTestKind::Fight,
-                crate::state::DifficultyBasis::Fixed(3),
+                DifficultyBasis::Fixed(3),
                 SkillTestFollowUp::None,
                 None,
                 None,
@@ -2589,7 +2589,7 @@ mod tests {
             "substitution prompt should suspend",
         );
         assert!(
-            matches!(state.continuations.last(), Some(crate::state::Continuation::SubstitutionPrompt { investigator }) if *investigator == inv)
+            matches!(state.continuations.last(), Some(Continuation::SubstitutionPrompt { investigator }) if *investigator == inv)
         );
         assert!(
             state.current_skill_test().is_some(),
@@ -2600,7 +2600,7 @@ mod tests {
             state
                 .continuations
                 .iter()
-                .any(|c| matches!(c, crate::state::Continuation::SkillTest(_))),
+                .any(|c| matches!(c, Continuation::SkillTest(_))),
             "a SkillTest frame is on the stack before the commit window",
         );
     }
@@ -2620,7 +2620,7 @@ mod tests {
                 inv,
                 SkillKind::Agility,
                 SkillTestKind::Evade,
-                crate::state::DifficultyBasis::Fixed(3),
+                DifficultyBasis::Fixed(3),
                 SkillTestFollowUp::None,
                 None,
                 None,
@@ -2675,7 +2675,7 @@ mod tests {
                 inv,
                 SkillKind::Combat,
                 SkillTestKind::Fight,
-                crate::state::DifficultyBasis::Fixed(3),
+                DifficultyBasis::Fixed(3),
                 SkillTestFollowUp::None,
                 None,
                 None,
@@ -2740,7 +2740,7 @@ mod tests {
             .with_investigator(test_investigator(1))
             .with_active_investigator(inv)
             .build();
-        state.chaos_bag.tokens = vec![crate::state::ChaosToken::Numeric(0)];
+        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
         let mut events = Vec::new();
         let out = {
             let mut cx = Cx {
@@ -2752,7 +2752,7 @@ mod tests {
                 inv,
                 SkillKind::Combat,
                 SkillTestKind::Fight,
-                crate::state::DifficultyBasis::Fixed(3),
+                DifficultyBasis::Fixed(3),
                 SkillTestFollowUp::None,
                 None,
                 None,
@@ -2764,7 +2764,7 @@ mod tests {
         assert!(
             !matches!(
                 state.continuations.last(),
-                Some(crate::state::Continuation::SubstitutionPrompt { .. })
+                Some(Continuation::SubstitutionPrompt { .. })
             ),
             "no prompt"
         );
@@ -2795,7 +2795,7 @@ mod tests {
             inv,
             SkillKind::Willpower,
             SkillTestKind::Plain,
-            crate::state::DifficultyBasis::Fixed(2),
+            DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
             None,
             None,

@@ -344,7 +344,7 @@ fn frozen_in_fear_board(token: ChaosToken) -> game_core::GameState {
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         // Mid-Investigation invariant (slice 1a): EndTurn rotates / cascades
         // through the InvestigationPhase anchor.
-        .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase {
             resume: game_core::state::InvestigationResume::TurnBegins,
         })
         // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
@@ -384,10 +384,11 @@ fn frozen_in_fear_end_of_turn_success_discards_and_turn_resumes() {
     );
     // The turn was not left stranded: no InvestigatorTurn frame is mid-end
     // (slice 2a-i absorbed the former pending_end_turn into `ending`).
-    assert!(!r.state.continuations.iter().any(|c| matches!(
-        c,
-        game_core::state::Continuation::InvestigatorTurn { ending: true, .. }
-    )));
+    assert!(!r
+        .state
+        .continuations
+        .iter()
+        .any(|c| matches!(c, Continuation::InvestigatorTurn { ending: true, .. })));
 }
 
 #[test]
@@ -405,10 +406,11 @@ fn frozen_in_fear_end_of_turn_failure_keeps_card_but_turn_still_resumes() {
     assert_eq!(r.state.active_investigator, Some(InvestigatorId(2)));
     // The turn was not left stranded: no InvestigatorTurn frame is mid-end
     // (slice 2a-i absorbed the former pending_end_turn into `ending`).
-    assert!(!r.state.continuations.iter().any(|c| matches!(
-        c,
-        game_core::state::Continuation::InvestigatorTurn { ending: true, .. }
-    )));
+    assert!(!r
+        .state
+        .continuations
+        .iter()
+        .any(|c| matches!(c, Continuation::InvestigatorTurn { ending: true, .. })));
 }
 
 #[test]
@@ -437,7 +439,7 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         // Mid-Investigation invariant (slice 1a): EndTurn rotates / cascades
         // through the InvestigationPhase anchor.
-        .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase {
             resume: game_core::state::InvestigationResume::TurnBegins,
         })
         // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
@@ -452,9 +454,9 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
     let r = TestSession::new(state)
         .take(&TurnAction::EndTurn)
         .resolve_choices(|c| {
-            c.pick_single(game_core::engine::OptionId(0))
+            c.pick_single(OptionId(0))
                 .commit_cards(&[])
-                .pick_single(game_core::engine::OptionId(0))
+                .pick_single(OptionId(0))
                 .commit_cards(&[]);
         })
         .run();
@@ -483,10 +485,11 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
     );
     // The turn was not left stranded: no InvestigatorTurn frame is mid-end
     // (slice 2a-i absorbed the former pending_end_turn into `ending`).
-    assert!(!r.state.continuations.iter().any(|c| matches!(
-        c,
-        game_core::state::Continuation::InvestigatorTurn { ending: true, .. }
-    )));
+    assert!(!r
+        .state
+        .continuations
+        .iter()
+        .any(|c| matches!(c, Continuation::InvestigatorTurn { ending: true, .. })));
 }
 
 #[test]

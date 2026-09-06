@@ -171,7 +171,7 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     let r = apply(
         r.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: game_core::action::InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
         }),
     );
     assert!(

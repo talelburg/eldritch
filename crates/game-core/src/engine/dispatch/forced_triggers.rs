@@ -223,7 +223,7 @@ pub(crate) fn queue_forced_triggers(
 // dispatcher: one match arm per ForcedTriggerPoint.
 #[allow(clippy::too_many_lines)]
 pub(super) fn collect_forced_hits(
-    state: &crate::state::GameState,
+    state: &GameState,
     point: &ForcedTriggerPoint,
     bucket: EventTiming,
 ) -> Vec<ResolutionCandidate> {
@@ -613,7 +613,7 @@ pub(super) fn collect_forced_hits(
 /// carries the doom model, this scan's in-play arm, and 01170 together, since
 /// none of the three is assertable without the other two.
 fn push_scenario_structure_matching(
-    state: &crate::state::GameState,
+    state: &GameState,
     hits: &mut Vec<ResolutionCandidate>,
     bucket: EventTiming,
     want: impl Fn(&EventPattern) -> bool + Copy,
@@ -771,7 +771,7 @@ fn resolve_one(
 /// Resolved via the registry; falls back to the raw code when no
 /// registry/metadata is available (tests).
 fn forced_source_name(code: &CardCode) -> String {
-    crate::card_registry::current()
+    card_registry::current()
         .and_then(|r| (r.metadata_for)(code))
         .map_or_else(|| code.0.clone(), |m| m.name.clone())
 }
@@ -853,7 +853,7 @@ mod tests {
         };
 
         // Drive: one-option suspend.
-        let out = super::drive_acknowledge_forced(&mut cx);
+        let out = drive_acknowledge_forced(&mut cx);
         match out {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
@@ -862,8 +862,7 @@ mod tests {
         }
 
         // Resume with the single option: frame pops, returns Done.
-        let out =
-            super::resume_acknowledge_forced(&mut cx, &InputResponse::PickSingle(OptionId(0)));
+        let out = resume_acknowledge_forced(&mut cx, &InputResponse::PickSingle(OptionId(0)));
         assert!(matches!(out, EngineOutcome::Done));
         assert!(
             cx.state.continuations.is_empty(),
@@ -893,7 +892,7 @@ mod tests {
             state: &mut state,
             events: &mut events,
         };
-        let out = super::resume_acknowledge_forced(&mut cx, &InputResponse::Confirm);
+        let out = resume_acknowledge_forced(&mut cx, &InputResponse::Confirm);
         assert!(matches!(out, EngineOutcome::Rejected { .. }));
         assert!(
             matches!(
@@ -926,7 +925,7 @@ mod tests {
             state: &mut state,
             events: &mut events,
         };
-        match super::drive_acknowledge_forced(&mut cx) {
+        match drive_acknowledge_forced(&mut cx) {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
                 assert_eq!(
@@ -960,7 +959,7 @@ mod tests {
             state: &mut state,
             events: &mut events,
         };
-        match super::drive_acknowledge_forced(&mut cx) {
+        match drive_acknowledge_forced(&mut cx) {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
                 assert_eq!(
@@ -999,7 +998,7 @@ mod tests {
             state: &mut state,
             events: &mut events,
         };
-        match super::drive_acknowledge_forced(&mut cx) {
+        match drive_acknowledge_forced(&mut cx) {
             EngineOutcome::AwaitingInput { request, .. } => {
                 assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
                 assert_eq!(request.options[0].target, Some(OptionTarget::Agenda));

@@ -327,7 +327,7 @@ fn pick_index_fires_pending_trigger_and_closes_window() {
     let resumed = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
 
@@ -548,7 +548,7 @@ fn unqualified_pattern_matches_any_defeat() {
     let resumed = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     assert!(matches!(
@@ -576,7 +576,7 @@ fn pick_index_out_of_bounds_rejects_window_stays_open() {
     let bad = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(99)),
+            response: InputResponse::PickSingle(OptionId(99)),
         }),
     );
     match bad.outcome {
@@ -627,7 +627,7 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
     let after_first = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     assert!(
@@ -655,7 +655,7 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
     let after_second = game_core::engine::apply(
         after_first.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     assert!(matches!(
@@ -711,7 +711,7 @@ fn fight_event_sequence_pins_window_between_enemy_defeated_and_skill_test_ended(
     let resumed = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     assert!(matches!(
@@ -837,7 +837,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     let resumed = game_core::engine::apply(
         paused_reaction.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     assert!(matches!(
@@ -994,7 +994,7 @@ fn skip_after_firing_one_drops_remaining_optionals() {
     let after_first = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     assert!(
@@ -1171,7 +1171,7 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
     let resumed = game_core::engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
 
@@ -1390,7 +1390,7 @@ fn after_successful_investigate_fires_in_play_reaction() {
     let resumed = game_core::engine::apply(
         paused_reaction.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     assert!(matches!(

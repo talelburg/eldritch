@@ -112,3 +112,22 @@ Rust `///` comments attach to the *next* item, so an `Edit` whose `old_string` m
 When a type deliberately omits a derive — `PartialEq` on `GameState`, say, because comparing large trees is expensive — don't add a comment explaining the omission. If the reason matters, it belongs in the commit message or PR description, where archaeology will find it.
 
 **Why:** comments about code that isn't there go stale, can't be checked, and imply a positive assertion where there is only a default.
+
+### Import types by full path; reach functions through their parent module
+
+Four rules. The first is adopted verbatim from The Rust Programming Language ch. 7.4, "Creating Idiomatic use Paths"; the other three are house rules the book says nothing about.
+
+> Bringing the function's parent module into scope with `use` means we have to specify the parent module when calling the function. Specifying the parent module when calling the function makes it clear that the function isn't locally defined while still minimizing repetition of the full path. […] On the other hand, when bringing in structs, enums, and other items with `use`, it's idiomatic to specify the full path.
+
+1. **Noun/verb split.** Types — structs, enums, traits — are imported by full path and used bare: `use crate::state::Continuation;`, then `Continuation`. Functions are reached through their parent: `use crate::engine::enumerate;`, then `enumerate::options(…)`. This holds across the crate seam too: `game_core::state::GameState` used in `cards` is imported once and written bare, so the layering is stated in the `use` block rather than at every mention. **The escape hatch is a genuine same-name collision in one scope**, where both items go module-qualified (`fmt::Result` / `io::Result`) — the rule never asks you to choose between it and code that compiles. **The verb half yields where the function's own name is already in scope** — a re-export (`engine::mod.rs`'s `apply_player_action`) or a `use super::*;` test module — because `unused_qualifications` rejects the module prefix there; the bare call is correct, and this is the one place the two disagree.
+2. **Placement.** Imports at file top, with two carve-outs: a `#[cfg(test)]` module keeps its own imports, `use super::*;` included, and a trait imported solely so one function's method call resolves may sit inside that function.
+3. **`super::` is direct-parent only.** One `super`, nothing after it — `use super::*;` and `use super::Item;` are the permitted shapes. Anything that descends past a `super` (`use super::card::CardCode`) or stacks two (`use super::super::Cx`) is written as an absolute `crate::` path, so an import resolves without knowing how deep the reading module sits.
+4. **`as _` for method-only trait imports.** A trait imported purely for method resolution claims no name: `use wasm_bindgen::JsCast as _;`.
+
+Grouping and ordering within the `use` block are **out of scope** — `rustfmt`'s import-granularity and reordering options are nightly-only, and this repo pins stable.
+
+`unused_qualifications` is on in `[workspace.lints]` and catches the narrow redundant case — `foo::Bar` where `Bar` is already imported in that file. It is a backstop, not an enforcer: it is blind to a fully-qualified inline path the file never imported, which is the bulk of rule 1.
+
+**The existing code does not yet match rules 1 and 3** — 1838 inline fully-qualified paths across 166 files, and 31 `super::` imports that reach sideways or stack. The rules bind new and modified code from now; #890's sweep tickets bring the rest into line, per crate, and this paragraph goes when the last of them lands.
+
+**Why:** the evidence here is adoption, not incident. The book is candid that the idiom has no deeper justification — *"There's no strong reason behind this idiom: It's just the convention that has emerged, and folks have gotten used to reading and writing Rust code this way."* That convention is exactly what is being bought: a shape every Rust reader already parses without effort, which no house style beats by being cleverer. Before #891 this repo had no written import rule at all, so each new file picked one from whichever neighbour its author read, and a reviewer had only a preference to express.

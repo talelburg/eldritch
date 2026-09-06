@@ -17,7 +17,7 @@ use web::transport::OutboundTx;
 wasm_bindgen_test_configure!(run_in_browser);
 
 fn last_card() -> web_sys::Element {
-    let cards = leptos::prelude::document()
+    let cards = document()
         .query_selector_all(".card")
         .expect("query_selector_all");
     cards
@@ -37,7 +37,7 @@ async fn engaged_enemy_renders_stats_keywords_exhausted() {
     e.hunter = true;
     e.retaliate = true;
     e.exhausted = true;
-    leptos::mount::mount_to_body(move || view! { <EnemyCard enemy=e.clone()/> });
+    mount_to_body(move || view! { <EnemyCard enemy=e.clone()/> });
     leptos::task::tick().await;
 
     let card = last_card();
@@ -70,7 +70,7 @@ async fn engaged_enemy_renders_stats_keywords_exhausted() {
 #[wasm_bindgen_test]
 async fn ready_enemy_is_not_dimmed() {
     let e = test_enemy(2, "Swarm of Rats");
-    leptos::mount::mount_to_body(move || view! { <EnemyCard enemy=e.clone()/> });
+    mount_to_body(move || view! { <EnemyCard enemy=e.clone()/> });
     leptos::task::tick().await;
     assert!(
         !last_card().class_name().contains("card--exhausted"),
@@ -93,7 +93,7 @@ async fn mount_enemy(
     store.update(|s| s.outcome = Some(outcome));
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
-    leptos::mount::mount_to_body(move || {
+    mount_to_body(move || {
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let pending = Signal::derive(move || store.with(pending_options));

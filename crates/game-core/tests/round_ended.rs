@@ -145,7 +145,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     let after_first = apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     assert!(
@@ -165,7 +165,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     let done = apply(
         after_first.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     // The upkeep tail runs through to Mythos, which pauses at the step-1.4

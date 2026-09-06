@@ -757,9 +757,9 @@ mod tests {
         use crate::engine::enumerate::TurnAction;
         // EndTurn reads max_health / max_sanity on the investigator card.
         crate::test_support::install_test_registry();
-        let state = crate::test_support::GameStateBuilder::default()
-            .with_investigator(crate::test_support::test_investigator(1))
-            .with_phase(crate::state::Phase::Investigation)
+        let state = GameStateBuilder::default()
+            .with_investigator(test_investigator(1))
+            .with_phase(Phase::Investigation)
             .with_active_investigator(crate::state::InvestigatorId(1))
             .with_turn_order([crate::state::InvestigatorId(1)])
             .with_chaos_bag(crate::state::ChaosBag::new([
@@ -819,7 +819,7 @@ mod tests {
     fn state_with_in_flight_hand(hand: &[&str]) -> GameState {
         use crate::dsl::SkillTestKind;
         let id = InvestigatorId(1);
-        let mut inv = crate::test_support::test_investigator(1);
+        let mut inv = test_investigator(1);
         inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
         state

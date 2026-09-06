@@ -24,6 +24,11 @@ rust-version = "1.95"
 # opts in via `#[allow(unsafe_code)]` — which `forbid` (being absolute) rejects.
 # `deny` still errors on any unsafe by default; the only opt-in is the ctor macro.
 unsafe_code = "deny"
+# Redundant qualification — `foo::Bar` where `Bar` is already in scope. Narrow by
+# design: it only fires where the leaf is already imported, so it backstops the
+# import standard rather than enforcing it (`docs/agents/standards.md` → Import
+# types by full path; reach functions through their parent module).
+unused_qualifications = "warn"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

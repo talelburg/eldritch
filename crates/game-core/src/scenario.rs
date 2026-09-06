@@ -291,7 +291,7 @@ pub fn scenario_layout(state: &GameState) -> LocationLayout {
 #[must_use]
 pub fn resolve_symbol_token(
     state: &GameState,
-    token: crate::state::ChaosToken,
+    token: ChaosToken,
     investigator: InvestigatorId,
 ) -> Option<SymbolOutcome> {
     let id = state.scenario_id.as_ref()?;

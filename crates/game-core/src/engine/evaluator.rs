@@ -114,7 +114,7 @@ pub struct EnemyAttackBinding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ChoiceBinding {
     /// `InvestigatorTarget::Chosen` pick.
-    pub investigator: Option<crate::state::InvestigatorId>,
+    pub investigator: Option<InvestigatorId>,
     /// `LocationTarget::Chosen` pick.
     pub location: Option<crate::state::LocationId>,
     /// `EnemyTarget::Chosen` pick.
@@ -138,7 +138,7 @@ pub struct EvalContext {
     /// The investigator whose card-effect we're resolving — the
     /// "you" in card text. Resolves [`InvestigatorTarget::You`]
     /// and [`LocationTarget::YourLocation`].
-    pub controller: crate::state::InvestigatorId,
+    pub controller: InvestigatorId,
     /// Skill-test margin binding, bound only while running an `on_fail` effect.
     /// Read via [`Self::failed_by`]. `None` outside that window.
     pub skill_test: Option<SkillTestBinding>,
@@ -182,7 +182,7 @@ impl EvalContext {
     /// card. Use [`for_controller_with_source`](Self::for_controller_with_source)
     /// when the effect originates from a known ability source.
     #[must_use]
-    pub fn for_controller(controller: crate::state::InvestigatorId) -> Self {
+    pub fn for_controller(controller: InvestigatorId) -> Self {
         Self {
             controller,
             skill_test: None,
@@ -200,7 +200,7 @@ impl EvalContext {
     /// `DiscardSelf` and recorded-modifier provenance.
     #[must_use]
     pub fn for_controller_with_source(
-        controller: crate::state::InvestigatorId,
+        controller: InvestigatorId,
         source: crate::state::AbilitySource,
     ) -> Self {
         Self::for_controller_with_optional_source(controller, Some(source))
@@ -214,7 +214,7 @@ impl EvalContext {
     /// when the source is a `CandidateSource`.
     #[must_use]
     pub fn for_controller_with_optional_source(
-        controller: crate::state::InvestigatorId,
+        controller: InvestigatorId,
         source: Option<crate::state::AbilitySource>,
     ) -> Self {
         Self {
@@ -266,7 +266,7 @@ impl EvalContext {
     }
     /// Investigator picked for an `InvestigatorTarget::Chosen`.
     #[must_use]
-    pub fn chosen_investigator(&self) -> Option<crate::state::InvestigatorId> {
+    pub fn chosen_investigator(&self) -> Option<InvestigatorId> {
         self.choice.and_then(|c| c.investigator)
     }
     /// Location picked for a `LocationTarget::Chosen`.
@@ -302,7 +302,7 @@ impl EvalContext {
         });
     }
     /// Bind the chosen investigator (see [`Self::chosen_investigator`]).
-    pub fn set_chosen_investigator(&mut self, id: crate::state::InvestigatorId) {
+    pub fn set_chosen_investigator(&mut self, id: InvestigatorId) {
         self.choice
             .get_or_insert_with(Default::default)
             .investigator = Some(id);
@@ -1457,7 +1457,7 @@ fn modify(
                     // written today is a `Lit`. The row is expression-valued
                     // regardless (ADR 0005): what is stored is evaluated at
                     // read time, not at push time.
-                    crate::dsl::IntExpr::Lit(delta),
+                    IntExpr::Lit(delta),
                     lifetime,
                     eval_ctx.source_instance(),
                 ));
@@ -1722,7 +1722,7 @@ pub(crate) fn perform_discovery(
     cx: &mut Cx,
     location_id: crate::state::LocationId,
     count: u8,
-    controller: crate::state::InvestigatorId,
+    controller: InvestigatorId,
 ) {
     let location = cx
         .state
@@ -2213,9 +2213,9 @@ fn ground_fight_target_choice(
 /// `BTreeMap` (id) order so the `OptionId` index replays deterministically.
 fn investigator_candidates(
     state: &GameState,
-    controller: crate::state::InvestigatorId,
+    controller: InvestigatorId,
     scope: crate::dsl::EntityScope,
-) -> Vec<crate::state::InvestigatorId> {
+) -> Vec<InvestigatorId> {
     use crate::dsl::{EntityScope, LocationSet};
     let EntityScope::At(set) = scope;
     match set {
@@ -2241,7 +2241,7 @@ fn investigator_candidates(
 /// (id) order.
 fn location_candidates(
     state: &GameState,
-    controller: crate::state::InvestigatorId,
+    controller: InvestigatorId,
     set: crate::dsl::LocationSet,
 ) -> Vec<crate::state::LocationId> {
     use crate::dsl::LocationSet;
@@ -2272,7 +2272,7 @@ fn resolve_investigator_target(
     state: &GameState,
     ctx: EvalContext,
     target: InvestigatorTarget,
-) -> Result<crate::state::InvestigatorId, &'static str> {
+) -> Result<InvestigatorId, &'static str> {
     match target {
         InvestigatorTarget::You => Ok(ctx.controller),
         InvestigatorTarget::Active => state
@@ -2456,11 +2456,7 @@ fn any_eligible_investigator_target(
 /// initiation gate (is there *any* eligible target?) and by
 /// [`ground_investigator_choice`] (which ones do we offer?), so the answer is
 /// the same in both places.
-fn investigator_target_eligible(
-    state: &GameState,
-    effect: &Effect,
-    id: crate::state::InvestigatorId,
-) -> bool {
+fn investigator_target_eligible(state: &GameState, effect: &Effect, id: InvestigatorId) -> bool {
     let Some(inv) = state.investigators.get(&id) else {
         return false;
     };
@@ -3137,7 +3133,7 @@ mod tests {
             events: &mut events,
         };
 
-        super::push_effect(&mut cx, &gain_resources(InvestigatorTarget::You, 3), ctx(1));
+        push_effect(&mut cx, &gain_resources(InvestigatorTarget::You, 3), ctx(1));
         assert!(
             matches!(
                 cx.state.continuations.last(),
@@ -4437,7 +4433,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &crate::dsl::search_deck(
+            &search_deck(
                 InvestigatorTarget::You,
                 crate::dsl::SearchScope::Top(3),
                 None,
@@ -4465,7 +4461,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &crate::dsl::search_deck(
+            &search_deck(
                 InvestigatorTarget::You,
                 crate::dsl::SearchScope::Top(3),
                 None,
@@ -4488,7 +4484,7 @@ mod tests {
             CardCode::new("90003"),
         ];
         let mut events = Vec::new();
-        let effect = crate::dsl::search_deck(
+        let effect = search_deck(
             InvestigatorTarget::You,
             crate::dsl::SearchScope::Top(3),
             None,
@@ -5089,7 +5085,7 @@ mod tests {
                 InvestigatorId(1),
                 crate::state::AbilitySource::InPlay(inst),
             );
-            run(&mut cx, &super::Effect::DiscardSelf, c)
+            run(&mut cx, &Effect::DiscardSelf, c)
         };
         assert_eq!(outcome, EngineOutcome::Done);
         assert!(state.investigators[&InvestigatorId(1)]
@@ -5126,7 +5122,7 @@ mod tests {
                 InvestigatorId(1),
                 crate::state::AbilitySource::InPlay(CardInstanceId(9)),
             );
-            run(&mut cx, &super::Effect::DiscardSelf, c)
+            run(&mut cx, &Effect::DiscardSelf, c)
         };
         assert_eq!(outcome, EngineOutcome::Done);
         assert!(state.locations[&LocationId(3)].attachments.is_empty());
@@ -5149,7 +5145,7 @@ mod tests {
         };
         let outcome = run(
             &mut cx,
-            &super::Effect::DiscardSelf,
+            &Effect::DiscardSelf,
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
@@ -5771,7 +5767,7 @@ mod tests {
     #[test]
     fn grounded_choice_anchors_enemy_options() {
         use crate::engine::{EngineOutcome, OptionTarget};
-        let ctx = super::EvalContext::for_controller(InvestigatorId(1));
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
         let cands = [EnemyId(4), EnemyId(9)];
         let out = super::resolve_grounded_choice(
             ctx,
@@ -5801,7 +5797,7 @@ mod tests {
     #[test]
     fn grounded_choice_investigator_stays_unanchored() {
         use crate::engine::EngineOutcome;
-        let ctx = super::EvalContext::for_controller(InvestigatorId(1));
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
         let cands = [InvestigatorId(1), InvestigatorId(2)];
         let out = super::resolve_grounded_choice(
             ctx,

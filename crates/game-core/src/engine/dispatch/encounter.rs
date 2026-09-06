@@ -504,12 +504,10 @@ pub(super) fn spawn_enemy_at(
             // the chain through the exposed `PlayerDraw`.
             cx.state
                 .continuations
-                .push(crate::state::Continuation::SpawnEngage(
-                    SpawnEngagePending {
-                        enemy: enemy_id,
-                        candidates: tied.clone(),
-                    },
-                ));
+                .push(Continuation::SpawnEngage(SpawnEngagePending {
+                    enemy: enemy_id,
+                    candidates: tied.clone(),
+                }));
             EngineOutcome::AwaitingInput {
                 request: InputRequest::pick_single(
                     format!(
@@ -708,7 +706,7 @@ pub(super) fn drive_player_draw(cx: &mut Cx) -> EngineOutcome {
 /// returns to `encounter_deck` — the draw-before-validate ordering only
 /// matters on non-rejecting paths.
 fn draw_encounter_card_into_frame(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    let Some(reg) = crate::card_registry::current() else {
+    let Some(reg) = card_registry::current() else {
         return EngineOutcome::Rejected {
             reason: "DrawEncounterCard: no card registry installed".into(),
         };
@@ -1191,7 +1189,7 @@ mod encounter_deck_helper_tests {
         let result = apply(state, Action::Engine(EngineRecord::EncounterDeckShuffled));
 
         assert!(
-            matches!(result.outcome, crate::EngineOutcome::Done),
+            matches!(result.outcome, EngineOutcome::Done),
             "expected Done, got {:?}",
             result.outcome
         );
@@ -1769,7 +1767,7 @@ mod spawn_enemy_tests {
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert!(matches!(
             state.continuations.last(),
-            Some(crate::state::Continuation::SpawnEngage(_))
+            Some(Continuation::SpawnEngage(_))
         ));
         let spawned = state.enemies.values().next().expect("one enemy");
         assert_eq!(spawned.engaged_with, None);
@@ -1808,7 +1806,7 @@ mod spawn_enemy_tests {
         );
         assert!(matches!(
             state.continuations.last(),
-            Some(crate::state::Continuation::SpawnEngage(_))
+            Some(Continuation::SpawnEngage(_))
         ));
 
         // Option id 99 is out of the co-located candidate range.
@@ -1826,7 +1824,7 @@ mod spawn_enemy_tests {
         assert!(
             matches!(
                 state.continuations.last(),
-                Some(crate::state::Continuation::SpawnEngage(_))
+                Some(Continuation::SpawnEngage(_))
             ),
             "pending must survive a rejected pick for retry",
         );

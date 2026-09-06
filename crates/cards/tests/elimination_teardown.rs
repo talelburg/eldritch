@@ -61,7 +61,7 @@ fn install_registry() {
 /// Hands sits on top of the encounter deck with a rigged `Numeric(-2)` token, so
 /// `reveal_committing` puts him through an Agility(3) test he fails by 2 — or by
 /// 1 when Survival Instinct's single [agility] icon is committed.
-fn board_at_lethal_range(damage: u8, hand: &[&str], threat: &[(&str, u8)]) -> game_core::GameState {
+fn board_at_lethal_range(damage: u8, hand: &[&str], threat: &[(&str, u8)]) -> GameState {
     let mut inv = test_investigator(1);
     // Real investigator code so max_health() reads from the installed cards
     // registry (#448 cp2a). Roland Banks (01001, 9/5).
@@ -97,7 +97,7 @@ fn board_at_lethal_range(damage: u8, hand: &[&str], threat: &[(&str, u8)]) -> ga
 /// scenario. The survivor carries a real investigator code because
 /// `max_health()` reads capacity from the installed corpus registry (#448); he
 /// is a stand-in whose only job is to keep the game running.
-fn board_with_survivor(damage: u8, threat: &[(&str, u8)]) -> game_core::GameState {
+fn board_with_survivor(damage: u8, threat: &[(&str, u8)]) -> GameState {
     let mut state = board_at_lethal_range(damage, &[], threat);
     let mut survivor = test_investigator(2);
     survivor.investigator_card.code = CardCode::new(ROLAND);
@@ -112,7 +112,7 @@ fn board_with_survivor(damage: u8, threat: &[(&str, u8)]) -> game_core::GameStat
 
 /// Reveal the top encounter card for investigator 1, committing `commit` at the
 /// revelation skill-test window.
-fn reveal_committing(state: game_core::GameState, commit: &[&str]) -> game_core::ApplyResult {
+fn reveal_committing(state: GameState, commit: &[&str]) -> game_core::ApplyResult {
     let mut resolver = ScriptedResolver::new();
     resolver.commit_cards(&commit.iter().map(|c| CardCode::new(*c)).collect::<Vec<_>>());
     drive(

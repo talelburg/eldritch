@@ -30,7 +30,7 @@ fn mount() -> (RwSignal<ClientState>, web_sys::HtmlElement) {
         .expect("append_child");
 
     let store = RwSignal::new(ClientState::default());
-    leptos::mount::mount_to(container.clone(), move || {
+    mount_to(container.clone(), move || {
         provide_context(store);
         leptos::view! { <VersionMismatchView/> }
     })
@@ -127,7 +127,7 @@ async fn the_real_overlay_set_declares_the_mismatch_card_last() {
         .append_child(&container)
         .expect("append_child");
 
-    leptos::mount::mount_to(container.clone(), move || {
+    mount_to(container.clone(), move || {
         provide_context(store);
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));
         provide_context(web::interaction::PendingOptions(pending));

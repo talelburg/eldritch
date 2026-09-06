@@ -749,7 +749,7 @@ fn collect_recorded(
         // same narrowing one layer down onto `ContributionSource::Recorded`.
         let eval_ctx = crate::engine::evaluator::EvalContext::for_controller_with_optional_source(
             row.investigator,
-            row.source.map(crate::state::AbilitySource::InPlay),
+            row.source.map(AbilitySource::InPlay),
         );
         let Ok(delta) = crate::engine::evaluator::eval_int_expr(state, &eval_ctx, delta) else {
             continue;
@@ -1376,7 +1376,7 @@ mod tests {
         crate::state::RecordedModifier::new(
             investigator,
             stat,
-            crate::dsl::IntExpr::Lit(delta),
+            IntExpr::Lit(delta),
             crate::state::Lifetime::SkillTest(test),
             None,
         )
@@ -1654,7 +1654,7 @@ mod tests {
 
     /// A board carrying `test` in flight, one investigator, one location
     /// (printed shroud 2) and one enemy (printed fight 2, evade 2).
-    fn state_with_test(basis: crate::state::DifficultyBasis) -> GameState {
+    fn state_with_test(basis: DifficultyBasis) -> GameState {
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .with_location(test_location(3, "Study"))
@@ -1705,7 +1705,7 @@ mod tests {
     /// behind it on the board.
     #[test]
     fn a_fixed_difficulty_is_its_printed_number() {
-        let state = state_with_test(crate::state::DifficultyBasis::Fixed(4));
+        let state = state_with_test(DifficultyBasis::Fixed(4));
         assert_eq!(difficulty_of(&state), 4);
     }
 
@@ -1713,7 +1713,7 @@ mod tests {
     /// attachments and all.
     #[test]
     fn an_investigations_difficulty_is_the_locations_modified_shroud() {
-        let mut state = state_with_test(crate::state::DifficultyBasis::Shroud(LocationId(3)));
+        let mut state = state_with_test(DifficultyBasis::Shroud(LocationId(3)));
         assert_eq!(difficulty_of(&state), 2, "the printed shroud");
         state
             .locations
@@ -1731,9 +1731,9 @@ mod tests {
     /// Evade's is its modified evade value.
     #[test]
     fn an_enemys_fight_and_evade_are_the_difficulties_of_attacking_and_evading_it() {
-        let state = state_with_test(crate::state::DifficultyBasis::Fight(EnemyId(7)));
+        let state = state_with_test(DifficultyBasis::Fight(EnemyId(7)));
         assert_eq!(difficulty_of(&state), 2);
-        let mut state = state_with_test(crate::state::DifficultyBasis::Evade(EnemyId(7)));
+        let mut state = state_with_test(DifficultyBasis::Evade(EnemyId(7)));
         assert_eq!(difficulty_of(&state), 2);
         state.enemies.get_mut(&EnemyId(7)).unwrap().evade = 4;
         assert_eq!(difficulty_of(&state), 4, "read live, not banked at ST.1");
@@ -1745,7 +1745,7 @@ mod tests {
     /// once, at the end: 1 + 2 − 2 = 1, not (1 − 2 → 0) + 2 = 2.
     #[test]
     fn a_recorded_row_on_a_location_composes_with_its_attachments() {
-        let mut state = state_with_test(crate::state::DifficultyBasis::Shroud(LocationId(3)));
+        let mut state = state_with_test(DifficultyBasis::Shroud(LocationId(3)));
         let loc = state.locations.get_mut(&LocationId(3)).unwrap();
         loc.shroud = 1;
         loc.attachments.push(CardInPlay::enter_play(
@@ -1771,7 +1771,7 @@ mod tests {
     /// -8 token"* (<https://arkhamdb.com/card/01087>).
     #[test]
     fn a_difficulty_reduced_below_zero_clamps_at_zero() {
-        let mut state = state_with_test(crate::state::DifficultyBasis::Shroud(LocationId(3)));
+        let mut state = state_with_test(DifficultyBasis::Shroud(LocationId(3)));
         state.locations.get_mut(&LocationId(3)).unwrap().shroud = 1;
         state
             .recorded_modifiers
@@ -1790,7 +1790,7 @@ mod tests {
     /// difficulty either — the identity check is not investigator-specific.
     #[test]
     fn a_location_row_from_another_test_does_not_change_the_difficulty() {
-        let mut state = state_with_test(crate::state::DifficultyBasis::Shroud(LocationId(3)));
+        let mut state = state_with_test(DifficultyBasis::Shroud(LocationId(3)));
         state
             .recorded_modifiers
             .push(crate::state::RecordedModifier::targeting(
@@ -1857,7 +1857,7 @@ mod tests {
     // ---- the fold's stage 5: the test's determination -------------
 
     /// A determination row scoped to [`IN_FLIGHT`].
-    fn determination_row(d: crate::dsl::Determination) -> crate::state::RecordedModifier {
+    fn determination_row(d: Determination) -> crate::state::RecordedModifier {
         crate::state::RecordedModifier::determination(
             InvestigatorId(1),
             d,
@@ -1870,7 +1870,7 @@ mod tests {
     /// Intellect investigation against the Study's shroud 2), with `rows`
     /// recorded on top.
     fn state_with_determinations(rows: Vec<crate::state::RecordedModifier>) -> GameState {
-        let mut state = state_with_test(crate::state::DifficultyBasis::Shroud(LocationId(3)));
+        let mut state = state_with_test(DifficultyBasis::Shroud(LocationId(3)));
         state.recorded_modifiers = rows;
         state
     }

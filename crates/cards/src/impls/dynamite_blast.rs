@@ -186,7 +186,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            super::dynamite_blast(&mut cx, &ctx)
+            dynamite_blast(&mut cx, &ctx)
         };
         match out {
             EngineOutcome::AwaitingInput { request, .. } => {

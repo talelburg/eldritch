@@ -292,7 +292,7 @@ pub(super) fn assign_attack(soakers: &[Soaker], mut damage: u8, mut horror: u8) 
 /// Mutable handle to the controlled in-play instance `inst`, or `None`
 /// if the investigator doesn't control it (C5b #237).
 fn find_controlled_mut(
-    state: &mut crate::state::GameState,
+    state: &mut GameState,
     investigator: InvestigatorId,
     inst: CardInstanceId,
 ) -> Option<&mut crate::state::CardInPlay> {
@@ -585,7 +585,7 @@ pub(crate) fn begin_deal_damage(
 /// exhausted (or non-asset cards) are skipped. Returns empty when no
 /// registry is installed, so attacks resolve as before in registry-free
 /// tests.
-fn build_soakers(state: &crate::state::GameState, investigator: InvestigatorId) -> Vec<Soaker> {
+fn build_soakers(state: &GameState, investigator: InvestigatorId) -> Vec<Soaker> {
     let Some(reg) = crate::card_registry::current() else {
         return Vec::new();
     };
@@ -1480,7 +1480,7 @@ mod combat_tests {
         // so any index ≥ 1 is invalid) → reject, frame untouched.
         let oob = super::resume_damage_distribution(
             &mut cx,
-            &crate::action::InputResponse::PickSingle(crate::engine::OptionId(5)),
+            &crate::action::InputResponse::PickSingle(OptionId(5)),
         );
         assert!(matches!(oob, EngineOutcome::Rejected { .. }));
 
@@ -1775,7 +1775,7 @@ mod combat_tests {
             .with_investigator(test_investigator(1))
             .with_turn_order([inv_id])
             .with_enemy(enemy)
-            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
+            .with_phase_anchor(Continuation::EnemyPhase {
                 resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
                 attacking: Some(inv_id),
             })
@@ -1844,7 +1844,7 @@ mod combat_tests {
             .with_investigator(test_investigator(1))
             .with_turn_order([inv_id])
             .with_enemy(enemy)
-            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
+            .with_phase_anchor(Continuation::EnemyPhase {
                 resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
                 attacking: Some(inv_id),
             })
@@ -1938,7 +1938,7 @@ mod combat_tests {
         let outcome = super::drive_retaliate(&mut cx, EnemyId(100), inv_id);
         let outcome = super::super::drive(&mut cx, outcome);
 
-        assert!(matches!(outcome, crate::engine::EngineOutcome::Done));
+        assert!(matches!(outcome, EngineOutcome::Done));
         assert!(
             !cx.state.enemies[&EnemyId(100)].exhausted,
             "retaliate must not exhaust (RR p.18)"
@@ -1974,7 +1974,7 @@ mod combat_tests {
         let outcome = super::drive_aoo(&mut cx, inv_id);
         let outcome = super::super::drive(&mut cx, outcome);
 
-        assert!(matches!(outcome, crate::engine::EngineOutcome::Done));
+        assert!(matches!(outcome, EngineOutcome::Done));
         assert!(
             !cx.state.enemies[&EnemyId(100)].exhausted,
             "AoO must not exhaust the attacker (RR p.7)"

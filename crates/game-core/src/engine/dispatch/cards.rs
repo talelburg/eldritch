@@ -24,7 +24,7 @@ pub(super) const INITIAL_HAND_SIZE: u8 = 5;
 /// disposal in [`combat`](super::combat) (a defeated weakness enemy goes to its
 /// owner's discard pile rather than the encounter discard, #632).
 pub(super) fn is_weakness_code(code: &CardCode) -> bool {
-    crate::card_registry::current()
+    card_registry::current()
         .and_then(|reg| (reg.metadata_for)(code))
         .is_some_and(card_dsl::CardMetadata::is_weakness)
 }
@@ -846,7 +846,7 @@ pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOu
         // of this step, shuffle each of these weakness cards back into its
         // owner's deck."). Drain `setaside` into `deck` and reshuffle.
         // Process in deterministic id order.
-        let mut ids_with_setaside: Vec<crate::state::InvestigatorId> = cx
+        let mut ids_with_setaside: Vec<InvestigatorId> = cx
             .state
             .investigators
             .iter()
@@ -855,7 +855,7 @@ pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOu
             .collect();
         ids_with_setaside.sort_unstable();
         for id in ids_with_setaside {
-            let cards: Vec<crate::state::CardCode> = cx
+            let cards: Vec<CardCode> = cx
                 .state
                 .investigators
                 .get_mut(&id)
@@ -1200,14 +1200,14 @@ fn complete_play(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) -> E
             investigator,
             card: Some(card),
         });
-    let on_play: Vec<crate::dsl::Effect> = abilities
+    let on_play: Vec<Effect> = abilities
         .into_iter()
         .filter(|a| a.trigger == Trigger::OnPlay)
         .map(|a| a.effect)
         .collect();
     if !on_play.is_empty() {
         let eval_ctx = EvalContext::for_controller(investigator);
-        push_effect(cx, &crate::dsl::Effect::Seq(on_play), eval_ctx);
+        push_effect(cx, &Effect::Seq(on_play), eval_ctx);
     }
     EngineOutcome::Done
 }

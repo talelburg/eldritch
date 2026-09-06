@@ -405,9 +405,9 @@ pub struct Assignment {
     /// Horror absorbed by the investigator.
     pub investigator_horror: u8,
     /// instance → damage soaked onto that asset.
-    pub asset_damage: std::collections::BTreeMap<CardInstanceId, u8>,
+    pub asset_damage: BTreeMap<CardInstanceId, u8>,
     /// instance → horror soaked onto that asset.
-    pub asset_horror: std::collections::BTreeMap<CardInstanceId, u8>,
+    pub asset_horror: BTreeMap<CardInstanceId, u8>,
 }
 
 /// What is dealing the damage/horror a [`Continuation::DealDamage`] frame is
@@ -1151,7 +1151,7 @@ pub enum ActionResume {
     /// `source` is kept only as the eval context's source.
     ActivateAbility {
         /// The ability source — the eval context's `source` on resume (#707).
-        source: crate::state::AbilitySource,
+        source: AbilitySource,
         /// The bold action designator the ability prints, if any — what
         /// **performs the action** (#805), snapshotted at activation exactly as
         /// `effect` is. Flashlight 01087's **Investigate** is performed here,
@@ -3665,10 +3665,7 @@ mod add_location_tests {
         assert_eq!(study.shroud, 2);
         assert_eq!(study.clues, 0, "enters unrevealed with no clues");
         assert!(!study.revealed);
-        assert_eq!(
-            study.printed_clues,
-            crate::card_data::ClueValue::PerInvestigator(2)
-        );
+        assert_eq!(study.printed_clues, ClueValue::PerInvestigator(2));
         assert!(study.connections.is_empty());
         assert_eq!(state.location_ids.peek(), 2, "counter advanced twice");
     }
@@ -3819,10 +3816,10 @@ mod starting_location_tests {
         let mut state = GameStateBuilder::new().build();
         assert_eq!(state.starting_location, None, "default must be None");
 
-        state.starting_location = Some(crate::state::LocationId(7));
+        state.starting_location = Some(LocationId(7));
         let json = serde_json::to_string(&state).expect("serialize");
         let back: GameState = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.starting_location, Some(crate::state::LocationId(7)));
+        assert_eq!(back.starting_location, Some(LocationId(7)));
     }
 }
 
