@@ -3,16 +3,17 @@
 use crate::action::InputResponse;
 use crate::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, SpawnLocation};
 use crate::card_registry;
-use crate::dsl::Trigger;
+use crate::dsl::{Ability, Effect, Trigger};
+use crate::engine::dispatch::hunters::PreyResolution;
+use crate::engine::dispatch::{cursor, hunters, reaction_windows, skill_test};
+use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::outcome::{EngineOutcome, InputRequest, OptionTarget, ResumeToken};
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     CardCode, Continuation, EncounterDisposition, Enemy, FastWindowKind, InvestigatorId,
     LocationId, PhaseStep, SpawnEngagePending, Status,
 };
-
-use super::super::evaluator::{push_effect, EvalContext};
-use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
-use super::Cx;
 
 /// Hard cap on a single Mythos draw chain. Real scenarios surge ≤2
 /// in a chain; the cap exists purely to guarantee termination on
@@ -96,24 +97,25 @@ pub(super) fn encounter_card_revealed(cx: &mut Cx, investigator: InvestigatorId)
 /// treacheries). Revisit with an explicit persistence marker only if a
 /// treachery must persist with no ongoing ability, or auto-discard
 /// despite carrying one.
-pub(crate) fn treachery_is_persistent(abilities: &[crate::dsl::Ability]) -> bool {
+pub(crate) fn treachery_is_persistent(abilities: &[Ability]) -> bool {
     abilities.iter().any(|a| a.trigger != Trigger::Revelation)
 }
 
 #[cfg(test)]
 mod persistence_tests {
+    use super::*;
     use card_dsl::dsl::{constant, modify, native, revelation, Ability, ModifierScope, Stat};
 
     #[test]
     fn persistence_is_derived_from_non_revelation_abilities() {
         let one_shot: Vec<Ability> = vec![revelation(native("x:rev"))];
-        assert!(!super::treachery_is_persistent(&one_shot));
+        assert!(!treachery_is_persistent(&one_shot));
 
         let persistent: Vec<Ability> = vec![
             revelation(native("y:rev")),
             constant(modify(Stat::Willpower, 1, ModifierScope::WhileInPlay)),
         ];
-        assert!(super::treachery_is_persistent(&persistent));
+        assert!(treachery_is_persistent(&persistent));
     }
 }
 
@@ -193,7 +195,7 @@ pub fn resolve_encounter_card(
     // ability on the drawn card." then "4. If the card is an enemy, spawn it
     // following any spawn instruction the card bears." The spawn happens at
     // disposal, after the Revelation frames the loop drives have all resolved.
-    let revelation_effects: Vec<crate::dsl::Effect> = abilities
+    let revelation_effects: Vec<Effect> = abilities
         .into_iter()
         .filter(|a| a.trigger == Trigger::Revelation)
         .map(|a| a.effect)
@@ -210,7 +212,7 @@ pub fn resolve_encounter_card(
     // investigator controls the Revelation.
     if !revelation_effects.is_empty() {
         let eval_ctx = EvalContext::for_controller(investigator);
-        push_effect(cx, &crate::dsl::Effect::Seq(revelation_effects), eval_ctx);
+        evaluator::push_effect(cx, &Effect::Seq(revelation_effects), eval_ctx);
     }
     EngineOutcome::Done
 }
@@ -441,7 +443,7 @@ pub(super) fn spawn_enemy_at(
     //    set is narrowed by the enemy's `prey`; with `Prey::Default` a 2+
     //    set ties and suspends for the lead investigator's
     //    `PickSingle` (option A).
-    let candidates = super::cursor::active_investigators_at(cx.state, location_id);
+    let candidates = cursor::active_investigators_at(cx.state, location_id);
 
     // 3. Mint and place (mutate-second). The enemy is inserted unengaged;
     //    the `One` and (post-resume) `Tie` cases set `engaged_with` via
@@ -471,8 +473,8 @@ pub(super) fn spawn_enemy_at(
     };
     cx.state.enemies.insert(enemy_id, enemy);
 
-    match super::hunters::resolve_prey(cx.state, prey, &candidates) {
-        super::hunters::PreyResolution::None => {
+    match hunters::resolve_prey(cx.state, prey, &candidates) {
+        PreyResolution::None => {
             cx.events.push(Event::EnemySpawned {
                 enemy: enemy_id,
                 code,
@@ -481,17 +483,17 @@ pub(super) fn spawn_enemy_at(
             });
             EngineOutcome::Done
         }
-        super::hunters::PreyResolution::One(target) => {
+        PreyResolution::One(target) => {
             cx.events.push(Event::EnemySpawned {
                 enemy: enemy_id,
                 code,
                 location: location_id,
                 engaged_with: Some(target),
             });
-            super::hunters::engage_enemy_with(cx, enemy_id, target);
+            hunters::engage_enemy_with(cx, enemy_id, target);
             EngineOutcome::Done
         }
-        super::hunters::PreyResolution::Tie(tied) => {
+        PreyResolution::Tie(tied) => {
             cx.events.push(Event::EnemySpawned {
                 enemy: enemy_id,
                 code,
@@ -514,7 +516,7 @@ pub(super) fn spawn_enemy_at(
                         "Enemy {enemy_id:?} spawn engagement: lead investigator picks whom to \
                          engage among {tied:?}"
                     ),
-                    super::hunters::candidate_options(&tied),
+                    hunters::candidate_options(&tied),
                 ),
                 resume_token: ResumeToken(0),
             }
@@ -603,7 +605,7 @@ pub(super) fn prompt_encounter_draw(cx: &Cx) -> EngineOutcome {
         request: InputRequest::confirm(format!(
             "Mythos step 1.4: {drawer:?} draws an encounter card; submit InputResponse::Confirm.",
         ))
-        .at(crate::engine::OptionTarget::EncounterDeck),
+        .at(OptionTarget::EncounterDeck),
         resume_token: ResumeToken(0),
     }
 }
@@ -772,7 +774,7 @@ fn draw_encounter_card_into_frame(cx: &mut Cx, investigator: InvestigatorId) -> 
     *surge_pending = surges;
 
     // Step 2: Check for the peril keyword on the drawn card.
-    super::skill_test::peril_check(cx, &code, investigator, metadata.peril());
+    skill_test::peril_check(cx, &code, investigator, metadata.peril());
 
     // Step 3 + 4: Push the disposition + Revelation frames; the `drive` loop
     // resolves them, then disposes of the card.
@@ -812,7 +814,7 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
     }
     if queue.is_empty() {
         cx.state.continuations.pop(); // pop the drained frame (it is on top)
-        let outcome = super::reaction_windows::open_fast_window(
+        let outcome = reaction_windows::open_fast_window(
             cx,
             FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
         );
@@ -908,8 +910,11 @@ pub(super) fn dispose_encounter_card_if_top(cx: &mut Cx) -> EngineOutcome {
 
 #[cfg(test)]
 mod encounter_card_revealed_tests {
-    use crate::state::CardCode;
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::action::EngineRecord;
+    use crate::engine::outcome::EngineOutcome;
+    use crate::engine::{dispatch, Cx};
+    use crate::state::{CardCode, InvestigatorId};
+    use crate::test_support::{self, GameStateBuilder};
 
     /// Exercises the early-reject guard: when the handler cannot
     /// proceed past the registry / metadata checks, it must reject
@@ -935,10 +940,8 @@ mod encounter_card_revealed_tests {
     /// process with the slot still empty.
     #[test]
     fn rejects_when_no_card_registry_installed() {
-        use crate::action::EngineRecord;
-        use crate::state::InvestigatorId;
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         // Seed the encounter deck so we can prove the reject fires
         // *before* the draw mutates state. Use a code that no real
@@ -949,8 +952,8 @@ mod encounter_card_revealed_tests {
         let pre_deck_len = state.encounter_deck.len();
         let mut events = Vec::new();
 
-        let outcome = super::super::apply_engine_record(
-            &mut crate::engine::Cx {
+        let outcome = dispatch::apply_engine_record(
+            &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
@@ -960,7 +963,7 @@ mod encounter_card_revealed_tests {
         );
 
         match outcome {
-            crate::engine::outcome::EngineOutcome::Rejected { reason } => {
+            EngineOutcome::Rejected { reason } => {
                 assert!(
                     reason.contains("no card registry installed")
                         || reason.contains("unknown card code"),
@@ -991,6 +994,8 @@ mod encounter_card_revealed_tests {
 #[cfg(test)]
 mod encounter_deck_helper_tests {
     use super::*;
+    use crate::action::{Action, EngineRecord};
+    use crate::engine::apply;
     use crate::event::Event;
     use crate::rng::RngState;
     use crate::state::CardCode;
@@ -1176,9 +1181,6 @@ mod encounter_deck_helper_tests {
 
     #[test]
     fn engine_record_encounter_deck_shuffled_drives_shuffle() {
-        use crate::action::{Action, EngineRecord};
-        use crate::engine::apply;
-
         let mut state = GameStateBuilder::new().build();
         state.rng = RngState::new(99);
         for i in 0..4 {
@@ -1235,9 +1237,10 @@ mod encounter_deck_helper_tests {
 #[cfg(test)]
 mod spawn_enemy_tests {
     use super::*;
+    use crate::engine::outcome::OptionId;
     use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
-    use crate::test_support::{test_investigator, test_location, GameStateBuilder};
-    use crate::{assert_event, assert_event_sequence, assert_no_event};
+    use crate::test_support::GameStateBuilder;
+    use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
     use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey, Spawn, SpawnLocation};
 
     fn synth_enemy_metadata(spawn: Option<Spawn>) -> CardMetadata {
@@ -1300,12 +1303,12 @@ mod spawn_enemy_tests {
         // The investigator is at loc 10; spawn_enemy_at is told loc 11. The
         // enemy must land at 11 (the explicit location wins), unlike
         // spawn_enemy's investigator-location fallback.
-        let mut here = test_location(10, "Here");
+        let mut here = test_support::test_location(10, "Here");
         here.code = CardCode("_here".into());
-        let mut there = test_location(11, "There");
+        let mut there = test_support::test_location(11, "There");
         there.code = CardCode("_there".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(here)
             .with_location(there)
             .with_turn_order([InvestigatorId(1)])
@@ -1342,10 +1345,10 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_enemy_reads_combat_stats_and_keywords_from_metadata() {
-        let mut loc = test_location(10, "Loc");
+        let mut loc = test_support::test_location(10, "Loc");
         loc.code = CardCode("_l".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(loc)
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -1390,11 +1393,11 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_enemy_scales_per_investigator_health_by_investigator_count() {
-        let mut loc = test_location(10, "Loc");
+        let mut loc = test_support::test_location(10, "Loc");
         loc.code = CardCode("_l".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .with_location(loc)
             .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
             .build();
@@ -1435,10 +1438,10 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_enemy_reads_victory_from_metadata() {
-        let mut loc = test_location(10, "Loc");
+        let mut loc = test_support::test_location(10, "Loc");
         loc.code = CardCode("_l".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(loc)
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -1477,10 +1480,10 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_at_specific_location_with_one_investigator_engages_them() {
-        let mut loc = test_location(10, "Synth Loc");
+        let mut loc = test_support::test_location(10, "Synth Loc");
         loc.code = CardCode("_synth_loc".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(loc)
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -1525,10 +1528,10 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_at_specific_location_with_no_investigators_leaves_unengaged() {
-        let mut loc = test_location(10, "Synth Loc");
+        let mut loc = test_support::test_location(10, "Synth Loc");
         loc.code = CardCode("_synth_loc".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(loc)
             .build();
         // Investigator 1 is NOT at location 10 (current_location is None).
@@ -1563,7 +1566,7 @@ mod spawn_enemy_tests {
         // instead." Flesh-Eater FAQ: "place that enemy card into the encounter
         // discard pile without any further effects." So the draw does NOT reject.
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let metadata = synth_enemy_metadata(Some(Spawn {
             location: SpawnLocation::Specific("_nonexistent_loc".into()),
@@ -1595,10 +1598,10 @@ mod spawn_enemy_tests {
         // the one location guaranteed *not* to be empty, so the fallback
         // placement would be doubly wrong (wrong location, plus an engagement
         // that should not happen).
-        let mut loc = test_location(10, "Demo");
+        let mut loc = test_support::test_location(10, "Demo");
         loc.code = CardCode("_demo_loc".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(loc)
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -1642,10 +1645,10 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_with_no_instruction_places_at_drawing_investigators_location() {
-        let mut loc = test_location(10, "Demo");
+        let mut loc = test_support::test_location(10, "Demo");
         loc.code = CardCode("_demo_loc".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(loc)
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -1682,7 +1685,7 @@ mod spawn_enemy_tests {
     #[test]
     fn spawn_with_no_instruction_rejects_when_drawing_investigator_has_no_location() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         // Investigator has no current_location.
         let metadata = synth_enemy_metadata(None);
@@ -1711,9 +1714,9 @@ mod spawn_enemy_tests {
     fn spawn_engages_sole_colocated_investigator() {
         // Regression: #127's single-investigator engage-on-spawn path
         // still resolves inline under the shared prey resolver.
-        let mut loc = test_location(1, "Hall");
+        let mut loc = test_support::test_location(1, "Hall");
         loc.code = CardCode("_loc".into());
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Mythos)
@@ -1739,11 +1742,11 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_tie_suspends_for_lead_pick() {
-        let mut loc = test_location(1, "Hall");
+        let mut loc = test_support::test_location(1, "Hall");
         loc.code = CardCode("_loc".into());
-        let mut i1 = test_investigator(1);
+        let mut i1 = test_support::test_investigator(1);
         i1.current_location = Some(LocationId(1));
-        let mut i2 = test_investigator(2);
+        let mut i2 = test_support::test_investigator(2);
         i2.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Mythos)
@@ -1778,12 +1781,11 @@ mod spawn_enemy_tests {
         // Validate-first: a pick outside the stored candidate set rejects
         // and leaves the SpawnEngage frame intact for retry, with the
         // enemy still unengaged.
-        use crate::action::InputResponse;
-        let mut loc = test_location(1, "Hall");
+        let mut loc = test_support::test_location(1, "Hall");
         loc.code = CardCode("_loc".into());
-        let mut i1 = test_investigator(1);
+        let mut i1 = test_support::test_investigator(1);
         i1.current_location = Some(LocationId(1));
-        let mut i2 = test_investigator(2);
+        let mut i2 = test_support::test_investigator(2);
         i2.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Mythos)
@@ -1810,12 +1812,12 @@ mod spawn_enemy_tests {
         ));
 
         // Option id 99 is out of the co-located candidate range.
-        let outcome = super::super::hunters::resume_spawn_engage(
+        let outcome = hunters::resume_spawn_engage(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
-            &InputResponse::PickSingle(crate::engine::OptionId(99)),
+            &InputResponse::PickSingle(OptionId(99)),
         );
         assert!(
             matches!(outcome, EngineOutcome::Rejected { .. }),
@@ -1834,10 +1836,10 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_mints_distinct_enemy_ids() {
-        let mut loc = test_location(10, "L");
+        let mut loc = test_support::test_location(10, "L");
         loc.code = CardCode("_l".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(loc)
             .build();
         state
@@ -1879,8 +1881,9 @@ mod spawn_enemy_tests {
 #[cfg(test)]
 mod resume_encounter_draw_chain_tests {
     use super::*;
+    use crate::engine::dispatch;
     use crate::state::{CardCode, InvestigatorId, Phase};
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     /// Exercises the early-reject guard for the registry / unknown-card
     /// checks. Depending on which tests have run in this process:
@@ -1898,7 +1901,7 @@ mod resume_encounter_draw_chain_tests {
     #[test]
     fn rejects_when_registry_not_installed_or_unknown_code() {
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Mythos)
             .with_turn_order([InvestigatorId(1)])
             .with_mythos_draw_remaining([InvestigatorId(1)])
@@ -1921,7 +1924,7 @@ mod resume_encounter_draw_chain_tests {
                 events: &mut events,
             };
             let outcome = resume_encounter_draw(&mut cx, &InputResponse::Confirm);
-            crate::engine::drive(&mut cx, outcome)
+            dispatch::drive(&mut cx, outcome)
         };
         match outcome {
             EngineOutcome::Rejected { reason } => {
@@ -1947,8 +1950,9 @@ mod resume_encounter_draw_chain_tests {
 #[cfg(test)]
 mod resume_encounter_draw_tests {
     use super::*;
+    use crate::engine::outcome::InputKind;
     use crate::state::{Continuation, InvestigatorId, Phase};
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     // The former `rejects_outside_mythos_phase` / `rejects_when_no_draw_pending`
     // / `rejects_when_out_of_order` tests are gone (#348 part 2c-iii-b): the
@@ -1965,7 +1969,7 @@ mod resume_encounter_draw_tests {
         // Validate-first: a non-`Confirm` response rejects and leaves the
         // `EncounterDraw` frame intact for retry.
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Mythos)
             .with_turn_order([InvestigatorId(1)])
             .with_mythos_draw_remaining([InvestigatorId(1)])
@@ -1999,7 +2003,7 @@ mod resume_encounter_draw_tests {
         // `Confirm`s (ADR 0011). A rewritten builder that drops the `.at(…)`
         // relocates the Draw button to the banner, and this is what catches it.
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Mythos)
             .with_turn_order([InvestigatorId(1)])
             .with_mythos_draw_remaining([InvestigatorId(1)])
@@ -2012,11 +2016,8 @@ mod resume_encounter_draw_tests {
         let EngineOutcome::AwaitingInput { request, .. } = outcome else {
             panic!("the encounter draw suspends for a Confirm");
         };
-        assert_eq!(request.kind, crate::engine::InputKind::Confirm);
+        assert_eq!(request.kind, InputKind::Confirm);
         assert!(request.options.is_empty(), "a Confirm carries no options");
-        assert_eq!(
-            request.target,
-            Some(crate::engine::OptionTarget::EncounterDeck)
-        );
+        assert_eq!(request.target, Some(OptionTarget::EncounterDeck));
     }
 }

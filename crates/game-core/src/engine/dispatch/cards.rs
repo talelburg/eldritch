@@ -2,15 +2,22 @@
 //! resource grants, and card play.
 
 use crate::action::InputResponse;
-use crate::card_data::CardType;
+use crate::card_data::{CardMetadata, CardType};
 use crate::card_registry;
-use crate::dsl::{Effect, Trigger};
+use crate::dsl::{Ability, Effect, Trigger};
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::{
+    actions, combat, elimination, emit, encounter, phases, reaction_windows, slots, threat_area,
+    PlayCheckResult, PlayDestination,
+};
+use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use crate::engine::Cx;
 use crate::event::Event;
-use crate::state::{AssetEntry, CardCode, CardInPlay, CardInstanceId, InvestigatorId, Zone};
-
-use super::super::evaluator::{push_effect, EvalContext};
-use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
-use super::Cx;
+use crate::state::{
+    ActionResume, AssetEntry, CardCode, CardInPlay, CardInstanceId, Continuation, InvestigatorId,
+    Zone,
+};
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
 /// each investigator draws 5 cards before mulligan.
@@ -26,7 +33,7 @@ pub(super) const INITIAL_HAND_SIZE: u8 = 5;
 pub(super) fn is_weakness_code(code: &CardCode) -> bool {
     card_registry::current()
         .and_then(|reg| (reg.metadata_for)(code))
-        .is_some_and(card_dsl::CardMetadata::is_weakness)
+        .is_some_and(CardMetadata::is_weakness)
 }
 
 /// Replace weaknesses currently in `investigator`'s hand per Rules Reference
@@ -166,7 +173,7 @@ pub(in crate::engine) fn resolve_drawn_weaknesses(cx: &mut Cx, investigator: Inv
             .filter(|(_, code)| {
                 (reg.metadata_for)(code)
                     .is_some_and(|m| m.is_weakness() && m.card_type() == CardType::Treachery)
-                    && super::encounter::treachery_is_persistent(
+                    && encounter::treachery_is_persistent(
                         &(reg.abilities_for)(code).unwrap_or_default(),
                     )
             })
@@ -201,7 +208,7 @@ pub(in crate::engine) fn resolve_drawn_weaknesses(cx: &mut Cx, investigator: Inv
             .map(|a| a.effect)
             .collect();
         if !effects.is_empty() {
-            push_effect(
+            evaluator::push_effect(
                 cx,
                 &Effect::Seq(effects),
                 EvalContext::for_controller(investigator),
@@ -481,7 +488,7 @@ pub(crate) fn grant_resources(cx: &mut Cx, investigator: InvestigatorId, amount:
 pub(super) fn pay_play_cost(cx: &mut Cx, investigator: InvestigatorId, code: &CardCode) {
     let cost = card_registry::current()
         .and_then(|reg| (reg.metadata_for)(code))
-        .and_then(crate::card_data::CardMetadata::play_cost)
+        .and_then(CardMetadata::play_cost)
         .and_then(|c| u8::try_from(c).ok())
         .unwrap_or(0);
     if cost == 0 {
@@ -590,7 +597,7 @@ pub(in crate::engine) fn draw_with_deckout(cx: &mut Cx, investigator: Investigat
         count: drawn,
     });
     if deck_ran_out {
-        super::elimination::take_horror(cx, investigator, 1);
+        elimination::take_horror(cx, investigator, 1);
     }
     // RR Weakness keyword: a weakness drawn during play reveals + resolves its
     // Revelation (#509). Setup's opening-hand draw uses `draw_cards` directly,
@@ -627,7 +634,7 @@ pub(in crate::engine) fn draw_with_deckout(cx: &mut Cx, investigator: Investigat
 /// the attack-of-opportunity loop runs as an
 /// [`ActionResolution`](crate::state::Continuation::ActionResolution) frame (#293).
 pub(super) fn draw(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    if let Err(rejection) = super::actions::validate_basic_action(cx.state, "Draw", investigator) {
+    if let Err(rejection) = actions::validate_basic_action(cx.state, "Draw", investigator) {
         return rejection;
     }
 
@@ -636,14 +643,12 @@ pub(super) fn draw(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     // drive the AoO. Draw is NOT on the AoO-exempt list (only Fight,
     // Evade, Parley, Resign are), so each ready engaged enemy attacks
     // before the card is drawn (RR p.5).
-    super::actions::spend_one_action(cx, investigator);
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::ActionResolution {
-            investigator,
-            resume: crate::state::ActionResume::Draw,
-        });
-    super::combat::drive_aoo(cx, investigator)
+    actions::spend_one_action(cx, investigator);
+    cx.state.continuations.push(Continuation::ActionResolution {
+        investigator,
+        resume: ActionResume::Draw,
+    });
+    combat::drive_aoo(cx, investigator)
 }
 
 /// The draw half of a Draw action, run after its `AoO` loop (#293).
@@ -667,7 +672,7 @@ pub(super) fn draw_primary_effect(cx: &mut Cx, investigator: InvestigatorId) -> 
 pub(super) fn prompt_mulligan(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> EngineOutcome {
     cx.state
         .continuations
-        .push(crate::state::Continuation::Mulligan { remaining });
+        .push(Continuation::Mulligan { remaining });
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_multiple(
             "Mulligan: choose cards to redraw (an empty selection keeps your hand).",
@@ -780,8 +785,7 @@ fn perform_mulligan_redraw(cx: &mut Cx, investigator: InvestigatorId, sorted: &[
 /// Otherwise re-prompt the next investigator. Rejections leave state and events
 /// untouched.
 pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let Some(crate::state::Continuation::Mulligan { remaining }) = cx.state.continuations.last()
-    else {
+    let Some(Continuation::Mulligan { remaining }) = cx.state.continuations.last() else {
         unreachable!("resume_mulligan: no Mulligan frame on top of the stack")
     };
     let remaining = remaining.clone();
@@ -881,7 +885,7 @@ pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOu
         // still return `Done`, so this is one of the few paths where `Done`
         // accompanies a non-empty continuation stack — hosts present
         // `ResolveInput::Skip` to close it, as for any phase-transition window.
-        super::phases::investigation_phase(cx)
+        phases::investigation_phase(cx)
     } else {
         prompt_mulligan(cx, remaining)
     }
@@ -895,15 +899,7 @@ pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOu
 /// separate from the state-side prefix.
 pub(super) fn resolve_play_target(
     code: &CardCode,
-) -> Result<
-    (
-        super::PlayDestination,
-        Vec<crate::dsl::Ability>,
-        bool,
-        CardType,
-    ),
-    EngineOutcome,
-> {
+) -> Result<(PlayDestination, Vec<Ability>, bool, CardType), EngineOutcome> {
     let Some(registry) = card_registry::current() else {
         return Err(EngineOutcome::Rejected {
             reason: "PlayCard: no card registry installed; engine cannot resolve card \
@@ -920,8 +916,8 @@ pub(super) fn resolve_play_target(
     let is_fast = metadata.is_fast();
     let card_type = metadata.card_type();
     let destination = match card_type {
-        CardType::Asset => super::PlayDestination::InPlay,
-        CardType::Event => super::PlayDestination::Discard,
+        CardType::Asset => PlayDestination::InPlay,
+        CardType::Event => PlayDestination::Discard,
         other => {
             return Err(EngineOutcome::Rejected {
                 reason: format!(
@@ -1004,11 +1000,11 @@ pub(super) fn play_card(
     investigator: InvestigatorId,
     hand_index: u8,
 ) -> EngineOutcome {
-    let super::PlayCheckResult {
+    let PlayCheckResult {
         abilities: _,
         is_fast,
         card_type: _,
-    } = match super::reaction_windows::check_play_card(cx.state, investigator, hand_index) {
+    } = match reaction_windows::check_play_card(cx.state, investigator, hand_index) {
         Ok(r) => r,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
@@ -1029,7 +1025,7 @@ pub(super) fn play_card(
     // ("spend an action and pay the cost, then … attack of opportunity"). Fast
     // plays are not actions (#378).
     if !is_fast {
-        super::actions::spend_one_action(cx, investigator);
+        actions::spend_one_action(cx, investigator);
     }
     // Pay the resource cost (RR p.22): both Fast and non-Fast plays pay it —
     // Fast only skips the *action* cost. Affordability was validated in
@@ -1049,13 +1045,11 @@ pub(super) fn play_card(
     // soak windows); `complete_play` runs on resume. Fast plays are not actions
     // and resolve immediately. (#378.)
     if !is_fast {
-        cx.state
-            .continuations
-            .push(crate::state::Continuation::ActionResolution {
-                investigator,
-                resume: crate::state::ActionResume::PlayCard { card: Some(card) },
-            });
-        return super::combat::drive_aoo(cx, investigator);
+        cx.state.continuations.push(Continuation::ActionResolution {
+            investigator,
+            resume: ActionResume::PlayCard { card: Some(card) },
+        });
+        return combat::drive_aoo(cx, investigator);
     }
     complete_play(cx, investigator, card)
 }
@@ -1091,9 +1085,9 @@ pub(in crate::engine) fn enter_asset_into_play(
     // was already in play and stays there, so announcing it would fire every
     // after-enters-play reaction a second time (#772).
     if entry == AssetEntry::PlayedFromHand {
-        let _ = super::emit::queue_event(
+        let _ = emit::queue_event(
             cx,
-            &super::emit::TimingEvent::EnteredPlay {
+            &TimingEvent::EnteredPlay {
                 instance,
                 controller: investigator,
             },
@@ -1119,8 +1113,7 @@ pub(in crate::engine) fn enter_asset_into_play(
 /// re-homed it (Barricade 01038). Either way there is nothing left to place and
 /// the pop is the whole disposal.
 pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
-    let Some(crate::state::Continuation::PlayFromHand { investigator, card }) =
-        cx.state.continuations.pop()
+    let Some(Continuation::PlayFromHand { investigator, card }) = cx.state.continuations.pop()
     else {
         unreachable!("dispose_play_from_hand: top frame is not PlayFromHand");
     };
@@ -1136,20 +1129,15 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
     };
 
     match destination {
-        super::PlayDestination::Discard => {
+        PlayDestination::Discard => {
             discard_played_card(cx, investigator, card);
             EngineOutcome::Done
         }
-        super::PlayDestination::InPlay => {
+        PlayDestination::InPlay => {
             // Play from hand mints the instance here, at the door: the card is
             // its owner's, so the mint carries that ownership in.
-            let instance = super::threat_area::new_in_play_instance(cx, card, Some(investigator));
-            super::slots::enter_asset_making_room(
-                cx,
-                investigator,
-                instance,
-                AssetEntry::PlayedFromHand,
-            )
+            let instance = threat_area::new_in_play_instance(cx, card, Some(investigator));
+            slots::enter_asset_making_room(cx, investigator, instance, AssetEntry::PlayedFromHand)
         }
     }
 }
@@ -1194,12 +1182,10 @@ fn complete_play(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) -> E
     // below a PlayFromHand frame that holds the card and disposes of it (event →
     // discard; asset → enter play) once the effect pops. (Slice D #423 — replaces
     // the synchronous apply_effect + asset tail + manual window open.)
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::PlayFromHand {
-            investigator,
-            card: Some(card),
-        });
+    cx.state.continuations.push(Continuation::PlayFromHand {
+        investigator,
+        card: Some(card),
+    });
     let on_play: Vec<Effect> = abilities
         .into_iter()
         .filter(|a| a.trigger == Trigger::OnPlay)
@@ -1207,7 +1193,7 @@ fn complete_play(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) -> E
         .collect();
     if !on_play.is_empty() {
         let eval_ctx = EvalContext::for_controller(investigator);
-        push_effect(cx, &Effect::Seq(on_play), eval_ctx);
+        evaluator::push_effect(cx, &Effect::Seq(on_play), eval_ctx);
     }
     EngineOutcome::Done
 }
@@ -1290,13 +1276,13 @@ fn discard_played_card(cx: &mut Cx, investigator: InvestigatorId, card: CardCode
 mod grant_resources_tests {
     use super::*;
     use crate::state::InvestigatorId;
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn grant_resources_adds_to_wallet_and_emits() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
@@ -1321,7 +1307,7 @@ mod grant_resources_tests {
     fn grant_resources_zero_is_silent_noop() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
@@ -1344,13 +1330,13 @@ mod grant_resources_tests {
 mod draw_with_deckout_tests {
     use super::*;
     use crate::state::{CardCode, InvestigatorId};
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn draw_one_with_deckout_empty_deck_reshuffles_and_takes_horror() {
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.deck.clear();
         inv.discard = vec![CardCode::new("01000"), CardCode::new("01001")];
         // After #448 cp2a: horror accumulates on investigator_card, accessor reads it.
@@ -1387,9 +1373,9 @@ mod draw_with_deckout_tests {
     /// entire draw, not once per emptied deck (#636).
     #[test]
     fn draw_with_deckout_completes_the_count_across_a_midway_reshuffle() {
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.deck = vec![CardCode::new("01000")];
         inv.discard = vec![
             CardCode::new("01001"),
@@ -1426,9 +1412,9 @@ mod draw_with_deckout_tests {
     /// reshuffle and no horror.
     #[test]
     fn draw_with_deckout_on_a_stocked_deck_neither_reshuffles_nor_takes_horror() {
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.deck = vec![
             CardCode::new("01000"),
             CardCode::new("01001"),

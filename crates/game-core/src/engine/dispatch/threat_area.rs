@@ -5,10 +5,10 @@
 //! (#235).
 
 use crate::card_data::CardKind;
+use crate::card_registry;
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Zone};
-
-use super::Cx;
 
 /// Mint a fresh in-play instance of `code`: allocate its id, build the
 /// `CardInPlay`, and seed the named-uses pool ("ammo") from the asset's
@@ -40,7 +40,7 @@ pub(super) fn new_in_play_instance(
     owner: Option<InvestigatorId>,
 ) -> CardInPlay {
     let instance_id = cx.state.card_instance_ids.mint();
-    let uses = crate::card_registry::current()
+    let uses = card_registry::current()
         .and_then(|reg| (reg.metadata_for)(&code))
         .and_then(|m| match &m.kind {
             CardKind::Asset { uses, .. } => *uses,
@@ -209,12 +209,12 @@ pub(super) fn discard_from_threat_area(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{test_investigator, test_location, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn attach_mints_id_pushes_to_location_and_emits_event() {
         let mut state = GameStateBuilder::new()
-            .with_location(test_location(7, "Study"))
+            .with_location(test_support::test_location(7, "Study"))
             .build();
         let mut events = Vec::new();
         let id = {
@@ -238,7 +238,7 @@ mod tests {
     #[test]
     fn place_mints_id_pushes_instance_and_emits_event() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
         let id = {
@@ -261,7 +261,7 @@ mod tests {
     #[test]
     fn discard_removes_instance_pushes_to_encounter_discard_and_emits() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
         let id = {
@@ -294,7 +294,7 @@ mod tests {
     #[test]
     fn discard_of_unknown_instance_is_a_no_op() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
         let removed = {

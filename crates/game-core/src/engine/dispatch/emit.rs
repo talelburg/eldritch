@@ -29,13 +29,16 @@
 //! logged [`Event`](crate::event::Event) — call sites still emit their own
 //! (e.g. `EnemyDefeated`, `InvestigatorMoved`).
 
-use crate::state::{CardCode, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase};
-
+use crate::dsl::{SkillTestKind, TestOutcome};
+use crate::engine::dispatch::forced_triggers::ForcedTriggerPoint;
+use crate::engine::dispatch::{actions, combat};
+use crate::engine::outcome::EngineOutcome;
+use crate::engine::{evaluator, Cx};
+use crate::state::{
+    Assignment, CardCode, CardInstanceId, Continuation, DamageSource, EmitStep, EnemyId,
+    InvestigatorId, LocationId, Phase,
+};
 use serde::{Deserialize, Serialize};
-
-use super::super::outcome::EngineOutcome;
-use super::forced_triggers::ForcedTriggerPoint;
-use super::Cx;
 
 /// A game/framework timing point at which forced and/or reaction triggers
 /// may fire, with the binding context the fired effects need.
@@ -119,12 +122,12 @@ pub enum TimingEvent {
     DamageAssigned {
         /// What is dealing the harm — the scoping Guard Dog's *"an enemy
         /// attack"* narrows on, and what binds the attacker its retaliate names.
-        source: crate::state::DamageSource,
+        source: DamageSource,
         /// The investigator the harm is being dealt to.
         investigator: InvestigatorId,
         /// The assignment as this step left it: a snapshot of the live value the
         /// [`DealDamage`](crate::state::Continuation::DealDamage) frame owns.
-        assignment: crate::state::Assignment,
+        assignment: Assignment,
     },
     /// Assigned damage and/or horror is **placed** — Rules Reference step 2:
     /// *"Any assigned damage/horror that has not been prevented is now placed on
@@ -146,13 +149,13 @@ pub enum TimingEvent {
     /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
     DamagePlaced {
         /// What dealt the harm.
-        source: crate::state::DamageSource,
+        source: DamageSource,
         /// The investigator the harm is being dealt to.
         investigator: InvestigatorId,
         /// The assignment being placed — re-read from the frame after
         /// [`DamageAssigned`](Self::DamageAssigned)'s cells, so it is what
         /// actually lands.
-        assignment: crate::state::Assignment,
+        assignment: Assignment,
     },
     /// A skill test resolved (RR ST.6). **Dual:** forced + reaction. The
     /// general timing point of which "after you successfully investigate"
@@ -164,8 +167,8 @@ pub enum TimingEvent {
     /// fire at one timing point, RR p.2 forced-before-reaction.
     SkillTestResolved {
         investigator: InvestigatorId,
-        kind: crate::dsl::SkillTestKind,
-        outcome: crate::dsl::TestOutcome,
+        kind: SkillTestKind,
+        outcome: TestOutcome,
     },
     /// An enemy attacks an investigator (RR p.25 step 3.3) — one triggering
     /// condition in all three cells, **coordinator-owned** (#704).
@@ -527,7 +530,7 @@ fn resolve_clue_discovery(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     else {
         unreachable!("resolve_clue_discovery: not a DiscoverClues event: {event:?}");
     };
-    crate::engine::evaluator::perform_discovery(cx, *location, *count, *investigator);
+    evaluator::perform_discovery(cx, *location, *count, *investigator);
     EngineOutcome::Done
 }
 
@@ -558,7 +561,7 @@ fn resolve_enemy_attack(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     else {
         unreachable!("resolve_enemy_attack: not an EnemyAttacks event: {event:?}");
     };
-    super::combat::deal_enemy_attack(cx, *investigator, *enemy)
+    combat::deal_enemy_attack(cx, *investigator, *enemy)
 }
 
 /// The resolve step of [`TimingEvent::DamagePlaced`]: the tokens land (#727).
@@ -586,7 +589,7 @@ fn resolve_damage_placed(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     else {
         unreachable!("resolve_damage_placed: not a DamagePlaced event: {event:?}");
     };
-    super::combat::place_assignment(cx, *investigator, assignment);
+    combat::place_assignment(cx, *investigator, assignment);
     EngineOutcome::Done
 }
 
@@ -613,7 +616,7 @@ fn resolve_left_location(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     else {
         unreachable!("resolve_left_location: not a LeftLocation event: {event:?}");
     };
-    super::actions::resolve_departure(cx, *investigator, *location, *destination);
+    actions::resolve_departure(cx, *investigator, *location, *destination);
     EngineOutcome::Done
 }
 
@@ -656,11 +659,9 @@ fn resolve_left_location(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
               frame, not after this call (ADR 0003). Return the outcome, or bind \
               it to `_` at a site whose caller owns the suspension channel"]
 pub(crate) fn queue_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::EmitEvent {
-            event: event.clone(),
-            step: crate::state::EmitStep::When,
-        });
+    cx.state.continuations.push(Continuation::EmitEvent {
+        event: event.clone(),
+        step: EmitStep::When,
+    });
     EngineOutcome::Done
 }

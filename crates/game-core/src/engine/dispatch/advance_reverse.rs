@@ -2,26 +2,19 @@
 //! and its driver. See the `Continuation::AdvanceReverse` doc.
 
 use crate::action::InputResponse;
-use crate::event::Event;
-use crate::state::{AdvanceDeck, AdvanceStep, AdvanceTrigger, Continuation};
-
-use super::super::outcome::{
+use crate::engine::dispatch::emit;
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
-use super::Cx;
+use crate::engine::Cx;
+use crate::event::Event;
+use crate::state::{AdvanceDeck, AdvanceStep, AdvanceTrigger, CardCode, Continuation};
 
 /// Read the top `AdvanceReverse` frame's fields. The frame is the top
 /// continuation whenever the driver / resume runs (the `drive` loop /
 /// `resolve_input` route here only with it on top).
-fn top(
-    cx: &Cx,
-) -> (
-    AdvanceDeck,
-    usize,
-    crate::state::CardCode,
-    AdvanceStep,
-    AdvanceTrigger,
-) {
+fn top(cx: &Cx) -> (AdvanceDeck, usize, CardCode, AdvanceStep, AdvanceTrigger) {
     match cx.state.continuations.last() {
         Some(Continuation::AdvanceReverse {
             deck,
@@ -53,10 +46,10 @@ fn advanced_event(deck: AdvanceDeck, from: usize) -> Event {
     }
 }
 
-fn reverse_timing(deck: AdvanceDeck, code: crate::state::CardCode) -> super::emit::TimingEvent {
+fn reverse_timing(deck: AdvanceDeck, code: CardCode) -> TimingEvent {
     match deck {
-        AdvanceDeck::Act => super::emit::TimingEvent::ActAdvanced { code },
-        AdvanceDeck::Agenda => super::emit::TimingEvent::AgendaAdvanced { code },
+        AdvanceDeck::Act => TimingEvent::ActAdvanced { code },
+        AdvanceDeck::Agenda => TimingEvent::AgendaAdvanced { code },
     }
 }
 
@@ -105,7 +98,7 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
             // Pre-advance BEFORE emitting so a suspending reverse resumes at
             // Finalize once its frames pop.
             set_step(cx, AdvanceStep::Finalize);
-            super::emit::queue_event(cx, &reverse_timing(deck, leaving_code))
+            emit::queue_event(cx, &reverse_timing(deck, leaving_code))
         }
         AdvanceStep::Finalize => {
             finalize(cx, deck, from);
@@ -185,12 +178,16 @@ pub(super) fn resume(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::dispatch;
+    use crate::scenario::{ResolutionId, ScenarioEnding};
     use crate::state::{
-        Act, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, CardCode, Continuation,
+        Act, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, CardCode, Continuation, GameState,
+        InvestigatorId,
     };
-    use crate::test_support::GameStateBuilder;
+    use crate::test_support::{self, GameStateBuilder};
+    use crate::InputKind;
 
-    fn state_advancing_agenda(interactive: bool) -> crate::state::GameState {
+    fn state_advancing_agenda(interactive: bool) -> GameState {
         let mut state = GameStateBuilder::new().build();
         state.agenda_deck = vec![
             Agenda {
@@ -218,7 +215,7 @@ mod tests {
 
     /// An act mid-advance with the given `trigger`, `interactive_acknowledge` per
     /// the arg. Mirrors `state_advancing_agenda` for the act deck.
-    fn state_advancing_act(interactive: bool, trigger: AdvanceTrigger) -> crate::state::GameState {
+    fn state_advancing_act(interactive: bool, trigger: AdvanceTrigger) -> GameState {
         let mut state = GameStateBuilder::new().build();
         state.act_deck = vec![
             Act {
@@ -246,10 +243,9 @@ mod tests {
     /// the agenda cursor bumps at Finalize, the frame popping itself.
     #[test]
     fn advance_reverse_drives_through_when_not_interactive() {
-        use crate::event::Event;
         let mut state = state_advancing_agenda(false);
         let mut events = Vec::new();
-        let out = crate::engine::dispatch::drive(
+        let out = dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -275,10 +271,9 @@ mod tests {
     /// reverse — the cursor has NOT bumped yet (#558).
     #[test]
     fn forced_interactive_advance_prompts_on_card_pick_anchored_to_the_deck() {
-        use crate::InputKind;
         let mut state = state_advancing_agenda(true);
         let mut events = Vec::new();
-        let out = crate::engine::dispatch::drive(
+        let out = dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -305,7 +300,6 @@ mod tests {
     /// advance): the flip pick anchors to the act card, not the agenda (#558).
     #[test]
     fn forced_interactive_act_advance_anchors_to_the_act() {
-        use crate::InputKind;
         let mut state = state_advancing_act(true, AdvanceTrigger::Forced);
         let mut events = Vec::new();
         let out = drive(&mut Cx {
@@ -333,23 +327,20 @@ mod tests {
     /// `scenarios/tests/the_gathering_resolutions.rs`.
     #[test]
     fn a_terminal_act_pauses_on_the_flip_acknowledge_before_its_reverse_ends_the_scenario() {
-        use crate::scenario::{ResolutionId, ScenarioEnding};
-        use crate::state::{Act, InvestigatorId};
-        use crate::test_support::{terminal_code, test_investigator};
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let mut state = state_advancing_act(true, AdvanceTrigger::Forced);
         // One act, and it is the one advancing — so it is the terminal one.
         state.act_deck = vec![Act {
-            code: terminal_code(1),
+            code: test_support::terminal_code(1),
             clue_threshold: 0,
         }];
         state
             .investigators
-            .insert(InvestigatorId(1), test_investigator(1));
+            .insert(InvestigatorId(1), test_support::test_investigator(1));
         state.turn_order = vec![InvestigatorId(1)];
         match state.continuations.last_mut() {
             Some(Continuation::AdvanceReverse { leaving_code, .. }) => {
-                *leaving_code = terminal_code(1);
+                *leaving_code = test_support::terminal_code(1);
             }
             other => unreachable!("fixture puts the frame on top, got {other:?}"),
         }
@@ -386,7 +377,7 @@ mod tests {
         // asserted end-to-end in `scenarios/tests/the_gathering_resolutions.rs`;
         // what is under test here is that the ending lands *after* the flip.
         state.interactive_acknowledge = false;
-        crate::engine::dispatch::drive(
+        dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -412,7 +403,7 @@ mod tests {
         let mut state = state_advancing_agenda(false);
         state.agenda_deck.truncate(1);
         let mut events = Vec::new();
-        let _ = crate::engine::dispatch::drive(
+        let _ = dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,

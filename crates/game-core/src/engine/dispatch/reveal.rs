@@ -12,10 +12,9 @@
 //! through here would place them again.
 
 use crate::card_data::ClueValue;
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::LocationId;
-
-use super::Cx;
 
 /// Reveal `location_id` if it is unrevealed, placing its printed clues.
 /// No-op if the location is absent or already revealed. Public so
@@ -53,12 +52,12 @@ pub fn reveal_location(cx: &mut Cx, location_id: LocationId) {
 
 #[cfg(test)]
 mod tests {
-    use super::reveal_location;
     use crate::card_data::ClueValue;
+    use crate::engine::dispatch::reveal;
     use crate::engine::Cx;
     use crate::event::Event;
     use crate::state::{CardCode, Location, LocationId};
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     fn unrevealed(id: u32, code: &str, printed: ClueValue) -> Location {
         let mut loc = Location::new(LocationId(id), CardCode(code.into()), "L", 1, 0);
@@ -71,12 +70,12 @@ mod tests {
     #[test]
     fn reveal_places_per_investigator_clues_times_count() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .with_location(unrevealed(5, "x", ClueValue::PerInvestigator(2)))
             .build();
         let mut events = Vec::new();
-        reveal_location(
+        reveal::reveal_location(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -92,12 +91,12 @@ mod tests {
     #[test]
     fn reveal_places_fixed_clues_regardless_of_count() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .with_location(unrevealed(5, "x", ClueValue::Fixed(3)))
             .build();
         let mut events = Vec::new();
-        reveal_location(
+        reveal::reveal_location(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -117,12 +116,12 @@ mod tests {
         let mut loc = unrevealed(5, "x", ClueValue::PerInvestigator(1));
         loc.clues = 2;
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .with_location(loc)
             .build();
         let mut events = Vec::new();
-        reveal_location(
+        reveal::reveal_location(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -145,7 +144,7 @@ mod tests {
     #[test]
     fn reveal_is_idempotent_on_already_revealed() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(Location::new(
                 LocationId(5),
                 CardCode("x".into()),
@@ -155,7 +154,7 @@ mod tests {
             ))
             .build();
         let mut events = Vec::new();
-        reveal_location(
+        reveal::reveal_location(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,

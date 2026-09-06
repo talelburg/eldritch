@@ -1,19 +1,25 @@
 //! Phase-driver functions: start/end scenario, per-phase entrypoints,
 //! and the round-cycle stepping logic.
 
-use crate::action::InputResponse;
+use crate::action::{InputResponse, RosterEntry};
+use crate::card_data::CardKind;
+use crate::card_registry;
+#[cfg(test)] // only `drive_phase` / `push_anchor_and_drive`, the cfg(test) helpers below
+use crate::engine::dispatch;
+use std::collections::BTreeSet;
+
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::{
+    act_agenda, cards, combat, cursor, emit, encounter, hunters, reaction_windows, reveal,
+};
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    CardCode, EnemyId, FastWindowKind, GameState, HandSizeDiscard, InvestigatorId, Phase,
-    PhaseStep, Zone,
+    CardCode, CardInPlay, Continuation, EnemyId, EnemyResume, FastWindowKind, GameState,
+    HandSizeDiscard, InvestigationResume, Investigator, InvestigatorId, MythosResume, Phase,
+    PhaseStep, Skills, Status, UpkeepResume, Zone,
 };
-
-use crate::action::RosterEntry;
-use crate::card_data::CardKind;
-use crate::state::{CardInPlay, Investigator, Skills, Status};
-
-use super::Cx;
 
 /// Action points granted to an investigator at the start of their
 /// turn during the Investigation phase. Per the Arkham Horror LCG
@@ -39,7 +45,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     // (#448 cp4) — the accessors read from the registry directly via
     // `investigator_card.code`. We still validate that the code resolves to a
     // `CardKind::Investigator` here so seating rejects non-investigators.
-    let registry = crate::card_registry::current();
+    let registry = card_registry::current();
     let mut resolved: Vec<(Skills, String, Vec<CardCode>, CardCode)> =
         Vec::with_capacity(roster.len());
     for entry in roster {
@@ -103,7 +109,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
                 cards_in_play: Vec::new(),
                 threat_area: Vec::new(),
                 removed_from_game: Vec::new(),
-                action_surcharge_spent_this_round: std::collections::BTreeSet::new(),
+                action_surcharge_spent_this_round: BTreeSet::new(),
                 investigator_card,
             },
         );
@@ -114,7 +120,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     // per-investigator clue counts are correct. No-op when start is None
     // (pre-seated test path) or already revealed.
     if let Some(loc) = start {
-        super::reveal::reveal_location(cx, loc);
+        reveal::reveal_location(cx, loc);
     }
 
     // Round 1: scenario starts directly in Investigation phase —
@@ -131,9 +137,9 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     // weaknesses per Rules Reference setup step 8.
     let inv_ids: Vec<InvestigatorId> = cx.state.investigators.keys().copied().collect();
     for inv_id in inv_ids {
-        super::cards::shuffle_player_deck(cx, inv_id);
-        super::cards::draw_cards(cx, inv_id, super::cards::INITIAL_HAND_SIZE);
-        super::cards::replace_opening_hand_weaknesses(cx, inv_id);
+        cards::shuffle_player_deck(cx, inv_id);
+        cards::draw_cards(cx, inv_id, cards::INITIAL_HAND_SIZE);
+        cards::replace_opening_hand_weaknesses(cx, inv_id);
     }
 
     // Shuffle the shared encounter deck with the same scenario-start RNG
@@ -141,7 +147,7 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     // `setup()` seeds it in deterministic construction order; this is the
     // single randomizing step. A <2-card deck (the synthetic test fixture)
     // shuffles to a no-op (no event).
-    super::encounter::shuffle_encounter_deck(cx);
+    encounter::shuffle_encounter_deck(cx);
 
     // Round-1 action seed: round 1 skips Mythos, so there's no Upkeep 4.2
     // to grant the first round's actions. Every Active investigator → ACTIONS_PER_TURN.
@@ -154,11 +160,11 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     // the `Mulligan` frame is on the stack, every non-`ResolveInput` action is
     // rejected. An empty/all-eliminated `turn_order` skips the loop entirely:
     // setup ends immediately and we begin Investigation here.
-    let remaining = super::cursor::active_investigators_in_turn_order(cx.state);
+    let remaining = cursor::active_investigators_in_turn_order(cx.state);
     if remaining.is_empty() {
         return investigation_phase(cx);
     }
-    super::cards::prompt_mulligan(cx, remaining)
+    cards::prompt_mulligan(cx, remaining)
 }
 
 pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
@@ -222,13 +228,13 @@ pub(super) fn end_turn(cx: &mut Cx) -> EngineOutcome {
     // empty, completes immediately, or suspends — there is no inline-resume branch.
     // A `Rejected` from `queue_event` rolls back the armed flag with the rest of
     // the apply (transactional snapshot).
-    let ending = super::cursor::turn_frame_ending_mut(cx.state, active_id).unwrap_or_else(|| {
+    let ending = cursor::turn_frame_ending_mut(cx.state, active_id).unwrap_or_else(|| {
         unreachable!("end_turn: no InvestigatorTurn({active_id:?}) on the stack")
     });
     *ending = true;
-    super::emit::queue_event(
+    emit::queue_event(
         cx,
-        &super::emit::TimingEvent::EndOfTurn {
+        &TimingEvent::EndOfTurn {
             investigator: active_id,
         },
     )
@@ -250,7 +256,7 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
     debug_assert!(
         matches!(
             cx.state.continuations.last(),
-            Some(crate::state::Continuation::InvestigatorTurn { investigator, .. })
+            Some(Continuation::InvestigatorTurn { investigator, .. })
                 if *investigator == active_id
         ),
         "resume_end_turn: expected InvestigatorTurn({active_id:?}) on top, got {:?}",
@@ -262,7 +268,7 @@ pub(super) fn resume_end_turn(cx: &mut Cx, active_id: InvestigatorId) -> EngineO
     // proceed to 2.3. next_active_investigator_after skips eliminated
     // investigators (Rules Reference p.10) — the same shared helper the
     // Enemy phase uses.
-    if let Some(next_id) = super::cursor::next_active_investigator_after(cx.state, active_id) {
+    if let Some(next_id) = cursor::next_active_investigator_after(cx.state, active_id) {
         begin_investigator_turn(cx, next_id);
         EngineOutcome::Done
     } else {
@@ -299,12 +305,12 @@ pub(super) fn investigation_phase(cx: &mut Cx) -> EngineOutcome {
     // milestone.
     cx.state
         .continuations
-        .push(crate::state::Continuation::InvestigationPhase {
-            resume: crate::state::InvestigationResume::AfterPhaseStartForced,
+        .push(Continuation::InvestigationPhase {
+            resume: InvestigationResume::AfterPhaseStartForced,
         });
-    super::emit::queue_event(
+    emit::queue_event(
         cx,
-        &super::emit::TimingEvent::PhaseStarted {
+        &TimingEvent::PhaseStarted {
             phase: Phase::Investigation,
         },
     )
@@ -322,8 +328,8 @@ pub(super) fn investigation_phase(cx: &mut Cx) -> EngineOutcome {
 /// single-investigator entry still lands the lead active within the same
 /// `apply()` call.
 fn investigation_after_phase_start(cx: &mut Cx) -> EngineOutcome {
-    set_investigation_resume(cx, crate::state::InvestigationResume::Begins);
-    let outcome = super::reaction_windows::open_fast_window(
+    set_investigation_resume(cx, InvestigationResume::Begins);
+    let outcome = reaction_windows::open_fast_window(
         cx,
         FastWindowKind::Phase(PhaseStep::InvestigationBegins),
     );
@@ -339,15 +345,15 @@ fn investigation_after_phase_start(cx: &mut Cx) -> EngineOutcome {
 /// anchor's resume cursor. Reverse-searches the stack, mirroring
 /// [`set_enemy_anchor`] / [`set_upkeep_resume`], so it is robust whether the
 /// anchor is on top or buried beneath a frame the phase's own work pushed.
-fn set_investigation_resume(cx: &mut Cx, resume: crate::state::InvestigationResume) {
+fn set_investigation_resume(cx: &mut Cx, resume: InvestigationResume) {
     if let Some(c) = cx
         .state
         .continuations
         .iter_mut()
         .rev()
-        .find(|c| matches!(c, crate::state::Continuation::InvestigationPhase { .. }))
+        .find(|c| matches!(c, Continuation::InvestigationPhase { .. }))
     {
-        *c = crate::state::Continuation::InvestigationPhase { resume };
+        *c = Continuation::InvestigationPhase { resume };
     } else {
         unreachable!("set_investigation_resume: no InvestigationPhase anchor on the stack");
     }
@@ -368,8 +374,8 @@ pub(super) fn begin_investigator_turn(cx: &mut Cx, who: InvestigatorId) {
     // Advance the Investigation anchor to `TurnBegins` so the closing
     // InvestigatorTurnBegins window routes to the right on_child_pop arm
     // (slice 1a, #393).
-    set_investigation_resume(cx, crate::state::InvestigationResume::TurnBegins);
-    let outcome = super::reaction_windows::open_fast_window(
+    set_investigation_resume(cx, InvestigationResume::TurnBegins);
+    let outcome = reaction_windows::open_fast_window(
         cx,
         FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
     );
@@ -399,7 +405,7 @@ fn investigation_phase_end(cx: &mut Cx) -> EngineOutcome {
     debug_assert!(
         matches!(
             cx.state.continuations.last(),
-            Some(crate::state::Continuation::InvestigationPhase { .. })
+            Some(Continuation::InvestigationPhase { .. })
         ),
         "investigation_phase_end: expected InvestigationPhase anchor on top, got {:?}",
         cx.state.continuations.last(),
@@ -410,10 +416,10 @@ fn investigation_phase_end(cx: &mut Cx) -> EngineOutcome {
     // Arm the resume BEFORE emitting: the emit may push an ordering run that
     // suspends across an `apply()` boundary, and the anchor beneath it must
     // already know where to continue.
-    set_investigation_resume(cx, crate::state::InvestigationResume::AfterPhaseEndForced);
-    super::emit::queue_event(
+    set_investigation_resume(cx, InvestigationResume::AfterPhaseEndForced);
+    emit::queue_event(
         cx,
-        &super::emit::TimingEvent::PhaseEnded {
+        &TimingEvent::PhaseEnded {
             phase: Phase::Investigation,
         },
     )
@@ -430,19 +436,17 @@ fn investigation_phase_end_transition(cx: &mut Cx) -> EngineOutcome {
     debug_assert!(
         matches!(
             cx.state.continuations.last(),
-            Some(crate::state::Continuation::InvestigationPhase { .. })
+            Some(Continuation::InvestigationPhase { .. })
         ),
         "investigation_phase_end_transition: expected InvestigationPhase anchor on top, got {:?}",
         cx.state.continuations.last(),
     );
     cx.state.continuations.pop();
     cx.state.phase = Phase::Enemy;
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::EnemyPhase {
-            resume: crate::state::EnemyResume::Entry,
-            attacking: None,
-        });
+    cx.state.continuations.push(Continuation::EnemyPhase {
+        resume: EnemyResume::Entry,
+        attacking: None,
+    });
     EngineOutcome::Done
 }
 
@@ -456,7 +460,7 @@ fn investigation_phase_end_transition(cx: &mut Cx) -> EngineOutcome {
 /// does; without it, it would only ever see the parked anchor.
 #[cfg(test)]
 fn drive_phase(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
-    super::drive(cx, outcome)
+    dispatch::drive(cx, outcome)
 }
 
 /// Entered by [`step_phase`] on the Upkeep→Mythos transition. Lays
@@ -488,14 +492,12 @@ fn mythos_phase(cx: &mut Cx) -> EngineOutcome {
     // *before* the emit, so steps 1.2/1.3 cannot run above the step-1.1 forced
     // abilities the emit queues. `mythos_after_phase_start` re-parks it at
     // `Draws` and runs them on re-exposure.
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::MythosPhase {
-            resume: crate::state::MythosResume::AfterPhaseStartForced,
-        });
-    super::emit::queue_event(
+    cx.state.continuations.push(Continuation::MythosPhase {
+        resume: MythosResume::AfterPhaseStartForced,
+    });
+    emit::queue_event(
         cx,
-        &super::emit::TimingEvent::PhaseStarted {
+        &TimingEvent::PhaseStarted {
             phase: Phase::Mythos,
         },
     )
@@ -511,13 +513,13 @@ fn mythos_phase(cx: &mut Cx) -> EngineOutcome {
 /// pops, never before — RR order has the agenda's on-advance effect resolve
 /// before the encounter draws.
 fn mythos_after_phase_start(cx: &mut Cx) -> EngineOutcome {
-    set_mythos_resume(cx, crate::state::MythosResume::Draws);
+    set_mythos_resume(cx, MythosResume::Draws);
 
     // 1.2 Place 1 doom on the current agenda.
-    super::act_agenda::place_doom_on_agenda(cx, 1);
+    act_agenda::place_doom_on_agenda(cx, 1);
 
     // 1.3 Check doom threshold (may push an AdvanceReverse frame above the anchor).
-    super::act_agenda::check_doom_threshold(cx);
+    act_agenda::check_doom_threshold(cx);
 
     // 1.4 runs from the anchor's `Draws` resume, after any advance sub-process
     // resolves. Cede to the loop.
@@ -526,15 +528,15 @@ fn mythos_after_phase_start(cx: &mut Cx) -> EngineOutcome {
 
 /// Set the [`MythosPhase`](crate::state::Continuation::MythosPhase) anchor's
 /// resume cursor. Reverse-searches the stack, mirroring [`set_upkeep_resume`].
-fn set_mythos_resume(cx: &mut Cx, resume: crate::state::MythosResume) {
+fn set_mythos_resume(cx: &mut Cx, resume: MythosResume) {
     if let Some(c) = cx
         .state
         .continuations
         .iter_mut()
         .rev()
-        .find(|c| matches!(c, crate::state::Continuation::MythosPhase { .. }))
+        .find(|c| matches!(c, Continuation::MythosPhase { .. }))
     {
-        *c = crate::state::Continuation::MythosPhase { resume };
+        *c = Continuation::MythosPhase { resume };
     } else {
         unreachable!("set_mythos_resume: no MythosPhase anchor on the stack");
     }
@@ -549,9 +551,6 @@ fn set_mythos_resume(cx: &mut Cx, resume: crate::state::MythosResume) {
 /// same mechanism here.
 #[cfg(test)]
 fn step_phase(cx: &mut Cx) -> EngineOutcome {
-    use crate::state::{
-        Continuation, EnemyResume, InvestigationResume, MythosResume, UpkeepResume,
-    };
     let to = cx.state.phase.next();
     cx.state.phase = to;
     let anchor = match to {
@@ -570,7 +569,7 @@ fn step_phase(cx: &mut Cx) -> EngineOutcome {
         },
     };
     cx.state.continuations.push(anchor);
-    super::drive(cx, EngineOutcome::Done)
+    dispatch::drive(cx, EngineOutcome::Done)
 }
 
 /// Set `active_investigator` to `id`. Does NOT refresh actions —
@@ -609,7 +608,7 @@ fn rotate_to_active(cx: &mut Cx, id: InvestigatorId) {
 pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
     // No Active investigators (turn_order empty or all eliminated) → `None`
     // opens the final window directly, mirroring mythos_phase's no-drawer path.
-    open_attack_window(cx, super::cursor::first_active_investigator(cx.state))
+    open_attack_window(cx, cursor::first_active_investigator(cx.state))
 }
 
 /// Point the Enemy phase anchor at the next step-3.3 window and open it. The
@@ -628,16 +627,16 @@ pub(super) fn enemy_attack_kickoff(cx: &mut Cx) -> EngineOutcome {
 pub(super) fn open_attack_window(cx: &mut Cx, attacking: Option<InvestigatorId>) -> EngineOutcome {
     let (resume, step) = match attacking {
         Some(_) => (
-            crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            EnemyResume::BeforeInvestigatorAttacked,
             PhaseStep::BeforeInvestigatorAttacked,
         ),
         None => (
-            crate::state::EnemyResume::AfterAllAttacked,
+            EnemyResume::AfterAllAttacked,
             PhaseStep::AfterAllInvestigatorsAttacked,
         ),
     };
     set_enemy_anchor(cx, resume, attacking);
-    super::reaction_windows::open_fast_window(cx, FastWindowKind::Phase(step))
+    reaction_windows::open_fast_window(cx, FastWindowKind::Phase(step))
 }
 
 /// Set the Enemy phase anchor's `resume` and `attacking` cursor together (slice
@@ -647,7 +646,7 @@ pub(super) fn open_attack_window(cx: &mut Cx, attacking: Option<InvestigatorId>)
 /// isolation).
 pub(super) fn set_enemy_anchor(
     cx: &mut Cx,
-    resume: crate::state::EnemyResume,
+    resume: EnemyResume,
     attacking: Option<InvestigatorId>,
 ) {
     if let Some(c) = cx
@@ -655,9 +654,9 @@ pub(super) fn set_enemy_anchor(
         .continuations
         .iter_mut()
         .rev()
-        .find(|c| matches!(c, crate::state::Continuation::EnemyPhase { .. }))
+        .find(|c| matches!(c, Continuation::EnemyPhase { .. }))
     {
-        *c = crate::state::Continuation::EnemyPhase { resume, attacking };
+        *c = Continuation::EnemyPhase { resume, attacking };
     }
 }
 
@@ -677,15 +676,13 @@ fn enemy_phase(cx: &mut Cx) -> EngineOutcome {
     // *before* the emit, so hunter movement cannot run above the step-3.1 forced
     // abilities the emit queues. `enemy_after_phase_start` sets the running
     // cursor and runs 3.2/3.3 on re-exposure.
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::EnemyPhase {
-            resume: crate::state::EnemyResume::AfterPhaseStartForced,
-            attacking: None,
-        });
-    super::emit::queue_event(
+    cx.state.continuations.push(Continuation::EnemyPhase {
+        resume: EnemyResume::AfterPhaseStartForced,
+        attacking: None,
+    });
+    emit::queue_event(
         cx,
-        &super::emit::TimingEvent::PhaseStarted {
+        &TimingEvent::PhaseStarted {
             phase: Phase::Enemy,
         },
     )
@@ -705,15 +702,11 @@ fn enemy_after_phase_start(cx: &mut Cx) -> EngineOutcome {
     // so no investigator is selected yet. `enemy_attack_kickoff` /
     // `after_enemy_phase_attacks` set both fields again before opening each
     // attack window.
-    set_enemy_anchor(
-        cx,
-        crate::state::EnemyResume::BeforeInvestigatorAttacked,
-        None,
-    );
+    set_enemy_anchor(cx, EnemyResume::BeforeInvestigatorAttacked, None);
 
     // 3.2 Hunter enemies move. Park on a lead-investigator tie; the
     //     attack-loop kickoff then happens on resume.
-    match super::hunters::drive_hunter_moves(cx) {
+    match hunters::drive_hunter_moves(cx) {
         outcome @ EngineOutcome::AwaitingInput { .. } => return outcome,
         // drive_hunter_moves only ever returns Done or AwaitingInput, never Rejected.
         EngineOutcome::Rejected { reason } => {
@@ -747,7 +740,7 @@ pub(crate) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
     debug_assert!(
         matches!(
             cx.state.continuations.last(),
-            Some(crate::state::Continuation::EnemyPhase { .. })
+            Some(Continuation::EnemyPhase { .. })
         ),
         "enemy_phase_end: expected EnemyPhase anchor on top, got {:?}",
         cx.state.continuations.last(),
@@ -762,14 +755,14 @@ pub(crate) fn enemy_phase_end(cx: &mut Cx) -> EngineOutcome {
     // re-dispatches this anchor in every case.
     set_enemy_anchor(
         cx,
-        crate::state::EnemyResume::AfterPhaseEndForced,
+        EnemyResume::AfterPhaseEndForced,
         // The per-investigator attack cursor is spent by step 3.4; carrying it
         // into the transition would misreport the phase's state.
         None,
     );
-    super::emit::queue_event(
+    emit::queue_event(
         cx,
-        &super::emit::TimingEvent::PhaseEnded {
+        &TimingEvent::PhaseEnded {
             phase: Phase::Enemy,
         },
     )
@@ -785,18 +778,16 @@ fn enemy_phase_end_transition(cx: &mut Cx) -> EngineOutcome {
     debug_assert!(
         matches!(
             cx.state.continuations.last(),
-            Some(crate::state::Continuation::EnemyPhase { .. })
+            Some(Continuation::EnemyPhase { .. })
         ),
         "enemy_phase_end_transition: expected EnemyPhase anchor on top, got {:?}",
         cx.state.continuations.last(),
     );
     cx.state.continuations.pop();
     cx.state.phase = Phase::Upkeep;
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::UpkeepPhase {
-            resume: crate::state::UpkeepResume::Entry,
-        });
+    cx.state.continuations.push(Continuation::UpkeepPhase {
+        resume: UpkeepResume::Entry,
+    });
     EngineOutcome::Done
 }
 
@@ -818,7 +809,7 @@ pub(super) fn mythos_phase_end(cx: &mut Cx) -> EngineOutcome {
     debug_assert!(
         matches!(
             cx.state.continuations.last(),
-            Some(crate::state::Continuation::MythosPhase { .. })
+            Some(Continuation::MythosPhase { .. })
         ),
         "mythos_phase_end: expected MythosPhase anchor on top, got {:?}",
         cx.state.continuations.last(),
@@ -834,10 +825,10 @@ pub(super) fn mythos_phase_end(cx: &mut Cx) -> EngineOutcome {
     });
     // Arm the resume BEFORE emitting (the emit may suspend on an ordering run
     // that outlives this `apply()`), then emit in tail position.
-    set_mythos_resume(cx, crate::state::MythosResume::AfterPhaseEndForced);
-    super::emit::queue_event(
+    set_mythos_resume(cx, MythosResume::AfterPhaseEndForced);
+    emit::queue_event(
         cx,
-        &super::emit::TimingEvent::PhaseEnded {
+        &TimingEvent::PhaseEnded {
             phase: Phase::Mythos,
         },
     )
@@ -852,7 +843,7 @@ fn mythos_phase_end_transition(cx: &mut Cx) -> EngineOutcome {
     debug_assert!(
         matches!(
             cx.state.continuations.last(),
-            Some(crate::state::Continuation::MythosPhase { .. })
+            Some(Continuation::MythosPhase { .. })
         ),
         "mythos_phase_end_transition: expected MythosPhase anchor on top, got {:?}",
         cx.state.continuations.last(),
@@ -861,8 +852,8 @@ fn mythos_phase_end_transition(cx: &mut Cx) -> EngineOutcome {
     cx.state.phase = Phase::Investigation;
     cx.state
         .continuations
-        .push(crate::state::Continuation::InvestigationPhase {
-            resume: crate::state::InvestigationResume::Entry,
+        .push(Continuation::InvestigationPhase {
+            resume: InvestigationResume::Entry,
         });
     EngineOutcome::Done
 }
@@ -873,13 +864,7 @@ fn mythos_phase_end_transition(cx: &mut Cx) -> EngineOutcome {
 /// boundary resume + the phase's first child). Returns `None` when the top is
 /// not an `Entry` anchor, so [`anchor_on_child_pop`] falls through to its
 /// boundary dispatch.
-fn advance_phase_entry(
-    cx: &mut Cx,
-    anchor: Option<&crate::state::Continuation>,
-) -> Option<EngineOutcome> {
-    use crate::state::{
-        Continuation, EnemyResume, InvestigationResume, MythosResume, UpkeepResume,
-    };
+fn advance_phase_entry(cx: &mut Cx, anchor: Option<&Continuation>) -> Option<EngineOutcome> {
     match anchor {
         Some(Continuation::MythosPhase {
             resume: MythosResume::Entry,
@@ -916,14 +901,14 @@ fn advance_phase_entry(
 /// acknowledge) above the anchor has popped, so the agenda effect resolves before
 /// any encounter is drawn (RR order).
 fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
-    set_mythos_resume(cx, crate::state::MythosResume::AfterDraws);
+    set_mythos_resume(cx, MythosResume::AfterDraws);
     // Per Rules Reference p.10 (Elimination), eliminated investigators (Defeated,
     // Resigned) do not draw — seed Active only.
-    let remaining = super::cursor::active_investigators_in_turn_order(cx.state);
+    let remaining = cursor::active_investigators_in_turn_order(cx.state);
     if remaining.is_empty() {
         // No Active drawers: open + auto-skip the post-1.4 window inline (its
         // continuation runs mythos_phase_end → Investigation).
-        let outcome = super::reaction_windows::open_fast_window(
+        let outcome = reaction_windows::open_fast_window(
             cx,
             FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
         );
@@ -936,8 +921,8 @@ fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
     }
     cx.state
         .continuations
-        .push(crate::state::Continuation::EncounterDraw { remaining });
-    super::encounter::prompt_encounter_draw(cx)
+        .push(Continuation::EncounterDraw { remaining });
+    encounter::prompt_encounter_draw(cx)
 }
 
 /// Run the top `*Phase` anchor's continuation after one of its framework
@@ -951,9 +936,6 @@ fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
 // would only obscure the phase-boundary map it draws.
 #[allow(clippy::too_many_lines)]
 pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
-    use crate::state::{
-        Continuation, EnemyResume, InvestigationResume, MythosResume, UpkeepResume,
-    };
     let anchor = cx.state.continuations.last().cloned();
     // `Entry` advances (slice 1b, #393) run the phase opening; delegated so this
     // function stays the boundary-dispatch it was in slice 1a.
@@ -1029,7 +1011,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             // attacks are over*. The per-investigator cursor advance
             // (`after_enemy_phase_attacks`) therefore runs from the loop's own
             // drain (`finish_attack_loop`), never from this arm.
-            super::combat::resolve_attacks_for_investigator(cx, investigator)
+            combat::resolve_attacks_for_investigator(cx, investigator)
         }
         Some(Continuation::EnemyPhase {
             resume: EnemyResume::AfterAllAttacked,
@@ -1066,7 +1048,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
             // Post-2.1 window closed; start the first investigator's turn
             // (step 2.2). No skill-test-in-flight guard: runs at phase start
             // (no test in flight) and does not transition phase.
-            if let Some(id) = super::cursor::first_active_investigator(cx.state) {
+            if let Some(id) = cursor::first_active_investigator(cx.state) {
                 begin_investigator_turn(cx, id);
             }
             // None branch: no active investigator can take a turn — the
@@ -1146,14 +1128,12 @@ fn upkeep_phase(cx: &mut Cx) -> EngineOutcome {
     // **Emits in tail position** (ADR 0003): parked at `AfterPhaseStartForced`
     // *before* the emit, so the post-4.1 player window cannot open above the
     // step-4.1 forced abilities the emit queues.
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::UpkeepPhase {
-            resume: crate::state::UpkeepResume::AfterPhaseStartForced,
-        });
-    super::emit::queue_event(
+    cx.state.continuations.push(Continuation::UpkeepPhase {
+        resume: UpkeepResume::AfterPhaseStartForced,
+    });
+    emit::queue_event(
         cx,
-        &super::emit::TimingEvent::PhaseStarted {
+        &TimingEvent::PhaseStarted {
             phase: Phase::Upkeep,
         },
     )
@@ -1165,8 +1145,8 @@ fn upkeep_phase(cx: &mut Cx) -> EngineOutcome {
 /// inline (running [`upkeep_resume`] via the anchor's on-child-pop) when nothing
 /// is Fast-eligible.
 fn upkeep_after_phase_start(cx: &mut Cx) -> EngineOutcome {
-    set_upkeep_resume(cx, crate::state::UpkeepResume::Begins);
-    super::reaction_windows::open_fast_window(cx, FastWindowKind::Phase(PhaseStep::UpkeepBegins))
+    set_upkeep_resume(cx, UpkeepResume::Begins);
+    reaction_windows::open_fast_window(cx, FastWindowKind::Phase(PhaseStep::UpkeepBegins))
 }
 
 /// The post-4.1 window continuation. Steps 4.2–4.4 run inline as named call
@@ -1199,7 +1179,7 @@ pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
         // 4.4 pushed a drawn-weakness Revelation above the (now-buried) UpkeepPhase
         // anchor. Cede: the drive loop resolves the Revelation, then re-exposes the
         // anchor at AfterDraw (anchor_on_child_pop → upkeep_after_draw) for 4.5/4.6.
-        set_upkeep_resume(cx, crate::state::UpkeepResume::AfterDraw);
+        set_upkeep_resume(cx, UpkeepResume::AfterDraw);
         return EngineOutcome::Done;
     }
     upkeep_after_draw(cx) // 4.5 + 4.6 inline — common case, nothing pushed
@@ -1234,10 +1214,10 @@ pub(crate) fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
     });
     // Arm the resume BEFORE emitting (the emit may suspend on an ordering run
     // that outlives this `apply()`), then emit in tail position.
-    set_upkeep_resume(cx, crate::state::UpkeepResume::AfterPhaseEndForced);
-    super::emit::queue_event(
+    set_upkeep_resume(cx, UpkeepResume::AfterPhaseEndForced);
+    emit::queue_event(
         cx,
-        &super::emit::TimingEvent::PhaseEnded {
+        &TimingEvent::PhaseEnded {
             phase: Phase::Upkeep,
         },
     )
@@ -1256,8 +1236,8 @@ pub(crate) fn upkeep_phase_end(cx: &mut Cx) -> EngineOutcome {
 /// and returns `Done`; the global loop drives the bucket walk (suspending at the
 /// `when` window) and re-exposes this anchor at `AfterRoundEnd` on completion.
 fn upkeep_round_end(cx: &mut Cx) -> EngineOutcome {
-    set_upkeep_resume(cx, crate::state::UpkeepResume::AfterRoundEnd);
-    super::emit::queue_event(cx, &super::emit::TimingEvent::RoundEnded)
+    set_upkeep_resume(cx, UpkeepResume::AfterRoundEnd);
+    emit::queue_event(cx, &TimingEvent::RoundEnded)
 }
 
 /// Set the [`UpkeepPhase`](crate::state::Continuation::UpkeepPhase) anchor's
@@ -1265,15 +1245,15 @@ fn upkeep_round_end(cx: &mut Cx) -> EngineOutcome {
 /// so it is robust whether the anchor is on top (`upkeep_phase_end`'s call, made
 /// before the round-end coordinator is pushed) or buried beneath a drawn-weakness
 /// Revelation pushed by the step-4.4 draw (#509, `upkeep_resume`'s cede).
-fn set_upkeep_resume(cx: &mut Cx, resume: crate::state::UpkeepResume) {
+fn set_upkeep_resume(cx: &mut Cx, resume: UpkeepResume) {
     if let Some(c) = cx
         .state
         .continuations
         .iter_mut()
         .rev()
-        .find(|c| matches!(c, crate::state::Continuation::UpkeepPhase { .. }))
+        .find(|c| matches!(c, Continuation::UpkeepPhase { .. }))
     {
-        *c = crate::state::Continuation::UpkeepPhase { resume };
+        *c = Continuation::UpkeepPhase { resume };
     } else {
         unreachable!("set_upkeep_resume: no UpkeepPhase anchor on the stack");
     }
@@ -1293,7 +1273,7 @@ pub(super) fn upkeep_round_end_teardown(cx: &mut Cx) -> EngineOutcome {
     debug_assert!(
         matches!(
             cx.state.continuations.last(),
-            Some(crate::state::Continuation::UpkeepPhase { .. })
+            Some(Continuation::UpkeepPhase { .. })
         ),
         "upkeep_round_end_teardown: expected UpkeepPhase anchor on top, got {:?}",
         cx.state.continuations.last(),
@@ -1305,11 +1285,9 @@ pub(super) fn upkeep_round_end_teardown(cx: &mut Cx) -> EngineOutcome {
     // synchronous `step_phase(cx)`. With all four transitions now loop-driven,
     // `step_phase` is gone.
     cx.state.phase = Phase::Mythos;
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::MythosPhase {
-            resume: crate::state::MythosResume::Entry,
-        });
+    cx.state.continuations.push(Continuation::MythosPhase {
+        resume: MythosResume::Entry,
+    });
     EngineOutcome::Done
 }
 
@@ -1359,7 +1337,7 @@ fn ready_exhausted_cards(cx: &mut Cx) {
     // newly_readied is in ascending EnemyId order (BTreeMap key order).
     for eid in newly_readied {
         if cx.state.enemies[&eid].engaged_with.is_none() {
-            super::hunters::reengage_at_location(cx, eid);
+            hunters::reengage_at_location(cx, eid);
         }
     }
 }
@@ -1373,7 +1351,7 @@ pub(super) const HAND_SIZE_LIMIT: u8 = 8;
 /// Active investigators, in player order, whose hand exceeds
 /// [`HAND_SIZE_LIMIT`]. Empty when nobody is over the cap.
 pub(super) fn over_cap_investigators(state: &GameState) -> Vec<InvestigatorId> {
-    super::cursor::active_investigators_in_turn_order(state)
+    cursor::active_investigators_in_turn_order(state)
         .into_iter()
         .filter(|id| state.investigators[id].hand.len() > HAND_SIZE_LIMIT as usize)
         .collect()
@@ -1388,9 +1366,7 @@ pub(super) fn over_cap_investigators(state: &GameState) -> Vec<InvestigatorId> {
 fn park_hand_size_discard(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> EngineOutcome {
     cx.state
         .continuations
-        .push(crate::state::Continuation::HandSizeDiscard(
-            HandSizeDiscard { remaining },
-        ));
+        .push(Continuation::HandSizeDiscard(HandSizeDiscard { remaining }));
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_multiple(format!(
             "You have more than {HAND_SIZE_LIMIT} cards in hand — choose cards to discard \
@@ -1423,8 +1399,7 @@ fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
 /// — when the queue drains — runs [`upkeep_phase_end`] (4.6 + transition
 /// to Mythos). Rejections leave state and events untouched.
 pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let Some(crate::state::Continuation::HandSizeDiscard(pending)) = cx.state.continuations.last()
-    else {
+    let Some(Continuation::HandSizeDiscard(pending)) = cx.state.continuations.last() else {
         unreachable!("resume_hand_size_discard: no HandSizeDiscard frame on top of the stack")
     };
     let pending = pending.clone();
@@ -1457,7 +1432,7 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
             .into(),
         };
     }
-    let mut seen = std::collections::BTreeSet::new();
+    let mut seen = BTreeSet::new();
     for &i in &indices {
         if !seen.insert(i) {
             return EngineOutcome::Rejected {
@@ -1524,7 +1499,7 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
 /// `start_scenario` seeds round 1. Eliminated investigators are skipped
 /// (Rules Reference p.10).
 fn reset_actions(cx: &mut Cx) {
-    for id in super::cursor::active_investigators_in_turn_order(cx.state) {
+    for id in cursor::active_investigators_in_turn_order(cx.state) {
         let inv = cx
             .state
             .investigators
@@ -1546,12 +1521,12 @@ fn reset_actions(cx: &mut Cx) {
 /// resource." Two passes to honor that ordering: all draws first, then
 /// all resource gains.
 fn upkeep_draw_and_resource(cx: &mut Cx) {
-    let ids = super::cursor::active_investigators_in_turn_order(cx.state);
+    let ids = cursor::active_investigators_in_turn_order(cx.state);
     for &id in &ids {
-        super::cards::draw_one_with_deckout(cx, id);
+        cards::draw_one_with_deckout(cx, id);
     }
     for &id in &ids {
-        super::cards::grant_resources(cx, id, 1);
+        cards::grant_resources(cx, id, 1);
     }
 }
 
@@ -1559,22 +1534,22 @@ fn upkeep_draw_and_resource(cx: &mut Cx) {
 mod investigation_phase_tests {
     use super::*;
     use crate::action::PlayerAction;
+    use crate::engine::dispatch;
     use crate::engine::dispatch::apply_player_action;
     use crate::engine::outcome::EngineOutcome;
     use crate::state::{InvestigatorId, Phase, Status};
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn investigator_turn_defaults_to_not_ending() {
-        use crate::state::Continuation;
         // The builder-staged open-turn frame is not mid-end-turn.
         let state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Investigation)
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1)])
             .with_phase_anchor(Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(InvestigatorId(1))
             .build();
@@ -1589,11 +1564,10 @@ mod investigation_phase_tests {
 
     #[test]
     fn open_turn_leaves_investigator_turn_frame_on_top() {
-        use crate::state::{Continuation, InvestigationResume};
         // Reach the open turn the way production does: enter the Investigation
         // phase for a single investigator (no Fast cards → windows auto-skip).
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Investigation)
             .build();
         state.turn_order = vec![InvestigatorId(1)];
@@ -1607,7 +1581,7 @@ mod investigation_phase_tests {
             // investigation_phase pushes the anchor + opens (auto-skips) both
             // windows, landing the first investigator's open turn.
             investigation_phase(&mut cx);
-            super::super::drive(&mut cx, EngineOutcome::Done)
+            dispatch::drive(&mut cx, EngineOutcome::Done)
         };
 
         // The open turn surfaces its action menu as AwaitingInput (2b, #447).
@@ -1636,7 +1610,7 @@ mod investigation_phase_tests {
         // windows during setup; the game begins after mulligans).
         // active_investigator defaults to None (set when the phase rotates).
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Investigation)
             .with_turn_order([InvestigatorId(1)])
             .with_mulligan_remaining([InvestigatorId(1)])
@@ -1684,7 +1658,7 @@ mod investigation_phase_tests {
         // auto-skip closed.
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Investigation)
             .build();
         state.turn_order = vec![id];
@@ -1697,7 +1671,7 @@ mod investigation_phase_tests {
             state
                 .continuations
                 .iter()
-                .any(|c| matches!(c, crate::state::Continuation::InvestigationPhase { .. })),
+                .any(|c| matches!(c, Continuation::InvestigationPhase { .. })),
             "InvestigationPhase anchor present during the turn; stack = {:?}",
             state.continuations,
         );
@@ -1711,8 +1685,8 @@ mod investigation_phase_tests {
         // and then rotate to the first investigator in turn_order
         // (Rules Reference p.24 step 2.1 → window → step 2.2 lead-first).
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .with_phase(Phase::Mythos)
             .build();
         state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
@@ -1792,8 +1766,8 @@ mod investigation_phase_tests {
         // Investigator 1 (lead) is Defeated; investigator 2 is Active.
         // investigation_phase must skip Id(1) and rotate to Id(2).
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .with_phase(Phase::Mythos)
             .build();
         state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
@@ -1825,14 +1799,14 @@ mod investigation_phase_tests {
         // PhaseEnded(Investigation) (2.3) from investigation_phase_end,
         // then the cascade enters the Enemy phase.
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Investigation)
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1)])
             // Mid-Investigation invariant: the InvestigationPhase anchor (slice
             // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(InvestigatorId(1))
             .build();
@@ -1846,7 +1820,7 @@ mod investigation_phase_tests {
                 events: &mut events,
             };
             let o = end_turn(&mut cx);
-            super::super::drive(&mut cx, o)
+            dispatch::drive(&mut cx, o)
         };
 
         // Single investigator with no enemies: the round-ending EndTurn
@@ -1891,15 +1865,15 @@ mod investigation_phase_tests {
         // Two investigators: ending #1's turn returns to 2.2 for #2 and
         // opens the InvestigatorTurnBegins window for them.
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .with_phase(Phase::Investigation)
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
             // Mid-Investigation invariant: the InvestigationPhase anchor (slice
             // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(InvestigatorId(1))
             .build();
@@ -1913,7 +1887,7 @@ mod investigation_phase_tests {
                 events: &mut events,
             };
             let o = end_turn(&mut cx);
-            super::super::drive(&mut cx, o)
+            dispatch::drive(&mut cx, o)
         };
 
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
@@ -1946,7 +1920,7 @@ mod investigation_phase_tests {
         // downstream cascade may emit PhaseEnded for Enemy/Upkeep via
         // their own *_end helpers, but that's correct and expected.
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Investigation)
             .build();
         state.turn_order = vec![InvestigatorId(1)];
@@ -1973,7 +1947,7 @@ mod investigation_phase_tests {
         // both windows (no registry → nothing Fast-eligible) and lands
         // the lead active, with no PhaseEnded yet.
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Mythos)
             .build();
         state.turn_order = vec![InvestigatorId(1)];
@@ -2005,14 +1979,16 @@ mod investigation_phase_tests {
 #[cfg(test)]
 mod mythos_phase_tests {
     use super::*;
+    use crate::engine::dispatch;
+    use crate::engine::outcome::InputKind;
     use crate::state::{InvestigatorId, Phase, Status};
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn mythos_phase_emits_phase_started_and_prompts_first_drawer() {
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .with_phase(Phase::Mythos)
             .build();
         state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
@@ -2025,7 +2001,7 @@ mod mythos_phase_tests {
             state: &mut state,
             events: &mut events,
         });
-        let outcome = super::super::drive(
+        let outcome = dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2037,7 +2013,7 @@ mod mythos_phase_tests {
             panic!("mythos_phase opens the first encounter-draw prompt, got {outcome:?}");
         };
         // The draw is a binary acknowledge: kind Confirm, not skippable.
-        assert_eq!(request.kind, crate::engine::InputKind::Confirm);
+        assert_eq!(request.kind, InputKind::Confirm);
         assert!(!request.skippable);
         assert_eq!(state.current_encounter_drawer(), Some(InvestigatorId(1)));
         assert!(
@@ -2058,15 +2034,15 @@ mod mythos_phase_tests {
         // loop) and suspends at the first drawer prompt — same as the old
         // synchronous mythos_phase entry.
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Mythos)
-            .with_phase_anchor(crate::state::Continuation::MythosPhase {
-                resume: crate::state::MythosResume::Entry,
+            .with_phase_anchor(Continuation::MythosPhase {
+                resume: MythosResume::Entry,
             })
             .build();
         state.turn_order = vec![InvestigatorId(1)];
         let mut events = Vec::new();
-        let outcome = super::super::drive(
+        let outcome = dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2086,7 +2062,7 @@ mod mythos_phase_tests {
         assert!(state
             .continuations
             .iter()
-            .any(|c| matches!(c, crate::state::Continuation::EncounterDraw { .. })));
+            .any(|c| matches!(c, Continuation::EncounterDraw { .. })));
     }
 
     #[test]
@@ -2094,7 +2070,7 @@ mod mythos_phase_tests {
         // The Mythos driver pushes its anchor at entry; it sits beneath the
         // encounter-draw loop while the phase is suspended (slice 1a).
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Mythos)
             .build();
         state.turn_order = vec![InvestigatorId(1)];
@@ -2104,7 +2080,7 @@ mod mythos_phase_tests {
             events: &mut events,
         });
         // Draws run from the anchor's Draws resume (#482); drive to reach them.
-        let outcome = super::super::drive(
+        let outcome = dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2116,7 +2092,7 @@ mod mythos_phase_tests {
             state
                 .continuations
                 .iter()
-                .any(|c| matches!(c, crate::state::Continuation::MythosPhase { .. })),
+                .any(|c| matches!(c, Continuation::MythosPhase { .. })),
             "MythosPhase anchor on the stack during the phase; stack = {:?}",
             state.continuations,
         );
@@ -2138,7 +2114,7 @@ mod mythos_phase_tests {
             events: &mut events,
         };
         let outcome = mythos_phase(&mut cx);
-        let outcome = super::super::drive(&mut cx, outcome);
+        let outcome = dispatch::drive(&mut cx, outcome);
 
         assert_eq!(outcome, EngineOutcome::Done);
         assert_eq!(state.current_encounter_drawer(), None);
@@ -2168,11 +2144,11 @@ mod mythos_phase_tests {
         // mythos_phase_end now runs only with the MythosPhase anchor on top
         // (slice 1a) — it pops the anchor as its first act.
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Mythos)
             .with_turn_order([InvestigatorId(1)])
-            .with_phase_anchor(crate::state::Continuation::MythosPhase {
-                resume: crate::state::MythosResume::AfterDraws,
+            .with_phase_anchor(Continuation::MythosPhase {
+                resume: MythosResume::AfterDraws,
             })
             .build();
         let mut events = Vec::new();
@@ -2185,13 +2161,13 @@ mod mythos_phase_tests {
             events: &mut events,
         };
         mythos_phase_end(&mut cx);
-        let _ = super::super::drive(&mut cx, EngineOutcome::Done);
+        let _ = dispatch::drive(&mut cx, EngineOutcome::Done);
 
         assert!(
             !state
                 .continuations
                 .iter()
-                .any(|c| matches!(c, crate::state::Continuation::MythosPhase { .. })),
+                .any(|c| matches!(c, Continuation::MythosPhase { .. })),
             "mythos_phase_end pops the Mythos anchor (the cascade into \
              Investigation then pushes its own anchor)",
         );
@@ -2223,8 +2199,8 @@ mod mythos_phase_tests {
     #[test]
     fn mythos_phase_skips_eliminated_lead_when_seeding_queue() {
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .with_phase(Phase::Mythos)
             .build();
         state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
@@ -2240,7 +2216,7 @@ mod mythos_phase_tests {
             events: &mut events,
         });
         // The 1.4 draws (queue seeding) run from the Draws anchor (#482); drive.
-        super::super::drive(
+        dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2265,7 +2241,7 @@ mod mythos_phase_tests {
     #[test]
     fn mythos_phase_with_all_investigators_eliminated_opens_after_draws_window() {
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Mythos)
             .build();
         state.turn_order = vec![InvestigatorId(1)];
@@ -2282,7 +2258,7 @@ mod mythos_phase_tests {
         });
         // No Active drawers: the Draws anchor opens + auto-skips MythosAfterDraws,
         // cascading to Investigation — all once the loop processes it (#482).
-        super::super::drive(
+        dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2305,9 +2281,9 @@ mod mythos_phase_tests {
     #[test]
     fn advance_encounter_draw_skips_eliminated_middle_investigator() {
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
-            .with_investigator(test_investigator(3))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
+            .with_investigator(test_support::test_investigator(3))
             .with_phase(Phase::Mythos)
             .with_turn_order([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
             .with_mythos_draw_remaining([InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)])
@@ -2321,7 +2297,7 @@ mod mythos_phase_tests {
 
         // inv1 has just completed their draw chain: advance drops inv1 and must
         // skip the Defeated inv2, landing on inv3.
-        let outcome = super::super::encounter::advance_encounter_draw(&mut Cx {
+        let outcome = encounter::advance_encounter_draw(&mut Cx {
             state: &mut state,
             events: &mut events,
         });
@@ -2340,9 +2316,9 @@ mod mythos_phase_tests {
     #[test]
     fn first_active_investigator_finds_first_active_skipping_eliminated() {
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
-            .with_investigator(test_investigator(3))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
+            .with_investigator(test_support::test_investigator(3))
             .build();
         state.turn_order = vec![InvestigatorId(1), InvestigatorId(2), InvestigatorId(3)];
         state
@@ -2357,7 +2333,7 @@ mod mythos_phase_tests {
             .status = Status::Defeated;
 
         assert_eq!(
-            super::super::cursor::first_active_investigator(&state),
+            cursor::first_active_investigator(&state),
             Some(InvestigatorId(3)),
             "first Active in turn_order after skipping eliminated"
         );
@@ -2366,7 +2342,7 @@ mod mythos_phase_tests {
     #[test]
     fn first_active_investigator_returns_none_when_all_eliminated() {
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         state.turn_order = vec![InvestigatorId(1)];
         state
@@ -2375,28 +2351,22 @@ mod mythos_phase_tests {
             .unwrap()
             .status = Status::Defeated;
 
-        assert_eq!(
-            super::super::cursor::first_active_investigator(&state),
-            None
-        );
+        assert_eq!(cursor::first_active_investigator(&state), None);
     }
 
     #[test]
     fn first_active_investigator_returns_none_when_turn_order_empty() {
         let state = GameStateBuilder::default().build();
-        assert_eq!(
-            super::super::cursor::first_active_investigator(&state),
-            None
-        );
+        assert_eq!(cursor::first_active_investigator(&state), None);
     }
 
     #[test]
     fn next_active_investigator_after_skips_eliminated_middle() {
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
-            .with_investigator(test_investigator(3))
-            .with_investigator(test_investigator(4))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
+            .with_investigator(test_support::test_investigator(3))
+            .with_investigator(test_support::test_investigator(4))
             .build();
         state.turn_order = vec![
             InvestigatorId(1),
@@ -2411,17 +2381,17 @@ mod mythos_phase_tests {
             .status = Status::Defeated;
 
         assert_eq!(
-            super::super::cursor::next_active_investigator_after(&state, InvestigatorId(1)),
+            cursor::next_active_investigator_after(&state, InvestigatorId(1)),
             Some(InvestigatorId(3)),
             "advance from 1 skips Defeated 2, lands on 3"
         );
         assert_eq!(
-            super::super::cursor::next_active_investigator_after(&state, InvestigatorId(3)),
+            cursor::next_active_investigator_after(&state, InvestigatorId(3)),
             Some(InvestigatorId(4)),
             "advance from 3 lands on 4"
         );
         assert_eq!(
-            super::super::cursor::next_active_investigator_after(&state, InvestigatorId(4)),
+            cursor::next_active_investigator_after(&state, InvestigatorId(4)),
             None,
             "advance past the last entry returns None"
         );
@@ -2430,12 +2400,12 @@ mod mythos_phase_tests {
     #[test]
     fn next_active_investigator_after_returns_none_when_current_not_in_turn_order() {
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         state.turn_order = vec![InvestigatorId(1)];
 
         assert_eq!(
-            super::super::cursor::next_active_investigator_after(&state, InvestigatorId(99)),
+            cursor::next_active_investigator_after(&state, InvestigatorId(99)),
             None
         );
     }
@@ -2446,8 +2416,8 @@ mod mythos_phase_tests {
         // time we advance from them. The cursor still finds the right
         // successor.
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .build();
         state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
         state
@@ -2457,7 +2427,7 @@ mod mythos_phase_tests {
             .status = Status::Defeated;
 
         assert_eq!(
-            super::super::cursor::next_active_investigator_after(&state, InvestigatorId(1)),
+            cursor::next_active_investigator_after(&state, InvestigatorId(1)),
             Some(InvestigatorId(2)),
             "current=1 is non-Active but turn_order still anchors the index"
         );
@@ -2468,20 +2438,18 @@ mod mythos_phase_tests {
 mod upkeep_phase_tests {
     use super::*;
     use crate::engine::enumerate::TurnAction;
-    use crate::engine::EngineOutcome;
+    use crate::engine::outcome::EngineOutcome;
     use crate::event::Event;
     use crate::state::{
         CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase, Status,
     };
-    use crate::test_support::{
-        take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
-    };
-    use crate::{assert_event, assert_event_sequence, assert_no_event};
+    use crate::test_support::GameStateBuilder;
+    use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
     #[test]
     fn hand_size_discard_prompt_is_player_facing() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
         let outcome = park_hand_size_discard(
@@ -2511,7 +2479,7 @@ mod upkeep_phase_tests {
         // cascade lands in Mythos.
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Enemy)
             .build();
         state.turn_order = vec![id];
@@ -2573,11 +2541,11 @@ mod upkeep_phase_tests {
     fn ready_exhausted_cards_readies_investigator_cards_and_enemies() {
         let inv_id = InvestigatorId(1);
         let enemy_id = EnemyId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         let mut card = CardInPlay::enter_play(CardCode("01000".into()), CardInstanceId(1));
         card.exhausted = true;
         inv.cards_in_play = vec![card];
-        let mut enemy = test_enemy(1, "Test Enemy");
+        let mut enemy = test_support::test_enemy(1, "Test Enemy");
         enemy.exhausted = true;
         let mut state = GameStateBuilder::default()
             .with_investigator(inv)
@@ -2606,12 +2574,12 @@ mod upkeep_phase_tests {
     fn ready_exhausted_cards_reengages_co_located_unengaged_enemy() {
         let inv_id = InvestigatorId(1);
         let enemy_id = EnemyId(1);
-        let loc = test_location(10, "Synth Loc");
-        let mut enemy = test_enemy(1, "Test Enemy");
+        let loc = test_support::test_location(10, "Synth Loc");
+        let mut enemy = test_support::test_enemy(1, "Test Enemy");
         enemy.exhausted = true; // exhausted + disengaged, e.g. survived a successful Evade
         enemy.current_location = Some(LocationId(10));
         let mut state = GameStateBuilder::default()
-            .with_investigator_at(test_investigator(1), LocationId(10))
+            .with_investigator_at(test_support::test_investigator(1), LocationId(10))
             .with_location(loc)
             .with_enemy(enemy)
             .with_turn_order([inv_id])
@@ -2640,10 +2608,10 @@ mod upkeep_phase_tests {
 
     #[test]
     fn ready_exhausted_cards_leaves_ready_cards_untouched() {
-        let mut enemy = test_enemy(1, "Test Enemy");
+        let mut enemy = test_support::test_enemy(1, "Test Enemy");
         enemy.exhausted = false; // already ready
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_enemy(enemy)
             .build();
         let mut events = Vec::new();
@@ -2663,12 +2631,12 @@ mod upkeep_phase_tests {
     fn ready_exhausted_cards_no_engage_when_no_co_located_investigator() {
         let enemy_id = EnemyId(1);
         let inv_id = InvestigatorId(1);
-        let loc = test_location(10, "Synth Loc");
-        let mut enemy = test_enemy(1, "Test Enemy");
+        let loc = test_support::test_location(10, "Synth Loc");
+        let mut enemy = test_support::test_enemy(1, "Test Enemy");
         enemy.exhausted = true;
         enemy.current_location = Some(LocationId(10));
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1)) // current_location stays None — NOT co-located
+            .with_investigator(test_support::test_investigator(1)) // current_location stays None — NOT co-located
             .with_location(loc)
             .with_enemy(enemy)
             .with_turn_order([inv_id])
@@ -2692,11 +2660,11 @@ mod upkeep_phase_tests {
     fn ready_exhausted_cards_keeps_existing_engagement_no_duplicate() {
         let enemy_id = EnemyId(1);
         let inv_id = InvestigatorId(1);
-        let mut enemy = test_enemy(1, "Test Enemy");
+        let mut enemy = test_support::test_enemy(1, "Test Enemy");
         enemy.exhausted = true; // exhausted but still engaged (e.g. attacked last Enemy phase)
         enemy.engaged_with = Some(inv_id);
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_enemy(enemy)
             .build();
         let mut events = Vec::new();
@@ -2718,11 +2686,11 @@ mod upkeep_phase_tests {
     #[test]
     fn upkeep_draw_and_resource_draws_and_grants_per_active_investigator() {
         let (a, b, c) = (InvestigatorId(1), InvestigatorId(2), InvestigatorId(3));
-        let mut inv_a = test_investigator(1);
+        let mut inv_a = test_support::test_investigator(1);
         inv_a.deck = vec![CardCode::new("01000")];
-        let mut inv_b = test_investigator(2);
+        let mut inv_b = test_support::test_investigator(2);
         inv_b.deck = vec![CardCode::new("01001")];
-        let mut inv_c = test_investigator(3);
+        let mut inv_c = test_support::test_investigator(3);
         inv_c.status = Status::Resigned; // eliminated → skipped
         inv_c.deck = vec![CardCode::new("01002")];
         let res_a = inv_a.resources;
@@ -2760,9 +2728,9 @@ mod upkeep_phase_tests {
     fn upkeep_draw_and_resource_two_pass_ordering() {
         // All CardsDrawn events precede all ResourcesGained events.
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
-        let mut inv_a = test_investigator(1);
+        let mut inv_a = test_support::test_investigator(1);
         inv_a.deck = vec![CardCode::new("01000")];
-        let mut inv_b = test_investigator(2);
+        let mut inv_b = test_support::test_investigator(2);
         inv_b.deck = vec![CardCode::new("01001")];
         let mut state = GameStateBuilder::default()
             .with_investigator(inv_a)
@@ -2793,9 +2761,9 @@ mod upkeep_phase_tests {
     #[test]
     fn reset_actions_sets_active_to_per_turn_and_skips_eliminated() {
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
-        let mut inv_a = test_investigator(1);
+        let mut inv_a = test_support::test_investigator(1);
         inv_a.actions_remaining = 0;
-        let mut inv_b = test_investigator(2);
+        let mut inv_b = test_support::test_investigator(2);
         inv_b.actions_remaining = 0;
         inv_b.status = Status::Defeated;
         let mut state = GameStateBuilder::default()
@@ -2828,7 +2796,7 @@ mod upkeep_phase_tests {
         // ACTIONS_PER_TURN, reset_actions makes no state change and emits
         // no ActionsRemainingChanged event.
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.actions_remaining = ACTIONS_PER_TURN;
         let mut state = GameStateBuilder::default().with_investigator(inv).build();
         state.turn_order = vec![id];
@@ -2846,7 +2814,7 @@ mod upkeep_phase_tests {
     #[test]
     fn rotate_to_active_does_not_refresh_actions() {
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.actions_remaining = 1;
         let mut state = GameStateBuilder::default().with_investigator(inv).build();
         let mut events = Vec::new();
@@ -2877,7 +2845,7 @@ mod upkeep_phase_tests {
         // the test asserts observable behavior, which is unchanged.
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Upkeep)
             .build();
         state.turn_order = vec![id];
@@ -2900,7 +2868,7 @@ mod upkeep_phase_tests {
         // After EndTurn: card readied, hand +1, resources +1, landed in
         // Mythos paused at the encounter-draw prompt and round bumped.
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.actions_remaining = 0;
         inv.deck = vec![CardCode::new("01000"), CardCode::new("01001")];
         let mut card = CardInPlay::enter_play(CardCode::new("01002"), CardInstanceId(1));
@@ -2916,13 +2884,13 @@ mod upkeep_phase_tests {
             .with_round(1)
             // Mid-Investigation invariant: the InvestigationPhase anchor (slice
             // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(id)
             .build();
 
-        let result = take_turn_action(state, &TurnAction::EndTurn);
+        let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
 
         // The round-ending EndTurn cascades into Mythos and pauses at the
         // step-1.4 encounter-draw prompt (AwaitingInput).
@@ -2956,21 +2924,22 @@ mod upkeep_phase_tests {
 mod enemy_phase_tests {
     use super::*;
     use crate::action::{Action, InputResponse, PlayerAction};
-    use crate::assert_event;
     use crate::engine::dispatch::resolve_input;
-    use crate::engine::{apply, EngineOutcome};
+    use crate::engine::outcome::{EngineOutcome, OptionId};
+    use crate::engine::{apply, dispatch};
     use crate::state::{EnemyId, FastActorScope, InvestigatorId, LocationId, Phase, Status};
-    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+    use crate::test_support::GameStateBuilder;
+    use crate::{assert_event, test_support};
 
     #[test]
     fn enemy_phase_runs_hunters_then_attack_loop_when_no_tie() {
-        let mut loc_a = test_location(1, "A");
-        let mut loc_b = test_location(2, "B");
+        let mut loc_a = test_support::test_location(1, "A");
+        let mut loc_b = test_support::test_location(2, "B");
         loc_a.connections = vec![LocationId(2)];
         loc_b.connections = vec![LocationId(1)];
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(2));
-        let mut hunter = test_enemy(1, "Hunter");
+        let mut hunter = test_support::test_enemy(1, "Hunter");
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
@@ -2985,8 +2954,8 @@ mod enemy_phase_tests {
             // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
             // These tests construct the state directly (bypassing
             // investigation_phase), so stage both explicitly.
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(InvestigatorId(1))
             .build();
@@ -2999,7 +2968,7 @@ mod enemy_phase_tests {
                 events: &mut events,
             };
             let o = end_turn(&mut cx);
-            super::super::drive(&mut cx, o)
+            dispatch::drive(&mut cx, o)
         };
         // No registry installed → the attack window auto-skips inline and the
         // cascade runs Enemy→Upkeep→Mythos within this same call, pausing at the
@@ -3016,17 +2985,17 @@ mod enemy_phase_tests {
 
     #[test]
     fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
-        let mut loc_a = test_location(1, "A");
-        let mut loc_b = test_location(2, "B");
-        let mut loc_c = test_location(3, "C");
-        let mut loc_d = test_location(4, "D");
+        let mut loc_a = test_support::test_location(1, "A");
+        let mut loc_b = test_support::test_location(2, "B");
+        let mut loc_c = test_support::test_location(3, "C");
+        let mut loc_d = test_support::test_location(4, "D");
         loc_a.connections = vec![LocationId(2), LocationId(3)];
         loc_b.connections = vec![LocationId(1), LocationId(4)];
         loc_c.connections = vec![LocationId(1), LocationId(4)];
         loc_d.connections = vec![LocationId(2), LocationId(3)];
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(4));
-        let mut hunter = test_enemy(1, "Hunter");
+        let mut hunter = test_support::test_enemy(1, "Hunter");
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
@@ -3043,8 +3012,8 @@ mod enemy_phase_tests {
             // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
             // These tests construct the state directly (bypassing
             // investigation_phase), so stage both explicitly.
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(InvestigatorId(1))
             .build();
@@ -3057,7 +3026,7 @@ mod enemy_phase_tests {
                 events: &mut events,
             };
             let o = end_turn(&mut cx);
-            super::super::drive(&mut cx, o)
+            dispatch::drive(&mut cx, o)
         };
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(state.phase, Phase::Enemy);
@@ -3067,13 +3036,13 @@ mod enemy_phase_tests {
             state
                 .continuations
                 .iter()
-                .any(|c| matches!(c, crate::state::Continuation::EnemyPhase { .. })),
+                .any(|c| matches!(c, Continuation::EnemyPhase { .. })),
             "EnemyPhase anchor present while suspended in the Enemy phase; stack = {:?}",
             state.continuations,
         );
         let mut ev2 = Vec::new();
         // Pick LocationId(2) by its offered option id (candidates ride the request).
-        let crate::engine::EngineOutcome::AwaitingInput { request, .. } = &outcome else {
+        let EngineOutcome::AwaitingInput { request, .. } = &outcome else {
             unreachable!("asserted AwaitingInput above");
         };
         let pick = request
@@ -3088,7 +3057,7 @@ mod enemy_phase_tests {
                 events: &mut ev2,
             };
             let o = resolve_input(&mut cx, &InputResponse::PickSingle(pick));
-            super::super::drive(&mut cx, o) // slice 1b: complete the cascade
+            dispatch::drive(&mut cx, o) // slice 1b: complete the cascade
         };
         // With no registry the attack window auto-skips and the cascade runs
         // Enemy->Upkeep->Mythos within the same resume call, pausing at the
@@ -3101,19 +3070,19 @@ mod enemy_phase_tests {
     fn resolve_attacks_for_investigator_fires_engaged_ready_enemy_and_exhausts() {
         let inv_id = InvestigatorId(1);
         let enemy_id = EnemyId(1);
-        let mut enemy = test_enemy(1, "Test Enemy");
+        let mut enemy = test_support::test_enemy(1, "Test Enemy");
         enemy.engaged_with = Some(inv_id);
         enemy.attack_damage = 1;
         enemy.attack_horror = 0;
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([inv_id])
             .with_enemy(enemy)
             // The loop's own tail advances the enemy-phase cursor once it drains
             // (#704), so it needs its anchor; driving past it cascades on into
             // the next phase, which these assertions do not read.
-            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
-                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            .with_phase_anchor(Continuation::EnemyPhase {
+                resume: EnemyResume::BeforeInvestigatorAttacked,
                 attacking: Some(inv_id),
             })
             .build();
@@ -3124,8 +3093,8 @@ mod enemy_phase_tests {
             state: &mut state,
             events: &mut events,
         };
-        let queued = super::super::combat::resolve_attacks_for_investigator(&mut cx, inv_id);
-        let _ = super::super::drive(&mut cx, queued);
+        let queued = combat::resolve_attacks_for_investigator(&mut cx, inv_id);
+        let _ = dispatch::drive(&mut cx, queued);
 
         // Damage placed.
         assert!(
@@ -3167,30 +3136,30 @@ mod enemy_phase_tests {
         let inv_id = InvestigatorId(1);
 
         // Engaged but exhausted — must NOT attack.
-        let mut e1 = test_enemy(1, "Exhausted Engaged");
+        let mut e1 = test_support::test_enemy(1, "Exhausted Engaged");
         e1.engaged_with = Some(inv_id);
         e1.exhausted = true;
         e1.attack_damage = 5;
 
         // Ready but unengaged — must NOT attack.
-        let mut e2 = test_enemy(2, "Ready Unengaged");
+        let mut e2 = test_support::test_enemy(2, "Ready Unengaged");
         e2.engaged_with = None;
         e2.attack_damage = 5;
 
         // Ready engaged — the only one that attacks.
-        let mut e3 = test_enemy(3, "Ready Engaged");
+        let mut e3 = test_support::test_enemy(3, "Ready Engaged");
         e3.engaged_with = Some(inv_id);
         e3.attack_damage = 1;
 
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([inv_id])
             .with_enemy(e1)
             .with_enemy(e2)
             .with_enemy(e3)
             // See the sibling test: the drained loop advances its own cursor.
-            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
-                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            .with_phase_anchor(Continuation::EnemyPhase {
+                resume: EnemyResume::BeforeInvestigatorAttacked,
                 attacking: Some(inv_id),
             })
             .build();
@@ -3200,8 +3169,8 @@ mod enemy_phase_tests {
             state: &mut state,
             events: &mut events,
         };
-        let queued = super::super::combat::resolve_attacks_for_investigator(&mut cx, inv_id);
-        let _ = super::super::drive(&mut cx, queued);
+        let queued = combat::resolve_attacks_for_investigator(&mut cx, inv_id);
+        let _ = dispatch::drive(&mut cx, queued);
 
         // Exactly one DamageTaken (from e3, amount 1).
         let damages: Vec<&Event> = events
@@ -3231,26 +3200,25 @@ mod enemy_phase_tests {
 
     #[test]
     fn resolve_attacks_for_investigator_pick_overrides_enemy_id_order() {
-        use crate::engine::OptionId;
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
 
         let inv_id = InvestigatorId(1);
 
-        let mut e_lower = test_enemy(2, "Lower id"); // EnemyId(2), dmg 1
+        let mut e_lower = test_support::test_enemy(2, "Lower id"); // EnemyId(2), dmg 1
         e_lower.engaged_with = Some(inv_id);
         e_lower.attack_damage = 1;
 
-        let mut e_higher = test_enemy(10, "Higher id"); // EnemyId(10), dmg 2
+        let mut e_higher = test_support::test_enemy(10, "Higher id"); // EnemyId(10), dmg 2
         e_higher.engaged_with = Some(inv_id);
         e_higher.attack_damage = 2;
 
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1)) // TEST_INV: 8 health; 1+2=3 total damage < 8
+            .with_investigator(test_support::test_investigator(1)) // TEST_INV: 8 health; 1+2=3 total damage < 8
             .with_turn_order([inv_id])
             .with_enemy(e_higher) // inserted non-id order: BTreeMap still snapshots 2 then 10
             .with_enemy(e_lower)
-            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
-                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            .with_phase_anchor(Continuation::EnemyPhase {
+                resume: EnemyResume::BeforeInvestigatorAttacked,
                 attacking: Some(inv_id),
             })
             .build();
@@ -3261,8 +3229,8 @@ mod enemy_phase_tests {
             state: &mut state,
             events: &mut events,
         };
-        let queued = super::super::combat::resolve_attacks_for_investigator(&mut cx, inv_id);
-        let outcome = super::super::drive(&mut cx, queued);
+        let queued = combat::resolve_attacks_for_investigator(&mut cx, inv_id);
+        let outcome = dispatch::drive(&mut cx, queued);
         let EngineOutcome::AwaitingInput { request, .. } = outcome else {
             panic!("expected an attack-order prompt, got {outcome:?}");
         };
@@ -3289,7 +3257,7 @@ mod enemy_phase_tests {
         // Driving past the drained loop cascades into the next phase, so the
         // outcome here is that phase's prompt rather than the loop's; what this
         // test pins is the order the two attacks landed in.
-        let _ = super::super::drive(&mut cx, resumed);
+        let _ = dispatch::drive(&mut cx, resumed);
         // Both attacks resolved; the chosen (EnemyId 10, dmg 2) struck first.
         let damages: Vec<u8> = events
             .iter()
@@ -3320,22 +3288,22 @@ mod enemy_phase_tests {
     #[test]
     fn resolve_attacks_for_investigator_early_breaks_when_target_defeated_mid_loop() {
         // Registry needed for max_health()/max_sanity() after cp2a.
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
 
         // EnemyId(1) deals the killing blow on its attack.
-        let mut e1 = test_enemy(1, "Killer");
+        let mut e1 = test_support::test_enemy(1, "Killer");
         e1.engaged_with = Some(inv_id);
         e1.attack_damage = 1;
 
         // EnemyId(2) must NOT attack (active check fails at loop top).
-        let mut e2 = test_enemy(2, "Bystander");
+        let mut e2 = test_support::test_enemy(2, "Bystander");
         e2.engaged_with = Some(inv_id);
         e2.attack_damage = 5;
 
         let mut state = GameStateBuilder::default()
             .with_investigator({
-                let mut inv = test_investigator(1);
+                let mut inv = test_support::test_investigator(1);
                 // Pre-load accumulated_damage so remaining health = 1 (lethal with attack_damage=1).
                 // max_health()=8 from TEST_INV; 7+1=8=defeated.
                 inv.investigator_card.accumulated_damage = 7;
@@ -3344,8 +3312,8 @@ mod enemy_phase_tests {
             .with_turn_order([inv_id])
             .with_enemy(e1)
             .with_enemy(e2)
-            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
-                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            .with_phase_anchor(Continuation::EnemyPhase {
+                resume: EnemyResume::BeforeInvestigatorAttacked,
                 attacking: Some(inv_id),
             })
             .build();
@@ -3358,8 +3326,8 @@ mod enemy_phase_tests {
             state: &mut state,
             events: &mut events,
         };
-        let queued = super::super::combat::resolve_attacks_for_investigator(&mut cx, inv_id);
-        let outcome = super::super::drive(&mut cx, queued);
+        let queued = combat::resolve_attacks_for_investigator(&mut cx, inv_id);
+        let outcome = dispatch::drive(&mut cx, queued);
         let EngineOutcome::AwaitingInput { request, .. } = outcome else {
             panic!("expected an order pick, got {outcome:?}");
         };
@@ -3374,7 +3342,7 @@ mod enemy_phase_tests {
             events: &mut events,
         };
         let resumed = resolve_input(&mut cx, &InputResponse::PickSingle(pick));
-        let _ = super::super::drive(&mut cx, resumed);
+        let _ = dispatch::drive(&mut cx, resumed);
 
         // e1's attack killed the sole investigator, so the scenario's resolution
         // latched and the parked attack loop is one of the frames that cancels
@@ -3416,7 +3384,7 @@ mod enemy_phase_tests {
         // Upkeep → Mythos.
         let inv_id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Investigation)
             .build();
         state.turn_order = vec![inv_id];
@@ -3467,7 +3435,7 @@ mod enemy_phase_tests {
             !state
                 .continuations
                 .iter()
-                .any(|c| matches!(c, crate::state::Continuation::EnemyPhase { .. })),
+                .any(|c| matches!(c, Continuation::EnemyPhase { .. })),
             "EnemyPhase anchor popped at phase end (cursor gone with it)"
         );
     }
@@ -3479,15 +3447,15 @@ mod enemy_phase_tests {
         // DamageTaken per investigator (id1 before id2).
         let id1 = InvestigatorId(1);
         let id2 = InvestigatorId(2);
-        let mut e1 = test_enemy(1, "Enemy 1");
+        let mut e1 = test_support::test_enemy(1, "Enemy 1");
         e1.engaged_with = Some(id1);
         e1.attack_damage = 1;
-        let mut e2 = test_enemy(2, "Enemy 2");
+        let mut e2 = test_support::test_enemy(2, "Enemy 2");
         e2.engaged_with = Some(id2);
         e2.attack_damage = 1;
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .with_enemy(e1)
             .with_enemy(e2)
             .with_phase(Phase::Investigation)
@@ -3528,19 +3496,19 @@ mod enemy_phase_tests {
         let id1 = InvestigatorId(1);
         let id2 = InvestigatorId(2);
         let id3 = InvestigatorId(3);
-        let mut e1 = test_enemy(1, "Enemy 1");
+        let mut e1 = test_support::test_enemy(1, "Enemy 1");
         e1.engaged_with = Some(id1);
         e1.attack_damage = 1;
-        let mut e2 = test_enemy(2, "Enemy 2");
+        let mut e2 = test_support::test_enemy(2, "Enemy 2");
         e2.engaged_with = Some(id2);
         e2.attack_damage = 1;
-        let mut e3 = test_enemy(3, "Enemy 3");
+        let mut e3 = test_support::test_enemy(3, "Enemy 3");
         e3.engaged_with = Some(id3);
         e3.attack_damage = 1;
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
-            .with_investigator(test_investigator(3))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
+            .with_investigator(test_support::test_investigator(3))
             .with_enemy(e1)
             .with_enemy(e2)
             .with_enemy(e3)
@@ -3580,7 +3548,7 @@ mod enemy_phase_tests {
     fn enemy_phase_with_all_eliminated_opens_after_all_directly() {
         let id1 = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Investigation)
             .build();
         state.turn_order = vec![id1];
@@ -3609,11 +3577,11 @@ mod enemy_phase_tests {
         // cascade; attack lands inside the BeforeInvestigatorAttacked continuation.
         let inv_id = InvestigatorId(1);
         let enemy_id = EnemyId(1);
-        let mut enemy = test_enemy(1, "Test Enemy");
+        let mut enemy = test_support::test_enemy(1, "Test Enemy");
         enemy.engaged_with = Some(inv_id);
         enemy.attack_damage = 1;
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_enemy(enemy)
             .with_phase(Phase::Investigation)
             .build();
@@ -3652,7 +3620,7 @@ mod enemy_phase_tests {
         // so the Enemy→Upkeep step must not emit PhaseEnded(Enemy)
         // (enemy_phase_end owns that emit).
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Enemy)
             .build();
         state.turn_order = vec![InvestigatorId(1)];
@@ -3709,19 +3677,19 @@ mod enemy_phase_tests {
         // resume mechanism this test exercises.
         let inv_id = InvestigatorId(1);
         let enemy_id = EnemyId(1);
-        let mut enemy = test_enemy(1, "Test Enemy");
+        let mut enemy = test_support::test_enemy(1, "Test Enemy");
         enemy.engaged_with = Some(inv_id);
         enemy.attack_damage = 1;
         // active_investigator defaults to None. The EnemyPhase anchor (slice 1a)
         // sits beneath the synthetic BeforeInvestigatorAttacked window staged
         // above it; the window's close routes to anchor_on_child_pop.
         let state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_enemy(enemy)
             .with_phase(Phase::Enemy)
             .with_turn_order([inv_id])
-            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
-                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            .with_phase_anchor(Continuation::EnemyPhase {
+                resume: EnemyResume::BeforeInvestigatorAttacked,
                 attacking: Some(inv_id),
             })
             .with_open_window(
@@ -3772,7 +3740,7 @@ mod enemy_phase_tests {
                 .state
                 .continuations
                 .iter()
-                .any(|c| matches!(c, crate::state::Continuation::EnemyPhase { .. })),
+                .any(|c| matches!(c, Continuation::EnemyPhase { .. })),
             "the EnemyPhase anchor (with its `attacking` cursor) is gone after the \
              continuation advances past the last Active investigator and the AfterAll \
              window auto-skips"
@@ -3788,18 +3756,19 @@ mod enemy_phase_tests {
 #[cfg(test)]
 mod hand_size_tests {
     use super::*;
-    use crate::assert_no_event;
-    use crate::engine::OptionId;
+    use crate::engine::dispatch;
+    use crate::engine::outcome::OptionId;
     use crate::state::{CardCode, InvestigatorId};
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::GameStateBuilder;
+    use crate::{assert_no_event, test_support};
 
     #[test]
     fn over_cap_investigators_lists_only_over_eight_in_player_order() {
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .with_turn_order([inv2, inv1]) // player order: inv2 first
             .build();
         // inv1: 9 cards (over), inv2: 8 cards (at cap, not over).
@@ -3818,7 +3787,7 @@ mod hand_size_tests {
         // upkeep_phase pushes the UpkeepPhase anchor at entry; it sits beneath
         // the step-4.5 hand-size discard while the phase is suspended (slice 1a).
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.hand = vec![CardCode("x".into()); 10];
         inv.deck = vec![CardCode("y".into())]; // step 4.4 draws 1
         let mut state = GameStateBuilder::new()
@@ -3841,7 +3810,7 @@ mod hand_size_tests {
             state
                 .continuations
                 .iter()
-                .any(|c| matches!(c, crate::state::Continuation::UpkeepPhase { .. })),
+                .any(|c| matches!(c, Continuation::UpkeepPhase { .. })),
             "UpkeepPhase anchor present while suspended; stack = {:?}",
             state.continuations,
         );
@@ -3849,10 +3818,9 @@ mod hand_size_tests {
 
     #[test]
     fn check_hand_size_suspends_for_over_cap_investigator() {
-        use crate::state::CardCode;
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([id])
             .with_phase(Phase::Upkeep)
             .build();
@@ -3870,7 +3838,7 @@ mod hand_size_tests {
         );
         assert_eq!(
             state.continuations.iter().rev().find_map(|c| match c {
-                crate::state::Continuation::HandSizeDiscard(p) => Some(p.remaining.clone()),
+                Continuation::HandSizeDiscard(p) => Some(p.remaining.clone()),
                 _ => None,
             }),
             Some(vec![id]),
@@ -3879,10 +3847,9 @@ mod hand_size_tests {
 
     #[test]
     fn check_hand_size_is_noop_when_all_at_or_below_cap() {
-        use crate::state::CardCode;
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([id])
             .with_phase(Phase::Upkeep)
             .build();
@@ -3897,16 +3864,15 @@ mod hand_size_tests {
         assert_eq!(outcome, EngineOutcome::Done);
         assert!(!matches!(
             state.continuations.last(),
-            Some(crate::state::Continuation::HandSizeDiscard(_))
+            Some(Continuation::HandSizeDiscard(_))
         ));
     }
 
     #[test]
     fn upkeep_resume_parks_at_hand_size_discard() {
-        use crate::state::CardCode;
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([id])
             .with_phase(Phase::Upkeep)
             .build();
@@ -3926,7 +3892,7 @@ mod hand_size_tests {
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert!(matches!(
             state.continuations.last(),
-            Some(crate::state::Continuation::HandSizeDiscard(_))
+            Some(Continuation::HandSizeDiscard(_))
         ));
         assert_eq!(
             state.phase,
@@ -3943,17 +3909,15 @@ mod hand_size_tests {
 
     #[test]
     fn resume_hand_size_discard_discards_overflow_and_advances_to_mythos() {
-        use crate::action::InputResponse;
-        use crate::state::CardCode;
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([id])
             .with_phase(Phase::Upkeep)
             // UpkeepPhase anchor (slice 1a) sits beneath the staged hand-size
             // discard; the round-end teardown pops it.
-            .with_phase_anchor(crate::state::Continuation::UpkeepPhase {
-                resume: crate::state::UpkeepResume::Begins,
+            .with_phase_anchor(Continuation::UpkeepPhase {
+                resume: UpkeepResume::Begins,
             })
             .with_hand_size_discard_pending([id])
             .build();
@@ -3973,7 +3937,7 @@ mod hand_size_tests {
                     selected: vec![OptionId(0), OptionId(1)],
                 },
             );
-            super::super::drive(&mut cx, o) // slice 1b: loop-driven Upkeep→Mythos
+            dispatch::drive(&mut cx, o) // slice 1b: loop-driven Upkeep→Mythos
         };
 
         // The discard drains the hand-size queue, so 4.6 runs and the cascade
@@ -3981,7 +3945,7 @@ mod hand_size_tests {
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert!(!matches!(
             state.continuations.last(),
-            Some(crate::state::Continuation::HandSizeDiscard(_))
+            Some(Continuation::HandSizeDiscard(_))
         ));
         assert_eq!(state.investigators[&id].hand.len(), 8);
         assert_eq!(state.investigators[&id].discard.len(), 2);
@@ -4012,11 +3976,9 @@ mod hand_size_tests {
 
     #[test]
     fn resume_hand_size_discard_rejects_wrong_count() {
-        use crate::action::InputResponse;
-        use crate::state::CardCode;
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([id])
             .with_phase(Phase::Upkeep)
             .with_hand_size_discard_pending([id])
@@ -4045,7 +4007,7 @@ mod hand_size_tests {
         assert!(
             matches!(
                 state.continuations.last(),
-                Some(crate::state::Continuation::HandSizeDiscard(_))
+                Some(Continuation::HandSizeDiscard(_))
             ),
             "rejected: still pending"
         );
@@ -4054,12 +4016,10 @@ mod hand_size_tests {
 
     #[test]
     fn resume_hand_size_discard_rejects_duplicate_and_oob_indices() {
-        use crate::action::InputResponse;
-        use crate::state::CardCode;
         let id = InvestigatorId(1);
         let build = || {
             let mut s = GameStateBuilder::new()
-                .with_investigator(test_investigator(1))
+                .with_investigator(test_support::test_investigator(1))
                 .with_turn_order([id])
                 .with_phase(Phase::Upkeep)
                 .with_hand_size_discard_pending([id])
@@ -4102,13 +4062,11 @@ mod hand_size_tests {
 
     #[test]
     fn resume_hand_size_discard_sequences_investigators_in_player_order() {
-        use crate::action::InputResponse;
-        use crate::state::CardCode;
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .with_turn_order([inv1, inv2])
             .with_phase(Phase::Upkeep)
             .with_hand_size_discard_pending([inv1, inv2])
@@ -4132,7 +4090,7 @@ mod hand_size_tests {
         assert!(matches!(o1, EngineOutcome::AwaitingInput { .. }));
         assert_eq!(
             state.continuations.iter().rev().find_map(|c| match c {
-                crate::state::Continuation::HandSizeDiscard(p) => Some(p.remaining.clone()),
+                Continuation::HandSizeDiscard(p) => Some(p.remaining.clone()),
                 _ => None,
             }),
             Some(vec![inv2]),
@@ -4143,11 +4101,9 @@ mod hand_size_tests {
 
     #[test]
     fn resume_hand_size_discard_rejects_wrong_response_kind() {
-        use crate::action::InputResponse;
-        use crate::state::CardCode;
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([id])
             .with_phase(Phase::Upkeep)
             .with_hand_size_discard_pending([id])
@@ -4173,7 +4129,7 @@ mod hand_size_tests {
         assert!(
             matches!(
                 state.continuations.last(),
-                Some(crate::state::Continuation::HandSizeDiscard(_))
+                Some(Continuation::HandSizeDiscard(_))
             ),
             "rejected: still pending"
         );
@@ -4185,11 +4141,10 @@ mod hand_size_tests {
 mod start_scenario_tests {
     use super::*;
     use crate::action::RosterEntry;
-    use crate::seat_and_open;
-    use crate::state::CardCode;
-    use crate::state::GameStateBuilder;
-    use crate::test_support::fixtures::test_investigator;
-    use crate::test_support::{install_test_registry, TEST_INV};
+    use crate::card_data::SkillKind;
+    use crate::state::{CardCode, GameStateBuilder, SkillSubstitution};
+    use crate::test_support::TEST_INV;
+    use crate::{seat_and_open, test_support};
 
     #[test]
     fn start_scenario_rejects_when_roster_would_seat_zero_investigators() {
@@ -4205,16 +4160,14 @@ mod start_scenario_tests {
         // RR p.24 step 4.6: "until the end of the round" effects expire as the
         // round ends — in upkeep_round_end_teardown (after the round-end forced
         // abilities), not the next Mythos step.
-        use crate::card_data::SkillKind;
-        use crate::state::{InvestigatorId, SkillSubstitution};
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([id])
             .with_active_investigator(id)
             // upkeep_round_end_teardown pops the UpkeepPhase anchor (slice 1a).
-            .with_phase_anchor(crate::state::Continuation::UpkeepPhase {
-                resume: crate::state::UpkeepResume::Begins,
+            .with_phase_anchor(Continuation::UpkeepPhase {
+                resume: UpkeepResume::Begins,
             })
             .build();
         state.round = 1;
@@ -4236,7 +4189,7 @@ mod start_scenario_tests {
 
     #[test]
     fn seat_and_open_rejects_an_empty_roster() {
-        install_test_registry();
+        test_support::install_test_registry();
         let state = GameStateBuilder::new().build();
         let result = seat_and_open(state, &[]);
         assert!(
@@ -4260,8 +4213,7 @@ mod start_scenario_tests {
     /// and `EncounterDeckShuffled` fires.
     #[test]
     fn start_scenario_shuffles_the_encounter_deck() {
-        use crate::state::CardCode;
-        install_test_registry();
+        test_support::install_test_registry();
         let mut state = GameStateBuilder::new().build();
         let codes = ["e1", "e2", "e3", "e4", "e5"];
         state.encounter_deck = codes.iter().map(|c| CardCode::new(*c)).collect();

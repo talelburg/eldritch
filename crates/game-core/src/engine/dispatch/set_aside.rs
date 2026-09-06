@@ -19,12 +19,11 @@
 //! entry — the only moment both endpoints of a connection have ids.
 
 use crate::card_data::CardKind;
-use crate::card_registry;
-use crate::engine::dispatch::encounter::spawn_enemy_at;
-use crate::engine::dispatch::threat_area::put_into_play_at_location;
-use crate::engine::{location_id_by_code, Cx, EngineOutcome};
-use crate::scenario::scenario_layout;
+use crate::engine::dispatch::{encounter, threat_area};
+use crate::engine::outcome::EngineOutcome;
+use crate::engine::{evaluator, Cx};
 use crate::state::{CardCode, GameState, LocationId};
+use crate::{card_registry, scenario};
 
 /// Bring the set-aside card `code` into play, dispatching on its printed
 /// cardtype:
@@ -96,7 +95,7 @@ pub fn put_set_aside_card_into_play(cx: &mut Cx, code: &str, at: Option<&str>) -
                     .into(),
                 };
             };
-            let Some(location_id) = location_id_by_code(cx.state, location_code) else {
+            let Some(location_id) = evaluator::location_id_by_code(cx.state, location_code) else {
                 return EngineOutcome::Rejected {
                     reason: format!(
                         "put_set_aside_card_into_play: location {location_code} not in play"
@@ -106,7 +105,7 @@ pub fn put_set_aside_card_into_play(cx: &mut Cx, code: &str, at: Option<&str>) -
             };
             // All checks passed — mutate.
             cx.state.set_aside_cards.remove(pos);
-            spawn_enemy_at(cx, CardCode::new(code), metadata, location_id)
+            encounter::spawn_enemy_at(cx, CardCode::new(code), metadata, location_id)
         }
         CardKind::Asset { .. } => {
             let Some(location_code) = at else {
@@ -118,7 +117,7 @@ pub fn put_set_aside_card_into_play(cx: &mut Cx, code: &str, at: Option<&str>) -
                     .into(),
                 };
             };
-            let Some(location_id) = location_id_by_code(cx.state, location_code) else {
+            let Some(location_id) = evaluator::location_id_by_code(cx.state, location_code) else {
                 return EngineOutcome::Rejected {
                     reason: format!(
                         "put_set_aside_card_into_play: location {location_code} not in play"
@@ -128,7 +127,7 @@ pub fn put_set_aside_card_into_play(cx: &mut Cx, code: &str, at: Option<&str>) -
             };
             // All checks passed — mutate.
             cx.state.set_aside_cards.remove(pos);
-            put_into_play_at_location(cx, location_id, CardCode::new(code));
+            threat_area::put_into_play_at_location(cx, location_id, CardCode::new(code));
             EngineOutcome::Done
         }
         ref kind => EngineOutcome::Rejected {
@@ -151,7 +150,7 @@ pub fn put_set_aside_card_into_play(cx: &mut Cx, code: &str, at: Option<&str>) -
 /// half never enters play stays unwired.
 fn wire_layout_connections(state: &mut GameState, id: LocationId) {
     let code = state.locations[&id].code.as_str().to_owned();
-    let layout = scenario_layout(state);
+    let layout = scenario::scenario_layout(state);
     let neighbours: Vec<LocationId> = layout
         .iter()
         .filter_map(|&(a, b)| {
@@ -162,7 +161,7 @@ fn wire_layout_connections(state: &mut GameState, id: LocationId) {
             } else {
                 return None;
             };
-            location_id_by_code(state, other)
+            evaluator::location_id_by_code(state, other)
         })
         .filter(|&n| n != id)
         .collect();
@@ -173,21 +172,22 @@ fn wire_layout_connections(state: &mut GameState, id: LocationId) {
 
 #[cfg(test)]
 mod tests {
-    use super::put_set_aside_card_into_play;
-    use crate::engine::{Cx, EngineOutcome};
+    use crate::engine::dispatch::set_aside;
+    use crate::engine::outcome::EngineOutcome;
+    use crate::engine::Cx;
     use crate::state::{CardCode, InvestigatorId};
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn rejects_a_code_that_is_not_set_aside() {
         // Empty set-aside zone — the call must reject before touching the
         // registry or the board, and mint nothing.
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([InvestigatorId(1)])
             .build();
         let mut events = Vec::new();
-        let outcome = put_set_aside_card_into_play(
+        let outcome = set_aside::put_set_aside_card_into_play(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -209,12 +209,12 @@ mod tests {
         // registry — the call must reject without removing the code from the
         // zone (validate-first: no mutation on reject).
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([InvestigatorId(1)])
             .build();
         state.set_aside_cards.push(CardCode::new("01116"));
         let mut events = Vec::new();
-        let outcome = put_set_aside_card_into_play(
+        let outcome = set_aside::put_set_aside_card_into_play(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,

@@ -11,13 +11,12 @@ use std::collections::BTreeMap;
 use crate::action::InputResponse;
 use crate::card_data::Slot;
 use crate::card_registry;
-use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
-use crate::engine::OptionId;
+use crate::engine::dispatch::{cards, hunters};
+use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::engine::Cx;
 use crate::state::{
     AssetEntry, CardCode, CardInPlay, CardInstanceId, Continuation, GameState, InvestigatorId,
 };
-
-use super::Cx;
 
 /// Per-type slot counts (a multiset). `BTreeMap` keeps iteration deterministic.
 pub(super) type SlotCounts = BTreeMap<Slot, u8>;
@@ -181,7 +180,7 @@ pub(in crate::engine) fn enter_asset_making_room(
 ) -> EngineOutcome {
     let deficit = slot_deficit(cx.state, investigator, &card.code);
     if deficit.is_empty() {
-        super::cards::enter_asset_into_play(cx, investigator, card, entry);
+        cards::enter_asset_into_play(cx, investigator, card, entry);
         return EngineOutcome::Done;
     }
     let candidates = make_room_candidates(cx.state, investigator, &deficit);
@@ -202,7 +201,7 @@ pub(in crate::engine) fn enter_asset_making_room(
         return prompt_slot_discard(cx, investigator, &deficit);
     }
     let (inst, _) = candidates[0];
-    super::cards::discard_card_from_play(cx, investigator, inst);
+    cards::discard_card_from_play(cx, investigator, inst);
     enter_asset_making_room(cx, investigator, card, entry)
 }
 
@@ -220,7 +219,7 @@ fn prompt_slot_discard(
          (slots needed: {deficit:?})."
     );
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(prompt, super::hunters::candidate_options(&codes)),
+        request: InputRequest::pick_single(prompt, hunters::candidate_options(&codes)),
         resume_token: ResumeToken(0),
     }
 }
@@ -268,7 +267,7 @@ pub(super) fn resume_slot_discard(cx: &mut Cx, response: &InputResponse) -> Engi
     };
     // Valid: pop the frame we validated against, discard the choice, continue.
     cx.state.continuations.pop();
-    super::cards::discard_card_from_play(cx, investigator, inst);
+    cards::discard_card_from_play(cx, investigator, inst);
     enter_asset_making_room(cx, investigator, card, entry)
 }
 

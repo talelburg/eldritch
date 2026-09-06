@@ -7,9 +7,10 @@
 //! card-local natives. No replay, no separate choice frame (umbrella §3.4).
 
 use crate::action::InputResponse;
-use crate::engine::{
-    ChoiceOption, Cx, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
+use crate::engine::outcome::{
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
+use crate::engine::{Cx, EvalContext};
 use crate::state::{Continuation, EffectFrame};
 
 /// Outcome of applying the uniform resolve convention to a count of legal
@@ -124,7 +125,7 @@ pub fn suspend_for_native_choice(
     prompt: impl Into<String>,
     labels: Vec<String>,
     _tag: &str,
-    _ctx: &crate::engine::EvalContext,
+    _ctx: &EvalContext,
 ) -> EngineOutcome {
     awaiting_choice(prompt, labels)
 }
@@ -175,9 +176,11 @@ pub(crate) fn resume_effect_walk(_cx: &mut Cx) -> EngineOutcome {
 mod tests {
     use super::*;
     use crate::dsl::{choose_one, gain_resources, Effect, InvestigatorTarget};
+    use crate::engine::dispatch;
     use crate::engine::evaluator::{push_effect, EvalContext};
-    use crate::state::InvestigatorId;
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::engine::outcome::PromptNature;
+    use crate::state::{EnemyId, GameState, InvestigatorId};
+    use crate::test_support::{self, GameStateBuilder};
 
     /// A `ChooseOne` branch that is **live** — one `effect_can_change_state`
     /// cannot prove inert, so #664's mode filter keeps it in the offer. (An
@@ -188,9 +191,9 @@ mod tests {
     }
 
     /// A state holding the investigator [`live_branch`] pays out to.
-    fn state_with_investigator() -> crate::state::GameState {
+    fn state_with_investigator() -> GameState {
         GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build()
     }
 
@@ -255,7 +258,7 @@ mod tests {
                 events: &mut events,
             };
             push_effect(&mut cx, &effect, ctx);
-            crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done)
+            dispatch::drive(&mut cx, EngineOutcome::Done)
         };
         assert!(
             matches!(out, EngineOutcome::AwaitingInput { .. }),
@@ -290,7 +293,7 @@ mod tests {
                 events: &mut events,
             };
             push_effect(&mut cx, &effect, ctx);
-            crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done)
+            dispatch::drive(&mut cx, EngineOutcome::Done)
         };
         match out {
             EngineOutcome::AwaitingInput { request, .. } => {
@@ -316,7 +319,7 @@ mod tests {
                 events: &mut events,
             };
             push_effect(&mut cx, &effect, ctx);
-            crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done)
+            dispatch::drive(&mut cx, EngineOutcome::Done)
         };
         assert!(
             matches!(out, EngineOutcome::Done),
@@ -326,8 +329,6 @@ mod tests {
 
     #[test]
     fn awaiting_choice_anchored_carries_per_option_targets() {
-        use crate::engine::OptionTarget;
-        use crate::state::EnemyId;
         let out = awaiting_choice_anchored(
             "Choose an enemy",
             vec![
@@ -348,7 +349,6 @@ mod tests {
 
     #[test]
     fn awaiting_decision_marks_the_request_and_anchors_both_levels() {
-        use crate::engine::{OptionTarget, PromptNature};
         let out = awaiting_decision(
             "Choose one",
             vec!["Burn it down".into(), "Do not".into()],
@@ -377,7 +377,6 @@ mod tests {
     /// pointing at a card no board surface renders.
     #[test]
     fn awaiting_decision_with_no_live_source_is_unanchored_but_still_a_decision() {
-        use crate::engine::PromptNature;
         let out = awaiting_decision("Choose one", vec!["A".into(), "B".into()], None);
         let EngineOutcome::AwaitingInput { request, .. } = out else {
             panic!("expected AwaitingInput");

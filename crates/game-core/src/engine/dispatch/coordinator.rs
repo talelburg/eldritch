@@ -29,11 +29,11 @@
 //! cell into a loop).
 
 use crate::dsl::EventTiming;
+use crate::engine::dispatch::emit::ConditionResolution;
+use crate::engine::dispatch::{forced_triggers, reaction_windows};
+use crate::engine::outcome::EngineOutcome;
+use crate::engine::Cx;
 use crate::state::{Continuation, EmitStep, TimingSub};
-
-use super::super::outcome::EngineOutcome;
-use super::emit::ConditionResolution;
-use super::Cx;
 
 /// Dispatch the [`Continuation::EmitEvent`] coordinator on top of the stack
 /// (called only by the `drive` loop with one on top). One step of the sequence
@@ -98,10 +98,9 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
     let caller_owned = matches!(resolution, ConditionResolution::Caller);
     // Per-cell re-scan (#434): the prior cell may have changed board state.
     let has_forced = event.forced_point().is_some_and(|point| {
-        !super::forced_triggers::collect_forced_hits(cx.state, &point, bucket).is_empty()
+        !forced_triggers::collect_forced_hits(cx.state, &point, bucket).is_empty()
     });
-    let has_reaction =
-        !super::reaction_windows::scan_reactions_at(cx.state, &event, bucket).is_empty();
+    let has_reaction = !reaction_windows::scan_reactions_at(cx.state, &event, bucket).is_empty();
     if caller_owned && step == EmitStep::When {
         if has_forced || has_reaction {
             return EngineOutcome::Rejected {
@@ -179,24 +178,24 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
             let Some(point) = event.forced_point() else {
                 return EngineOutcome::Done;
             };
-            let candidates = super::forced_triggers::collect_forced_hits(cx.state, &point, bucket);
+            let candidates = forced_triggers::collect_forced_hits(cx.state, &point, bucket);
             if candidates.len() >= 2 {
                 // 2+ forced: the lead orders them (#213). The run carries no
                 // continuation (#434) — when it closes the loop re-dispatches the
                 // parent `TimingPoint` (now at `Reaction`).
-                super::reaction_windows::open_forced_resolution(cx, &event, bucket, candidates)
+                reaction_windows::open_forced_resolution(cx, &event, bucket, candidates)
             } else {
-                super::forced_triggers::queue_forced_triggers(cx, &point, bucket)
+                forced_triggers::queue_forced_triggers(cx, &point, bucket)
             }
         }
         TimingSub::Reaction => {
-            let candidates = super::reaction_windows::scan_reactions_at(cx.state, &event, bucket);
+            let candidates = reaction_windows::scan_reactions_at(cx.state, &event, bucket);
             if candidates.is_empty() {
                 finish_timing_point(cx);
                 EngineOutcome::Done
             } else {
                 set_timing_sub(cx, TimingSub::Done);
-                super::reaction_windows::open_reaction_run(cx, &event, bucket, candidates)
+                reaction_windows::open_reaction_run(cx, &event, bucket, candidates)
             }
         }
         TimingSub::Done => {

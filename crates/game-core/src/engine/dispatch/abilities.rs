@@ -3,17 +3,18 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use crate::card_data::CardKind;
 use crate::card_registry;
-use crate::dsl::{ActionDesignator, Cost, Trigger};
+use crate::dsl::{ActionDesignator, Cost, Effect, Trigger, UsageLimit};
+use crate::engine::dispatch::{cards, combat, reaction_windows, threat_area, ActivateCheckResult};
+use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::outcome::EngineOutcome;
+use crate::engine::{abilities_in_effect, ability_source, Cx};
 use crate::event::Event;
 use crate::state::{
-    AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInPlay, CardInstanceId,
-    GameState, Investigator, InvestigatorId, UseKind,
+    AbilityAddress, AbilitySource, ActionResume, CandidateSource, CardCode, CardInPlay,
+    CardInstanceId, Continuation, GameState, Investigator, InvestigatorId, UseKind,
 };
-
-use super::super::evaluator::{push_effect, EvalContext};
-use super::super::outcome::EngineOutcome;
-use super::Cx;
 
 /// Handler for `TurnAction::ActivateAbility`.
 ///
@@ -94,7 +95,7 @@ pub(super) fn activate_ability(
     source: AbilitySource,
     address: &AbilityAddress,
 ) -> EngineOutcome {
-    let super::ActivateCheckResult {
+    let ActivateCheckResult {
         source_code,
         action_cost,
         surcharge_sources,
@@ -102,12 +103,7 @@ pub(super) fn activate_ability(
         costs,
         effect,
         source_exhausted: _,
-    } = match super::reaction_windows::check_activate_ability(
-        cx.state,
-        investigator,
-        source,
-        address,
-    ) {
+    } = match reaction_windows::check_activate_ability(cx.state, investigator, source, address) {
         Ok(r) => r,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
@@ -142,17 +138,15 @@ pub(super) fn activate_ability(
     // frame and drive the AoO loop (which may open a Dodge cancel / Guard Dog
     // soak window), then run the effect on resume. (#361, K3.)
     if provokes_aoo(action_cost, designator.as_ref()) {
-        cx.state
-            .continuations
-            .push(crate::state::Continuation::ActionResolution {
-                investigator,
-                resume: crate::state::ActionResume::ActivateAbility {
-                    source,
-                    designator,
-                    effect,
-                },
-            });
-        return super::combat::drive_aoo(cx, investigator);
+        cx.state.continuations.push(Continuation::ActionResolution {
+            investigator,
+            resume: ActionResume::ActivateAbility {
+                source,
+                designator,
+                effect,
+            },
+        });
+        return combat::drive_aoo(cx, investigator);
     }
 
     // Fast (not an action), or an AoO-exempt designator: push both halves for
@@ -179,12 +173,12 @@ pub(super) fn activate_ability(
 fn push_activation_resolution(
     cx: &mut Cx,
     designator: Option<&ActionDesignator>,
-    effect: &crate::dsl::Effect,
+    effect: &Effect,
     eval_ctx: EvalContext,
 ) {
-    push_effect(cx, effect, eval_ctx);
+    evaluator::push_effect(cx, effect, eval_ctx);
     if let Some(designator) = designator {
-        crate::engine::evaluator::push_designated_action(cx, designator, eval_ctx);
+        evaluator::push_designated_action(cx, designator, eval_ctx);
     }
 }
 
@@ -250,7 +244,7 @@ pub(super) fn resume_activate_ability(
     investigator: InvestigatorId,
     source: AbilitySource,
     designator: Option<&ActionDesignator>,
-    effect: &crate::dsl::Effect,
+    effect: &Effect,
 ) -> EngineOutcome {
     let eval_ctx = EvalContext::for_controller_with_source(investigator, source);
     push_activation_resolution(cx, designator, effect, eval_ctx);
@@ -354,7 +348,7 @@ fn pay_activation_costs(
                 let discards_when_empty = card_registry::current()
                     .and_then(|r| (r.metadata_for)(source_code))
                     .and_then(|m| match m.kind {
-                        crate::card_data::CardKind::Asset { uses, .. } => uses,
+                        CardKind::Asset { uses, .. } => uses,
                         _ => None,
                     })
                     .is_some_and(|u| u.discard_when_empty && u.kind == *kind);
@@ -398,7 +392,7 @@ fn require_source_reachable<'a>(
     cost: &Cost,
     source_code: &CardCode,
 ) -> Result<&'a mut CardInPlay, Cow<'static, str>> {
-    crate::engine::ability_source::resolve_mut(cx.state, investigator, source).ok_or_else(|| {
+    ability_source::resolve_mut(cx.state, investigator, source).ok_or_else(|| {
         format!(
             "ActivateAbility: the {} cost needs its source {source_code} \
              ({source:?}), but an earlier cost on the same ability removed it \
@@ -435,10 +429,10 @@ fn discard_source(
         .iter()
         .any(|c| c.instance_id == instance_id)
     {
-        super::cards::discard_card_from_play(cx, investigator, instance_id);
+        cards::discard_card_from_play(cx, investigator, instance_id);
         return Ok(());
     }
-    if super::threat_area::discard_from_threat_area(cx, investigator, instance_id) {
+    if threat_area::discard_from_threat_area(cx, investigator, instance_id) {
         return Ok(());
     }
     Err(format!(
@@ -478,9 +472,9 @@ pub(super) struct ActivatedAbility {
     /// The ability's payment costs, in printed order.
     pub(super) costs: Vec<Cost>,
     /// The effect to resolve once every cost is paid.
-    pub(super) effect: crate::dsl::Effect,
+    pub(super) effect: Effect,
     /// The *"Limit X per \[period\]"* cap, if the card prints one.
-    pub(super) usage_limit: Option<crate::dsl::UsageLimit>,
+    pub(super) usage_limit: Option<UsageLimit>,
 }
 
 /// Resolve the activated ability `address` names on the card behind `source`,
@@ -506,12 +500,9 @@ pub(super) fn resolve_activated_ability(
     // from, so an address means the same ability on both ends of the round
     // trip. A granted ability whose granter has left play or whose condition
     // has flipped is simply not there, and rejects like an unknown one.
-    let Some(ability) = crate::engine::abilities_in_effect::resolve(
-        state,
-        CandidateSource::Ability(source),
-        code,
-        address,
-    ) else {
+    let Some(ability) =
+        abilities_in_effect::resolve(state, CandidateSource::Ability(source), code, address)
+    else {
         return Err(EngineOutcome::Rejected {
             reason: format!(
                 "ActivateAbility: {address:?} names no ability in effect on {code} \
@@ -596,7 +587,9 @@ pub(super) fn check_cost_payable(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::fixtures::test_investigator;
+    use crate::dsl::{fight, investigate};
+    use crate::test_support;
+    use ActionDesignator::{Evade, Move, Parley, Resign};
 
     /// The attack-of-opportunity exemption is exactly the four designators
     /// `glossary/Attack_of_Opportunity.md` names — **fight**, **evade**,
@@ -605,9 +598,6 @@ mod tests {
     /// flavours.
     #[test]
     fn provokes_aoo_exempts_exactly_the_four_named_designators() {
-        use crate::dsl::{fight, investigate};
-        use ActionDesignator::{Evade, Move, Parley, Resign};
-
         for exempt in [fight(0u8, 0u8), Evade, Parley, Resign] {
             assert!(
                 !provokes_aoo(1, Some(&exempt)),
@@ -644,7 +634,7 @@ mod tests {
 
     #[test]
     fn spend_uses_payable_only_with_enough_of_the_named_kind() {
-        let inv = test_investigator(1);
+        let inv = test_support::test_investigator(1);
         let ammo4: BTreeMap<UseKind, u8> = [(UseKind::Ammo, 4)].into_iter().collect();
         let empty: BTreeMap<UseKind, u8> = BTreeMap::new();
         let cost = Cost::SpendUses {

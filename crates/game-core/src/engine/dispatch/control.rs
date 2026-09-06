@@ -24,11 +24,11 @@
 //! new owner, which is what later routes it out of the game rather than into a
 //! discard pile (`cards::discard_card_from_play`).
 
+use crate::engine::dispatch::slots;
+use crate::engine::outcome::EngineOutcome;
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{AssetEntry, CardInPlay, InvestigatorId};
-
-use super::Cx;
-use crate::engine::EngineOutcome;
 
 /// Resolve [`Effect::TakeControl`](crate::dsl::Effect::TakeControl): move the
 /// in-play card printed with `code` into `investigator`'s play area.
@@ -68,7 +68,7 @@ pub(crate) fn take_control(cx: &mut Cx, investigator: InvestigatorId, code: &str
         code: card.code.clone(),
         instance_id: card.instance_id,
     });
-    super::slots::enter_asset_making_room(cx, investigator, card, AssetEntry::ControlTaken)
+    slots::enter_asset_making_room(cx, investigator, card, AssetEntry::ControlTaken)
 }
 
 /// Take the in-play instance printed with `code` out of the zone that holds it,
@@ -110,8 +110,8 @@ fn lift_in_play_card(cx: &mut Cx, code: &str) -> Option<CardInPlay> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{CardCode, CardInstanceId, GameStateBuilder, LocationId};
-    use crate::test_support::{test_investigator, test_location};
+    use crate::state::{CardCode, CardInstanceId, GameState, GameStateBuilder, LocationId};
+    use crate::test_support;
 
     const INV: InvestigatorId = InvestigatorId(1);
     const HERE: LocationId = LocationId(1);
@@ -119,10 +119,10 @@ mod tests {
     const INST: CardInstanceId = CardInstanceId(9);
 
     /// A board with one card in play *at* a location under nobody's control.
-    fn board_with_uncontrolled_card() -> crate::state::GameState {
+    fn board_with_uncontrolled_card() -> GameState {
         let mut state = GameStateBuilder::new()
-            .with_investigator_at(test_investigator(1), HERE)
-            .with_location(test_location(1, "Study"))
+            .with_investigator_at(test_support::test_investigator(1), HERE)
+            .with_location(test_support::test_location(1, "Study"))
             .build();
         state
             .locations
@@ -133,7 +133,7 @@ mod tests {
         state
     }
 
-    fn run(state: &mut crate::state::GameState, code: &str) -> (EngineOutcome, Vec<Event>) {
+    fn run(state: &mut GameState, code: &str) -> (EngineOutcome, Vec<Event>) {
         let mut events = Vec::new();
         let outcome = take_control(
             &mut Cx {

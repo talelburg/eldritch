@@ -42,7 +42,7 @@
 //! rather than an oversight.
 
 use crate::card_registry;
-use crate::dsl::{Effect, Restriction, Trigger};
+use crate::dsl::{Ability, Effect, Restriction, Trigger};
 use crate::engine::abilities_in_effect;
 use crate::state::{Enemy, GameState, LocationId};
 
@@ -66,7 +66,7 @@ use crate::state::{Enemy, GameState, LocationId};
 /// or whether this walk should simply chain both collections. The first card
 /// that puts a restriction-carrying card into play at a location forces it.
 fn location_carries_restriction(state: &GameState, loc: LocationId, r: &Restriction) -> bool {
-    let carries = |abilities: &[crate::dsl::Ability]| {
+    let carries = |abilities: &[Ability]| {
         abilities.iter().any(|a| {
             a.trigger == Trigger::Constant && matches!(&a.effect, Effect::Restrict(got) if got == r)
         })

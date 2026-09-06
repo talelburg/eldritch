@@ -1,15 +1,19 @@
 //! Player-action handlers: Investigate, Move, Fight, Evade, plus the
 //! engaged-action validation and single-action-spend helpers.
 
-use crate::dsl::SkillTestKind;
+use crate::card_registry;
+use crate::dsl::{ActionClass, IntExpr, SkillTestKind, Stat};
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::skill_test::InitiatorModifier;
+use crate::engine::dispatch::{combat, emit, hunters, movement, reveal, skill_test};
+use crate::engine::outcome::EngineOutcome;
+use crate::engine::{designator, evaluator, Cx};
 use crate::event::Event;
 use crate::state::{
-    Enemy, EnemyId, GameState, Investigator, InvestigatorId, LocationId, Phase, SkillKind,
+    AbilitySource, ActionResume, CardInstanceId, Continuation, DifficultyBasis, Enemy, EnemyId,
+    GameState, Investigator, InvestigatorId, LocationId, ModifierTarget, Phase, SkillKind,
     SkillTestFollowUp, Status,
 };
-
-use super::super::outcome::EngineOutcome;
-use super::Cx;
 
 /// Handler for `TurnAction::Investigate`.
 ///
@@ -84,13 +88,11 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
     // (only Fight, Evade, Parley, Resign are), so each ready engaged
     // enemy attacks before the skill test resolves.
     spend_one_action(cx, investigator);
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::ActionResolution {
-            investigator,
-            resume: crate::state::ActionResume::Investigate,
-        });
-    super::combat::drive_aoo(cx, investigator)
+    cx.state.continuations.push(Continuation::ActionResolution {
+        investigator,
+        resume: ActionResume::Investigate,
+    });
+    combat::drive_aoo(cx, investigator)
 }
 
 /// The skill-test half of an Investigate, run after its `AoO` loop (#293).
@@ -117,8 +119,7 @@ pub(super) fn investigate_primary_effect(
     // (the §D contract). Read through the same helper `can_perform` uses, so
     // the basic action and a designated **Investigate** agree on what a
     // location has to be to investigate it (#805).
-    let Some(location_id) = crate::engine::designator::investigate_location(cx.state, investigator)
-    else {
+    let Some(location_id) = designator::investigate_location(cx.state, investigator) else {
         return EngineOutcome::Done;
     };
     // A basic investigation carries no modification — the designated one
@@ -152,24 +153,24 @@ pub(crate) fn perform_investigate(
     cx: &mut Cx,
     investigator: InvestigatorId,
     location_id: LocationId,
-    shroud_modifier: Option<crate::dsl::IntExpr>,
-    source: Option<crate::state::AbilitySource>,
+    shroud_modifier: Option<IntExpr>,
+    source: Option<AbilitySource>,
 ) -> EngineOutcome {
-    super::skill_test::start_skill_test(
+    skill_test::start_skill_test(
         cx,
         investigator,
         SkillKind::Intellect,
         SkillTestKind::Investigate,
-        crate::state::DifficultyBasis::Shroud(location_id),
+        DifficultyBasis::Shroud(location_id),
         SkillTestFollowUp::Investigate,
         None,
         None,
         source,
         // "Your location gets -2 shroud for this investigation" — a row over
         // the *location*, scoped to the test about to start.
-        shroud_modifier.map(|delta| super::skill_test::InitiatorModifier {
-            target: crate::state::ModifierTarget::Location(location_id),
-            stat: crate::dsl::Stat::Shroud,
+        shroud_modifier.map(|delta| InitiatorModifier {
+            target: ModifierTarget::Location(location_id),
+            stat: Stat::Shroud,
             delta,
         }),
     )
@@ -196,13 +197,11 @@ pub(super) fn resource_action(cx: &mut Cx, investigator: InvestigatorId) -> Engi
     // Parley, Resign are), so each ready engaged enemy attacks before the
     // gain resolves.
     spend_one_action(cx, investigator);
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::ActionResolution {
-            investigator,
-            resume: crate::state::ActionResume::Resource,
-        });
-    super::combat::drive_aoo(cx, investigator)
+    cx.state.continuations.push(Continuation::ActionResolution {
+        investigator,
+        resume: ActionResume::Resource,
+    });
+    combat::drive_aoo(cx, investigator)
 }
 
 /// The gain half of a Resource action, run after its `AoO` loop (#293).
@@ -294,13 +293,11 @@ pub(super) fn engage(
     // Parley, Resign are). The target is not yet engaged so it cannot AoO;
     // only OTHER ready engaged enemies do.
     spend_one_action(cx, investigator);
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::ActionResolution {
-            investigator,
-            resume: crate::state::ActionResume::Engage { enemy: enemy_id },
-        });
-    super::combat::drive_aoo(cx, investigator)
+    cx.state.continuations.push(Continuation::ActionResolution {
+        investigator,
+        resume: ActionResume::Engage { enemy: enemy_id },
+    });
+    combat::drive_aoo(cx, investigator)
 }
 
 /// The engagement half of an Engage action, run after its `AoO` loop (#293).
@@ -444,7 +441,7 @@ pub(super) fn move_action(
     // because the `apply` seam is submittable directly: a client that never
     // read the menu, or read a stale one, must still be refused. The Parlor
     // 01115's unrevealed back is the only card in the corpus that prints one.
-    if !super::movement::investigator_can_enter_location(cx.state, destination) {
+    if !movement::investigator_can_enter_location(cx.state, destination) {
         return EngineOutcome::Rejected {
             reason: format!("Move: movement into {destination:?} is blocked by a card ability")
                 .into(),
@@ -453,20 +450,18 @@ pub(super) fn move_action(
 
     // Mutate-second. Charge the action (base 1 + surcharge) last — after
     // every move precondition has passed — so a rejected move spends nothing.
-    if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Move, "Move") {
+    if let Err(rejected) = charge_action(cx, investigator, ActionClass::Move, "Move") {
         return rejected;
     }
 
     // Park the move over its attack-of-opportunity loop (#293): push the
     // resume frame, then drive the AoO. If a cancel/soak window opens the loop
     // suspends here; otherwise `drive` resumes the frame and relocates.
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::ActionResolution {
-            investigator,
-            resume: crate::state::ActionResume::Move { destination },
-        });
-    super::combat::drive_aoo(cx, investigator)
+    cx.state.continuations.push(Continuation::ActionResolution {
+        investigator,
+        resume: ActionResume::Move { destination },
+    });
+    combat::drive_aoo(cx, investigator)
 }
 
 /// The relocation half of a Move, run after its attack-of-opportunity loop
@@ -512,7 +507,7 @@ pub(super) fn move_primary_effect(
         .get(&from)
         .is_some_and(|l| l.connections.contains(&destination))
         && cx.state.locations.contains_key(&destination)
-        && super::movement::investigator_can_enter_location(cx.state, destination);
+        && movement::investigator_can_enter_location(cx.state, destination);
     if !still_enterable {
         return EngineOutcome::Done; // precondition lapsed: suppress
     }
@@ -530,15 +525,13 @@ pub(super) fn move_primary_effect(
     // above the abilities the emit had just queued, so entering resolved
     // before leaving. The destination reveal rides that frame too; it is the
     // arrival's business, not the departure's.
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::MoveEnter {
-            investigator,
-            destination,
-        });
-    super::emit::queue_event(
+    cx.state.continuations.push(Continuation::MoveEnter {
+        investigator,
+        destination,
+    });
+    emit::queue_event(
         cx,
-        &super::emit::TimingEvent::LeftLocation {
+        &TimingEvent::LeftLocation {
             investigator,
             location: from,
             destination,
@@ -623,7 +616,7 @@ pub(super) fn resolve_departure(
                  and the drag-along; this is a state-corruption invariant violation"
             )
         });
-        let follows = super::movement::enemy_can_enter_location(cx.state, enemy, destination);
+        let follows = movement::enemy_can_enter_location(cx.state, enemy, destination);
         let enemy = cx
             .state
             .enemies
@@ -656,7 +649,7 @@ pub(super) fn resolve_departure(
 /// left location's queued `LeftLocation` forced abilities have resolved (#569).
 /// Pops the frame, auto-engages, and emits `EnteredLocation` in tail position.
 pub(super) fn resume_move_enter(cx: &mut Cx) -> EngineOutcome {
-    let Some(crate::state::Continuation::MoveEnter {
+    let Some(Continuation::MoveEnter {
         investigator,
         destination,
     }) = cx.state.continuations.pop()
@@ -668,7 +661,7 @@ pub(super) fn resume_move_enter(cx: &mut Cx) -> EngineOutcome {
     // in `move_primary_effect` because it is the arrival's business: the
     // investigator has to have arrived to have entered, and since #721 the
     // arrival happens at the departure's resolve step, further down the stack.
-    super::reveal::reveal_location(cx, destination);
+    reveal::reveal_location(cx, destination);
     // Framework engagement on entering (RR engagement rules): "Each time an
     // investigator enters a location, each ready enemy at that location
     // automatically engages that investigator." Runs after the move is applied
@@ -680,9 +673,9 @@ pub(super) fn resume_move_enter(cx: &mut Cx) -> EngineOutcome {
     // applied, so if it returns Rejected, `apply`'s structural rollback restores
     // the pre-move state — the partial mutation above is safe (same reliance on
     // the apply-loop snapshot that `play_card` documents).
-    super::emit::queue_event(
+    emit::queue_event(
         cx,
-        &super::emit::TimingEvent::EnteredLocation {
+        &TimingEvent::EnteredLocation {
             investigator,
             location: destination,
         },
@@ -721,7 +714,7 @@ fn engage_ready_enemies_on_enter(cx: &mut Cx, investigator: InvestigatorId, loca
         .map(|(id, _)| *id)
         .collect();
     for enemy_id in to_engage {
-        super::hunters::engage_enemy_with(cx, enemy_id, investigator);
+        hunters::engage_enemy_with(cx, enemy_id, investigator);
     }
 }
 
@@ -849,7 +842,7 @@ fn validate_fight_target(
             reason: format!("Fight: enemy {enemy_id:?} is not in state").into(),
         });
     };
-    if !crate::engine::designator::fight_candidates(state, investigator).contains(&enemy_id) {
+    if !designator::fight_candidates(state, investigator).contains(&enemy_id) {
         return Err(EngineOutcome::Rejected {
             reason: format!(
                 "Fight: enemy {enemy_id:?} (at {:?}) is not at {investigator:?}'s location",
@@ -917,15 +910,10 @@ const BASIC_ACTION_COST: u8 = 1;
 pub(crate) fn action_surcharge(
     state: &GameState,
     investigator: InvestigatorId,
-    action_class: crate::dsl::ActionClass,
-) -> (u8, Vec<crate::state::CardInstanceId>) {
-    match crate::card_registry::current() {
-        Some(reg) => crate::engine::evaluator::pending_action_surcharge(
-            state,
-            reg,
-            investigator,
-            action_class,
-        ),
+    action_class: ActionClass,
+) -> (u8, Vec<CardInstanceId>) {
+    match card_registry::current() {
+        Some(reg) => evaluator::pending_action_surcharge(state, reg, investigator, action_class),
         None => (0, Vec::new()),
     }
 }
@@ -941,7 +929,7 @@ pub(crate) fn action_surcharge(
 pub(crate) fn action_cost(
     state: &GameState,
     investigator: InvestigatorId,
-    action_class: crate::dsl::ActionClass,
+    action_class: ActionClass,
 ) -> u8 {
     BASIC_ACTION_COST.saturating_add(action_surcharge(state, investigator, action_class).0)
 }
@@ -956,7 +944,7 @@ pub(crate) fn action_cost(
 fn charge_action(
     cx: &mut Cx,
     investigator: InvestigatorId,
-    action_class: crate::dsl::ActionClass,
+    action_class: ActionClass,
     action_name: &str,
 ) -> Result<(), EngineOutcome> {
     let (extra, to_mark) = action_surcharge(cx.state, investigator, action_class);
@@ -1010,8 +998,7 @@ pub(super) fn fight(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
     if let Err(rejection) = validate_fight_target(cx.state, investigator, enemy_id) {
         return rejection;
     }
-    if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Fight, "Fight")
-    {
+    if let Err(rejected) = charge_action(cx, investigator, ActionClass::Fight, "Fight") {
         return rejected;
     }
     // A basic attack carries no modification — a designated Fight (every
@@ -1045,16 +1032,16 @@ pub(crate) fn perform_fight(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
-    combat_modifier: Option<crate::dsl::IntExpr>,
+    combat_modifier: Option<IntExpr>,
     extra_damage: u8,
-    source: Option<crate::state::AbilitySource>,
+    source: Option<AbilitySource>,
 ) -> EngineOutcome {
-    super::skill_test::start_skill_test(
+    skill_test::start_skill_test(
         cx,
         investigator,
         SkillKind::Combat,
         SkillTestKind::Fight,
-        crate::state::DifficultyBasis::Fight(enemy_id),
+        DifficultyBasis::Fight(enemy_id),
         SkillTestFollowUp::Fight {
             enemy: enemy_id,
             extra_damage,
@@ -1062,9 +1049,9 @@ pub(crate) fn perform_fight(
         None,
         None,
         source,
-        combat_modifier.map(|delta| super::skill_test::InitiatorModifier {
-            target: crate::state::ModifierTarget::Investigator(investigator),
-            stat: crate::dsl::Stat::Combat,
+        combat_modifier.map(|delta| InitiatorModifier {
+            target: ModifierTarget::Investigator(investigator),
+            stat: Stat::Combat,
             delta,
         }),
     )
@@ -1090,11 +1077,10 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         Ok(_) => {}
         Err(rejected) => return rejected,
     }
-    if let Err(rejected) = charge_action(cx, investigator, crate::dsl::ActionClass::Evade, "Evade")
-    {
+    if let Err(rejected) = charge_action(cx, investigator, ActionClass::Evade, "Evade") {
         return rejected;
     }
-    super::skill_test::start_skill_test(
+    skill_test::start_skill_test(
         cx,
         investigator,
         SkillKind::Agility,
@@ -1102,7 +1088,7 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
         // The difficulty *is* the enemy's modified evade value, read at
         // ST.6 — Cold Spring Glen 02244's "Each enemy in Cold Spring Glen
         // gets -1 evade" reaches this test (#677).
-        crate::state::DifficultyBasis::Evade(enemy_id),
+        DifficultyBasis::Evade(enemy_id),
         SkillTestFollowUp::Evade { enemy: enemy_id },
         None,
         None,
@@ -1115,30 +1101,28 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
 mod actions_tests {
     use crate::action::{Action, InputResponse, PlayerAction};
     use crate::engine::enumerate::TurnAction;
-    use crate::engine::EngineOutcome;
+    use crate::engine::outcome::{EngineOutcome, OptionId};
+    use crate::engine::{enumerate, ApplyResult};
     use crate::event::Event;
-    use crate::state::{EnemyId, InvestigatorId, LocationId, Phase, Status};
-    use crate::test_support::{
-        apply_no_commits, take_turn_action, test_enemy, test_investigator, test_location,
-        GameStateBuilder,
+    use crate::state::{
+        ChaosBag, ChaosToken, Continuation, EnemyId, GameState, InvestigationResume,
+        InvestigatorId, LocationId, Phase, Status,
     };
-    use crate::{assert_event, assert_event_sequence, assert_no_event};
+    use crate::test_support::GameStateBuilder;
+    use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
     /// Drive a turn action that may suspend at a skill-test commit window.
     /// Equivalent to `take_turn_action` but drains `AwaitingInput` (commit
     /// window) by submitting an empty `PickMultiple`, matching `apply_no_commits`.
-    fn take_turn_action_no_commits(
-        state: crate::state::GameState,
-        action: &TurnAction,
-    ) -> crate::engine::ApplyResult {
-        let actions = crate::engine::enumerate::legal_actions(&state);
+    fn take_turn_action_no_commits(state: GameState, action: &TurnAction) -> ApplyResult {
+        let actions = enumerate::legal_actions(&state);
         let idx = actions.iter().position(|a| a == action).unwrap_or_else(|| {
             panic!("take_turn_action_no_commits: {action:?} is not legal; offered: {actions:?}")
         });
-        apply_no_commits(
+        test_support::apply_no_commits(
             state,
             Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickSingle(crate::engine::OptionId(
+                response: InputResponse::PickSingle(OptionId(
                     u32::try_from(idx).expect("action index fits u32"),
                 )),
             }),
@@ -1151,20 +1135,14 @@ mod actions_tests {
     fn move_scenario_with_enemy(
         attack_damage: u8,
         inv_health: u8,
-    ) -> (
-        InvestigatorId,
-        LocationId,
-        LocationId,
-        EnemyId,
-        crate::state::GameState,
-    ) {
+    ) -> (InvestigatorId, LocationId, LocationId, EnemyId, GameState) {
         let inv_id = InvestigatorId(1);
         let l1 = LocationId(10);
         let l2 = LocationId(11);
         let enemy_id = EnemyId(100);
 
-        crate::test_support::install_test_registry();
-        let mut inv = test_investigator(1);
+        test_support::install_test_registry();
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(l1);
         inv.actions_remaining = 3;
         // After #448 cp2a: max_health() reads from the registry (TEST_INV = 8).
@@ -1173,11 +1151,11 @@ mod actions_tests {
         // ⟺ attack_damage >= inv_health (same condition as before).
         inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
 
-        let mut loc1 = test_location(10, "L1");
+        let mut loc1 = test_support::test_location(10, "L1");
         loc1.connections = vec![l2];
-        let loc2 = test_location(11, "L2");
+        let loc2 = test_support::test_location(11, "L2");
 
-        let mut enemy = test_enemy(100, "Ghoul");
+        let mut enemy = test_support::test_enemy(100, "Ghoul");
         enemy.current_location = Some(l1);
         enemy.engaged_with = Some(inv_id);
         enemy.attack_damage = attack_damage;
@@ -1191,8 +1169,8 @@ mod actions_tests {
             .with_enemy(enemy)
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(inv_id)
             .build();
@@ -1212,7 +1190,7 @@ mod actions_tests {
         // event fires and the investigator does NOT appear at the destination.
         let (inv_id, _l1, l2, _enemy_id, state) = move_scenario_with_enemy(1, 1);
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Move {
                 investigator: inv_id,
@@ -1254,7 +1232,7 @@ mod actions_tests {
         // No registry installed → no cancel/soak windows → no suspension.
         let (inv_id, _l1, l2, enemy_id, state) = move_scenario_with_enemy(1, 8);
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Move {
                 investigator: inv_id,
@@ -1300,24 +1278,23 @@ mod actions_tests {
     /// at the destination L2. The investigator starts Active at L1 with actions
     /// to spend and full health, mid-Investigation. The L2 enemy isn't engaged
     /// with the mover, so the move opens no attack of opportunity.
-    fn move_into_enemy_scenario() -> (InvestigatorId, LocationId, EnemyId, crate::state::GameState)
-    {
+    fn move_into_enemy_scenario() -> (InvestigatorId, LocationId, EnemyId, GameState) {
         let inv_id = InvestigatorId(1);
         let l1 = LocationId(10);
         let l2 = LocationId(11);
         let enemy_id = EnemyId(100);
 
-        crate::test_support::install_test_registry();
-        let mut inv = test_investigator(1);
+        test_support::install_test_registry();
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(l1);
         inv.actions_remaining = 3;
 
-        let mut loc1 = test_location(10, "L1");
+        let mut loc1 = test_support::test_location(10, "L1");
         loc1.connections = vec![l2];
-        let mut loc2 = test_location(11, "L2");
+        let mut loc2 = test_support::test_location(11, "L2");
         loc2.connections = vec![l1];
 
-        let mut enemy = test_enemy(100, "Icy Ghoul");
+        let mut enemy = test_support::test_enemy(100, "Icy Ghoul");
         enemy.current_location = Some(l2);
         enemy.engaged_with = None;
         enemy.exhausted = false;
@@ -1329,8 +1306,8 @@ mod actions_tests {
             .with_enemy(enemy)
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(inv_id)
             .build();
@@ -1345,7 +1322,7 @@ mod actions_tests {
         // Ghoul 01119 waiting at the Cellar — no Aloof keyword.)
         let (inv_id, l2, enemy_id, state) = move_into_enemy_scenario();
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Move {
                 investigator: inv_id,
@@ -1378,7 +1355,7 @@ mod actions_tests {
         let (inv_id, l2, enemy_id, mut state) = move_into_enemy_scenario();
         state.enemies.get_mut(&enemy_id).unwrap().exhausted = true;
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Move {
                 investigator: inv_id,
@@ -1405,19 +1382,19 @@ mod actions_tests {
         let enemy_c = EnemyId(102);
 
         // A second ready, unengaged enemy at the destination.
-        let mut b = test_enemy(101, "Ghoul B");
+        let mut b = test_support::test_enemy(101, "Ghoul B");
         b.current_location = Some(l2);
         b.engaged_with = None;
         b.exhausted = false;
         // A third enemy at the destination already engaged with someone else.
-        let mut c = test_enemy(102, "Ghoul C");
+        let mut c = test_support::test_enemy(102, "Ghoul C");
         c.current_location = Some(l2);
         c.engaged_with = Some(other);
         c.exhausted = false;
         state.enemies.insert(enemy_b, b);
         state.enemies.insert(enemy_c, c);
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Move {
                 investigator: inv_id,
@@ -1443,25 +1420,25 @@ mod actions_tests {
     fn investigate_scenario_with_enemy(
         inv_health: u8,
         attack_damage: u8,
-    ) -> (InvestigatorId, LocationId, EnemyId, crate::state::GameState) {
+    ) -> (InvestigatorId, LocationId, EnemyId, GameState) {
         // Registry needed for max_health()/max_sanity() after cp2a.
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
         let loc_id = LocationId(10);
         let enemy_id = EnemyId(200);
 
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(loc_id);
         inv.actions_remaining = 3;
         // Pre-load accumulated_damage so that max_health() (8 from TEST_INV) minus
         // accumulated_damage equals inv_health (the "remaining health" the test intended).
         inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
 
-        let mut loc = test_location(10, "Study");
+        let mut loc = test_support::test_location(10, "Study");
         loc.clues = 2;
         loc.shroud = 2;
 
-        let mut enemy = test_enemy(200, "Ghoul");
+        let mut enemy = test_support::test_enemy(200, "Ghoul");
         enemy.current_location = Some(loc_id);
         enemy.engaged_with = Some(inv_id);
         enemy.attack_damage = attack_damage;
@@ -1472,13 +1449,11 @@ mod actions_tests {
             .with_investigator(inv)
             .with_location(loc)
             .with_enemy(enemy)
-            .with_chaos_bag(crate::state::ChaosBag::new([
-                crate::state::ChaosToken::Numeric(0),
-            ]))
+            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(inv_id)
             .build();
@@ -1494,7 +1469,7 @@ mod actions_tests {
         // the investigator is still Active, and took 1 damage.
         let (inv_id, _loc_id, enemy_id, state) = investigate_scenario_with_enemy(8, 1);
 
-        let outcome = take_turn_action(
+        let outcome = test_support::take_turn_action(
             state,
             &TurnAction::Investigate {
                 investigator: inv_id,
@@ -1570,14 +1545,14 @@ mod actions_tests {
     fn resource_scenario_with_enemy(
         attack_damage: u8,
         inv_health: u8,
-    ) -> (InvestigatorId, EnemyId, crate::state::GameState) {
+    ) -> (InvestigatorId, EnemyId, GameState) {
         // Registry needed for max_health()/max_sanity() after cp2a.
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
         let loc_id = LocationId(10);
         let enemy_id = EnemyId(300);
 
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(loc_id);
         inv.actions_remaining = 3;
         // Pre-load accumulated_damage so that max_health() (8 from TEST_INV) minus
@@ -1585,9 +1560,9 @@ mod actions_tests {
         inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
         inv.resources = 0;
 
-        let loc = test_location(10, "Study");
+        let loc = test_support::test_location(10, "Study");
 
-        let mut enemy = test_enemy(300, "Ghoul");
+        let mut enemy = test_support::test_enemy(300, "Ghoul");
         enemy.current_location = Some(loc_id);
         enemy.engaged_with = Some(inv_id);
         enemy.attack_damage = attack_damage;
@@ -1600,8 +1575,8 @@ mod actions_tests {
             .with_enemy(enemy)
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(inv_id)
             .build();
@@ -1615,7 +1590,7 @@ mod actions_tests {
         // Investigator has 1 health, enemy deals 1 damage → lethal AoO.
         let (inv_id, _enemy_id, state) = resource_scenario_with_enemy(1, 1);
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Resource {
                 investigator: inv_id,
@@ -1656,7 +1631,7 @@ mod actions_tests {
         // exhausted (RR p.7), investigator took 1 damage.
         let (inv_id, enemy_id, state) = resource_scenario_with_enemy(1, 8);
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Resource {
                 investigator: inv_id,
@@ -1704,25 +1679,25 @@ mod actions_tests {
         let inv_id = InvestigatorId(1);
         let loc_id = LocationId(10);
 
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(loc_id);
         inv.actions_remaining = 3;
         inv.resources = 2;
 
-        let loc = test_location(10, "Study");
+        let loc = test_support::test_location(10, "Study");
 
         let state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_location(loc)
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(inv_id)
             .build();
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Resource {
                 investigator: inv_id,
@@ -1759,25 +1734,25 @@ mod actions_tests {
     fn engage_scenario_with_aoo_enemy(
         inv_health: u8,
         aoo_damage: u8,
-    ) -> (InvestigatorId, EnemyId, EnemyId, crate::state::GameState) {
+    ) -> (InvestigatorId, EnemyId, EnemyId, GameState) {
         // Registry needed for max_health()/max_sanity() after cp2a.
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
         let loc_id = LocationId(10);
         let target_id = EnemyId(400);
         let aoo_enemy_id = EnemyId(401);
 
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(loc_id);
         inv.actions_remaining = 3;
         // Pre-load accumulated_damage so that max_health() (8 from TEST_INV) minus
         // accumulated_damage equals inv_health (the "remaining health" the test intended).
         inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
 
-        let loc = test_location(10, "Study");
+        let loc = test_support::test_location(10, "Study");
 
         // The target: co-located, not yet engaged — cannot AoO.
-        let mut target = test_enemy(400, "Cultist");
+        let mut target = test_support::test_enemy(400, "Cultist");
         target.current_location = Some(loc_id);
         target.engaged_with = None;
         target.attack_damage = 0;
@@ -1785,7 +1760,7 @@ mod actions_tests {
         target.exhausted = false;
 
         // The AoO attacker: already engaged, ready — it WILL AoO.
-        let mut aoo_enemy = test_enemy(401, "Ghoul");
+        let mut aoo_enemy = test_support::test_enemy(401, "Ghoul");
         aoo_enemy.current_location = Some(loc_id);
         aoo_enemy.engaged_with = Some(inv_id);
         aoo_enemy.attack_damage = aoo_damage;
@@ -1799,8 +1774,8 @@ mod actions_tests {
             .with_enemy(aoo_enemy)
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv_id)
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(inv_id)
             .build();
@@ -1815,7 +1790,7 @@ mod actions_tests {
         // target's engaged_with == Some(investigator), investigator survived.
         let (inv_id, target_id, aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(8, 1);
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Engage {
                 investigator: inv_id,
@@ -1873,7 +1848,7 @@ mod actions_tests {
         // The other engaged enemy's AoO defeats the investigator: no EnemyEngaged.
         let (inv_id, target_id, _aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(1, 1);
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Engage {
                 investigator: inv_id,

@@ -7,23 +7,28 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::card_registry;
-use crate::dsl::{discover_clue, Determination, IntExpr, LocationTarget, SkillTestKind, Trigger};
-use crate::event::{Event, FailureReason};
-use crate::state::{
-    resolve_token, CardCode, ChaosToken, Continuation, DifficultyBasis, GameState,
-    InFlightSkillTest, InvestigatorId, Lifetime, RecordedModifier, SkillKind, SkillTestFollowUp,
-    SkillTestStep, Status, TokenResolution, Zone,
-};
-
-use super::super::evaluator::{push_effect, EvalContext};
-use super::super::modified_value::{
-    elder_sign_expr, modified_value, stat_for_skill, test_determination, ContributionSource,
-    ModifiedQuantity, ModifierBreakdown, ModifierTarget, ReadContext,
-};
-use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
-use super::Cx;
 use crate::action::InputResponse;
+use crate::card_data::CardKind;
+use crate::dsl::{
+    self, Determination, Effect, HarmKind, IntExpr, InvestigatorTarget, LocationTarget,
+    SkillTestKind, Stat, TestOutcome, Trigger,
+};
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::{combat, emit, reaction_windows};
+use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::modified_value::{
+    self, ContributionSource, ModifiedQuantity, ModifierBreakdown, ModifierTarget, ReadContext,
+};
+use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::engine::Cx;
+use crate::event::{Event, FailureReason};
+use crate::scenario::TokenEffect;
+use crate::state::{
+    self, AbilitySource, CardCode, ChaosToken, Continuation, DifficultyBasis, FastWindowKind,
+    GameState, InFlightSkillTest, InvestigatorId, Lifetime, RecordedModifier, ResolvedTest,
+    SkillKind, SkillTestFollowUp, SkillTestStep, Status, TokenResolution, Zone,
+};
+use crate::{card_registry, scenario};
 
 /// The one-shot modifier an initiator grants the test it starts: a weapon's
 /// *"+N \[combat\] for this attack"* (the
@@ -54,7 +59,7 @@ pub(in crate::engine) struct InitiatorModifier {
     /// investigated location for a shroud reduction.
     pub target: ModifierTarget,
     /// Which quantity of that target.
-    pub stat: crate::dsl::Stat,
+    pub stat: Stat,
     /// The signed magnitude, evaluated at every read.
     pub delta: IntExpr,
 }
@@ -70,9 +75,9 @@ pub(in crate::engine) fn start_skill_test(
     kind: SkillTestKind,
     difficulty_basis: DifficultyBasis,
     follow_up: SkillTestFollowUp,
-    on_success: Option<card_dsl::dsl::Effect>,
-    on_fail: Option<card_dsl::dsl::Effect>,
-    source: Option<crate::state::AbilitySource>,
+    on_success: Option<Effect>,
+    on_fail: Option<Effect>,
+    source: Option<AbilitySource>,
     initiator_modifier: Option<InitiatorModifier>,
 ) -> EngineOutcome {
     // Validate-first: investigator must exist and be Active; chaos
@@ -179,7 +184,7 @@ pub(in crate::engine) fn start_skill_test(
                 // times per attack"*) has nothing to key on for a board source.
                 // Narrowing here rather than widening `RecordedModifier` keeps
                 // the projection at the row's own boundary (#834).
-                source.and_then(crate::state::AbilitySource::instance),
+                source.and_then(AbilitySource::instance),
             ));
     }
     // The announced difficulty is the modified difficulty as it stands at
@@ -444,7 +449,7 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     // `ChaosTokenRevealed`, no symbol effects — straight to ST.5. Every other
     // step of the test still runs, so the cursor advances exactly as the
     // drawing path leaves it.
-    if test_determination(cx.state, ReadContext::from_state(cx.state)).is_some() {
+    if modified_value::test_determination(cx.state, ReadContext::from_state(cx.state)).is_some() {
         cx.state
             .current_skill_test_mut()
             .expect("run_resolution: the SkillTest frame must exist")
@@ -457,13 +462,13 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     let token = cx.state.chaos_bag.tokens[token_idx];
     let symbol_outcome = match token {
         ChaosToken::Skull | ChaosToken::Cultist | ChaosToken::Tablet | ChaosToken::ElderThing => {
-            crate::scenario::resolve_symbol_token(cx.state, token, investigator)
+            scenario::resolve_symbol_token(cx.state, token, investigator)
         }
         _ => None,
     };
     let resolution = match &symbol_outcome {
         Some(o) => TokenResolution::Modifier(o.modifier),
-        None => resolve_token(token, &cx.state.token_modifiers),
+        None => state::resolve_token(token, &cx.state.token_modifiers),
     };
     cx.events
         .push(Event::ChaosTokenRevealed { token, resolution });
@@ -545,7 +550,7 @@ fn record_token_contribution(
         TokenResolution::Modifier(n) => IntExpr::Lit(n),
         TokenResolution::ElderSign => {
             let Some(expr) = card_registry::current()
-                .and_then(|reg| elder_sign_expr(cx.state, reg, investigator))
+                .and_then(|reg| modified_value::elder_sign_expr(cx.state, reg, investigator))
             else {
                 return;
             };
@@ -565,7 +570,7 @@ fn record_token_contribution(
     };
     cx.state.recorded_modifiers.push(RecordedModifier::new(
         investigator,
-        stat_for_skill(skill),
+        modified_value::stat_for_skill(skill),
         delta,
         Lifetime::SkillTest(test_id),
         None,
@@ -577,7 +582,7 @@ fn record_token_contribution(
 /// outcome here instead of threading `succeeded`/`failed_by` through cursor
 /// payloads; the `.expect` is the structural witness that the test is past
 /// `DetermineOutcome` (the cursor never reaches these steps before it runs).
-fn resolved(cx: &Cx) -> crate::state::ResolvedTest {
+fn resolved(cx: &Cx) -> ResolvedTest {
     cx.state
         .current_skill_test()
         .expect("resolved: the SkillTest frame must persist")
@@ -613,8 +618,8 @@ fn fire_on_commit_step(cx: &mut Cx, investigator: InvestigatorId, committed: &[C
         .expect("the SkillTest frame must persist across driver steps")
         .continuation = SkillTestStep::ApplyFollowUp;
     if !effects.is_empty() {
-        let seq = crate::dsl::Effect::Seq(effects);
-        push_effect(cx, &seq, EvalContext::for_controller(investigator));
+        let seq = Effect::Seq(effects);
+        evaluator::push_effect(cx, &seq, EvalContext::for_controller(investigator));
     }
 }
 
@@ -696,7 +701,7 @@ fn determine_outcome_step(
     // success whichever was latched first (ADR 0007). The `[auto_fail]`
     // token wrote its row at ST.3 like any other latch; nothing here knows
     // a token was involved.
-    let determination = test_determination(cx.state, ReadContext::DuringTest(kind));
+    let determination = modified_value::test_determination(cx.state, ReadContext::DuringTest(kind));
     // The total difficulty, read the same way as the total skill value: off
     // the board as it stands now, not as it stood at ST.1. An enemy's
     // modified fight value *is* the difficulty of a Fight action, so a card
@@ -753,7 +758,7 @@ fn determine_outcome_step(
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above")
-        .resolved = Some(crate::state::ResolvedTest {
+        .resolved = Some(ResolvedTest {
         succeeded,
         failed_by,
         margin,
@@ -784,13 +789,13 @@ fn determine_outcome_step(
         .expect("the SkillTest frame must persist across driver steps")
         .continuation = SkillTestStep::AcknowledgeOutcome;
     let outcome = if succeeded {
-        crate::dsl::TestOutcome::Success
+        TestOutcome::Success
     } else {
-        crate::dsl::TestOutcome::Failure
+        TestOutcome::Failure
     };
-    super::emit::queue_event(
+    emit::queue_event(
         cx,
-        &super::emit::TimingEvent::SkillTestResolved {
+        &TimingEvent::SkillTestResolved {
             investigator,
             kind,
             outcome,
@@ -806,7 +811,7 @@ fn determine_outcome_step(
 /// suspending effect resumes past this step. The push (if any) makes an Effect
 /// frame the new top → the `advance` loop yields to drive it.
 fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
-    let crate::state::ResolvedTest {
+    let ResolvedTest {
         succeeded,
         failed_by,
         ..
@@ -829,14 +834,14 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
         |inv: InvestigatorId| EvalContext::for_controller_with_optional_source(inv, source);
     if succeeded {
         if let Some(effect) = &on_success {
-            push_effect(cx, effect, card_ctx(investigator));
+            evaluator::push_effect(cx, effect, card_ctx(investigator));
         }
     } else if let Some(effect) = &on_fail {
         // Thread the failure margin so `IntExpr::Count(Quantity::SkillTestFailedBy)`
         // (Grasping Hands 01162, Rotting Remains 01163) can scale.
         let mut ctx = card_ctx(investigator);
         ctx.set_failed_by(failed_by);
-        push_effect(cx, effect, ctx);
+        evaluator::push_effect(cx, effect, ctx);
     }
 }
 
@@ -862,7 +867,7 @@ fn fire_on_resolution_step(
             .continuation = SkillTestStep::FireOnResolution {
             next: next.saturating_add(1),
         };
-        push_effect(cx, &effects[idx], EvalContext::for_controller(investigator));
+        evaluator::push_effect(cx, &effects[idx], EvalContext::for_controller(investigator));
     } else {
         cx.state
             .current_skill_test_mut()
@@ -915,10 +920,7 @@ fn open_skill_test_player_window(
         .current_skill_test_mut()
         .expect("open_skill_test_player_window: the SkillTest frame must exist")
         .continuation = next;
-    super::reaction_windows::open_fast_window(
-        cx,
-        crate::state::FastWindowKind::SkillTest { before_token },
-    )
+    reaction_windows::open_fast_window(cx, FastWindowKind::SkillTest { before_token })
 }
 
 /// Walk the skill-test resolution sequence from the current
@@ -1131,7 +1133,11 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                     .continuation = SkillTestStep::FireOnResolution { next: 0 };
                 if !succeeded {
                     if let Some(effect) = on_fail {
-                        push_effect(cx, &effect, EvalContext::for_controller(investigator));
+                        evaluator::push_effect(
+                            cx,
+                            &effect,
+                            EvalContext::for_controller(investigator),
+                        );
                     }
                 }
             }
@@ -1368,7 +1374,7 @@ fn validate_commit_indices(
         }
         for (code, count) in counts {
             let cap = (reg.metadata_for)(code).and_then(|m| match m.kind {
-                crate::card_data::CardKind::Skill { commit_limit, .. } => commit_limit,
+                CardKind::Skill { commit_limit, .. } => commit_limit,
                 _ => None,
             });
             if let Some(limit) = cap {
@@ -1401,7 +1407,7 @@ fn validate_commit_indices(
 /// realistic difficulties are 0–6.
 fn current_difficulty(state: &GameState) -> i8 {
     i8::try_from(
-        modified_value(
+        modified_value::modified_value(
             state,
             card_registry::current(),
             ModifierTarget::Test,
@@ -1442,7 +1448,7 @@ fn sum_skill_value(
         "sum_skill_value: investigator {investigator:?} disappeared while test was in flight; \
          this is a state-corruption invariant violation"
     );
-    let mut breakdown = modified_value(
+    let mut breakdown = modified_value::modified_value(
         state,
         card_registry::current(),
         ModifierTarget::Investigator(investigator),
@@ -1587,8 +1593,9 @@ fn apply_skill_test_follow_up(
                 .state
                 .current_skill_test()
                 .map_or(0, |t| t.bonus_clues_discovered);
-            let effect = discover_clue(LocationTarget::TestedLocation, 1u8.saturating_add(bonus));
-            push_effect(cx, &effect, EvalContext::for_controller(investigator));
+            let effect =
+                dsl::discover_clue(LocationTarget::TestedLocation, 1u8.saturating_add(bonus));
+            evaluator::push_effect(cx, &effect, EvalContext::for_controller(investigator));
         }
         SkillTestFollowUp::Fight {
             enemy,
@@ -1612,7 +1619,7 @@ fn apply_skill_test_follow_up(
                 .state
                 .current_skill_test()
                 .map_or(0, |t| t.bonus_attack_damage);
-            super::combat::damage_enemy(
+            combat::damage_enemy(
                 cx,
                 enemy,
                 1u8.saturating_add(extra_damage).saturating_add(bonus),
@@ -1684,7 +1691,7 @@ fn fire_retaliate_if_any(
     if retaliates {
         // Route through the attack loop (#379) so the retaliate opens its cancel
         // (Dodge) and soak (Guard Dog) windows; non-exhausting (RR p.18).
-        super::combat::drive_retaliate(cx, enemy, investigator)
+        combat::drive_retaliate(cx, enemy, investigator)
     } else {
         EngineOutcome::Done
     }
@@ -1704,17 +1711,14 @@ fn fire_retaliate_if_any(
 /// No registry installed → empty list: engine-only tests that don't touch card
 /// data never reach `OnSkillTestResolution`. Silent skip mirrors
 /// `constant_skill_modifier`'s behavior.
-fn collect_on_skill_test_resolution(
-    committed: &[CardCode],
-    succeeded: bool,
-) -> Vec<card_dsl::dsl::Effect> {
+fn collect_on_skill_test_resolution(committed: &[CardCode], succeeded: bool) -> Vec<Effect> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
     };
     let outcome_now = if succeeded {
-        crate::dsl::TestOutcome::Success
+        TestOutcome::Success
     } else {
-        crate::dsl::TestOutcome::Failure
+        TestOutcome::Failure
     };
 
     let mut effects = Vec::new();
@@ -1752,7 +1756,7 @@ fn collect_on_skill_test_resolution(
 /// No registry installed → empty list: engine-only tests that don't touch card
 /// data never commit real cards. Silent skip mirrors
 /// `constant_skill_modifier`'s behavior.
-fn collect_on_commit(committed: &[CardCode]) -> Vec<card_dsl::dsl::Effect> {
+fn collect_on_commit(committed: &[CardCode]) -> Vec<Effect> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
     };
@@ -1817,11 +1821,7 @@ pub(super) fn peril_check(
 /// these suspend when the tester controls a soak asset — RR-correct (the player
 /// assigns damage/horror to soak assets), unlike the old auto-assigning
 /// `take_damage`/`take_horror` shortcut.
-fn symbol_effects_to_effect(
-    effects: &[crate::scenario::TokenEffect],
-) -> Option<card_dsl::dsl::Effect> {
-    use crate::dsl::{Effect, HarmKind, InvestigatorTarget};
-    use crate::scenario::TokenEffect;
+fn symbol_effects_to_effect(effects: &[TokenEffect]) -> Option<Effect> {
     let deals: Vec<Effect> = effects
         .iter()
         .map(|e| match e {
@@ -1847,22 +1847,22 @@ fn symbol_effects_to_effect(
 /// Push a chaos symbol token's side effects (built by
 /// [`symbol_effects_to_effect`]) for the drive loop, controller-scoped to the
 /// tester (symbol effects have no source card). A no-op when the list is empty.
-fn push_symbol_effects(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    effects: &[crate::scenario::TokenEffect],
-) {
+fn push_symbol_effects(cx: &mut Cx, investigator: InvestigatorId, effects: &[TokenEffect]) {
     if let Some(effect) = symbol_effects_to_effect(effects) {
-        push_effect(cx, &effect, EvalContext::for_controller(investigator));
+        evaluator::push_effect(cx, &effect, EvalContext::for_controller(investigator));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dsl::deal_horror;
+    use crate::engine::dispatch;
     use crate::event::Event;
     use crate::scenario::TokenEffect;
-    use crate::test_support::{test_investigator, test_skill_test, GameStateBuilder};
+    use crate::state::{EffectFrame, EnemyId, LocationId, SkillSubstitution, SkillTestId};
+    use crate::test_support::{self, GameStateBuilder};
+    use crate::InputKind;
 
     /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
     /// reading the commit-time accumulator off the in-flight record
@@ -1870,14 +1870,11 @@ mod tests {
     /// `bonus_attack_damage: 2`, the attack deals `1 + 1 + 2 = 4`.
     #[test]
     fn fight_follow_up_adds_bonus_attack_damage() {
-        use crate::state::EnemyId;
-        use crate::test_support::test_enemy;
-
         let inv = InvestigatorId(1);
-        let mut enemy = test_enemy(7, "Goon");
+        let mut enemy = test_support::test_enemy(7, "Goon");
         enemy.max_health = 10; // avoid clamping so the dealt damage is observable
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_enemy(enemy)
             .build();
         state
@@ -1888,8 +1885,8 @@ mod tests {
                     extra_damage: 1,
                 },
                 bonus_attack_damage: 2,
-                ..test_skill_test(
-                    crate::state::SkillTestId(0),
+                ..test_support::test_skill_test(
+                    SkillTestId(0),
                     inv,
                     SkillKind::Combat,
                     SkillTestKind::Fight,
@@ -1925,14 +1922,11 @@ mod tests {
     /// 1, which is what Cover Up 01007 would replace twice (#471).
     #[test]
     fn investigate_follow_up_pushes_one_discovery_carrying_the_clue_bonus() {
-        use crate::state::{EffectFrame, LocationId};
-        use crate::test_support::test_location;
-
         let inv = InvestigatorId(1);
         let loc = LocationId(10);
         let mut state = GameStateBuilder::new()
-            .with_investigator_at(test_investigator(1), loc)
-            .with_location(test_location(10, "Study"))
+            .with_investigator_at(test_support::test_investigator(1), loc)
+            .with_location(test_support::test_location(10, "Study"))
             .build();
         state
             .continuations
@@ -1940,8 +1934,8 @@ mod tests {
                 tested_location: Some(loc),
                 follow_up: SkillTestFollowUp::Investigate,
                 bonus_clues_discovered: 1,
-                ..test_skill_test(
-                    crate::state::SkillTestId(0),
+                ..test_support::test_skill_test(
+                    SkillTestId(0),
                     inv,
                     SkillKind::Intellect,
                     SkillTestKind::Investigate,
@@ -1966,7 +1960,7 @@ mod tests {
         };
         assert_eq!(
             **effect,
-            crate::dsl::Effect::DiscoverClue {
+            Effect::DiscoverClue {
                 from: LocationTarget::TestedLocation,
                 count: 2,
             },
@@ -1976,8 +1970,6 @@ mod tests {
 
     #[test]
     fn symbol_effects_to_effect_builds_deal_seq() {
-        use crate::dsl::{Effect, HarmKind, InvestigatorTarget};
-
         // Empty → nothing to push.
         assert_eq!(symbol_effects_to_effect(&[]), None);
 
@@ -2010,11 +2002,9 @@ mod tests {
     /// skill-test driver no longer touches encounter disposal at all (#380).
     #[test]
     fn plain_skill_test_disposes_of_no_encounter_card() {
-        use crate::state::ChaosToken;
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2026,7 +2016,7 @@ mod tests {
         let out = perform_skill_test(&mut cx, inv, SkillKind::Intellect, 1);
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         let out = finish_skill_test(&mut cx, &[]);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert!(state.encounter_discard.is_empty());
     }
@@ -2035,12 +2025,9 @@ mod tests {
     /// draw (the success-side mirror of the `on_fail` path).
     #[test]
     fn skill_test_runs_on_success_effect_on_a_passing_draw() {
-        use crate::dsl::{deal_horror, InvestigatorTarget};
-        use crate::state::ChaosToken;
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         // Willpower 3 + Numeric(0) = 3 vs difficulty 2 → success.
@@ -2064,7 +2051,7 @@ mod tests {
         );
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         let out = finish_skill_test(&mut cx, &[]);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(
             state.investigators[&inv].horror(),
@@ -2077,11 +2064,9 @@ mod tests {
     /// Fast-eligible), bracketing the commit, and the test still resolves. (#374.)
     #[test]
     fn skill_test_opens_and_auto_skips_both_player_windows() {
-        use crate::state::ChaosToken;
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2111,7 +2096,7 @@ mod tests {
 
         // commit nothing -> PreTokenWindow auto-skips window 2 -> resolves to end.
         let out = finish_skill_test(&mut cx, &[]);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(
             out,
             EngineOutcome::Done,
@@ -2132,26 +2117,24 @@ mod tests {
     /// emit the commit prompt. (#374.)
     #[test]
     fn closing_a_skill_test_player_window_re_enters_advance() {
-        use crate::state::{ChaosToken, Continuation, FastWindowKind};
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
         // A SkillTest pre-advanced to AwaitingCommit, as if window 1 just opened.
         state
             .continuations
-            .push(Continuation::SkillTest(test_skill_test(
-                crate::state::SkillTestId(0),
+            .push(Continuation::SkillTest(test_support::test_skill_test(
+                SkillTestId(0),
                 inv,
                 SkillKind::Willpower,
                 SkillTestKind::Plain,
                 2,
             )));
         let mut events = Vec::new();
-        let out = super::super::reaction_windows::run_fast_continuation(
+        let out = reaction_windows::run_fast_continuation(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2174,11 +2157,9 @@ mod tests {
     /// teardown — `SkillTestStarted` then `SkillTestEnded`, no frame left behind.
     #[test]
     fn commit_emits_then_resolves_through_advance() {
-        use crate::state::{ChaosToken, Continuation};
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2215,7 +2196,7 @@ mod tests {
 
         // Commit nothing → the hop parks; the loop drives to teardown.
         let out = finish_skill_test(&mut cx, &[]);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert!(
             events
@@ -2240,12 +2221,9 @@ mod tests {
     /// Confirm drives it to completion (#478).
     #[test]
     fn interactive_acknowledge_pauses_for_confirm_then_resolves() {
-        use crate::state::ChaosToken;
-        use crate::InputKind;
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2275,7 +2253,7 @@ mod tests {
 
         // Commit nothing -> resolution runs, then suspends at the acknowledge step.
         let out = finish_skill_test(&mut cx, &[]);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         let EngineOutcome::AwaitingInput { request, .. } = &out else {
             panic!("expected the acknowledge Confirm prompt, got {out:?}");
         };
@@ -2316,7 +2294,7 @@ mod tests {
 
         // Confirm -> drive into teardown.
         let out = acknowledge_outcome(&mut cx);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert!(
             events
@@ -2330,11 +2308,9 @@ mod tests {
     /// through, exactly as before #478 (guards against test churn).
     #[test]
     fn no_acknowledge_pause_when_flag_off() {
-        use crate::state::ChaosToken;
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2361,7 +2337,7 @@ mod tests {
             "commit prompt"
         );
         let out = finish_skill_test(&mut cx, &[]);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(
             out,
             EngineOutcome::Done,
@@ -2377,7 +2353,7 @@ mod tests {
     #[test]
     fn acknowledge_outcome_rejects_without_in_flight_test() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -2396,11 +2372,9 @@ mod tests {
     /// re-entry retired.)
     #[test]
     fn finish_skill_test_parks_the_resolution_for_the_loop() {
-        use crate::state::{ChaosToken, Continuation, SkillTestStep};
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2443,7 +2417,7 @@ mod tests {
         );
 
         // The loop's SkillTest arm drives the parked frame the rest of the way.
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert!(
             cx.events
@@ -2461,9 +2435,8 @@ mod tests {
     }
 
     fn substitution_state(inv: InvestigatorId) -> GameState {
-        use crate::state::{ChaosToken, SkillSubstitution};
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2498,7 +2471,7 @@ mod tests {
                 None,
                 Some(InitiatorModifier {
                     target: ModifierTarget::Investigator(inv),
-                    stat: crate::dsl::Stat::Combat,
+                    stat: Stat::Combat,
                     delta: IntExpr::Lit(2),
                 }),
             )
@@ -2520,7 +2493,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            super::super::drive(&mut cx, out)
+            dispatch::drive(&mut cx, out)
         };
         assert!(
             matches!(out, EngineOutcome::AwaitingInput { .. }),
@@ -2533,7 +2506,7 @@ mod tests {
         // over `Stat::Combat`, and the test now reads Intellect (FAQ: "ignore
         // any bonuses to Combat or Agility").
         let read = |skill| {
-            modified_value(
+            modified_value::modified_value(
                 &state,
                 card_registry::current(),
                 ModifierTarget::Investigator(inv),
@@ -2640,7 +2613,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            super::super::drive(&mut cx, out)
+            dispatch::drive(&mut cx, out)
         };
         assert!(
             matches!(out, EngineOutcome::AwaitingInput { .. }),
@@ -2660,8 +2633,6 @@ mod tests {
     /// #431 — substitution-resume re-entry retired.)
     #[test]
     fn resume_substitution_choice_parks_for_the_loop() {
-        use crate::state::Continuation;
-
         let inv = InvestigatorId(1);
         let mut state = substitution_state(inv);
         let mut events = Vec::new();
@@ -2725,7 +2696,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            super::super::drive(&mut cx, out)
+            dispatch::drive(&mut cx, out)
         };
         assert!(
             matches!(out, EngineOutcome::AwaitingInput { .. }),
@@ -2737,7 +2708,7 @@ mod tests {
     fn no_active_substitution_opens_commit_window_directly() {
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2776,11 +2747,9 @@ mod tests {
     /// clamped skill value, bonus 0. Locks the behaviour-preserving default.
     #[test]
     fn elder_sign_token_adds_zero_without_an_elder_sign_ability() {
-        use crate::state::ChaosToken;
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1)) // card_code = "" sentinel
+            .with_investigator(test_support::test_investigator(1)) // card_code = "" sentinel
             .with_active_investigator(inv)
             .build();
         // Willpower 3, difficulty 2, ElderSign token. Bonus 0 → total 3 → succeed by 1.
@@ -2804,7 +2773,7 @@ mod tests {
         );
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         let out = finish_skill_test(&mut cx, &[]);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert!(
             events.iter().any(|e| matches!(
