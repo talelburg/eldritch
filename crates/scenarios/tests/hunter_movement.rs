@@ -12,9 +12,11 @@
 //! which is what #877 did. Until then the `TEST_REGISTRY` install below is the
 //! only thing keeping the binary tied to the scenarios crate.
 //!
-//! The spawn-engagement tie that also lived here moved the other way, to
-//! `crates/cards/tests/spawn_engagement_tie.rs` (#877), where it runs against
-//! Flesh-Eater 01118 and the real registry.
+//! The spawn-engagement tie that also lived here is gone (#877). Flipping it to
+//! a real card would have made it the third test of the same fact, behind
+//! `cards/tests/encounter_spawn.rs`'s direct-record variant and
+//! `cards/tests/mythos_phase.rs`'s full Mythos walk — and the weakest of the
+//! three, since its Mythos frames were staged by hand rather than reached.
 //!
 //! [#873]: https://github.com/talelburg/eldritch/issues/873
 
