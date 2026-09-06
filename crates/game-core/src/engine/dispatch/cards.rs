@@ -1282,13 +1282,13 @@ fn discard_played_card(cx: &mut Cx, investigator: InvestigatorId, card: CardCode
 mod grant_resources_tests {
     use super::*;
     use crate::state::InvestigatorId;
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn grant_resources_adds_to_wallet_and_emits() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
@@ -1313,7 +1313,7 @@ mod grant_resources_tests {
     fn grant_resources_zero_is_silent_noop() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
@@ -1336,14 +1336,13 @@ mod grant_resources_tests {
 mod draw_with_deckout_tests {
     use super::*;
     use crate::state::{CardCode, InvestigatorId};
-    use crate::test_support;
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn draw_one_with_deckout_empty_deck_reshuffles_and_takes_horror() {
         test_support::install_test_registry();
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.deck.clear();
         inv.discard = vec![CardCode::new("01000"), CardCode::new("01001")];
         // After #448 cp2a: horror accumulates on investigator_card, accessor reads it.
@@ -1382,7 +1381,7 @@ mod draw_with_deckout_tests {
     fn draw_with_deckout_completes_the_count_across_a_midway_reshuffle() {
         test_support::install_test_registry();
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.deck = vec![CardCode::new("01000")];
         inv.discard = vec![
             CardCode::new("01001"),
@@ -1421,7 +1420,7 @@ mod draw_with_deckout_tests {
     fn draw_with_deckout_on_a_stocked_deck_neither_reshuffles_nor_takes_horror() {
         test_support::install_test_registry();
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.deck = vec![
             CardCode::new("01000"),
             CardCode::new("01001"),

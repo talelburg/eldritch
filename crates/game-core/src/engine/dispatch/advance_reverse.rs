@@ -183,8 +183,7 @@ mod tests {
     use crate::state::{
         Act, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, CardCode, Continuation, GameState,
     };
-    use crate::test_support;
-    use crate::test_support::GameStateBuilder;
+    use crate::test_support::{self, GameStateBuilder};
 
     fn state_advancing_agenda(interactive: bool) -> GameState {
         let mut state = GameStateBuilder::new().build();
@@ -331,21 +330,20 @@ mod tests {
     fn a_terminal_act_pauses_on_the_flip_acknowledge_before_its_reverse_ends_the_scenario() {
         use crate::scenario::{ResolutionId, ScenarioEnding};
         use crate::state::{Act, InvestigatorId};
-        use crate::test_support::{terminal_code, test_investigator};
         test_support::install_test_registry();
         let mut state = state_advancing_act(true, AdvanceTrigger::Forced);
         // One act, and it is the one advancing — so it is the terminal one.
         state.act_deck = vec![Act {
-            code: terminal_code(1),
+            code: test_support::terminal_code(1),
             clue_threshold: 0,
         }];
         state
             .investigators
-            .insert(InvestigatorId(1), test_investigator(1));
+            .insert(InvestigatorId(1), test_support::test_investigator(1));
         state.turn_order = vec![InvestigatorId(1)];
         match state.continuations.last_mut() {
             Some(Continuation::AdvanceReverse { leaving_code, .. }) => {
-                *leaving_code = terminal_code(1);
+                *leaving_code = test_support::terminal_code(1);
             }
             other => unreachable!("fixture puts the frame on top, got {other:?}"),
         }

@@ -178,7 +178,7 @@ mod tests {
     use crate::engine::dispatch;
     use crate::engine::evaluator::{push_effect, EvalContext};
     use crate::state::{GameState, InvestigatorId};
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     /// A `ChooseOne` branch that is **live** — one `effect_can_change_state`
     /// cannot prove inert, so #664's mode filter keeps it in the offer. (An
@@ -191,7 +191,7 @@ mod tests {
     /// A state holding the investigator [`live_branch`] pays out to.
     fn state_with_investigator() -> GameState {
         GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build()
     }
 

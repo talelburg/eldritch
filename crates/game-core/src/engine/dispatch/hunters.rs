@@ -589,13 +589,12 @@ pub(super) fn resume_spawn_engage(cx: &mut Cx, response: &InputResponse) -> Engi
 mod resolve_prey_tests {
     use super::*;
     use crate::card_data::SkillKind;
-    use crate::test_support;
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn resolve_prey_default_single_candidate_is_one() {
         let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let r = resolve_prey(&state, Prey::Default, &[InvestigatorId(1)]);
         assert!(matches!(r, PreyResolution::One(id) if id == InvestigatorId(1)));
@@ -604,8 +603,8 @@ mod resolve_prey_tests {
     #[test]
     fn resolve_prey_default_multiple_is_tie() {
         let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .build();
         let r = resolve_prey(
             &state,
@@ -624,9 +623,9 @@ mod resolve_prey_tests {
 
     #[test]
     fn resolve_prey_highest_stat_picks_max() {
-        let mut hi = test_investigator(1);
+        let mut hi = test_support::test_investigator(1);
         hi.skills.combat = 5;
-        let mut lo = test_investigator(2);
+        let mut lo = test_support::test_investigator(2);
         lo.skills.combat = 2;
         let state = GameStateBuilder::new()
             .with_investigator(hi)
@@ -645,9 +644,9 @@ mod resolve_prey_tests {
 
     #[test]
     fn resolve_prey_highest_stat_tie_is_tie() {
-        let mut a = test_investigator(1);
+        let mut a = test_support::test_investigator(1);
         a.skills.combat = 4;
-        let mut b = test_investigator(2);
+        let mut b = test_support::test_investigator(2);
         b.skills.combat = 4;
         let state = GameStateBuilder::new()
             .with_investigator(a)
@@ -670,9 +669,9 @@ mod resolve_prey_tests {
         // hurt: accumulated_damage 6 → remaining 2.
         // healthy: accumulated_damage 0 → remaining 8. hurt is lowest.
         test_support::install_test_registry();
-        let mut hurt = test_investigator(1);
+        let mut hurt = test_support::test_investigator(1);
         hurt.investigator_card.accumulated_damage = 6;
-        let healthy = test_investigator(2);
+        let healthy = test_support::test_investigator(2);
         let state = GameStateBuilder::new()
             .with_investigator(hurt)
             .with_investigator(healthy)
@@ -694,9 +693,9 @@ mod resolve_prey_tests {
         // a: accumulated_damage 3 → remaining 5.
         // b: accumulated_damage 3 → remaining 5. Tie.
         test_support::install_test_registry();
-        let mut a = test_investigator(1);
+        let mut a = test_support::test_investigator(1);
         a.investigator_card.accumulated_damage = 3;
-        let mut b = test_investigator(2);
+        let mut b = test_support::test_investigator(2);
         b.investigator_card.accumulated_damage = 3;
         let state = GameStateBuilder::new()
             .with_investigator(a)
@@ -721,8 +720,7 @@ mod measure_value_tests {
     use crate::card_registry::CardRegistry;
     use crate::dsl::{constant, modify, Ability, ModifierScope, Stat};
     use crate::state::{CardCode, CardInPlay, CardInstanceId};
-    use crate::test_support;
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     fn no_metadata(_: &CardCode) -> Option<&'static CardMetadata> {
         None
@@ -762,8 +760,8 @@ mod measure_value_tests {
     /// must be in the state, not merely passed by reference).
     fn state_with(cards: &[&str], damage: u8) -> GameState {
         test_support::install_test_registry();
-        let mut inv = test_investigator(1); // combat 3, max_health() = 8 from TEST_INV registry
-                                            // After #448 cp2a harm accumulates on the investigator card.
+        let mut inv = test_support::test_investigator(1); // combat 3, max_health() = 8 from TEST_INV registry
+                                                          // After #448 cp2a harm accumulates on the investigator card.
         inv.investigator_card.accumulated_damage = damage;
         inv.cards_in_play = cards
             .iter()
@@ -840,22 +838,22 @@ mod hunter_movement_tests {
     use super::*;
     use crate::engine::Cx;
     use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
-    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
-    use crate::{assert_event, assert_no_event};
+    use crate::test_support::GameStateBuilder;
+    use crate::{assert_event, assert_no_event, test_support};
 
     #[test]
     fn hunter_moves_one_step_toward_investigator_two_hops_away_no_engage() {
         // Map: A(1)-B(2)-C(3). Investigator at C; hunter at A. Hunter moves
         // A->B (one step). No investigator at B, so no engage yet.
-        let mut a = test_location(1, "A");
-        let mut b = test_location(2, "B");
-        let mut c = test_location(3, "C");
+        let mut a = test_support::test_location(1, "A");
+        let mut b = test_support::test_location(2, "B");
+        let mut c = test_support::test_location(3, "C");
         a.connections = vec![LocationId(2)];
         b.connections = vec![LocationId(1), LocationId(3)];
         c.connections = vec![LocationId(2)];
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(3));
-        let mut ghoul = test_enemy(1, "Swarm");
+        let mut ghoul = test_support::test_enemy(1, "Swarm");
         ghoul.hunter = true;
         ghoul.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
@@ -885,13 +883,13 @@ mod hunter_movement_tests {
     fn hunter_engages_when_it_moves_into_investigators_location() {
         // Map A(1)-B(2). Investigator at B; hunter at A. Hunter moves A->B
         // and engages on arrival.
-        let mut a = test_location(1, "A");
-        let mut b = test_location(2, "B");
+        let mut a = test_support::test_location(1, "A");
+        let mut b = test_support::test_location(2, "B");
         a.connections = vec![LocationId(2)];
         b.connections = vec![LocationId(1)];
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(2));
-        let mut h = test_enemy(1, "Hunter");
+        let mut h = test_support::test_enemy(1, "Hunter");
         h.hunter = true;
         h.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
@@ -920,12 +918,12 @@ mod hunter_movement_tests {
 
     #[test]
     fn hunter_with_no_path_does_not_move() {
-        let mut a = test_location(1, "A");
-        let island = test_location(9, "Island");
+        let mut a = test_support::test_location(1, "A");
+        let island = test_support::test_location(9, "Island");
         a.connections = vec![];
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(1));
-        let mut h = test_enemy(1, "Hunter");
+        let mut h = test_support::test_enemy(1, "Hunter");
         h.hunter = true;
         h.current_location = Some(LocationId(9));
         let mut state = GameStateBuilder::new()
@@ -950,13 +948,13 @@ mod hunter_movement_tests {
 
     #[test]
     fn exhausted_hunter_is_skipped() {
-        let mut a = test_location(1, "A");
-        let mut b = test_location(2, "B");
+        let mut a = test_support::test_location(1, "A");
+        let mut b = test_support::test_location(2, "B");
         a.connections = vec![LocationId(2)];
         b.connections = vec![LocationId(1)];
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(2));
-        let mut h = test_enemy(1, "Hunter");
+        let mut h = test_support::test_enemy(1, "Hunter");
         h.hunter = true;
         h.exhausted = true;
         h.current_location = Some(LocationId(1));
@@ -982,13 +980,13 @@ mod hunter_movement_tests {
 
     #[test]
     fn non_hunter_enemy_does_not_move() {
-        let mut a = test_location(1, "A");
-        let mut b = test_location(2, "B");
+        let mut a = test_support::test_location(1, "A");
+        let mut b = test_support::test_location(2, "B");
         a.connections = vec![LocationId(2)];
         b.connections = vec![LocationId(1)];
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(2));
-        let mut e = test_enemy(1, "Slug");
+        let mut e = test_support::test_enemy(1, "Slug");
         e.hunter = false;
         e.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
@@ -1015,13 +1013,13 @@ mod hunter_movement_tests {
     fn hunter_already_co_located_does_not_move_but_engages() {
         // Hunter and investigator both at A(1). p.12: an enemy already at a
         // location with an investigator does not move; it still engages.
-        let mut a = test_location(1, "A");
-        let mut b = test_location(2, "B");
+        let mut a = test_support::test_location(1, "A");
+        let mut b = test_support::test_location(2, "B");
         a.connections = vec![LocationId(2)];
         b.connections = vec![LocationId(1)];
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(1));
-        let mut h = test_enemy(1, "Hunter");
+        let mut h = test_support::test_enemy(1, "Hunter");
         h.hunter = true;
         h.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
@@ -1054,9 +1052,9 @@ mod hunter_movement_tests {
 #[cfg(test)]
 mod hunter_resume_tests {
     use super::*;
-    use crate::assert_event;
     use crate::engine::{dispatch, Cx};
     use crate::state::{EnemyId, EnemyResume, InvestigatorId, LocationId, Phase};
+    use crate::{assert_event, test_support};
 
     /// Build the `PickSingle` response selecting the offered option whose label
     /// is `format!("{target:?}")`, from a suspended `AwaitingInput`'s options.
@@ -1079,23 +1077,23 @@ mod hunter_resume_tests {
         InputResponse::PickSingle(opt.id)
     }
     use crate::card_data::SkillKind;
-    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+    use crate::test_support::GameStateBuilder;
 
     #[test]
     fn hunter_move_tie_suspends_then_resumes_on_pick_location() {
         // Diamond A(1)-{B(2),C(3)}-D(4). Investigator at D; hunter at A,
         // default prey. Two equal first-steps (B, C) -> AwaitingInput.
-        let mut loc_a = test_location(1, "A");
-        let mut loc_b = test_location(2, "B");
-        let mut loc_c = test_location(3, "C");
-        let mut loc_d = test_location(4, "D");
+        let mut loc_a = test_support::test_location(1, "A");
+        let mut loc_b = test_support::test_location(2, "B");
+        let mut loc_c = test_support::test_location(3, "C");
+        let mut loc_d = test_support::test_location(4, "D");
         loc_a.connections = vec![LocationId(2), LocationId(3)];
         loc_b.connections = vec![LocationId(1), LocationId(4)];
         loc_c.connections = vec![LocationId(1), LocationId(4)];
         loc_d.connections = vec![LocationId(2), LocationId(3)];
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(4));
-        let mut hunter = test_enemy(1, "Hunter");
+        let mut hunter = test_support::test_enemy(1, "Hunter");
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
@@ -1154,17 +1152,17 @@ mod hunter_resume_tests {
     #[test]
     fn hunter_move_tie_rejects_invalid_pick() {
         // Same diamond setup; resume with a location not in candidates.
-        let mut loc_a = test_location(1, "A");
-        let mut loc_b = test_location(2, "B");
-        let mut loc_c = test_location(3, "C");
-        let mut loc_d = test_location(4, "D");
+        let mut loc_a = test_support::test_location(1, "A");
+        let mut loc_b = test_support::test_location(2, "B");
+        let mut loc_c = test_support::test_location(3, "C");
+        let mut loc_d = test_support::test_location(4, "D");
         loc_a.connections = vec![LocationId(2), LocationId(3)];
         loc_b.connections = vec![LocationId(1), LocationId(4)];
         loc_c.connections = vec![LocationId(1), LocationId(4)];
         loc_d.connections = vec![LocationId(2), LocationId(3)];
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(4));
-        let mut hunter = test_enemy(1, "Hunter");
+        let mut hunter = test_support::test_enemy(1, "Hunter");
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
@@ -1205,15 +1203,15 @@ mod hunter_resume_tests {
     fn hunter_engage_tie_suspends_then_resumes_on_pick_investigator() {
         // Two investigators at B; hunter moves A->B; default prey -> tie ->
         // PickSingle.
-        let mut a = test_location(1, "A");
-        let mut b = test_location(2, "B");
+        let mut a = test_support::test_location(1, "A");
+        let mut b = test_support::test_location(2, "B");
         a.connections = vec![LocationId(2)];
         b.connections = vec![LocationId(1)];
-        let mut i1 = test_investigator(1);
+        let mut i1 = test_support::test_investigator(1);
         i1.current_location = Some(LocationId(2));
-        let mut i2 = test_investigator(2);
+        let mut i2 = test_support::test_investigator(2);
         i2.current_location = Some(LocationId(2));
-        let mut h = test_enemy(1, "Hunter");
+        let mut h = test_support::test_enemy(1, "Hunter");
         h.hunter = true;
         h.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
@@ -1270,19 +1268,19 @@ mod hunter_resume_tests {
         // Fan A(1)-{B(2),C(3)}. inv1 at B combat 5; inv2 at C combat 2.
         // hunter at A with Ranked Highest-combat prey. resolve_prey picks
         // inv1 unambiguously -> moves A->B, engages, no prompt.
-        let mut loc_a = test_location(1, "A");
-        let mut loc_b = test_location(2, "B");
-        let mut loc_c = test_location(3, "C");
+        let mut loc_a = test_support::test_location(1, "A");
+        let mut loc_b = test_support::test_location(2, "B");
+        let mut loc_c = test_support::test_location(3, "C");
         loc_a.connections = vec![LocationId(2), LocationId(3)];
         loc_b.connections = vec![LocationId(1)];
         loc_c.connections = vec![LocationId(1)];
-        let mut inv1 = test_investigator(1);
+        let mut inv1 = test_support::test_investigator(1);
         inv1.current_location = Some(LocationId(2));
         inv1.skills.combat = 5;
-        let mut inv2 = test_investigator(2);
+        let mut inv2 = test_support::test_investigator(2);
         inv2.current_location = Some(LocationId(3));
         inv2.skills.combat = 2;
-        let mut hunter = test_enemy(1, "Ghoul Priest");
+        let mut hunter = test_support::test_enemy(1, "Ghoul Priest");
         hunter.hunter = true;
         hunter.prey = Prey::Ranked {
             direction: PreyDirection::Highest,
@@ -1322,20 +1320,20 @@ mod hunter_resume_tests {
         // Hunter1 at A(1) ties B/C; hunter2 at B(2) has clean B->D step.
         // drive suspends on hunter1; resume picks B; then hunter2
         // processes automatically: moves B->D and engages.
-        let mut loc_a = test_location(1, "A");
-        let mut loc_b = test_location(2, "B");
-        let mut loc_c = test_location(3, "C");
-        let mut loc_d = test_location(4, "D");
+        let mut loc_a = test_support::test_location(1, "A");
+        let mut loc_b = test_support::test_location(2, "B");
+        let mut loc_c = test_support::test_location(3, "C");
+        let mut loc_d = test_support::test_location(4, "D");
         loc_a.connections = vec![LocationId(2), LocationId(3)];
         loc_b.connections = vec![LocationId(1), LocationId(4)];
         loc_c.connections = vec![LocationId(1), LocationId(4)];
         loc_d.connections = vec![LocationId(2), LocationId(3)];
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(4));
-        let mut tie_hunter = test_enemy(1, "Tie Hunter");
+        let mut tie_hunter = test_support::test_enemy(1, "Tie Hunter");
         tie_hunter.hunter = true;
         tie_hunter.current_location = Some(LocationId(1)); // ties B/C toward D
-        let mut clean_hunter = test_enemy(2, "Clean Hunter");
+        let mut clean_hunter = test_support::test_enemy(2, "Clean Hunter");
         clean_hunter.hunter = true;
         clean_hunter.current_location = Some(LocationId(2)); // single step B->D
         let mut state = GameStateBuilder::new()
@@ -1391,17 +1389,17 @@ mod hunter_resume_tests {
         // default prey. Two equal first-steps (B, C) -> AwaitingInput on Move.
         // Client submits a non-PickSingle response (Skip) -> Rejected,
         // pending preserved for retry.
-        let mut loc_a = test_location(1, "A");
-        let mut loc_b = test_location(2, "B");
-        let mut loc_c = test_location(3, "C");
-        let mut loc_d = test_location(4, "D");
+        let mut loc_a = test_support::test_location(1, "A");
+        let mut loc_b = test_support::test_location(2, "B");
+        let mut loc_c = test_support::test_location(3, "C");
+        let mut loc_d = test_support::test_location(4, "D");
         loc_a.connections = vec![LocationId(2), LocationId(3)];
         loc_b.connections = vec![LocationId(1), LocationId(4)];
         loc_c.connections = vec![LocationId(1), LocationId(4)];
         loc_d.connections = vec![LocationId(2), LocationId(3)];
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(4));
-        let mut hunter = test_enemy(1, "Hunter");
+        let mut hunter = test_support::test_enemy(1, "Hunter");
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
@@ -1458,15 +1456,15 @@ mod hunter_resume_tests {
         // -> engage tie -> AwaitingInput on Engage.
         // Client submits a non-PickSingle response (Skip) -> Rejected,
         // pending preserved for retry.
-        let mut loc_a = test_location(1, "A");
-        let mut loc_b = test_location(2, "B");
+        let mut loc_a = test_support::test_location(1, "A");
+        let mut loc_b = test_support::test_location(2, "B");
         loc_a.connections = vec![LocationId(2)];
         loc_b.connections = vec![LocationId(1)];
-        let mut inv1 = test_investigator(1);
+        let mut inv1 = test_support::test_investigator(1);
         inv1.current_location = Some(LocationId(2));
-        let mut inv2 = test_investigator(2);
+        let mut inv2 = test_support::test_investigator(2);
         inv2.current_location = Some(LocationId(2));
-        let mut hunter = test_enemy(1, "Hunter");
+        let mut hunter = test_support::test_enemy(1, "Hunter");
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
@@ -1519,29 +1517,29 @@ mod hunter_resume_tests {
 #[cfg(test)]
 mod reengage_tests {
     use super::*;
-    use crate::assert_event;
     use crate::assert_no_event;
     use crate::engine::Cx;
-    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+    use crate::test_support::GameStateBuilder;
+    use crate::{assert_event, test_support};
 
     #[test]
     fn reengage_at_location_engages_sole_co_located_survivor() {
         let surv = InvestigatorId(2);
         let loc = LocationId(1);
         let survivor = {
-            let mut i = test_investigator(2);
+            let mut i = test_support::test_investigator(2);
             i.current_location = Some(loc);
             i
         };
         let enemy = {
-            let mut e = test_enemy(1, "Ghoul");
+            let mut e = test_support::test_enemy(1, "Ghoul");
             e.current_location = Some(loc);
             e.engaged_with = None;
             e
         };
         let mut state = GameStateBuilder::default()
             .with_investigator(survivor)
-            .with_location(test_location(1, "Study"))
+            .with_location(test_support::test_location(1, "Study"))
             .with_enemy(enemy)
             .with_turn_order([surv])
             .build();
@@ -1564,13 +1562,13 @@ mod reengage_tests {
     fn reengage_at_location_no_co_located_investigator_leaves_unengaged() {
         let loc = LocationId(1);
         let enemy = {
-            let mut e = test_enemy(1, "Ghoul");
+            let mut e = test_support::test_enemy(1, "Ghoul");
             e.current_location = Some(loc);
             e.engaged_with = None;
             e
         };
         let mut state = GameStateBuilder::default()
-            .with_location(test_location(1, "Study"))
+            .with_location(test_support::test_location(1, "Study"))
             .with_enemy(enemy)
             .with_turn_order([])
             .build();
@@ -1595,12 +1593,12 @@ mod reengage_tests {
         let other = InvestigatorId(3);
         let loc = LocationId(1);
         let mk = |raw: u32| {
-            let mut i = test_investigator(raw);
+            let mut i = test_support::test_investigator(raw);
             i.current_location = Some(loc);
             i
         };
         let enemy = {
-            let mut e = test_enemy(1, "Ghoul");
+            let mut e = test_support::test_enemy(1, "Ghoul");
             e.current_location = Some(loc);
             e.engaged_with = None;
             e.prey = Prey::Default;
@@ -1609,7 +1607,7 @@ mod reengage_tests {
         let mut state = GameStateBuilder::default()
             .with_investigator(mk(2))
             .with_investigator(mk(3))
-            .with_location(test_location(1, "Study"))
+            .with_location(test_support::test_location(1, "Study"))
             .with_enemy(enemy)
             .with_turn_order([lead, other]) // lead first
             .build();
@@ -1637,12 +1635,12 @@ mod reengage_tests {
         let surv = InvestigatorId(2);
         let loc = LocationId(1);
         let survivor = {
-            let mut i = test_investigator(2);
+            let mut i = test_support::test_investigator(2);
             i.current_location = Some(loc);
             i
         };
         let enemy = {
-            let mut e = test_enemy(1, "Ghoul");
+            let mut e = test_support::test_enemy(1, "Ghoul");
             e.current_location = Some(loc);
             e.engaged_with = None;
             e.exhausted = true; // exhausted unengaged enemy does not engage (RR p.10)
@@ -1650,7 +1648,7 @@ mod reengage_tests {
         };
         let mut state = GameStateBuilder::default()
             .with_investigator(survivor)
-            .with_location(test_location(1, "Study"))
+            .with_location(test_support::test_location(1, "Study"))
             .with_enemy(enemy)
             .with_turn_order([surv])
             .build();
@@ -1671,7 +1669,7 @@ mod reengage_tests {
     #[test]
     fn reengage_at_location_enemy_without_location_is_noop() {
         let enemy = {
-            let mut e = test_enemy(1, "Ghoul");
+            let mut e = test_support::test_enemy(1, "Ghoul");
             e.current_location = None; // no location — must no-op
             e.engaged_with = None;
             e
@@ -1694,29 +1692,29 @@ mod reengage_tests {
 #[cfg(test)]
 mod relocate_tests {
     use super::*;
-    use crate::assert_event;
     use crate::assert_no_event;
     use crate::engine::Cx;
-    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+    use crate::test_support::GameStateBuilder;
+    use crate::{assert_event, test_support};
 
     /// Two adjacent locations: the investigator in the Hallway (2), a
     /// ready unengaged enemy in the Attic (1).
     fn two_room_board() -> GameState {
         let inv = {
-            let mut i = test_investigator(1);
+            let mut i = test_support::test_investigator(1);
             i.current_location = Some(LocationId(2));
             i
         };
         let enemy = {
-            let mut e = test_enemy(1, "Ghoul");
+            let mut e = test_support::test_enemy(1, "Ghoul");
             e.current_location = Some(LocationId(1));
             e.engaged_with = None;
             e
         };
         let mut state = GameStateBuilder::default()
             .with_investigator(inv)
-            .with_location(test_location(1, "Attic"))
-            .with_location(test_location(2, "Hallway"))
+            .with_location(test_support::test_location(1, "Attic"))
+            .with_location(test_support::test_location(2, "Hallway"))
             .with_enemy(enemy)
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -1822,7 +1820,7 @@ mod relocate_tests {
         let mut state = two_room_board();
         let other = InvestigatorId(2);
         state.investigators.insert(other, {
-            let mut i = test_investigator(2);
+            let mut i = test_support::test_investigator(2);
             i.current_location = Some(LocationId(1));
             i
         });

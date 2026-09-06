@@ -2431,12 +2431,12 @@ pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
 #[cfg(test)]
 mod check_play_card_tests {
     use super::*;
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn check_play_card_returns_err_for_unknown_hand_index() {
         let state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
             .build();
         let err =
@@ -2635,12 +2635,12 @@ mod trigger_matches_tests {
 mod check_activate_ability_tests {
     use super::*;
     use crate::state::CardInstanceId;
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn check_activate_ability_returns_err_for_unreachable_source() {
         let state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
             .build();
         let err = check_activate_ability(
@@ -2676,7 +2676,7 @@ mod check_activate_ability_tests {
 #[cfg(test)]
 mod any_fast_play_eligible_tests {
     use super::*;
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn returns_false_when_no_investigators() {
@@ -2687,7 +2687,7 @@ mod any_fast_play_eligible_tests {
     #[test]
     fn returns_false_when_hands_and_in_play_empty() {
         let state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         assert!(!any_fast_play_eligible(&state));
     }
@@ -2806,14 +2806,14 @@ mod resolution_option_anchor_tests {
 mod open_fast_window_tests {
     use super::*;
     use crate::state::{FastWindowKind, MythosResume, PhaseStep};
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn open_fast_window_with_no_eligibility_auto_skips_inline() {
         // No reactions, no Fast-eligible cards → auto-skip: window
         // opens and closes without ever landing on state.open_windows.
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             // The MythosAfterDraws window now closes onto the MythosPhase anchor
             // (slice 1a); stage it so the auto-skip continuation has its frame.
             .with_phase_anchor(Continuation::MythosPhase {
@@ -2845,7 +2845,7 @@ mod open_fast_window_tests {
         let state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_active_investigator(inv)
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         assert!(enumerate_fast_plays(&state).is_empty());
     }
@@ -2856,7 +2856,7 @@ mod candidate_source_present_tests {
     use super::*;
     use crate::state::CardInstanceId;
     use crate::state::{CardInPlay, LocationId};
-    use crate::test_support::{test_investigator, test_location, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     const INV: InvestigatorId = InvestigatorId(1);
     /// Deliberately resolved by no registry — these tests install none.
@@ -2876,7 +2876,7 @@ mod candidate_source_present_tests {
 
     #[test]
     fn a_hand_candidate_is_present_only_while_the_code_is_in_hand() {
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.hand.push(CardCode::new(SOME_CODE));
         let state = GameStateBuilder::default().with_investigator(inv).build();
         assert!(candidate_source_present(
@@ -2895,7 +2895,7 @@ mod candidate_source_present_tests {
     #[test]
     fn an_in_play_candidate_is_present_only_while_its_instance_is() {
         let instance = CardInstanceId(7);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.cards_in_play
             .push(CardInPlay::enter_play(CardCode::new(SOME_CODE), instance));
         let state = GameStateBuilder::default().with_investigator(inv).build();
@@ -2922,12 +2922,12 @@ mod candidate_source_present_tests {
     #[test]
     fn an_attachment_candidate_is_present_though_no_investigator_controls_it() {
         let instance = CardInstanceId(12);
-        let mut location = test_location(10, "Study");
+        let mut location = test_support::test_location(10, "Study");
         location
             .attachments
             .push(CardInPlay::enter_play(CardCode::new(SOME_CODE), instance));
         let state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(location)
             .build();
         assert!(candidate_source_present(
@@ -2944,7 +2944,7 @@ mod candidate_source_present_tests {
             clue_threshold: 0,
         };
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         state.act_deck = vec![act(SOME_CODE), act("_next_act")];
         state.act_index = 0;
@@ -2965,7 +2965,7 @@ mod candidate_source_present_tests {
 
         // No act deck at all: nothing for `AbilitySource::Act` to name.
         let empty = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         assert!(!candidate_source_present(&empty, &cand));
     }
@@ -2974,7 +2974,7 @@ mod candidate_source_present_tests {
     fn an_agenda_candidate_is_present_only_while_that_agenda_is_the_current_one() {
         use crate::state::Agenda;
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         state.agenda_deck = vec![Agenda {
             code: CardCode::new(SOME_CODE),
@@ -3001,11 +3001,10 @@ mod candidate_source_present_tests {
     #[test]
     fn an_enemy_candidate_tracks_its_enemy() {
         use crate::state::EnemyId;
-        use crate::test_support::test_enemy;
-        let mut enemy = test_enemy(4, "Silver Twilight Acolyte");
+        let mut enemy = test_support::test_enemy(4, "Silver Twilight Acolyte");
         enemy.code = CardCode::new(SOME_CODE);
         let state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_enemy(enemy)
             .build();
         let cand = |id| {
@@ -3030,10 +3029,10 @@ mod candidate_source_present_tests {
         // The candidate's code is the location's own printed code — the probe
         // asks whether the source still names *the same card*, and a location's
         // `LocationId` and code move together.
-        let mut location = test_location(10, "Study");
+        let mut location = test_support::test_location(10, "Study");
         location.code = CardCode::new(SOME_CODE);
         let state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(location)
             .build();
         assert!(candidate_source_present(
@@ -3054,7 +3053,7 @@ mod withdraw_suppressed_candidates_tests {
     use super::*;
     use crate::state::LocationId;
     use crate::state::{CardInstanceId, TimingSub};
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     const INV: InvestigatorId = InvestigatorId(1);
     /// Deliberately resolved by no registry — these tests install none. The
@@ -3085,7 +3084,7 @@ mod withdraw_suppressed_candidates_tests {
         prevented: bool,
     ) -> GameState {
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(INV)
             .build();
         state.pending_cancellation = prevented;

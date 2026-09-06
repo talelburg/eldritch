@@ -1863,7 +1863,7 @@ mod tests {
     use crate::event::Event;
     use crate::scenario::TokenEffect;
     use crate::state::SkillTestId;
-    use crate::test_support::{test_investigator, test_skill_test, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
     /// reading the commit-time accumulator off the in-flight record
@@ -1872,13 +1872,12 @@ mod tests {
     #[test]
     fn fight_follow_up_adds_bonus_attack_damage() {
         use crate::state::EnemyId;
-        use crate::test_support::test_enemy;
 
         let inv = InvestigatorId(1);
-        let mut enemy = test_enemy(7, "Goon");
+        let mut enemy = test_support::test_enemy(7, "Goon");
         enemy.max_health = 10; // avoid clamping so the dealt damage is observable
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_enemy(enemy)
             .build();
         state
@@ -1889,7 +1888,7 @@ mod tests {
                     extra_damage: 1,
                 },
                 bonus_attack_damage: 2,
-                ..test_skill_test(
+                ..test_support::test_skill_test(
                     SkillTestId(0),
                     inv,
                     SkillKind::Combat,
@@ -1927,13 +1926,12 @@ mod tests {
     #[test]
     fn investigate_follow_up_pushes_one_discovery_carrying_the_clue_bonus() {
         use crate::state::{EffectFrame, LocationId};
-        use crate::test_support::test_location;
 
         let inv = InvestigatorId(1);
         let loc = LocationId(10);
         let mut state = GameStateBuilder::new()
-            .with_investigator_at(test_investigator(1), loc)
-            .with_location(test_location(10, "Study"))
+            .with_investigator_at(test_support::test_investigator(1), loc)
+            .with_location(test_support::test_location(10, "Study"))
             .build();
         state
             .continuations
@@ -1941,7 +1939,7 @@ mod tests {
                 tested_location: Some(loc),
                 follow_up: SkillTestFollowUp::Investigate,
                 bonus_clues_discovered: 1,
-                ..test_skill_test(
+                ..test_support::test_skill_test(
                     SkillTestId(0),
                     inv,
                     SkillKind::Intellect,
@@ -2015,7 +2013,7 @@ mod tests {
 
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2041,7 +2039,7 @@ mod tests {
 
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         // Willpower 3 + Numeric(0) = 3 vs difficulty 2 → success.
@@ -2082,7 +2080,7 @@ mod tests {
 
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2137,14 +2135,14 @@ mod tests {
 
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
         // A SkillTest pre-advanced to AwaitingCommit, as if window 1 just opened.
         state
             .continuations
-            .push(Continuation::SkillTest(test_skill_test(
+            .push(Continuation::SkillTest(test_support::test_skill_test(
                 SkillTestId(0),
                 inv,
                 SkillKind::Willpower,
@@ -2179,7 +2177,7 @@ mod tests {
 
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2246,7 +2244,7 @@ mod tests {
 
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2335,7 +2333,7 @@ mod tests {
 
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2378,7 +2376,7 @@ mod tests {
     #[test]
     fn acknowledge_outcome_rejects_without_in_flight_test() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -2401,7 +2399,7 @@ mod tests {
 
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2464,7 +2462,7 @@ mod tests {
     fn substitution_state(inv: InvestigatorId) -> GameState {
         use crate::state::{ChaosToken, SkillSubstitution};
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2738,7 +2736,7 @@ mod tests {
     fn no_active_substitution_opens_commit_window_directly() {
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
@@ -2781,7 +2779,7 @@ mod tests {
 
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1)) // card_code = "" sentinel
+            .with_investigator(test_support::test_investigator(1)) // card_code = "" sentinel
             .with_active_investigator(inv)
             .build();
         // Willpower 3, difficulty 2, ElderSign token. Bonus 0 → total 3 → succeed by 1.

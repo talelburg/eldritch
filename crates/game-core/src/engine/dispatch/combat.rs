@@ -1330,13 +1330,13 @@ mod combat_tests {
         AttackLoopStage, CardCode, CardInstanceId, Continuation, EnemyAttackSource, EnemyId,
         EnemyResume, InvestigatorId,
     };
-    use crate::test_support::{test_enemy, test_investigator, GameStateBuilder};
+    use crate::test_support::GameStateBuilder;
     use crate::{assert_event, assert_no_event, test_support};
 
     #[test]
     fn defeating_victory_enemy_places_it_in_the_victory_display() {
         let eid = EnemyId(1);
-        let mut enemy = test_enemy(1, "Ghoul Priest");
+        let mut enemy = test_support::test_enemy(1, "Ghoul Priest");
         enemy.code = CardCode::new("01116");
         enemy.max_health = 1;
         enemy.victory = Some(2);
@@ -1369,7 +1369,7 @@ mod combat_tests {
         // encounter discard pile" — not removed from the game, so the
         // `glossary/Encounter_Deck.md` reshuffle can bring it back (#632).
         let eid = EnemyId(1);
-        let mut enemy = test_enemy(1, "Ghoul");
+        let mut enemy = test_support::test_enemy(1, "Ghoul");
         enemy.code = CardCode::new("01160");
         enemy.max_health = 1;
         enemy.victory = None;
@@ -1394,7 +1394,7 @@ mod combat_tests {
     #[test]
     fn defeating_enemy_without_registry_still_removes_it() {
         let eid = EnemyId(1);
-        let mut enemy = test_enemy(1, "Ghoul");
+        let mut enemy = test_support::test_enemy(1, "Ghoul");
         enemy.max_health = 1;
         let mut state = GameStateBuilder::new().build();
         state.enemies.insert(eid, enemy);
@@ -1415,7 +1415,7 @@ mod combat_tests {
         // as the pre-rewrite direct apply_damage/horror_numeric path did.
         test_support::install_test_registry();
         let id = InvestigatorId(1);
-        let inv = test_investigator(1);
+        let inv = test_support::test_investigator(1);
         // max_health()/max_sanity() now read from the registry (TEST_INV = 8/8).
         // 2 damage and 1 horror both land below capacity, so no defeat fires.
         // The old explicit max_health = 10 / max_sanity = 10 are vestigial.
@@ -1469,7 +1469,7 @@ mod combat_tests {
         use crate::state::{Continuation, DamageSource, DealDamageStep, EnemyId};
         let inv_id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         // Park a DealDamage frame mid-distribution (2 damage to assign).
         state.continuations.push(Continuation::DealDamage {
@@ -1528,7 +1528,7 @@ mod combat_tests {
         test_support::install_test_registry();
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -1659,7 +1659,7 @@ mod combat_tests {
         }
         // The milestone's resolve step changes nothing; the other's places.
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let before = state.clone();
         let mut events = Vec::new();
@@ -1729,7 +1729,7 @@ mod combat_tests {
 
         let id = InvestigatorId(1);
         let inst = CardInstanceId(7);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.cards_in_play = vec![CardInPlay::enter_play(CardCode::new("01021"), inst)];
 
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
@@ -1778,11 +1778,11 @@ mod combat_tests {
 
         let inv_id = InvestigatorId(1);
         let attacker = EnemyId(2);
-        let mut enemy = test_enemy(2, "Attacker");
+        let mut enemy = test_support::test_enemy(2, "Attacker");
         enemy.engaged_with = Some(inv_id);
 
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([inv_id])
             .with_enemy(enemy)
             .with_phase_anchor(Continuation::EnemyPhase {
@@ -1847,11 +1847,11 @@ mod combat_tests {
 
         let inv_id = InvestigatorId(1);
         let attacker = EnemyId(2);
-        let mut enemy = test_enemy(2, "Attacker");
+        let mut enemy = test_support::test_enemy(2, "Attacker");
         enemy.engaged_with = Some(inv_id);
 
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([inv_id])
             .with_enemy(enemy)
             .with_phase_anchor(Continuation::EnemyPhase {
@@ -1894,11 +1894,11 @@ mod combat_tests {
 
         let inv_id = InvestigatorId(1);
         let attacker = EnemyId(2);
-        let mut enemy = test_enemy(2, "Attacker");
+        let mut enemy = test_support::test_enemy(2, "Attacker");
         enemy.engaged_with = Some(inv_id);
 
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([inv_id])
             .with_enemy(enemy)
             .build();
@@ -1928,13 +1928,13 @@ mod combat_tests {
         // RR p.18: a retaliate attack does not exhaust the attacker.
         test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
-        let mut enemy = test_enemy(100, "Retaliator");
+        let mut enemy = test_support::test_enemy(100, "Retaliator");
         enemy.retaliate = true;
         enemy.attack_damage = 1;
         enemy.attack_horror = 0;
         // Not engaged: a retaliate fires regardless of engagement, driven by enemy id.
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_enemy(enemy)
             .build();
         let mut events = Vec::new();
@@ -1967,12 +1967,12 @@ mod combat_tests {
         // RR p.7: an enemy does not exhaust while making an attack of opportunity.
         test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
-        let mut enemy = test_enemy(100, "Ghoul");
+        let mut enemy = test_support::test_enemy(100, "Ghoul");
         enemy.engaged_with = Some(inv_id);
         enemy.attack_damage = 1;
         enemy.attack_horror = 0;
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_enemy(enemy)
             .build();
         let mut events = Vec::new();
@@ -2010,15 +2010,15 @@ mod combat_tests {
         // max_sanity() resolve (#448 cp2a); total AoO damage = 3 < 8 = TEST_INV.
         test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
-        let mut e_a = test_enemy(5, "A"); // EnemyId(5), dmg 1
+        let mut e_a = test_support::test_enemy(5, "A"); // EnemyId(5), dmg 1
         e_a.engaged_with = Some(inv_id);
         e_a.attack_damage = 1;
-        let mut e_b = test_enemy(6, "B"); // EnemyId(6), dmg 2
+        let mut e_b = test_support::test_enemy(6, "B"); // EnemyId(6), dmg 2
         e_b.engaged_with = Some(inv_id);
         e_b.attack_damage = 2;
 
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_enemy(e_a)
             .with_enemy(e_b)
             .build();
@@ -2077,13 +2077,13 @@ mod combat_tests {
         // leaving the PickOrder frame on the stack for the client to retry
         // (mirrors resume_hunter_choice).
         let inv_id = InvestigatorId(1);
-        let mut e_a = test_enemy(5, "A");
+        let mut e_a = test_support::test_enemy(5, "A");
         e_a.engaged_with = Some(inv_id);
-        let mut e_b = test_enemy(6, "B");
+        let mut e_b = test_support::test_enemy(6, "B");
         e_b.engaged_with = Some(inv_id);
 
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_enemy(e_a)
             .with_enemy(e_b)
             .build();
@@ -2156,7 +2156,7 @@ mod combat_tests {
         test_support::install_test_registry();
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
         let mut cx = Cx {

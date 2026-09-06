@@ -918,7 +918,7 @@ mod encounter_card_revealed_tests {
     use crate::engine::outcome::EngineOutcome;
     use crate::engine::Cx;
     use crate::state::CardCode;
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     /// Exercises the early-reject guard: when the handler cannot
     /// proceed past the registry / metadata checks, it must reject
@@ -947,7 +947,7 @@ mod encounter_card_revealed_tests {
         use crate::action::EngineRecord;
         use crate::state::InvestigatorId;
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         // Seed the encounter deck so we can prove the reject fires
         // *before* the draw mutates state. Use a code that no real
@@ -1246,8 +1246,8 @@ mod spawn_enemy_tests {
     use super::*;
     use crate::engine::OptionId;
     use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
-    use crate::test_support::{test_investigator, test_location, GameStateBuilder};
-    use crate::{assert_event, assert_event_sequence, assert_no_event};
+    use crate::test_support::GameStateBuilder;
+    use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
     use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey, Spawn, SpawnLocation};
 
     fn synth_enemy_metadata(spawn: Option<Spawn>) -> CardMetadata {
@@ -1310,12 +1310,12 @@ mod spawn_enemy_tests {
         // The investigator is at loc 10; spawn_enemy_at is told loc 11. The
         // enemy must land at 11 (the explicit location wins), unlike
         // spawn_enemy's investigator-location fallback.
-        let mut here = test_location(10, "Here");
+        let mut here = test_support::test_location(10, "Here");
         here.code = CardCode("_here".into());
-        let mut there = test_location(11, "There");
+        let mut there = test_support::test_location(11, "There");
         there.code = CardCode("_there".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(here)
             .with_location(there)
             .with_turn_order([InvestigatorId(1)])
@@ -1352,10 +1352,10 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_enemy_reads_combat_stats_and_keywords_from_metadata() {
-        let mut loc = test_location(10, "Loc");
+        let mut loc = test_support::test_location(10, "Loc");
         loc.code = CardCode("_l".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(loc)
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -1400,11 +1400,11 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_enemy_scales_per_investigator_health_by_investigator_count() {
-        let mut loc = test_location(10, "Loc");
+        let mut loc = test_support::test_location(10, "Loc");
         loc.code = CardCode("_l".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .with_location(loc)
             .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
             .build();
@@ -1445,10 +1445,10 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_enemy_reads_victory_from_metadata() {
-        let mut loc = test_location(10, "Loc");
+        let mut loc = test_support::test_location(10, "Loc");
         loc.code = CardCode("_l".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(loc)
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -1487,10 +1487,10 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_at_specific_location_with_one_investigator_engages_them() {
-        let mut loc = test_location(10, "Synth Loc");
+        let mut loc = test_support::test_location(10, "Synth Loc");
         loc.code = CardCode("_synth_loc".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(loc)
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -1535,10 +1535,10 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_at_specific_location_with_no_investigators_leaves_unengaged() {
-        let mut loc = test_location(10, "Synth Loc");
+        let mut loc = test_support::test_location(10, "Synth Loc");
         loc.code = CardCode("_synth_loc".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(loc)
             .build();
         // Investigator 1 is NOT at location 10 (current_location is None).
@@ -1573,7 +1573,7 @@ mod spawn_enemy_tests {
         // instead." Flesh-Eater FAQ: "place that enemy card into the encounter
         // discard pile without any further effects." So the draw does NOT reject.
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let metadata = synth_enemy_metadata(Some(Spawn {
             location: SpawnLocation::Specific("_nonexistent_loc".into()),
@@ -1605,10 +1605,10 @@ mod spawn_enemy_tests {
         // the one location guaranteed *not* to be empty, so the fallback
         // placement would be doubly wrong (wrong location, plus an engagement
         // that should not happen).
-        let mut loc = test_location(10, "Demo");
+        let mut loc = test_support::test_location(10, "Demo");
         loc.code = CardCode("_demo_loc".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(loc)
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -1652,10 +1652,10 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_with_no_instruction_places_at_drawing_investigators_location() {
-        let mut loc = test_location(10, "Demo");
+        let mut loc = test_support::test_location(10, "Demo");
         loc.code = CardCode("_demo_loc".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(loc)
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -1692,7 +1692,7 @@ mod spawn_enemy_tests {
     #[test]
     fn spawn_with_no_instruction_rejects_when_drawing_investigator_has_no_location() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         // Investigator has no current_location.
         let metadata = synth_enemy_metadata(None);
@@ -1721,9 +1721,9 @@ mod spawn_enemy_tests {
     fn spawn_engages_sole_colocated_investigator() {
         // Regression: #127's single-investigator engage-on-spawn path
         // still resolves inline under the shared prey resolver.
-        let mut loc = test_location(1, "Hall");
+        let mut loc = test_support::test_location(1, "Hall");
         loc.code = CardCode("_loc".into());
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Mythos)
@@ -1749,11 +1749,11 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_tie_suspends_for_lead_pick() {
-        let mut loc = test_location(1, "Hall");
+        let mut loc = test_support::test_location(1, "Hall");
         loc.code = CardCode("_loc".into());
-        let mut i1 = test_investigator(1);
+        let mut i1 = test_support::test_investigator(1);
         i1.current_location = Some(LocationId(1));
-        let mut i2 = test_investigator(2);
+        let mut i2 = test_support::test_investigator(2);
         i2.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Mythos)
@@ -1789,11 +1789,11 @@ mod spawn_enemy_tests {
         // and leaves the SpawnEngage frame intact for retry, with the
         // enemy still unengaged.
         use crate::action::InputResponse;
-        let mut loc = test_location(1, "Hall");
+        let mut loc = test_support::test_location(1, "Hall");
         loc.code = CardCode("_loc".into());
-        let mut i1 = test_investigator(1);
+        let mut i1 = test_support::test_investigator(1);
         i1.current_location = Some(LocationId(1));
-        let mut i2 = test_investigator(2);
+        let mut i2 = test_support::test_investigator(2);
         i2.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Mythos)
@@ -1844,10 +1844,10 @@ mod spawn_enemy_tests {
 
     #[test]
     fn spawn_mints_distinct_enemy_ids() {
-        let mut loc = test_location(10, "L");
+        let mut loc = test_support::test_location(10, "L");
         loc.code = CardCode("_l".into());
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(loc)
             .build();
         state
@@ -1891,7 +1891,7 @@ mod resume_encounter_draw_chain_tests {
     use super::*;
     use crate::engine::dispatch;
     use crate::state::{CardCode, InvestigatorId, Phase};
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     /// Exercises the early-reject guard for the registry / unknown-card
     /// checks. Depending on which tests have run in this process:
@@ -1909,7 +1909,7 @@ mod resume_encounter_draw_chain_tests {
     #[test]
     fn rejects_when_registry_not_installed_or_unknown_code() {
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Mythos)
             .with_turn_order([InvestigatorId(1)])
             .with_mythos_draw_remaining([InvestigatorId(1)])
@@ -1960,7 +1960,7 @@ mod resume_encounter_draw_tests {
     use super::*;
     use crate::engine::InputKind;
     use crate::state::{Continuation, InvestigatorId, Phase};
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     // The former `rejects_outside_mythos_phase` / `rejects_when_no_draw_pending`
     // / `rejects_when_out_of_order` tests are gone (#348 part 2c-iii-b): the
@@ -1977,7 +1977,7 @@ mod resume_encounter_draw_tests {
         // Validate-first: a non-`Confirm` response rejects and leaves the
         // `EncounterDraw` frame intact for retry.
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Mythos)
             .with_turn_order([InvestigatorId(1)])
             .with_mythos_draw_remaining([InvestigatorId(1)])
@@ -2011,7 +2011,7 @@ mod resume_encounter_draw_tests {
         // `Confirm`s (ADR 0011). A rewritten builder that drops the `.at(…)`
         // relocates the Draw button to the banner, and this is what catches it.
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Mythos)
             .with_turn_order([InvestigatorId(1)])
             .with_mythos_draw_remaining([InvestigatorId(1)])

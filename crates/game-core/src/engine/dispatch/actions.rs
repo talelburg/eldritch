@@ -1115,10 +1115,7 @@ mod actions_tests {
         ChaosBag, ChaosToken, Continuation, EnemyId, GameState, InvestigationResume,
         InvestigatorId, LocationId, Phase, Status,
     };
-    use crate::test_support::{
-        apply_no_commits, take_turn_action, test_enemy, test_investigator, test_location,
-        GameStateBuilder,
-    };
+    use crate::test_support::GameStateBuilder;
     use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
     /// Drive a turn action that may suspend at a skill-test commit window.
@@ -1129,7 +1126,7 @@ mod actions_tests {
         let idx = actions.iter().position(|a| a == action).unwrap_or_else(|| {
             panic!("take_turn_action_no_commits: {action:?} is not legal; offered: {actions:?}")
         });
-        apply_no_commits(
+        test_support::apply_no_commits(
             state,
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::PickSingle(OptionId(
@@ -1152,7 +1149,7 @@ mod actions_tests {
         let enemy_id = EnemyId(100);
 
         test_support::install_test_registry();
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(l1);
         inv.actions_remaining = 3;
         // After #448 cp2a: max_health() reads from the registry (TEST_INV = 8).
@@ -1161,11 +1158,11 @@ mod actions_tests {
         // ⟺ attack_damage >= inv_health (same condition as before).
         inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
 
-        let mut loc1 = test_location(10, "L1");
+        let mut loc1 = test_support::test_location(10, "L1");
         loc1.connections = vec![l2];
-        let loc2 = test_location(11, "L2");
+        let loc2 = test_support::test_location(11, "L2");
 
-        let mut enemy = test_enemy(100, "Ghoul");
+        let mut enemy = test_support::test_enemy(100, "Ghoul");
         enemy.current_location = Some(l1);
         enemy.engaged_with = Some(inv_id);
         enemy.attack_damage = attack_damage;
@@ -1200,7 +1197,7 @@ mod actions_tests {
         // event fires and the investigator does NOT appear at the destination.
         let (inv_id, _l1, l2, _enemy_id, state) = move_scenario_with_enemy(1, 1);
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Move {
                 investigator: inv_id,
@@ -1242,7 +1239,7 @@ mod actions_tests {
         // No registry installed → no cancel/soak windows → no suspension.
         let (inv_id, _l1, l2, enemy_id, state) = move_scenario_with_enemy(1, 8);
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Move {
                 investigator: inv_id,
@@ -1295,16 +1292,16 @@ mod actions_tests {
         let enemy_id = EnemyId(100);
 
         test_support::install_test_registry();
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(l1);
         inv.actions_remaining = 3;
 
-        let mut loc1 = test_location(10, "L1");
+        let mut loc1 = test_support::test_location(10, "L1");
         loc1.connections = vec![l2];
-        let mut loc2 = test_location(11, "L2");
+        let mut loc2 = test_support::test_location(11, "L2");
         loc2.connections = vec![l1];
 
-        let mut enemy = test_enemy(100, "Icy Ghoul");
+        let mut enemy = test_support::test_enemy(100, "Icy Ghoul");
         enemy.current_location = Some(l2);
         enemy.engaged_with = None;
         enemy.exhausted = false;
@@ -1332,7 +1329,7 @@ mod actions_tests {
         // Ghoul 01119 waiting at the Cellar — no Aloof keyword.)
         let (inv_id, l2, enemy_id, state) = move_into_enemy_scenario();
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Move {
                 investigator: inv_id,
@@ -1365,7 +1362,7 @@ mod actions_tests {
         let (inv_id, l2, enemy_id, mut state) = move_into_enemy_scenario();
         state.enemies.get_mut(&enemy_id).unwrap().exhausted = true;
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Move {
                 investigator: inv_id,
@@ -1392,19 +1389,19 @@ mod actions_tests {
         let enemy_c = EnemyId(102);
 
         // A second ready, unengaged enemy at the destination.
-        let mut b = test_enemy(101, "Ghoul B");
+        let mut b = test_support::test_enemy(101, "Ghoul B");
         b.current_location = Some(l2);
         b.engaged_with = None;
         b.exhausted = false;
         // A third enemy at the destination already engaged with someone else.
-        let mut c = test_enemy(102, "Ghoul C");
+        let mut c = test_support::test_enemy(102, "Ghoul C");
         c.current_location = Some(l2);
         c.engaged_with = Some(other);
         c.exhausted = false;
         state.enemies.insert(enemy_b, b);
         state.enemies.insert(enemy_c, c);
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Move {
                 investigator: inv_id,
@@ -1437,18 +1434,18 @@ mod actions_tests {
         let loc_id = LocationId(10);
         let enemy_id = EnemyId(200);
 
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(loc_id);
         inv.actions_remaining = 3;
         // Pre-load accumulated_damage so that max_health() (8 from TEST_INV) minus
         // accumulated_damage equals inv_health (the "remaining health" the test intended).
         inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
 
-        let mut loc = test_location(10, "Study");
+        let mut loc = test_support::test_location(10, "Study");
         loc.clues = 2;
         loc.shroud = 2;
 
-        let mut enemy = test_enemy(200, "Ghoul");
+        let mut enemy = test_support::test_enemy(200, "Ghoul");
         enemy.current_location = Some(loc_id);
         enemy.engaged_with = Some(inv_id);
         enemy.attack_damage = attack_damage;
@@ -1479,7 +1476,7 @@ mod actions_tests {
         // the investigator is still Active, and took 1 damage.
         let (inv_id, _loc_id, enemy_id, state) = investigate_scenario_with_enemy(8, 1);
 
-        let outcome = take_turn_action(
+        let outcome = test_support::take_turn_action(
             state,
             &TurnAction::Investigate {
                 investigator: inv_id,
@@ -1562,7 +1559,7 @@ mod actions_tests {
         let loc_id = LocationId(10);
         let enemy_id = EnemyId(300);
 
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(loc_id);
         inv.actions_remaining = 3;
         // Pre-load accumulated_damage so that max_health() (8 from TEST_INV) minus
@@ -1570,9 +1567,9 @@ mod actions_tests {
         inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
         inv.resources = 0;
 
-        let loc = test_location(10, "Study");
+        let loc = test_support::test_location(10, "Study");
 
-        let mut enemy = test_enemy(300, "Ghoul");
+        let mut enemy = test_support::test_enemy(300, "Ghoul");
         enemy.current_location = Some(loc_id);
         enemy.engaged_with = Some(inv_id);
         enemy.attack_damage = attack_damage;
@@ -1600,7 +1597,7 @@ mod actions_tests {
         // Investigator has 1 health, enemy deals 1 damage → lethal AoO.
         let (inv_id, _enemy_id, state) = resource_scenario_with_enemy(1, 1);
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Resource {
                 investigator: inv_id,
@@ -1641,7 +1638,7 @@ mod actions_tests {
         // exhausted (RR p.7), investigator took 1 damage.
         let (inv_id, enemy_id, state) = resource_scenario_with_enemy(1, 8);
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Resource {
                 investigator: inv_id,
@@ -1689,12 +1686,12 @@ mod actions_tests {
         let inv_id = InvestigatorId(1);
         let loc_id = LocationId(10);
 
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(loc_id);
         inv.actions_remaining = 3;
         inv.resources = 2;
 
-        let loc = test_location(10, "Study");
+        let loc = test_support::test_location(10, "Study");
 
         let state = GameStateBuilder::new()
             .with_investigator(inv)
@@ -1707,7 +1704,7 @@ mod actions_tests {
             .with_investigator_turn(inv_id)
             .build();
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Resource {
                 investigator: inv_id,
@@ -1752,17 +1749,17 @@ mod actions_tests {
         let target_id = EnemyId(400);
         let aoo_enemy_id = EnemyId(401);
 
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(loc_id);
         inv.actions_remaining = 3;
         // Pre-load accumulated_damage so that max_health() (8 from TEST_INV) minus
         // accumulated_damage equals inv_health (the "remaining health" the test intended).
         inv.investigator_card.accumulated_damage = 8_u8.saturating_sub(inv_health);
 
-        let loc = test_location(10, "Study");
+        let loc = test_support::test_location(10, "Study");
 
         // The target: co-located, not yet engaged — cannot AoO.
-        let mut target = test_enemy(400, "Cultist");
+        let mut target = test_support::test_enemy(400, "Cultist");
         target.current_location = Some(loc_id);
         target.engaged_with = None;
         target.attack_damage = 0;
@@ -1770,7 +1767,7 @@ mod actions_tests {
         target.exhausted = false;
 
         // The AoO attacker: already engaged, ready — it WILL AoO.
-        let mut aoo_enemy = test_enemy(401, "Ghoul");
+        let mut aoo_enemy = test_support::test_enemy(401, "Ghoul");
         aoo_enemy.current_location = Some(loc_id);
         aoo_enemy.engaged_with = Some(inv_id);
         aoo_enemy.attack_damage = aoo_damage;
@@ -1800,7 +1797,7 @@ mod actions_tests {
         // target's engaged_with == Some(investigator), investigator survived.
         let (inv_id, target_id, aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(8, 1);
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Engage {
                 investigator: inv_id,
@@ -1858,7 +1855,7 @@ mod actions_tests {
         // The other engaged enemy's AoO defeats the investigator: no EnemyEngaged.
         let (inv_id, target_id, _aoo_enemy_id, state) = engage_scenario_with_aoo_enemy(1, 1);
 
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::Engage {
                 investigator: inv_id,

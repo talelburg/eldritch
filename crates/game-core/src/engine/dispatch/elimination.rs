@@ -631,13 +631,13 @@ mod elimination_tests {
     use super::*;
     use crate::assert_no_event;
     use crate::state::InvestigationResume;
-    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+    use crate::test_support::GameStateBuilder;
     use crate::{assert_event, test_support};
 
     #[test]
     fn elimination_step1_removes_controlled_and_owned_cards() {
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.hand = vec![CardCode("h1".into()), CardCode("h2".into())];
         inv.deck = vec![CardCode("d1".into())];
         inv.discard = vec![CardCode("x1".into())];
@@ -680,12 +680,12 @@ mod elimination_tests {
     fn elimination_step2_places_clues_at_location_and_zeroes_resources() {
         let id = InvestigatorId(1);
         let loc_id = LocationId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(loc_id);
         inv.clues = 2;
         inv.resources = 4;
 
-        let mut loc = test_location(1, "Study");
+        let mut loc = test_support::test_location(1, "Study");
         loc.clues = 1;
 
         let mut state = GameStateBuilder::default()
@@ -724,14 +724,14 @@ mod elimination_tests {
         let surv = InvestigatorId(2);
         let loc = LocationId(1);
 
-        let mut dying = test_investigator(1);
+        let mut dying = test_support::test_investigator(1);
         dying.current_location = Some(loc);
 
-        let mut survivor = test_investigator(2);
+        let mut survivor = test_support::test_investigator(2);
         survivor.current_location = Some(loc);
 
         let enemy = {
-            let mut e = test_enemy(1, "Ghoul");
+            let mut e = test_support::test_enemy(1, "Ghoul");
             e.current_location = Some(loc);
             e.engaged_with = Some(dead); // engaged with the about-to-die investigator
             e
@@ -740,7 +740,7 @@ mod elimination_tests {
         let mut state = GameStateBuilder::default()
             .with_investigator(dying)
             .with_investigator(survivor)
-            .with_location(test_location(1, "Study"))
+            .with_location(test_support::test_location(1, "Study"))
             .with_enemy(enemy)
             .with_turn_order([dead, surv])
             .build();
@@ -776,11 +776,11 @@ mod elimination_tests {
         let dead = InvestigatorId(1);
         let loc = LocationId(1);
 
-        let mut dying = test_investigator(1);
+        let mut dying = test_support::test_investigator(1);
         dying.current_location = Some(loc);
 
         let enemy = {
-            let mut e = test_enemy(1, "Ghoul");
+            let mut e = test_support::test_enemy(1, "Ghoul");
             e.current_location = Some(loc);
             e.engaged_with = Some(dead);
             e
@@ -788,7 +788,7 @@ mod elimination_tests {
 
         let mut state = GameStateBuilder::default()
             .with_investigator(dying)
-            .with_location(test_location(1, "Study"))
+            .with_location(test_support::test_location(1, "Study"))
             .with_enemy(enemy)
             .with_turn_order([dead])
             .build();
@@ -819,7 +819,7 @@ mod elimination_tests {
         // scenario-ending latch is set (Rules Reference p.10 step 6).
         test_support::install_test_registry();
         let inv = InvestigatorId(1);
-        let mut investigator = test_investigator(1);
+        let mut investigator = test_support::test_investigator(1);
         // After #448 cp2a: max_sanity() reads from the registry (TEST_INV = 8).
         // Pre-load 7 horror so 1 more = 8 = max_sanity → lethal horror.
         investigator.investigator_card.accumulated_horror = 7;
@@ -858,15 +858,15 @@ mod elimination_tests {
         let surv = InvestigatorId(2);
         let loc = LocationId(1);
 
-        let mut dying = test_investigator(1);
+        let mut dying = test_support::test_investigator(1);
         dying.current_location = Some(loc);
         dying.clues = 1;
 
-        let mut survivor = test_investigator(2);
+        let mut survivor = test_support::test_investigator(2);
         survivor.current_location = Some(loc);
 
         let enemy = {
-            let mut e = test_enemy(1, "Whippoorwill");
+            let mut e = test_support::test_enemy(1, "Whippoorwill");
             e.current_location = Some(loc);
             e.engaged_with = Some(dead);
             e
@@ -875,7 +875,7 @@ mod elimination_tests {
         let mut state = GameStateBuilder::default()
             .with_investigator(dying)
             .with_investigator(survivor)
-            .with_location(test_location(1, "Study"))
+            .with_location(test_support::test_location(1, "Study"))
             .with_enemy(enemy)
             .with_turn_order([dead, surv])
             .build();
@@ -906,14 +906,14 @@ mod elimination_tests {
         let surv = InvestigatorId(2);
         let loc = LocationId(1);
 
-        let mut dying = test_investigator(1);
+        let mut dying = test_support::test_investigator(1);
         dying.current_location = Some(loc);
 
-        let mut survivor = test_investigator(2);
+        let mut survivor = test_support::test_investigator(2);
         survivor.current_location = Some(loc);
 
         let enemy = {
-            let mut e = test_enemy(1, "Ghoul");
+            let mut e = test_support::test_enemy(1, "Ghoul");
             e.current_location = Some(loc);
             e.engaged_with = Some(dead);
             e.exhausted = true; // does not re-engage even with a co-located survivor
@@ -923,7 +923,7 @@ mod elimination_tests {
         let mut state = GameStateBuilder::default()
             .with_investigator(dying)
             .with_investigator(survivor)
-            .with_location(test_location(1, "Study"))
+            .with_location(test_support::test_location(1, "Study"))
             .with_enemy(enemy)
             .with_turn_order([dead, surv])
             .build();
@@ -950,7 +950,7 @@ mod elimination_tests {
         // must skip clue placement (the clues leave play with the
         // investigator) and zero resources without panicking.
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = None;
         inv.clues = 3;
         inv.resources = 2;
@@ -982,7 +982,7 @@ mod elimination_tests {
         // by `crates/cards/tests/elimination_teardown.rs` (install_test_registry
         // resolves TEST_INV only).
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.threat_area = vec![CardInPlay::enter_play(
             CardCode::new("01165"),
             CardInstanceId(1),
@@ -1023,9 +1023,9 @@ mod elimination_tests {
     /// turn. `dying` is the one about to be defeated.
     fn two_investigator_open_turn(whose: InvestigatorId) -> GameState {
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
-        let mut first = test_investigator(1);
+        let mut first = test_support::test_investigator(1);
         first.actions_remaining = 2;
-        let mut second = test_investigator(2);
+        let mut second = test_support::test_investigator(2);
         second.actions_remaining = 2;
         GameStateBuilder::new()
             .with_phase(Phase::Investigation)
@@ -1110,7 +1110,7 @@ mod elimination_tests {
         let dead = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Mythos)
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([dead])
             .build();
         let mut events = Vec::new();

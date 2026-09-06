@@ -177,14 +177,14 @@ mod tests {
     use crate::engine::dispatch::set_aside;
     use crate::engine::{Cx, EngineOutcome};
     use crate::state::{CardCode, InvestigatorId};
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn rejects_a_code_that_is_not_set_aside() {
         // Empty set-aside zone — the call must reject before touching the
         // registry or the board, and mint nothing.
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([InvestigatorId(1)])
             .build();
         let mut events = Vec::new();
@@ -210,7 +210,7 @@ mod tests {
         // registry — the call must reject without removing the code from the
         // zone (validate-first: no mutation on reject).
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([InvestigatorId(1)])
             .build();
         state.set_aside_cards.push(CardCode::new("01116"));

@@ -593,7 +593,7 @@ pub(super) fn check_cost_payable(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::fixtures::test_investigator;
+    use crate::test_support;
 
     /// The attack-of-opportunity exemption is exactly the four designators
     /// `glossary/Attack_of_Opportunity.md` names — **fight**, **evade**,
@@ -641,7 +641,7 @@ mod tests {
 
     #[test]
     fn spend_uses_payable_only_with_enough_of_the_named_kind() {
-        let inv = test_investigator(1);
+        let inv = test_support::test_investigator(1);
         let ammo4: BTreeMap<UseKind, u8> = [(UseKind::Ammo, 4)].into_iter().collect();
         let empty: BTreeMap<UseKind, u8> = BTreeMap::new();
         let cost = Cost::SpendUses {

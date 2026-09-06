@@ -133,7 +133,7 @@ pub(super) fn turn_frame_ending_mut(
 mod tests {
     use super::*;
     use crate::state::Status;
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn active_investigators_in_turn_order_excludes_eliminated() {
@@ -142,9 +142,9 @@ mod tests {
         // gets prompted. inv1 is Defeated, inv2 is Active; only inv2 survives.
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
-        let mut a = test_investigator(1);
+        let mut a = test_support::test_investigator(1);
         a.status = Status::Defeated;
-        let b = test_investigator(2);
+        let b = test_support::test_investigator(2);
         let state = GameStateBuilder::new()
             .with_investigator(a)
             .with_investigator(b)

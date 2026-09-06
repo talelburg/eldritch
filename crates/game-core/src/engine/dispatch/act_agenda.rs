@@ -511,17 +511,16 @@ mod doom_agenda_tests {
     fn terminal_agenda_advances_and_its_reverse_latches_the_ending() {
         use crate::scenario::{ResolutionId, ScenarioEnding};
         use crate::state::{Agenda, InvestigatorId};
-        use crate::test_support::{terminal_code, test_investigator};
         // The synthetic terminal card's reverse comes from the registry, and a
         // forced on-advance ability binds the lead — so both are needed.
         test_support::install_test_registry();
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([inv])
             .build();
         state.agenda_deck = vec![Agenda {
-            code: terminal_code(3),
+            code: test_support::terminal_code(3),
             doom_threshold: 2,
         }];
         state.agenda_doom = 2;
@@ -587,18 +586,17 @@ mod advance_act_tests {
     use crate::engine::EngineOutcome;
     use crate::event::Event;
     use crate::state::{Continuation, InvestigationResume, InvestigatorId, Phase};
-    use crate::test_support::{take_turn_action, test_investigator, GameStateBuilder};
+    use crate::test_support::GameStateBuilder;
     use crate::{assert_event, test_support};
 
     #[test]
     fn round_end_advance_affordable_tracks_hallway_clues_vs_threshold() {
         use crate::state::{Act, CardCode, LocationId};
-        use crate::test_support::test_location;
 
         // A location coded "HALL"; the investigator stands on it.
-        let mut hall = test_location(1, "Hallway");
+        let mut hall = test_support::test_location(1, "Hallway");
         hall.code = CardCode("HALL".into());
-        let mut investigator = test_investigator(1);
+        let mut investigator = test_support::test_investigator(1);
         investigator.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
             .with_location(hall)
@@ -635,7 +633,7 @@ mod advance_act_tests {
     fn advance_act_rejects_when_clues_insufficient() {
         use crate::state::{Act, CardCode};
         let inv = InvestigatorId(1);
-        let mut investigator = test_investigator(1);
+        let mut investigator = test_support::test_investigator(1);
         investigator.clues = 1;
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
@@ -671,7 +669,7 @@ mod advance_act_tests {
         // neither offered nor accepted — even with no registry installed (this
         // is a pure game-core unit test, so none is).
         let inv = InvestigatorId(1);
-        let mut investigator = test_investigator(1);
+        let mut investigator = test_support::test_investigator(1);
         investigator.clues = 5; // plenty — reject must be the objective, not affordability
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
@@ -724,7 +722,7 @@ mod advance_act_tests {
     fn advance_act_spends_clues_and_advances_non_terminal() {
         use crate::state::{Act, CardCode};
         let inv = InvestigatorId(1);
-        let mut investigator = test_investigator(1);
+        let mut investigator = test_support::test_investigator(1);
         investigator.clues = 3;
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
@@ -747,7 +745,8 @@ mod advance_act_tests {
             },
         ];
 
-        let result = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });
+        let result =
+            test_support::take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });
         assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.act_index, 1);
         assert_eq!(
@@ -767,10 +766,9 @@ mod advance_act_tests {
     fn terminal_act_advances_and_its_reverse_latches_the_ending() {
         use crate::scenario::{ResolutionId, ScenarioEnding};
         use crate::state::Act;
-        use crate::test_support::terminal_code;
         test_support::install_test_registry();
         let inv = InvestigatorId(1);
-        let mut investigator = test_investigator(1);
+        let mut investigator = test_support::test_investigator(1);
         investigator.clues = 2;
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
@@ -783,11 +781,12 @@ mod advance_act_tests {
             .with_investigator_turn(inv)
             .build();
         state.act_deck = vec![Act {
-            code: terminal_code(1),
+            code: test_support::terminal_code(1),
             clue_threshold: 2,
         }];
 
-        let result = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });
+        let result =
+            test_support::take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });
         assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(
             result.state.act_index, 0,
@@ -804,9 +803,9 @@ mod advance_act_tests {
     #[test]
     fn advance_act_without_registry_still_advances() {
         use crate::state::{Act, CardCode, InvestigatorId, Phase};
-        use crate::test_support::{take_turn_action, test_investigator, GameStateBuilder};
+        use crate::test_support::GameStateBuilder;
         let inv = InvestigatorId(1);
-        let mut investigator = test_investigator(1);
+        let mut investigator = test_support::test_investigator(1);
         investigator.clues = 2;
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
@@ -828,7 +827,8 @@ mod advance_act_tests {
                 clue_threshold: 3,
             },
         ];
-        let result = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });
+        let result =
+            test_support::take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv });
         assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(
             result.state.act_index, 1,
@@ -841,9 +841,9 @@ mod advance_act_tests {
         use crate::state::{Act, CardCode};
         let acting = InvestigatorId(1);
         let other = InvestigatorId(2);
-        let mut inv1 = test_investigator(1);
+        let mut inv1 = test_support::test_investigator(1);
         inv1.clues = 1;
-        let mut inv2 = test_investigator(2);
+        let mut inv2 = test_support::test_investigator(2);
         inv2.clues = 2;
         let mut state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
@@ -872,7 +872,7 @@ mod advance_act_tests {
         ];
 
         // Threshold 2: acting (1 clue) drained fully first, then 1 from `other`.
-        let result = take_turn_action(
+        let result = test_support::take_turn_action(
             state,
             &TurnAction::AdvanceAct {
                 investigator: acting,

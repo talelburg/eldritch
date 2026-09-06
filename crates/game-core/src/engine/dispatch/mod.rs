@@ -988,7 +988,7 @@ mod turn_menu_tests {
     use crate::state::{
         ChaosBag, ChaosToken, Continuation, InvestigationResume, InvestigatorId, Phase,
     };
-    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     #[test]
     fn turn_menu_carries_action_targets() {
@@ -996,7 +996,7 @@ mod turn_menu_tests {
         // at least one Enemy-anchored option (Fight/Evade), proving turn_menu
         // propagates each action's target — not just Global.
         let mut state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Investigation)
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1)])
@@ -1006,7 +1006,7 @@ mod turn_menu_tests {
             })
             .with_investigator_turn(InvestigatorId(1))
             .build();
-        let loc = test_location(10, "Study");
+        let loc = test_support::test_location(10, "Study");
         let loc_id = loc.id;
         state.locations.insert(loc_id, loc);
         state.locations.get_mut(&loc_id).unwrap().revealed = true;
@@ -1015,7 +1015,7 @@ mod turn_menu_tests {
             inv.current_location = Some(loc_id);
             inv.actions_remaining = 3;
         }
-        let mut e = test_enemy(7, "Ghoul");
+        let mut e = test_support::test_enemy(7, "Ghoul");
         e.engaged_with = Some(InvestigatorId(1));
         e.current_location = Some(loc_id);
         state.enemies.insert(e.id, e);
