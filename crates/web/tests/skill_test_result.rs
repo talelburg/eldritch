@@ -34,7 +34,7 @@ fn acknowledge_pause() -> EngineOutcome {
 }
 
 fn last_section() -> Option<web_sys::Element> {
-    let secs = leptos::prelude::document()
+    let secs = document()
         .query_selector_all(".skill-test-result")
         .expect("query");
     let n = secs.length();
@@ -179,7 +179,7 @@ async fn renders_nothing_before_any_resolution() {
     // Other tests on the same page accumulate panels in the DOM, so assert on the
     // before/after delta for THIS mount rather than an absolute count.
     let count = || {
-        leptos::prelude::document()
+        document()
             .query_selector_all(".skill-test-result")
             .expect("query")
             .length()
@@ -202,7 +202,7 @@ fn mount_modal() -> (
     let store = RwSignal::new(ClientState::default());
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
-    leptos::mount::mount_to_body(move || {
+    mount_to_body(move || {
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());
         leptos::view! { <SkillTestResultView/> }

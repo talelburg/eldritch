@@ -138,8 +138,8 @@ mod tests {
             &abilities[2].trigger,
             Trigger::OnEvent {
                 pattern: EventPattern::SkillTestResolved {
-                    outcome: card_dsl::dsl::TestOutcome::Success,
-                    kind: Some(card_dsl::dsl::SkillTestKind::Investigate),
+                    outcome: TestOutcome::Success,
+                    kind: Some(SkillTestKind::Investigate),
                     by_controller: true,
                 },
                 timing: EventTiming::After,

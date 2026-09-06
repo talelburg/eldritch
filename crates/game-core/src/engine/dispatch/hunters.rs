@@ -478,7 +478,7 @@ pub(super) fn resume_hunter_choice(
         unreachable!("resume_hunter_choice: called with no HunterMove frame on top of the stack")
     };
     let pending = pending.clone();
-    let crate::action::InputResponse::PickSingle(crate::engine::OptionId(i)) = response else {
+    let crate::action::InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
             reason: format!(
                 "ResolveInput: hunter choice expects InputResponse::PickSingle, got {response:?}"
@@ -566,7 +566,7 @@ pub(super) fn resume_spawn_engage(
         unreachable!("resume_spawn_engage: called with no SpawnEngage frame on top of the stack")
     };
     let pending = pending.clone();
-    let crate::action::InputResponse::PickSingle(crate::engine::OptionId(i)) = response else {
+    let crate::action::InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
             reason: format!(
                 "ResolveInput: spawn engagement expects InputResponse::PickSingle, got {response:?}"
@@ -601,11 +601,7 @@ mod resolve_prey_tests {
         let state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
             .build();
-        let r = resolve_prey(
-            &state,
-            crate::card_data::Prey::Default,
-            &[InvestigatorId(1)],
-        );
+        let r = resolve_prey(&state, Prey::Default, &[InvestigatorId(1)]);
         assert!(matches!(r, PreyResolution::One(id) if id == InvestigatorId(1)));
     }
 
@@ -617,7 +613,7 @@ mod resolve_prey_tests {
             .build();
         let r = resolve_prey(
             &state,
-            crate::card_data::Prey::Default,
+            Prey::Default,
             &[InvestigatorId(1), InvestigatorId(2)],
         );
         assert!(matches!(r, PreyResolution::Tie(ref v) if v.len() == 2));
@@ -626,7 +622,7 @@ mod resolve_prey_tests {
     #[test]
     fn resolve_prey_empty_is_none() {
         let state = GameStateBuilder::new().build();
-        let r = resolve_prey(&state, crate::card_data::Prey::Default, &[]);
+        let r = resolve_prey(&state, Prey::Default, &[]);
         assert!(matches!(r, PreyResolution::None));
     }
 
@@ -642,9 +638,9 @@ mod resolve_prey_tests {
             .build();
         let r = resolve_prey(
             &state,
-            crate::card_data::Prey::Ranked {
-                direction: crate::card_data::PreyDirection::Highest,
-                measure: crate::card_data::PreyMeasure::Skill(crate::card_data::SkillKind::Combat),
+            Prey::Ranked {
+                direction: PreyDirection::Highest,
+                measure: PreyMeasure::Skill(crate::card_data::SkillKind::Combat),
             },
             &[InvestigatorId(1), InvestigatorId(2)],
         );
@@ -663,9 +659,9 @@ mod resolve_prey_tests {
             .build();
         let r = resolve_prey(
             &state,
-            crate::card_data::Prey::Ranked {
-                direction: crate::card_data::PreyDirection::Highest,
-                measure: crate::card_data::PreyMeasure::Skill(crate::card_data::SkillKind::Combat),
+            Prey::Ranked {
+                direction: PreyDirection::Highest,
+                measure: PreyMeasure::Skill(crate::card_data::SkillKind::Combat),
             },
             &[InvestigatorId(1), InvestigatorId(2)],
         );
@@ -687,9 +683,9 @@ mod resolve_prey_tests {
             .build();
         let r = resolve_prey(
             &state,
-            crate::card_data::Prey::Ranked {
-                direction: crate::card_data::PreyDirection::Lowest,
-                measure: crate::card_data::PreyMeasure::RemainingHealth,
+            Prey::Ranked {
+                direction: PreyDirection::Lowest,
+                measure: PreyMeasure::RemainingHealth,
             },
             &[InvestigatorId(1), InvestigatorId(2)],
         );
@@ -712,9 +708,9 @@ mod resolve_prey_tests {
             .build();
         let r = resolve_prey(
             &state,
-            crate::card_data::Prey::Ranked {
-                direction: crate::card_data::PreyDirection::Lowest,
-                measure: crate::card_data::PreyMeasure::RemainingHealth,
+            Prey::Ranked {
+                direction: PreyDirection::Lowest,
+                measure: PreyMeasure::RemainingHealth,
             },
             &[InvestigatorId(1), InvestigatorId(2)],
         );
@@ -1069,7 +1065,7 @@ mod hunter_resume_tests {
     /// is `format!("{target:?}")`, from a suspended `AwaitingInput`'s options.
     /// Panics if no option matches (a test-setup error).
     fn pick(outcome: &EngineOutcome, target: impl std::fmt::Debug) -> crate::action::InputResponse {
-        let crate::engine::EngineOutcome::AwaitingInput { request, .. } = outcome else {
+        let EngineOutcome::AwaitingInput { request, .. } = outcome else {
             panic!("expected AwaitingInput, got {outcome:?}");
         };
         let label = format!("{target:?}");
@@ -1195,7 +1191,7 @@ mod hunter_resume_tests {
                 state: &mut state,
                 events: &mut ev2,
             },
-            &crate::action::InputResponse::PickSingle(crate::engine::OptionId(99)),
+            &crate::action::InputResponse::PickSingle(OptionId(99)),
         );
         assert!(matches!(result, EngineOutcome::Rejected { .. }));
         assert!(
@@ -1290,9 +1286,9 @@ mod hunter_resume_tests {
         inv2.skills.combat = 2;
         let mut hunter = test_enemy(1, "Ghoul Priest");
         hunter.hunter = true;
-        hunter.prey = crate::card_data::Prey::Ranked {
-            direction: crate::card_data::PreyDirection::Highest,
-            measure: crate::card_data::PreyMeasure::Skill(crate::card_data::SkillKind::Combat),
+        hunter.prey = Prey::Ranked {
+            direction: PreyDirection::Highest,
+            measure: PreyMeasure::Skill(crate::card_data::SkillKind::Combat),
         };
         hunter.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
@@ -1609,7 +1605,7 @@ mod reengage_tests {
             let mut e = test_enemy(1, "Ghoul");
             e.current_location = Some(loc);
             e.engaged_with = None;
-            e.prey = crate::card_data::Prey::Default;
+            e.prey = Prey::Default;
             e
         };
         let mut state = GameStateBuilder::default()

@@ -95,7 +95,7 @@ impl Harness {
         let (tx, rx) = mpsc::unbounded::<ClientMessage>();
         let tx_for_mount: OutboundTx = tx;
         let seed = state.clone();
-        leptos::mount::mount_to_body(move || {
+        mount_to_body(move || {
             provide_context(store);
             provide_context::<OutboundTx>(tx_for_mount.clone());
             let pending = Signal::derive(move || store.with(web::interaction::pending_options));

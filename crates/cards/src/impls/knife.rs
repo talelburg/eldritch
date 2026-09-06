@@ -54,10 +54,7 @@ mod tests {
     /// The `(combat_modifier, extra_damage)` the ability at `index` fights
     /// with, asserting on the way that it is a 1-action **Fight** designator
     /// with nothing printed beside it.
-    fn fight_modification(
-        abilities: &[card_dsl::dsl::Ability],
-        index: usize,
-    ) -> (IntExpr, IntExpr) {
+    fn fight_modification(abilities: &[Ability], index: usize) -> (IntExpr, IntExpr) {
         let Trigger::Activated {
             action_cost: 1,
             designator:

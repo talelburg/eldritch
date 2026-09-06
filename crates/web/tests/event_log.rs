@@ -14,7 +14,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 #[wasm_bindgen_test]
 async fn renders_batches_with_headers_and_event_debug() {
     let store = RwSignal::new(ClientState::default());
-    leptos::mount::mount_to_body(move || {
+    mount_to_body(move || {
         provide_context(store);
         leptos::view! { <EventLogView/> }
     });
@@ -26,9 +26,7 @@ async fn renders_batches_with_headers_and_event_debug() {
     });
     leptos::task::tick().await;
 
-    let logs = leptos::prelude::document()
-        .query_selector_all(".event-log")
-        .expect("query");
+    let logs = document().query_selector_all(".event-log").expect("query");
     assert!(logs.length() >= 1, "no .event-log element rendered");
     let panel = logs
         .item(logs.length() - 1)
@@ -46,14 +44,14 @@ async fn renders_batches_with_headers_and_event_debug() {
 #[wasm_bindgen_test]
 async fn log_collapses_and_expands() {
     // Mount EventLogView (use the file's existing mount helper / store setup).
-    let store = leptos::prelude::RwSignal::new(web::store::ClientState::default());
-    leptos::mount::mount_to_body(move || {
-        leptos::prelude::provide_context(store);
-        leptos::view! { <web::event_log::EventLogView/> }
+    let store = RwSignal::new(ClientState::default());
+    mount_to_body(move || {
+        provide_context(store);
+        leptos::view! { <EventLogView/> }
     });
     leptos::task::tick().await;
 
-    let logs = leptos::prelude::document()
+    let logs = document()
         .query_selector_all(".event-log")
         .expect("query ok");
     let panel = logs

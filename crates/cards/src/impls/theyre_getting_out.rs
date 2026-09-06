@@ -328,7 +328,7 @@ mod tests {
     }
 
     // Hallway(2) hub connects to Attic(3), Cellar(4), Parlor(5).
-    fn star_board() -> game_core::state::GameState {
+    fn star_board() -> GameState {
         let loc =
             |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
         let mut state = GameStateBuilder::new()
@@ -343,7 +343,7 @@ mod tests {
         state
     }
 
-    fn cx_apply(state: &mut game_core::state::GameState, f: NativeEffectFn) -> Vec<Event> {
+    fn cx_apply(state: &mut GameState, f: NativeEffectFn) -> Vec<Event> {
         let mut events = Vec::new();
         let mut cx = Cx {
             state,
@@ -365,7 +365,7 @@ mod tests {
             .collect()
     }
 
-    fn with_agenda(state: &mut game_core::state::GameState) {
+    fn with_agenda(state: &mut GameState) {
         state.agenda_deck = vec![Agenda {
             code: CardCode::new("01107"),
             doom_threshold: 10,
@@ -606,7 +606,7 @@ mod tests {
     /// (2 steps); Attic -> Study -> Cellar -> Parlor is the long way (3).
     /// Synthetic topology on real Gathering codes — the printed map is the
     /// star in [`star_board`], which has no detour to test against.
-    fn detour_board() -> game_core::state::GameState {
+    fn detour_board() -> GameState {
         let loc =
             |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
         let mut state = GameStateBuilder::new()
@@ -624,7 +624,7 @@ mod tests {
         state
     }
 
-    fn barricade(state: &mut game_core::state::GameState, at: LocationId) {
+    fn barricade(state: &mut GameState, at: LocationId) {
         state.locations.get_mut(&at).unwrap().attachments.push(
             game_core::state::CardInPlay::enter_play(
                 CardCode::new("01038"),

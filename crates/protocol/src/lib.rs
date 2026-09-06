@@ -207,7 +207,7 @@ mod tests {
         let ServerMessage::Applied { outcome, .. } = back else {
             panic!("expected Applied, got {back:?}");
         };
-        let game_core::EngineOutcome::AwaitingInput { request, .. } = outcome else {
+        let EngineOutcome::AwaitingInput { request, .. } = outcome else {
             panic!("expected AwaitingInput outcome");
         };
         assert!(

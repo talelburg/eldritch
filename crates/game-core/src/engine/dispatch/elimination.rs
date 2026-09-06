@@ -5,12 +5,12 @@ use super::super::outcome::EngineOutcome;
 use super::Cx;
 use crate::event::Event;
 use crate::state::{
-    CardInPlay, CardInstanceId, Continuation, EliminationCause, EliminationStep, EnemyId,
+    CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, EliminationStep, EnemyId,
     InvestigatorId, Status,
 };
 
 #[cfg(test)]
-use crate::state::{CardCode, LocationId, Phase};
+use crate::state::{LocationId, Phase};
 
 /// Flip an Active investigator's status to the variant `cause` implies —
 /// [`Status::Resigned`] for a resignation, [`Status::Defeated`] for every
@@ -254,10 +254,7 @@ pub(super) fn drive_elimination(cx: &mut Cx) -> EngineOutcome {
 /// Split out of [`run_elimination_steps`] to keep it under the function-size
 /// lint; the *why* — a card mid-play or in limbo is reachable by no zone drain —
 /// is at the call site.
-fn take_limbo_cards(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-) -> (Vec<crate::state::CardCode>, Vec<crate::state::CardCode>) {
+fn take_limbo_cards(cx: &mut Cx, investigator: InvestigatorId) -> (Vec<CardCode>, Vec<CardCode>) {
     let mut theirs = Vec::new();
     let mut scenarios = Vec::new();
     for frame in &mut cx.state.continuations {

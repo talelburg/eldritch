@@ -317,7 +317,7 @@ mod tests {
         };
         assert_eq!(prompt_anchor(&state), None, "un-anchored request");
 
-        if let Some(game_core::EngineOutcome::AwaitingInput { request, .. }) = &mut state.outcome {
+        if let Some(EngineOutcome::AwaitingInput { request, .. }) = &mut state.outcome {
             request.target = Some(OptionTarget::TurnControl(InvestigatorId(1)));
         }
         assert_eq!(
@@ -342,7 +342,7 @@ mod tests {
             "the acknowledge pause is un-anchored"
         );
 
-        if let Some(game_core::EngineOutcome::AwaitingInput { request, .. }) = &mut ack.outcome {
+        if let Some(EngineOutcome::AwaitingInput { request, .. }) = &mut ack.outcome {
             request.target = Some(OptionTarget::EncounterDeck);
         }
         assert_eq!(confirm_anchor(&ack), Some(OptionTarget::EncounterDeck));

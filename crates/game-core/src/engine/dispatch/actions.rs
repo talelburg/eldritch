@@ -1220,10 +1220,7 @@ mod actions_tests {
             },
         );
 
-        assert!(!matches!(
-            result.outcome,
-            crate::engine::EngineOutcome::Rejected { .. }
-        ));
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         // Action was still spent.
         assert_event!(
             result.events,
@@ -1243,7 +1240,7 @@ mod actions_tests {
         // Investigator is no longer Active (defeated by AoO).
         assert_ne!(
             result.state.investigators[&inv_id].status,
-            crate::state::Status::Active,
+            Status::Active,
             "investigator not Active after lethal AoO"
         );
         // No InvestigatorMoved emitted.
@@ -1265,10 +1262,7 @@ mod actions_tests {
             },
         );
 
-        assert!(!matches!(
-            result.outcome,
-            crate::engine::EngineOutcome::Rejected { .. }
-        ));
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         // AoO damage landed.
         assert_event!(
             result.events,
@@ -1359,10 +1353,7 @@ mod actions_tests {
             },
         );
 
-        assert!(!matches!(
-            result.outcome,
-            crate::engine::EngineOutcome::Rejected { .. }
-        ));
+        assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(
             result.state.investigators[&inv_id].current_location,
             Some(l2),
@@ -1864,7 +1855,7 @@ mod actions_tests {
         // Investigator is still Active.
         assert_eq!(
             result.state.investigators[&inv_id].status,
-            crate::state::Status::Active,
+            Status::Active,
             "investigator must still be Active after nonlethal AoO"
         );
         // Investigator took 1 damage.
@@ -1910,7 +1901,7 @@ mod actions_tests {
         // Investigator is not Active (defeated by AoO).
         assert_ne!(
             result.state.investigators[&inv_id].status,
-            crate::state::Status::Active,
+            Status::Active,
             "investigator must not be Active after lethal AoO"
         );
     }

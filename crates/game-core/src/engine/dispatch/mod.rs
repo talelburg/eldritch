@@ -917,7 +917,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         // arm is the live open turn; `ending: true` is only ever top momentarily
         // inside `drive`'s resume tail and never legitimately awaits input here.
         Some(Continuation::InvestigatorTurn { ending: false, .. }) => {
-            let crate::action::InputResponse::PickSingle(opt) = response else {
+            let InputResponse::PickSingle(opt) = response else {
                 return EngineOutcome::Rejected {
                     reason: "ResolveInput: the open turn expects PickSingle(OptionId)".into(),
                 };

@@ -51,7 +51,7 @@ use crate::state::{
 #[must_use = "GameStateBuilder is a builder; call .build() to produce a GameState"]
 pub struct GameStateBuilder {
     investigators: BTreeMap<InvestigatorId, Investigator>,
-    locations: BTreeMap<crate::state::LocationId, Location>,
+    locations: BTreeMap<LocationId, Location>,
     enemies: BTreeMap<EnemyId, Enemy>,
     chaos_bag: ChaosBag,
     token_modifiers: TokenModifiers,

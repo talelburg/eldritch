@@ -44,7 +44,7 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
     }];
     state.agenda_doom = 1;
 
-    leptos::mount::mount_to_body(move || web::act_agenda::act_agenda_view(&state));
+    mount_to_body(move || web::act_agenda::act_agenda_view(&state));
     leptos::task::tick().await;
 
     let text = section_text();
@@ -94,7 +94,7 @@ async fn mount_with_prompt(
     store.update(|s| s.outcome = Some(outcome));
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
-    leptos::mount::mount_to_body(move || {
+    mount_to_body(move || {
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));
@@ -240,7 +240,7 @@ async fn mount_advancing(
         step,
         trigger: AdvanceTrigger::Forced,
     });
-    leptos::mount::mount_to_body(move || web::act_agenda::act_agenda_view(&state));
+    mount_to_body(move || web::act_agenda::act_agenda_view(&state));
     leptos::task::tick().await;
 }
 

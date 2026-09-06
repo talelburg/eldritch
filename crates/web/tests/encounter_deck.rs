@@ -44,7 +44,7 @@ async fn mount(deck_size: usize, outcome: EngineOutcome) -> mpsc::UnboundedRecei
     store.update(|s| s.outcome = Some(outcome));
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
-    leptos::mount::mount_to_body(move || {
+    mount_to_body(move || {
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let anchor = Signal::derive(move || store.with(web::interaction::confirm_anchor));

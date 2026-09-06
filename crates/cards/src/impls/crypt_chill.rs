@@ -182,7 +182,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            super::crypt_chill_fail(&mut cx, &ctx)
+            crypt_chill_fail(&mut cx, &ctx)
         };
         match out {
             EngineOutcome::AwaitingInput { request, .. } => {
@@ -216,7 +216,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            super::crypt_chill_fail(&mut cx, &ctx)
+            crypt_chill_fail(&mut cx, &ctx)
         };
         assert!(
             matches!(out, EngineOutcome::Done),

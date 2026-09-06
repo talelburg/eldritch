@@ -20,7 +20,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 /// Inner HTML of the last mounted `.card` (DOM accumulates across tests on the
 /// shared page — scope to the latest subtree).
 fn last_card_html() -> String {
-    let cards = leptos::prelude::document()
+    let cards = document()
         .query_selector_all(".card")
         .expect("query_selector_all");
     cards
@@ -34,7 +34,7 @@ fn last_card_html() -> String {
 async fn mount_card(code: &str) -> String {
     let _ = game_core::card_registry::install(cards::REGISTRY);
     let code = CardCode::new(code);
-    leptos::mount::mount_to_body(move || view! { <Card code=code.clone()/> });
+    mount_to_body(move || view! { <Card code=code.clone()/> });
     leptos::task::tick().await;
     last_card_html()
 }
@@ -63,7 +63,7 @@ async fn guardian_card_carries_class_modifier() {
     let _ = mount_card("01020").await;
     // Scope to the last mounted .card (DOM accumulates across tests on the
     // shared page) and assert IT carries the guardian class modifier.
-    let cards = leptos::prelude::document()
+    let cards = document()
         .query_selector_all(".card")
         .expect("query_selector_all");
     let last = cards
@@ -100,7 +100,7 @@ async fn unknown_code_falls_back_to_raw_code() {
 
 /// Class list of the last mounted `.card` element.
 fn last_card_classes() -> String {
-    let cards = leptos::prelude::document()
+    let cards = document()
         .query_selector_all(".card")
         .expect("query_selector_all");
     cards
@@ -118,9 +118,7 @@ async fn in_play_exhausted_asset_dims_badges_and_shows_soak() {
     let mut inst = CardInPlay::enter_play(CardCode::new("01018"), CardInstanceId(0));
     inst.exhausted = true;
     inst.accumulated_damage = 1;
-    leptos::mount::mount_to_body(
-        move || view! { <Card code=CardCode::new("01018") in_play=inst.clone()/> },
-    );
+    mount_to_body(move || view! { <Card code=CardCode::new("01018") in_play=inst.clone()/> });
     leptos::task::tick().await;
 
     assert!(
@@ -146,9 +144,7 @@ async fn treachery_renders_generic_face_with_clues() {
     // enters the threat area with clues on the card.
     let mut inst = CardInPlay::enter_play(CardCode::new("01007"), CardInstanceId(0));
     inst.clues = 3;
-    leptos::mount::mount_to_body(
-        move || view! { <Card code=CardCode::new("01007") in_play=inst.clone()/> },
-    );
+    mount_to_body(move || view! { <Card code=CardCode::new("01007") in_play=inst.clone()/> });
     leptos::task::tick().await;
 
     assert!(
@@ -168,9 +164,7 @@ async fn treachery_renders_generic_face_with_clues() {
 async fn in_play_ready_asset_is_not_dimmed() {
     let _ = game_core::card_registry::install(cards::REGISTRY);
     let inst = CardInPlay::enter_play(CardCode::new("01018"), CardInstanceId(0));
-    leptos::mount::mount_to_body(
-        move || view! { <Card code=CardCode::new("01018") in_play=inst.clone()/> },
-    );
+    mount_to_body(move || view! { <Card code=CardCode::new("01018") in_play=inst.clone()/> });
     leptos::task::tick().await;
     assert!(
         !last_card_classes().contains("card--exhausted"),
@@ -184,9 +178,7 @@ async fn in_play_ready_asset_is_not_dimmed() {
 
 /// The last-mounted `.hand-slot`.
 fn last_slot() -> web_sys::Element {
-    let slots = leptos::prelude::document()
-        .query_selector_all(".hand-slot")
-        .expect("query");
+    let slots = document().query_selector_all(".hand-slot").expect("query");
     slots
         .item(slots.length() - 1)
         .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
@@ -208,7 +200,7 @@ async fn mount_hand(
     let selected = RwSignal::new(BTreeSet::<u32>::new());
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
-    leptos::mount::mount_to_body(move || {
+    mount_to_body(move || {
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));

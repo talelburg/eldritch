@@ -35,7 +35,7 @@ async fn mount(outcome: game_core::EngineOutcome) -> mpsc::UnboundedReceiver<Cli
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
     let inst = CardInPlay::enter_play(CardCode::new("01020"), CardInstanceId(3));
-    leptos::mount::mount_to_body(move || {
+    mount_to_body(move || {
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));

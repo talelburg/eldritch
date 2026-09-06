@@ -251,11 +251,9 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
     let mut state = board_with_agenda();
     state.phase = Phase::Upkeep;
     // UpkeepPhase anchor (slice 1a): the round-end teardown pops it.
-    state
-        .continuations
-        .push(game_core::state::Continuation::UpkeepPhase {
-            resume: game_core::state::UpkeepResume::Begins,
-        });
+    state.continuations.push(Continuation::UpkeepPhase {
+        resume: game_core::state::UpkeepResume::Begins,
+    });
 
     // Affordable act window: investigator in the Hallway (01112) with >= 3 clues.
     state.act_deck = vec![Act {

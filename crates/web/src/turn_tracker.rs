@@ -102,10 +102,8 @@ pub fn TurnTrackerView() -> impl IntoView {
                     .steps
                     .iter()
                     .map(|s| match s {
-                        Step::Framework(t) => {
-                            view! { <li class="tracker-step">{*t}</li> }.into_any()
-                        }
-                        Step::Window => {
+                        Framework(t) => view! { <li class="tracker-step">{*t}</li> }.into_any(),
+                        Window => {
                             view! { <li class="tracker-window">"player window"</li> }.into_any()
                         }
                     })

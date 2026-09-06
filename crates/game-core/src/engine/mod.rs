@@ -151,7 +151,7 @@ pub fn apply_with_scenario_registry(
     registry: Option<&ScenarioRegistry>,
 ) -> ApplyResult {
     apply_via(state, registry, |cx| match action {
-        Action::Player(p) => dispatch::apply_player_action(cx, &p),
+        Action::Player(p) => apply_player_action(cx, &p),
         Action::Engine(e) => dispatch::apply_engine_record(cx, &e),
     })
 }
@@ -375,7 +375,7 @@ mod tests {
         crate::test_support::install_test_registry();
         let state = GameStateBuilder::new().build();
         let roster = vec![RosterEntry {
-            investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+            investigator: CardCode::new(crate::test_support::TEST_INV),
             deck: vec![],
         }];
         let start_result = seat_and_open(state, &roster);
@@ -972,14 +972,11 @@ mod tests {
     /// Investigation phase, with the investigator active and 3 actions.
     /// Bag is `Numeric(0)` so the test outcome depends purely on
     /// (intellect vs shroud).
-    fn investigate_scenario(
-        clues: u8,
-        shroud: u8,
-    ) -> (InvestigatorId, crate::state::LocationId, GameState) {
+    fn investigate_scenario(clues: u8, shroud: u8) -> (InvestigatorId, LocationId, GameState) {
         // Registry needed for max_health()/max_sanity() after cp2a.
         crate::test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
-        let loc_id = crate::state::LocationId(10);
+        let loc_id = LocationId(10);
         let mut inv = test_investigator(1);
         inv.current_location = Some(loc_id);
         inv.actions_remaining = 3;
@@ -1153,7 +1150,7 @@ mod tests {
         let state = GameStateBuilder::new().build();
         let roster = vec![
             RosterEntry {
-                investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+                investigator: CardCode::new(crate::test_support::TEST_INV),
                 deck: vec![],
             };
             2
@@ -1278,7 +1275,7 @@ mod tests {
         crate::test_support::install_test_registry();
         let state = GameStateBuilder::new().build();
         let roster = vec![RosterEntry {
-            investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+            investigator: CardCode::new(crate::test_support::TEST_INV),
             deck: vec![],
         }];
         // seat_and_open: round 0 → 1, mulligan window opens.
@@ -1364,7 +1361,7 @@ mod tests {
         crate::test_support::install_test_registry();
         let state = GameStateBuilder::new().with_rng_seed(42).build();
         let roster = vec![RosterEntry {
-            investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+            investigator: CardCode::new(crate::test_support::TEST_INV),
             deck: make_test_deck(10),
         }];
         let result = seat_and_open(state, &roster);
@@ -1404,7 +1401,7 @@ mod tests {
         crate::test_support::install_test_registry();
         let state = GameStateBuilder::new().build();
         let roster = vec![RosterEntry {
-            investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+            investigator: CardCode::new(crate::test_support::TEST_INV),
             deck: vec![],
         }];
         let result = seat_and_open(state, &roster);
@@ -1433,7 +1430,7 @@ mod tests {
         crate::test_support::install_test_registry();
         let state = GameStateBuilder::new().with_rng_seed(7).build();
         let roster = vec![RosterEntry {
-            investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+            investigator: CardCode::new(crate::test_support::TEST_INV),
             deck: make_test_deck(3),
         }];
         let result = seat_and_open(state, &roster);
@@ -1459,7 +1456,7 @@ mod tests {
         let state_b = GameStateBuilder::new().with_rng_seed(123).build();
         let make_roster = || {
             vec![RosterEntry {
-                investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+                investigator: CardCode::new(crate::test_support::TEST_INV),
                 deck: deck.clone(),
             }]
         };
@@ -1521,7 +1518,7 @@ mod tests {
         let state = GameStateBuilder::new().with_rng_seed(2026).build();
         let roster: Vec<RosterEntry> = (0..3)
             .map(|_| RosterEntry {
-                investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+                investigator: CardCode::new(crate::test_support::TEST_INV),
                 deck: make_test_deck(8),
             })
             .collect();
@@ -1562,17 +1559,12 @@ mod tests {
     /// location A, with A connected to B (and only A→B; B has no
     /// connections back). Investigation phase, active investigator,
     /// 3 actions. Returns (investigator id, A id, B id, state).
-    fn move_scenario() -> (
-        InvestigatorId,
-        crate::state::LocationId,
-        crate::state::LocationId,
-        GameState,
-    ) {
+    fn move_scenario() -> (InvestigatorId, LocationId, LocationId, GameState) {
         // Registry needed for max_health()/max_sanity() after cp2a.
         crate::test_support::install_test_registry();
         let inv_id = InvestigatorId(1);
-        let a = crate::state::LocationId(10);
-        let b = crate::state::LocationId(11);
+        let a = LocationId(10);
+        let b = LocationId(11);
         let mut inv = test_investigator(1);
         inv.current_location = Some(a);
         inv.actions_remaining = 3;
@@ -1626,7 +1618,7 @@ mod tests {
     fn move_to_unconnected_location_is_rejected() {
         // Build a fresh scenario where C exists but A is not connected to C.
         let (inv_id, _, _, mut state) = move_scenario();
-        let c = crate::state::LocationId(12);
+        let c = LocationId(12);
         state.locations.insert(c, test_location(12, "C"));
         // C is not connected from A → Move to C is not legal.
         assert!(!crate::engine::enumerate::legal_actions(&state)
@@ -2353,13 +2345,8 @@ mod tests {
     /// Move scenario with a ready enemy engaged with the active
     /// investigator at the origin. A connects to B (one-way).
     /// Returns (inv id, A, B, enemy id, state).
-    fn move_scenario_with_engaged_enemy() -> (
-        InvestigatorId,
-        crate::state::LocationId,
-        crate::state::LocationId,
-        EnemyId,
-        GameState,
-    ) {
+    fn move_scenario_with_engaged_enemy(
+    ) -> (InvestigatorId, LocationId, LocationId, EnemyId, GameState) {
         let (inv_id, a, b, mut state) = move_scenario();
         let enemy_id = EnemyId(200);
         let mut enemy = test_enemy(200, "Engaged Ghoul");
@@ -2445,7 +2432,7 @@ mod tests {
     #[test]
     fn resource_action_spends_action_and_gains_one_resource() {
         let inv_id = InvestigatorId(1);
-        let loc = crate::state::LocationId(10);
+        let loc = LocationId(10);
         let state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_location(test_location(10, "Study"))
@@ -2481,7 +2468,7 @@ mod tests {
     #[test]
     fn resource_action_fires_aoo_from_ready_engaged_enemy() {
         let inv_id = InvestigatorId(1);
-        let loc = crate::state::LocationId(10);
+        let loc = LocationId(10);
         let mut enemy = test_enemy(200, "Engaged Ghoul");
         enemy.current_location = Some(loc);
         enemy.engaged_with = Some(inv_id);
@@ -2592,7 +2579,7 @@ mod tests {
         // suppressed (no ResourcesGained event) while the AoO damage
         // still lands.
         let inv_id = InvestigatorId(1);
-        let loc = crate::state::LocationId(10);
+        let loc = LocationId(10);
         let mut enemy = test_enemy(200, "Lethal Ghoul");
         enemy.current_location = Some(loc);
         enemy.engaged_with = Some(inv_id);
@@ -2632,7 +2619,7 @@ mod tests {
     #[test]
     fn engage_action_engages_unengaged_enemy_at_location() {
         let inv_id = InvestigatorId(1);
-        let loc = crate::state::LocationId(10);
+        let loc = LocationId(10);
         let enemy_id = EnemyId(300);
         let mut enemy = test_enemy(300, "Aloof Ghoul");
         enemy.current_location = Some(loc);
@@ -2674,7 +2661,7 @@ mod tests {
     #[test]
     fn engage_action_provokes_aoo_from_other_engaged_enemy_not_the_target() {
         let inv_id = InvestigatorId(1);
-        let loc = crate::state::LocationId(10);
+        let loc = LocationId(10);
         let target_id = EnemyId(300);
         let mut target = test_enemy(300, "Target Ghoul"); // not engaged yet
         target.current_location = Some(loc);
@@ -2721,8 +2708,8 @@ mod tests {
     #[test]
     fn engage_action_rejects_enemy_not_at_location() {
         let inv_id = InvestigatorId(1);
-        let here = crate::state::LocationId(10);
-        let there = crate::state::LocationId(11);
+        let here = LocationId(10);
+        let there = LocationId(11);
         let enemy_id = EnemyId(300);
         let mut enemy = test_enemy(300, "Distant Ghoul");
         enemy.current_location = Some(there);
@@ -2747,7 +2734,7 @@ mod tests {
     #[test]
     fn engage_action_rejects_already_engaged_enemy() {
         let inv_id = InvestigatorId(1);
-        let loc = crate::state::LocationId(10);
+        let loc = LocationId(10);
         let enemy_id = EnemyId(300);
         let mut enemy = test_enemy(300, "Engaged Ghoul");
         enemy.current_location = Some(loc);
@@ -2772,7 +2759,7 @@ mod tests {
     #[test]
     fn engage_action_rejects_unknown_enemy() {
         let inv_id = InvestigatorId(1);
-        let loc = crate::state::LocationId(10);
+        let loc = LocationId(10);
         let state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_location(test_location(10, "Study"))
@@ -2792,7 +2779,7 @@ mod tests {
     #[test]
     fn engage_action_rejects_no_actions_remaining() {
         let inv_id = InvestigatorId(1);
-        let loc = crate::state::LocationId(10);
+        let loc = LocationId(10);
         let enemy_id = EnemyId(300);
         let mut enemy = test_enemy(300, "Ghoul");
         enemy.current_location = Some(loc);
@@ -2817,7 +2804,7 @@ mod tests {
     #[test]
     fn engage_action_rejects_when_not_active_status() {
         let inv_id = InvestigatorId(1);
-        let loc = crate::state::LocationId(10);
+        let loc = LocationId(10);
         let enemy_id = EnemyId(300);
         let mut enemy = test_enemy(300, "Ghoul");
         enemy.current_location = Some(loc);
@@ -2842,7 +2829,7 @@ mod tests {
     #[test]
     fn draw_action_fires_aoo_from_ready_engaged_enemy() {
         let inv_id = InvestigatorId(1);
-        let loc = crate::state::LocationId(10);
+        let loc = LocationId(10);
         let mut enemy = test_enemy(200, "Engaged Ghoul");
         enemy.current_location = Some(loc);
         enemy.engaged_with = Some(inv_id);
@@ -2887,7 +2874,7 @@ mod tests {
         // before the card is drawn; the draw is suppressed (no CardsDrawn event)
         // while the AoO damage still lands. Action is still spent.
         let inv_id = InvestigatorId(1);
-        let loc = crate::state::LocationId(10);
+        let loc = LocationId(10);
         let mut enemy = test_enemy(200, "Lethal Ghoul");
         enemy.current_location = Some(loc);
         enemy.engaged_with = Some(inv_id);
@@ -2937,7 +2924,7 @@ mod tests {
         // Behaviour-preserving: no AoO enemy, so the draw resolves without
         // interruption. One card drawn, Done.
         let inv_id = InvestigatorId(1);
-        let loc = crate::state::LocationId(10);
+        let loc = LocationId(10);
         let state = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
             .with_location(test_location(10, "Study"))
@@ -3106,7 +3093,7 @@ mod tests {
 
     /// From a suspended `AwaitingInput` outcome, the attack-order (#143)
     /// `PickSingle` `OptionId` whose label matches `enemy`'s debug repr.
-    fn attack_order_pick(outcome: &EngineOutcome, enemy: EnemyId) -> crate::engine::OptionId {
+    fn attack_order_pick(outcome: &EngineOutcome, enemy: EnemyId) -> OptionId {
         let EngineOutcome::AwaitingInput { request, .. } = outcome else {
             panic!("expected an attack-order prompt, got {outcome:?}");
         };
@@ -3220,13 +3207,8 @@ mod tests {
     /// enemy's `AoO`: `accumulated_damage` pre-loaded to 7 (leaving 1
     /// health remaining), enemy `attack_damage = 1`. Returns (inv id,
     /// origin, dest, enemy id, state).
-    fn move_scenario_with_lethal_aoo() -> (
-        InvestigatorId,
-        crate::state::LocationId,
-        crate::state::LocationId,
-        EnemyId,
-        GameState,
-    ) {
+    fn move_scenario_with_lethal_aoo(
+    ) -> (InvestigatorId, LocationId, LocationId, EnemyId, GameState) {
         let (inv_id, a, b, enemy_id, mut state) = move_scenario_with_engaged_enemy();
         // Pre-load accumulated_damage so remaining health = 1 (lethal with attack_damage=1).
         // max_health() = 8 from TEST_INV; 7 + 1 = 8 = defeated.
@@ -3574,8 +3556,8 @@ mod tests {
         let mut e = test_enemy(500, "Lethal Ghoul");
         e.engaged_with = Some(inv1);
         e.attack_damage = 1;
-        let a = crate::state::LocationId(10);
-        let b = crate::state::LocationId(11);
+        let a = LocationId(10);
+        let b = LocationId(11);
         let mut loc_a = test_location(10, "A");
         loc_a.connections = vec![b];
         let state = GameStateBuilder::new()
@@ -3679,7 +3661,7 @@ mod tests {
         // Registry needed for max_health()/max_sanity() after cp2a.
         crate::test_support::install_test_registry();
         let id = InvestigatorId(1);
-        let a = crate::state::LocationId(10);
+        let a = LocationId(10);
         let mut inv = test_investigator(1);
         inv.current_location = Some(a);
         inv.actions_remaining = 3;
@@ -4191,7 +4173,7 @@ mod tests {
         crate::test_support::install_test_registry();
         let state = GameStateBuilder::new().build();
         let roster = vec![RosterEntry {
-            investigator: crate::state::CardCode::new(crate::test_support::TEST_INV),
+            investigator: CardCode::new(crate::test_support::TEST_INV),
             deck: make_test_deck(10),
         }];
         let result = seat_and_open(state, &roster);
@@ -4211,8 +4193,8 @@ mod tests {
         // has submitted their mulligan choice. Without an InvestigatorTurn
         // frame, no open-turn actions are legal.
         let id = InvestigatorId(1);
-        let a = crate::state::LocationId(10);
-        let b = crate::state::LocationId(11);
+        let a = LocationId(10);
+        let b = LocationId(11);
         let mut inv = test_investigator(1);
         inv.current_location = Some(a);
         inv.actions_remaining = 3;
@@ -4909,17 +4891,13 @@ mod tests {
     /// `apply_resolution` that records it ran by stamping the acting
     /// investigator's resources to a sentinel value, so tests can assert
     /// the module hook (not just the event) fired.
-    fn stamp_apply(
-        _ending: ScenarioEnding,
-        state: &mut crate::state::GameState,
-        _events: &mut Vec<Event>,
-    ) {
+    fn stamp_apply(_ending: ScenarioEnding, state: &mut GameState, _events: &mut Vec<Event>) {
         if let Some(inv) = state.investigators.values_mut().next() {
             inv.resources = 99;
         }
     }
 
-    fn unused_setup() -> crate::state::GameState {
+    fn unused_setup() -> GameState {
         GameStateBuilder::new().build()
     }
 
@@ -4944,7 +4922,7 @@ mod tests {
     /// `AdvanceAct` flips it and its reverse latches `Resolution(1)`, which is
     /// why the test registry has to be installed: the reverse is an ability the
     /// registry serves, not a field on the deck entry.
-    fn terminal_act_state(scenario_id: Option<&str>) -> crate::state::GameState {
+    fn terminal_act_state(scenario_id: Option<&str>) -> GameState {
         crate::test_support::install_test_registry();
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
@@ -4953,7 +4931,7 @@ mod tests {
         // so `legal_actions` enumerates `AdvanceAct` — the OptionId-routing entry
         // point these tests drive through `apply_with_scenario_registry`.
         let mut builder = GameStateBuilder::new()
-            .with_phase(crate::state::Phase::Investigation)
+            .with_phase(Phase::Investigation)
             .with_investigator(investigator)
             .with_active_investigator(inv)
             .with_turn_order([inv])
@@ -5165,10 +5143,7 @@ mod tests {
             result.outcome
         );
         assert_eq!(result.state.round, 1);
-        assert!(result
-            .state
-            .investigators
-            .contains_key(&crate::state::InvestigatorId(1)));
+        assert!(result.state.investigators.contains_key(&InvestigatorId(1)));
     }
 
     #[test]

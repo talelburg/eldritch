@@ -579,7 +579,7 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
     assert!(
         matches!(
             state.continuations.last(),
-            Some(game_core::state::Continuation::TimingPointWindow {
+            Some(Continuation::TimingPointWindow {
                 mode: game_core::state::TimingMode::Forced,
                 ..
             })
@@ -593,7 +593,7 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
         if !state
             .continuations
             .iter()
-            .any(|c| !matches!(c, game_core::state::Continuation::ScenarioEnd { .. }))
+            .any(|c| !matches!(c, Continuation::ScenarioEnd { .. }))
         {
             break;
         }

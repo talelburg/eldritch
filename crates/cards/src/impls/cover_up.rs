@@ -242,7 +242,7 @@ mod tests {
         };
 
         // Both clue-conditional abilities carry the eligibility tag.
-        let abilities = super::abilities();
+        let abilities = abilities();
         assert_eq!(
             abilities[1].eligibility.as_deref(),
             Some("01007:has_clues"),
@@ -256,7 +256,7 @@ mod tests {
         );
 
         // Predicate: true while the source instance holds clues, false at 0.
-        let pred = super::native_eligibility_for("01007:has_clues").expect("registered");
+        let pred = native_eligibility_for("01007:has_clues").expect("registered");
         let mut inv = game_core::test_support::test_investigator(1);
         let mut card =
             CardInPlay::enter_play(game_core::state::CardCode::new("01007"), CardInstanceId(0));

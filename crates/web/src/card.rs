@@ -745,7 +745,7 @@ mod tests {
         // Machete 01020 is an asset with no soak capacity.
         let meta = cards::by_code("01020").expect("Machete in corpus");
         let mut inst = TestCardInPlay::enter_play(CardCode::new("01020"), CardInstanceId(0));
-        inst.uses.insert(game_core::state::UseKind::Ammo, 2);
+        inst.uses.insert(UseKind::Ammo, 2);
         assert_eq!(
             live_state_chips(&inst, &meta.kind),
             vec!["2 ammo".to_string()]

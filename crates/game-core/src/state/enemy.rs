@@ -121,7 +121,7 @@ mod hunter_prey_field_tests {
             hunter: true,
             prey: Prey::Default,
             retaliate: true,
-            code: crate::CardCode::new("01116"),
+            code: CardCode::new("01116"),
             victory: Some(2),
             attachments: Vec::new(),
         };

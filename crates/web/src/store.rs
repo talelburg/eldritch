@@ -201,7 +201,7 @@ mod tests {
     use game_core::Event;
 
     /// An `Applied` frame carrying `events` and nothing else of interest.
-    fn applied(events: Vec<game_core::Event>) -> ServerMessage {
+    fn applied(events: Vec<Event>) -> ServerMessage {
         ServerMessage::Applied {
             state: Box::new(sample_state()),
             events,
@@ -209,16 +209,16 @@ mod tests {
         }
     }
 
-    fn started(difficulty: i8) -> game_core::Event {
-        game_core::Event::SkillTestStarted {
+    fn started(difficulty: i8) -> Event {
+        Event::SkillTestStarted {
             investigator: InvestigatorId(1),
             skill: SkillKind::Willpower,
             difficulty,
         }
     }
 
-    fn succeeded(margin: i8) -> game_core::Event {
-        game_core::Event::SkillTestSucceeded {
+    fn succeeded(margin: i8) -> Event {
+        Event::SkillTestSucceeded {
             investigator: InvestigatorId(1),
             skill: SkillKind::Willpower,
             margin,
@@ -530,13 +530,13 @@ mod tests {
             &mut s,
             ServerMessage::Applied {
                 state: Box::new(sample_state()),
-                events: vec![game_core::Event::ScenarioStarted],
+                events: vec![Event::ScenarioStarted],
                 outcome: EngineOutcome::Done,
             },
         );
         assert_eq!(s.log.len(), 1);
         assert_eq!(s.log[0].header, "Move to Cellar");
-        assert_eq!(s.log[0].events, vec![game_core::Event::ScenarioStarted]);
+        assert_eq!(s.log[0].events, vec![Event::ScenarioStarted]);
         assert_eq!(s.pending_label, None, "pending_label is consumed");
     }
 
@@ -619,12 +619,12 @@ mod tests {
             ServerMessage::Hello {
                 state: Box::new(sample_state()),
                 outcome: EngineOutcome::Done,
-                events: vec![game_core::Event::ScenarioStarted],
+                events: vec![Event::ScenarioStarted],
             },
         );
         assert_eq!(s.log.len(), 1, "one Setup batch expected");
         assert_eq!(s.log[0].header, "Setup");
-        assert_eq!(s.log[0].events, vec![game_core::Event::ScenarioStarted]);
+        assert_eq!(s.log[0].events, vec![Event::ScenarioStarted]);
     }
 
     #[test]
@@ -647,7 +647,7 @@ mod tests {
         // Seed a prior action batch.
         s.log.push(LogBatch {
             header: "prior action".into(),
-            events: vec![game_core::Event::ScenarioStarted],
+            events: vec![Event::ScenarioStarted],
         });
         // Hello with setup events: prior batch gone, Setup batch present.
         reduce(
@@ -655,7 +655,7 @@ mod tests {
             ServerMessage::Hello {
                 state: Box::new(sample_state()),
                 outcome: EngineOutcome::Done,
-                events: vec![game_core::Event::ScenarioStarted],
+                events: vec![Event::ScenarioStarted],
             },
         );
         assert_eq!(s.log.len(), 1, "only the Setup batch should remain");

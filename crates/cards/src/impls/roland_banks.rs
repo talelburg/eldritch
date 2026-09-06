@@ -131,7 +131,7 @@ mod tests {
         assert!(abilities[1].usage_limit.is_none());
         // Pure-modifier elder-sign: inert empty `Seq` effect (the engine reads
         // the trigger's `modifier`, not the effect).
-        assert!(matches!(&abilities[1].effect, card_dsl::dsl::Effect::Seq(v) if v.is_empty()),);
+        assert!(matches!(&abilities[1].effect, Effect::Seq(v) if v.is_empty()),);
     }
 
     /// Catches a `pub mod` rename or a fat-fingered match arm in

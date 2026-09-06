@@ -138,7 +138,7 @@ async fn engaged_enemy_renders_in_detail_panel_not_in_node() {
     let len = investigators.length();
     let panel = investigators
         .item(len.saturating_sub(1))
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .and_then(|el| el.text_content())
         .unwrap_or_default();
     assert!(

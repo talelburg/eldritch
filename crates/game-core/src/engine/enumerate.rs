@@ -121,10 +121,7 @@ impl TurnAction {
                     .investigators
                     .get(investigator)
                     .and_then(|inv| inv.hand.get(*hand_index as usize))
-                    .map_or_else(
-                        || format!("card {hand_index}"),
-                        std::string::ToString::to_string,
-                    );
+                    .map_or_else(|| format!("card {hand_index}"), ToString::to_string);
                 format!("Play {code}")
             }
             // Structured / rich rendering is #205; until then a granted
@@ -185,7 +182,7 @@ impl TurnAction {
 /// [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame is on top —
 /// [`TurnAction::EndTurn`] carries no investigator field, so its `TurnControl`
 /// anchor has to come from the frame.
-fn active_investigator(state: &GameState) -> Option<crate::state::InvestigatorId> {
+fn active_investigator(state: &GameState) -> Option<InvestigatorId> {
     match state.continuations.last() {
         Some(Continuation::InvestigatorTurn { investigator, .. }) => Some(*investigator),
         _ => None,
