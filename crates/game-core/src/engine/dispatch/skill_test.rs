@@ -1824,8 +1824,7 @@ pub(super) fn peril_check(
 /// assigns damage/horror to soak assets), unlike the old auto-assigning
 /// `take_damage`/`take_horror` shortcut.
 fn symbol_effects_to_effect(effects: &[TokenEffect]) -> Option<Effect> {
-    use crate::dsl::{Effect, HarmKind, InvestigatorTarget};
-    use crate::scenario::TokenEffect;
+    use crate::dsl::{HarmKind, InvestigatorTarget};
     let deals: Vec<Effect> = effects
         .iter()
         .map(|e| match e {

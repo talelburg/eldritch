@@ -10,10 +10,10 @@ use crate::state::{
     LocationId, Status,
 };
 
-use super::cursor;
-use super::movement;
 use super::Cx;
 use crate::action::InputResponse;
+use crate::engine::dispatch::cursor;
+use crate::engine::dispatch::movement;
 use crate::engine::dispatch::phases;
 use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use std::fmt::Debug;

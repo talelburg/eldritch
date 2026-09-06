@@ -18,10 +18,10 @@
 //! [`LocationLayout`](crate::scenario::LocationLayout) and are wired at
 //! entry — the only moment both endpoints of a connection have ids.
 
-use super::encounter;
-use super::threat_area;
 use crate::card_data::CardKind;
 use crate::card_registry;
+use crate::engine::dispatch::encounter;
+use crate::engine::dispatch::threat_area;
 use crate::engine::evaluator;
 use crate::engine::{Cx, EngineOutcome};
 use crate::scenario;

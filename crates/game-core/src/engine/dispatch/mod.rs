@@ -79,7 +79,6 @@ pub(crate) mod threat_area;
 /// Called from the `InvestigatorTurn { ending: false }` arm of `resolve_input`
 /// (slice 2b, #447).
 pub(crate) fn dispatch_turn_action(cx: &mut Cx, action: &TurnAction) -> EngineOutcome {
-    use crate::engine::enumerate::TurnAction;
     match action {
         TurnAction::EndTurn => phases::end_turn(cx),
         TurnAction::Move {
@@ -247,7 +246,7 @@ pub(crate) fn drive(cx: &mut Cx, mut outcome: EngineOutcome) -> EngineOutcome {
 // splitting it would only scatter the one place that says what each frame does.
 #[allow(clippy::too_many_lines)]
 fn drive_frames(cx: &mut Cx) -> EngineOutcome {
-    use crate::state::{Continuation, ScenarioEndStep};
+    use crate::state::ScenarioEndStep;
     loop {
         // A latched resolution cancels opportunities, not resolutions (ADR
         // 0004). Applied at the loop head rather than by sweeping the stack
@@ -544,7 +543,7 @@ fn assert_no_queued_ability_beneath_anchor(state: &GameState) {
 /// defeated mid-action; each primary effect additionally re-checks its own
 /// target precondition. Called only by [`drive`] with such a frame on top.
 fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
-    use crate::state::{ActionResume, Continuation};
+    use crate::state::ActionResume;
     let Some(Continuation::ActionResolution {
         investigator,
         resume,
@@ -805,7 +804,6 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // a mid-test commit, etc.). So routing is "dispatch on the top frame's
     // variant"; the former hand-ordered `if pending_X.is_some()` priority
     // cascade is gone.
-    use crate::state::Continuation;
     let outcome = match cx.state.continuations.last() {
         Some(Continuation::SubstitutionPrompt { .. }) => {
             skill_test::resume_substitution_choice(cx, response)

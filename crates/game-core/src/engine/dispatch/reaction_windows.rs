@@ -623,7 +623,6 @@ fn trigger_matches(
 ///
 /// Shared by [`build_resolution_options`] and the forced-ack path.
 pub(super) fn candidate_anchor(cand: &ResolutionCandidate) -> OptionTarget {
-    use crate::engine::OptionTarget;
     match cand.source {
         CandidateSource::Hand => OptionTarget::HandCardByCode {
             investigator: cand.controller,
@@ -2089,7 +2088,6 @@ fn check_activation_changes_state(
 /// unlifted until a card needs the combo — no tracking issue on purpose (YAGNI);
 /// whoever hits this rejection files one.
 fn reject_incompatible_costs(costs: &[Cost]) -> Result<(), Cow<'static, str>> {
-    use crate::dsl::Cost;
     if costs.iter().any(|c| matches!(c, Cost::DiscardSelf))
         && costs
             .iter()
@@ -2174,7 +2172,6 @@ fn reject_source_costs_without_an_instance(
     code: &CardCode,
     costs: &[Cost],
 ) -> Result<(), Cow<'static, str>> {
-    use crate::dsl::Cost;
     if source.instance().is_some() {
         return Ok(());
     }

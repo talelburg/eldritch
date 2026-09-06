@@ -42,7 +42,6 @@ pub(crate) fn enemies_in_scope(
     controller: InvestigatorId,
     scope: EntityScope,
 ) -> Vec<EnemyId> {
-    use crate::dsl::{EntityScope, LocationSet};
     let EntityScope::At(set) = scope;
     match set {
         LocationSet::Anywhere => state.enemies.keys().copied().collect(),
@@ -840,7 +839,7 @@ fn credit_point(assignment: &mut Assignment, target: DistributionTarget, damage_
 /// the investigator to `Global` (no card). Labels match the former
 /// `hunters::candidate_options` debug repr, so the flat bar is byte-unchanged.
 fn soak_options(targets: &[DistributionTarget]) -> Vec<ChoiceOption> {
-    use crate::engine::{ChoiceOption, OptionId, OptionTarget};
+    use crate::engine::{OptionId, OptionTarget};
     targets
         .iter()
         .enumerate()
@@ -1323,7 +1322,8 @@ mod combat_tests {
     use super::Soaker;
     use crate::action::InputResponse;
     use crate::engine::dispatch::emit::ConditionResolution;
-    use crate::engine::{dispatch, Cx, TimingEvent};
+    use crate::engine::dispatch::emit::TimingEvent;
+    use crate::engine::{dispatch, Cx};
     use crate::engine::{EngineOutcome, OptionId};
     use crate::event::Event;
     use crate::state::{

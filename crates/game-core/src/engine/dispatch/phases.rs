@@ -557,9 +557,6 @@ fn set_mythos_resume(cx: &mut Cx, resume: MythosResume) {
 /// same mechanism here.
 #[cfg(test)]
 fn step_phase(cx: &mut Cx) -> EngineOutcome {
-    use crate::state::{
-        Continuation, EnemyResume, InvestigationResume, MythosResume, UpkeepResume,
-    };
     let to = cx.state.phase.next();
     cx.state.phase = to;
     let anchor = match to {
@@ -874,9 +871,6 @@ fn mythos_phase_end_transition(cx: &mut Cx) -> EngineOutcome {
 /// not an `Entry` anchor, so [`anchor_on_child_pop`] falls through to its
 /// boundary dispatch.
 fn advance_phase_entry(cx: &mut Cx, anchor: Option<&Continuation>) -> Option<EngineOutcome> {
-    use crate::state::{
-        Continuation, EnemyResume, InvestigationResume, MythosResume, UpkeepResume,
-    };
     match anchor {
         Some(Continuation::MythosPhase {
             resume: MythosResume::Entry,
@@ -948,9 +942,6 @@ fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
 // would only obscure the phase-boundary map it draws.
 #[allow(clippy::too_many_lines)]
 pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
-    use crate::state::{
-        Continuation, EnemyResume, InvestigationResume, MythosResume, UpkeepResume,
-    };
     let anchor = cx.state.continuations.last().cloned();
     // `Entry` advances (slice 1b, #393) run the phase opening; delegated so this
     // function stays the boundary-dispatch it was in slice 1a.
