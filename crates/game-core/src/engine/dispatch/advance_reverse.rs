@@ -2,15 +2,14 @@
 //! and its driver. See the `Continuation::AdvanceReverse` doc.
 
 use crate::action::InputResponse;
-use crate::event::Event;
-use crate::state::{AdvanceDeck, AdvanceStep, AdvanceTrigger, CardCode, Continuation};
-
-use super::Cx;
 use crate::engine::dispatch::emit;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
+use crate::engine::Cx;
+use crate::event::Event;
+use crate::state::{AdvanceDeck, AdvanceStep, AdvanceTrigger, CardCode, Continuation};
 
 /// Read the top `AdvanceReverse` frame's fields. The frame is the top
 /// continuation whenever the driver / resume runs (the `drive` loop /
@@ -180,10 +179,13 @@ pub(super) fn resume(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
 mod tests {
     use super::*;
     use crate::engine::dispatch;
+    use crate::scenario::{ResolutionId, ScenarioEnding};
     use crate::state::{
         Act, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, CardCode, Continuation, GameState,
+        InvestigatorId,
     };
     use crate::test_support::{self, GameStateBuilder};
+    use crate::InputKind;
 
     fn state_advancing_agenda(interactive: bool) -> GameState {
         let mut state = GameStateBuilder::new().build();
@@ -241,7 +243,6 @@ mod tests {
     /// the agenda cursor bumps at Finalize, the frame popping itself.
     #[test]
     fn advance_reverse_drives_through_when_not_interactive() {
-        use crate::event::Event;
         let mut state = state_advancing_agenda(false);
         let mut events = Vec::new();
         let out = dispatch::drive(
@@ -270,7 +271,6 @@ mod tests {
     /// reverse — the cursor has NOT bumped yet (#558).
     #[test]
     fn forced_interactive_advance_prompts_on_card_pick_anchored_to_the_deck() {
-        use crate::InputKind;
         let mut state = state_advancing_agenda(true);
         let mut events = Vec::new();
         let out = dispatch::drive(
@@ -300,7 +300,6 @@ mod tests {
     /// advance): the flip pick anchors to the act card, not the agenda (#558).
     #[test]
     fn forced_interactive_act_advance_anchors_to_the_act() {
-        use crate::InputKind;
         let mut state = state_advancing_act(true, AdvanceTrigger::Forced);
         let mut events = Vec::new();
         let out = drive(&mut Cx {
@@ -328,8 +327,6 @@ mod tests {
     /// `scenarios/tests/the_gathering_resolutions.rs`.
     #[test]
     fn a_terminal_act_pauses_on_the_flip_acknowledge_before_its_reverse_ends_the_scenario() {
-        use crate::scenario::{ResolutionId, ScenarioEnding};
-        use crate::state::{Act, InvestigatorId};
         test_support::install_test_registry();
         let mut state = state_advancing_act(true, AdvanceTrigger::Forced);
         // One act, and it is the one advancing — so it is the terminal one.

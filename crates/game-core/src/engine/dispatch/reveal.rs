@@ -12,10 +12,9 @@
 //! through here would place them again.
 
 use crate::card_data::ClueValue;
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::LocationId;
-
-use super::Cx;
 
 /// Reveal `location_id` if it is unrevealed, placing its printed clues.
 /// No-op if the location is absent or already revealed. Public so

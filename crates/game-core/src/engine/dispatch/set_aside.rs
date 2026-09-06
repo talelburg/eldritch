@@ -19,13 +19,11 @@
 //! entry — the only moment both endpoints of a connection have ids.
 
 use crate::card_data::CardKind;
-use crate::card_registry;
-use crate::engine::dispatch::encounter;
-use crate::engine::dispatch::threat_area;
-use crate::engine::evaluator;
-use crate::engine::{Cx, EngineOutcome};
-use crate::scenario;
+use crate::engine::dispatch::{encounter, threat_area};
+use crate::engine::outcome::EngineOutcome;
+use crate::engine::{evaluator, Cx};
 use crate::state::{CardCode, GameState, LocationId};
+use crate::{card_registry, scenario};
 
 /// Bring the set-aside card `code` into play, dispatching on its printed
 /// cardtype:
@@ -175,7 +173,8 @@ fn wire_layout_connections(state: &mut GameState, id: LocationId) {
 #[cfg(test)]
 mod tests {
     use crate::engine::dispatch::set_aside;
-    use crate::engine::{Cx, EngineOutcome};
+    use crate::engine::outcome::EngineOutcome;
+    use crate::engine::Cx;
     use crate::state::{CardCode, InvestigatorId};
     use crate::test_support::{self, GameStateBuilder};
 

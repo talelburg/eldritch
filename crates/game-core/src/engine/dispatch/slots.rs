@@ -11,15 +11,12 @@ use std::collections::BTreeMap;
 use crate::action::InputResponse;
 use crate::card_data::Slot;
 use crate::card_registry;
-use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
-use crate::engine::OptionId;
+use crate::engine::dispatch::{cards, hunters};
+use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::engine::Cx;
 use crate::state::{
     AssetEntry, CardCode, CardInPlay, CardInstanceId, Continuation, GameState, InvestigatorId,
 };
-
-use super::Cx;
-use crate::engine::dispatch::cards;
-use crate::engine::dispatch::hunters;
 
 /// Per-type slot counts (a multiset). `BTreeMap` keeps iteration deterministic.
 pub(super) type SlotCounts = BTreeMap<Slot, u8>;

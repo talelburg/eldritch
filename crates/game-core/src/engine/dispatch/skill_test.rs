@@ -7,30 +7,28 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::action::InputResponse;
+use crate::card_data::CardKind;
 use crate::dsl::{
-    self, Determination, Effect, IntExpr, LocationTarget, SkillTestKind, Stat, TestOutcome, Trigger,
+    self, Determination, Effect, HarmKind, IntExpr, InvestigatorTarget, LocationTarget,
+    SkillTestKind, Stat, TestOutcome, Trigger,
 };
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::{combat, emit, reaction_windows};
+use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::modified_value::{
+    self, ContributionSource, ModifiedQuantity, ModifierBreakdown, ModifierTarget, ReadContext,
+};
+use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::engine::Cx;
 use crate::event::{Event, FailureReason};
+use crate::scenario::TokenEffect;
 use crate::state::{
     self, AbilitySource, CardCode, ChaosToken, Continuation, DifficultyBasis, FastWindowKind,
     GameState, InFlightSkillTest, InvestigatorId, Lifetime, RecordedModifier, ResolvedTest,
     SkillKind, SkillTestFollowUp, SkillTestStep, Status, TokenResolution, Zone,
 };
 use crate::{card_registry, scenario};
-
-use super::Cx;
-use crate::action::InputResponse;
-use crate::card_data::CardKind;
-use crate::engine::dispatch::combat;
-use crate::engine::dispatch::emit;
-use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::reaction_windows;
-use crate::engine::evaluator::{self, EvalContext};
-use crate::engine::modified_value::{
-    self, ContributionSource, ModifiedQuantity, ModifierBreakdown, ModifierTarget, ReadContext,
-};
-use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
-use crate::scenario::TokenEffect;
 
 /// The one-shot modifier an initiator grants the test it starts: a weapon's
 /// *"+N \[combat\] for this attack"* (the
@@ -1824,7 +1822,6 @@ pub(super) fn peril_check(
 /// assigns damage/horror to soak assets), unlike the old auto-assigning
 /// `take_damage`/`take_horror` shortcut.
 fn symbol_effects_to_effect(effects: &[TokenEffect]) -> Option<Effect> {
-    use crate::dsl::{HarmKind, InvestigatorTarget};
     let deals: Vec<Effect> = effects
         .iter()
         .map(|e| match e {
@@ -1859,11 +1856,13 @@ fn push_symbol_effects(cx: &mut Cx, investigator: InvestigatorId, effects: &[Tok
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dsl::deal_horror;
     use crate::engine::dispatch;
     use crate::event::Event;
     use crate::scenario::TokenEffect;
-    use crate::state::SkillTestId;
+    use crate::state::{EffectFrame, EnemyId, LocationId, SkillSubstitution, SkillTestId};
     use crate::test_support::{self, GameStateBuilder};
+    use crate::InputKind;
 
     /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
     /// reading the commit-time accumulator off the in-flight record
@@ -1871,8 +1870,6 @@ mod tests {
     /// `bonus_attack_damage: 2`, the attack deals `1 + 1 + 2 = 4`.
     #[test]
     fn fight_follow_up_adds_bonus_attack_damage() {
-        use crate::state::EnemyId;
-
         let inv = InvestigatorId(1);
         let mut enemy = test_support::test_enemy(7, "Goon");
         enemy.max_health = 10; // avoid clamping so the dealt damage is observable
@@ -1925,8 +1922,6 @@ mod tests {
     /// 1, which is what Cover Up 01007 would replace twice (#471).
     #[test]
     fn investigate_follow_up_pushes_one_discovery_carrying_the_clue_bonus() {
-        use crate::state::{EffectFrame, LocationId};
-
         let inv = InvestigatorId(1);
         let loc = LocationId(10);
         let mut state = GameStateBuilder::new()
@@ -1975,8 +1970,6 @@ mod tests {
 
     #[test]
     fn symbol_effects_to_effect_builds_deal_seq() {
-        use crate::dsl::{Effect, HarmKind, InvestigatorTarget};
-
         // Empty → nothing to push.
         assert_eq!(symbol_effects_to_effect(&[]), None);
 
@@ -2009,8 +2002,6 @@ mod tests {
     /// skill-test driver no longer touches encounter disposal at all (#380).
     #[test]
     fn plain_skill_test_disposes_of_no_encounter_card() {
-        use crate::state::ChaosToken;
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -2034,9 +2025,6 @@ mod tests {
     /// draw (the success-side mirror of the `on_fail` path).
     #[test]
     fn skill_test_runs_on_success_effect_on_a_passing_draw() {
-        use crate::dsl::{deal_horror, InvestigatorTarget};
-        use crate::state::ChaosToken;
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -2076,8 +2064,6 @@ mod tests {
     /// Fast-eligible), bracketing the commit, and the test still resolves. (#374.)
     #[test]
     fn skill_test_opens_and_auto_skips_both_player_windows() {
-        use crate::state::ChaosToken;
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -2131,8 +2117,6 @@ mod tests {
     /// emit the commit prompt. (#374.)
     #[test]
     fn closing_a_skill_test_player_window_re_enters_advance() {
-        use crate::state::{ChaosToken, Continuation, FastWindowKind};
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -2173,8 +2157,6 @@ mod tests {
     /// teardown — `SkillTestStarted` then `SkillTestEnded`, no frame left behind.
     #[test]
     fn commit_emits_then_resolves_through_advance() {
-        use crate::state::{ChaosToken, Continuation};
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -2239,9 +2221,6 @@ mod tests {
     /// Confirm drives it to completion (#478).
     #[test]
     fn interactive_acknowledge_pauses_for_confirm_then_resolves() {
-        use crate::state::ChaosToken;
-        use crate::InputKind;
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -2329,8 +2308,6 @@ mod tests {
     /// through, exactly as before #478 (guards against test churn).
     #[test]
     fn no_acknowledge_pause_when_flag_off() {
-        use crate::state::ChaosToken;
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -2395,8 +2372,6 @@ mod tests {
     /// re-entry retired.)
     #[test]
     fn finish_skill_test_parks_the_resolution_for_the_loop() {
-        use crate::state::{ChaosToken, Continuation, SkillTestStep};
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -2460,7 +2435,6 @@ mod tests {
     }
 
     fn substitution_state(inv: InvestigatorId) -> GameState {
-        use crate::state::{ChaosToken, SkillSubstitution};
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
@@ -2659,8 +2633,6 @@ mod tests {
     /// #431 — substitution-resume re-entry retired.)
     #[test]
     fn resume_substitution_choice_parks_for_the_loop() {
-        use crate::state::Continuation;
-
         let inv = InvestigatorId(1);
         let mut state = substitution_state(inv);
         let mut events = Vec::new();
@@ -2775,8 +2747,6 @@ mod tests {
     /// clamped skill value, bonus 0. Locks the behaviour-preserving default.
     #[test]
     fn elder_sign_token_adds_zero_without_an_elder_sign_ability() {
-        use crate::state::ChaosToken;
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1)) // card_code = "" sentinel

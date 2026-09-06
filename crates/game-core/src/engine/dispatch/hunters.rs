@@ -1,22 +1,19 @@
 //! Hunter-movement and prey-resolution helpers (Enemy phase step 3.2).
 
+use std::fmt::Debug;
+
+use crate::action::InputResponse;
 use crate::card_data::{Prey, PreyDirection, PreyMeasure};
 use crate::card_registry::{self, CardRegistry};
+use crate::engine::dispatch::{cursor, movement, phases};
 use crate::engine::modified_value::{self, ModifiedQuantity, ModifierTarget, ReadContext};
-use crate::engine::pathfinding;
+use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::engine::{pathfinding, Cx};
 use crate::event::Event;
 use crate::state::{
     Continuation, Enemy, EnemyId, GameState, HunterChoice, Investigator, InvestigatorId,
     LocationId, Status,
 };
-
-use super::Cx;
-use crate::action::InputResponse;
-use crate::engine::dispatch::cursor;
-use crate::engine::dispatch::movement;
-use crate::engine::dispatch::phases;
-use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
-use std::fmt::Debug;
 
 /// Result of narrowing a candidate investigator set by a prey
 /// instruction (Rules Reference p.12 / p.17).
@@ -1517,10 +1514,9 @@ mod hunter_resume_tests {
 #[cfg(test)]
 mod reengage_tests {
     use super::*;
-    use crate::assert_no_event;
     use crate::engine::Cx;
     use crate::test_support::GameStateBuilder;
-    use crate::{assert_event, test_support};
+    use crate::{assert_event, assert_no_event, test_support};
 
     #[test]
     fn reengage_at_location_engages_sole_co_located_survivor() {
@@ -1692,10 +1688,9 @@ mod reengage_tests {
 #[cfg(test)]
 mod relocate_tests {
     use super::*;
-    use crate::assert_no_event;
     use crate::engine::Cx;
     use crate::test_support::GameStateBuilder;
-    use crate::{assert_event, test_support};
+    use crate::{assert_event, assert_no_event, test_support};
 
     /// Two adjacent locations: the investigator in the Hallway (2), a
     /// ready unengaged enemy in the Attic (1).

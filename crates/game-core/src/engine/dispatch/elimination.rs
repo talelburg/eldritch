@@ -1,25 +1,20 @@
 //! Investigator elimination helpers: defeat application, elimination
 //! steps, horror application, and no-remaining-players detection.
 
-use super::Cx;
+use crate::card_registry;
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::forced_triggers::ForcedTriggerPoint;
+use crate::engine::dispatch::{
+    act_agenda, combat, cursor, emit, forced_triggers, hunters, threat_area,
+};
 use crate::engine::outcome::EngineOutcome;
+use crate::engine::Cx;
 use crate::event::Event;
+use crate::scenario::ScenarioEnding;
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, EliminationStep,
     EmitStep, EnemyId, GameState, InvestigatorId, Status,
 };
-
-use crate::card_registry;
-use crate::engine::dispatch::act_agenda;
-use crate::engine::dispatch::combat;
-use crate::engine::dispatch::cursor;
-use crate::engine::dispatch::emit;
-use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::forced_triggers;
-use crate::engine::dispatch::forced_triggers::ForcedTriggerPoint;
-use crate::engine::dispatch::hunters;
-use crate::engine::dispatch::threat_area;
-use crate::scenario::ScenarioEnding;
 #[cfg(test)]
 use crate::state::{LocationId, Phase};
 
@@ -629,10 +624,9 @@ pub(super) fn check_all_eliminated(cx: &mut Cx) {
 #[cfg(test)]
 mod elimination_tests {
     use super::*;
-    use crate::assert_no_event;
     use crate::state::InvestigationResume;
     use crate::test_support::GameStateBuilder;
-    use crate::{assert_event, test_support};
+    use crate::{assert_event, assert_no_event, test_support};
 
     #[test]
     fn elimination_step1_removes_controlled_and_owned_cards() {

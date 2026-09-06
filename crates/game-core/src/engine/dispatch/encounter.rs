@@ -4,21 +4,16 @@ use crate::action::InputResponse;
 use crate::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, SpawnLocation};
 use crate::card_registry;
 use crate::dsl::{Ability, Effect, Trigger};
+use crate::engine::dispatch::hunters::PreyResolution;
+use crate::engine::dispatch::{cursor, hunters, reaction_windows, skill_test};
+use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::outcome::{EngineOutcome, InputRequest, OptionTarget, ResumeToken};
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     CardCode, Continuation, EncounterDisposition, Enemy, FastWindowKind, InvestigatorId,
     LocationId, PhaseStep, SpawnEngagePending, Status,
 };
-
-use super::Cx;
-use crate::engine::dispatch::cursor;
-use crate::engine::dispatch::hunters;
-use crate::engine::dispatch::hunters::PreyResolution;
-use crate::engine::dispatch::reaction_windows;
-use crate::engine::dispatch::skill_test;
-use crate::engine::evaluator::{self, EvalContext};
-use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
-use crate::engine::OptionTarget;
 
 /// Hard cap on a single Mythos draw chain. Real scenarios surge ≤2
 /// in a chain; the cap exists purely to guarantee termination on
@@ -108,18 +103,19 @@ pub(crate) fn treachery_is_persistent(abilities: &[Ability]) -> bool {
 
 #[cfg(test)]
 mod persistence_tests {
+    use super::*;
     use card_dsl::dsl::{constant, modify, native, revelation, Ability, ModifierScope, Stat};
 
     #[test]
     fn persistence_is_derived_from_non_revelation_abilities() {
         let one_shot: Vec<Ability> = vec![revelation(native("x:rev"))];
-        assert!(!super::treachery_is_persistent(&one_shot));
+        assert!(!treachery_is_persistent(&one_shot));
 
         let persistent: Vec<Ability> = vec![
             revelation(native("y:rev")),
             constant(modify(Stat::Willpower, 1, ModifierScope::WhileInPlay)),
         ];
-        assert!(super::treachery_is_persistent(&persistent));
+        assert!(treachery_is_persistent(&persistent));
     }
 }
 
@@ -914,10 +910,10 @@ pub(super) fn dispose_encounter_card_if_top(cx: &mut Cx) -> EngineOutcome {
 
 #[cfg(test)]
 mod encounter_card_revealed_tests {
-    use crate::engine::dispatch;
+    use crate::action::EngineRecord;
     use crate::engine::outcome::EngineOutcome;
-    use crate::engine::Cx;
-    use crate::state::CardCode;
+    use crate::engine::{dispatch, Cx};
+    use crate::state::{CardCode, InvestigatorId};
     use crate::test_support::{self, GameStateBuilder};
 
     /// Exercises the early-reject guard: when the handler cannot
@@ -944,8 +940,6 @@ mod encounter_card_revealed_tests {
     /// process with the slot still empty.
     #[test]
     fn rejects_when_no_card_registry_installed() {
-        use crate::action::EngineRecord;
-        use crate::state::InvestigatorId;
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
             .build();
@@ -1000,6 +994,8 @@ mod encounter_card_revealed_tests {
 #[cfg(test)]
 mod encounter_deck_helper_tests {
     use super::*;
+    use crate::action::{Action, EngineRecord};
+    use crate::engine::apply;
     use crate::event::Event;
     use crate::rng::RngState;
     use crate::state::CardCode;
@@ -1185,9 +1181,6 @@ mod encounter_deck_helper_tests {
 
     #[test]
     fn engine_record_encounter_deck_shuffled_drives_shuffle() {
-        use crate::action::{Action, EngineRecord};
-        use crate::engine::apply;
-
         let mut state = GameStateBuilder::new().build();
         state.rng = RngState::new(99);
         for i in 0..4 {
@@ -1244,7 +1237,7 @@ mod encounter_deck_helper_tests {
 #[cfg(test)]
 mod spawn_enemy_tests {
     use super::*;
-    use crate::engine::OptionId;
+    use crate::engine::outcome::OptionId;
     use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
     use crate::test_support::GameStateBuilder;
     use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
@@ -1788,7 +1781,6 @@ mod spawn_enemy_tests {
         // Validate-first: a pick outside the stored candidate set rejects
         // and leaves the SpawnEngage frame intact for retry, with the
         // enemy still unengaged.
-        use crate::action::InputResponse;
         let mut loc = test_support::test_location(1, "Hall");
         loc.code = CardCode("_loc".into());
         let mut i1 = test_support::test_investigator(1);
@@ -1958,7 +1950,7 @@ mod resume_encounter_draw_chain_tests {
 #[cfg(test)]
 mod resume_encounter_draw_tests {
     use super::*;
-    use crate::engine::InputKind;
+    use crate::engine::outcome::InputKind;
     use crate::state::{Continuation, InvestigatorId, Phase};
     use crate::test_support::{self, GameStateBuilder};
 

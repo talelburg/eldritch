@@ -5,25 +5,19 @@ use crate::action::InputResponse;
 use crate::card_data::{CardMetadata, CardType};
 use crate::card_registry;
 use crate::dsl::{Ability, Effect, Trigger};
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::{
+    actions, combat, elimination, emit, encounter, phases, reaction_windows, slots, threat_area,
+    PlayCheckResult, PlayDestination,
+};
+use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     ActionResume, AssetEntry, CardCode, CardInPlay, CardInstanceId, Continuation, InvestigatorId,
     Zone,
 };
-
-use super::{Cx, PlayCheckResult, PlayDestination};
-use crate::engine::dispatch::actions;
-use crate::engine::dispatch::combat;
-use crate::engine::dispatch::elimination;
-use crate::engine::dispatch::emit;
-use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::encounter;
-use crate::engine::dispatch::phases;
-use crate::engine::dispatch::reaction_windows;
-use crate::engine::dispatch::slots;
-use crate::engine::dispatch::threat_area;
-use crate::engine::evaluator::{self, EvalContext};
-use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
 /// each investigator draws 5 cards before mulligan.

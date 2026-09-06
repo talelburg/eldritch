@@ -1,27 +1,21 @@
 //! Combat helpers: enemy damage, investigator damage/horror, attacks.
 
-use crate::engine::outcome::{InputRequest, OptionId, ResumeToken};
-use crate::engine::{ChoiceOption, EngineOutcome};
+use crate::action::InputResponse;
+use crate::card_data::CardKind;
+use crate::card_registry;
+use crate::dsl::{EntityScope, LocationSet};
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::{cards, choice, elimination, emit, hunters, reaction_windows};
+use crate::engine::outcome::{
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
+};
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     Assignment, AttackLoopStage, CardCode, CardInPlay, CardInstanceId, Continuation, DamageSource,
     DealDamageStep, EliminationCause, EnemyAttackSource, EnemyId, GameState, InvestigatorId,
     Status,
 };
-
-use super::Cx;
-use crate::action::InputResponse;
-use crate::card_data::CardKind;
-use crate::card_registry;
-use crate::dsl::EntityScope;
-use crate::dsl::LocationSet;
-use crate::engine::dispatch::cards;
-use crate::engine::dispatch::choice;
-use crate::engine::dispatch::elimination;
-use crate::engine::dispatch::emit;
-use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::hunters;
-use crate::engine::dispatch::reaction_windows;
 
 /// The scope of enemies a Fight (basic action or designated **Fight** ability)
 /// may target: any enemy *at your location*. Per RR you choose an enemy at your
@@ -839,7 +833,6 @@ fn credit_point(assignment: &mut Assignment, target: DistributionTarget, damage_
 /// the investigator to `Global` (no card). Labels match the former
 /// `hunters::candidate_options` debug repr, so the flat bar is byte-unchanged.
 fn soak_options(targets: &[DistributionTarget]) -> Vec<ChoiceOption> {
-    use crate::engine::{OptionId, OptionTarget};
     targets
         .iter()
         .enumerate()
@@ -1317,18 +1310,17 @@ pub(super) fn resume_attack_order_pick(cx: &mut Cx, response: &InputResponse) ->
 
 #[cfg(test)]
 mod combat_tests {
-    use super::Assignment;
-    use super::DistributionTarget;
-    use super::Soaker;
+    use super::*;
+    use std::collections::BTreeMap;
+
     use crate::action::InputResponse;
-    use crate::engine::dispatch::emit::ConditionResolution;
-    use crate::engine::dispatch::emit::TimingEvent;
+    use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
+    use crate::engine::outcome::{EngineOutcome, OptionId};
     use crate::engine::{dispatch, Cx};
-    use crate::engine::{EngineOutcome, OptionId};
     use crate::event::Event;
     use crate::state::{
-        AttackLoopStage, CardCode, CardInstanceId, Continuation, EnemyAttackSource, EnemyId,
-        EnemyResume, InvestigatorId,
+        Assignment, AttackLoopStage, CardCode, CardInstanceId, Continuation, EnemyAttackSource,
+        EnemyId, EnemyResume, InvestigatorId,
     };
     use crate::test_support::GameStateBuilder;
     use crate::{assert_event, assert_no_event, test_support};
@@ -1347,7 +1339,7 @@ mod combat_tests {
             state: &mut state,
             events: &mut events,
         };
-        super::damage_enemy(&mut cx, eid, 1, Some(InvestigatorId(1)));
+        damage_enemy(&mut cx, eid, 1, Some(InvestigatorId(1)));
 
         assert_eq!(state.victory_display, vec![CardCode::new("01116")]);
         assert_event!(
@@ -1380,7 +1372,7 @@ mod combat_tests {
             state: &mut state,
             events: &mut events,
         };
-        super::damage_enemy(&mut cx, eid, 1, Some(InvestigatorId(1)));
+        damage_enemy(&mut cx, eid, 1, Some(InvestigatorId(1)));
 
         assert!(state.victory_display.is_empty());
         assert_no_event!(events, Event::EnteredVictoryDisplay { .. });
@@ -1403,7 +1395,7 @@ mod combat_tests {
             state: &mut state,
             events: &mut events,
         };
-        super::damage_enemy(&mut cx, eid, 1, Some(InvestigatorId(1)));
+        damage_enemy(&mut cx, eid, 1, Some(InvestigatorId(1)));
         assert!(!state.enemies.contains_key(&eid), "defeated enemy removed");
     }
 
@@ -1427,7 +1419,7 @@ mod combat_tests {
             events: &mut events,
         };
 
-        super::soak_and_place(&mut cx, id, 2, 1);
+        soak_and_place(&mut cx, id, 2, 1);
 
         assert_eq!(state.investigators[&id].damage(), 2, "all damage on inv");
         assert_eq!(state.investigators[&id].horror(), 1, "all horror on inv");
@@ -1444,7 +1436,7 @@ mod combat_tests {
         // No soaker → fully deterministic: all damage to the investigator, drained.
         let mut asg = Assignment::default();
         let (mut d, mut h) = (2u8, 0u8);
-        assert!(super::advance_distribution(&[], &mut d, &mut h, &mut asg).is_some());
+        assert!(advance_distribution(&[], &mut d, &mut h, &mut asg).is_some());
         assert_eq!((d, h, asg.investigator_damage), (0, 0, 2));
 
         // A soaker with capacity → a damage point is contested → prompt (None),
@@ -1456,7 +1448,7 @@ mod combat_tests {
         };
         let mut asg2 = Assignment::default();
         let (mut d2, mut h2) = (2u8, 0u8);
-        assert!(super::advance_distribution(&[soaker], &mut d2, &mut h2, &mut asg2).is_none());
+        assert!(advance_distribution(&[soaker], &mut d2, &mut h2, &mut asg2).is_none());
         assert_eq!(
             (d2, h2),
             (2, 0),
@@ -1466,7 +1458,6 @@ mod combat_tests {
 
     #[test]
     fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
-        use crate::state::{Continuation, DamageSource, DealDamageStep, EnemyId};
         let inv_id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -1488,13 +1479,12 @@ mod combat_tests {
         };
 
         // Wrong response variant → reject, frame untouched.
-        let wrong = super::resume_damage_distribution(&mut cx, &InputResponse::Skip);
+        let wrong = resume_damage_distribution(&mut cx, &InputResponse::Skip);
         assert!(matches!(wrong, EngineOutcome::Rejected { .. }));
 
         // Out-of-range option (no soakers → only the investigator is eligible,
         // so any index ≥ 1 is invalid) → reject, frame untouched.
-        let oob =
-            super::resume_damage_distribution(&mut cx, &InputResponse::PickSingle(OptionId(5)));
+        let oob = resume_damage_distribution(&mut cx, &InputResponse::PickSingle(OptionId(5)));
         assert!(matches!(oob, EngineOutcome::Rejected { .. }));
 
         // The frame survives both rejections, at the same step, for the client
@@ -1524,7 +1514,6 @@ mod combat_tests {
     /// exactly the gap this walk opens (ADR 0009).
     #[test]
     fn deal_damage_cursor_walks_distribute_announce_place_finish() {
-        use crate::state::{Continuation, DamageSource, DealDamageStep, EnemyId};
         test_support::install_test_registry();
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
@@ -1538,7 +1527,7 @@ mod combat_tests {
 
         // Entry parks the frame at the top of the cursor and returns `Done`:
         // dealing damage is tail position, like an emit.
-        let out = super::begin_deal_damage(
+        let out = begin_deal_damage(
             &mut cx,
             id,
             2,
@@ -1557,7 +1546,7 @@ mod combat_tests {
         // Distribute: no soaker can take a point, so it drains without
         // prompting and the cursor reaches `Announce` with the whole 2 on the
         // investigator's share.
-        assert_eq!(super::drive_deal_damage(&mut cx), EngineOutcome::Done);
+        assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
         let Some(Continuation::DealDamage {
             assignment, step, ..
         }) = cx.state.continuations.last()
@@ -1569,7 +1558,7 @@ mod combat_tests {
 
         // Announce: the cursor advances *before* the emit (tail position), and
         // the coordinator it pushed is now on top.
-        assert_eq!(super::drive_deal_damage(&mut cx), EngineOutcome::Done);
+        assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
         assert!(matches!(
             cx.state.continuations.last(),
             Some(Continuation::EmitEvent {
@@ -1587,7 +1576,7 @@ mod combat_tests {
 
         // Place: same shape, and again nothing has landed until the coordinator
         // reaches its resolve step.
-        assert_eq!(super::drive_deal_damage(&mut cx), EngineOutcome::Done);
+        assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
         let Some(Continuation::EmitEvent {
             event: placed @ TimingEvent::DamagePlaced { .. },
             ..
@@ -1619,7 +1608,7 @@ mod combat_tests {
 
         // Finish: pop and hand back to the caller. An enemy attack's own
         // sequence continues on the frames beneath, so this is just `Done`.
-        assert_eq!(super::drive_deal_damage(&mut cx), EngineOutcome::Done);
+        assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
         assert!(
             !cx.state
                 .continuations
@@ -1635,8 +1624,6 @@ mod combat_tests {
     /// rests on the first of those being true.
     #[test]
     fn the_two_damage_conditions_are_classified_as_the_adr_says() {
-        use crate::engine::TimingEvent;
-        use crate::state::{Assignment, DamageSource, EnemyId};
         let assigned = TimingEvent::DamageAssigned {
             source: DamageSource::EnemyAttack { enemy: EnemyId(1) },
             investigator: InvestigatorId(1),
@@ -1689,7 +1676,7 @@ mod combat_tests {
             remaining_health: 3,
             remaining_sanity: 1,
         }];
-        let assignment = super::assign_attack(&soakers, 2, 0);
+        let assignment = assign_attack(&soakers, 2, 0);
         assert_eq!(assignment.investigator_damage, 0);
         assert_eq!(assignment.investigator_horror, 0);
         assert_eq!(assignment.asset_damage.get(&inst), Some(&2));
@@ -1706,7 +1693,7 @@ mod combat_tests {
             remaining_health: 1,
             remaining_sanity: 0,
         }];
-        let assignment = super::assign_attack(&soakers, 2, 0);
+        let assignment = assign_attack(&soakers, 2, 0);
         assert_eq!(assignment.asset_damage.get(&inst), Some(&1));
         assert_eq!(assignment.investigator_damage, 1);
         // Horror side trivially zero (attack deals no horror) — asserted so
@@ -1717,8 +1704,6 @@ mod combat_tests {
 
     #[test]
     fn place_assignment_accumulates_on_asset_and_investigator() {
-        use crate::state::{CardCode, CardInPlay, CardInstanceId};
-        use std::collections::BTreeMap;
         // Pre-construct an Assignment placing 1 damage + 1 horror on an
         // in-play asset and 1 damage on the investigator. Registry installed
         // so max_health() / max_sanity() can resolve; TEST_INV = 8/8 and the
@@ -1750,7 +1735,7 @@ mod combat_tests {
             asset_horror,
         };
 
-        super::place_assignment(&mut cx, id, &assignment);
+        place_assignment(&mut cx, id, &assignment);
 
         let card = &state.investigators[&id].cards_in_play[0];
         assert_eq!(card.accumulated_damage, 1, "asset soaked 1 damage");
@@ -1773,7 +1758,6 @@ mod combat_tests {
     /// resolve (#448 cp2a).
     #[test]
     fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
-        use crate::state::{AttackLoopStage, Continuation, EnemyAttackSource, InvestigatorId};
         test_support::install_test_registry();
 
         let inv_id = InvestigatorId(1);
@@ -1802,7 +1786,7 @@ mod combat_tests {
             state: &mut state,
             events: &mut events,
         };
-        let outcome = super::drive_parked_attack_loop(&mut cx);
+        let outcome = drive_parked_attack_loop(&mut cx);
 
         assert!(
             !state
@@ -1842,7 +1826,6 @@ mod combat_tests {
     /// end-to-end cancel is `crates/cards/tests/dodge.rs`.
     #[test]
     fn a_head_attacker_that_dealt_nothing_still_exhausts() {
-        use crate::state::{AttackLoopStage, Continuation, EnemyAttackSource, InvestigatorId};
         test_support::install_test_registry();
 
         let inv_id = InvestigatorId(1);
@@ -1871,7 +1854,7 @@ mod combat_tests {
             state: &mut state,
             events: &mut events,
         };
-        let _ = super::drive_parked_attack_loop(&mut cx);
+        let _ = drive_parked_attack_loop(&mut cx);
 
         assert_eq!(
             state.investigators[&inv_id].damage(),
@@ -1889,7 +1872,6 @@ mod combat_tests {
     /// retaliate attacker never exhausts (RR p.7 / p.18), cancelled or not.
     #[test]
     fn an_attack_of_opportunity_attacker_never_exhausts() {
-        use crate::state::{AttackLoopStage, Continuation, EnemyAttackSource, InvestigatorId};
         test_support::install_test_registry();
 
         let inv_id = InvestigatorId(1);
@@ -1914,7 +1896,7 @@ mod combat_tests {
             state: &mut state,
             events: &mut events,
         };
-        let _ = super::drive_parked_attack_loop(&mut cx);
+        let _ = drive_parked_attack_loop(&mut cx);
 
         assert!(
             !state.enemies[&attacker].exhausted,
@@ -1945,7 +1927,7 @@ mod combat_tests {
 
         // The attack is queued on the coordinator (#704), so drive it out: the
         // loop's `Done` means *queued*, not *dealt*.
-        let outcome = super::drive_retaliate(&mut cx, EnemyId(100), inv_id);
+        let outcome = drive_retaliate(&mut cx, EnemyId(100), inv_id);
         let outcome = dispatch::drive(&mut cx, outcome);
 
         assert!(matches!(outcome, EngineOutcome::Done));
@@ -1981,7 +1963,7 @@ mod combat_tests {
             events: &mut events,
         };
 
-        let outcome = super::drive_aoo(&mut cx, inv_id);
+        let outcome = drive_aoo(&mut cx, inv_id);
         let outcome = dispatch::drive(&mut cx, outcome);
 
         assert!(matches!(outcome, EngineOutcome::Done));
@@ -2028,7 +2010,7 @@ mod combat_tests {
             state: &mut state,
             events: &mut events,
         };
-        let outcome = super::drive_aoo(&mut cx, inv_id);
+        let outcome = drive_aoo(&mut cx, inv_id);
         let outcome = dispatch::drive(&mut cx, outcome);
         assert!(
             matches!(outcome, EngineOutcome::AwaitingInput { .. }),
@@ -2088,7 +2070,7 @@ mod combat_tests {
             .with_enemy(e_b)
             .build();
         let mut events = Vec::new();
-        let _ = super::drive_aoo(
+        let _ = drive_aoo(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2142,7 +2124,7 @@ mod combat_tests {
                 remaining_sanity: 2,
             },
         ];
-        let assignment = super::assign_attack(&soakers, 1, 1);
+        let assignment = assign_attack(&soakers, 1, 1);
         assert_eq!(assignment.asset_damage.get(&a), Some(&1));
         assert!(!assignment.asset_damage.contains_key(&b));
         assert_eq!(assignment.asset_horror.get(&b), Some(&1));
@@ -2163,7 +2145,7 @@ mod combat_tests {
             state: &mut state,
             events: &mut events,
         };
-        let defeated = super::apply_damage_numeric(&mut cx, id, 3);
+        let defeated = apply_damage_numeric(&mut cx, id, 3);
         assert_eq!(
             state.investigators[&id]
                 .investigator_card
@@ -2181,13 +2163,11 @@ mod combat_tests {
 
     #[test]
     fn soak_options_anchor_assets_to_card_instances() {
-        use crate::engine::OptionTarget;
-        use crate::state::CardInstanceId;
         let targets = vec![
             DistributionTarget::Investigator,
             DistributionTarget::Asset(CardInstanceId(7)),
         ];
-        let opts = super::soak_options(&targets);
+        let opts = soak_options(&targets);
         // Anchors: the investigator has no card home; a soaker asset points at its card.
         assert_eq!(
             opts[0].target, None,

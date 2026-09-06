@@ -10,24 +10,17 @@
 
 use crate::action::{EngineRecord, InputResponse, PlayerAction, RosterEntry};
 use crate::card_data::CardType;
-use crate::state::{
-    AttackLoopStage, CardCode, CardInstanceId, Continuation, DealDamageStep, GameState, Status,
-};
-
-use super::Cx;
-use crate::engine::outcome::EngineOutcome;
-
-use crate::dsl::Ability;
-use crate::dsl::ActionDesignator;
-use crate::dsl::Cost;
-use crate::dsl::Effect;
+use crate::dsl::{Ability, ActionDesignator, Cost, Effect};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::enumerate::TurnAction;
-use crate::engine::InputRequest;
-use crate::engine::OptionId;
-use crate::engine::OptionTarget;
-use crate::engine::ResumeToken;
-use crate::engine::{enumerate, evaluator, ChoiceOption};
+use crate::engine::outcome::{
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
+};
+use crate::engine::{enumerate, evaluator, Cx};
+use crate::state::{
+    ActionResume, AttackLoopStage, CardCode, CardInstanceId, Continuation, DealDamageStep,
+    GameState, ScenarioEndStep, Status,
+};
 pub(crate) use control::take_control;
 
 mod abilities;
@@ -246,7 +239,6 @@ pub(crate) fn drive(cx: &mut Cx, mut outcome: EngineOutcome) -> EngineOutcome {
 // splitting it would only scatter the one place that says what each frame does.
 #[allow(clippy::too_many_lines)]
 fn drive_frames(cx: &mut Cx) -> EngineOutcome {
-    use crate::state::ScenarioEndStep;
     loop {
         // A latched resolution cancels opportunities, not resolutions (ADR
         // 0004). Applied at the loop head rather than by sweeping the stack
@@ -543,7 +535,6 @@ fn assert_no_queued_ability_beneath_anchor(state: &GameState) {
 /// defeated mid-action; each primary effect additionally re-checks its own
 /// target precondition. Called only by [`drive`] with such a frame on top.
 fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
-    use crate::state::ActionResume;
     let Some(Continuation::ActionResolution {
         investigator,
         resume,
@@ -984,7 +975,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 mod turn_menu_tests {
     use crate::engine::dispatch;
     use crate::engine::enumerate::legal_actions;
-    use crate::engine::OptionTarget;
+    use crate::engine::outcome::OptionTarget;
     use crate::state::{
         ChaosBag, ChaosToken, Continuation, InvestigationResume, InvestigatorId, Phase,
     };

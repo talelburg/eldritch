@@ -1,31 +1,25 @@
 //! Phase-driver functions: start/end scenario, per-phase entrypoints,
 //! and the round-cycle stepping logic.
 
-use crate::action::InputResponse;
+use crate::action::{InputResponse, RosterEntry};
+use crate::card_data::CardKind;
+use crate::card_registry;
+#[cfg(test)] // only `drive_phase` / `push_anchor_and_drive`, the cfg(test) helpers below
+use crate::engine::dispatch;
+use std::collections::BTreeSet;
+
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::{
+    act_agenda, cards, combat, cursor, emit, encounter, hunters, reaction_windows, reveal,
+};
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    CardCode, Continuation, EnemyId, EnemyResume, FastWindowKind, GameState, HandSizeDiscard,
-    InvestigationResume, InvestigatorId, MythosResume, Phase, PhaseStep, UpkeepResume, Zone,
+    CardCode, CardInPlay, Continuation, EnemyId, EnemyResume, FastWindowKind, GameState,
+    HandSizeDiscard, InvestigationResume, Investigator, InvestigatorId, MythosResume, Phase,
+    PhaseStep, Skills, Status, UpkeepResume, Zone,
 };
-
-use crate::action::RosterEntry;
-use crate::card_data::CardKind;
-use crate::state::{CardInPlay, Investigator, Skills, Status};
-
-use super::Cx;
-use crate::card_registry;
-use crate::engine::dispatch::act_agenda;
-use crate::engine::dispatch::cards;
-use crate::engine::dispatch::combat;
-use crate::engine::dispatch::cursor;
-use crate::engine::dispatch::emit;
-use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::encounter;
-use crate::engine::dispatch::hunters;
-use crate::engine::dispatch::reaction_windows;
-use crate::engine::dispatch::reveal;
-use std::collections::BTreeSet;
 
 /// Action points granted to an investigator at the start of their
 /// turn during the Investigation phase. Per the Arkham Horror LCG
@@ -466,7 +460,7 @@ fn investigation_phase_end_transition(cx: &mut Cx) -> EngineOutcome {
 /// does; without it, it would only ever see the parked anchor.
 #[cfg(test)]
 fn drive_phase(cx: &mut Cx, outcome: EngineOutcome) -> EngineOutcome {
-    super::drive(cx, outcome)
+    dispatch::drive(cx, outcome)
 }
 
 /// Entered by [`step_phase`] on the Upkeep→Mythos transition. Lays
@@ -575,7 +569,7 @@ fn step_phase(cx: &mut Cx) -> EngineOutcome {
         },
     };
     cx.state.continuations.push(anchor);
-    super::drive(cx, EngineOutcome::Done)
+    dispatch::drive(cx, EngineOutcome::Done)
 }
 
 /// Set `active_investigator` to `id`. Does NOT refresh actions —
@@ -1548,7 +1542,6 @@ mod investigation_phase_tests {
 
     #[test]
     fn investigator_turn_defaults_to_not_ending() {
-        use crate::state::Continuation;
         // The builder-staged open-turn frame is not mid-end-turn.
         let state = GameStateBuilder::default()
             .with_investigator(test_support::test_investigator(1))
@@ -1571,7 +1564,6 @@ mod investigation_phase_tests {
 
     #[test]
     fn open_turn_leaves_investigator_turn_frame_on_top() {
-        use crate::state::{Continuation, InvestigationResume};
         // Reach the open turn the way production does: enter the Investigation
         // phase for a single investigator (no Fast cards → windows auto-skip).
         let mut state = GameStateBuilder::default()
@@ -1988,7 +1980,7 @@ mod investigation_phase_tests {
 mod mythos_phase_tests {
     use super::*;
     use crate::engine::dispatch;
-    use crate::engine::InputKind;
+    use crate::engine::outcome::InputKind;
     use crate::state::{InvestigatorId, Phase, Status};
     use crate::test_support::{self, GameStateBuilder};
 
@@ -2446,7 +2438,7 @@ mod mythos_phase_tests {
 mod upkeep_phase_tests {
     use super::*;
     use crate::engine::enumerate::TurnAction;
-    use crate::engine::EngineOutcome;
+    use crate::engine::outcome::EngineOutcome;
     use crate::event::Event;
     use crate::state::{
         CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase, Status,
@@ -2933,7 +2925,8 @@ mod enemy_phase_tests {
     use super::*;
     use crate::action::{Action, InputResponse, PlayerAction};
     use crate::engine::dispatch::resolve_input;
-    use crate::engine::{apply, dispatch, EngineOutcome};
+    use crate::engine::outcome::{EngineOutcome, OptionId};
+    use crate::engine::{apply, dispatch};
     use crate::state::{EnemyId, FastActorScope, InvestigatorId, LocationId, Phase, Status};
     use crate::test_support::GameStateBuilder;
     use crate::{assert_event, test_support};
@@ -3207,7 +3200,6 @@ mod enemy_phase_tests {
 
     #[test]
     fn resolve_attacks_for_investigator_pick_overrides_enemy_id_order() {
-        use crate::engine::OptionId;
         test_support::install_test_registry();
 
         let inv_id = InvestigatorId(1);
@@ -3764,7 +3756,8 @@ mod enemy_phase_tests {
 #[cfg(test)]
 mod hand_size_tests {
     use super::*;
-    use crate::engine::{dispatch, OptionId};
+    use crate::engine::dispatch;
+    use crate::engine::outcome::OptionId;
     use crate::state::{CardCode, InvestigatorId};
     use crate::test_support::GameStateBuilder;
     use crate::{assert_no_event, test_support};
@@ -3825,7 +3818,6 @@ mod hand_size_tests {
 
     #[test]
     fn check_hand_size_suspends_for_over_cap_investigator() {
-        use crate::state::CardCode;
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -3855,7 +3847,6 @@ mod hand_size_tests {
 
     #[test]
     fn check_hand_size_is_noop_when_all_at_or_below_cap() {
-        use crate::state::CardCode;
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -3879,7 +3870,6 @@ mod hand_size_tests {
 
     #[test]
     fn upkeep_resume_parks_at_hand_size_discard() {
-        use crate::state::CardCode;
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -3919,8 +3909,6 @@ mod hand_size_tests {
 
     #[test]
     fn resume_hand_size_discard_discards_overflow_and_advances_to_mythos() {
-        use crate::action::InputResponse;
-        use crate::state::CardCode;
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -3988,8 +3976,6 @@ mod hand_size_tests {
 
     #[test]
     fn resume_hand_size_discard_rejects_wrong_count() {
-        use crate::action::InputResponse;
-        use crate::state::CardCode;
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -4030,8 +4016,6 @@ mod hand_size_tests {
 
     #[test]
     fn resume_hand_size_discard_rejects_duplicate_and_oob_indices() {
-        use crate::action::InputResponse;
-        use crate::state::CardCode;
         let id = InvestigatorId(1);
         let build = || {
             let mut s = GameStateBuilder::new()
@@ -4078,8 +4062,6 @@ mod hand_size_tests {
 
     #[test]
     fn resume_hand_size_discard_sequences_investigators_in_player_order() {
-        use crate::action::InputResponse;
-        use crate::state::CardCode;
         let inv1 = InvestigatorId(1);
         let inv2 = InvestigatorId(2);
         let mut state = GameStateBuilder::new()
@@ -4119,8 +4101,6 @@ mod hand_size_tests {
 
     #[test]
     fn resume_hand_size_discard_rejects_wrong_response_kind() {
-        use crate::action::InputResponse;
-        use crate::state::CardCode;
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -4161,8 +4141,8 @@ mod hand_size_tests {
 mod start_scenario_tests {
     use super::*;
     use crate::action::RosterEntry;
-    use crate::state::CardCode;
-    use crate::state::GameStateBuilder;
+    use crate::card_data::SkillKind;
+    use crate::state::{CardCode, GameStateBuilder, SkillSubstitution};
     use crate::test_support::TEST_INV;
     use crate::{seat_and_open, test_support};
 
@@ -4180,8 +4160,6 @@ mod start_scenario_tests {
         // RR p.24 step 4.6: "until the end of the round" effects expire as the
         // round ends — in upkeep_round_end_teardown (after the round-end forced
         // abilities), not the next Mythos step.
-        use crate::card_data::SkillKind;
-        use crate::state::{InvestigatorId, SkillSubstitution};
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -4235,7 +4213,6 @@ mod start_scenario_tests {
     /// and `EncounterDeckShuffled` fires.
     #[test]
     fn start_scenario_shuffles_the_encounter_deck() {
-        use crate::state::CardCode;
         test_support::install_test_registry();
         let mut state = GameStateBuilder::new().build();
         let codes = ["e1", "e2", "e3", "e4", "e5"];

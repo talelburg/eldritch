@@ -29,13 +29,11 @@
 //! cell into a loop).
 
 use crate::dsl::EventTiming;
-use crate::state::{Continuation, EmitStep, TimingSub};
-
-use super::Cx;
 use crate::engine::dispatch::emit::ConditionResolution;
-use crate::engine::dispatch::forced_triggers;
-use crate::engine::dispatch::reaction_windows;
+use crate::engine::dispatch::{forced_triggers, reaction_windows};
 use crate::engine::outcome::EngineOutcome;
+use crate::engine::Cx;
+use crate::state::{Continuation, EmitStep, TimingSub};
 
 /// Dispatch the [`Continuation::EmitEvent`] coordinator on top of the stack
 /// (called only by the `drive` loop with one on top). One step of the sequence

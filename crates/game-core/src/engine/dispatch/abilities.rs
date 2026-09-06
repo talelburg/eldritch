@@ -3,24 +3,18 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use crate::card_data::CardKind;
 use crate::card_registry;
 use crate::dsl::{ActionDesignator, Cost, Effect, Trigger, UsageLimit};
+use crate::engine::dispatch::{cards, combat, reaction_windows, threat_area, ActivateCheckResult};
+use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::outcome::EngineOutcome;
+use crate::engine::{abilities_in_effect, ability_source, Cx};
 use crate::event::Event;
 use crate::state::{
     AbilityAddress, AbilitySource, ActionResume, CandidateSource, CardCode, CardInPlay,
     CardInstanceId, Continuation, GameState, Investigator, InvestigatorId, UseKind,
 };
-
-use super::{ActivateCheckResult, Cx};
-use crate::card_data::CardKind;
-use crate::engine::abilities_in_effect;
-use crate::engine::ability_source;
-use crate::engine::dispatch::cards;
-use crate::engine::dispatch::combat;
-use crate::engine::dispatch::reaction_windows;
-use crate::engine::dispatch::threat_area;
-use crate::engine::evaluator::{self, EvalContext};
-use crate::engine::outcome::EngineOutcome;
 
 /// Handler for `TurnAction::ActivateAbility`.
 ///
@@ -593,7 +587,9 @@ pub(super) fn check_cost_payable(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dsl::{fight, investigate};
     use crate::test_support;
+    use ActionDesignator::{Evade, Move, Parley, Resign};
 
     /// The attack-of-opportunity exemption is exactly the four designators
     /// `glossary/Attack_of_Opportunity.md` names — **fight**, **evade**,
@@ -602,9 +598,6 @@ mod tests {
     /// flavours.
     #[test]
     fn provokes_aoo_exempts_exactly_the_four_named_designators() {
-        use crate::dsl::{fight, investigate};
-        use ActionDesignator::{Evade, Move, Parley, Resign};
-
         for exempt in [fight(0u8, 0u8), Evade, Parley, Resign] {
             assert!(
                 !provokes_aoo(1, Some(&exempt)),

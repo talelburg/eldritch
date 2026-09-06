@@ -1,27 +1,19 @@
 //! Player-action handlers: Investigate, Move, Fight, Evade, plus the
 //! engaged-action validation and single-action-spend helpers.
 
+use crate::card_registry;
 use crate::dsl::{ActionClass, IntExpr, SkillTestKind, Stat};
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::skill_test::InitiatorModifier;
+use crate::engine::dispatch::{combat, emit, hunters, movement, reveal, skill_test};
+use crate::engine::outcome::EngineOutcome;
+use crate::engine::{designator, evaluator, Cx};
 use crate::event::Event;
 use crate::state::{
     AbilitySource, ActionResume, CardInstanceId, Continuation, DifficultyBasis, Enemy, EnemyId,
     GameState, Investigator, InvestigatorId, LocationId, ModifierTarget, Phase, SkillKind,
     SkillTestFollowUp, Status,
 };
-
-use super::Cx;
-use crate::card_registry;
-use crate::engine::designator;
-use crate::engine::dispatch::combat;
-use crate::engine::dispatch::emit;
-use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::hunters;
-use crate::engine::dispatch::movement;
-use crate::engine::dispatch::reveal;
-use crate::engine::dispatch::skill_test;
-use crate::engine::dispatch::skill_test::InitiatorModifier;
-use crate::engine::evaluator;
-use crate::engine::outcome::EngineOutcome;
 
 /// Handler for `TurnAction::Investigate`.
 ///
@@ -1109,7 +1101,8 @@ pub(super) fn evade(cx: &mut Cx, investigator: InvestigatorId, enemy_id: EnemyId
 mod actions_tests {
     use crate::action::{Action, InputResponse, PlayerAction};
     use crate::engine::enumerate::TurnAction;
-    use crate::engine::{enumerate, ApplyResult, EngineOutcome, OptionId};
+    use crate::engine::outcome::{EngineOutcome, OptionId};
+    use crate::engine::{enumerate, ApplyResult};
     use crate::event::Event;
     use crate::state::{
         ChaosBag, ChaosToken, Continuation, EnemyId, GameState, InvestigationResume,

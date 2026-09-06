@@ -18,27 +18,24 @@ use crate::dsl::{
     Ability, ActionDesignator, Cost, Effect, EnemyTarget, EventPattern, EventTiming, Trigger,
     TriggerKind, UsageLimit,
 };
+use crate::engine::dispatch::abilities::ActivatedAbility;
 use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
+use crate::engine::dispatch::{
+    abilities, actions, cards, combat, cursor, phases, skill_test, slots, ActivateCheckResult,
+    PlayCheckResult,
+};
 use crate::engine::enumerate::TurnAction;
-use crate::engine::{abilities_in_effect, ability_source, designator, OptionTarget};
+use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::outcome::{
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
+};
+use crate::engine::{abilities_in_effect, ability_source, designator, Cx};
 use crate::event::{Event, LapseReason};
 use crate::state::{
-    AbilityAddress, AbilitySource, CandidateSource, CardCode, Continuation, FastActorScope,
-    FastWindowKind, GameState, InvestigatorId, Phase, ResolutionCandidate, Status,
+    AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, Continuation,
+    DamageSource, FastActorScope, FastWindowKind, GameState, InvestigatorId, Phase,
+    ResolutionCandidate, Status, TimingMode,
 };
-use crate::state::{CardInstanceId, DamageSource, TimingMode};
-
-use super::{ActivateCheckResult, Cx, PlayCheckResult};
-use crate::engine::dispatch::abilities::ActivatedAbility;
-use crate::engine::dispatch::cards;
-use crate::engine::dispatch::combat;
-use crate::engine::dispatch::cursor;
-use crate::engine::dispatch::phases;
-use crate::engine::dispatch::skill_test;
-use crate::engine::dispatch::slots;
-use crate::engine::dispatch::{abilities, actions};
-use crate::engine::evaluator::{self, EvalContext};
-use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 
 /// Push a reaction window frame for `candidates` at `bucket`. The shared push
 /// behind [`open_reaction_run`] (which queues and then opens) and the coordinator's
@@ -2696,11 +2693,10 @@ mod any_fast_play_eligible_tests {
 #[cfg(test)]
 mod resolution_option_anchor_tests {
     use super::*;
+    use crate::state::{EnemyId, LocationId};
 
     #[test]
     fn resolution_options_anchor_by_candidate_source() {
-        use crate::engine::OptionTarget;
-        use crate::state::{CardCode, CardInstanceId, InvestigatorId, ResolutionCandidate};
         let cands = vec![
             ResolutionCandidate {
                 code: CardCode::new("_inplay"),
@@ -2749,11 +2745,6 @@ mod resolution_option_anchor_tests {
     /// (#735).
     #[test]
     fn candidate_anchor_maps_each_source() {
-        use crate::engine::OptionTarget;
-        use crate::state::{
-            CardCode, CardInstanceId, EnemyId, InvestigatorId, LocationId, ResolutionCandidate,
-        };
-
         let anchor_of = |source| {
             candidate_anchor(&ResolutionCandidate::new(
                 CardCode::new("_code"),
@@ -2854,8 +2845,7 @@ mod open_fast_window_tests {
 #[cfg(test)]
 mod candidate_source_present_tests {
     use super::*;
-    use crate::state::CardInstanceId;
-    use crate::state::{CardInPlay, LocationId};
+    use crate::state::{Act, Agenda, CardInPlay, CardInstanceId, EnemyId, LocationId};
     use crate::test_support::{self, GameStateBuilder};
 
     const INV: InvestigatorId = InvestigatorId(1);
@@ -2938,7 +2928,6 @@ mod candidate_source_present_tests {
 
     #[test]
     fn an_act_candidate_is_present_only_while_that_act_is_the_current_one() {
-        use crate::state::Act;
         let act = |code: &str| Act {
             code: CardCode::new(code),
             clue_threshold: 0,
@@ -2972,7 +2961,6 @@ mod candidate_source_present_tests {
 
     #[test]
     fn an_agenda_candidate_is_present_only_while_that_agenda_is_the_current_one() {
-        use crate::state::Agenda;
         let mut state = GameStateBuilder::default()
             .with_investigator(test_support::test_investigator(1))
             .build();
@@ -3000,7 +2988,6 @@ mod candidate_source_present_tests {
     /// act and agenda and always answer "gone" (#735).
     #[test]
     fn an_enemy_candidate_tracks_its_enemy() {
-        use crate::state::EnemyId;
         let mut enemy = test_support::test_enemy(4, "Silver Twilight Acolyte");
         enemy.code = CardCode::new(SOME_CODE);
         let state = GameStateBuilder::default()
@@ -3051,8 +3038,7 @@ mod candidate_source_present_tests {
 #[cfg(test)]
 mod withdraw_suppressed_candidates_tests {
     use super::*;
-    use crate::state::LocationId;
-    use crate::state::{CardInstanceId, TimingSub};
+    use crate::state::{CardInstanceId, LocationId, TimingSub};
     use crate::test_support::{self, GameStateBuilder};
 
     const INV: InvestigatorId = InvestigatorId(1);

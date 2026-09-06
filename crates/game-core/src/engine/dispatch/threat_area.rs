@@ -5,11 +5,10 @@
 //! (#235).
 
 use crate::card_data::CardKind;
+use crate::card_registry;
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Zone};
-
-use super::Cx;
-use crate::card_registry;
 
 /// Mint a fresh in-play instance of `code`: allocate its id, build the
 /// `CardInPlay`, and seed the named-uses pool ("ammo") from the asset's

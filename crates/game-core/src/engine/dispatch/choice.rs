@@ -7,9 +7,10 @@
 //! card-local natives. No replay, no separate choice frame (umbrella §3.4).
 
 use crate::action::InputResponse;
-use crate::engine::{
-    ChoiceOption, Cx, EngineOutcome, EvalContext, InputRequest, OptionId, OptionTarget, ResumeToken,
+use crate::engine::outcome::{
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
+use crate::engine::{Cx, EvalContext};
 use crate::state::{Continuation, EffectFrame};
 
 /// Outcome of applying the uniform resolve convention to a count of legal
@@ -177,7 +178,8 @@ mod tests {
     use crate::dsl::{choose_one, gain_resources, Effect, InvestigatorTarget};
     use crate::engine::dispatch;
     use crate::engine::evaluator::{push_effect, EvalContext};
-    use crate::state::{GameState, InvestigatorId};
+    use crate::engine::outcome::PromptNature;
+    use crate::state::{EnemyId, GameState, InvestigatorId};
     use crate::test_support::{self, GameStateBuilder};
 
     /// A `ChooseOne` branch that is **live** — one `effect_can_change_state`
@@ -327,8 +329,6 @@ mod tests {
 
     #[test]
     fn awaiting_choice_anchored_carries_per_option_targets() {
-        use crate::engine::OptionTarget;
-        use crate::state::EnemyId;
         let out = awaiting_choice_anchored(
             "Choose an enemy",
             vec![
@@ -349,7 +349,6 @@ mod tests {
 
     #[test]
     fn awaiting_decision_marks_the_request_and_anchors_both_levels() {
-        use crate::engine::{OptionTarget, PromptNature};
         let out = awaiting_decision(
             "Choose one",
             vec!["Burn it down".into(), "Do not".into()],
@@ -378,7 +377,6 @@ mod tests {
     /// pointing at a card no board surface renders.
     #[test]
     fn awaiting_decision_with_no_live_source_is_unanchored_but_still_a_decision() {
-        use crate::engine::PromptNature;
         let out = awaiting_decision("Choose one", vec!["A".into(), "B".into()], None);
         let EngineOutcome::AwaitingInput { request, .. } = out else {
             panic!("expected AwaitingInput");

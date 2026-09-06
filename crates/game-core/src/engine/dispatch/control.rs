@@ -24,12 +24,11 @@
 //! new owner, which is what later routes it out of the game rather than into a
 //! discard pile (`cards::discard_card_from_play`).
 
+use crate::engine::dispatch::slots;
+use crate::engine::outcome::EngineOutcome;
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{AssetEntry, CardInPlay, InvestigatorId};
-
-use super::Cx;
-use crate::engine::dispatch::slots;
-use crate::engine::EngineOutcome;
 
 /// Resolve [`Effect::TakeControl`](crate::dsl::Effect::TakeControl): move the
 /// in-play card printed with `code` into `investigator`'s play area.

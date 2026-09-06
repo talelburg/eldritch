@@ -5,21 +5,19 @@
 //! a fixed deterministic order (see [`queue_forced_triggers`]), beneath the
 //! universal [`queue_event`](super::emit::queue_event) chokepoint.
 
+use crate::action::InputResponse;
 use crate::card_registry;
 use crate::dsl::{
     self, Effect, EventPattern, EventTiming, SkillTestKind, TestOutcome, Trigger, TriggerKind,
 };
-use crate::engine::abilities_in_effect;
+use crate::engine::dispatch::reaction_windows;
+use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::engine::{abilities_in_effect, Cx};
 use crate::state::{
     self, AbilitySource, CandidateSource, CardCode, Continuation, EnemyId, GameState,
     InvestigatorId, LocationId, ResolutionCandidate, Status,
 };
-
-use super::Cx;
-use crate::action::InputResponse;
-use crate::engine::dispatch::reaction_windows;
-use crate::engine::evaluator::{self, EvalContext};
-use crate::engine::outcome::EngineOutcome;
 
 /// A framework timing point at which Forced (`Trigger::OnEvent`)
 /// abilities on scenario-structure cards may fire. Each variant carries
@@ -782,7 +780,6 @@ fn forced_source_name(code: &CardCode) -> String {
 /// pick precedes the forced effect's resolution ("confirm before the effect"),
 /// and for an act/agenda reverse it is the whole of what an advance asks (#858).
 pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
-    use crate::engine::{ChoiceOption, InputRequest, OptionId, ResumeToken};
     let Some(Continuation::AcknowledgeForced { candidate }) = cx.state.continuations.last() else {
         return EngineOutcome::Rejected {
             reason: "drive_acknowledge_forced: top frame is not AcknowledgeForced".into(),
@@ -803,7 +800,6 @@ pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
 /// frame: validate the single option, pop the frame, and return `Done` so the
 /// `drive` loop resolves the forced effect beneath.
 pub(crate) fn resume_acknowledge_forced(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    use crate::engine::OptionId;
     if !matches!(response, InputResponse::PickSingle(OptionId(0))) {
         return EngineOutcome::Rejected {
             reason: "resume_acknowledge_forced: expected the single forced-resolution option"
@@ -821,15 +817,12 @@ pub(crate) fn resume_acknowledge_forced(cx: &mut Cx, response: &InputResponse) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{AbilityAddress, CardInstanceId};
+    use crate::engine::outcome::OptionTarget;
+    use crate::state::{AbilityAddress, Agenda, CardInstanceId};
+    use crate::test_support::GameStateBuilder;
 
     #[test]
     fn acknowledge_forced_suspends_then_pops_on_pick() {
-        use crate::action::InputResponse;
-        use crate::engine::OptionId;
-        use crate::state::Continuation;
-        use crate::test_support::GameStateBuilder;
-
         let mut state = GameStateBuilder::default().build();
         state.continuations.push(Continuation::AcknowledgeForced {
             candidate: ResolutionCandidate::new(
@@ -865,10 +858,6 @@ mod tests {
 
     #[test]
     fn acknowledge_forced_rejects_non_pick_response() {
-        use crate::action::InputResponse;
-        use crate::state::Continuation;
-        use crate::test_support::GameStateBuilder;
-
         // Validate-first: a Confirm/Skip (not the single PickSingle) is rejected
         // and leaves the frame in place.
         let mut state = GameStateBuilder::default().build();
@@ -898,10 +887,6 @@ mod tests {
 
     #[test]
     fn acknowledge_forced_anchors_the_option_to_its_source_card() {
-        use crate::engine::OptionTarget;
-        use crate::state::Continuation;
-        use crate::test_support::GameStateBuilder;
-
         // A forced ability on an in-play instance surfaces a one-option pick
         // anchored to that card (#553), not Global.
         let mut state = GameStateBuilder::default().build();
@@ -932,10 +917,6 @@ mod tests {
 
     #[test]
     fn acknowledge_forced_anchors_a_location_source_to_its_map_node() {
-        use crate::engine::OptionTarget;
-        use crate::state::{Continuation, LocationId};
-        use crate::test_support::GameStateBuilder;
-
         // A location's own forced ability (the Attic's on-enter horror) surfaces a
         // one-option pick anchored to the location on the map (#553), not Global.
         let mut state = GameStateBuilder::default().build();
@@ -966,10 +947,6 @@ mod tests {
 
     #[test]
     fn acknowledge_forced_anchors_an_agenda_source_to_the_agenda_card() {
-        use crate::engine::OptionTarget;
-        use crate::state::{Agenda, Continuation};
-        use crate::test_support::GameStateBuilder;
-
         // A forced ability on the current agenda (What's Going On?! 01105's
         // on-advance reverse) anchors its "Resolve" to the agenda card (#556).
         let mut state = GameStateBuilder::default().build();
