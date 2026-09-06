@@ -13,16 +13,20 @@
 //! workspace dep — what `TEST_REGISTRY` isolates is the *runtime*
 //! registry lookup, not the compile-time footprint.
 //!
-//! **Transitional.** ADR 0016 retires this module: [#878] relocates the toy
-//! scenario out of `src/` into the crate's own test directory and deletes the
-//! `test_fixtures` feature, at which point nothing outside `tests/` can reach
-//! any of this. What flips when it lands is the four binaries still installing
-//! [`TEST_REGISTRY`] — `synthetic_resolution.rs`, `upkeep_hand_size.rs`,
-//! `upkeep_phase.rs` and `hunter_movement.rs` — which build a local registry
-//! instead; [#873] takes the last two of those to `crates/game-core/tests/`
-//! on the way. #877 already
-//! deleted the synthetic Cover Up and the synthetic spawn-bearing enemy, whose
-//! last readers moved to `crates/cards/tests/` and real cards.
+//! **Transitional, and down to its last reader.** ADR 0016 retires this module:
+//! [#878] relocates the toy scenario out of `src/` into the crate's own test
+//! directory and deletes the `test_fixtures` feature, at which point nothing
+//! outside `tests/` can reach any of this. No test binary installs
+//! [`TEST_REGISTRY`] any more — [#873] took the last four
+//! (`synthetic_resolution.rs`, `upkeep_hand_size.rs`, `upkeep_phase.rs` and
+//! `hunter_movement.rs`) down to `crates/game-core/tests/`, where each builds a
+//! local `MockRegistry` instead, and #877 before it deleted the synthetic Cover
+//! Up and the synthetic spawn-bearing enemy, whose last readers moved to
+//! `crates/cards/tests/` and real cards. What is left reads only from this
+//! crate's own `#[cfg(test)]` modules and from [`synthetic::setup`], which #878
+//! moves wholesale.
+//!
+//! [`synthetic::setup`]: super::synthetic::setup
 //!
 //! [#878]: https://github.com/talelburg/eldritch/issues/878
 //! [#873]: https://github.com/talelburg/eldritch/issues/873

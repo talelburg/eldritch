@@ -930,11 +930,11 @@ mod encounter_card_revealed_tests {
     /// `OnceLock` install ordering, which is non-deterministic across
     /// parallel test binaries.
     ///
-    /// The authoritative "no registry installed" path is exercised in
-    /// the `crates/scenarios/tests/encounter_reveal.rs` integration
-    /// test, which runs in its own process and installs `TEST_REGISTRY`
-    /// explicitly. The process-isolated install guarantees the "no
-    /// registry" rejection fires in a controlled environment.
+    /// Which is why this test accepts either reason and asserts only the
+    /// shared invariant. Nothing pins the "no registry installed" branch
+    /// on its own: every integration binary installs a registry from a
+    /// `#[ctor]` before the first test runs, so none of them can reach a
+    /// process with the slot still empty.
     #[test]
     fn rejects_when_no_card_registry_installed() {
         use crate::action::EngineRecord;
