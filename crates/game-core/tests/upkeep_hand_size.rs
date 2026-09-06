@@ -1,51 +1,119 @@
 //! #111 acceptance: upkeep step 4.5 discards down to the hand-size cap.
 //!
-//! Drives a full apply cycle through scenario setup (via `seat_and_open`) →
-//! `Mulligan` → `EndTurn`, padding the sole investigator's hand so that —
-//! after the step-4.4 draw — they hold more than the cap at step 4.5. The
-//! round-ending `EndTurn` must cascade into upkeep and pause with
-//! `AwaitingInput`; resolving the prompt with `PickMultiple` must land
-//! the hand at exactly the cap and let the round proceed.
+//! Drives a full apply cycle through a locally-built scenario shell (via
+//! `seat_and_open`) → `Mulligan` → `EndTurn`, padding the sole investigator's
+//! hand so that — after the step-4.4 draw — they hold more than the cap at step
+//! 4.5. The round-ending `EndTurn` must cascade into upkeep and pause with
+//! `AwaitingInput`; resolving the prompt with `PickMultiple` must land the hand
+//! at exactly the cap and let the round proceed.
 //!
-//! Lives in `crates/scenarios/tests/` for the same process-isolation /
-//! crate-direction reasons as `upkeep_phase.rs` and `mythos_phase.rs`:
-//! we install [`TEST_REGISTRY`] without colliding with other test
-//! binaries, and `game-core` unit tests can't reach a real registry.
+//! Moved down from `crates/scenarios/tests/upkeep_hand_size.rs` (#873): no card
+//! is involved, only a scenario module, which under ADR 0016 is a locally-built
+//! shell. No scenario registry is installed, so the resolution hook is skipped
+//! and the round cannot end mid-cascade.
 
 use game_core::action::RosterEntry;
 use game_core::engine::{apply, EngineOutcome, OptionId};
 use game_core::seat_and_open;
-use game_core::state::{CardCode, InvestigatorId, Phase};
-use game_core::test_support::{take_turn_action, TEST_INV};
+use game_core::state::{
+    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase,
+};
+use game_core::test_support::{
+    take_turn_action, terminal_code, test_location, GameStateBuilder, MockRegistry, TEST_INV,
+};
 use game_core::{Action, InputResponse, PlayerAction, TurnAction};
-use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
-use scenarios::test_fixtures::synthetic;
 
-#[ctor::ctor(unsafe)]
-fn install_test_registry() {
-    let _ = game_core::card_registry::install(TEST_REGISTRY);
-}
+/// Per-binary code prefix. Nothing here is looked up in the registry — the
+/// hand-size discard path only moves cards between hand and discard — so the
+/// codes are deliberately not ArkhamDB-shaped (ADR 0016). This replaces the
+/// former `01999` filler, a five-digit code that looked like a real one and is
+/// in no pack.
+const PREFIX: &str = "_uhs_";
 
 /// The hand-size cap enforced at upkeep step 4.5.
 // mirrors the engine-private phases::HAND_SIZE_LIMIT; keep in sync if the cap changes.
 const HAND_SIZE_LIMIT: usize = 8;
 
+/// Hand size to pad to before the round-ending `EndTurn`. The step-4.4 draw adds
+/// one, landing on 12 at the 4.5 check — a discard of 12 - cap = 4.
+const PADDED_HAND: usize = 11;
+
+#[ctor::ctor(unsafe)]
+fn install() {
+    // No probe cards: `install` composes `metadata_for_test_inv` (capacity reads
+    // for `TEST_INV`) and `abilities_for_terminal` (the terminal act/agenda
+    // reverses `setup` seeds), which is all the cascade touches.
+    MockRegistry::new().install();
+}
+
+/// The locally-built scenario shell's state: one revealed location to seat onto,
+/// a chaos bag, and two-card act/agenda decks ending in a terminal card. Phase =
+/// Mythos, round = 0 — ready for [`seat_and_open`].
+fn setup() -> GameState {
+    let mut location = test_location(10, "Upkeep Location");
+    location.code = CardCode::new(format!("{PREFIX}loc"));
+
+    let mut state = GameStateBuilder::new()
+        .with_location(location)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .build();
+    state.starting_location = Some(LocationId(10));
+    // Something for the Mythos step-1.4 prompt to be pending over; these tests
+    // stop at that prompt and never resolve it, so it is never drawn.
+    state
+        .encounter_deck
+        .push_back(CardCode::new(format!("{PREFIX}encounter")));
+    state.agenda_deck = vec![
+        Agenda {
+            code: CardCode::new(format!("{PREFIX}agenda_1")),
+            doom_threshold: 2,
+        },
+        Agenda {
+            // Terminal: last in the deck (ADR 0013). Its reverse reaches R2.
+            code: terminal_code(2),
+            doom_threshold: 2,
+        },
+    ];
+    state.act_deck = vec![
+        Act {
+            code: CardCode::new(format!("{PREFIX}act_1")),
+            clue_threshold: 2,
+        },
+        Act {
+            // Terminal: last in the deck. Its reverse reaches R1.
+            code: terminal_code(1),
+            clue_threshold: 2,
+        },
+    ];
+    state
+}
+
+/// A one-investigator roster holding 6 cards: `seat_and_open` draws 5 for the
+/// opening hand, leaving 1 for the step-4.4 upkeep draw.
+fn roster() -> Vec<RosterEntry> {
+    vec![RosterEntry {
+        investigator: CardCode::new(TEST_INV),
+        deck: (0..6u32)
+            .map(|i| CardCode::new(format!("{PREFIX}deck_{i}")))
+            .collect(),
+    }]
+}
+
+/// Pad the sole investigator's hand to [`PADDED_HAND`] with opaque filler.
+fn pad_hand(state: &mut GameState) {
+    let inv = state.investigators.get_mut(&InvestigatorId(1)).unwrap();
+    while inv.hand.len() < PADDED_HAND {
+        inv.hand.push(CardCode::new(format!("{PREFIX}filler")));
+    }
+}
+
 #[test]
 #[allow(clippy::too_many_lines)] // end-to-end upkeep walkthrough; length is inherent
 fn upkeep_prompts_and_discards_down_to_eight() {
     let inv1 = InvestigatorId(1);
-    // Seed 6 cards via the roster: seat_and_open draws 5 for the opening
-    // hand, leaving 1 for the step-4.4 upkeep draw.
-    let deck = (0..6u32)
-        .map(|i| CardCode::new(format!("01{i:03}")))
-        .collect();
-    let roster = vec![RosterEntry {
-        investigator: CardCode::new(TEST_INV),
-        deck,
-    }];
 
     // seat_and_open → mulligan (keep hand).
-    let r1 = seat_and_open(synthetic::setup(), &roster);
+    let r1 = seat_and_open(setup(), &roster());
     assert!(
         matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt, got {:?}",
@@ -64,15 +132,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     // card; padding to 11 here lands us at 12 cards at the 4.5 check,
     // requiring a discard of (11 + 1 draw) - HAND_SIZE_LIMIT = 4.
     let mut state = r2.state;
-    {
-        let inv = state.investigators.get_mut(&inv1).unwrap();
-        while inv.hand.len() < 11 {
-            // Arbitrary code unknown to the test registry — fine because the
-            // hand-size discard path only moves cards between hand and discard
-            // and never performs a registry lookup.
-            inv.hand.push(CardCode::new("01999"));
-        }
-    }
+    pad_hand(&mut state);
     let hand_before_end = state.investigators[&inv1].hand.len();
     let discard_pile_before = state.investigators[&inv1].discard.len();
     assert!(
@@ -165,27 +225,13 @@ fn upkeep_prompts_and_discards_down_to_eight() {
 
 #[test]
 fn upkeep_hand_size_discard_replay_is_deterministic() {
-    let inv1 = InvestigatorId(1);
-
-    // 6 deck cards via roster: seat_and_open draws 5 → hand has 5;
-    // upkeep step 4.4 draws the last → 12 cards after padding, triggering
-    // the hand-size prompt.
-    let deck: Vec<CardCode> = (0..6u32)
-        .map(|i| CardCode::new(format!("01{i:03}")))
-        .collect();
-    let roster = vec![RosterEntry {
-        investigator: CardCode::new(TEST_INV),
-        deck,
-    }];
-
     // discard_count = 12 - HAND_SIZE_LIMIT = 4; indices 0..4.
-    let discard_count = 12u32 - u32::try_from(HAND_SIZE_LIMIT).unwrap();
-    let indices: Vec<u32> = (0..discard_count).collect();
-    let selected: Vec<OptionId> = indices.iter().copied().map(OptionId).collect();
+    let discard_count = u32::try_from(PADDED_HAND + 1 - HAND_SIZE_LIMIT).unwrap();
+    let selected: Vec<OptionId> = (0..discard_count).map(OptionId).collect();
 
     // Drive the same sequence twice to verify replay determinism.
-    let run_sequence = |initial: game_core::state::GameState| -> game_core::state::GameState {
-        let mut state = seat_and_open(initial, &roster).state;
+    let run_sequence = |initial: GameState| -> GameState {
+        let mut state = seat_and_open(initial, &roster()).state;
         state = apply(
             state,
             Action::Player(PlayerAction::ResolveInput {
@@ -195,12 +241,7 @@ fn upkeep_hand_size_discard_replay_is_deterministic() {
         .state;
         // Pad hand to 11 so that the upkeep draw (4.4) pushes it to 12,
         // triggering the hand-size discard prompt at 4.5.
-        {
-            let inv = state.investigators.get_mut(&inv1).unwrap();
-            while inv.hand.len() < 11 {
-                inv.hand.push(CardCode::new("01999"));
-            }
-        }
+        pad_hand(&mut state);
         state = take_turn_action(state, &TurnAction::EndTurn).state;
         apply(
             state,
@@ -214,10 +255,10 @@ fn upkeep_hand_size_discard_replay_is_deterministic() {
     };
 
     // --- First pass: drive and collect final state. ---
-    let final_state = run_sequence(synthetic::setup());
+    let final_state = run_sequence(setup());
 
     // --- Second pass: replay from the same initial state. ---
-    let replayed_state = run_sequence(synthetic::setup());
+    let replayed_state = run_sequence(setup());
 
     // Replaying the same action sequence from the same initial state must
     // reproduce identical state bit-for-bit — the PickMultiple discard path is

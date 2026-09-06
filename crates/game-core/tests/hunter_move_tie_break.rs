@@ -1,37 +1,31 @@
-//! Hunter-movement replay equality across a `PickSingle` round-trip.
+//! A hunter's move is resolved by the player when the shortest path ties, and
+//! that choice replays identically.
 //!
 //! The substrate is map **topology**, not a card: a symmetric diamond producing
 //! a genuine two-way tie in the hunter's first step. A hand-built fixture is the
 //! right one here — ADR 0016 permits one that models an engine primitive, which
-//! a bare connection graph is.
+//! a bare connection graph is. The Gathering's hub-and-spoke layout has no
+//! analogue, which is why the map stays hand-built rather than flipping to real
+//! scenario content.
 //!
-//! **In the wrong directory, and knowingly.** This test drives no scenario
-//! content, so `docs/agents/standards.md` puts it at layer 2 —
-//! `crates/game-core/tests/` — not layer 4. [#873] owns the drop and the file
-//! rename that goes with it; it is blocked on this file being trimmed first,
-//! which is what #877 did. Until then the `TEST_REGISTRY` install below is the
-//! only thing keeping the binary tied to the scenarios crate.
-//!
-//! The spawn-engagement tie that also lived here is gone (#877). Flipping it to
-//! a real card would have made it the third test of the same fact, behind
-//! `cards/tests/encounter_spawn.rs`'s direct-record variant and
-//! `cards/tests/mythos_phase.rs`'s full Mythos walk — and the weakest of the
-//! three, since its Mythos frames were staged by hand rather than reached.
-//!
-//! [#873]: https://github.com/talelburg/eldritch/issues/873
+//! Renamed on the way down from `crates/scenarios/tests/hunter_movement.rs`
+//! (#873): the surviving test is about the tie and the `PickSingle` that settles
+//! it, not about hunter movement at large. The spawn-engagement tie that also
+//! lived in that file went to real cards under #877.
 
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{apply, OptionId};
 use game_core::state::{EnemyId, InvestigatorId, LocationId, Phase};
 use game_core::test_support::{
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
+    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder, MockRegistry,
 };
 use game_core::{Action, TurnAction};
-use scenarios::test_fixtures::synth_cards::TEST_REGISTRY;
 
 #[ctor::ctor(unsafe)]
-fn install_test_registry() {
-    let _ = game_core::card_registry::install(TEST_REGISTRY);
+fn install() {
+    // No probe cards: the diamond is pure topology. `install`'s composed
+    // `metadata_for_test_inv` is what `test_investigator`'s capacity reads want.
+    MockRegistry::new().install();
 }
 
 #[test]
