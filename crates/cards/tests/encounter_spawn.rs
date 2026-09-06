@@ -44,7 +44,10 @@
 //! - **Roland Banks 01001 / Daisy Walker 01002** — the seated investigators, so
 //!   `max_health()` / `max_sanity()` resolve against the installed registry.
 //!   Neither's printed ability has a trigger here — no turn is taken and no
-//!   enemy is defeated.
+//!   enemy is defeated. Roland's two rulings
+//!   (<https://arkhamdb.com/card/01001>) scope his reaction; Daisy's single one
+//!   (<https://arkhamdb.com/card/01002>) is about which action a lose-actions
+//!   effect takes first, and no turn runs here.
 
 use game_core::action::EngineRecord;
 use game_core::card_data::CardType;
@@ -76,7 +79,6 @@ fn install_real_registry() {
 fn board() -> (GameState, LocationId) {
     let mut state = GameStateBuilder::new().build();
     let attic = state.add_location(cards::by_code(ATTIC).expect("Attic 01113 in corpus"));
-    state.starting_location = Some(attic);
     state.phase = Phase::Mythos;
     state.encounter_deck.push_back(CardCode::new(FLESH_EATER));
     (state, attic)

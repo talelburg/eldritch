@@ -19,14 +19,17 @@
 //!   on it."* **Step 8 never resolves the card**, so that Revelation and the
 //!   `[reaction]` and **Forced** clauses under it are all inert here; what the
 //!   test needs from 01007 is only that the corpus marks it a weakness. Its
-//!   rulings (<https://arkhamdb.com/card/01007>) are entirely about the
-//!   clue-replacement reaction and the game-end trauma — both downstream of a
+//!   rulings (<https://arkhamdb.com/card/01007>) all describe the card once it
+//!   is in the threat area — the clue-replacement reaction, the game-end trauma,
+//!   and *"Once you discard all clues from Cover Up, it stays in your threat
+//!   area until the end of the current scenario"* — which is downstream of a
 //!   Revelation this test never reaches. `cover_up.rs` owns those.
 //! - **Roland Banks 01001** — the seated investigator, and the one Cover Up's
 //!   `restrictions: investigator:01001` names, so the deck below is a legal one.
 //!   His *"\[reaction\] After you defeat an enemy: Discover 1 clue at your
-//!   location"* has no trigger here; his rulings
-//!   (<https://arkhamdb.com/card/01001>) all scope it.
+//!   location. (Limit once per round.)"* has no trigger here — nothing is
+//!   defeated — and both his rulings (<https://arkhamdb.com/card/01001>) scope
+//!   that same reaction.
 //! - **Study 01111** — the starting location, so `seat_and_open` has somewhere
 //!   to place the roster. No printed ability text and no rulings
 //!   (`data/arkhamdb-faq/no-rulings.txt`), so nothing on the board reacts to the

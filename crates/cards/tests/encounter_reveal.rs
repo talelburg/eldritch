@@ -34,9 +34,9 @@
 //!   forbids.
 //! - **Roland Banks 01001** — the seated investigator, so `max_health()` /
 //!   `max_sanity()` resolve against the installed registry. His *"\[reaction\]
-//!   After you defeat an enemy: Discover 1 clue at your location"* has no
-//!   trigger here. Rulings (<https://arkhamdb.com/card/01001>) all scope that
-//!   reaction and his deckbuilding.
+//!   After you defeat an enemy: Discover 1 clue at your location. (Limit once
+//!   per round.)"* has no trigger here — nothing is defeated. Both his rulings
+//!   (<https://arkhamdb.com/card/01001>) scope that same reaction.
 
 use game_core::action::EngineRecord;
 use game_core::card_data::{CardKind, CardType};

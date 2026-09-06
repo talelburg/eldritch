@@ -1,13 +1,22 @@
 //! Hunter-movement replay equality across a `PickSingle` round-trip.
 //!
 //! The substrate is map **topology**, not a card: a symmetric diamond producing
-//! a genuine two-way tie in the hunter's first step. ADR 0016 permits a
-//! hand-built fixture that models an engine primitive, which a bare connection
-//! graph is.
+//! a genuine two-way tie in the hunter's first step. A hand-built fixture is the
+//! right one here — ADR 0016 permits one that models an engine primitive, which
+//! a bare connection graph is.
 //!
-//! The spawn-engagement tie that also lived here moved to
+//! **In the wrong directory, and knowingly.** This test drives no scenario
+//! content, so `docs/agents/standards.md` puts it at layer 2 —
+//! `crates/game-core/tests/` — not layer 4. [#873] owns the drop and the file
+//! rename that goes with it; it is blocked on this file being trimmed first,
+//! which is what #877 did. Until then the `TEST_REGISTRY` install below is the
+//! only thing keeping the binary tied to the scenarios crate.
+//!
+//! The spawn-engagement tie that also lived here moved the other way, to
 //! `crates/cards/tests/spawn_engagement_tie.rs` (#877), where it runs against
 //! Flesh-Eater 01118 and the real registry.
+//!
+//! [#873]: https://github.com/talelburg/eldritch/issues/873
 
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{apply, OptionId};

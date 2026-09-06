@@ -12,8 +12,9 @@
 //! Persistent treachery: the Revelation self-places into the threat area
 //! with 3 clues (`Effect::PutIntoThreatArea`), so `resolve_encounter_card`
 //! does not auto-discard it. Both triggered abilities are backed by the native
-//! effects below — ports of the synthetic Cover-Up fixture C5a proved, which
-//! #877 deleted once this impl carried its readers.
+//! effects below — ports of what the synthetic Cover-Up fixture proved in C5a.
+//! That fixture is gone: #877 deleted it once this impl had taken over its
+//! readers.
 //!
 //! **Cell: the `when` cell of the `DiscoverClues` condition** for the reaction
 //! (#703). The printed word is *"When you **would** discover…"*, and the

@@ -36,7 +36,10 @@
 //!   scopes that same entry.
 //! - **Roland Banks 01001 / Daisy Walker 01002** — the seated investigators, so
 //!   `max_health()` / `max_sanity()` resolve against the installed registry.
-//!   Neither's printed ability has a trigger here.
+//!   Neither's printed ability has a trigger here. Roland's two rulings
+//!   (<https://arkhamdb.com/card/01001>) scope his reaction; Daisy's single one
+//!   (<https://arkhamdb.com/card/01002>) is about which action a lose-actions
+//!   effect takes first, and no turn runs here.
 
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{apply, EngineOutcome};
