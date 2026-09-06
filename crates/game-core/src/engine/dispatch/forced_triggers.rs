@@ -6,16 +6,20 @@
 //! universal [`queue_event`](super::emit::queue_event) chokepoint.
 
 use crate::card_registry;
-use crate::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
+use crate::dsl::{
+    self, Effect, EventPattern, EventTiming, SkillTestKind, TestOutcome, Trigger, TriggerKind,
+};
 use crate::engine::abilities_in_effect;
 use crate::state::{
-    AbilitySource, CandidateSource, CardCode, EnemyId, GameState, InvestigatorId, LocationId,
-    Phase, ResolutionCandidate, Status,
+    self, AbilitySource, CandidateSource, CardCode, Continuation, EnemyId, GameState,
+    InvestigatorId, LocationId, ResolutionCandidate, Status,
 };
 
-use super::super::evaluator::{push_effect, EvalContext};
-use super::super::outcome::EngineOutcome;
 use super::Cx;
+use crate::action::InputResponse;
+use crate::engine::dispatch::reaction_windows;
+use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::outcome::EngineOutcome;
 
 /// A framework timing point at which Forced (`Trigger::OnEvent`)
 /// abilities on scenario-structure cards may fire. Each variant carries
@@ -42,11 +46,11 @@ pub(crate) enum ForcedTriggerPoint {
     /// `EventPattern::PhaseStarted { phase }` forced abilities; binds
     /// controller = the lead investigator (board-wide effects ignore it).
     /// The mirror of [`PhaseEnded`](Self::PhaseEnded), sharing its scan.
-    PhaseStarted { phase: Phase },
+    PhaseStarted { phase: state::Phase },
     /// A phase ended. Scans the current act and agenda for
     /// `EventPattern::PhaseEnded { phase }` forced abilities; binds
     /// controller = the lead investigator (board-wide effects ignore it).
-    PhaseEnded { phase: Phase },
+    PhaseEnded { phase: state::Phase },
     /// An act advanced (its reverse side resolves). Scans the *leaving*
     /// act's card for `EventPattern::ActAdvanced` forced abilities; binds
     /// controller = the lead investigator.
@@ -112,9 +116,9 @@ pub(crate) enum ForcedTriggerPoint {
         /// The investigator who took the test.
         investigator: InvestigatorId,
         /// The test kind — matched against a listener's `kind` narrowing.
-        kind: crate::dsl::SkillTestKind,
+        kind: SkillTestKind,
         /// The test outcome — matched against a listener's `outcome`.
-        outcome: crate::dsl::TestOutcome,
+        outcome: TestOutcome,
     },
     /// The game ended (a scenario resolution latched). Scans every
     /// investigator's controlled card instances (threat area + in play)
@@ -210,7 +214,7 @@ pub(crate) fn queue_forced_triggers(
             {
                 cx.state
                     .continuations
-                    .push(crate::state::Continuation::AcknowledgeForced {
+                    .push(Continuation::AcknowledgeForced {
                         candidate: hit.clone(),
                     });
             }
@@ -592,7 +596,7 @@ pub(super) fn collect_forced_hits(
         let Some((_, ability)) = abilities.iter().find(|(addr, _)| *addr == hit.address) else {
             return false;
         };
-        crate::engine::evaluator::ability_can_initiate(state, ability, hit.source, hit.controller)
+        evaluator::ability_can_initiate(state, ability, hit.source, hit.controller)
     });
     hits
 }
@@ -647,12 +651,12 @@ fn push_scenario_structure_matching(
 
 /// Map the engine's `state::Phase` to the `card-dsl` mirror so a
 /// `PhaseStarted` / `PhaseEnded` pattern can be compared.
-fn dsl_phase(phase: Phase) -> crate::dsl::Phase {
+fn dsl_phase(phase: state::Phase) -> dsl::Phase {
     match phase {
-        Phase::Mythos => crate::dsl::Phase::Mythos,
-        Phase::Investigation => crate::dsl::Phase::Investigation,
-        Phase::Enemy => crate::dsl::Phase::Enemy,
-        Phase::Upkeep => crate::dsl::Phase::Upkeep,
+        state::Phase::Mythos => dsl::Phase::Mythos,
+        state::Phase::Investigation => dsl::Phase::Investigation,
+        state::Phase::Enemy => dsl::Phase::Enemy,
+        state::Phase::Upkeep => dsl::Phase::Upkeep,
     }
 }
 
@@ -721,16 +725,13 @@ fn push_matching(
 /// The agenda has no counterpart to suppress — an agenda advances from the doom
 /// threshold, which is engine machinery rather than a forced ability, so its flip
 /// pick was never stacked on top of one.
-fn is_only_an_advance(effect: &crate::dsl::Effect) -> bool {
-    matches!(effect, crate::dsl::Effect::AdvanceCurrentAct)
+fn is_only_an_advance(effect: &Effect) -> bool {
+    matches!(effect, Effect::AdvanceCurrentAct)
 }
 
 /// Push `hit`'s effect root frame for the `drive` loop to resolve, and hand the
 /// effect back so the caller can decide whether it warrants a #466 acknowledge.
-fn resolve_one(
-    cx: &mut Cx,
-    hit: &ResolutionCandidate,
-) -> (EngineOutcome, Option<crate::dsl::Effect>) {
+fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> (EngineOutcome, Option<Effect>) {
     if card_registry::current().is_none() {
         return (
             EngineOutcome::Rejected {
@@ -762,7 +763,7 @@ fn resolve_one(
     // both have `instance() == None` (#555).
     let ctx =
         EvalContext::for_controller_with_optional_source(hit.controller, hit.source.ability());
-    push_effect(cx, &effect, ctx);
+    evaluator::push_effect(cx, &effect, ctx);
     (EngineOutcome::Done, Some(effect))
 }
 
@@ -782,15 +783,13 @@ fn forced_source_name(code: &CardCode) -> String {
 /// and for an act/agenda reverse it is the whole of what an advance asks (#858).
 pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
     use crate::engine::{ChoiceOption, InputRequest, OptionId, ResumeToken};
-    let Some(crate::state::Continuation::AcknowledgeForced { candidate }) =
-        cx.state.continuations.last()
-    else {
+    let Some(Continuation::AcknowledgeForced { candidate }) = cx.state.continuations.last() else {
         return EngineOutcome::Rejected {
             reason: "drive_acknowledge_forced: top frame is not AcknowledgeForced".into(),
         };
     };
     let name = forced_source_name(&candidate.code);
-    let anchor = super::reaction_windows::candidate_anchor(candidate);
+    let anchor = reaction_windows::candidate_anchor(candidate);
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
             format!("Forced — {name}"),
@@ -803,15 +802,9 @@ pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
 /// Resume an [`AcknowledgeForced`](crate::state::Continuation::AcknowledgeForced)
 /// frame: validate the single option, pop the frame, and return `Done` so the
 /// `drive` loop resolves the forced effect beneath.
-pub(crate) fn resume_acknowledge_forced(
-    cx: &mut Cx,
-    response: &crate::action::InputResponse,
-) -> EngineOutcome {
+pub(crate) fn resume_acknowledge_forced(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     use crate::engine::OptionId;
-    if !matches!(
-        response,
-        crate::action::InputResponse::PickSingle(OptionId(0))
-    ) {
+    if !matches!(response, InputResponse::PickSingle(OptionId(0))) {
         return EngineOutcome::Rejected {
             reason: "resume_acknowledge_forced: expected the single forced-resolution option"
                 .into(),
@@ -819,7 +812,7 @@ pub(crate) fn resume_acknowledge_forced(
     }
     debug_assert!(matches!(
         cx.state.continuations.last(),
-        Some(crate::state::Continuation::AcknowledgeForced { .. })
+        Some(Continuation::AcknowledgeForced { .. })
     ));
     cx.state.continuations.pop();
     EngineOutcome::Done

@@ -3,16 +3,22 @@
 use crate::action::InputResponse;
 use crate::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, SpawnLocation};
 use crate::card_registry;
-use crate::dsl::Trigger;
+use crate::dsl::{Ability, Effect, Trigger};
 use crate::event::Event;
 use crate::state::{
     CardCode, Continuation, EncounterDisposition, Enemy, FastWindowKind, InvestigatorId,
     LocationId, PhaseStep, SpawnEngagePending, Status,
 };
 
-use super::super::evaluator::{push_effect, EvalContext};
-use super::super::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use super::Cx;
+use crate::engine::dispatch::cursor;
+use crate::engine::dispatch::hunters;
+use crate::engine::dispatch::hunters::PreyResolution;
+use crate::engine::dispatch::reaction_windows;
+use crate::engine::dispatch::skill_test;
+use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
+use crate::engine::OptionTarget;
 
 /// Hard cap on a single Mythos draw chain. Real scenarios surge ≤2
 /// in a chain; the cap exists purely to guarantee termination on
@@ -96,7 +102,7 @@ pub(super) fn encounter_card_revealed(cx: &mut Cx, investigator: InvestigatorId)
 /// treacheries). Revisit with an explicit persistence marker only if a
 /// treachery must persist with no ongoing ability, or auto-discard
 /// despite carrying one.
-pub(crate) fn treachery_is_persistent(abilities: &[crate::dsl::Ability]) -> bool {
+pub(crate) fn treachery_is_persistent(abilities: &[Ability]) -> bool {
     abilities.iter().any(|a| a.trigger != Trigger::Revelation)
 }
 
@@ -193,7 +199,7 @@ pub fn resolve_encounter_card(
     // ability on the drawn card." then "4. If the card is an enemy, spawn it
     // following any spawn instruction the card bears." The spawn happens at
     // disposal, after the Revelation frames the loop drives have all resolved.
-    let revelation_effects: Vec<crate::dsl::Effect> = abilities
+    let revelation_effects: Vec<Effect> = abilities
         .into_iter()
         .filter(|a| a.trigger == Trigger::Revelation)
         .map(|a| a.effect)
@@ -210,7 +216,7 @@ pub fn resolve_encounter_card(
     // investigator controls the Revelation.
     if !revelation_effects.is_empty() {
         let eval_ctx = EvalContext::for_controller(investigator);
-        push_effect(cx, &crate::dsl::Effect::Seq(revelation_effects), eval_ctx);
+        evaluator::push_effect(cx, &Effect::Seq(revelation_effects), eval_ctx);
     }
     EngineOutcome::Done
 }
@@ -441,7 +447,7 @@ pub(super) fn spawn_enemy_at(
     //    set is narrowed by the enemy's `prey`; with `Prey::Default` a 2+
     //    set ties and suspends for the lead investigator's
     //    `PickSingle` (option A).
-    let candidates = super::cursor::active_investigators_at(cx.state, location_id);
+    let candidates = cursor::active_investigators_at(cx.state, location_id);
 
     // 3. Mint and place (mutate-second). The enemy is inserted unengaged;
     //    the `One` and (post-resume) `Tie` cases set `engaged_with` via
@@ -471,8 +477,8 @@ pub(super) fn spawn_enemy_at(
     };
     cx.state.enemies.insert(enemy_id, enemy);
 
-    match super::hunters::resolve_prey(cx.state, prey, &candidates) {
-        super::hunters::PreyResolution::None => {
+    match hunters::resolve_prey(cx.state, prey, &candidates) {
+        PreyResolution::None => {
             cx.events.push(Event::EnemySpawned {
                 enemy: enemy_id,
                 code,
@@ -481,17 +487,17 @@ pub(super) fn spawn_enemy_at(
             });
             EngineOutcome::Done
         }
-        super::hunters::PreyResolution::One(target) => {
+        PreyResolution::One(target) => {
             cx.events.push(Event::EnemySpawned {
                 enemy: enemy_id,
                 code,
                 location: location_id,
                 engaged_with: Some(target),
             });
-            super::hunters::engage_enemy_with(cx, enemy_id, target);
+            hunters::engage_enemy_with(cx, enemy_id, target);
             EngineOutcome::Done
         }
-        super::hunters::PreyResolution::Tie(tied) => {
+        PreyResolution::Tie(tied) => {
             cx.events.push(Event::EnemySpawned {
                 enemy: enemy_id,
                 code,
@@ -514,7 +520,7 @@ pub(super) fn spawn_enemy_at(
                         "Enemy {enemy_id:?} spawn engagement: lead investigator picks whom to \
                          engage among {tied:?}"
                     ),
-                    super::hunters::candidate_options(&tied),
+                    hunters::candidate_options(&tied),
                 ),
                 resume_token: ResumeToken(0),
             }
@@ -603,7 +609,7 @@ pub(super) fn prompt_encounter_draw(cx: &Cx) -> EngineOutcome {
         request: InputRequest::confirm(format!(
             "Mythos step 1.4: {drawer:?} draws an encounter card; submit InputResponse::Confirm.",
         ))
-        .at(crate::engine::OptionTarget::EncounterDeck),
+        .at(OptionTarget::EncounterDeck),
         resume_token: ResumeToken(0),
     }
 }
@@ -772,7 +778,7 @@ fn draw_encounter_card_into_frame(cx: &mut Cx, investigator: InvestigatorId) -> 
     *surge_pending = surges;
 
     // Step 2: Check for the peril keyword on the drawn card.
-    super::skill_test::peril_check(cx, &code, investigator, metadata.peril());
+    skill_test::peril_check(cx, &code, investigator, metadata.peril());
 
     // Step 3 + 4: Push the disposition + Revelation frames; the `drive` loop
     // resolves them, then disposes of the card.
@@ -812,7 +818,7 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
     }
     if queue.is_empty() {
         cx.state.continuations.pop(); // pop the drained frame (it is on top)
-        let outcome = super::reaction_windows::open_fast_window(
+        let outcome = reaction_windows::open_fast_window(
             cx,
             FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
         );
@@ -908,6 +914,9 @@ pub(super) fn dispose_encounter_card_if_top(cx: &mut Cx) -> EngineOutcome {
 
 #[cfg(test)]
 mod encounter_card_revealed_tests {
+    use crate::engine::dispatch;
+    use crate::engine::outcome::EngineOutcome;
+    use crate::engine::Cx;
     use crate::state::CardCode;
     use crate::test_support::{test_investigator, GameStateBuilder};
 
@@ -949,8 +958,8 @@ mod encounter_card_revealed_tests {
         let pre_deck_len = state.encounter_deck.len();
         let mut events = Vec::new();
 
-        let outcome = super::super::apply_engine_record(
-            &mut crate::engine::Cx {
+        let outcome = dispatch::apply_engine_record(
+            &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
@@ -960,7 +969,7 @@ mod encounter_card_revealed_tests {
         );
 
         match outcome {
-            crate::engine::outcome::EngineOutcome::Rejected { reason } => {
+            EngineOutcome::Rejected { reason } => {
                 assert!(
                     reason.contains("no card registry installed")
                         || reason.contains("unknown card code"),
@@ -1235,6 +1244,7 @@ mod encounter_deck_helper_tests {
 #[cfg(test)]
 mod spawn_enemy_tests {
     use super::*;
+    use crate::engine::OptionId;
     use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
     use crate::test_support::{test_investigator, test_location, GameStateBuilder};
     use crate::{assert_event, assert_event_sequence, assert_no_event};
@@ -1810,12 +1820,12 @@ mod spawn_enemy_tests {
         ));
 
         // Option id 99 is out of the co-located candidate range.
-        let outcome = super::super::hunters::resume_spawn_engage(
+        let outcome = hunters::resume_spawn_engage(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
             },
-            &InputResponse::PickSingle(crate::engine::OptionId(99)),
+            &InputResponse::PickSingle(OptionId(99)),
         );
         assert!(
             matches!(outcome, EngineOutcome::Rejected { .. }),
@@ -1879,6 +1889,7 @@ mod spawn_enemy_tests {
 #[cfg(test)]
 mod resume_encounter_draw_chain_tests {
     use super::*;
+    use crate::engine::dispatch;
     use crate::state::{CardCode, InvestigatorId, Phase};
     use crate::test_support::{test_investigator, GameStateBuilder};
 
@@ -1921,7 +1932,7 @@ mod resume_encounter_draw_chain_tests {
                 events: &mut events,
             };
             let outcome = resume_encounter_draw(&mut cx, &InputResponse::Confirm);
-            crate::engine::drive(&mut cx, outcome)
+            dispatch::drive(&mut cx, outcome)
         };
         match outcome {
             EngineOutcome::Rejected { reason } => {
@@ -1947,6 +1958,7 @@ mod resume_encounter_draw_chain_tests {
 #[cfg(test)]
 mod resume_encounter_draw_tests {
     use super::*;
+    use crate::engine::InputKind;
     use crate::state::{Continuation, InvestigatorId, Phase};
     use crate::test_support::{test_investigator, GameStateBuilder};
 
@@ -2012,11 +2024,8 @@ mod resume_encounter_draw_tests {
         let EngineOutcome::AwaitingInput { request, .. } = outcome else {
             panic!("the encounter draw suspends for a Confirm");
         };
-        assert_eq!(request.kind, crate::engine::InputKind::Confirm);
+        assert_eq!(request.kind, InputKind::Confirm);
         assert!(request.options.is_empty(), "a Confirm carries no options");
-        assert_eq!(
-            request.target,
-            Some(crate::engine::OptionTarget::EncounterDeck)
-        );
+        assert_eq!(request.target, Some(OptionTarget::EncounterDeck));
     }
 }

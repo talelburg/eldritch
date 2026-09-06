@@ -14,20 +14,31 @@ use std::borrow::Cow;
 use crate::action::InputResponse;
 use crate::card_data::{CardMetadata, CardType};
 use crate::card_registry;
-use crate::dsl::{Ability, ActionDesignator, EventPattern, EventTiming, Trigger, TriggerKind};
-use crate::engine::abilities_in_effect;
+use crate::dsl::{
+    Ability, ActionDesignator, Cost, Effect, EnemyTarget, EventPattern, EventTiming, Trigger,
+    TriggerKind, UsageLimit,
+};
+use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
 use crate::engine::enumerate::TurnAction;
-use crate::engine::TimingEvent;
+use crate::engine::{abilities_in_effect, ability_source, designator, OptionTarget};
 use crate::event::{Event, LapseReason};
-use crate::state::TimingMode;
 use crate::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, Continuation, FastActorScope,
     FastWindowKind, GameState, InvestigatorId, Phase, ResolutionCandidate, Status,
 };
+use crate::state::{CardInstanceId, DamageSource, TimingMode};
 
-use super::super::evaluator::{ability_can_initiate, push_effect, EvalContext};
-use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
-use super::Cx;
+use super::{ActivateCheckResult, Cx, PlayCheckResult};
+use crate::engine::dispatch::abilities::ActivatedAbility;
+use crate::engine::dispatch::cards;
+use crate::engine::dispatch::combat;
+use crate::engine::dispatch::cursor;
+use crate::engine::dispatch::phases;
+use crate::engine::dispatch::skill_test;
+use crate::engine::dispatch::slots;
+use crate::engine::dispatch::{abilities, actions};
+use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 
 /// Push a reaction window frame for `candidates` at `bucket`. The shared push
 /// behind [`open_reaction_run`] (which queues and then opens) and the coordinator's
@@ -283,7 +294,7 @@ fn scan_pending_triggers(
                 }
                 // Eligibility gate (RR p.2): suppress a reaction whose effect
                 // can't change state (e.g. an emptied Cover Up 01007).
-                if !ability_can_initiate(
+                if !evaluator::ability_can_initiate(
                     state,
                     ability,
                     CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
@@ -366,7 +377,12 @@ fn scan_act_agenda_reactions(
             // Eligibility gate (RR p.2): suppress an act/agenda reaction whose
             // effect can't change state (e.g. The Barrier 01109's round-end
             // advance when the Hallway group can't afford the clue threshold).
-            if !ability_can_initiate(state, ability, CandidateSource::Ability(source), lead) {
+            if !evaluator::ability_can_initiate(
+                state,
+                ability,
+                CandidateSource::Ability(source),
+                lead,
+            ) {
                 continue;
             }
             hits.push(ResolutionCandidate {
@@ -454,7 +470,7 @@ fn scan_hand_fast_events(
                 // can't change game state — same rule as the in-play reaction scan
                 // (#495). Covers Evidence! 01022 (Roland's reaction sourced from
                 // hand: discover 1 clue at your location) at a 0-clue location.
-                if !ability_can_initiate(state, ability, CandidateSource::Hand, id) {
+                if !evaluator::ability_can_initiate(state, ability, CandidateSource::Hand, id) {
                     continue;
                 }
                 // RR p.22 affordability: don't offer a Fast event whose resource
@@ -540,7 +556,7 @@ fn trigger_matches(
         // the condition to an enemy attack, which `Effect::Deal` harm (Dynamite
         // Blast, a treachery) does not satisfy.
         (TimingEvent::DamageAssigned { source, .. }, EventPattern::EnemyAttackDamagedSelf) => {
-            matches!(source, crate::state::DamageSource::EnemyAttack { .. })
+            matches!(source, DamageSource::EnemyAttack { .. })
         }
         // "after you succeed/fail a skill test" — narrowed by outcome,
         // (optionally) test kind, and whether the card says *"**you**"*. Dr.
@@ -606,7 +622,7 @@ fn trigger_matches(
 /// nothing to derive and no fall-through: every candidate is anchored.
 ///
 /// Shared by [`build_resolution_options`] and the forced-ack path.
-pub(super) fn candidate_anchor(cand: &ResolutionCandidate) -> crate::engine::OptionTarget {
+pub(super) fn candidate_anchor(cand: &ResolutionCandidate) -> OptionTarget {
     use crate::engine::OptionTarget;
     match cand.source {
         CandidateSource::Hand => OptionTarget::HandCardByCode {
@@ -783,7 +799,7 @@ fn withdraw_suppressed_candidates(cx: &mut Cx) -> usize {
             ..
         }) if matches!(
             event.condition_resolution(),
-            super::emit::ConditionResolution::Coordinator(_)
+            ConditionResolution::Coordinator(_)
         ) =>
         {
             candidates.clone()
@@ -844,7 +860,12 @@ fn lapse_reason(state: &GameState, candidate: &ResolutionCandidate) -> LapseReas
     let still_eligible =
         abilities_in_effect::resolve(state, candidate.source, &candidate.code, &candidate.address)
             .is_some_and(|ability| {
-                ability_can_initiate(state, &ability, candidate.source, candidate.controller)
+                evaluator::ability_can_initiate(
+                    state,
+                    &ability,
+                    candidate.source,
+                    candidate.controller,
+                )
             });
     if still_eligible {
         LapseReason::NoLongerEligible
@@ -869,10 +890,8 @@ fn candidate_source_present(state: &GameState, candidate: &ResolutionCandidate) 
             .investigators
             .get(&candidate.controller)
             .is_some_and(|inv| inv.hand.contains(&candidate.code)),
-        CandidateSource::Ability(source) => {
-            crate::engine::ability_source::source_card(state, source)
-                .is_some_and(|card| *card.code() == candidate.code)
-        }
+        CandidateSource::Ability(source) => ability_source::source_card(state, source)
+            .is_some_and(|card| *card.code() == candidate.code),
     }
 }
 
@@ -1119,7 +1138,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         .and_then(Continuation::window_timing_event)
     {
         Some(TimingEvent::DamageAssigned {
-            source: crate::state::DamageSource::EnemyAttack { enemy },
+            source: DamageSource::EnemyAttack { enemy },
             ..
         }) => {
             eval_ctx.set_attacking_enemy(*enemy);
@@ -1159,7 +1178,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     if usage_limit.is_some() {
         bump_usage_counter(cx.state, &trigger);
     }
-    push_effect(cx, &ability.effect, eval_ctx);
+    evaluator::push_effect(cx, &ability.effect, eval_ctx);
     EngineOutcome::Done
 }
 
@@ -1212,8 +1231,8 @@ fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcom
     // Pay the resource cost before announcing the play (RR p.22): Fast plays
     // skip the action cost, not the resource cost. Affordability was re-checked
     // at fire time (#501, #568).
-    super::cards::pay_play_cost(cx, controller, &candidate.code);
-    let card = super::cards::commence_play(cx, controller, hand_idx);
+    cards::pay_play_cost(cx, controller, &candidate.code);
+    let card = cards::commence_play(cx, controller, hand_idx);
 
     // Look up the matched OnEvent ability's effect from the registry.
     let reg = card_registry::current().unwrap_or_else(|| {
@@ -1255,7 +1274,7 @@ fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcom
         investigator: controller,
         card: Some(card),
     });
-    push_effect(cx, &effect, eval_ctx);
+    evaluator::push_effect(cx, &effect, eval_ctx);
     EngineOutcome::Done
 }
 
@@ -1469,8 +1488,8 @@ pub(super) fn run_fast_continuation(cx: &mut Cx, kind: FastWindowKind) -> Engine
     // — the redundant `skill_test::advance` *after* this in `close_reaction_window`
     // — was removed in Slice C-plumbing).
     match kind {
-        FastWindowKind::Phase(_) => super::phases::anchor_on_child_pop(cx),
-        FastWindowKind::SkillTest { .. } => super::skill_test::advance(cx),
+        FastWindowKind::Phase(_) => phases::anchor_on_child_pop(cx),
+        FastWindowKind::SkillTest { .. } => skill_test::advance(cx),
     }
 }
 
@@ -1493,8 +1512,8 @@ pub(super) fn after_enemy_phase_attacks(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
-    let next = super::cursor::next_active_investigator_after(cx.state, investigator);
-    super::phases::open_attack_window(cx, next)
+    let next = cursor::next_active_investigator_after(cx.state, investigator);
+    phases::open_attack_window(cx, next)
 }
 
 /// Open a printed Fast-play window of the given kind. Then either:
@@ -1593,7 +1612,7 @@ fn check_event_play_changes_state(
     let ctx = EvalContext::for_controller_with_optional_source(investigator, None);
     let changes_state = abilities.iter().any(|a| {
         matches!(a.trigger, Trigger::OnPlay)
-            && crate::engine::evaluator::effect_can_change_state(state, ctx, &a.effect)
+            && evaluator::effect_can_change_state(state, ctx, &a.effect)
     });
     if changes_state {
         Ok(())
@@ -1615,7 +1634,7 @@ fn check_play_slot_satisfiable(
     if card_type != CardType::Asset {
         return Ok(());
     }
-    if let Some(slot) = super::slots::unsatisfiable_slot(code) {
+    if let Some(slot) = slots::unsatisfiable_slot(code) {
         return Err(format!(
             "PlayCard: {code} needs more {slot:?} slots than the investigator has \
              (slot capacity exceeded; RR p.19)."
@@ -1642,7 +1661,7 @@ fn check_play_not_prohibited(
     let Some(reg) = card_registry::current() else {
         return Ok(());
     };
-    if crate::engine::evaluator::play_is_prohibited(state, reg, investigator, card_type) {
+    if evaluator::play_is_prohibited(state, reg, investigator, card_type) {
         return Err(format!(
             "PlayCard: {investigator:?} cannot play a {card_type:?} \
              (a constant restriction forbids it)"
@@ -1656,7 +1675,7 @@ pub(crate) fn check_play_card(
     state: &GameState,
     investigator: InvestigatorId,
     hand_index: u8,
-) -> Result<super::PlayCheckResult, Cow<'static, str>> {
+) -> Result<PlayCheckResult, Cow<'static, str>> {
     let Some(inv) = state.investigators.get(&investigator) else {
         return Err(format!("PlayCard: investigator {investigator:?} is not in state").into());
     };
@@ -1691,14 +1710,13 @@ pub(crate) fn check_play_card(
     // The destination is re-derived from the code at disposal time
     // (`dispose_play_from_hand`), not carried through validation — commencing a
     // play is destination-agnostic (#604).
-    let (_destination, abilities, is_fast, card_type) =
-        match super::cards::resolve_play_target(&code) {
-            Ok(v) => v,
-            Err(EngineOutcome::Rejected { reason }) => return Err(reason),
-            Err(other) => {
-                unreachable!("resolve_play_target returned non-Rejected outcome: {other:?}")
-            }
-        };
+    let (_destination, abilities, is_fast, card_type) = match cards::resolve_play_target(&code) {
+        Ok(v) => v,
+        Err(EngineOutcome::Rejected { reason }) => return Err(reason),
+        Err(other) => {
+            unreachable!("resolve_play_target returned non-Rejected outcome: {other:?}")
+        }
+    };
     // Reaction-event gate (Axis C, #335 / #304): a Fast event whose play
     // instruction is a triggering condition is modeled as a `TriggerKind::Reaction`
     // `OnEvent` ability (e.g. Evidence! 01022's "Play after you defeat an enemy").
@@ -1821,7 +1839,7 @@ pub(crate) fn check_play_card(
     // resource cost must be established as payable before initiation. Both Fast
     // and non-Fast plays pay it — Fast only skips the *action* cost (#501).
     check_play_resource_cost_payable(state, investigator, &code)?;
-    Ok(super::PlayCheckResult {
+    Ok(PlayCheckResult {
         abilities,
         is_fast,
         card_type,
@@ -1954,18 +1972,18 @@ fn check_activation_target_available(
     state: &GameState,
     investigator: InvestigatorId,
     designator: Option<&ActionDesignator>,
-    effect: &crate::dsl::Effect,
+    effect: &Effect,
 ) -> Result<(), Cow<'static, str>> {
     if let Some(designator) = designator {
-        crate::engine::designator::can_perform(state, investigator, designator)
+        designator::can_perform(state, investigator, designator)
             .map_err(|why| Cow::from(format!("ActivateAbility: {why}")))?;
     }
-    if let crate::dsl::Effect::DealDamageToEnemy {
-        target: crate::dsl::EnemyTarget::Chosen(choose),
+    if let Effect::DealDamageToEnemy {
+        target: EnemyTarget::Chosen(choose),
         ..
     } = effect
     {
-        if super::combat::enemies_in_scope(state, investigator, choose.scope).is_empty() {
+        if combat::enemies_in_scope(state, investigator, choose.scope).is_empty() {
             return Err(
                 "ActivateAbility: a 'deal damage to an enemy at your location' ability \
                  needs at least one enemy at your location"
@@ -1997,14 +2015,12 @@ fn designated_action_surcharge(
     investigator: InvestigatorId,
     action_cost: u8,
     designator: Option<&ActionDesignator>,
-) -> (u8, Vec<crate::state::CardInstanceId>) {
+) -> (u8, Vec<CardInstanceId>) {
     if action_cost == 0 {
         return (0, Vec::new());
     }
     match designator.and_then(ActionDesignator::action_class) {
-        Some(class) => {
-            crate::engine::dispatch::actions::action_surcharge(state, investigator, class)
-        }
+        Some(class) => actions::action_surcharge(state, investigator, class),
         None => (0, Vec::new()),
     }
 }
@@ -2035,7 +2051,7 @@ fn check_activation_changes_state(
     source: AbilitySource,
     code: &CardCode,
     designator: Option<&ActionDesignator>,
-    effect: &crate::dsl::Effect,
+    effect: &Effect,
 ) -> Result<(), Cow<'static, str>> {
     // A designated ability's substance is the action it performs, not the
     // residual effect beside it (#805) — and every implemented one's residual
@@ -2057,7 +2073,7 @@ fn check_activation_changes_state(
         return Ok(());
     }
     let ctx = EvalContext::for_controller_with_source(investigator, source);
-    if crate::engine::evaluator::effect_can_change_state(state, ctx, effect) {
+    if evaluator::effect_can_change_state(state, ctx, effect) {
         return Ok(());
     }
     Err(format!(
@@ -2072,7 +2088,7 @@ fn check_activation_changes_state(
 /// must be the sole such cost (Beat Cop / Knife list only it). Deliberately
 /// unlifted until a card needs the combo — no tracking issue on purpose (YAGNI);
 /// whoever hits this rejection files one.
-fn reject_incompatible_costs(costs: &[crate::dsl::Cost]) -> Result<(), Cow<'static, str>> {
+fn reject_incompatible_costs(costs: &[Cost]) -> Result<(), Cow<'static, str>> {
     use crate::dsl::Cost;
     if costs.iter().any(|c| matches!(c, Cost::DiscardSelf))
         && costs
@@ -2111,7 +2127,7 @@ fn reject_untrackable_usage_limit(
     source: AbilitySource,
     code: &CardCode,
     address: &AbilityAddress,
-    usage_limit: Option<crate::dsl::UsageLimit>,
+    usage_limit: Option<UsageLimit>,
 ) -> Result<(), Cow<'static, str>> {
     if usage_limit.is_none() {
         return Ok(());
@@ -2156,7 +2172,7 @@ fn reject_untrackable_usage_limit(
 fn reject_source_costs_without_an_instance(
     source: AbilitySource,
     code: &CardCode,
-    costs: &[crate::dsl::Cost],
+    costs: &[Cost],
 ) -> Result<(), Cow<'static, str>> {
     use crate::dsl::Cost;
     if source.instance().is_some() {
@@ -2188,7 +2204,7 @@ pub(crate) fn check_activate_ability(
     investigator: InvestigatorId,
     source: AbilitySource,
     address: &AbilityAddress,
-) -> Result<super::ActivateCheckResult, Cow<'static, str>> {
+) -> Result<ActivateCheckResult, Cow<'static, str>> {
     let Some(inv) = state.investigators.get(&investigator) else {
         return Err(
             format!("ActivateAbility: investigator {investigator:?} is not in state").into(),
@@ -2205,7 +2221,7 @@ pub(crate) fn check_activate_ability(
     // same one the turn-menu enumerator lists from (#707). Addressed by
     // identity, never by position: the position a validation computes is stale
     // the moment a cost removes the source (#706).
-    let source_card = crate::engine::ability_source::resolve(state, investigator, source)?;
+    let source_card = ability_source::resolve(state, investigator, source)?;
     let source_code = source_card.code().clone();
     let source_exhausted = source_card.exhausted();
     let source_uses = source_card.uses();
@@ -2218,13 +2234,13 @@ pub(crate) fn check_activate_ability(
     // redesigned to thread the `AwaitingInput` outcome back through
     // `check_activate_ability`'s `Result` shape. Mirrors the same invariant
     // comment on `resolve_play_target` in `check_play_card`.
-    let super::abilities::ActivatedAbility {
+    let ActivatedAbility {
         action_cost,
         designator,
         costs,
         effect,
         usage_limit,
-    } = match super::abilities::resolve_activated_ability(state, source, &source_code, address) {
+    } = match abilities::resolve_activated_ability(state, source, &source_code, address) {
         Ok(v) => v,
         Err(EngineOutcome::Rejected { reason }) => return Err(reason),
         Err(other) => {
@@ -2283,7 +2299,7 @@ pub(crate) fn check_activate_ability(
     // untouched.
     for cost in &costs {
         if let Err(reason) =
-            super::abilities::check_cost_payable(cost, inv, source_exhausted, &source_uses)
+            abilities::check_cost_payable(cost, inv, source_exhausted, &source_uses)
         {
             return Err(reason.into());
         }
@@ -2301,7 +2317,7 @@ pub(crate) fn check_activate_ability(
         &effect,
     )?;
 
-    Ok(super::ActivateCheckResult {
+    Ok(ActivateCheckResult {
         source_code,
         action_cost,
         surcharge_sources,
@@ -2394,7 +2410,7 @@ pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
         // reach. The rules bullets are written once for `[free]`, `[reaction]`
         // and `[action]` together, so the fast window consults the same
         // reachability predicate the turn menu does (#707).
-        for (source, code) in crate::engine::ability_source::reachable_source_codes(state, inv_id) {
+        for (source, code) in ability_source::reachable_source_codes(state, inv_id) {
             let Some(abilities) = abilities_in_effect::for_source(state, source, &code) else {
                 continue;
             };
@@ -2487,7 +2503,7 @@ mod check_play_card_tests {
 #[cfg(test)]
 mod trigger_matches_tests {
     use super::*;
-    use crate::state::{CardInstanceId, EnemyId, LocationId};
+    use crate::state::{Assignment, CardInstanceId, EnemyId, LocationId};
 
     fn enemy_attacks(inv: InvestigatorId) -> TimingEvent {
         TimingEvent::EnemyAttacks {
@@ -2555,8 +2571,8 @@ mod trigger_matches_tests {
 
     /// An [`Assignment`](crate::state::Assignment) giving 1 damage to `inst` —
     /// the shape a `DamageAssigned` event carries when that card is a soaker.
-    fn assignment_damaging(inst: CardInstanceId) -> crate::state::Assignment {
-        let mut assignment = crate::state::Assignment::default();
+    fn assignment_damaging(inst: CardInstanceId) -> Assignment {
+        let mut assignment = Assignment::default();
         assignment.asset_damage.insert(inst, 1);
         assignment
     }
@@ -2572,7 +2588,7 @@ mod trigger_matches_tests {
     fn soak_event_matches_only_the_self_soak_pattern() {
         let controller = InvestigatorId(1);
         let soak = TimingEvent::DamageAssigned {
-            source: crate::state::DamageSource::EnemyAttack { enemy: EnemyId(1) },
+            source: DamageSource::EnemyAttack { enemy: EnemyId(1) },
             investigator: controller,
             assignment: assignment_damaging(CardInstanceId(7)),
         };
@@ -2585,7 +2601,7 @@ mod trigger_matches_tests {
         // …but not the same condition from a non-attack source: Guard Dog
         // retaliates to an enemy *attack*, not to treachery harm.
         let effect_harm = TimingEvent::DamageAssigned {
-            source: crate::state::DamageSource::Effect,
+            source: DamageSource::Effect,
             investigator: controller,
             assignment: assignment_damaging(CardInstanceId(7)),
         };
@@ -2792,7 +2808,7 @@ mod resolution_option_anchor_tests {
 #[cfg(test)]
 mod open_fast_window_tests {
     use super::*;
-    use crate::state::{FastWindowKind, PhaseStep};
+    use crate::state::{FastWindowKind, MythosResume, PhaseStep};
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
@@ -2804,7 +2820,7 @@ mod open_fast_window_tests {
             // The MythosAfterDraws window now closes onto the MythosPhase anchor
             // (slice 1a); stage it so the auto-skip continuation has its frame.
             .with_phase_anchor(Continuation::MythosPhase {
-                resume: crate::state::MythosResume::AfterDraws,
+                resume: MythosResume::AfterDraws,
             })
             .build();
         let mut events = Vec::new();
@@ -3039,8 +3055,8 @@ mod candidate_source_present_tests {
 #[cfg(test)]
 mod withdraw_suppressed_candidates_tests {
     use super::*;
-    use crate::state::CardInstanceId;
     use crate::state::LocationId;
+    use crate::state::{CardInstanceId, TimingSub};
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     const INV: InvestigatorId = InvestigatorId(1);
@@ -3187,7 +3203,7 @@ mod withdraw_suppressed_candidates_tests {
         };
         debug_assert!(matches!(
             entered.condition_resolution(),
-            super::super::emit::ConditionResolution::Caller
+            ConditionResolution::Caller
         ));
         let mut state =
             state_with_window_of(entered, EventTiming::When, TimingMode::Reaction, true);
@@ -3208,7 +3224,7 @@ mod withdraw_suppressed_candidates_tests {
         state.continuations.push(Continuation::TimingPoint {
             event: discovery(),
             bucket: EventTiming::When,
-            sub: crate::state::TimingSub::Reaction,
+            sub: TimingSub::Reaction,
         });
         let (n, events) = withdraw(&mut state);
         assert_eq!(n, 0);

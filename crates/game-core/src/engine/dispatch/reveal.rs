@@ -53,8 +53,8 @@ pub fn reveal_location(cx: &mut Cx, location_id: LocationId) {
 
 #[cfg(test)]
 mod tests {
-    use super::reveal_location;
     use crate::card_data::ClueValue;
+    use crate::engine::dispatch::reveal;
     use crate::engine::Cx;
     use crate::event::Event;
     use crate::state::{CardCode, Location, LocationId};
@@ -76,7 +76,7 @@ mod tests {
             .with_location(unrevealed(5, "x", ClueValue::PerInvestigator(2)))
             .build();
         let mut events = Vec::new();
-        reveal_location(
+        reveal::reveal_location(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -97,7 +97,7 @@ mod tests {
             .with_location(unrevealed(5, "x", ClueValue::Fixed(3)))
             .build();
         let mut events = Vec::new();
-        reveal_location(
+        reveal::reveal_location(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -122,7 +122,7 @@ mod tests {
             .with_location(loc)
             .build();
         let mut events = Vec::new();
-        reveal_location(
+        reveal::reveal_location(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -155,7 +155,7 @@ mod tests {
             ))
             .build();
         let mut events = Vec::new();
-        reveal_location(
+        reveal::reveal_location(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,

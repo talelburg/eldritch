@@ -8,13 +8,26 @@
 //! human-initiated actions, [`apply_engine_record`] for engine-emitted
 //! ones.
 
-use crate::action::{EngineRecord, InputResponse, PlayerAction};
+use crate::action::{EngineRecord, InputResponse, PlayerAction, RosterEntry};
 use crate::card_data::CardType;
-use crate::state::CardCode;
+use crate::state::{
+    AttackLoopStage, CardCode, CardInstanceId, Continuation, DealDamageStep, GameState, Status,
+};
 
-use super::outcome::EngineOutcome;
 use super::Cx;
+use crate::engine::outcome::EngineOutcome;
 
+use crate::dsl::Ability;
+use crate::dsl::ActionDesignator;
+use crate::dsl::Cost;
+use crate::dsl::Effect;
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::enumerate::TurnAction;
+use crate::engine::InputRequest;
+use crate::engine::OptionId;
+use crate::engine::OptionTarget;
+use crate::engine::ResumeToken;
+use crate::engine::{enumerate, evaluator, ChoiceOption};
 pub(crate) use control::take_control;
 
 mod abilities;
@@ -65,10 +78,7 @@ pub(crate) mod threat_area;
 /// The same handlers `apply_player_action`'s typed arms call; behaviour-identical.
 /// Called from the `InvestigatorTurn { ending: false }` arm of `resolve_input`
 /// (slice 2b, #447).
-pub(crate) fn dispatch_turn_action(
-    cx: &mut Cx,
-    action: &crate::engine::enumerate::TurnAction,
-) -> EngineOutcome {
+pub(crate) fn dispatch_turn_action(cx: &mut Cx, action: &TurnAction) -> EngineOutcome {
     use crate::engine::enumerate::TurnAction;
     match action {
         TurnAction::EndTurn => phases::end_turn(cx),
@@ -110,25 +120,25 @@ pub(crate) fn dispatch_turn_action(
 /// surfaced as a structured [`InputRequest`](crate::engine::InputRequest).
 /// `OptionId(i)` indexes [`legal_actions`](crate::engine::enumerate::legal_actions);
 /// the `InvestigatorTurn` arm of [`resolve_input`] re-enumerates and dispatches.
-fn turn_menu(state: &crate::state::GameState) -> crate::engine::InputRequest {
-    let options = crate::engine::enumerate::legal_actions(state)
+fn turn_menu(state: &GameState) -> InputRequest {
+    let options = enumerate::legal_actions(state)
         .iter()
         .enumerate()
         .map(|(i, a)| {
-            crate::engine::ChoiceOption::new(
-                crate::engine::OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
+            ChoiceOption::new(
+                OptionId(u32::try_from(i).unwrap_or(u32::MAX)),
                 a.label(state),
             )
             .maybe_at(a.target(state))
         })
         .collect();
-    let request = crate::engine::InputRequest::pick_single("Choose an action", options);
+    let request = InputRequest::pick_single("Choose an action", options);
     // The prompt itself is anchored to the acting investigator's turn control, so
     // a host can suppress its "Choose an action" text structurally rather than by
     // matching the string (ADR 0011).
     match state.continuations.last() {
-        Some(crate::state::Continuation::InvestigatorTurn { investigator, .. }) => {
-            request.at(crate::engine::OptionTarget::TurnControl(*investigator))
+        Some(Continuation::InvestigatorTurn { investigator, .. }) => {
+            request.at(OptionTarget::TurnControl(*investigator))
         }
         _ => request,
     }
@@ -277,7 +287,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // e.g. an on-play effect that opened a reaction window now resumes
             // after the window closed. Step it via the shared effect driver.
             Some(Continuation::Effect(_)) => {
-                match crate::engine::evaluator::step_effect_frame(cx) {
+                match evaluator::step_effect_frame(cx) {
                     EngineOutcome::Done => {
                         // Stepped (child pushed / frame popped); loop on.
                     }
@@ -407,7 +417,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // `PickOrder` stage is a prompt the player owes an answer to, so it
             // idles in the `_` arm instead.
             Some(Continuation::AttackLoop {
-                stage: crate::state::AttackLoopStage::Attacking,
+                stage: AttackLoopStage::Attacking,
                 ..
             }) => match combat::drive_parked_attack_loop(cx) {
                 EngineOutcome::Done => {}
@@ -436,7 +446,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
                     request: turn_menu(cx.state),
                     // Deterministic resume-token is #458; placeholder like every
                     // other `AwaitingInput` site until then.
-                    resume_token: crate::engine::ResumeToken(0),
+                    resume_token: ResumeToken(0),
                 };
             }
             // An investigator's elimination, mid-sequence (#638). Step 0's
@@ -463,7 +473,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
                     unreachable!("drive: the ScenarioEnd arm ran without one on top");
                 };
                 *step = ScenarioEndStep::Finalize;
-                match emit::queue_event(cx, &emit::TimingEvent::GameEnd) {
+                match emit::queue_event(cx, &TimingEvent::GameEnd) {
                     EngineOutcome::Done => {} // queued; loop on to drain it
                     other => return other,    // 2+ simultaneous: the lead orders them
                 }
@@ -483,12 +493,12 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
 /// resolution has latched; the
 /// [`ScenarioEnd`](crate::state::Continuation::ScenarioEnd) frame sits at the
 /// bottom of the stack from that moment, so this cannot drain the stack.
-fn scenario_end_cancels_top(state: &crate::state::GameState) -> bool {
+fn scenario_end_cancels_top(state: &GameState) -> bool {
     state.ending.is_some()
         && state
             .continuations
             .last()
-            .is_some_and(crate::state::Continuation::cancelled_by_scenario_end)
+            .is_some_and(Continuation::cancelled_by_scenario_end)
 }
 
 /// Backstop for the ADR-0003 defect class (#569): a queued ability frame must
@@ -508,16 +518,14 @@ fn scenario_end_cancels_top(state: &crate::state::GameState) -> bool {
 /// is [`Continuation::is_queued_ability`], beside the anchor predicate it pairs
 /// with.
 #[cfg(debug_assertions)]
-fn assert_no_queued_ability_beneath_anchor(state: &crate::state::GameState) {
+fn assert_no_queued_ability_beneath_anchor(state: &GameState) {
     let Some((top, beneath)) = state.continuations.split_last() else {
         return;
     };
     if !top.is_phase_anchor() {
         return;
     }
-    let buried = beneath
-        .iter()
-        .position(crate::state::Continuation::is_queued_ability);
+    let buried = beneath.iter().position(Continuation::is_queued_ability);
     assert!(
         buried.is_none(),
         "a queued ability frame is buried beneath the {top:?} anchor at depth {depth} \
@@ -549,7 +557,7 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
         .state
         .investigators
         .get(&investigator)
-        .is_some_and(|inv| inv.status == crate::state::Status::Active);
+        .is_some_and(|inv| inv.status == Status::Active);
     if !active {
         // A defeated actor suppresses the primary effect — but a card riding
         // this frame mid-play must still be placed, or popping the frame would
@@ -611,7 +619,7 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
 /// [`crate::seat_and_open`] wraps this in the shared `apply_via` scaffolding.
 /// Used at game creation (server `GameSession::create`); the action log that
 /// follows is `ResolveInput`-only.
-pub(crate) fn seat_and_open(cx: &mut Cx, roster: &[crate::action::RosterEntry]) -> EngineOutcome {
+pub(crate) fn seat_and_open(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutcome {
     let outcome = phases::start_scenario(cx, roster);
     drive(cx, outcome)
 }
@@ -662,7 +670,7 @@ pub(super) enum PlayDestination {
 #[derive(Debug)]
 #[allow(dead_code)]
 pub(crate) struct PlayCheckResult {
-    pub abilities: Vec<crate::dsl::Ability>,
+    pub abilities: Vec<Ability>,
     pub is_fast: bool,
     pub card_type: CardType,
 }
@@ -685,15 +693,15 @@ pub(super) struct ActivateCheckResult {
     /// for, to mark spent once the activation commits. Empty unless the
     /// surcharge applied. Kept beside the cost so the peek stays read-only
     /// for validate-first.
-    pub surcharge_sources: Vec<crate::state::CardInstanceId>,
+    pub surcharge_sources: Vec<CardInstanceId>,
     /// The bold action designator the ability prints, if any — what the
     /// attack-of-opportunity exemption reads (#696) and what names the action
     /// class the surcharge keys on (#754).
-    pub designator: Option<crate::dsl::ActionDesignator>,
+    pub designator: Option<ActionDesignator>,
     /// Payment costs (beyond the action cost).
-    pub costs: Vec<crate::dsl::Cost>,
+    pub costs: Vec<Cost>,
     /// The effect to dispatch after paying costs.
-    pub effect: crate::dsl::Effect,
+    pub effect: Effect,
     /// Whether the source card was exhausted at validation time —
     /// load-bearing for activated abilities whose payment includes
     /// `Cost::Exhaust`.
@@ -711,7 +719,7 @@ fn resume_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
         .state
         .continuations
         .last()
-        .and_then(crate::state::Continuation::pending_candidates)
+        .and_then(Continuation::pending_candidates)
         .is_some_and(|c| !c.is_empty());
     if has_candidates {
         return reaction_windows::resume_reaction_window(cx, response);
@@ -865,7 +873,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         // (the window is the prompt) and never legitimately awaits input here, so
         // it rejects defensively (mirrors the EncounterCard arm).
         Some(Continuation::AttackLoop {
-            stage: crate::state::AttackLoopStage::PickOrder,
+            stage: AttackLoopStage::PickOrder,
             ..
         }) => combat::resume_attack_order_pick(cx, response),
         Some(Continuation::AttackLoop { .. }) => EngineOutcome::Rejected {
@@ -878,7 +886,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         // loop dispatches on sight and never await input, so they reject
         // defensively (the `AttackLoop` contract).
         Some(Continuation::DealDamage {
-            step: crate::state::DealDamageStep::Distribute { .. },
+            step: DealDamageStep::Distribute { .. },
             ..
         }) => combat::resume_damage_distribution(cx, response),
         Some(Continuation::DealDamage { .. }) => EngineOutcome::Rejected {
@@ -922,7 +930,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
                     reason: "ResolveInput: the open turn expects PickSingle(OptionId)".into(),
                 };
             };
-            let actions = crate::engine::enumerate::legal_actions(cx.state);
+            let actions = enumerate::legal_actions(cx.state);
             let Some(action) = actions.get(opt.0 as usize).cloned() else {
                 return EngineOutcome::Rejected {
                     reason: format!(
@@ -976,10 +984,12 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 
 #[cfg(test)]
 mod turn_menu_tests {
-    use super::turn_menu;
+    use crate::engine::dispatch;
     use crate::engine::enumerate::legal_actions;
     use crate::engine::OptionTarget;
-    use crate::state::{Continuation, InvestigationResume, InvestigatorId, Phase};
+    use crate::state::{
+        ChaosBag, ChaosToken, Continuation, InvestigationResume, InvestigatorId, Phase,
+    };
     use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 
     #[test]
@@ -992,9 +1002,7 @@ mod turn_menu_tests {
             .with_phase(Phase::Investigation)
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1)])
-            .with_chaos_bag(crate::state::ChaosBag::new([
-                crate::state::ChaosToken::Numeric(0),
-            ]))
+            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
             .with_phase_anchor(Continuation::InvestigationPhase {
                 resume: InvestigationResume::TurnBegins,
             })
@@ -1015,7 +1023,7 @@ mod turn_menu_tests {
         state.enemies.insert(e.id, e);
 
         let actions = legal_actions(&state);
-        let menu = turn_menu(&state);
+        let menu = dispatch::turn_menu(&state);
         assert_eq!(menu.options.len(), actions.len());
         for (i, action) in actions.iter().enumerate() {
             assert_eq!(menu.options[i].target, action.target(&state));

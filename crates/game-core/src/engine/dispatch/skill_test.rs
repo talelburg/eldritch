@@ -7,23 +7,30 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::card_registry;
-use crate::dsl::{discover_clue, Determination, IntExpr, LocationTarget, SkillTestKind, Trigger};
+use crate::dsl::{
+    self, Determination, Effect, IntExpr, LocationTarget, SkillTestKind, Stat, TestOutcome, Trigger,
+};
 use crate::event::{Event, FailureReason};
 use crate::state::{
-    resolve_token, CardCode, ChaosToken, Continuation, DifficultyBasis, GameState,
-    InFlightSkillTest, InvestigatorId, Lifetime, RecordedModifier, SkillKind, SkillTestFollowUp,
-    SkillTestStep, Status, TokenResolution, Zone,
+    self, AbilitySource, CardCode, ChaosToken, Continuation, DifficultyBasis, FastWindowKind,
+    GameState, InFlightSkillTest, InvestigatorId, Lifetime, RecordedModifier, ResolvedTest,
+    SkillKind, SkillTestFollowUp, SkillTestStep, Status, TokenResolution, Zone,
 };
+use crate::{card_registry, scenario};
 
-use super::super::evaluator::{push_effect, EvalContext};
-use super::super::modified_value::{
-    elder_sign_expr, modified_value, stat_for_skill, test_determination, ContributionSource,
-    ModifiedQuantity, ModifierBreakdown, ModifierTarget, ReadContext,
-};
-use super::super::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use super::Cx;
 use crate::action::InputResponse;
+use crate::card_data::CardKind;
+use crate::engine::dispatch::combat;
+use crate::engine::dispatch::emit;
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::reaction_windows;
+use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::modified_value::{
+    self, ContributionSource, ModifiedQuantity, ModifierBreakdown, ModifierTarget, ReadContext,
+};
+use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::scenario::TokenEffect;
 
 /// The one-shot modifier an initiator grants the test it starts: a weapon's
 /// *"+N \[combat\] for this attack"* (the
@@ -54,7 +61,7 @@ pub(in crate::engine) struct InitiatorModifier {
     /// investigated location for a shroud reduction.
     pub target: ModifierTarget,
     /// Which quantity of that target.
-    pub stat: crate::dsl::Stat,
+    pub stat: Stat,
     /// The signed magnitude, evaluated at every read.
     pub delta: IntExpr,
 }
@@ -70,9 +77,9 @@ pub(in crate::engine) fn start_skill_test(
     kind: SkillTestKind,
     difficulty_basis: DifficultyBasis,
     follow_up: SkillTestFollowUp,
-    on_success: Option<card_dsl::dsl::Effect>,
-    on_fail: Option<card_dsl::dsl::Effect>,
-    source: Option<crate::state::AbilitySource>,
+    on_success: Option<Effect>,
+    on_fail: Option<Effect>,
+    source: Option<AbilitySource>,
     initiator_modifier: Option<InitiatorModifier>,
 ) -> EngineOutcome {
     // Validate-first: investigator must exist and be Active; chaos
@@ -179,7 +186,7 @@ pub(in crate::engine) fn start_skill_test(
                 // times per attack"*) has nothing to key on for a board source.
                 // Narrowing here rather than widening `RecordedModifier` keeps
                 // the projection at the row's own boundary (#834).
-                source.and_then(crate::state::AbilitySource::instance),
+                source.and_then(AbilitySource::instance),
             ));
     }
     // The announced difficulty is the modified difficulty as it stands at
@@ -444,7 +451,7 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     // `ChaosTokenRevealed`, no symbol effects — straight to ST.5. Every other
     // step of the test still runs, so the cursor advances exactly as the
     // drawing path leaves it.
-    if test_determination(cx.state, ReadContext::from_state(cx.state)).is_some() {
+    if modified_value::test_determination(cx.state, ReadContext::from_state(cx.state)).is_some() {
         cx.state
             .current_skill_test_mut()
             .expect("run_resolution: the SkillTest frame must exist")
@@ -457,13 +464,13 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
     let token = cx.state.chaos_bag.tokens[token_idx];
     let symbol_outcome = match token {
         ChaosToken::Skull | ChaosToken::Cultist | ChaosToken::Tablet | ChaosToken::ElderThing => {
-            crate::scenario::resolve_symbol_token(cx.state, token, investigator)
+            scenario::resolve_symbol_token(cx.state, token, investigator)
         }
         _ => None,
     };
     let resolution = match &symbol_outcome {
         Some(o) => TokenResolution::Modifier(o.modifier),
-        None => resolve_token(token, &cx.state.token_modifiers),
+        None => state::resolve_token(token, &cx.state.token_modifiers),
     };
     cx.events
         .push(Event::ChaosTokenRevealed { token, resolution });
@@ -545,7 +552,7 @@ fn record_token_contribution(
         TokenResolution::Modifier(n) => IntExpr::Lit(n),
         TokenResolution::ElderSign => {
             let Some(expr) = card_registry::current()
-                .and_then(|reg| elder_sign_expr(cx.state, reg, investigator))
+                .and_then(|reg| modified_value::elder_sign_expr(cx.state, reg, investigator))
             else {
                 return;
             };
@@ -565,7 +572,7 @@ fn record_token_contribution(
     };
     cx.state.recorded_modifiers.push(RecordedModifier::new(
         investigator,
-        stat_for_skill(skill),
+        modified_value::stat_for_skill(skill),
         delta,
         Lifetime::SkillTest(test_id),
         None,
@@ -577,7 +584,7 @@ fn record_token_contribution(
 /// outcome here instead of threading `succeeded`/`failed_by` through cursor
 /// payloads; the `.expect` is the structural witness that the test is past
 /// `DetermineOutcome` (the cursor never reaches these steps before it runs).
-fn resolved(cx: &Cx) -> crate::state::ResolvedTest {
+fn resolved(cx: &Cx) -> ResolvedTest {
     cx.state
         .current_skill_test()
         .expect("resolved: the SkillTest frame must persist")
@@ -613,8 +620,8 @@ fn fire_on_commit_step(cx: &mut Cx, investigator: InvestigatorId, committed: &[C
         .expect("the SkillTest frame must persist across driver steps")
         .continuation = SkillTestStep::ApplyFollowUp;
     if !effects.is_empty() {
-        let seq = crate::dsl::Effect::Seq(effects);
-        push_effect(cx, &seq, EvalContext::for_controller(investigator));
+        let seq = Effect::Seq(effects);
+        evaluator::push_effect(cx, &seq, EvalContext::for_controller(investigator));
     }
 }
 
@@ -696,7 +703,7 @@ fn determine_outcome_step(
     // success whichever was latched first (ADR 0007). The `[auto_fail]`
     // token wrote its row at ST.3 like any other latch; nothing here knows
     // a token was involved.
-    let determination = test_determination(cx.state, ReadContext::DuringTest(kind));
+    let determination = modified_value::test_determination(cx.state, ReadContext::DuringTest(kind));
     // The total difficulty, read the same way as the total skill value: off
     // the board as it stands now, not as it stood at ST.1. An enemy's
     // modified fight value *is* the difficulty of a Fight action, so a card
@@ -753,7 +760,7 @@ fn determine_outcome_step(
     cx.state
         .current_skill_test_mut()
         .expect("the SkillTest frame was present immediately above")
-        .resolved = Some(crate::state::ResolvedTest {
+        .resolved = Some(ResolvedTest {
         succeeded,
         failed_by,
         margin,
@@ -784,13 +791,13 @@ fn determine_outcome_step(
         .expect("the SkillTest frame must persist across driver steps")
         .continuation = SkillTestStep::AcknowledgeOutcome;
     let outcome = if succeeded {
-        crate::dsl::TestOutcome::Success
+        TestOutcome::Success
     } else {
-        crate::dsl::TestOutcome::Failure
+        TestOutcome::Failure
     };
-    super::emit::queue_event(
+    emit::queue_event(
         cx,
-        &super::emit::TimingEvent::SkillTestResolved {
+        &TimingEvent::SkillTestResolved {
             investigator,
             kind,
             outcome,
@@ -806,7 +813,7 @@ fn determine_outcome_step(
 /// suspending effect resumes past this step. The push (if any) makes an Effect
 /// frame the new top → the `advance` loop yields to drive it.
 fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
-    let crate::state::ResolvedTest {
+    let ResolvedTest {
         succeeded,
         failed_by,
         ..
@@ -829,14 +836,14 @@ fn apply_result_effect_step(cx: &mut Cx, investigator: InvestigatorId) {
         |inv: InvestigatorId| EvalContext::for_controller_with_optional_source(inv, source);
     if succeeded {
         if let Some(effect) = &on_success {
-            push_effect(cx, effect, card_ctx(investigator));
+            evaluator::push_effect(cx, effect, card_ctx(investigator));
         }
     } else if let Some(effect) = &on_fail {
         // Thread the failure margin so `IntExpr::Count(Quantity::SkillTestFailedBy)`
         // (Grasping Hands 01162, Rotting Remains 01163) can scale.
         let mut ctx = card_ctx(investigator);
         ctx.set_failed_by(failed_by);
-        push_effect(cx, effect, ctx);
+        evaluator::push_effect(cx, effect, ctx);
     }
 }
 
@@ -862,7 +869,7 @@ fn fire_on_resolution_step(
             .continuation = SkillTestStep::FireOnResolution {
             next: next.saturating_add(1),
         };
-        push_effect(cx, &effects[idx], EvalContext::for_controller(investigator));
+        evaluator::push_effect(cx, &effects[idx], EvalContext::for_controller(investigator));
     } else {
         cx.state
             .current_skill_test_mut()
@@ -915,10 +922,7 @@ fn open_skill_test_player_window(
         .current_skill_test_mut()
         .expect("open_skill_test_player_window: the SkillTest frame must exist")
         .continuation = next;
-    super::reaction_windows::open_fast_window(
-        cx,
-        crate::state::FastWindowKind::SkillTest { before_token },
-    )
+    reaction_windows::open_fast_window(cx, FastWindowKind::SkillTest { before_token })
 }
 
 /// Walk the skill-test resolution sequence from the current
@@ -1131,7 +1135,11 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                     .continuation = SkillTestStep::FireOnResolution { next: 0 };
                 if !succeeded {
                     if let Some(effect) = on_fail {
-                        push_effect(cx, &effect, EvalContext::for_controller(investigator));
+                        evaluator::push_effect(
+                            cx,
+                            &effect,
+                            EvalContext::for_controller(investigator),
+                        );
                     }
                 }
             }
@@ -1368,7 +1376,7 @@ fn validate_commit_indices(
         }
         for (code, count) in counts {
             let cap = (reg.metadata_for)(code).and_then(|m| match m.kind {
-                crate::card_data::CardKind::Skill { commit_limit, .. } => commit_limit,
+                CardKind::Skill { commit_limit, .. } => commit_limit,
                 _ => None,
             });
             if let Some(limit) = cap {
@@ -1401,7 +1409,7 @@ fn validate_commit_indices(
 /// realistic difficulties are 0–6.
 fn current_difficulty(state: &GameState) -> i8 {
     i8::try_from(
-        modified_value(
+        modified_value::modified_value(
             state,
             card_registry::current(),
             ModifierTarget::Test,
@@ -1442,7 +1450,7 @@ fn sum_skill_value(
         "sum_skill_value: investigator {investigator:?} disappeared while test was in flight; \
          this is a state-corruption invariant violation"
     );
-    let mut breakdown = modified_value(
+    let mut breakdown = modified_value::modified_value(
         state,
         card_registry::current(),
         ModifierTarget::Investigator(investigator),
@@ -1587,8 +1595,9 @@ fn apply_skill_test_follow_up(
                 .state
                 .current_skill_test()
                 .map_or(0, |t| t.bonus_clues_discovered);
-            let effect = discover_clue(LocationTarget::TestedLocation, 1u8.saturating_add(bonus));
-            push_effect(cx, &effect, EvalContext::for_controller(investigator));
+            let effect =
+                dsl::discover_clue(LocationTarget::TestedLocation, 1u8.saturating_add(bonus));
+            evaluator::push_effect(cx, &effect, EvalContext::for_controller(investigator));
         }
         SkillTestFollowUp::Fight {
             enemy,
@@ -1612,7 +1621,7 @@ fn apply_skill_test_follow_up(
                 .state
                 .current_skill_test()
                 .map_or(0, |t| t.bonus_attack_damage);
-            super::combat::damage_enemy(
+            combat::damage_enemy(
                 cx,
                 enemy,
                 1u8.saturating_add(extra_damage).saturating_add(bonus),
@@ -1684,7 +1693,7 @@ fn fire_retaliate_if_any(
     if retaliates {
         // Route through the attack loop (#379) so the retaliate opens its cancel
         // (Dodge) and soak (Guard Dog) windows; non-exhausting (RR p.18).
-        super::combat::drive_retaliate(cx, enemy, investigator)
+        combat::drive_retaliate(cx, enemy, investigator)
     } else {
         EngineOutcome::Done
     }
@@ -1704,17 +1713,14 @@ fn fire_retaliate_if_any(
 /// No registry installed → empty list: engine-only tests that don't touch card
 /// data never reach `OnSkillTestResolution`. Silent skip mirrors
 /// `constant_skill_modifier`'s behavior.
-fn collect_on_skill_test_resolution(
-    committed: &[CardCode],
-    succeeded: bool,
-) -> Vec<card_dsl::dsl::Effect> {
+fn collect_on_skill_test_resolution(committed: &[CardCode], succeeded: bool) -> Vec<Effect> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
     };
     let outcome_now = if succeeded {
-        crate::dsl::TestOutcome::Success
+        TestOutcome::Success
     } else {
-        crate::dsl::TestOutcome::Failure
+        TestOutcome::Failure
     };
 
     let mut effects = Vec::new();
@@ -1752,7 +1758,7 @@ fn collect_on_skill_test_resolution(
 /// No registry installed → empty list: engine-only tests that don't touch card
 /// data never commit real cards. Silent skip mirrors
 /// `constant_skill_modifier`'s behavior.
-fn collect_on_commit(committed: &[CardCode]) -> Vec<card_dsl::dsl::Effect> {
+fn collect_on_commit(committed: &[CardCode]) -> Vec<Effect> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
     };
@@ -1817,9 +1823,7 @@ pub(super) fn peril_check(
 /// these suspend when the tester controls a soak asset — RR-correct (the player
 /// assigns damage/horror to soak assets), unlike the old auto-assigning
 /// `take_damage`/`take_horror` shortcut.
-fn symbol_effects_to_effect(
-    effects: &[crate::scenario::TokenEffect],
-) -> Option<card_dsl::dsl::Effect> {
+fn symbol_effects_to_effect(effects: &[TokenEffect]) -> Option<Effect> {
     use crate::dsl::{Effect, HarmKind, InvestigatorTarget};
     use crate::scenario::TokenEffect;
     let deals: Vec<Effect> = effects
@@ -1847,21 +1851,19 @@ fn symbol_effects_to_effect(
 /// Push a chaos symbol token's side effects (built by
 /// [`symbol_effects_to_effect`]) for the drive loop, controller-scoped to the
 /// tester (symbol effects have no source card). A no-op when the list is empty.
-fn push_symbol_effects(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    effects: &[crate::scenario::TokenEffect],
-) {
+fn push_symbol_effects(cx: &mut Cx, investigator: InvestigatorId, effects: &[TokenEffect]) {
     if let Some(effect) = symbol_effects_to_effect(effects) {
-        push_effect(cx, &effect, EvalContext::for_controller(investigator));
+        evaluator::push_effect(cx, &effect, EvalContext::for_controller(investigator));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::dispatch;
     use crate::event::Event;
     use crate::scenario::TokenEffect;
+    use crate::state::SkillTestId;
     use crate::test_support::{test_investigator, test_skill_test, GameStateBuilder};
 
     /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
@@ -1889,7 +1891,7 @@ mod tests {
                 },
                 bonus_attack_damage: 2,
                 ..test_skill_test(
-                    crate::state::SkillTestId(0),
+                    SkillTestId(0),
                     inv,
                     SkillKind::Combat,
                     SkillTestKind::Fight,
@@ -1941,7 +1943,7 @@ mod tests {
                 follow_up: SkillTestFollowUp::Investigate,
                 bonus_clues_discovered: 1,
                 ..test_skill_test(
-                    crate::state::SkillTestId(0),
+                    SkillTestId(0),
                     inv,
                     SkillKind::Intellect,
                     SkillTestKind::Investigate,
@@ -1966,7 +1968,7 @@ mod tests {
         };
         assert_eq!(
             **effect,
-            crate::dsl::Effect::DiscoverClue {
+            Effect::DiscoverClue {
                 from: LocationTarget::TestedLocation,
                 count: 2,
             },
@@ -2026,7 +2028,7 @@ mod tests {
         let out = perform_skill_test(&mut cx, inv, SkillKind::Intellect, 1);
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         let out = finish_skill_test(&mut cx, &[]);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert!(state.encounter_discard.is_empty());
     }
@@ -2064,7 +2066,7 @@ mod tests {
         );
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         let out = finish_skill_test(&mut cx, &[]);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(
             state.investigators[&inv].horror(),
@@ -2111,7 +2113,7 @@ mod tests {
 
         // commit nothing -> PreTokenWindow auto-skips window 2 -> resolves to end.
         let out = finish_skill_test(&mut cx, &[]);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(
             out,
             EngineOutcome::Done,
@@ -2144,14 +2146,14 @@ mod tests {
         state
             .continuations
             .push(Continuation::SkillTest(test_skill_test(
-                crate::state::SkillTestId(0),
+                SkillTestId(0),
                 inv,
                 SkillKind::Willpower,
                 SkillTestKind::Plain,
                 2,
             )));
         let mut events = Vec::new();
-        let out = super::super::reaction_windows::run_fast_continuation(
+        let out = reaction_windows::run_fast_continuation(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2215,7 +2217,7 @@ mod tests {
 
         // Commit nothing → the hop parks; the loop drives to teardown.
         let out = finish_skill_test(&mut cx, &[]);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert!(
             events
@@ -2275,7 +2277,7 @@ mod tests {
 
         // Commit nothing -> resolution runs, then suspends at the acknowledge step.
         let out = finish_skill_test(&mut cx, &[]);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         let EngineOutcome::AwaitingInput { request, .. } = &out else {
             panic!("expected the acknowledge Confirm prompt, got {out:?}");
         };
@@ -2316,7 +2318,7 @@ mod tests {
 
         // Confirm -> drive into teardown.
         let out = acknowledge_outcome(&mut cx);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert!(
             events
@@ -2361,7 +2363,7 @@ mod tests {
             "commit prompt"
         );
         let out = finish_skill_test(&mut cx, &[]);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(
             out,
             EngineOutcome::Done,
@@ -2443,7 +2445,7 @@ mod tests {
         );
 
         // The loop's SkillTest arm drives the parked frame the rest of the way.
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert!(
             cx.events
@@ -2498,7 +2500,7 @@ mod tests {
                 None,
                 Some(InitiatorModifier {
                     target: ModifierTarget::Investigator(inv),
-                    stat: crate::dsl::Stat::Combat,
+                    stat: Stat::Combat,
                     delta: IntExpr::Lit(2),
                 }),
             )
@@ -2520,7 +2522,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            super::super::drive(&mut cx, out)
+            dispatch::drive(&mut cx, out)
         };
         assert!(
             matches!(out, EngineOutcome::AwaitingInput { .. }),
@@ -2533,7 +2535,7 @@ mod tests {
         // over `Stat::Combat`, and the test now reads Intellect (FAQ: "ignore
         // any bonuses to Combat or Agility").
         let read = |skill| {
-            modified_value(
+            modified_value::modified_value(
                 &state,
                 card_registry::current(),
                 ModifierTarget::Investigator(inv),
@@ -2640,7 +2642,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            super::super::drive(&mut cx, out)
+            dispatch::drive(&mut cx, out)
         };
         assert!(
             matches!(out, EngineOutcome::AwaitingInput { .. }),
@@ -2725,7 +2727,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            super::super::drive(&mut cx, out)
+            dispatch::drive(&mut cx, out)
         };
         assert!(
             matches!(out, EngineOutcome::AwaitingInput { .. }),
@@ -2804,7 +2806,7 @@ mod tests {
         );
         assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
         let out = finish_skill_test(&mut cx, &[]);
-        let out = super::super::drive(&mut cx, out);
+        let out = dispatch::drive(&mut cx, out);
         assert_eq!(out, EngineOutcome::Done);
         assert!(
             events.iter().any(|e| matches!(

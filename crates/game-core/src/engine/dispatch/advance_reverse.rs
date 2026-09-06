@@ -3,25 +3,19 @@
 
 use crate::action::InputResponse;
 use crate::event::Event;
-use crate::state::{AdvanceDeck, AdvanceStep, AdvanceTrigger, Continuation};
+use crate::state::{AdvanceDeck, AdvanceStep, AdvanceTrigger, CardCode, Continuation};
 
-use super::super::outcome::{
+use super::Cx;
+use crate::engine::dispatch::emit;
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
-use super::Cx;
 
 /// Read the top `AdvanceReverse` frame's fields. The frame is the top
 /// continuation whenever the driver / resume runs (the `drive` loop /
 /// `resolve_input` route here only with it on top).
-fn top(
-    cx: &Cx,
-) -> (
-    AdvanceDeck,
-    usize,
-    crate::state::CardCode,
-    AdvanceStep,
-    AdvanceTrigger,
-) {
+fn top(cx: &Cx) -> (AdvanceDeck, usize, CardCode, AdvanceStep, AdvanceTrigger) {
     match cx.state.continuations.last() {
         Some(Continuation::AdvanceReverse {
             deck,
@@ -53,10 +47,10 @@ fn advanced_event(deck: AdvanceDeck, from: usize) -> Event {
     }
 }
 
-fn reverse_timing(deck: AdvanceDeck, code: crate::state::CardCode) -> super::emit::TimingEvent {
+fn reverse_timing(deck: AdvanceDeck, code: CardCode) -> TimingEvent {
     match deck {
-        AdvanceDeck::Act => super::emit::TimingEvent::ActAdvanced { code },
-        AdvanceDeck::Agenda => super::emit::TimingEvent::AgendaAdvanced { code },
+        AdvanceDeck::Act => TimingEvent::ActAdvanced { code },
+        AdvanceDeck::Agenda => TimingEvent::AgendaAdvanced { code },
     }
 }
 
@@ -105,7 +99,7 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
             // Pre-advance BEFORE emitting so a suspending reverse resumes at
             // Finalize once its frames pop.
             set_step(cx, AdvanceStep::Finalize);
-            super::emit::queue_event(cx, &reverse_timing(deck, leaving_code))
+            emit::queue_event(cx, &reverse_timing(deck, leaving_code))
         }
         AdvanceStep::Finalize => {
             finalize(cx, deck, from);
@@ -185,12 +179,14 @@ pub(super) fn resume(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::dispatch;
     use crate::state::{
-        Act, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, CardCode, Continuation,
+        Act, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, CardCode, Continuation, GameState,
     };
+    use crate::test_support;
     use crate::test_support::GameStateBuilder;
 
-    fn state_advancing_agenda(interactive: bool) -> crate::state::GameState {
+    fn state_advancing_agenda(interactive: bool) -> GameState {
         let mut state = GameStateBuilder::new().build();
         state.agenda_deck = vec![
             Agenda {
@@ -218,7 +214,7 @@ mod tests {
 
     /// An act mid-advance with the given `trigger`, `interactive_acknowledge` per
     /// the arg. Mirrors `state_advancing_agenda` for the act deck.
-    fn state_advancing_act(interactive: bool, trigger: AdvanceTrigger) -> crate::state::GameState {
+    fn state_advancing_act(interactive: bool, trigger: AdvanceTrigger) -> GameState {
         let mut state = GameStateBuilder::new().build();
         state.act_deck = vec![
             Act {
@@ -249,7 +245,7 @@ mod tests {
         use crate::event::Event;
         let mut state = state_advancing_agenda(false);
         let mut events = Vec::new();
-        let out = crate::engine::dispatch::drive(
+        let out = dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -278,7 +274,7 @@ mod tests {
         use crate::InputKind;
         let mut state = state_advancing_agenda(true);
         let mut events = Vec::new();
-        let out = crate::engine::dispatch::drive(
+        let out = dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -336,7 +332,7 @@ mod tests {
         use crate::scenario::{ResolutionId, ScenarioEnding};
         use crate::state::{Act, InvestigatorId};
         use crate::test_support::{terminal_code, test_investigator};
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let mut state = state_advancing_act(true, AdvanceTrigger::Forced);
         // One act, and it is the one advancing — so it is the terminal one.
         state.act_deck = vec![Act {
@@ -386,7 +382,7 @@ mod tests {
         // asserted end-to-end in `scenarios/tests/the_gathering_resolutions.rs`;
         // what is under test here is that the ending lands *after* the flip.
         state.interactive_acknowledge = false;
-        crate::engine::dispatch::drive(
+        dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -412,7 +408,7 @@ mod tests {
         let mut state = state_advancing_agenda(false);
         state.agenda_deck.truncate(1);
         let mut events = Vec::new();
-        let _ = crate::engine::dispatch::drive(
+        let _ = dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,

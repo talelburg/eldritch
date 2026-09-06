@@ -4,10 +4,19 @@
 use std::borrow::Cow;
 
 use crate::scenario::ScenarioEnding;
-use crate::state::{GameState, InvestigatorId, LocationId, Phase};
+use crate::state::{
+    AdvanceDeck, AdvanceStep, AdvanceTrigger, Continuation, GameState, InvestigatorId, LocationId,
+    Phase, ScenarioEndStep,
+};
 
-use super::super::outcome::EngineOutcome;
 use super::Cx;
+use crate::card_registry;
+use crate::dsl::EventPattern;
+use crate::dsl::EventTiming;
+use crate::dsl::Trigger;
+use crate::dsl::TriggerKind;
+use crate::engine::evaluator;
+use crate::engine::outcome::EngineOutcome;
 
 /// Whether the current act advances *only* at the end of the round (its
 /// round-end objective — act 01109's `When`-`RoundEnded` group advance), in
@@ -18,7 +27,7 @@ fn act_advances_at_round_end(state: &GameState) -> bool {
     let Some(act) = state.act_deck.get(state.act_index) else {
         return false;
     };
-    let Some(reg) = crate::card_registry::current() else {
+    let Some(reg) = card_registry::current() else {
         return false;
     };
     let Some(abilities) = (reg.abilities_for)(&act.code) else {
@@ -27,10 +36,10 @@ fn act_advances_at_round_end(state: &GameState) -> bool {
     abilities.iter().any(|a| {
         matches!(
             &a.trigger,
-            crate::dsl::Trigger::OnEvent {
-                pattern: crate::dsl::EventPattern::RoundEnded,
-                timing: crate::dsl::EventTiming::When,
-                kind: crate::dsl::TriggerKind::Reaction,
+            Trigger::OnEvent {
+                pattern: EventPattern::RoundEnded,
+                timing: EventTiming::When,
+                kind: TriggerKind::Reaction,
             }
         )
     })
@@ -93,16 +102,14 @@ pub(super) fn advance_agenda(cx: &mut Cx) {
     // then bumps the cursor at Finalize (RR order — after the reverse resolves).
     // The drive loop owns it from here; the terminal-card guard now lives in
     // `advance_reverse::finalize`.
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::AdvanceReverse {
-            deck: crate::state::AdvanceDeck::Agenda,
-            from,
-            leaving_code,
-            step: crate::state::AdvanceStep::AwaitAck,
-            // Agenda advances are always game-forced (a doom threshold).
-            trigger: crate::state::AdvanceTrigger::Forced,
-        });
+    cx.state.continuations.push(Continuation::AdvanceReverse {
+        deck: AdvanceDeck::Agenda,
+        from,
+        leaving_code,
+        step: AdvanceStep::AwaitAck,
+        // Agenda advances are always game-forced (a doom threshold).
+        trigger: AdvanceTrigger::Forced,
+    });
 }
 
 /// The investigators who may contribute clues to advance the act, in the
@@ -190,7 +197,7 @@ pub(super) fn advance_act_action(cx: &mut Cx, investigator: InvestigatorId) -> E
     // All validations passed — mutate.
     spend_clues(cx.state, investigator, threshold);
     // The `AdvanceAct` action *is* the player's flip — a deliberate advance.
-    advance_act(cx, crate::state::AdvanceTrigger::Deliberate);
+    advance_act(cx, AdvanceTrigger::Deliberate);
     EngineOutcome::Done
 }
 
@@ -269,7 +276,7 @@ pub fn round_end_advance_affordable(state: &GameState, contributor_location_code
         return false;
     };
     let threshold = act.clue_threshold;
-    let Some(loc) = crate::engine::location_id_by_code(state, contributor_location_code) else {
+    let Some(loc) = evaluator::location_id_by_code(state, contributor_location_code) else {
         return false;
     };
     clues_held(state, &investigators_at(state, loc)) >= u32::from(threshold)
@@ -300,12 +307,12 @@ pub fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> Engine
         };
     }
     let threshold = cx.state.act_deck[cx.state.act_index].clue_threshold;
-    let loc = crate::engine::location_id_by_code(cx.state, contributor_location_code)
+    let loc = evaluator::location_id_by_code(cx.state, contributor_location_code)
         .expect("affordable ⇒ contributor location in play");
     let contributors = investigators_at(cx.state, loc);
     spend_clues_from(cx.state, &contributors, threshold);
     // The round-end objective (01109) is a deliberate, player-chosen advance.
-    advance_act(cx, crate::state::AdvanceTrigger::Deliberate);
+    advance_act(cx, AdvanceTrigger::Deliberate);
     EngineOutcome::Done
 }
 
@@ -325,7 +332,7 @@ pub fn round_end_advance(cx: &mut Cx, contributor_location_code: &str) -> Engine
 /// whether to prompt the on-card flip: `Deliberate` for the player-driven
 /// `AdvanceAct` action and the round-end objective, `Forced` for 01110's
 /// Ghoul-Priest-defeat forced advance (#558).
-pub(crate) fn advance_act(cx: &mut Cx, trigger: crate::state::AdvanceTrigger) {
+pub(crate) fn advance_act(cx: &mut Cx, trigger: AdvanceTrigger) {
     let from = cx.state.act_index;
     let leaving_code = cx.state.act_deck[from].code.clone();
     // Mirror of advance_agenda (#482): defer to the resumable AdvanceReverse
@@ -333,15 +340,13 @@ pub(crate) fn advance_act(cx: &mut Cx, trigger: crate::state::AdvanceTrigger) {
     // reverse, which may suspend → bump the cursor at Finalize, RR order). The
     // drive loop owns it; the terminal-card guard lives in
     // `advance_reverse::finalize`.
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::AdvanceReverse {
-            deck: crate::state::AdvanceDeck::Act,
-            from,
-            leaving_code,
-            step: crate::state::AdvanceStep::AwaitAck,
-            trigger,
-        });
+    cx.state.continuations.push(Continuation::AdvanceReverse {
+        deck: AdvanceDeck::Act,
+        from,
+        leaving_code,
+        step: AdvanceStep::AwaitAck,
+        trigger,
+    });
 }
 
 /// Set the scenario-ending latch and arm the scenario's ending.
@@ -377,8 +382,8 @@ pub(crate) fn end_scenario(state: &mut GameState, ending: ScenarioEnding) {
         state.ending = Some(ending);
         state.continuations.insert(
             0,
-            crate::state::Continuation::ScenarioEnd {
-                step: crate::state::ScenarioEndStep::EmitGameEnd,
+            Continuation::ScenarioEnd {
+                step: ScenarioEndStep::EmitGameEnd,
             },
         );
     }
@@ -387,9 +392,10 @@ pub(crate) fn end_scenario(state: &mut GameState, ending: ScenarioEnding) {
 #[cfg(test)]
 mod doom_agenda_tests {
     use super::*;
-    use crate::assert_event;
+    use crate::engine::dispatch;
     use crate::event::Event;
     use crate::test_support::GameStateBuilder;
+    use crate::{assert_event, test_support};
 
     #[test]
     fn place_doom_increments_agenda_doom() {
@@ -446,7 +452,7 @@ mod doom_agenda_tests {
         });
         // The advance is deferred to an AdvanceReverse frame (#482); drive it
         // (no registry ⇒ the reverse fires nothing ⇒ it drives straight through).
-        crate::engine::dispatch::drive(
+        dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -479,7 +485,7 @@ mod doom_agenda_tests {
             events: &mut events,
         });
         // The advance is deferred to an AdvanceReverse frame (#482); drive it.
-        crate::engine::dispatch::drive(
+        dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -508,7 +514,7 @@ mod doom_agenda_tests {
         use crate::test_support::{terminal_code, test_investigator};
         // The synthetic terminal card's reverse comes from the registry, and a
         // forced on-advance ability binds the lead — so both are needed.
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_investigator(1))
@@ -524,7 +530,7 @@ mod doom_agenda_tests {
             state: &mut state,
             events: &mut events,
         });
-        crate::engine::dispatch::drive(
+        dispatch::drive(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -577,12 +583,12 @@ mod doom_agenda_tests {
 
 #[cfg(test)]
 mod advance_act_tests {
-    use crate::assert_event;
     use crate::engine::enumerate::{legal_actions, TurnAction};
     use crate::engine::EngineOutcome;
     use crate::event::Event;
-    use crate::state::{InvestigatorId, Phase};
+    use crate::state::{Continuation, InvestigationResume, InvestigatorId, Phase};
     use crate::test_support::{take_turn_action, test_investigator, GameStateBuilder};
+    use crate::{assert_event, test_support};
 
     #[test]
     fn round_end_advance_affordable_tracks_hallway_clues_vs_threshold() {
@@ -636,8 +642,8 @@ mod advance_act_tests {
             .with_investigator(investigator)
             .with_active_investigator(inv)
             .with_turn_order([inv])
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(inv)
             .build();
@@ -672,8 +678,8 @@ mod advance_act_tests {
             .with_investigator(investigator)
             .with_active_investigator(inv)
             .with_turn_order([inv])
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(inv)
             .build();
@@ -690,7 +696,7 @@ mod advance_act_tests {
         );
         // Bypass the legality menu (the assert above already proves it's not
         // offered) to confirm the handler itself rejects, leaving state unchanged.
-        let result = crate::test_support::dispatch_turn_action_unchecked(
+        let result = test_support::dispatch_turn_action_unchecked(
             state,
             &TurnAction::AdvanceAct { investigator: inv },
         );
@@ -725,8 +731,8 @@ mod advance_act_tests {
             .with_investigator(investigator)
             .with_active_investigator(inv)
             .with_turn_order([inv])
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(inv)
             .build();
@@ -762,7 +768,7 @@ mod advance_act_tests {
         use crate::scenario::{ResolutionId, ScenarioEnding};
         use crate::state::Act;
         use crate::test_support::terminal_code;
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
         investigator.clues = 2;
@@ -771,8 +777,8 @@ mod advance_act_tests {
             .with_investigator(investigator)
             .with_active_investigator(inv)
             .with_turn_order([inv])
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(inv)
             .build();
@@ -807,8 +813,8 @@ mod advance_act_tests {
             .with_investigator(investigator)
             .with_active_investigator(inv)
             .with_turn_order([inv])
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(inv)
             .build();
@@ -845,8 +851,8 @@ mod advance_act_tests {
             .with_investigator(inv2)
             .with_active_investigator(acting)
             .with_turn_order([acting, other])
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(acting)
             .build();

@@ -1,14 +1,25 @@
 //! Investigator elimination helpers: defeat application, elimination
 //! steps, horror application, and no-remaining-players detection.
 
-use super::super::outcome::EngineOutcome;
 use super::Cx;
+use crate::engine::outcome::EngineOutcome;
 use crate::event::Event;
 use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, EliminationStep, EnemyId,
-    InvestigatorId, Status,
+    CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, EliminationStep,
+    EmitStep, EnemyId, GameState, InvestigatorId, Status,
 };
 
+use crate::card_registry;
+use crate::engine::dispatch::act_agenda;
+use crate::engine::dispatch::combat;
+use crate::engine::dispatch::cursor;
+use crate::engine::dispatch::emit;
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::forced_triggers;
+use crate::engine::dispatch::forced_triggers::ForcedTriggerPoint;
+use crate::engine::dispatch::hunters;
+use crate::engine::dispatch::threat_area;
+use crate::scenario::ScenarioEnding;
 #[cfg(test)]
 use crate::state::{LocationId, Phase};
 
@@ -165,7 +176,7 @@ pub(super) fn apply_investigator_elimination(
 /// defeat or resignation alike — therefore ends the scenario, and this arming is
 /// what keeps a *surviving* table moving.
 fn end_turn_on_elimination(cx: &mut Cx, investigator: InvestigatorId) {
-    let Some(ending) = super::cursor::turn_frame_ending_mut(cx.state, investigator) else {
+    let Some(ending) = cursor::turn_frame_ending_mut(cx.state, investigator) else {
         return;
     };
     // Already armed: the player submitted `EndTurn` and a suspending `EndOfTurn`
@@ -198,14 +209,11 @@ fn end_turn_on_elimination(cx: &mut Cx, investigator: InvestigatorId) {
 /// `After` here would have silently swallowed it.
 /// [`EmitStep::cells`](crate::state::EmitStep::cells) derives the list from the
 /// coordinator's own cursor, so a fourth cell cannot be forgotten here.
-fn has_weakness_game_end_ability(
-    state: &crate::state::GameState,
-    investigator: InvestigatorId,
-) -> bool {
-    crate::state::EmitStep::cells().any(|cell| {
-        !super::forced_triggers::collect_forced_hits(
+fn has_weakness_game_end_ability(state: &GameState, investigator: InvestigatorId) -> bool {
+    EmitStep::cells().any(|cell| {
+        !forced_triggers::collect_forced_hits(
             state,
-            &super::forced_triggers::ForcedTriggerPoint::EliminationGameEnd { investigator },
+            &ForcedTriggerPoint::EliminationGameEnd { investigator },
             cell,
         )
         .is_empty()
@@ -227,10 +235,7 @@ pub(super) fn drive_elimination(cx: &mut Cx) -> EngineOutcome {
     match *step {
         EliminationStep::FireWeaknessGameEnd => {
             *step = EliminationStep::RunSteps;
-            super::emit::queue_event(
-                cx,
-                &super::emit::TimingEvent::EliminationGameEnd { investigator },
-            )
+            emit::queue_event(cx, &TimingEvent::EliminationGameEnd { investigator })
         }
         EliminationStep::RunSteps => {
             cx.state.continuations.pop();
@@ -313,7 +318,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // pile no longer exists and the card is removed. Everything else in the
     // threat area is scenario-owned and is step 4's business (#567).
     let weakness_in_threat_area = |card: &CardInPlay| {
-        crate::card_registry::current()
+        card_registry::current()
             .and_then(|reg| (reg.metadata_for)(&card.code))
             .is_some_and(|m| m.weakness)
     };
@@ -407,7 +412,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
         });
     }
     for &eid in &affected {
-        super::hunters::reengage_at_location(cx, eid);
+        hunters::reengage_at_location(cx, eid);
     }
 
     // Step 4: "All other cards in the eliminated investigator's threat area are
@@ -424,7 +429,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
         .map(|inv| inv.threat_area.iter().map(|c| c.instance_id).collect())
         .unwrap_or_default();
     for instance_id in remaining {
-        let removed = super::threat_area::discard_from_threat_area(cx, investigator, instance_id);
+        let removed = threat_area::discard_from_threat_area(cx, investigator, instance_id);
         debug_assert!(
             removed,
             "elimination step 4: threat-area instance {instance_id:?} vanished mid-drain",
@@ -488,7 +493,7 @@ pub(crate) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8)
     // `DamageAssigned` nor `DamagePlaced` — an ability keyed to either does not
     // see harm dealt this way. Migrating means parking this caller's tail on a
     // frame first (see `combat::soak_and_place`).
-    super::combat::soak_and_place(cx, investigator, 0, amount);
+    combat::soak_and_place(cx, investigator, 0, amount);
 }
 
 /// Apply `amount` damage to `investigator` via the numeric helper,
@@ -508,7 +513,7 @@ pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
     // TODO(#728): announces neither condition — see the note on `take_horror`.
     // Dynamite Blast 01024's `for inv in investigators` loop is the caller that
     // makes this the harder of the two to migrate.
-    super::combat::soak_and_place(cx, investigator, amount, 0);
+    combat::soak_and_place(cx, investigator, amount, 0);
 }
 
 /// Defeat `investigator` outright by a card ability, with no damage or horror
@@ -617,16 +622,17 @@ pub(super) fn check_all_eliminated(cx: &mut Cx) {
         // who got here by resigning is "not considered to have been
         // defeated" (glossary/Resign). First-writer-wins, so an
         // already-fired act/agenda resolution point stays authoritative.
-        super::act_agenda::end_scenario(cx.state, crate::scenario::ScenarioEnding::NoResolution);
+        act_agenda::end_scenario(cx.state, ScenarioEnding::NoResolution);
     }
 }
 
 #[cfg(test)]
 mod elimination_tests {
     use super::*;
-    use crate::assert_event;
     use crate::assert_no_event;
+    use crate::state::InvestigationResume;
     use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+    use crate::{assert_event, test_support};
 
     #[test]
     fn elimination_step1_removes_controlled_and_owned_cards() {
@@ -811,7 +817,7 @@ mod elimination_tests {
     fn last_investigator_defeated_latches_lost_resolution() {
         // Single investigator; defeat them and assert the no-remaining-players
         // scenario-ending latch is set (Rules Reference p.10 step 6).
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let inv = InvestigatorId(1);
         let mut investigator = test_investigator(1);
         // After #448 cp2a: max_sanity() reads from the registry (TEST_INV = 8).
@@ -841,7 +847,7 @@ mod elimination_tests {
         // campaign guide answers it under "If no resolution was reached".
         assert_eq!(
             state.ending,
-            Some(crate::scenario::ScenarioEnding::NoResolution),
+            Some(ScenarioEnding::NoResolution),
             "no-remaining-players must latch NoResolution, not a resolution point"
         );
     }
@@ -1015,7 +1021,7 @@ mod elimination_tests {
 
     /// Two investigators mid-`Investigation`, with `whose` holding the open
     /// turn. `dying` is the one about to be defeated.
-    fn two_investigator_open_turn(whose: InvestigatorId) -> crate::state::GameState {
+    fn two_investigator_open_turn(whose: InvestigatorId) -> GameState {
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
         let mut first = test_investigator(1);
         first.actions_remaining = 2;
@@ -1028,13 +1034,13 @@ mod elimination_tests {
             .with_active_investigator(whose)
             .with_turn_order([a, b])
             .with_phase_anchor(Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(whose)
             .build()
     }
 
-    fn turn_frame(state: &crate::state::GameState) -> Option<(InvestigatorId, bool)> {
+    fn turn_frame(state: &GameState) -> Option<(InvestigatorId, bool)> {
         state.continuations.iter().rev().find_map(|c| match c {
             Continuation::InvestigatorTurn {
                 investigator,
@@ -1189,7 +1195,7 @@ mod elimination_tests {
     /// reads the recorded totals.
     #[test]
     fn damage_and_horror_defeats_both_land_on_defeated() {
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         for cause in [EliminationCause::Damage, EliminationCause::Horror] {
             let a = InvestigatorId(1);
             let mut state = two_investigator_open_turn(a);
@@ -1219,7 +1225,7 @@ mod elimination_tests {
     /// the event is what distinguishes it from a damage or horror defeat.
     #[test]
     fn a_card_ability_defeat_lands_on_defeated_and_carries_its_cause() {
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
         let mut state = two_investigator_open_turn(a);
         let mut events = Vec::new();
@@ -1256,7 +1262,7 @@ mod elimination_tests {
     /// point without latching one itself.
     #[test]
     fn a_card_ability_defeating_the_last_investigator_latches_no_resolution() {
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
         let mut state = two_investigator_open_turn(a);
         let mut events = Vec::new();
@@ -1271,7 +1277,7 @@ mod elimination_tests {
         assert_event!(events, Event::AllInvestigatorsEliminated);
         assert_eq!(
             state.ending,
-            Some(crate::scenario::ScenarioEnding::NoResolution),
+            Some(ScenarioEnding::NoResolution),
             "Elimination step 6, not a numbered resolution",
         );
     }
@@ -1281,7 +1287,7 @@ mod elimination_tests {
     /// filter entirely.
     #[test]
     fn a_card_ability_defeat_no_ops_on_an_already_eliminated_investigator() {
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
         let mut state = two_investigator_open_turn(b);
         state.investigators.get_mut(&a).expect("seated").status = Status::Resigned;

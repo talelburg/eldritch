@@ -2,19 +2,21 @@
 
 use crate::card_data::{Prey, PreyDirection, PreyMeasure};
 use crate::card_registry::{self, CardRegistry};
-use crate::engine::modified_value::{
-    modified_value, ModifiedQuantity, ModifierTarget, ReadContext,
-};
-use crate::engine::pathfinding::{bfs_distance, shortest_first_steps};
+use crate::engine::modified_value::{self, ModifiedQuantity, ModifierTarget, ReadContext};
+use crate::engine::pathfinding;
 use crate::event::Event;
 use crate::state::{
-    Enemy, EnemyId, GameState, HunterChoice, Investigator, InvestigatorId, LocationId,
+    Continuation, Enemy, EnemyId, GameState, HunterChoice, Investigator, InvestigatorId,
+    LocationId, Status,
 };
 
 use super::cursor;
-use super::movement::enemy_can_enter_location;
+use super::movement;
 use super::Cx;
+use crate::action::InputResponse;
+use crate::engine::dispatch::phases;
 use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
+use std::fmt::Debug;
 
 /// Result of narrowing a candidate investigator set by a prey
 /// instruction (Rules Reference p.12 / p.17).
@@ -59,7 +61,7 @@ fn measure_value(
         PreyMeasure::Skill(kind) => (ModifiedQuantity::Skill(kind), 0),
         PreyMeasure::RemainingHealth => (ModifiedQuantity::MaxHealth, i32::from(inv.damage())),
     };
-    let value = modified_value(
+    let value = modified_value::modified_value(
         state,
         registry,
         ModifierTarget::Investigator(inv.id),
@@ -179,13 +181,13 @@ fn hunter_destinations(
         let Some(inv) = state.investigators.get(id) else {
             continue;
         };
-        if inv.status != crate::state::Status::Active {
+        if inv.status != Status::Active {
             continue;
         }
         let Some(loc) = inv.current_location else {
             continue;
         };
-        let Some(d) = bfs_distance(state, from, loc) else {
+        let Some(d) = pathfinding::bfs_distance(state, from, loc) else {
             continue;
         };
         min_dist = Some(min_dist.map_or(d, |m| m.min(d)));
@@ -213,11 +215,11 @@ fn hunter_destinations(
         else {
             continue;
         };
-        for step in shortest_first_steps(state, from, loc) {
+        for step in pathfinding::shortest_first_steps(state, from, loc) {
             // The block bites here and only here: a barricaded step is one the
             // enemy cannot be compelled into, so it drops out of the offered
             // set rather than out of the graph the distances were measured on.
-            if enemy_can_enter_location(state, enemy, step) && !dests.contains(&step) {
+            if movement::enemy_can_enter_location(state, enemy, step) && !dests.contains(&step) {
                 dests.push(step);
             }
         }
@@ -422,7 +424,7 @@ pub(crate) fn drive_hunter_moves(cx: &mut Cx) -> EngineOutcome {
 
 /// Build the offered options for a candidate list: option `i` is
 /// `candidates[i]`, label = its debug repr (#205 will make these human).
-pub(super) fn candidate_options<T: std::fmt::Debug>(candidates: &[T]) -> Vec<ChoiceOption> {
+pub(super) fn candidate_options<T: Debug>(candidates: &[T]) -> Vec<ChoiceOption> {
     candidates
         .iter()
         .enumerate()
@@ -457,7 +459,7 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
     };
     cx.state
         .continuations
-        .push(crate::state::Continuation::HunterMove(choice));
+        .push(Continuation::HunterMove(choice));
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(prompt, options),
         resume_token: ResumeToken(0),
@@ -469,16 +471,12 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
 /// Validates the response against the stored candidate set; on an
 /// invalid pick, rejects and leaves the `HunterMove` frame on the stack so
 /// the client can retry. (#128)
-pub(super) fn resume_hunter_choice(
-    cx: &mut Cx,
-    response: &crate::action::InputResponse,
-) -> EngineOutcome {
-    let Some(crate::state::Continuation::HunterMove(pending)) = cx.state.continuations.last()
-    else {
+pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+    let Some(Continuation::HunterMove(pending)) = cx.state.continuations.last() else {
         unreachable!("resume_hunter_choice: called with no HunterMove frame on top of the stack")
     };
     let pending = pending.clone();
-    let crate::action::InputResponse::PickSingle(OptionId(i)) = response else {
+    let InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
             reason: format!(
                 "ResolveInput: hunter choice expects InputResponse::PickSingle, got {response:?}"
@@ -536,7 +534,7 @@ pub(super) fn resume_hunter_choice(
     // per-investigator attack loop (step 3.3). Reached only on the
     // no-further-suspension path; every suspension above early-returns
     // via `suspend_hunter_choice`.
-    super::phases::enemy_attack_kickoff(cx)
+    phases::enemy_attack_kickoff(cx)
 }
 
 /// Resume a suspended engagement-on-spawn choice (#128, option A) with
@@ -557,16 +555,12 @@ pub(super) fn resume_hunter_choice(
 /// `surge_pending` (set when the enemy card was drawn). The standalone
 /// `EncounterCardRevealed` / agenda-reverse-draw paths have no `PlayerDraw`
 /// frame beneath, so the loop simply finishes.
-pub(super) fn resume_spawn_engage(
-    cx: &mut Cx,
-    response: &crate::action::InputResponse,
-) -> EngineOutcome {
-    let Some(crate::state::Continuation::SpawnEngage(pending)) = cx.state.continuations.last()
-    else {
+pub(super) fn resume_spawn_engage(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
+    let Some(Continuation::SpawnEngage(pending)) = cx.state.continuations.last() else {
         unreachable!("resume_spawn_engage: called with no SpawnEngage frame on top of the stack")
     };
     let pending = pending.clone();
-    let crate::action::InputResponse::PickSingle(OptionId(i)) = response else {
+    let InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
             reason: format!(
                 "ResolveInput: spawn engagement expects InputResponse::PickSingle, got {response:?}"
@@ -594,6 +588,8 @@ pub(super) fn resume_spawn_engage(
 #[cfg(test)]
 mod resolve_prey_tests {
     use super::*;
+    use crate::card_data::SkillKind;
+    use crate::test_support;
     use crate::test_support::{test_investigator, GameStateBuilder};
 
     #[test]
@@ -640,7 +636,7 @@ mod resolve_prey_tests {
             &state,
             Prey::Ranked {
                 direction: PreyDirection::Highest,
-                measure: PreyMeasure::Skill(crate::card_data::SkillKind::Combat),
+                measure: PreyMeasure::Skill(SkillKind::Combat),
             },
             &[InvestigatorId(1), InvestigatorId(2)],
         );
@@ -661,7 +657,7 @@ mod resolve_prey_tests {
             &state,
             Prey::Ranked {
                 direction: PreyDirection::Highest,
-                measure: PreyMeasure::Skill(crate::card_data::SkillKind::Combat),
+                measure: PreyMeasure::Skill(SkillKind::Combat),
             },
             &[InvestigatorId(1), InvestigatorId(2)],
         );
@@ -673,7 +669,7 @@ mod resolve_prey_tests {
         // max_health() = 8 (TEST_INV registry, #448 cp2a).
         // hurt: accumulated_damage 6 → remaining 2.
         // healthy: accumulated_damage 0 → remaining 8. hurt is lowest.
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let mut hurt = test_investigator(1);
         hurt.investigator_card.accumulated_damage = 6;
         let healthy = test_investigator(2);
@@ -697,7 +693,7 @@ mod resolve_prey_tests {
         // max_health() = 8 (TEST_INV registry, #448 cp2a).
         // a: accumulated_damage 3 → remaining 5.
         // b: accumulated_damage 3 → remaining 5. Tie.
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let mut a = test_investigator(1);
         a.investigator_card.accumulated_damage = 3;
         let mut b = test_investigator(2);
@@ -721,13 +717,14 @@ mod resolve_prey_tests {
 #[cfg(test)]
 mod measure_value_tests {
     use super::*;
-    use crate::card_data::SkillKind;
+    use crate::card_data::{CardMetadata, SkillKind};
     use crate::card_registry::CardRegistry;
     use crate::dsl::{constant, modify, Ability, ModifierScope, Stat};
     use crate::state::{CardCode, CardInPlay, CardInstanceId};
+    use crate::test_support;
     use crate::test_support::{test_investigator, GameStateBuilder};
 
-    fn no_metadata(_: &CardCode) -> Option<&'static crate::card_data::CardMetadata> {
+    fn no_metadata(_: &CardCode) -> Option<&'static CardMetadata> {
         None
     }
 
@@ -764,7 +761,7 @@ mod measure_value_tests {
     /// `state.investigators[inv.id].cards_in_play`, so the investigator
     /// must be in the state, not merely passed by reference).
     fn state_with(cards: &[&str], damage: u8) -> GameState {
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let mut inv = test_investigator(1); // combat 3, max_health() = 8 from TEST_INV registry
                                             // After #448 cp2a harm accumulates on the investigator card.
         inv.investigator_card.accumulated_damage = damage;
@@ -1058,13 +1055,13 @@ mod hunter_movement_tests {
 mod hunter_resume_tests {
     use super::*;
     use crate::assert_event;
-    use crate::engine::Cx;
-    use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
+    use crate::engine::{dispatch, Cx};
+    use crate::state::{EnemyId, EnemyResume, InvestigatorId, LocationId, Phase};
 
     /// Build the `PickSingle` response selecting the offered option whose label
     /// is `format!("{target:?}")`, from a suspended `AwaitingInput`'s options.
     /// Panics if no option matches (a test-setup error).
-    fn pick(outcome: &EngineOutcome, target: impl std::fmt::Debug) -> crate::action::InputResponse {
+    fn pick(outcome: &EngineOutcome, target: impl Debug) -> InputResponse {
         let EngineOutcome::AwaitingInput { request, .. } = outcome else {
             panic!("expected AwaitingInput, got {outcome:?}");
         };
@@ -1079,8 +1076,9 @@ mod hunter_resume_tests {
                     request.options
                 )
             });
-        crate::action::InputResponse::PickSingle(opt.id)
+        InputResponse::PickSingle(opt.id)
     }
+    use crate::card_data::SkillKind;
     use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
 
     #[test]
@@ -1111,8 +1109,8 @@ mod hunter_resume_tests {
             .with_enemy(hunter)
             // EnemyPhase anchor (slice 1a): the resume cascade reaches the
             // attack kickoff / enemy_phase_end, which require it.
-            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
-                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            .with_phase_anchor(Continuation::EnemyPhase {
+                resume: EnemyResume::BeforeInvestigatorAttacked,
                 attacking: None,
             })
             .build();
@@ -1124,19 +1122,19 @@ mod hunter_resume_tests {
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert!(matches!(
             state.continuations.last(),
-            Some(crate::state::Continuation::HunterMove(_))
+            Some(Continuation::HunterMove(_))
         ));
         // Resume by picking C.
         let mut ev2 = Vec::new();
         let resumed = {
-            let mut cx = crate::engine::Cx {
+            let mut cx = Cx {
                 state: &mut state,
                 events: &mut ev2,
             };
             // resolve_input resumes the tie; drive then carries the Enemy→Upkeep
             // →Mythos cascade forward (slice 1b), as the apply boundary does.
-            let o = super::super::resolve_input(&mut cx, &pick(&outcome, LocationId(3)));
-            super::super::drive(&mut cx, o)
+            let o = dispatch::resolve_input(&mut cx, &pick(&outcome, LocationId(3)));
+            dispatch::drive(&mut cx, o)
         };
         // Resolving the tie continues the Enemy phase; with no registry the
         // attack windows auto-skip and the cascade runs to Mythos, pausing at
@@ -1148,7 +1146,7 @@ mod hunter_resume_tests {
         );
         assert!(!matches!(
             state.continuations.last(),
-            Some(crate::state::Continuation::HunterMove(_))
+            Some(Continuation::HunterMove(_))
         ));
         assert_event!(ev2, Event::EnemyMoved { enemy, to } if *enemy == EnemyId(1) && *to == LocationId(3));
     }
@@ -1186,18 +1184,18 @@ mod hunter_resume_tests {
         });
         let mut ev2 = Vec::new();
         // Option id 99 is out of the candidate range -> rejected.
-        let result = super::super::resolve_input(
-            &mut crate::engine::Cx {
+        let result = dispatch::resolve_input(
+            &mut Cx {
                 state: &mut state,
                 events: &mut ev2,
             },
-            &crate::action::InputResponse::PickSingle(OptionId(99)),
+            &InputResponse::PickSingle(OptionId(99)),
         );
         assert!(matches!(result, EngineOutcome::Rejected { .. }));
         assert!(
             matches!(
                 state.continuations.last(),
-                Some(crate::state::Continuation::HunterMove(_))
+                Some(Continuation::HunterMove(_))
             ),
             "pending stays open on invalid pick"
         );
@@ -1228,8 +1226,8 @@ mod hunter_resume_tests {
             .with_enemy(h)
             // EnemyPhase anchor (slice 1a): resume cascades into the attack
             // kickoff / enemy_phase_end.
-            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
-                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            .with_phase_anchor(Continuation::EnemyPhase {
+                resume: EnemyResume::BeforeInvestigatorAttacked,
                 attacking: None,
             })
             .build();
@@ -1246,12 +1244,12 @@ mod hunter_resume_tests {
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         let mut ev2 = Vec::new();
         let resumed = {
-            let mut cx = crate::engine::Cx {
+            let mut cx = Cx {
                 state: &mut state,
                 events: &mut ev2,
             };
-            let o = super::super::resolve_input(&mut cx, &pick(&outcome, InvestigatorId(2)));
-            super::super::drive(&mut cx, o) // slice 1b: complete the Enemy→… cascade
+            let o = dispatch::resolve_input(&mut cx, &pick(&outcome, InvestigatorId(2)));
+            dispatch::drive(&mut cx, o) // slice 1b: complete the Enemy→… cascade
         };
         // Resolving the tie continues the Enemy phase; with no registry the
         // attack windows auto-skip and the cascade runs to Mythos, pausing at
@@ -1263,7 +1261,7 @@ mod hunter_resume_tests {
         );
         assert!(!matches!(
             state.continuations.last(),
-            Some(crate::state::Continuation::HunterMove(_))
+            Some(Continuation::HunterMove(_))
         ));
     }
 
@@ -1288,7 +1286,7 @@ mod hunter_resume_tests {
         hunter.hunter = true;
         hunter.prey = Prey::Ranked {
             direction: PreyDirection::Highest,
-            measure: PreyMeasure::Skill(crate::card_data::SkillKind::Combat),
+            measure: PreyMeasure::Skill(SkillKind::Combat),
         };
         hunter.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
@@ -1352,8 +1350,8 @@ mod hunter_resume_tests {
             .with_enemy(clean_hunter)
             // EnemyPhase anchor (slice 1a): resume cascades into the attack
             // kickoff / enemy_phase_end.
-            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
-                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            .with_phase_anchor(Continuation::EnemyPhase {
+                resume: EnemyResume::BeforeInvestigatorAttacked,
                 attacking: None,
             })
             .build();
@@ -1366,12 +1364,12 @@ mod hunter_resume_tests {
         // Resolve hunter 1's tie -> hunter 2 then moves B->D and engages.
         let mut ev2 = Vec::new();
         let resumed = {
-            let mut cx = crate::engine::Cx {
+            let mut cx = Cx {
                 state: &mut state,
                 events: &mut ev2,
             };
-            let o = super::super::resolve_input(&mut cx, &pick(&outcome, LocationId(2)));
-            super::super::drive(&mut cx, o) // slice 1b: complete the Enemy→… cascade
+            let o = dispatch::resolve_input(&mut cx, &pick(&outcome, LocationId(2)));
+            dispatch::drive(&mut cx, o) // slice 1b: complete the Enemy→… cascade
         };
         // Resolving the tie continues the Enemy phase; with no registry the
         // attack windows auto-skip and the cascade runs to Mythos, pausing at
@@ -1417,8 +1415,8 @@ mod hunter_resume_tests {
             .with_enemy(hunter)
             // EnemyPhase anchor (slice 1a): the resume cascade reaches the
             // attack kickoff / enemy_phase_end, which require it.
-            .with_phase_anchor(crate::state::Continuation::EnemyPhase {
-                resume: crate::state::EnemyResume::BeforeInvestigatorAttacked,
+            .with_phase_anchor(Continuation::EnemyPhase {
+                resume: EnemyResume::BeforeInvestigatorAttacked,
                 attacking: None,
             })
             .build();
@@ -1430,16 +1428,16 @@ mod hunter_resume_tests {
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert!(matches!(
             state.continuations.last(),
-            Some(crate::state::Continuation::HunterMove(_))
+            Some(Continuation::HunterMove(_))
         ));
         // Submit a non-PickSingle response (Skip).
         let mut ev2 = Vec::new();
-        let result = super::super::resolve_input(
-            &mut crate::engine::Cx {
+        let result = dispatch::resolve_input(
+            &mut Cx {
                 state: &mut state,
                 events: &mut ev2,
             },
-            &crate::action::InputResponse::Skip,
+            &InputResponse::Skip,
         );
         assert!(
             matches!(result, EngineOutcome::Rejected { .. }),
@@ -1448,7 +1446,7 @@ mod hunter_resume_tests {
         assert!(
             matches!(
                 state.continuations.last(),
-                Some(crate::state::Continuation::HunterMove(_))
+                Some(Continuation::HunterMove(_))
             ),
             "pending preserved so client can retry with PickSingle"
         );
@@ -1493,16 +1491,16 @@ mod hunter_resume_tests {
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
         assert!(matches!(
             state.continuations.last(),
-            Some(crate::state::Continuation::HunterMove(_))
+            Some(Continuation::HunterMove(_))
         ));
         // Submit a non-PickSingle response (Skip).
         let mut ev2 = Vec::new();
-        let result = super::super::resolve_input(
-            &mut crate::engine::Cx {
+        let result = dispatch::resolve_input(
+            &mut Cx {
                 state: &mut state,
                 events: &mut ev2,
             },
-            &crate::action::InputResponse::Skip,
+            &InputResponse::Skip,
         );
         assert!(
             matches!(result, EngineOutcome::Rejected { .. }),
@@ -1511,7 +1509,7 @@ mod hunter_resume_tests {
         assert!(
             matches!(
                 state.continuations.last(),
-                Some(crate::state::Continuation::HunterMove(_))
+                Some(Continuation::HunterMove(_))
             ),
             "pending preserved so client can retry with PickSingle"
         );

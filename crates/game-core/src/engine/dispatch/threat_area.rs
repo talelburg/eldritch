@@ -9,6 +9,7 @@ use crate::event::Event;
 use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Zone};
 
 use super::Cx;
+use crate::card_registry;
 
 /// Mint a fresh in-play instance of `code`: allocate its id, build the
 /// `CardInPlay`, and seed the named-uses pool ("ammo") from the asset's
@@ -40,7 +41,7 @@ pub(super) fn new_in_play_instance(
     owner: Option<InvestigatorId>,
 ) -> CardInPlay {
     let instance_id = cx.state.card_instance_ids.mint();
-    let uses = crate::card_registry::current()
+    let uses = card_registry::current()
         .and_then(|reg| (reg.metadata_for)(&code))
         .and_then(|m| match &m.kind {
             CardKind::Asset { uses, .. } => *uses,
