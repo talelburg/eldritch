@@ -29,7 +29,7 @@ fn install() {
 }
 
 #[test]
-fn hunter_movement_pick_location_replays_identically() {
+fn hunter_move_tie_break_replays_identically() {
     fn diamond_state() -> game_core::state::GameState {
         let mut loc_a = test_location(1, "A");
         let mut loc_b = test_location(2, "B");

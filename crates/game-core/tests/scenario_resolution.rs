@@ -139,18 +139,17 @@ fn roster() -> Vec<game_core::action::RosterEntry> {
     }]
 }
 
-/// Drive a sequence of actions from an initial state, collecting all
-/// events. Returns the final state and the concatenation of all event
-/// vecs.
-fn drive(initial_state: GameState, actions: Vec<Action>) -> (GameState, Vec<Event>) {
-    let mut state = initial_state;
-    let mut all_events = Vec::new();
-    for action in actions {
-        let result = apply(state, action);
-        all_events.extend(result.events);
-        state = result.state;
-    }
-    (state, all_events)
+/// Close the mulligan window `seat_and_open` opens, keeping the whole hand.
+/// Both tests start from Investigation, round 1, and neither asserts on the
+/// events the close emits.
+fn keep_opening_hand(state: GameState) -> GameState {
+    apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        }),
+    )
+    .state
 }
 
 #[test]
@@ -158,13 +157,7 @@ fn scenario_resolves_won_via_act_advance() {
     let inv = InvestigatorId(1);
 
     // seat_and_open + close the mulligan window -> Investigation, round 1.
-    let state = seat_and_open(setup(), &roster()).state;
-    let (mut state, _) = drive(
-        state,
-        vec![Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        })],
-    );
+    let mut state = keep_opening_hand(seat_and_open(setup(), &roster()).state);
     assert_eq!(state.phase, Phase::Investigation);
 
     // Seed enough clues to advance both acts (2 + 2), then spend twice.
@@ -188,13 +181,7 @@ fn scenario_resolves_won_via_act_advance() {
 #[test]
 fn scenario_resolves_lost_via_doom() {
     // seat_and_open + close mulligan -> Investigation, round 1.
-    let state = seat_and_open(setup(), &roster()).state;
-    let (mut state, _) = drive(
-        state,
-        vec![Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        })],
-    );
+    let mut state = keep_opening_hand(seat_and_open(setup(), &roster()).state);
 
     // Each round: EndTurn cascades into Mythos, which adds doom (and may
     // advance the agenda) before pausing at step 1.4 for the encounter
@@ -207,10 +194,10 @@ fn scenario_resolves_lost_via_doom() {
     //
     // Break-on-resolution rather than a fixed count: tolerates cadence
     // drift and only draws when a Mythos draw is actually pending.
-    let mut doom_events = Vec::new();
+    let mut all_events = Vec::new();
     for _ in 0..12 {
         let r1 = take_turn_action(state, &TurnAction::EndTurn);
-        doom_events.extend(r1.events);
+        all_events.extend(r1.events);
         let latched = r1.state.ending.is_some();
         if latched {
             assert_eq!(
@@ -239,14 +226,13 @@ fn scenario_resolves_lost_via_doom() {
                     response: InputResponse::Confirm,
                 }),
             );
-            doom_events.extend(r2.events);
+            all_events.extend(r2.events);
             state = r2.state;
             if state.ending.is_some() {
                 break;
             }
         }
     }
-    let all_events = doom_events;
 
     // Agenda 0 advanced once, then the terminal agenda latched Lost via doom.
     assert_event!(all_events, Event::AgendaAdvanced { from } if *from == 0);

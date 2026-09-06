@@ -19,8 +19,9 @@
 //! [`synthetic`](test_fixtures::synthetic) fixture remains, gated behind
 //! `test_fixtures`, as the minimal teaching example; the engine's
 //! resolution-hook test now builds its own module shell in
-//! `crates/game-core/tests/scenario_resolution.rs` (#873). Further scenarios (the rest
-//! of Night of the Zealot, Dunwich, …) land in later phases.
+//! `crates/game-core/tests/scenario_resolution.rs` (#873). Further
+//! scenarios (the rest of Night of the Zealot, Dunwich, …) land in
+//! later phases.
 
 pub mod the_gathering;
 
