@@ -15,18 +15,18 @@
 //! before running actions that touch scenario data.
 //!
 //! [`the_gathering`] is the first real scenario module (Night of the
-//! Zealot, scenario 1; Slice 1 C1a skeleton). The
-//! [`synthetic`](test_fixtures::synthetic) fixture remains, gated behind
-//! `test_fixtures`, as the minimal teaching example; the engine's
-//! resolution-hook test now builds its own module shell in
-//! `crates/game-core/tests/scenario_resolution.rs` (#873). Further
-//! scenarios (the rest of Night of the Zealot, Dunwich, …) land in
-//! later phases.
+//! Zealot, scenario 1; Slice 1 C1a skeleton). **Every module in this
+//! crate is shipped content** — there is no test fixture to route
+//! around, so anything [`module_for`] resolves is a scenario a player
+//! is meant to be able to start (#878, [ADR 0016]). A test that needs
+//! a scenario module builds its own shell locally, as
+//! `crates/game-core/tests/scenario_resolution.rs` and
+//! `crates/server/tests/common/mod.rs` do. Further scenarios (the rest
+//! of Night of the Zealot, Dunwich, …) land in later phases.
+//!
+//! [ADR 0016]: https://github.com/talelburg/eldritch/blob/main/docs/adr/0016-a-synthetic-fixture-models-a-primitive-never-a-printed-card.md
 
 pub mod the_gathering;
-
-#[cfg(any(test, feature = "test_fixtures"))]
-pub mod test_fixtures;
 
 use game_core::scenario::{ScenarioId, ScenarioModule, ScenarioRegistry};
 
@@ -36,8 +36,6 @@ use game_core::scenario::{ScenarioId, ScenarioModule, ScenarioRegistry};
 pub fn module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
     match id.as_str() {
         the_gathering::ID => Some(&the_gathering::MODULE),
-        #[cfg(any(test, feature = "test_fixtures"))]
-        test_fixtures::synthetic::ID => Some(&test_fixtures::synthetic::MODULE),
         _ => None,
     }
 }
@@ -52,21 +50,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn module_for_resolves_synthetic() {
-        let id = ScenarioId::new(test_fixtures::synthetic::ID);
-        assert!(module_for(&id).is_some());
-    }
-
-    #[test]
     fn module_for_returns_none_for_unknown() {
         let id = ScenarioId::new("not-a-real-scenario");
         assert!(module_for(&id).is_none());
     }
 
+    /// The toy scenario used to be routable here whenever the
+    /// `test_fixtures` feature was on — and it was on by default, so
+    /// a `POST` of `{"scenario_id":"synthetic"}` started a one-location
+    /// demo on the production server. #878 deleted the fixture, which
+    /// makes this structurally true; the test is insurance against a
+    /// future re-export rather than the guarantee itself.
     #[test]
-    fn registry_dispatches_to_module_for() {
-        let id = ScenarioId::new(test_fixtures::synthetic::ID);
-        assert!((REGISTRY.module_for)(&id).is_some());
+    fn module_for_returns_none_for_the_retired_synthetic_id() {
+        let id = ScenarioId::new("synthetic");
+        assert!(module_for(&id).is_none());
     }
 
     #[test]
@@ -81,26 +79,6 @@ mod tests {
         assert!(
             (REGISTRY.module_for)(&unknown).is_none(),
             "unknown id resolves to None"
-        );
-    }
-}
-
-#[cfg(test)]
-mod setup_seeds_encounter_deck_tests {
-    use super::test_fixtures::{synth_cards::SYNTH_TREACHERY_CODE, synthetic};
-    use game_core::state::CardCode;
-
-    #[test]
-    fn synthetic_setup_seeds_encounter_deck_with_synth_treachery() {
-        let state = synthetic::setup();
-        assert_eq!(
-            state.encounter_deck.len(),
-            1,
-            "synthetic fixture must seed exactly one encounter card",
-        );
-        assert_eq!(
-            state.encounter_deck[0],
-            CardCode(SYNTH_TREACHERY_CODE.into()),
         );
     }
 }

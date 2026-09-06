@@ -141,8 +141,8 @@ impl CardRegistry {
     /// literals where the new slot actually matters. With `EMPTY` as the base,
     /// a new slot touches only the literals that implement it.
     ///
-    /// `const`, so a `const` registry (`cards::REGISTRY`,
-    /// `synth_cards::TEST_REGISTRY`) can spread it too.
+    /// `const`, so a `const` registry (`cards::REGISTRY`, or a test binary's
+    /// own probe registry) can spread it too.
     ///
     /// **Spread `EMPTY` only over a registry you are building from nothing.**
     /// A helper wrapping a *real* registry must spread that registry instead —

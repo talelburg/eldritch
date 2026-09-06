@@ -112,7 +112,7 @@ pub fn abilities_for_terminal(code: &crate::state::CardCode) -> Option<Vec<crate
 /// its reverse served alongside whatever `base` already knows.
 ///
 /// For **integration tests in other crates**, which install a real registry
-/// (`cards::REGISTRY`, `synth_cards::TEST_REGISTRY`) into the process-global
+/// (`cards::REGISTRY`, or one built locally in the test binary) into the process-global
 /// `OnceLock` and so cannot compose at the definition site the way
 /// [`install_test_registry`] does. Call it exactly where the plain install went:
 ///

@@ -11,10 +11,12 @@
 //! Drives a solo game via the public `EndTurn` apply path so the Investigation
 //! → Enemy → Upkeep cascade actually engages the drive loop (unlike the
 //! registry-free `upkeep_resume` unit tests, which call the helper directly and
-//! so never exercise the cede). Uses the real `cards::REGISTRY` because the
-//! synthetic Cover Up fixture has no `Trigger::Revelation` (it would push
-//! nothing and never trip the bug); only the real 01007 self-places into the
-//! threat area with 3 clues.
+//! so never exercise the cede). Uses the real `cards::REGISTRY` because only
+//! the real Cover Up 01007 self-places into the threat area with 3 clues. The
+//! synthetic fixture this file once contrasted against had no
+//! `Trigger::Revelation` at all, so it would have pushed nothing and never
+//! tripped the bug — which is the gap ADR 0016 was written from, and #878
+//! deleted the fixture.
 
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
