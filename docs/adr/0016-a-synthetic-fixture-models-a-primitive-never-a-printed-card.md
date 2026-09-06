@@ -237,3 +237,11 @@ acceptance criterion — that the production `server` binary does not compile
 *Folded in: [#878](https://github.com/talelburg/eldritch/issues/878) — the fixture is
 deleted outright rather than relocated to `crates/scenarios/tests/common/`, its
 readers having all been migrated by the four children ahead of it.*
+
+*Resolved since: [#868](https://github.com/talelburg/eldritch/issues/868) — the
+`crates/web/tests/board.rs` instance cited above as "not fixed by this posture"
+now is. The rendering decision it was waiting on came out as neither option in
+its issue body: rather than register probe cards or assert the fallback, the
+binary moved wholesale onto the real `cards::REGISTRY`, so no code it seeds can
+fail to resolve. `render_state` asserts `card--unknown` never renders, which
+makes the property structural rather than maintained.*

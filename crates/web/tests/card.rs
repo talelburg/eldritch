@@ -77,10 +77,25 @@ async fn guardian_card_carries_class_modifier() {
     );
 }
 
+/// The unresolved-code fallback is **intended** behaviour, not an accident: a
+/// code the registry cannot resolve (an unimplemented stub, or a render path
+/// with no registry installed) renders as a bare `card--unknown` rectangle
+/// showing the raw code, rather than as nothing.
+///
+/// The class is asserted, not just the code, because it is the contract
+/// `crates/web/tests/board.rs` reads: that binary asserts `card--unknown` never
+/// appears, which is only a real guard if the fallback is the sole producer of
+/// it (#868). `entity_names.rs` holds the complementary property — that a code
+/// which *does* resolve never leaks to the player.
 #[wasm_bindgen_test]
 async fn unknown_code_falls_back_to_raw_code() {
     let html = mount_card("99999").await;
     assert!(html.contains("99999"), "raw code fallback missing: {html}");
+    assert!(
+        last_card_classes().contains("card--unknown"),
+        "unresolved code should use the unknown arm: {}",
+        last_card_classes()
+    );
 }
 
 /// Class list of the last mounted `.card` element.
