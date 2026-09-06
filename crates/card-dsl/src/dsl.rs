@@ -296,10 +296,11 @@ pub enum Trigger {
     OnCommit,
     /// Fires when the owning card is revealed from the encounter deck.
     ///
-    /// First consumer: the synthetic treachery in
-    /// `scenarios::test_fixtures::synth_cards`. Real Phase-7+ treachery
-    /// cards will replace the synthetic fixture's role as primary
-    /// consumer.
+    /// Consumers are the real encounter treacheries in
+    /// `cards::impls` — Ancient Evils 01166, Rotting Remains 01163,
+    /// Crypt Chill 01167 and the rest. (The synthetic treachery that
+    /// was this trigger's first consumer is gone; #878 retired the
+    /// toy-scenario fixture it lived in.)
     ///
     /// Distinct from [`OnPlay`](Self::OnPlay) — Revelation fires for engine-driven
     /// encounter draws (Mythos phase, scenario forced effects), not

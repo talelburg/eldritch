@@ -1,6 +1,11 @@
 # A synthetic fixture models a primitive, never a printed card
 
-`crates/scenarios/src/test_fixtures/synth_cards.rs` defines `_synth_cover_up`, a
+**Every `file:line` in this Context section records the tree as it stood when the
+decision was taken; `crates/scenarios/src/test_fixtures/` has since been deleted
+(see the changelog footer), so read them against history rather than the working
+tree.**
+
+`crates/scenarios/src/test_fixtures/synth_cards.rs` defined `_synth_cover_up`, a
 hand-written treachery carrying a `DiscoverClues` reaction and a `GameEnd`
 forced. Cover Up 01007 is a real card, it is in the pinned snapshot, and it is
 implemented at `crates/cards/src/impls/cover_up.rs`. The fixture's eligibility
@@ -83,8 +88,9 @@ already working; this ADR names it rather than inventing it.
 
 **The toy scenario splits at the seam where sharing is real.** The
 `ScenarioModule` shell — a no-op `apply_resolution`, `resolve_symbol: None`,
-`layout: &[]`, and the local registry install — is identical across every reader
-and stays shared. The `setup()` *state* is local, composed per test with
+`layout: &[]`, and the local registry install — is identical across every reader,
+so where several tests in one crate need it, it is shared *there*, in that crate's
+own `tests/common/`. The `setup()` *state* is local, composed per test with
 `GameStateBuilder`. `crates/server/tests/common/mod.rs:19-42` already demonstrates
 this: a ten-line mock scenario, with a comment naming exactly where the shared
 fixture's shape was wrong for it — *"seating runs at creation via `seat_and_open`,
@@ -100,19 +106,29 @@ built for looked at the fixture, wanted a different shape, and wrote its own.
 
 The feature existed because cargo compiles integration-test binaries without
 `cfg(test)` on their own crate, so a `#[cfg(any(test, feature = "test_fixtures"))]`
-gate is inactive there. A `tests/common/` module — the pattern `crates/server/tests/`
-already uses — sidesteps that entirely. **The fixture moves to
-`crates/scenarios/tests/common/`, and the feature goes.**
+gate is inactive there. Every reader instead builds the `ScenarioModule` shell it
+needs locally — the pattern `crates/server/tests/common/mod.rs` already uses — which
+is the more honest thing for them to do: they test the engine's resolution hook,
+not the crate's routing table. **The fixture is deleted, and the feature with it.**
 
 This makes one property structural rather than maintained. `module_for`
-(`crates/scenarios/src/lib.rs:37-38`) currently routes `"synthetic"` whenever the
-feature is on, and `crates/server/src/lifecycle.rs:22` takes the scenario id
-straight off the HTTP request — so the toy scenario is startable in production by
-POSTing `{"scenario_id":"synthetic"}`, and whether it is depends on Cargo.toml
-discipline. A fixture under `tests/` cannot be referenced from `src/` at all.
-`synthetic_resolution.rs` and `closing_demo.rs` install a locally-built
-`ScenarioRegistry` in place of the crate's, which is the more honest thing for
-them to do — they test the engine's resolution hook, not the crate's routing table.
+(`crates/scenarios/src/lib.rs:37-38`) routed `"synthetic"` whenever the feature was
+on, and `crates/server/src/lifecycle.rs:22` takes the scenario id straight off the
+HTTP request — so the toy scenario was startable in production by POSTing
+`{"scenario_id":"synthetic"}`, and whether it was depended on Cargo.toml
+discipline. With nothing to route to, it cannot be. `crates/scenarios/src/lib.rs`
+carries a `None`-for-`"synthetic"` test as insurance against a future re-export.
+
+**Deletion rather than relocation is a refinement of this ADR, folded in after the
+fact.** The plan was to move the fixture to `crates/scenarios/tests/common/`, on the
+reasoning that `synthetic_resolution.rs` and `closing_demo.rs` still needed a shell
+to share. By the time the final child ([#878](https://github.com/talelburg/eldritch/issues/878))
+ran, the four children ahead of it had moved or retired every reader, each building
+its own shell on the way — so `tests/common/` would have held a module no test
+binary declares `mod common;` for, and cargo compiles nothing under a `tests/`
+subdirectory on its own. It would have been invisible to `cargo test`, `clippy` and
+`rustfmt` alike: dead code that rots silently, in place of the guarantee the
+relocation existed to buy.
 
 ## One synthetic is transitional, and carries its terminal condition
 
@@ -212,6 +228,12 @@ it.
 **#864 is re-scoped from a narrow feature-flag cleanup into the tracking issue for
 this work**, with the migration's steps as child issues. Its original
 acceptance criterion — that the production `server` binary does not compile
-`scenarios::test_fixtures` — is satisfied by the relocation above rather than by
+`scenarios::test_fixtures` — is satisfied by the deletion above rather than by
 `default-features = false`, and the phase-4 note it was going to update
 (`docs/phases/phase-4-scenario-plumbing.md:78`) points here instead.
+
+---
+
+*Folded in: [#878](https://github.com/talelburg/eldritch/issues/878) — the fixture is
+deleted outright rather than relocated to `crates/scenarios/tests/common/`, its
+readers having all been migrated by the four children ahead of it.*

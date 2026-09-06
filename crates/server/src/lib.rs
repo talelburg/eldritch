@@ -61,8 +61,10 @@ impl AppState {
 ///
 /// Installs the real `scenarios::REGISTRY` (which includes The Gathering)
 /// and the real `cards::REGISTRY` (the corpus + hand-written abilities) —
-/// C7a's registry swap, now that real content is servable. The synthetic
-/// fixtures stay for per-process tests, which install their own registries.
+/// C7a's registry swap, now that real content is servable. Tests install
+/// their own registries per process and build any mock scenario module
+/// locally (`crates/server/tests/common/mod.rs`); there is no shared
+/// fixture crate-side to install instead (#878, ADR 0016).
 /// Idempotent: a second call is a no-op (the underlying `OnceLock`s reject
 /// re-installation).
 pub fn install_registries() {
