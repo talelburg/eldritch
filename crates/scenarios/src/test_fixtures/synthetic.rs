@@ -37,11 +37,8 @@ pub const ID: &str = "synthetic";
 /// counts on locations, fills the chaos bag); the bare `GameStateBuilder` / `test_location` defaults
 /// (unplaced, 0 clues, empty bag) do not.
 ///
-/// The encounter-deck seeding gives the #126 / #127 integration
-/// tests something to draw from; integration tests that want to
-/// exercise spawn-bearing enemy reveals push the synthetic enemy
-/// code (`synth_cards::SYNTH_ENEMY_CODE`) onto the deck themselves
-/// after calling `setup()`.
+/// The encounter-deck seeding gives the integration tests that draw
+/// from it something to draw.
 ///
 /// Also seeds two-card act and agenda decks. Each deck's **last** card is what
 /// makes it terminal (ADR 0013), and it is [`terminal_code`]'s synthetic card,
@@ -55,7 +52,6 @@ pub const ID: &str = "synthetic";
 ///
 /// [`synth_cards::SYNTH_LOC_CODE`]: super::synth_cards::SYNTH_LOC_CODE
 /// [`synth_cards::SYNTH_TREACHERY_CODE`]: super::synth_cards::SYNTH_TREACHERY_CODE
-/// [`synth_cards::SYNTH_ENEMY_CODE`]: super::synth_cards::SYNTH_ENEMY_CODE
 pub fn setup() -> GameState {
     let mut location = test_location(10, "Demo Location");
     location.code = CardCode(SYNTH_LOC_CODE.into());
