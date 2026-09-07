@@ -42,7 +42,7 @@ impl Phase {
 
 #[cfg(test)]
 mod tests {
-    use super::Phase;
+    use super::*;
 
     #[test]
     fn phases_cycle_in_round_order() {

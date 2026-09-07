@@ -6,7 +6,7 @@
 //! `scenarios` crate (which depends on `game-core`) provides a static
 //! [`ScenarioRegistry`] of function pointers, and the host installs it
 //! once at startup via
-//! [`scenario_registry::install`](crate::scenario_registry::install).
+//! [`scenario_registry::install`].
 //! The engine watches `GameState.ending` for a `None`->`Some`
 //! transition during an apply (a push-model latch set at discrete
 //! trigger sites); on that transition it looks up the active
@@ -30,6 +30,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::event::Event;
+use crate::scenario_registry;
 use crate::state::{ChaosToken, GameState, InvestigatorId, LocationId};
 
 /// Stable, serializable identifier for a scenario module.
@@ -251,7 +252,7 @@ pub struct ScenarioModule {
 /// The `scenarios` crate exposes a `pub const REGISTRY: ScenarioRegistry`
 /// wrapping its own `by_id` lookup; hosts install it once at startup
 /// via
-/// [`scenario_registry::install`](crate::scenario_registry::install).
+/// [`scenario_registry::install`].
 #[derive(Debug, Clone, Copy)]
 pub struct ScenarioRegistry {
     /// Look up a scenario module by its id. Returns `None` for ids
@@ -272,7 +273,7 @@ pub fn scenario_layout(state: &GameState) -> LocationLayout {
     let Some(id) = state.scenario_id.as_ref() else {
         return &[];
     };
-    let Some(registry) = crate::scenario_registry::current() else {
+    let Some(registry) = scenario_registry::current() else {
         return &[];
     };
     let Some(module) = (registry.module_for)(id) else {
@@ -295,7 +296,7 @@ pub fn resolve_symbol_token(
     investigator: InvestigatorId,
 ) -> Option<SymbolOutcome> {
     let id = state.scenario_id.as_ref()?;
-    let registry = crate::scenario_registry::current()?;
+    let registry = scenario_registry::current()?;
     let module = (registry.module_for)(id)?;
     let hook = module.resolve_symbol?;
     Some(hook(token, &SymbolCtx::new(state, investigator)))
@@ -304,6 +305,7 @@ pub fn resolve_symbol_token(
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::test_support::GameStateBuilder;
 
     #[test]

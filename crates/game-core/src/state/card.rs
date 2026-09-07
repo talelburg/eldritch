@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::dsl::{UsageLimit, UsagePeriod};
+use crate::state::InvestigatorId;
 
 /// `ArkhamDB` card code (e.g. `"01030"` for Magnifying Glass).
 ///
@@ -193,7 +194,7 @@ pub struct CardInPlay {
     /// the wire: a missing field is the genuine absent-by-design case
     /// (scenario-owned), the same #453 carve-out `usage_limit` takes.
     #[serde(default)]
-    pub owner: Option<super::investigator::InvestigatorId>,
+    pub owner: Option<InvestigatorId>,
 }
 
 /// One ability's firing record for "Limit X per \[period\]" tracking.
@@ -297,7 +298,7 @@ impl CardInPlay {
     /// `#[non_exhaustive]` and cannot be built by literal from outside the
     /// crate.
     #[must_use]
-    pub fn owned_by(mut self, owner: Option<super::investigator::InvestigatorId>) -> Self {
+    pub fn owned_by(mut self, owner: Option<InvestigatorId>) -> Self {
         self.owner = owner;
         self
     }
@@ -331,7 +332,7 @@ impl CardInPlay {
 
 #[cfg(test)]
 mod tests {
-    use super::{CardCode, CardInPlay, CardInstanceId};
+    use super::*;
 
     /// `owner` is implicitly optional on the wire (#453's absent-by-design
     /// carve-out): a payload that omits it is a scenario-owned card, which is
@@ -340,7 +341,7 @@ mod tests {
     fn owner_defaults_to_scenario_owned_and_survives_the_wire() {
         let c = CardInPlay::enter_play(CardCode("_x".into()), CardInstanceId(1));
         assert_eq!(c.owner, None, "a fresh instance is owned by nobody yet");
-        let owned = c.owned_by(Some(crate::state::InvestigatorId(2)));
+        let owned = c.owned_by(Some(InvestigatorId(2)));
         let json = serde_json::to_value(&owned).expect("serialize");
         assert_eq!(
             serde_json::from_value::<CardInPlay>(json.clone()).expect("deserialize"),

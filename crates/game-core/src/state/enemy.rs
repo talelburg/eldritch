@@ -3,8 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{card::CardCode, investigator::InvestigatorId, location::LocationId};
 use crate::card_data::Prey;
+use crate::state::{CardCode, CardInPlay, InvestigatorId, LocationId};
 
 crate::state::define_id! {
     /// Stable identifier for an enemy within a scenario.
@@ -96,12 +96,14 @@ pub struct Enemy {
     /// [`AttachSelfToLocation`](crate::dsl::Effect::AttachSelfToLocation)
     /// and no enemy counterpart — so it is empty on every board the
     /// engine builds today. Required on the wire (#453).
-    pub attachments: Vec<super::card::CardInPlay>,
+    pub attachments: Vec<CardInPlay>,
 }
 
 #[cfg(test)]
 mod hunter_prey_field_tests {
     use super::*;
+
+    use crate::test_support;
 
     #[test]
     fn enemy_carries_hunter_and_prey() {
@@ -132,7 +134,7 @@ mod hunter_prey_field_tests {
 
     #[test]
     fn test_enemy_fixture_carries_a_code() {
-        let e = crate::test_support::test_enemy(7, "Ghoul");
+        let e = test_support::test_enemy(7, "Ghoul");
         assert!(
             !e.code.as_str().is_empty(),
             "every enemy carries its printed code"

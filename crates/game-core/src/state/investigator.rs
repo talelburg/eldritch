@@ -2,9 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::card::{CardCode, CardInPlay, CardInstanceId};
-use super::location::LocationId;
-use super::Skills;
+use crate::card_data::CardKind;
+use crate::card_registry;
+use crate::state::{CardCode, CardInPlay, CardInstanceId, LocationId, Skills};
 
 /// Stable identifier for an investigator within a scenario.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -209,13 +209,13 @@ impl Investigator {
 /// not an investigator card — a state-shape invariant violation, surfaced
 /// rather than silently defaulted.
 fn investigator_capacity(code: &CardCode) -> (u8, u8) {
-    let reg = crate::card_registry::current()
+    let reg = card_registry::current()
         .expect("investigator capacity read before a CardRegistry was installed");
     match &(reg.metadata_for)(code)
         .expect("investigator card code absent from registry")
         .kind
     {
-        crate::card_data::CardKind::Investigator { health, sanity, .. } => (*health, *sanity),
+        CardKind::Investigator { health, sanity, .. } => (*health, *sanity),
         _ => panic!("investigator_card.code does not resolve to a CardKind::Investigator"),
     }
 }
@@ -324,11 +324,12 @@ pub enum EliminationCause {
 #[cfg(test)]
 mod threat_area_tests {
     use super::*;
-    use crate::state::{CardCode, CardInPlay, CardInstanceId};
+
+    use crate::test_support;
 
     #[test]
     fn new_investigator_has_empty_threat_area() {
-        let inv = crate::test_support::test_investigator(1);
+        let inv = test_support::test_investigator(1);
         assert!(inv.threat_area.is_empty());
     }
 
@@ -338,7 +339,7 @@ mod threat_area_tests {
         // fails loudly rather than silently defaulting. `investigator_card`
         // in particular — an absent identity field must not degrade to some
         // default that silently disables elder-sign + seated reaction.
-        let inv = crate::test_support::test_investigator(1);
+        let inv = test_support::test_investigator(1);
         let full = serde_json::to_value(&inv).expect("serialize");
         // The complete object still round-trips.
         serde_json::from_value::<Investigator>(full.clone()).expect("full object deserializes");
@@ -365,7 +366,7 @@ mod threat_area_tests {
     fn controlled_card_instances_yields_investigator_card_then_in_play_then_threat_area() {
         // #448 cp3a: the investigator card is yielded first (so the unified
         // scan fires its abilities), then `cards_in_play`, then `threat_area`.
-        let mut inv = crate::test_support::test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.investigator_card.code = CardCode::new("inv-card");
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new("in-play"),
@@ -387,16 +388,17 @@ mod threat_area_tests {
 mod ability_usage_tests {
     use crate::dsl::{UsageLimit, UsagePeriod};
     use crate::state::AbilityUsageRecord;
+    use crate::test_support;
 
     #[test]
     fn new_investigator_card_has_empty_ability_usage() {
-        let inv = crate::test_support::test_investigator(1);
+        let inv = test_support::test_investigator(1);
         assert!(inv.investigator_card.ability_usage.is_empty());
     }
 
     #[test]
     fn usage_exhausts_after_limit_within_a_round_and_resets_across_rounds() {
-        let mut inv = crate::test_support::test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         let limit = Some(UsageLimit {
             count: 1,
             period: UsagePeriod::Round,
@@ -419,21 +421,25 @@ mod ability_usage_tests {
 
 #[cfg(test)]
 mod removed_from_game_tests {
+    use crate::test_support;
+
     #[test]
     fn new_investigator_has_empty_removed_pile() {
-        let inv = crate::test_support::test_investigator(1);
+        let inv = test_support::test_investigator(1);
         assert!(inv.removed_from_game.is_empty());
     }
 }
 
 #[cfg(test)]
 mod harm_accessor_tests {
+    use crate::test_support;
+
     // Seam test from cp1b (which delegated to legacy fields) is removed by
     // cp2a: the accessors now read the investigator_card directly.
     #[test]
     fn harm_accessors_read_from_investigator_card() {
-        crate::test_support::install_test_registry();
-        let mut inv = crate::test_support::test_investigator(1);
+        test_support::install_test_registry();
+        let mut inv = test_support::test_investigator(1);
         // Set accumulated harm directly on the card.
         inv.investigator_card.accumulated_damage = 2;
         inv.investigator_card.accumulated_horror = 1;
@@ -447,13 +453,12 @@ mod harm_accessor_tests {
 
 #[cfg(test)]
 mod investigator_card_tests {
+    use crate::test_support;
+
     #[test]
     fn test_investigator_has_an_investigator_card_with_the_synthetic_code() {
-        let inv = crate::test_support::test_investigator(1);
-        assert_eq!(
-            inv.investigator_card.code.as_str(),
-            crate::test_support::TEST_INV
-        );
+        let inv = test_support::test_investigator(1);
+        assert_eq!(inv.investigator_card.code.as_str(), test_support::TEST_INV);
         assert_eq!(inv.investigator_card.accumulated_damage, 0);
         assert_eq!(inv.investigator_card.accumulated_horror, 0);
     }
@@ -464,8 +469,8 @@ mod investigator_card_tests {
 
     #[test]
     fn defeat_reads_capacity_from_the_card_not_a_field() {
-        crate::test_support::install_test_registry();
-        let mut inv = crate::test_support::test_investigator(1);
+        test_support::install_test_registry();
+        let mut inv = test_support::test_investigator(1);
         inv.investigator_card.accumulated_damage = 8; // == TEST_INV health
         assert!(
             inv.damage() >= inv.max_health(),

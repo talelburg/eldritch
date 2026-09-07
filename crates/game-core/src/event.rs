@@ -15,11 +15,11 @@ use serde::{Deserialize, Serialize};
 
 use card_dsl::card_data::CardType;
 
-use crate::dsl::Determination;
+use crate::dsl::{Determination, HarmKind};
 use crate::scenario::ScenarioEnding;
 use crate::state::{
-    CardCode, CardInstanceId, ChaosToken, EliminationCause, EnemyId, InvestigatorId, LocationId,
-    Phase, SkillKind, TokenResolution, UseKind, Zone,
+    AbilityAddress, AbilitySource, CardCode, CardInstanceId, ChaosToken, EliminationCause, EnemyId,
+    InvestigatorId, LocationId, Phase, SkillKind, TokenResolution, UseKind, Zone,
 };
 
 /// One state-change record emitted by the engine.
@@ -525,7 +525,7 @@ pub enum Event {
         /// The investigator healed.
         investigator: InvestigatorId,
         /// Which track was healed.
-        kind: crate::dsl::HarmKind,
+        kind: HarmKind,
         /// How much was actually healed (≤ the amount requested).
         amount: u8,
     },
@@ -588,11 +588,11 @@ pub enum Event {
         /// [`CardInstanceId`]; a consumer that
         /// needs one reads
         /// [`AbilitySource::instance`](crate::state::AbilitySource::instance).
-        source: crate::state::AbilitySource,
+        source: AbilitySource,
         /// The source card's code.
         code: CardCode,
         /// Which ability fired, named by where it is printed (#772).
-        address: crate::state::AbilityAddress,
+        address: AbilityAddress,
     },
     /// A scenario ended — at a resolution point, or at none. Emitted by
     /// [`apply`](crate::engine::apply) when the scenario's *ending* finishes —
@@ -749,7 +749,6 @@ pub enum LapseReason {
 #[cfg(test)]
 mod enemy_spawned_event_tests {
     use super::*;
-    use crate::state::{CardCode, EnemyId, InvestigatorId, LocationId};
 
     #[test]
     fn enemy_spawned_with_engagement_serde_roundtrip() {
@@ -794,8 +793,6 @@ mod encounter_deck_event_tests {
 #[cfg(test)]
 mod card_revealed_event_tests {
     use super::*;
-    use crate::state::CardCode;
-    use card_dsl::card_data::CardType;
 
     #[test]
     fn card_revealed_event_serde_roundtrip() {

@@ -195,11 +195,12 @@ pub fn current() -> Option<&'static CardRegistry> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CardRegistry, REGISTRY};
-    use crate::card_data::{CardKind, CardMetadata, CardType, Class, SkillIcons};
-    use crate::dsl::{constant, modify, ModifierScope, Stat};
-    use crate::state::CardCode;
+    use super::*;
     use std::sync::OnceLock;
+
+    use crate::card_data::{CardKind, CardType, Class, SkillIcons};
+    use crate::dsl::{self, ModifierScope, Stat};
+    use crate::test_support;
 
     /// Build a hand-rolled `CardMetadata` for a fake test card.
     fn fake_metadata() -> CardMetadata {
@@ -241,9 +242,9 @@ mod tests {
         }
     }
 
-    fn fake_abilities_for(code: &CardCode) -> Option<Vec<crate::dsl::Ability>> {
+    fn fake_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         if code.as_str() == "TEST1" {
-            Some(vec![constant(modify(
+            Some(vec![dsl::constant(dsl::modify(
                 Stat::Willpower,
                 1,
                 ModifierScope::WhileInPlay,
@@ -310,14 +311,14 @@ mod tests {
     fn install_is_idempotent_and_current_reflects_installed_value() {
         // The test registry is the canonical game-core test registry.
         // Install it (idempotent) to ensure `current()` returns Some.
-        crate::test_support::install_test_registry();
-        let installed = super::current().expect("registry should be present after install");
+        test_support::install_test_registry();
+        let installed = current().expect("registry should be present after install");
         // A second install attempt must return Err (already set).
-        assert!(super::install(fake_registry()).is_err());
+        assert!(install(fake_registry()).is_err());
         // Sanity: `current()` keeps returning Some.
         assert!(REGISTRY.get().is_some());
         // Verify `installed` resolves the TEST_INV code that the test
         // registry knows about.
-        let _ = (installed.metadata_for)(&CardCode::new(crate::test_support::TEST_INV));
+        let _ = (installed.metadata_for)(&CardCode::new(test_support::TEST_INV));
     }
 }

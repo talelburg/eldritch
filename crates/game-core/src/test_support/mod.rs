@@ -11,6 +11,18 @@
 //! production `GameState`s, not just test ones); it is re-exported here
 //! so the existing test imports keep working.
 
+use std::sync::OnceLock;
+
+use crate::action::{InputResponse, PlayerAction};
+use crate::card_data::{CardKind, CardMetadata, Class, Skills};
+use crate::card_registry::{self, CardRegistry};
+use crate::dsl::{self, Ability, EventPattern, EventTiming, SkillTestKind, TestOutcome};
+use crate::engine::{self, Cx, EngineOutcome, ForcedTriggerPoint, TimingEvent};
+use crate::event::Event;
+use crate::state::{
+    CardCode, Continuation, EmitStep, EnemyId, GameState, InvestigatorId, LocationId, Phase,
+};
+
 pub mod assertions;
 pub mod fixtures;
 pub mod mock_registry;
@@ -21,9 +33,8 @@ pub mod resolver;
 /// `test_investigator` capacity).
 pub const TEST_INV: &str = "TEST_INV";
 
-fn test_inv_metadata() -> &'static crate::card_data::CardMetadata {
-    use crate::card_data::{CardKind, CardMetadata, Class, Skills};
-    static M: std::sync::OnceLock<CardMetadata> = std::sync::OnceLock::new();
+fn test_inv_metadata() -> &'static CardMetadata {
+    static M: OnceLock<CardMetadata> = OnceLock::new();
     M.get_or_init(|| CardMetadata {
         code: TEST_INV.to_owned(),
         name: "Test Investigator".to_owned(),
@@ -64,8 +75,8 @@ pub const TEST_TERMINAL_PREFIX: &str = "_TEST_TERM_R";
 /// `terminal_code(1)` → `_TEST_TERM_R1`. Put it last in an act or agenda deck
 /// and advancing it ends the scenario at `Resolution(n)`.
 #[must_use]
-pub fn terminal_code(n: u8) -> crate::state::CardCode {
-    crate::state::CardCode::new(format!("{TEST_TERMINAL_PREFIX}{n}"))
+pub fn terminal_code(n: u8) -> CardCode {
+    CardCode::new(format!("{TEST_TERMINAL_PREFIX}{n}"))
 }
 
 /// Abilities lookup for the synthetic terminal cards ([`terminal_code`]).
@@ -86,23 +97,22 @@ pub fn terminal_code(n: u8) -> crate::state::CardCode {
 /// }
 /// ```
 #[must_use]
-pub fn abilities_for_terminal(code: &crate::state::CardCode) -> Option<Vec<crate::dsl::Ability>> {
-    use crate::dsl::{forced_on_event, reach_resolution, EventPattern, EventTiming};
+pub fn abilities_for_terminal(code: &CardCode) -> Option<Vec<Ability>> {
     let n: u8 = code
         .as_str()
         .strip_prefix(TEST_TERMINAL_PREFIX)?
         .parse()
         .ok()?;
     Some(vec![
-        forced_on_event(
+        dsl::forced_on_event(
             EventPattern::ActAdvanced,
             EventTiming::After,
-            reach_resolution(n),
+            dsl::reach_resolution(n),
         ),
-        forced_on_event(
+        dsl::forced_on_event(
             EventPattern::AgendaAdvanced,
             EventTiming::After,
-            reach_resolution(n),
+            dsl::reach_resolution(n),
         ),
     ])
 }
@@ -123,13 +133,11 @@ pub fn abilities_for_terminal(code: &crate::state::CardCode) -> Option<Vec<crate
 /// }
 /// ```
 ///
-/// Idempotent, and — like [`card_registry::install`](crate::card_registry::install)
+/// Idempotent, and — like [`card_registry::install`]
 /// — first-install-wins.
-pub fn install_registry_with_terminal_cards(base: crate::card_registry::CardRegistry) {
-    use crate::card_registry::CardRegistry;
-    use crate::state::CardCode;
-    static BASE: std::sync::OnceLock<CardRegistry> = std::sync::OnceLock::new();
-    fn abilities_for(code: &CardCode) -> Option<Vec<crate::dsl::Ability>> {
+pub fn install_registry_with_terminal_cards(base: CardRegistry) {
+    static BASE: OnceLock<CardRegistry> = OnceLock::new();
+    fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         abilities_for_terminal(code)
             .or_else(|| BASE.get().and_then(|base| (base.abilities_for)(code)))
     }
@@ -138,7 +146,7 @@ pub fn install_registry_with_terminal_cards(base: crate::card_registry::CardRegi
     // synthetic acts/agendas with no reverse side, so there is nothing to
     // compose in, and overriding the slot would switch the *real* registry's
     // back sides off for every test that installs through here (#774).
-    let _ = crate::card_registry::install(CardRegistry {
+    let _ = card_registry::install(CardRegistry {
         abilities_for,
         ..base
     });
@@ -161,9 +169,7 @@ pub fn install_registry_with_terminal_cards(base: crate::card_registry::CardRegi
 ///         .or_else(|| /* mock-specific lookups */)
 /// }
 /// ```
-pub fn metadata_for_test_inv(
-    code: &crate::state::CardCode,
-) -> Option<&'static crate::card_data::CardMetadata> {
+pub fn metadata_for_test_inv(code: &CardCode) -> Option<&'static CardMetadata> {
     (code.as_str() == TEST_INV).then(test_inv_metadata)
 }
 
@@ -178,17 +184,15 @@ pub fn metadata_for_test_inv(
 /// process-global: a second per-test install would collide (the same constraint
 /// that put [`fire_forced_on_enter`] here).
 pub fn install_test_registry() {
-    use crate::state::CardCode;
-    static INSTALL: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    static INSTALL: OnceLock<()> = OnceLock::new();
     INSTALL.get_or_init(|| {
-        fn metadata_for(code: &CardCode) -> Option<&'static crate::card_data::CardMetadata> {
+        fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
             (code.as_str() == TEST_INV).then(test_inv_metadata)
         }
-        fn abilities_for(code: &CardCode) -> Option<Vec<crate::dsl::Ability>> {
+        fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             abilities_for_terminal(code)
         }
-        use crate::card_registry::CardRegistry;
-        let _ = crate::card_registry::install(CardRegistry {
+        let _ = card_registry::install(CardRegistry {
             metadata_for,
             abilities_for,
             ..CardRegistry::EMPTY
@@ -219,21 +223,21 @@ pub use resolver::{
 /// Wired into `move_action` (`EnteredLocation`); this helper exists for
 /// unit-style coverage of the dispatch path in isolation.
 pub fn fire_forced_on_enter(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<crate::event::Event>,
-    investigator: crate::state::InvestigatorId,
-    location: crate::state::LocationId,
-) -> crate::engine::EngineOutcome {
-    let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::queue_forced_triggers(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    location: LocationId,
+) -> EngineOutcome {
+    let mut cx = Cx { state, events };
+    let out = engine::queue_forced_triggers(
         &mut cx,
-        &crate::engine::ForcedTriggerPoint::EnteredLocation {
+        &ForcedTriggerPoint::EnteredLocation {
             investigator,
             location,
         },
-        crate::dsl::EventTiming::After,
+        EventTiming::After,
     );
-    crate::engine::drive(&mut cx, out)
+    engine::drive(&mut cx, out)
 }
 
 /// Test helper: fire one timing cell's forced triggers for a phase ending,
@@ -245,36 +249,27 @@ pub fn fire_forced_on_enter(
 /// real emit walks all three. A card declaring a different cell than the one
 /// asked for here fires nothing, so pass the cell the card under test prints:
 /// agenda 01107's *"**Forced** - At the end of the enemy phase"* is
-/// [`EventTiming::At`](crate::dsl::EventTiming::At).
+/// [`EventTiming::At`].
 pub fn fire_forced_on_phase_end(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<crate::event::Event>,
-    phase: crate::state::Phase,
-    cell: crate::dsl::EventTiming,
-) -> crate::engine::EngineOutcome {
-    let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::queue_forced_triggers(
-        &mut cx,
-        &crate::engine::ForcedTriggerPoint::PhaseEnded { phase },
-        cell,
-    );
-    crate::engine::drive(&mut cx, out)
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    phase: Phase,
+    cell: EventTiming,
+) -> EngineOutcome {
+    let mut cx = Cx { state, events };
+    let out =
+        engine::queue_forced_triggers(&mut cx, &ForcedTriggerPoint::PhaseEnded { phase }, cell);
+    engine::drive(&mut cx, out)
 }
 
 /// Test helper: fire `ForcedTriggerPoint::RoundEnded` against `state`,
 /// returning the `EngineOutcome`. See `fire_forced_on_enter`. Exercises
 /// round-end Forced abilities (agenda 01107's doom).
-pub fn fire_forced_on_round_end(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<crate::event::Event>,
-) -> crate::engine::EngineOutcome {
-    let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::queue_forced_triggers(
-        &mut cx,
-        &crate::engine::ForcedTriggerPoint::RoundEnded,
-        crate::dsl::EventTiming::At,
-    );
-    crate::engine::drive(&mut cx, out)
+pub fn fire_forced_on_round_end(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
+    let mut cx = Cx { state, events };
+    let out =
+        engine::queue_forced_triggers(&mut cx, &ForcedTriggerPoint::RoundEnded, EventTiming::At);
+    engine::drive(&mut cx, out)
 }
 
 /// Test helper: run the Upkeep step-4.6 round-end sequence — `upkeep_phase_end`
@@ -283,13 +278,10 @@ pub fn fire_forced_on_round_end(
 /// clue-spend reaction window when affordable; resume it with
 /// [`resume_round_end_window`]. Requires the `UpkeepPhase` anchor on the stack
 /// (the coordinator's teardown pops it).
-pub fn run_upkeep_round_end(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<crate::event::Event>,
-) -> crate::engine::EngineOutcome {
-    let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::upkeep_phase_end(&mut cx);
-    crate::engine::drive(&mut cx, out)
+pub fn run_upkeep_round_end(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
+    let mut cx = Cx { state, events };
+    let out = engine::upkeep_phase_end(&mut cx);
+    engine::drive(&mut cx, out)
 }
 
 /// Test helper: run the Enemy step-3.4 phase end — `enemy_phase_end` then the
@@ -297,13 +289,10 @@ pub fn run_upkeep_round_end(
 /// `PhaseEnded { Enemy }` (agenda 01107's Ghoul move) are *queued* by the emit
 /// and resolved by the loop, ahead of the Enemy→Upkeep transition (#569).
 /// Requires the `EnemyPhase` anchor on the stack (the transition pops it).
-pub fn run_enemy_phase_end(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<crate::event::Event>,
-) -> crate::engine::EngineOutcome {
-    let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::enemy_phase_end(&mut cx);
-    crate::engine::drive(&mut cx, out)
+pub fn run_enemy_phase_end(state: &mut GameState, events: &mut Vec<Event>) -> EngineOutcome {
+    let mut cx = Cx { state, events };
+    let out = engine::enemy_phase_end(&mut cx);
+    engine::drive(&mut cx, out)
 }
 
 /// Test helper: walk one triggering condition's whole timing sequence — push
@@ -315,32 +304,30 @@ pub fn run_enemy_phase_end(
 /// this is the only way to walk another condition's cells — notably the
 /// caller-owned `when`-cell reject (#701). Delete it with the classification.
 pub fn run_timing_sequence(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<crate::event::Event>,
-    event: crate::engine::TimingEvent,
-) -> crate::engine::EngineOutcome {
-    let mut cx = crate::engine::Cx { state, events };
-    cx.state
-        .continuations
-        .push(crate::state::Continuation::EmitEvent {
-            event,
-            step: crate::state::EmitStep::When,
-        });
-    crate::engine::drive(&mut cx, crate::engine::EngineOutcome::Done)
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    event: TimingEvent,
+) -> EngineOutcome {
+    let mut cx = Cx { state, events };
+    cx.state.continuations.push(Continuation::EmitEvent {
+        event,
+        step: EmitStep::When,
+    });
+    engine::drive(&mut cx, EngineOutcome::Done)
 }
 
 /// Test helper: resume the round-end `when` act-advance reaction window (#434)
 /// with `response` (`PickSingle`/`Skip`), driving the coordinator through to its
 /// next suspension or completion via the player-action entry.
 pub fn resume_round_end_window(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<crate::event::Event>,
-    response: &crate::action::InputResponse,
-) -> crate::engine::EngineOutcome {
-    let mut cx = crate::engine::Cx { state, events };
-    crate::engine::apply_player_action(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    response: &InputResponse,
+) -> EngineOutcome {
+    let mut cx = Cx { state, events };
+    engine::apply_player_action(
         &mut cx,
-        &crate::action::PlayerAction::ResolveInput {
+        &PlayerAction::ResolveInput {
             response: response.clone(),
         },
     )
@@ -349,54 +336,51 @@ pub fn resume_round_end_window(
 /// Test helper: fire forced triggers for an act advancing, returning the
 /// `EngineOutcome`. See `fire_forced_on_enter`.
 pub fn fire_forced_on_act_advance(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<crate::event::Event>,
-    code: crate::state::CardCode,
-) -> crate::engine::EngineOutcome {
-    let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::queue_forced_triggers(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    code: CardCode,
+) -> EngineOutcome {
+    let mut cx = Cx { state, events };
+    let out = engine::queue_forced_triggers(
         &mut cx,
-        &crate::engine::ForcedTriggerPoint::ActAdvanced { code },
-        crate::dsl::EventTiming::After,
+        &ForcedTriggerPoint::ActAdvanced { code },
+        EventTiming::After,
     );
-    crate::engine::drive(&mut cx, out)
+    engine::drive(&mut cx, out)
 }
 
 /// Test helper: fire forced triggers for an agenda advancing, returning
 /// the `EngineOutcome`. See `fire_forced_on_enter`. Exercises the agenda
 /// reverses (01105 discard/horror, 01106 dig-until-Ghoul).
 pub fn fire_forced_on_agenda_advance(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<crate::event::Event>,
-    code: crate::state::CardCode,
-) -> crate::engine::EngineOutcome {
-    let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::queue_forced_triggers(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    code: CardCode,
+) -> EngineOutcome {
+    let mut cx = Cx { state, events };
+    let out = engine::queue_forced_triggers(
         &mut cx,
-        &crate::engine::ForcedTriggerPoint::AgendaAdvanced { code },
-        crate::dsl::EventTiming::After,
+        &ForcedTriggerPoint::AgendaAdvanced { code },
+        EventTiming::After,
     );
-    crate::engine::drive(&mut cx, out)
+    engine::drive(&mut cx, out)
 }
 
 /// Test helper: fire one timing cell's forced triggers for an enemy defeat,
 /// returning the `EngineOutcome`. See `fire_forced_on_enter`, and
 /// `fire_forced_on_phase_end` for why the caller names the `cell`: act
 /// 01110's *"**Objective** - If the Ghoul Priest is Defeated, advance."* is
-/// [`EventTiming::At`](crate::dsl::EventTiming::At).
+/// [`EventTiming::At`].
 pub fn fire_forced_on_enemy_defeat(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<crate::event::Event>,
-    code: crate::state::CardCode,
-    cell: crate::dsl::EventTiming,
-) -> crate::engine::EngineOutcome {
-    let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::queue_forced_triggers(
-        &mut cx,
-        &crate::engine::ForcedTriggerPoint::EnemyDefeated { code },
-        cell,
-    );
-    crate::engine::drive(&mut cx, out)
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    code: CardCode,
+    cell: EventTiming,
+) -> EngineOutcome {
+    let mut cx = Cx { state, events };
+    let out =
+        engine::queue_forced_triggers(&mut cx, &ForcedTriggerPoint::EnemyDefeated { code }, cell);
+    engine::drive(&mut cx, out)
 }
 
 /// Test helper: fire one timing cell's forced triggers for an enemy attack,
@@ -404,50 +388,50 @@ pub fn fire_forced_on_enemy_defeat(
 /// `fire_forced_on_phase_end` for why the caller names the `cell`: Silver
 /// Twilight Acolyte 01102's *"**Forced** - After Silver Twilight Acolyte
 /// attacks: Place 1 doom on the current agenda."* is
-/// [`EventTiming::After`](crate::dsl::EventTiming::After).
+/// [`EventTiming::After`].
 ///
 /// Fires the point in isolation, without the attack that would carry it — which
 /// is what lets a test read the candidate the scan produced (its source, and the
 /// anchor of the interactive acknowledge) without staging a whole Enemy phase.
 pub fn fire_forced_on_enemy_attack(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<crate::event::Event>,
-    enemy: crate::state::EnemyId,
-    investigator: crate::state::InvestigatorId,
-    cell: crate::dsl::EventTiming,
-) -> crate::engine::EngineOutcome {
-    let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::queue_forced_triggers(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    enemy: EnemyId,
+    investigator: InvestigatorId,
+    cell: EventTiming,
+) -> EngineOutcome {
+    let mut cx = Cx { state, events };
+    let out = engine::queue_forced_triggers(
         &mut cx,
-        &crate::engine::ForcedTriggerPoint::EnemyAttacks {
+        &ForcedTriggerPoint::EnemyAttacks {
             enemy,
             investigator,
         },
         cell,
     );
-    crate::engine::drive(&mut cx, out)
+    engine::drive(&mut cx, out)
 }
 
 /// Test helper: fire one timing cell's forced triggers for `investigator`'s
 /// turn ending, returning the `EngineOutcome`. See `fire_forced_on_enter`, and
 /// `fire_forced_on_phase_end` for why the caller names the `cell`: Frozen in
 /// Fear 01164's *"**Forced** - At the end of your turn: …"* is
-/// [`EventTiming::At`](crate::dsl::EventTiming::At), so a corpus test of the
+/// [`EventTiming::At`], so a corpus test of the
 /// threat-area path wants that cell — the mock-registry callers here declare
 /// [`After`](crate::dsl::EventTiming::After) and pass it.
 pub fn fire_forced_at_end_of_turn(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<crate::event::Event>,
-    investigator: crate::state::InvestigatorId,
-    cell: crate::dsl::EventTiming,
-) -> crate::engine::EngineOutcome {
-    let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::queue_forced_triggers(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+    cell: EventTiming,
+) -> EngineOutcome {
+    let mut cx = Cx { state, events };
+    let out = engine::queue_forced_triggers(
         &mut cx,
-        &crate::engine::ForcedTriggerPoint::EndOfTurn { investigator },
+        &ForcedTriggerPoint::EndOfTurn { investigator },
         cell,
     );
-    crate::engine::drive(&mut cx, out)
+    engine::drive(&mut cx, out)
 }
 
 /// Test helper: fire the forced phase of
@@ -458,21 +442,21 @@ pub fn fire_forced_at_end_of_turn(
 /// scan is a no-op here — the attachment path (Obscuring Fog 01168) is
 /// exercised end-to-end through a real Investigate instead.
 pub fn fire_forced_after_location_investigated(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<crate::event::Event>,
-    investigator: crate::state::InvestigatorId,
-) -> crate::engine::EngineOutcome {
-    let mut cx = crate::engine::Cx { state, events };
-    let out = crate::engine::queue_forced_triggers(
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
+) -> EngineOutcome {
+    let mut cx = Cx { state, events };
+    let out = engine::queue_forced_triggers(
         &mut cx,
-        &crate::engine::ForcedTriggerPoint::SkillTestResolved {
+        &ForcedTriggerPoint::SkillTestResolved {
             investigator,
-            kind: crate::dsl::SkillTestKind::Investigate,
-            outcome: crate::dsl::TestOutcome::Success,
+            kind: SkillTestKind::Investigate,
+            outcome: TestOutcome::Success,
         },
-        crate::dsl::EventTiming::After,
+        EventTiming::After,
     );
-    crate::engine::drive(&mut cx, out)
+    engine::drive(&mut cx, out)
 }
 
 /// Test helper: eliminate `investigator` by dealing them `damage`, then run the
@@ -488,12 +472,12 @@ pub fn fire_forced_after_location_investigated(
 /// `damage` must be lethal for the investigator's capacity; the caller is
 /// responsible for that (the registry it installed answers `max_health()`).
 pub fn eliminate_by_damage(
-    state: &mut crate::state::GameState,
-    events: &mut Vec<crate::event::Event>,
-    investigator: crate::state::InvestigatorId,
+    state: &mut GameState,
+    events: &mut Vec<Event>,
+    investigator: InvestigatorId,
     damage: u8,
-) -> crate::engine::EngineOutcome {
-    let mut cx = crate::engine::Cx { state, events };
-    crate::engine::take_damage(&mut cx, investigator, damage);
-    crate::engine::drive(&mut cx, crate::engine::EngineOutcome::Done)
+) -> EngineOutcome {
+    let mut cx = Cx { state, events };
+    engine::take_damage(&mut cx, investigator, damage);
+    engine::drive(&mut cx, EngineOutcome::Done)
 }

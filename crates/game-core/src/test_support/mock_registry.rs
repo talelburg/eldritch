@@ -38,6 +38,7 @@ use crate::card_data::CardMetadata;
 use crate::card_registry::{self, CardRegistry, EligibilityFn, NativeConditionFn, NativeEffectFn};
 use crate::dsl::Ability;
 use crate::state::CardCode;
+use crate::test_support;
 
 /// A per-code abilities producer. Boxed rather than a `fn` pointer so a caller
 /// can close over locals — a `Vec<Ability>` is built fresh per lookup, which is
@@ -222,7 +223,7 @@ fn find_abilities(
 }
 
 fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-    super::metadata_for_test_inv(code).or_else(|| {
+    test_support::metadata_for_test_inv(code).or_else(|| {
         TABLES
             .get()?
             .metadata
@@ -232,7 +233,8 @@ fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
 }
 
 fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-    super::abilities_for_terminal(code).or_else(|| find_abilities(&TABLES.get()?.abilities, code))
+    test_support::abilities_for_terminal(code)
+        .or_else(|| find_abilities(&TABLES.get()?.abilities, code))
 }
 
 fn back_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {

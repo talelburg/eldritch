@@ -4,19 +4,16 @@ use std::collections::{BTreeMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
-use super::{
-    ability_source::{AbilityAddress, AbilitySource},
-    card::{CardCode, CardInPlay, CardInstanceId},
-    chaos_bag::{ChaosBag, TokenModifiers},
-    counter::Counter,
-    enemy::{Enemy, EnemyId},
-    investigator::{Investigator, InvestigatorId},
-    location::{Location, LocationId},
-    phase::Phase,
-};
 use crate::card_data::{CardKind, CardMetadata};
-use crate::dsl::{Determination, IntExpr, SkillTestKind, Stat};
+use crate::dsl::{Determination, EventTiming, IntExpr, SkillTestKind, Stat};
+use crate::engine::{EvalContext, TimingEvent};
+use crate::event::FailureReason;
 use crate::rng::RngState;
+use crate::scenario::{ScenarioEnding, ScenarioId};
+use crate::state::{
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, Counter, Enemy,
+    EnemyId, Investigator, InvestigatorId, Location, LocationId, Phase, TokenModifiers,
+};
 use card_dsl::card_data::SkillKind;
 
 /// The full state of a scenario at a single point in time.
@@ -171,7 +168,7 @@ pub struct GameState {
     ///
     /// Serializable so action-log replay reproduces the lookup
     /// deterministically across host restarts.
-    pub scenario_id: Option<crate::scenario::ScenarioId>,
+    pub scenario_id: Option<ScenarioId>,
     // The Mythos step-1.4 encounter-draw loop now lives on its
     // `Continuation::EncounterDraw` frame (#348); read the prompted drawer via
     // [`Self::current_encounter_drawer`]. The former `mythos_draw_pending:
@@ -271,7 +268,7 @@ pub struct GameState {
     /// `apply_resolution`, exactly once (the idempotency guard formerly tracked
     /// as #131). See
     /// `docs/adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md`.
-    pub ending: Option<crate::scenario::ScenarioEnding>,
+    pub ending: Option<ScenarioEnding>,
     /// The victory display (Rules Reference p.21): an out-of-play zone of
     /// cards worth experience, scored at scenario end. Victory-point
     /// locations are placed here when the scenario resolves (in play +
@@ -556,23 +553,23 @@ pub enum AssetEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Continuation {
     /// An event reaction window or the #213 forced run, keyed by the
-    /// [`TimingEvent`](crate::engine::TimingEvent) that opened it (EmitEvent-frame
+    /// [`TimingEvent`] that opened it (EmitEvent-frame
     /// Slice A, #433). The [`mode`](TimingMode) distinguishes a skippable
     /// reaction window from the mandatory forced run (which carries no resume
     /// continuation — on close the `drive` loop re-dispatches the exposed parent
     /// frame, #434). The `TimingEvent` is referenced in place rather than
     /// relocated — [`Effect`](Self::Effect) already holds a `crate::engine`
-    /// type ([`EvalContext`](crate::engine::EvalContext), #345).
+    /// type ([`EvalContext`], #345).
     TimingPointWindow {
         /// The timing event that opened this window/run.
-        event: crate::engine::TimingEvent,
+        event: TimingEvent,
         /// The timing cell whose scan produced `candidates` — the cell the
         /// `when → at → after` coordinator was resolving (#434/#702), or the
         /// caller-named cell of one of the three conditions that still bypass it.
         /// Carried so the fire-time re-validation of a reaction window (#568) can
         /// re-ask the scan the *same* question it was first asked; re-deriving it
         /// from `event` would answer for the wrong cell.
-        bucket: crate::dsl::EventTiming,
+        bucket: EventTiming,
         /// Reaction window vs. forced run.
         mode: TimingMode,
         /// Candidates in resolution order (lead-ordered for the forced run;
@@ -653,7 +650,7 @@ pub enum Continuation {
     /// `when` act-advance, a clue discovery's `when` replacement (#703).
     EmitEvent {
         /// The game event whose timing cells are being walked.
-        event: crate::engine::TimingEvent,
+        event: TimingEvent,
         /// The sequence cursor (`When` → `ResolveCondition` → `At` → `After`).
         ///
         /// Renamed from `bucket` with no compatibility shim: a coordinator frame
@@ -669,9 +666,9 @@ pub enum Continuation {
     /// (#434). Child of an `EmitEvent` frame.
     TimingPoint {
         /// The game event (carried for the forced/reaction scans).
-        event: crate::engine::TimingEvent,
+        event: TimingEvent,
         /// Which bucket this point resolves.
-        bucket: crate::dsl::EventTiming,
+        bucket: EventTiming,
         /// The forced-then-reaction sub-cursor.
         sub: TimingSub,
     },
@@ -941,7 +938,7 @@ pub enum Continuation {
     /// suspends *in place* (its `Leaf` step returns `AwaitingInput` and the frame
     /// stays on top — it *is* the prompt), so this variant can await input
     /// (routed in `resolve_input`, like [`Self::DealDamage`]). Carries its
-    /// own [`EvalContext`](crate::engine::EvalContext) snapshot (#345's grouped
+    /// own [`EvalContext`] snapshot (#345's grouped
     /// bindings) so resume re-binds without replay.
     Effect(EffectFrame),
     /// The scenario's ending, in progress (#566). Pushed at the **bottom** of the
@@ -1087,7 +1084,7 @@ pub enum EffectFrame {
         /// Index of the next child to run.
         next: usize,
         /// The evaluation context for this sequence.
-        ctx: crate::engine::EvalContext,
+        ctx: EvalContext,
     },
     /// A single effect node to evaluate. A terminal effect runs and pops;
     /// `ChooseOne` pushes its chosen branch; `Effect::Deal` may push a
@@ -1101,7 +1098,7 @@ pub enum EffectFrame {
         /// The effect node to evaluate.
         effect: Box<card_dsl::dsl::Effect>,
         /// The evaluation context for this node.
-        ctx: crate::engine::EvalContext,
+        ctx: EvalContext,
     },
     /// The **designated action** of an activated ability, performed as the
     /// rules describe it but modified in the manner the ability carries
@@ -1119,7 +1116,7 @@ pub enum EffectFrame {
         /// The bold action designator, carrying the ability's modification.
         designator: Box<card_dsl::dsl::ActionDesignator>,
         /// The evaluation context for the designated action.
-        ctx: crate::engine::EvalContext,
+        ctx: EvalContext,
     },
 }
 
@@ -1517,14 +1514,14 @@ impl Continuation {
         )
     }
 
-    /// The [`TimingEvent`](crate::engine::TimingEvent) that opened this frame,
+    /// The [`TimingEvent`] that opened this frame,
     /// if it is a [`TimingPointWindow`](Self::TimingPointWindow) (event window
     /// or forced run). `None` for [`FastWindow`](Self::FastWindow) framework
     /// windows (no timing event) and non-window frames. Lets the driver bind
     /// event-specific `EvalContext` (the attacking enemy, the would-be discovery
     /// count) directly from the timing event (#433).
     #[must_use]
-    pub fn window_timing_event(&self) -> Option<&crate::engine::TimingEvent> {
+    pub fn window_timing_event(&self) -> Option<&TimingEvent> {
         match self {
             Continuation::TimingPointWindow { event, .. } => Some(event),
             _ => None,
@@ -1687,12 +1684,12 @@ impl EmitStep {
     /// The timing cell this step scans for abilities, or `None` for the
     /// resolve step (which scans nothing — it resolves the condition).
     #[must_use]
-    pub fn cell(self) -> Option<crate::dsl::EventTiming> {
+    pub fn cell(self) -> Option<EventTiming> {
         match self {
-            EmitStep::When => Some(crate::dsl::EventTiming::When),
+            EmitStep::When => Some(EventTiming::When),
             EmitStep::ResolveCondition => None,
-            EmitStep::At => Some(crate::dsl::EventTiming::At),
-            EmitStep::After => Some(crate::dsl::EventTiming::After),
+            EmitStep::At => Some(EventTiming::At),
+            EmitStep::After => Some(EventTiming::After),
         }
     }
 
@@ -1724,7 +1721,7 @@ impl EmitStep {
     /// own rather than waiting to be remembered. That is the same reason ADR
     /// 0008 keeps `ConditionResolution` an exhaustive match instead of a table:
     /// *a table is a thing a new variant can be forgotten from*.
-    pub fn cells() -> impl Iterator<Item = crate::dsl::EventTiming> {
+    pub fn cells() -> impl Iterator<Item = EventTiming> {
         core::iter::successors(Some(EmitStep::When), |step| step.next()).filter_map(EmitStep::cell)
     }
 }
@@ -1919,7 +1916,7 @@ pub struct ResolvedTest {
     pub margin: i8,
     /// Why the test failed (meaningful only when `!succeeded`); supplied to the
     /// logged [`SkillTestFailed`](crate::Event::SkillTestFailed).
-    pub fail_reason: crate::event::FailureReason,
+    pub fail_reason: FailureReason,
 }
 
 /// Where the skill-test resolution driver should resume on the next
@@ -3122,6 +3119,8 @@ impl GameState {
 mod open_window_tests {
     use super::*;
 
+    use crate::test_support;
+
     #[test]
     fn open_window_serde_roundtrip() {
         // A framework window is a `FastWindow` frame on the stack (#433); the
@@ -3144,7 +3143,7 @@ mod open_window_tests {
     fn an_in_flight_tests_parked_board_source_round_trips_through_serde() {
         let test = InFlightSkillTest {
             source: Some(AbilitySource::Act),
-            ..crate::test_support::test_skill_test(
+            ..test_support::test_skill_test(
                 SkillTestId(0),
                 InvestigatorId(1),
                 SkillKind::Willpower,
@@ -3222,6 +3221,7 @@ mod fast_actor_scope_tests {
 
 #[cfg(test)]
 mod location_id_counter_tests {
+    use crate::state::{Counter, GameState};
     use crate::test_support::GameStateBuilder;
 
     #[test]
@@ -3232,11 +3232,10 @@ mod location_id_counter_tests {
 
     #[test]
     fn location_ids_round_trip_through_serde() {
-        use crate::state::Counter;
         let mut state = GameStateBuilder::new().build();
         state.location_ids = Counter::at(7);
         let json = serde_json::to_string(&state).expect("serialize");
-        let back: crate::state::GameState = serde_json::from_str(&json).expect("deserialize");
+        let back: GameState = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.location_ids.peek(), 7);
     }
 }
@@ -3244,6 +3243,7 @@ mod location_id_counter_tests {
 #[cfg(test)]
 mod continuation_stack_tests {
     use super::*;
+
     use crate::test_support::GameStateBuilder;
 
     #[test]
@@ -3404,6 +3404,7 @@ mod continuation_stack_tests {
 #[cfg(test)]
 mod id_counter_tests {
     use super::*;
+
     use crate::test_support::GameStateBuilder;
 
     #[test]
@@ -3451,12 +3452,11 @@ mod encounter_draw_tests {
 #[cfg(test)]
 mod enemy_attack_loop_tests {
     use super::*;
-    use crate::state::InvestigatorId;
+
     use crate::test_support::GameStateBuilder;
 
     #[test]
     fn enemy_phase_anchor_attacking_round_trips_through_serde() {
-        use crate::state::{Continuation, EnemyResume};
         let mut state = GameStateBuilder::new().build();
         state.continuations.push(Continuation::EnemyPhase {
             resume: EnemyResume::BeforeInvestigatorAttacked,
@@ -3469,7 +3469,6 @@ mod enemy_attack_loop_tests {
 
     #[test]
     fn deal_damage_frame_round_trips_through_serde() {
-        use crate::state::{Assignment, Continuation, DamageSource, DealDamageStep, EnemyId};
         let mut state = GameStateBuilder::new().build();
         state.continuations.push(Continuation::DealDamage {
             investigator: InvestigatorId(1),
@@ -3487,7 +3486,6 @@ mod enemy_attack_loop_tests {
 
     #[test]
     fn attack_loop_frame_round_trips_through_serde() {
-        use crate::state::{AttackLoopStage, Continuation, EnemyAttackSource, EnemyId};
         let mut state = GameStateBuilder::new().build();
         state.continuations.push(Continuation::AttackLoop {
             investigator: InvestigatorId(7),
@@ -3502,7 +3500,6 @@ mod enemy_attack_loop_tests {
 
     #[test]
     fn attack_loop_pick_order_stage_round_trips_through_serde() {
-        use crate::state::{AttackLoopStage, Continuation, EnemyAttackSource, EnemyId};
         let mut state = GameStateBuilder::new().build();
         state.continuations.push(Continuation::AttackLoop {
             investigator: InvestigatorId(1),
@@ -3519,7 +3516,7 @@ mod enemy_attack_loop_tests {
 #[cfg(test)]
 mod encounter_deck_tests {
     use super::*;
-    use crate::state::CardCode;
+
     use crate::test_support::GameStateBuilder;
 
     #[test]
@@ -3632,7 +3629,8 @@ mod partial_eq_tests {
 
 #[cfg(test)]
 mod add_location_tests {
-    use crate::card_data::{CardKind, CardMetadata, ClueValue};
+    use crate::card_data::{CardKind, CardMetadata, ClueValue, Prey};
+    use crate::state::CardCode;
     use crate::test_support::GameStateBuilder;
 
     fn location_meta(code: &str, name: &str, shroud: u8, clues: u8) -> CardMetadata {
@@ -3674,10 +3672,7 @@ mod add_location_tests {
     fn add_set_aside_card_records_a_location_by_code_only() {
         let mut state = GameStateBuilder::new().build();
         state.add_set_aside_card(&location_meta("01113", "Attic", 1, 2));
-        assert_eq!(
-            state.set_aside_cards,
-            vec![crate::state::CardCode::new("01113")],
-        );
+        assert_eq!(state.set_aside_cards, vec![CardCode::new("01113")],);
         assert!(state.locations.is_empty(), "not in play");
         assert_eq!(
             state.location_ids.peek(),
@@ -3687,7 +3682,6 @@ mod add_location_tests {
     }
 
     fn enemy_meta(code: &str, name: &str) -> CardMetadata {
-        use crate::card_data::Prey;
         CardMetadata {
             code: code.to_string(),
             name: name.to_string(),
@@ -3725,10 +3719,7 @@ mod add_location_tests {
         state.add_set_aside_card(&enemy_meta("01116", "Ghoul Priest"));
         assert_eq!(
             state.set_aside_cards,
-            vec![
-                crate::state::CardCode::new("01113"),
-                crate::state::CardCode::new("01116"),
-            ],
+            vec![CardCode::new("01113"), CardCode::new("01116"),],
         );
     }
 
@@ -3809,6 +3800,7 @@ mod connect_tests {
 #[cfg(test)]
 mod starting_location_tests {
     use super::*;
+
     use crate::test_support::GameStateBuilder;
 
     #[test]
@@ -3826,6 +3818,8 @@ mod starting_location_tests {
 #[cfg(test)]
 mod action_resolution_frame_tests {
     use super::*;
+
+    use crate::test_support::GameStateBuilder;
 
     #[test]
     fn action_resolution_frame_never_awaits_input_and_is_not_a_phase_anchor() {
@@ -3847,13 +3841,11 @@ mod action_resolution_frame_tests {
     fn current_hand_size_discard_reads_the_frame() {
         // No frame → None.
         assert_eq!(
-            crate::state::GameStateBuilder::new()
-                .build()
-                .current_hand_size_discard(),
+            GameStateBuilder::new().build().current_hand_size_discard(),
             None
         );
         // Top HandSizeDiscard frame → its first remaining investigator.
-        let mut state = crate::state::GameStateBuilder::new().build();
+        let mut state = GameStateBuilder::new().build();
         state
             .continuations
             .push(Continuation::HandSizeDiscard(HandSizeDiscard {
@@ -3875,8 +3867,8 @@ mod scenario_end_cancellation_tests {
     #[test]
     fn a_reaction_window_is_cancelled_but_its_forced_run_twin_completes() {
         let window = |mode| Continuation::TimingPointWindow {
-            event: crate::engine::TimingEvent::GameEnd,
-            bucket: crate::dsl::EventTiming::After,
+            event: TimingEvent::GameEnd,
+            bucket: EventTiming::After,
             mode,
             candidates: Vec::new(),
         };

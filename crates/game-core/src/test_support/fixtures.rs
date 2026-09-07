@@ -21,10 +21,11 @@ use crate::card_data::{ClueValue, Prey};
 use crate::dsl::SkillTestKind;
 use crate::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, InFlightSkillTest, Investigator,
-    InvestigatorId, Location, LocationId, SkillKind, SkillTestFollowUp, SkillTestId, SkillTestStep,
-    Skills, Status,
+    CardCode, CardInPlay, CardInstanceId, DifficultyBasis, Enemy, EnemyId, InFlightSkillTest,
+    Investigator, InvestigatorId, Location, LocationId, SkillKind, SkillTestFollowUp, SkillTestId,
+    SkillTestStep, Skills, Status,
 };
+use crate::test_support;
 
 /// A stock investigator with reasonable defaults.
 ///
@@ -37,7 +38,7 @@ use crate::state::{
 #[must_use]
 pub fn test_investigator(id: u32) -> Investigator {
     let investigator_card = CardInPlay::enter_play(
-        CardCode::new(crate::test_support::TEST_INV),
+        CardCode::new(test_support::TEST_INV),
         CardInstanceId(u32::MAX - id),
     );
     Investigator {
@@ -159,7 +160,7 @@ pub fn test_skill_test(
         // A printed difficulty, the basis with no board quantity behind it
         // — a fixture that wants a location's shroud or an enemy's fight
         // sets `difficulty_basis` itself with functional update syntax.
-        difficulty_basis: crate::state::DifficultyBasis::Fixed(difficulty),
+        difficulty_basis: DifficultyBasis::Fixed(difficulty),
         committed_by_active: Vec::new(),
         tested_location: None,
         follow_up: SkillTestFollowUp::None,
@@ -289,8 +290,7 @@ pub fn awaiting_skippable_pick_single_with(
 
 #[cfg(test)]
 mod tests {
-    use super::awaiting_commit_input;
-    use crate::EngineOutcome;
+    use super::*;
 
     #[test]
     fn awaiting_commit_input_carries_the_prompt() {
