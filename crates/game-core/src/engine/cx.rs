@@ -5,7 +5,7 @@
 //! by hand through every signature — the [`GameState`] being mutated and
 //! the [`Event`] buffer being emitted into. It is *not* a semantic
 //! context: the "you"/"source" of card text lives in
-//! [`EvalContext`](super::EvalContext), which travels alongside `Cx`
+//! [`EvalContext`](crate::engine::evaluator::EvalContext), which travels alongside `Cx`
 //! as a separate `eval_ctx` parameter in the evaluator.
 //!
 //! Bare field bundle by design — no helper methods. Read-only callees

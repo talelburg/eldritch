@@ -1,12 +1,14 @@
-//! Outcome of a single [`apply`](super::apply) call.
+//! Outcome of a single [`apply`](crate::engine::apply) call.
 
 use std::borrow::Cow;
 
+use crate::engine::ability_source;
+use crate::state::{
+    AbilitySource, CardCode, CardInstanceId, EnemyId, GameState, InvestigatorId, LocationId,
+};
 use serde::{Deserialize, Serialize};
 
-use crate::state::{CardCode, CardInstanceId, EnemyId, InvestigatorId, LocationId};
-
-/// The terminal status of an [`apply`](super::apply) call.
+/// The terminal status of an [`apply`](crate::engine::apply) call.
 ///
 /// After the engine finishes applying an action, it is in one of three
 /// states:
@@ -98,7 +100,7 @@ pub enum OptionTarget {
     EncounterDeck,
 }
 
-impl From<crate::state::AbilitySource> for OptionTarget {
+impl From<AbilitySource> for OptionTarget {
     /// The board surface an ability source is rendered on — **the one map from
     /// a source to an anchor** (#735).
     ///
@@ -122,8 +124,7 @@ impl From<crate::state::AbilitySource> for OptionTarget {
     /// site. A caller holding an anchor that was **snapshotted before arbitrary
     /// mutation** has no such guarantee and must use the crate-internal
     /// `OptionTarget::for_live_source` instead (#845).
-    fn from(source: crate::state::AbilitySource) -> Self {
-        use crate::state::AbilitySource;
+    fn from(source: AbilitySource) -> Self {
         match source {
             AbilitySource::InPlay(instance_id) => OptionTarget::CardInstance(instance_id),
             AbilitySource::Location(location) => OptionTarget::Location(location),
@@ -153,11 +154,8 @@ impl OptionTarget {
     /// could no longer legally activate (RR Appendix I, *"the sequence does not
     /// stop from completing if that card leaves play during the sequence"*), so
     /// the prompt is still owed a home.
-    pub(crate) fn for_live_source(
-        source: crate::state::AbilitySource,
-        state: &crate::GameState,
-    ) -> Option<Self> {
-        crate::engine::ability_source::source_card(state, source)?;
+    pub(crate) fn for_live_source(source: AbilitySource, state: &GameState) -> Option<Self> {
+        ability_source::source_card(state, source)?;
         Some(source.into())
     }
 }
@@ -537,7 +535,6 @@ mod tests {
 
     #[test]
     fn awaiting_input_round_trips_option_target() {
-        use crate::state::EnemyId;
         let outcome = EngineOutcome::AwaitingInput {
             request: InputRequest::pick_single(
                 "Choose an action",

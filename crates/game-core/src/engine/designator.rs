@@ -33,6 +33,7 @@
 use std::borrow::Cow;
 
 use crate::dsl::ActionDesignator;
+use crate::engine::dispatch::combat;
 use crate::state::{EnemyId, GameState, InvestigatorId, LocationId};
 
 /// Whether `investigator` can perform the action `designator` names, ignoring
@@ -118,11 +119,7 @@ pub(crate) fn unimplemented_designator(designator: &ActionDesignator) -> Cow<'st
 /// The same list the evaluator's target grounding offers, so the pre-cost gate
 /// and the pick cannot disagree about what counts as a candidate.
 pub(crate) fn fight_candidates(state: &GameState, investigator: InvestigatorId) -> Vec<EnemyId> {
-    crate::engine::dispatch::combat::enemies_in_scope(
-        state,
-        investigator,
-        crate::engine::dispatch::combat::fight_target_scope(),
-    )
+    combat::enemies_in_scope(state, investigator, combat::fight_target_scope())
 }
 
 /// The location an **Investigate** would test: `investigator`'s current
@@ -143,7 +140,7 @@ pub(crate) fn investigate_location(
 mod tests {
     use super::*;
     use crate::dsl::IntExpr;
-    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     const ME: InvestigatorId = InvestigatorId(1);
     const HERE: LocationId = LocationId(1);
@@ -164,15 +161,15 @@ mod tests {
     /// A board with the investigator at a revealed [`HERE`] and `enemies`
     /// co-located there.
     fn board(revealed: bool, enemies: u32) -> GameState {
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(HERE);
-        let mut loc = test_location(1, "Study");
+        let mut loc = test_support::test_location(1, "Study");
         loc.revealed = revealed;
         let mut builder = GameStateBuilder::new()
             .with_investigator(inv)
             .with_location(loc);
         for n in 0..enemies {
-            let mut enemy = test_enemy(n + 1, "Ghoul");
+            let mut enemy = test_support::test_enemy(n + 1, "Ghoul");
             enemy.current_location = Some(HERE);
             builder = builder.with_enemy(enemy);
         }

@@ -95,11 +95,13 @@
 use crate::card_data::SkillKind;
 use crate::card_registry::CardRegistry;
 use crate::dsl::{
-    Determination, Effect, ModifierAudience, ModifierScope, SkillTestKind, Stat, Trigger,
+    Determination, Effect, IntExpr, ModifierAudience, ModifierScope, SkillTestKind, Stat, Trigger,
 };
+use crate::engine::abilities_in_effect;
+use crate::engine::evaluator::{self, EvalContext};
 use crate::state::{
-    AbilitySource, CardCode, CardInPlay, DifficultyBasis, EnemyId, GameState, InvestigatorId,
-    LocationId, RecordedModifierKind,
+    AbilitySource, CardCode, CardInPlay, CardInstanceId, DifficultyBasis, EnemyId, GameState,
+    InvestigatorId, LocationId, RecordedModifierKind,
 };
 
 /// Which entity's quantity is being asked about.
@@ -174,13 +176,13 @@ pub enum ContributionSource {
         /// The source card's printed code.
         code: CardCode,
         /// The source card's in-play instance, where it has one.
-        instance: Option<crate::state::CardInstanceId>,
+        instance: Option<CardInstanceId>,
     },
     /// A recorded row queued by an earlier effect resolution, attributed
     /// to the in-play instance that pushed it where one is known.
     Recorded {
         /// The instance whose ability pushed the row.
-        instance: Option<crate::state::CardInstanceId>,
+        instance: Option<CardInstanceId>,
     },
 }
 
@@ -580,8 +582,7 @@ fn sweep(
         // board grants this card (#772). The address each ability comes paired
         // with names it across a suspension; a modifier is read fresh at every
         // read and never suspended, so it is dropped here.
-        let Some(abilities) =
-            crate::engine::abilities_in_effect::for_source_with(state, registry, source, code)
+        let Some(abilities) = abilities_in_effect::for_source_with(state, registry, source, code)
         else {
             return;
         };
@@ -747,11 +748,11 @@ fn collect_recorded(
         // activated, so a recorded row's origin instance is one honestly. The
         // row itself stays instance-valued (#834): widening it would push the
         // same narrowing one layer down onto `ContributionSource::Recorded`.
-        let eval_ctx = crate::engine::evaluator::EvalContext::for_controller_with_optional_source(
+        let eval_ctx = EvalContext::for_controller_with_optional_source(
             row.investigator,
             row.source.map(AbilitySource::InPlay),
         );
-        let Ok(delta) = crate::engine::evaluator::eval_int_expr(state, &eval_ctx, delta) else {
+        let Ok(delta) = evaluator::eval_int_expr(state, &eval_ctx, delta) else {
             continue;
         };
         out.push(Contribution {
@@ -890,7 +891,7 @@ pub(crate) fn elder_sign_expr(
     state: &GameState,
     registry: &CardRegistry,
     controller: InvestigatorId,
-) -> Option<crate::dsl::IntExpr> {
+) -> Option<IntExpr> {
     let inv = state.investigators.get(&controller)?;
     let abilities = (registry.abilities_for)(&inv.investigator_card.code)?;
     abilities.iter().find_map(|ability| match &ability.trigger {
@@ -918,21 +919,20 @@ pub(crate) fn stat_for_skill(skill: SkillKind) -> Stat {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::card_data::CardMetadata;
     use crate::dsl::{
         constant, control_status, elder_sign, grant, modify, modify_for, on_play, Ability,
-        ControlStatus, GrantTarget, IntExpr,
+        ControlStatus, GrantTarget, Quantity,
     };
-    use crate::state::{CardInstanceId, LocationId};
-    use crate::test_support::{
-        test_enemy, test_investigator, test_location, test_skill_test, GameStateBuilder,
-    };
+    use crate::state::{Continuation, InFlightSkillTest, Lifetime, RecordedModifier, SkillTestId};
+    use crate::test_support::{self, GameStateBuilder};
 
     /// Mock registry over a small hardcoded set of codes. Keeps these
     /// tests isolated from the global `OnceLock` and from the cards
     /// crate — a query takes its registry by argument, so nothing is
     /// installed. Named to match `tests/modified_value.rs`'s mocks,
     /// which cover the same sweep from the integration side.
-    fn mock_metadata_for(_: &CardCode) -> Option<&'static crate::card_data::CardMetadata> {
+    fn mock_metadata_for(_: &CardCode) -> Option<&'static CardMetadata> {
         None
     }
 
@@ -987,7 +987,7 @@ mod tests {
                 ModifierScope::WhileInPlay,
             ))]),
             "elder-sign-clues-here" => Some(vec![elder_sign(IntExpr::Count(
-                crate::dsl::Quantity::CluesAtControllerLocation,
+                Quantity::CluesAtControllerLocation,
             ))]),
             // Lita Chantler 01117's exact shape (#773): the card prints no
             // modifier of its own and **grants itself** one, gated on being
@@ -1021,7 +1021,7 @@ mod tests {
 
     fn state_with_cards_in_play(codes: &[&str]) -> (GameState, InvestigatorId) {
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.cards_in_play = codes
             .iter()
             .enumerate()
@@ -1204,7 +1204,7 @@ mod tests {
     /// and folds the same sweep over it.
     #[test]
     fn a_capacity_modifier_lands_on_max_health() {
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let (state, id) = state_with_cards_in_play(&["max-health-plus-1", "willpower-plus-1"]);
         let health = modified_value(
             &state,
@@ -1326,28 +1326,28 @@ mod tests {
     // ---- recorded rows -------------------------------------------
 
     /// The id of the test the recorded-row tests put in flight.
-    const IN_FLIGHT: crate::state::SkillTestId = crate::state::SkillTestId(7);
+    const IN_FLIGHT: SkillTestId = SkillTestId(7);
 
     /// One investigator, `rows` recorded, and the test identified by
     /// [`IN_FLIGHT`] in flight — the shape a `ThisSkillTest` row is read
     /// under.
-    fn state_with_recorded(rows: Vec<crate::state::RecordedModifier>) -> GameState {
+    fn state_with_recorded(rows: Vec<RecordedModifier>) -> GameState {
         state_with_recorded_during(rows, IN_FLIGHT)
     }
 
     /// As [`state_with_recorded`], with the in-flight test's id chosen by
     /// the caller — so a row can be read against a *different* test.
     fn state_with_recorded_during(
-        rows: Vec<crate::state::RecordedModifier>,
-        in_flight: crate::state::SkillTestId,
+        rows: Vec<RecordedModifier>,
+        in_flight: SkillTestId,
     ) -> GameState {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         state.recorded_modifiers = rows;
         state
             .continuations
-            .push(crate::state::Continuation::SkillTest(test_skill_test(
+            .push(Continuation::SkillTest(test_support::test_skill_test(
                 in_flight,
                 InvestigatorId(1),
                 SkillKind::Willpower,
@@ -1358,11 +1358,7 @@ mod tests {
     }
 
     /// A row scoped to [`IN_FLIGHT`].
-    fn recorded(
-        investigator: InvestigatorId,
-        stat: Stat,
-        delta: i8,
-    ) -> crate::state::RecordedModifier {
+    fn recorded(investigator: InvestigatorId, stat: Stat, delta: i8) -> RecordedModifier {
         recorded_for(investigator, stat, delta, IN_FLIGHT)
     }
 
@@ -1371,13 +1367,13 @@ mod tests {
         investigator: InvestigatorId,
         stat: Stat,
         delta: i8,
-        test: crate::state::SkillTestId,
-    ) -> crate::state::RecordedModifier {
-        crate::state::RecordedModifier::new(
+        test: SkillTestId,
+    ) -> RecordedModifier {
+        RecordedModifier::new(
             investigator,
             stat,
             IntExpr::Lit(delta),
-            crate::state::Lifetime::SkillTest(test),
+            Lifetime::SkillTest(test),
             None,
         )
     }
@@ -1415,13 +1411,8 @@ mod tests {
     fn a_recorded_row_from_another_test_contributes_nothing() {
         let id = InvestigatorId(1);
         let state = state_with_recorded_during(
-            vec![recorded_for(
-                id,
-                Stat::Willpower,
-                5,
-                crate::state::SkillTestId(1),
-            )],
-            crate::state::SkillTestId(2),
+            vec![recorded_for(id, Stat::Willpower, 5, SkillTestId(1))],
+            SkillTestId(2),
         );
         assert_eq!(skill(&state, id, SkillKind::Willpower), 3);
     }
@@ -1452,7 +1443,7 @@ mod tests {
     fn a_recorded_row_contributes_nothing_with_no_test_in_flight() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         state.recorded_modifiers = vec![recorded(id, Stat::Willpower, 5)];
         assert_eq!(skill(&state, id, SkillKind::Willpower), 3);
@@ -1463,17 +1454,18 @@ mod tests {
     /// board as it stands at the read.
     #[test]
     fn a_recorded_rows_delta_is_evaluated_at_read_time() {
-        use crate::dsl::{IntExpr, Quantity};
         let id = InvestigatorId(1);
         let loc = LocationId(3);
-        let mut state = state_with_recorded(vec![crate::state::RecordedModifier::new(
+        let mut state = state_with_recorded(vec![RecordedModifier::new(
             id,
             Stat::Willpower,
             IntExpr::Count(Quantity::CluesAtControllerLocation),
-            crate::state::Lifetime::SkillTest(IN_FLIGHT),
+            Lifetime::SkillTest(IN_FLIGHT),
             None,
         )]);
-        state.locations.insert(loc, test_location(3, "Study"));
+        state
+            .locations
+            .insert(loc, test_support::test_location(3, "Study"));
         state.investigators.get_mut(&id).unwrap().current_location = Some(loc);
         state.locations.get_mut(&loc).unwrap().clues = 2;
         assert_eq!(skill(&state, id, SkillKind::Willpower), 5);
@@ -1493,9 +1485,9 @@ mod tests {
         let id = InvestigatorId(1);
         let loc = LocationId(3);
         let card = CardInPlay::enter_play(CardCode::new("self-granting-combat"), CardInstanceId(0));
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(loc);
-        let mut location = test_location(3, "Study");
+        let mut location = test_support::test_location(3, "Study");
         if controlled {
             inv.cards_in_play.push(card);
         } else {
@@ -1569,7 +1561,7 @@ mod tests {
 
     #[test]
     fn a_locations_shroud_folds_in_its_attachments() {
-        let mut loc = test_location(3, "Study"); // printed shroud 2
+        let mut loc = test_support::test_location(3, "Study"); // printed shroud 2
         loc.attachments.push(CardInPlay::enter_play(
             CardCode::new("shroud-plus-2"),
             CardInstanceId(0),
@@ -1589,7 +1581,7 @@ mod tests {
     #[test]
     fn a_locations_shroud_with_no_attachments_is_the_printed_value() {
         let state = GameStateBuilder::new()
-            .with_location(test_location(3, "Study"))
+            .with_location(test_support::test_location(3, "Study"))
             .build();
         assert_eq!(
             modified_value(
@@ -1608,14 +1600,14 @@ mod tests {
     /// attached to — a second location in play is unaffected.
     #[test]
     fn an_attached_card_reaches_only_what_it_is_attached_to() {
-        let mut fogged = test_location(3, "Study");
+        let mut fogged = test_support::test_location(3, "Study");
         fogged.attachments.push(CardInPlay::enter_play(
             CardCode::new("shroud-plus-2"),
             CardInstanceId(0),
         ));
         let state = GameStateBuilder::new()
             .with_location(fogged)
-            .with_location(test_location(4, "Hallway"))
+            .with_location(test_support::test_location(4, "Hallway"))
             .build();
         let shroud = |id| {
             modified_value(
@@ -1634,7 +1626,7 @@ mod tests {
     #[test]
     fn an_enemys_fight_and_evade_answer_from_their_printed_values() {
         let state = GameStateBuilder::new()
-            .with_enemy(test_enemy(7, "Ghoul"))
+            .with_enemy(test_support::test_enemy(7, "Ghoul"))
             .build();
         let read = |quantity| {
             modified_value(
@@ -1656,24 +1648,22 @@ mod tests {
     /// (printed shroud 2) and one enemy (printed fight 2, evade 2).
     fn state_with_test(basis: DifficultyBasis) -> GameState {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_location(test_location(3, "Study"))
-            .with_enemy(test_enemy(7, "Ghoul"))
+            .with_investigator(test_support::test_investigator(1))
+            .with_location(test_support::test_location(3, "Study"))
+            .with_enemy(test_support::test_enemy(7, "Ghoul"))
             .build();
         state
             .continuations
-            .push(crate::state::Continuation::SkillTest(
-                crate::state::InFlightSkillTest {
-                    difficulty_basis: basis,
-                    ..test_skill_test(
-                        IN_FLIGHT,
-                        InvestigatorId(1),
-                        SkillKind::Intellect,
-                        SkillTestKind::Investigate,
-                        0,
-                    )
-                },
-            ));
+            .push(Continuation::SkillTest(InFlightSkillTest {
+                difficulty_basis: basis,
+                ..test_support::test_skill_test(
+                    IN_FLIGHT,
+                    InvestigatorId(1),
+                    SkillKind::Intellect,
+                    SkillTestKind::Investigate,
+                    0,
+                )
+            }));
         state
     }
 
@@ -1752,16 +1742,14 @@ mod tests {
             CardCode::new("shroud-plus-2"),
             CardInstanceId(0),
         ));
-        state
-            .recorded_modifiers
-            .push(crate::state::RecordedModifier::targeting(
-                ModifierTarget::Location(LocationId(3)),
-                InvestigatorId(1),
-                Stat::Shroud,
-                IntExpr::Lit(-2),
-                crate::state::Lifetime::SkillTest(IN_FLIGHT),
-                None,
-            ));
+        state.recorded_modifiers.push(RecordedModifier::targeting(
+            ModifierTarget::Location(LocationId(3)),
+            InvestigatorId(1),
+            Stat::Shroud,
+            IntExpr::Lit(-2),
+            Lifetime::SkillTest(IN_FLIGHT),
+            None,
+        ));
         assert_eq!(difficulty_of(&state), 1);
     }
 
@@ -1773,16 +1761,14 @@ mod tests {
     fn a_difficulty_reduced_below_zero_clamps_at_zero() {
         let mut state = state_with_test(DifficultyBasis::Shroud(LocationId(3)));
         state.locations.get_mut(&LocationId(3)).unwrap().shroud = 1;
-        state
-            .recorded_modifiers
-            .push(crate::state::RecordedModifier::targeting(
-                ModifierTarget::Location(LocationId(3)),
-                InvestigatorId(1),
-                Stat::Shroud,
-                IntExpr::Lit(-2),
-                crate::state::Lifetime::SkillTest(IN_FLIGHT),
-                None,
-            ));
+        state.recorded_modifiers.push(RecordedModifier::targeting(
+            ModifierTarget::Location(LocationId(3)),
+            InvestigatorId(1),
+            Stat::Shroud,
+            IntExpr::Lit(-2),
+            Lifetime::SkillTest(IN_FLIGHT),
+            None,
+        ));
         assert_eq!(difficulty_of(&state), 0);
     }
 
@@ -1791,16 +1777,14 @@ mod tests {
     #[test]
     fn a_location_row_from_another_test_does_not_change_the_difficulty() {
         let mut state = state_with_test(DifficultyBasis::Shroud(LocationId(3)));
-        state
-            .recorded_modifiers
-            .push(crate::state::RecordedModifier::targeting(
-                ModifierTarget::Location(LocationId(3)),
-                InvestigatorId(1),
-                Stat::Shroud,
-                IntExpr::Lit(-2),
-                crate::state::Lifetime::SkillTest(crate::state::SkillTestId(999)),
-                None,
-            ));
+        state.recorded_modifiers.push(RecordedModifier::targeting(
+            ModifierTarget::Location(LocationId(3)),
+            InvestigatorId(1),
+            Stat::Shroud,
+            IntExpr::Lit(-2),
+            Lifetime::SkillTest(SkillTestId(999)),
+            None,
+        ));
         assert_eq!(difficulty_of(&state), 2, "the printed shroud, unreduced");
     }
 
@@ -1828,10 +1812,10 @@ mod tests {
     /// ability has no expression to record at all.
     #[test]
     fn an_elder_sign_modifier_evaluates_its_expression() {
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.investigator_card.code = CardCode::new("elder-sign-clues-here");
         inv.current_location = Some(LocationId(10));
-        let mut loc = test_location(10, "Study");
+        let mut loc = test_support::test_location(10, "Study");
         loc.clues = 2;
         let state = GameStateBuilder::new()
             .with_investigator(inv)
@@ -1839,13 +1823,10 @@ mod tests {
             .build();
         let expr = elder_sign_expr(&state, &mock_registry(), InvestigatorId(1))
             .expect("the investigator card carries an elder-sign ability");
-        let ctx = crate::engine::evaluator::EvalContext::for_controller(InvestigatorId(1));
-        assert_eq!(
-            crate::engine::evaluator::eval_int_expr(&state, &ctx, &expr),
-            Ok(2)
-        );
+        let ctx = EvalContext::for_controller(InvestigatorId(1));
+        assert_eq!(evaluator::eval_int_expr(&state, &ctx, &expr), Ok(2));
 
-        let mut plain = test_investigator(2);
+        let mut plain = test_support::test_investigator(2);
         plain.investigator_card.code = CardCode::new("no-elder-sign");
         let state = GameStateBuilder::new().with_investigator(plain).build();
         assert_eq!(
@@ -1857,19 +1838,14 @@ mod tests {
     // ---- the fold's stage 5: the test's determination -------------
 
     /// A determination row scoped to [`IN_FLIGHT`].
-    fn determination_row(d: Determination) -> crate::state::RecordedModifier {
-        crate::state::RecordedModifier::determination(
-            InvestigatorId(1),
-            d,
-            crate::state::Lifetime::SkillTest(IN_FLIGHT),
-            None,
-        )
+    fn determination_row(d: Determination) -> RecordedModifier {
+        RecordedModifier::determination(InvestigatorId(1), d, Lifetime::SkillTest(IN_FLIGHT), None)
     }
 
     /// The board [`state_with_test`] builds (investigator 1 taking an
     /// Intellect investigation against the Study's shroud 2), with `rows`
     /// recorded on top.
-    fn state_with_determinations(rows: Vec<crate::state::RecordedModifier>) -> GameState {
+    fn state_with_determinations(rows: Vec<RecordedModifier>) -> GameState {
         let mut state = state_with_test(DifficultyBasis::Shroud(LocationId(3)));
         state.recorded_modifiers = rows;
         state
@@ -1991,20 +1967,19 @@ mod tests {
     /// skill-test identity check: one bought for another test is inert.
     #[test]
     fn a_determination_scoped_to_another_test_is_inert() {
-        let mut state =
-            state_with_determinations(vec![crate::state::RecordedModifier::determination(
-                InvestigatorId(1),
-                Determination::AutomaticFailure,
-                crate::state::Lifetime::SkillTest(crate::state::SkillTestId(99)),
-                None,
-            )]);
+        let mut state = state_with_determinations(vec![RecordedModifier::determination(
+            InvestigatorId(1),
+            Determination::AutomaticFailure,
+            Lifetime::SkillTest(SkillTestId(99)),
+            None,
+        )]);
         assert_eq!(skill_of(&state, SkillKind::Intellect), 3);
         assert_eq!(
             test_determination(&state, ReadContext::DuringTest(SkillTestKind::Investigate)),
             None,
         );
         // And it is gone for good once its own test tears down.
-        state.expire_modifiers_for_test(crate::state::SkillTestId(99));
+        state.expire_modifiers_for_test(SkillTestId(99));
         assert!(state.recorded_modifiers.is_empty());
     }
 

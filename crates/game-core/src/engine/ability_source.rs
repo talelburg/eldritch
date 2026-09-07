@@ -455,8 +455,8 @@ fn unreachable_reason(investigator: InvestigatorId, source: AbilitySource) -> Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{Act, Agenda, CardCode, CardInstanceId, EnemyId, LocationId};
-    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+    use crate::state::{EnemyId, LocationId};
+    use crate::test_support::{self, GameStateBuilder};
 
     const STUDY: LocationId = LocationId(1);
     const HALLWAY: LocationId = LocationId(2);
@@ -471,30 +471,30 @@ mod tests {
     ///
     /// Investigator 1 is the one doing the reaching.
     fn board() -> GameState {
-        let mut mine = test_investigator(1);
+        let mut mine = test_support::test_investigator(1);
         mine.investigator_card.instance_id = CardInstanceId(10);
         mine.cards_in_play.push(card("01020", 11));
         mine.threat_area.push(card("01098", 12));
 
-        let mut neighbour = test_investigator(2);
+        let mut neighbour = test_support::test_investigator(2);
         neighbour.investigator_card.instance_id = CardInstanceId(20);
         neighbour.threat_area.push(card("01099", 21));
 
-        let mut elsewhere = test_investigator(3);
+        let mut elsewhere = test_support::test_investigator(3);
         elsewhere.investigator_card.instance_id = CardInstanceId(30);
         elsewhere.threat_area.push(card("01100", 31));
 
-        let mut study = test_location(1, "Study");
+        let mut study = test_support::test_location(1, "Study");
         study.attachments.push(card("01168", 40));
         study.cards_at_location.push(card("01117", 60));
-        let mut hallway = test_location(2, "Hallway");
+        let mut hallway = test_support::test_location(2, "Hallway");
         hallway.attachments.push(card("01168", 41));
         hallway.cards_at_location.push(card("01117", 61));
 
-        let mut here = test_enemy(1, "Ghoul");
+        let mut here = test_support::test_enemy(1, "Ghoul");
         here.current_location = Some(STUDY);
         here.attachments.push(card("02256", 50));
-        let mut there = test_enemy(2, "Acolyte");
+        let mut there = test_support::test_enemy(2, "Acolyte");
         there.current_location = Some(HALLWAY);
 
         GameStateBuilder::new()
