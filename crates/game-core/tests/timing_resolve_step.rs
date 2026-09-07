@@ -21,16 +21,14 @@
 //! `GameEnd` is `cards::tests::cover_up`, which drives the real 01007 through a
 //! real scenario ending.
 
-use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
-use game_core::engine::TimingEvent;
+use card_dsl::dsl::{self, forced_on_event, native, Ability, EventPattern, EventTiming};
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::{Cx, EngineOutcome, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
-    Act, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId, Phase,
+    Act, CardCode, CardInPlay, CardInstanceId, EmitStep, GameState, InvestigatorId, Phase,
 };
-use game_core::test_support::{
-    run_timing_sequence, test_investigator, GameStateBuilder, MockRegistry,
-};
-use game_core::{Cx, EngineOutcome, EvalContext};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 /// Declares a `when`-timed forced on `PhaseEnded { Upkeep }` — a caller-owned
 /// condition, so the coordinator must reject rather than resolve it.
@@ -75,7 +73,7 @@ fn both_cells(pattern: EventPattern) -> Vec<Ability> {
 
 fn upkeep_ended() -> EventPattern {
     EventPattern::PhaseEnded {
-        phase: card_dsl::dsl::Phase::Upkeep,
+        phase: dsl::Phase::Upkeep,
     }
 }
 
@@ -109,7 +107,7 @@ fn state_with_act(act: &str) -> GameState {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Upkeep)
-        .with_investigator(test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .with_turn_order([inv])
         .build();
     state.act_deck = vec![Act {
@@ -124,7 +122,7 @@ fn state_with_act(act: &str) -> GameState {
 fn caller_owned_condition_rejects_a_declared_interrupt() {
     let mut state = state_with_act(WHEN_ACT);
     let mut events = Vec::new();
-    let out = run_timing_sequence(
+    let out = test_support::run_timing_sequence(
         &mut state,
         &mut events,
         TimingEvent::PhaseEnded {
@@ -156,7 +154,7 @@ fn caller_owned_condition_rejects_a_declared_interrupt() {
 fn caller_owned_condition_walks_the_cells_after_its_resolve_step() {
     let mut state = state_with_act(AT_ACT);
     let mut events = Vec::new();
-    let out = run_timing_sequence(
+    let out = test_support::run_timing_sequence(
         &mut state,
         &mut events,
         TimingEvent::PhaseEnded {
@@ -180,7 +178,7 @@ fn caller_owned_condition_walks_the_cells_after_its_resolve_step() {
 fn coordinator_owned_condition_walks_its_when_cell_before_its_at_cell() {
     let mut state = state_with_act(ROUND_ACT);
     let mut events = Vec::new();
-    let out = run_timing_sequence(&mut state, &mut events, TimingEvent::RoundEnded);
+    let out = test_support::run_timing_sequence(&mut state, &mut events, TimingEvent::RoundEnded);
     assert!(
         matches!(out, EngineOutcome::Done),
         "walk completes: {out:?}"
@@ -213,7 +211,7 @@ fn coordinator_owned_condition_walks_its_when_cell_before_its_at_cell() {
 #[test]
 fn the_game_ending_is_a_bare_milestone_that_walks_its_when_cell() {
     let inv = InvestigatorId(1);
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.threat_area.push(CardInPlay::enter_play(
         CardCode::new(GAME_END_CARD),
         CardInstanceId(1),
@@ -224,7 +222,7 @@ fn the_game_ending_is_a_bare_milestone_that_walks_its_when_cell() {
         .build();
     let mut events = Vec::new();
 
-    let out = run_timing_sequence(&mut state, &mut events, TimingEvent::GameEnd);
+    let out = test_support::run_timing_sequence(&mut state, &mut events, TimingEvent::GameEnd);
 
     assert!(
         matches!(out, EngineOutcome::Done),
@@ -253,7 +251,7 @@ fn the_game_ending_is_a_bare_milestone_that_walks_its_when_cell() {
 #[test]
 fn the_cell_list_is_every_cell_of_the_sequence_in_order() {
     assert_eq!(
-        game_core::state::EmitStep::cells().collect::<Vec<_>>(),
+        EmitStep::cells().collect::<Vec<_>>(),
         vec![EventTiming::When, EventTiming::At, EventTiming::After],
         "the three cells, in sequence order, with the resolve step filtered out"
     );

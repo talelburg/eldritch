@@ -14,9 +14,10 @@
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use game_core::card_registry::{self, NativeEffectFn};
 use game_core::dsl::{constant, modify, Ability, ModifierScope, Stat};
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::{Cx, EngineOutcome};
 use game_core::state::{CardCode, GameState};
-use game_core::test_support::{terminal_code, MockRegistry, TEST_INV};
-use game_core::{Cx, EngineOutcome, EvalContext};
+use game_core::test_support::{self, MockRegistry, TEST_INV};
 
 /// A probe card the installed registry knows about.
 const PROBE: &str = "_mrb_probe";
@@ -128,8 +129,8 @@ fn install_composes_the_test_investigator_lookup() {
 /// `terminal_code` card gets its reverse served.
 #[test]
 fn install_composes_the_terminal_card_abilities() {
-    let abilities =
-        (registry().abilities_for)(&terminal_code(3)).expect("terminal cards are composed in");
+    let abilities = (registry().abilities_for)(&test_support::terminal_code(3))
+        .expect("terminal cards are composed in");
     assert_eq!(abilities.len(), 2, "act-advanced and agenda-advanced");
 }
 

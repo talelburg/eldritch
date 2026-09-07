@@ -10,17 +10,18 @@
 //! `OnCommit` ability yet — Vicious Blow 01025 (the consumer, #240) is the
 //! first; until then this mock skill exercises the full commit path.
 
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::assert_event;
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use game_core::dsl::{boost_attack_damage, on_commit};
-use game_core::engine::{EngineOutcome, OptionId};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, InvestigatorId, LocationId, Phase, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, InvestigatorId, LocationId, Phase,
+    TokenModifiers,
 };
-use game_core::test_support::{
-    test_enemy, test_investigator, test_location, GameStateBuilder, MockRegistry,
-};
-use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 /// Mock skill: combat icon + `[OnCommit] that attack deals +1 damage`.
 const SKILL: &str = "VBLOW-MOCK";
@@ -62,17 +63,17 @@ fn install_mock_registry() {
 /// Board: the controller (combat 3) engaged with one enemy (fight 2,
 /// health 10 so the dealt damage is observable, not clamped), the mock
 /// skill in hand, a `Numeric(0)` chaos bag for a deterministic success.
-fn board() -> (game_core::GameState, InvestigatorId, EnemyId) {
+fn board() -> (GameState, InvestigatorId, EnemyId) {
     let id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
 
     let loc_id = LocationId(10);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.skills.combat = 3;
     inv.hand = vec![CardCode::new(SKILL)];
     inv.current_location = Some(loc_id);
 
-    let mut enemy = test_enemy(100, "Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Ghoul");
     enemy.fight = 2;
     enemy.max_health = 10;
     enemy.engaged_with = Some(id);
@@ -84,7 +85,7 @@ fn board() -> (game_core::GameState, InvestigatorId, EnemyId) {
         .with_turn_order([id])
         .with_investigator_turn(id)
         .with_investigator(inv)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_enemy(enemy)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
@@ -95,12 +96,12 @@ fn board() -> (game_core::GameState, InvestigatorId, EnemyId) {
 /// Resolve the open-turn `Fight` action against `state` to its `OptionId`,
 /// returning the `ResolveInput(PickSingle)` submit the enumeration round-trip
 /// expects. Replaces the typed `PlayerAction::Fight` (removed in 2b, #447).
-fn fight_action(state: &game_core::GameState, inv: InvestigatorId, enemy: EnemyId) -> Action {
+fn fight_action(state: &GameState, inv: InvestigatorId, enemy: EnemyId) -> Action {
     let target = TurnAction::Fight {
         investigator: inv,
         enemy,
     };
-    let idx = game_core::engine::enumerate::legal_actions(state)
+    let idx = enumerate::legal_actions(state)
         .iter()
         .position(|a| a == &target)
         .expect("Fight must be a legal open-turn action");
@@ -116,13 +117,13 @@ fn committing_vicious_blow_adds_one_attack_damage() {
     let (state, id, enemy_id) = board();
 
     let fight = fight_action(&state, id, enemy_id);
-    let paused = game_core::engine::apply(state, fight);
+    let paused = engine::apply(state, fight);
     assert!(matches!(
         paused.outcome,
         EngineOutcome::AwaitingInput { .. }
     ));
 
-    let result = game_core::engine::apply(
+    let result = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple {
@@ -147,8 +148,8 @@ fn fight_without_commit_deals_base_damage() {
     let (state, id, enemy_id) = board();
 
     let fight = fight_action(&state, id, enemy_id);
-    let paused = game_core::engine::apply(state, fight);
-    let result = game_core::engine::apply(
+    let paused = engine::apply(state, fight);
+    let result = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },

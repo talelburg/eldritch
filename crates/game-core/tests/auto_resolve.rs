@@ -42,29 +42,26 @@
 //! process-isolation reason.
 
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_data::CardMetadata;
-use game_core::card_data::{CardKind, Class, SkillIcons};
+use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use game_core::dsl::{
     activated, auto_resolve, gain_resources, on_play, on_skill_test_resolution, seq, Cost,
     Determination, InvestigatorTarget, TestOutcome,
 };
-use game_core::engine::{legal_actions, EngineOutcome, InputKind, InputRequest, OptionId};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId};
 use game_core::event::{Event, FailureReason};
 use game_core::scenario::{
-    ScenarioId, ScenarioModule, ScenarioRegistry, SymbolCtx, SymbolOutcome, TokenEffect,
+    ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry, SymbolCtx, SymbolOutcome,
+    TokenEffect,
 };
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState,
-    InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers, TokenResolution, Zone,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    GameState, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers, TokenResolution, Zone,
 };
 use game_core::test_support::{
-    dispatch_turn_action_unchecked, drive, drive_skill_test, perform_skill_test_no_commits,
-    test_investigator, test_location, ChoiceResolver, GameStateBuilder, MockRegistry,
-    TakeOneFastPlay,
+    self, ChoiceResolver, GameStateBuilder, MockRegistry, TakeOneFastPlay,
 };
-use game_core::TurnAction;
-use game_core::{assert_event, assert_event_count, assert_no_event};
+use game_core::{assert_event, assert_event_count, assert_no_event, scenario_registry};
 
 /// Mock asset: `[fast] Spend 1 resource: this skill test automatically
 /// fails.` Rex-Murphy-shaped, minus the elder-sign trigger and the draw.
@@ -151,12 +148,7 @@ fn mock_setup() -> GameState {
     GameStateBuilder::new().build()
 }
 
-fn mock_apply_resolution(
-    _: game_core::scenario::ScenarioEnding,
-    _: &mut GameState,
-    _: &mut Vec<Event>,
-) {
-}
+fn mock_apply_resolution(_: ScenarioEnding, _: &mut GameState, _: &mut Vec<Event>) {}
 
 static SYMBOL_MODULE: ScenarioModule = ScenarioModule {
     resolve_symbol: Some(mock_resolve_symbol),
@@ -227,7 +219,7 @@ fn install_mock_registry() {
             )]
         })
         .install();
-    let _ = game_core::scenario_registry::install(ScenarioRegistry {
+    let _ = scenario_registry::install(ScenarioRegistry {
         module_for: mock_module_for,
     });
 }
@@ -237,7 +229,7 @@ fn install_mock_registry() {
 /// (instance ids ascending from 0), drawing from `bag`.
 fn board_with(in_play: &[&str], hand: &[&str], bag: ChaosBag) -> (GameState, InvestigatorId) {
     let id = InvestigatorId(1);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.skills.willpower = 5;
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
     for (i, code) in in_play.iter().enumerate() {
@@ -267,10 +259,10 @@ fn board_with(in_play: &[&str], hand: &[&str], bag: ChaosBag) -> (GameState, Inv
 fn investigate_board(hand: &[&str], shroud: u8) -> (GameState, InvestigatorId, LocationId) {
     let id = InvestigatorId(1);
     let loc = LocationId(10);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc);
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
-    let mut location = test_location(10, "Study");
+    let mut location = test_support::test_location(10, "Study");
     location.clues = 1;
     location.shroud = shroud;
     let state = GameStateBuilder::new()
@@ -368,12 +360,8 @@ fn board(code: &str) -> (GameState, InvestigatorId, CardInstanceId) {
 
 /// Run a willpower test against `difficulty`, taking the card's offered fast
 /// activation at the test's player window.
-fn test_taking_the_fast_play(
-    state: GameState,
-    id: InvestigatorId,
-    difficulty: i8,
-) -> game_core::ApplyResult {
-    drive_skill_test(
+fn test_taking_the_fast_play(state: GameState, id: InvestigatorId, difficulty: i8) -> ApplyResult {
+    test_support::drive_skill_test(
         state,
         id,
         SkillKind::Willpower,
@@ -507,11 +495,11 @@ fn latching_a_determination_outside_a_test_is_rejected() {
     };
 
     assert!(
-        !legal_actions(&state).contains(&action),
+        !enumerate::legal_actions(&state).contains(&action),
         "the open-turn menu must not offer an activation that would reject",
     );
 
-    let result = dispatch_turn_action_unchecked(state, &action);
+    let result = test_support::dispatch_turn_action_unchecked(state, &action);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty(), "a rejection emits no events");
     assert_eq!(
@@ -531,7 +519,7 @@ fn latching_a_determination_outside_a_test_is_rejected() {
 fn an_unrelated_activation_is_still_offered_outside_a_test() {
     let (state, id, instance_id) = board(PLAIN_GAIN);
     assert!(
-        legal_actions(&state).contains(&TurnAction::ActivateAbility {
+        enumerate::legal_actions(&state).contains(&TurnAction::ActivateAbility {
             investigator: id,
             source: AbilitySource::InPlay(instance_id),
             address: AbilityAddress::Printed(0),
@@ -555,7 +543,8 @@ fn a_card_latched_determination_does_not_survive_into_a_later_test() {
 
     // The second test declines the fast window, so nothing latches: willpower
     // 5 against difficulty 9 fails by 4 on the numbers.
-    let second = perform_skill_test_no_commits(first.state, id, SkillKind::Willpower, 9);
+    let second =
+        test_support::perform_skill_test_no_commits(first.state, id, SkillKind::Willpower, 9);
     assert_event!(
         second.events,
         Event::SkillTestFailed {
@@ -598,7 +587,7 @@ fn the_latch_event_names_the_determination_and_its_source() {
 #[test]
 fn the_auto_fail_token_latches_no_second_event() {
     let (state, id) = board_with(&[], &[], ChaosBag::new([ChaosToken::AutoFail]));
-    let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 3);
+    let result = test_support::perform_skill_test_no_commits(state, id, SkillKind::Willpower, 3);
 
     assert_event!(
         result.events,
@@ -654,7 +643,7 @@ fn a_skipped_draw_pushes_no_chaos_symbol_effects() {
 #[test]
 fn the_symbol_effects_still_run_when_nothing_is_latched() {
     let (state, id) = board_with(&[], &[], ChaosBag::new([ChaosToken::Skull]));
-    let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 9);
+    let result = test_support::perform_skill_test_no_commits(state, id, SkillKind::Willpower, 9);
 
     assert_event!(
         result.events,
@@ -674,7 +663,7 @@ fn the_symbol_effects_still_run_when_nothing_is_latched() {
 #[test]
 fn a_determination_from_the_revealed_token_skips_nothing() {
     let (state, id) = board_with(&[], &[], ChaosBag::new([ChaosToken::AutoFail]));
-    let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 3);
+    let result = test_support::perform_skill_test_no_commits(state, id, SkillKind::Willpower, 3);
 
     assert_event!(
         result.events,
@@ -703,7 +692,7 @@ fn committed_cards_are_still_discarded_when_the_draw_is_skipped() {
         &[FILLER],
         ChaosBag::new([ChaosToken::Numeric(0)]),
     );
-    let result = drive_skill_test(
+    let result = test_support::drive_skill_test(
         state,
         id,
         SkillKind::Willpower,
@@ -734,11 +723,11 @@ fn the_follow_up_and_end_of_test_steps_still_run_on_a_skipped_draw() {
     let (state, id, loc) = investigate_board(&[PLAY_AUTO_SUCCEED, ON_RESOLUTION_GAIN], 9);
     let resources_before = state.investigators[&id].resources;
     let investigate = TurnAction::Investigate { investigator: id };
-    let idx = legal_actions(&state)
+    let idx = enumerate::legal_actions(&state)
         .iter()
         .position(|a| a == &investigate)
         .expect("Investigate must be a legal open-turn action");
-    let result = drive(
+    let result = test_support::drive(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(

@@ -39,23 +39,18 @@
 //! is `crates/cards/tests/activate_ability_aoo.rs`. The predicate's own
 //! exhaustive table over the six designators is `provokes_aoo`'s unit test.
 
-use game_core::state::AbilityAddress;
-
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use game_core::dsl::{
     activated, activated_as, fight, gain_resources, seq, Ability, ActionDesignator, Effect,
     InvestigatorTarget,
 };
+use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    InvestigatorId, LocationId, Phase,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    EnemyId, GameState, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location, GameStateBuilder,
-    MockRegistry,
-};
-use game_core::TurnAction;
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 /// Synthetic **asset** printing the same residual effect twice — once under a
 /// **Fight** designator, once under none. The pair is the control: only the
@@ -165,14 +160,14 @@ fn install_probe_registry() {
 /// to draw from once it performs — the assertion is taken before the test
 /// resolves either way.
 fn board() -> GameState {
-    let mut mine = test_investigator(1);
+    let mut mine = test_support::test_investigator(1);
     mine.cards_in_play
         .push(CardInPlay::enter_play(CardCode::new(SATCHEL), BAG));
 
-    let mut parlor = test_location(1, "Parlor");
+    let mut parlor = test_support::test_location(1, "Parlor");
     parlor.code = CardCode::new(PARLOR);
 
-    let mut attacker = test_enemy(1, "Mob Enforcer");
+    let mut attacker = test_support::test_enemy(1, "Mob Enforcer");
     attacker.code = CardCode::new(ENFORCER);
     attacker.current_location = Some(HERE);
     attacker.engaged_with = Some(MINE);
@@ -204,7 +199,8 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
 /// dealt after the costs and before the effect, so a non-zero reading is the
 /// attack and nothing else: this board deals the investigator no other damage.
 fn damage_after_activating(source: AbilitySource, ability_index: u8) -> u8 {
-    let result = dispatch_turn_action_unchecked(board(), &activation(source, ability_index));
+    let result =
+        test_support::dispatch_turn_action_unchecked(board(), &activation(source, ability_index));
     assert!(
         !matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "the activation itself must be legal for the attack-of-opportunity question \

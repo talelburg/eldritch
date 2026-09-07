@@ -15,19 +15,15 @@ use game_core::dsl::{
     activated, constant, gain_resources, modify, Cost, IntExpr, InvestigatorTarget, ModifierScope,
     Stat,
 };
-use game_core::engine::{apply, legal_actions, EngineOutcome};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId,
-    Lifetime, Phase, RecordedModifierKind, SkillKind, Status, TokenModifiers,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    GameState, InvestigatorId, Lifetime, Phase, RecordedModifierKind, SkillKind, Status,
+    TokenModifiers,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, drive_skill_test, perform_skill_test,
-    perform_skill_test_no_commits, take_turn_action, test_investigator, GameStateBuilder,
-    MockRegistry, TakeOneFastPlay,
-};
-use game_core::TurnAction;
+use game_core::test_support::{self, GameStateBuilder, MockRegistry, TakeOneFastPlay};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// Mock card code: `[fast] Spend 1 resource: gain 1 resource.` —
@@ -98,10 +94,10 @@ fn install_mock_registry() {
 /// Build a state with one in-play instance of `code` (instance id 0),
 /// in the Investigation phase, the controller active and Active,
 /// 3 actions remaining, 5 starting resources (per the test fixture).
-fn state_with_in_play(code: &str) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
+fn state_with_in_play(code: &str) -> (GameState, InvestigatorId, CardInstanceId) {
     let id = InvestigatorId(1);
     let instance_id = CardInstanceId(0);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.cards_in_play
         .push(CardInPlay::enter_play(CardCode::new(code), instance_id));
 
@@ -125,7 +121,7 @@ fn fast_resource_loop_activates_and_resolves_effect() {
     let (state, id, instance_id) = state_with_in_play(FAST_RESOURCE_LOOP);
     let actions_before = state.investigators[&id].actions_remaining;
 
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
@@ -170,7 +166,7 @@ fn action_exhaust_gain_exhausts_source_and_blocks_reactivation() {
     let (state, id, instance_id) = state_with_in_play(ACTION_EXHAUST_GAIN);
     let actions_before = state.investigators[&id].actions_remaining;
 
-    let after_first = take_turn_action(
+    let after_first = test_support::take_turn_action(
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
@@ -193,7 +189,7 @@ fn action_exhaust_gain_exhausts_source_and_blocks_reactivation() {
 
     // Second activation: source is exhausted; Cost::Exhaust check
     // rejects without mutating state.
-    let after_second = dispatch_turn_action_unchecked(
+    let after_second = test_support::dispatch_turn_action_unchecked(
         after_first.state,
         &TurnAction::ActivateAbility {
             investigator: id,
@@ -213,7 +209,7 @@ fn insufficient_resources_reject_without_payment() {
     let (mut state, id, instance_id) = state_with_in_play(FAST_RESOURCE_LOOP);
     state.investigators.get_mut(&id).unwrap().resources = 0;
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
@@ -232,7 +228,7 @@ fn insufficient_actions_reject_action_cost_ability() {
     let (mut state, id, instance_id) = state_with_in_play(ACTION_EXHAUST_GAIN);
     state.investigators.get_mut(&id).unwrap().actions_remaining = 0;
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
@@ -252,7 +248,7 @@ fn insufficient_actions_reject_action_cost_ability() {
 fn ability_index_pointing_at_non_activated_trigger_rejects() {
     let (state, id, instance_id) = state_with_in_play(CONSTANT_ONLY);
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
@@ -268,7 +264,7 @@ fn ability_index_pointing_at_non_activated_trigger_rejects() {
 fn ability_index_out_of_bounds_rejects() {
     let (state, id, instance_id) = state_with_in_play(FAST_RESOURCE_LOOP);
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
@@ -284,7 +280,7 @@ fn ability_index_out_of_bounds_rejects() {
 fn discard_card_from_hand_cost_rejects_with_todo() {
     let (state, id, instance_id) = state_with_in_play(DISCARD_COST_ABILITY);
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
@@ -304,7 +300,7 @@ fn activating_with_defeated_status_doesnt_need_registry() {
     // check rejects before the registry lookup runs.
     let id = InvestigatorId(1);
     let instance_id = CardInstanceId(0);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.status = Status::Defeated;
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(FAST_RESOURCE_LOOP),
@@ -317,7 +313,7 @@ fn activating_with_defeated_status_doesnt_need_registry() {
         .with_active_investigator(id)
         .build();
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
@@ -339,7 +335,7 @@ fn a_test_scoped_modifier_buffs_the_test_it_was_bought_during() {
     let (state, id, _) = state_with_in_play(SKILL_BOOST);
     let resources_before = state.investigators[&id].resources;
 
-    let result = drive_skill_test(
+    let result = test_support::drive_skill_test(
         state,
         id,
         SkillKind::Intellect,
@@ -368,14 +364,15 @@ fn a_test_scoped_modifier_does_not_leak_into_a_second_test() {
     // without buying it: 3 intellect vs difficulty 4 fails by 1.
     let (state, id, _) = state_with_in_play(SKILL_BOOST);
 
-    let first = drive_skill_test(
+    let first = test_support::drive_skill_test(
         state,
         id,
         SkillKind::Intellect,
         4,
         TakeOneFastPlay::at_index(0),
     );
-    let second = perform_skill_test_no_commits(first.state, id, SkillKind::Intellect, 4);
+    let second =
+        test_support::perform_skill_test_no_commits(first.state, id, SkillKind::Intellect, 4);
     assert_event!(
         second.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
@@ -391,12 +388,12 @@ fn a_test_scoped_row_is_stamped_with_the_running_test_and_carries_its_source() {
     let (state, id, instance_id) = state_with_in_play(SKILL_BOOST);
 
     // Start the test, then take the offered fast play at its player window.
-    let started = perform_skill_test(state, id, SkillKind::Intellect, 4);
+    let started = test_support::perform_skill_test(state, id, SkillKind::Intellect, 4);
     let EngineOutcome::AwaitingInput { request, .. } = &started.outcome else {
         panic!("expected the ST.1 fast window, got {:?}", started.outcome);
     };
     let option = request.options[0].id;
-    let after_activate = apply(
+    let after_activate = engine::apply(
         started.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(option),
@@ -437,11 +434,11 @@ fn activating_a_test_scoped_modifier_outside_a_test_is_rejected() {
     };
 
     assert!(
-        !legal_actions(&state).contains(&action),
+        !enumerate::legal_actions(&state).contains(&action),
         "the open-turn menu must not offer an activation that would reject",
     );
 
-    let result = dispatch_turn_action_unchecked(state, &action);
+    let result = test_support::dispatch_turn_action_unchecked(state, &action);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty());
     // State unchanged by the rejection: no resource spent, nothing recorded.

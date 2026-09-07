@@ -2,21 +2,20 @@
 //! ability. Mock registry in its own integration binary (own process +
 //! `OnceLock<CardRegistry>`), mirroring `weapon_fight.rs`.
 
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::assert_event;
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
 use game_core::dsl::{
     activated, deal_damage_to_enemy, gain_resources, Ability, Cost, EnemyTarget, InvestigatorTarget,
 };
-use game_core::engine::EngineOutcome;
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
+    InvestigatorId, LocationId, Phase, Zone,
 };
-use game_core::test_support::{
-    apply_no_commits, dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location,
-    GameStateBuilder, MockRegistry,
-};
-use game_core::{assert_event, Action, InputResponse, OptionId, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 const TRINKET: &str = "TRNK1";
 const COP: &str = "MCOP1";
@@ -130,7 +129,7 @@ fn install_mock_registry() {
 fn discard_self_removes_source_from_play_and_runs_the_effect() {
     let id = InvestigatorId(1);
     let inst = CardInstanceId(0);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     let before = inv.resources;
     inv.cards_in_play
         .push(CardInPlay::enter_play(CardCode::new(TRINKET), inst));
@@ -141,7 +140,7 @@ fn discard_self_removes_source_from_play_and_runs_the_effect() {
         .with_investigator(inv)
         .build();
 
-    let idx = game_core::engine::enumerate::legal_actions(&state)
+    let idx = enumerate::legal_actions(&state)
         .iter()
         .position(|a| {
             a == &TurnAction::ActivateAbility {
@@ -151,7 +150,7 @@ fn discard_self_removes_source_from_play_and_runs_the_effect() {
             }
         })
         .expect("ability must be legal");
-    let result = apply_no_commits(
+    let result = test_support::apply_no_commits(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
@@ -169,16 +168,16 @@ fn discard_self_removes_source_from_play_and_runs_the_effect() {
     assert_event!(
         result.events,
         Event::CardDiscarded {
-            from: game_core::state::Zone::InPlay,
+            from: Zone::InPlay,
             ..
         }
     );
 }
 
-fn board_with_cop(enemy_at_loc: bool) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
+fn board_with_cop(enemy_at_loc: bool) -> (GameState, InvestigatorId, CardInstanceId) {
     let id = InvestigatorId(1);
     let inst = CardInstanceId(0);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(1));
     inv.cards_in_play
         .push(CardInPlay::enter_play(CardCode::new(COP), inst));
@@ -186,9 +185,9 @@ fn board_with_cop(enemy_at_loc: bool) -> (game_core::GameState, InvestigatorId, 
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
         .with_investigator_turn(id)
-        .with_location(test_location(1, "A"));
+        .with_location(test_support::test_location(1, "A"));
     if enemy_at_loc {
-        let mut e = test_enemy(100, "Ghoul");
+        let mut e = test_support::test_enemy(100, "Ghoul");
         e.max_health = 3;
         e.current_location = Some(LocationId(1));
         builder = builder.with_enemy(e);
@@ -200,7 +199,7 @@ fn board_with_cop(enemy_at_loc: bool) -> (game_core::GameState, InvestigatorId, 
 #[test]
 fn discard_self_deal_damage_rejects_with_no_enemy_and_keeps_source_in_play() {
     let (state, id, inst) = board_with_cop(false);
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
@@ -220,7 +219,7 @@ fn discard_self_deal_damage_rejects_with_no_enemy_and_keeps_source_in_play() {
 fn discard_self_combined_with_exhaust_rejects_before_paying() {
     let id = InvestigatorId(1);
     let inst = CardInstanceId(0);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.cards_in_play
         .push(CardInPlay::enter_play(CardCode::new(COMBO), inst));
     let state = GameStateBuilder::new()
@@ -229,7 +228,7 @@ fn discard_self_combined_with_exhaust_rejects_before_paying() {
         .with_investigator(inv)
         .build();
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
@@ -248,7 +247,7 @@ fn discard_self_combined_with_exhaust_rejects_before_paying() {
 #[test]
 fn discard_self_deal_damage_discards_source_and_damages_the_enemy() {
     let (state, id, inst) = board_with_cop(true);
-    let idx = game_core::engine::enumerate::legal_actions(&state)
+    let idx = enumerate::legal_actions(&state)
         .iter()
         .position(|a| {
             a == &TurnAction::ActivateAbility {
@@ -258,7 +257,7 @@ fn discard_self_deal_damage_discards_source_and_damages_the_enemy() {
             }
         })
         .expect("ability must be legal");
-    let result = apply_no_commits(
+    let result = test_support::apply_no_commits(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
@@ -276,10 +275,10 @@ fn discard_self_deal_damage_discards_source_and_damages_the_enemy() {
 }
 
 /// Build a board with a 1-supply `code` asset in play (instance 0, seeded pool).
-fn board_with_kit(code: &str) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
+fn board_with_kit(code: &str) -> (GameState, InvestigatorId, CardInstanceId) {
     let id = InvestigatorId(1);
     let inst = CardInstanceId(0);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     let mut kit = CardInPlay::enter_play(CardCode::new(code), inst);
     kit.uses.insert(UseKind::Supplies, 1);
     inv.cards_in_play.push(kit);
@@ -295,7 +294,7 @@ fn board_with_kit(code: &str) -> (game_core::GameState, InvestigatorId, CardInst
 #[test]
 fn spending_last_use_discards_a_discard_when_empty_asset() {
     let (state, id, inst) = board_with_kit(KIT);
-    let idx = game_core::engine::enumerate::legal_actions(&state)
+    let idx = enumerate::legal_actions(&state)
         .iter()
         .position(|a| {
             a == &TurnAction::ActivateAbility {
@@ -305,7 +304,7 @@ fn spending_last_use_discards_a_discard_when_empty_asset() {
             }
         })
         .expect("ability must be legal");
-    let result = apply_no_commits(
+    let result = test_support::apply_no_commits(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
@@ -328,7 +327,7 @@ fn spending_last_use_discards_a_discard_when_empty_asset() {
 #[test]
 fn spending_last_use_keeps_a_non_discarding_asset_in_play() {
     let (state, id, inst) = board_with_kit(KIT_NODISC);
-    let idx = game_core::engine::enumerate::legal_actions(&state)
+    let idx = enumerate::legal_actions(&state)
         .iter()
         .position(|a| {
             a == &TurnAction::ActivateAbility {
@@ -338,7 +337,7 @@ fn spending_last_use_keeps_a_non_discarding_asset_in_play() {
             }
         })
         .expect("ability must be legal");
-    let result = apply_no_commits(
+    let result = test_support::apply_no_commits(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),

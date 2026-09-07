@@ -10,17 +10,14 @@
 //! scenario behavior wired up; skip", which is what these tests want: the round
 //! must not resolve out from under the cascade.
 
-use game_core::action::RosterEntry;
-use game_core::engine::{apply, EngineOutcome};
-use game_core::seat_and_open;
+use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, EngineOutcome};
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState,
     InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{
-    take_turn_action, terminal_code, test_location, GameStateBuilder, MockRegistry, TEST_INV,
-};
-use game_core::{Action, InputResponse, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry, TEST_INV};
 
 /// Per-binary code prefix. None of these codes is looked up — the deck, the
 /// hand and the readied asset are opaque tokens to every step the cascade runs —
@@ -43,13 +40,13 @@ fn deck_code(i: u32) -> CardCode {
 /// The locally-built scenario shell's state: one revealed location to seat onto,
 /// a chaos bag so a skill test could be taken, and two-card act/agenda decks
 /// ending in a terminal card. Phase = Mythos, round = 0 — ready for
-/// [`seat_and_open`], with no investigator pre-seated (callers pass a roster).
+/// [`engine::seat_and_open`], with no investigator pre-seated (callers pass a roster).
 ///
 /// The thresholds are set high enough that a single round's doom placement never
 /// advances the terminal agenda: these tests are about Upkeep, and a scenario
 /// that ends mid-cascade would test something else.
 fn setup() -> GameState {
-    let mut location = test_location(10, "Upkeep Location");
+    let mut location = test_support::test_location(10, "Upkeep Location");
     location.code = CardCode::new(format!("{PREFIX}loc"));
 
     let mut state = GameStateBuilder::new()
@@ -71,7 +68,7 @@ fn setup() -> GameState {
         },
         Agenda {
             // Terminal: last in the deck (ADR 0013). Its reverse reaches R2.
-            code: terminal_code(2),
+            code: test_support::terminal_code(2),
             doom_threshold: 2,
         },
     ];
@@ -82,7 +79,7 @@ fn setup() -> GameState {
         },
         Act {
             // Terminal: last in the deck. Its reverse reaches R1.
-            code: terminal_code(1),
+            code: test_support::terminal_code(1),
             clue_threshold: 2,
         },
     ];
@@ -117,7 +114,7 @@ fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
     let inv1 = InvestigatorId(1);
 
     // seat_and_open → seed exhausted asset → mulligan (keep hand).
-    let mut r1 = seat_and_open(setup(), &roster());
+    let mut r1 = engine::seat_and_open(setup(), &roster());
     assert!(
         matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt, got {:?}",
@@ -126,7 +123,7 @@ fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
     // Seed one exhausted asset after seating so we can verify ready-all fires.
     seed_exhausted_asset(&mut r1.state);
 
-    let r2 = apply(
+    let r2 = engine::apply(
         r1.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -141,7 +138,7 @@ fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
 
     // EndTurn: Investigation → Enemy → Upkeep → Mythos, pausing at the
     // step-1.4 encounter-draw prompt (AwaitingInput).
-    let r3 = take_turn_action(r2.state, &TurnAction::EndTurn);
+    let r3 = test_support::take_turn_action(r2.state, &TurnAction::EndTurn);
 
     assert!(matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_eq!(r3.state.phase, Phase::Mythos, "cascade must land in Mythos");
@@ -178,16 +175,16 @@ fn upkeep_full_round_draws_and_grants_then_pauses_at_mythos() {
 fn upkeep_round_replay_is_deterministic() {
     // Drive the same sequence twice to verify replay determinism.
     let run_sequence = |initial: GameState| -> GameState {
-        let mut r = seat_and_open(initial, &roster());
+        let mut r = engine::seat_and_open(initial, &roster());
         seed_exhausted_asset(&mut r.state);
-        let state = apply(
+        let state = engine::apply(
             r.state,
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::PickMultiple { selected: vec![] },
             }),
         )
         .state;
-        take_turn_action(state, &TurnAction::EndTurn).state
+        test_support::take_turn_action(state, &TurnAction::EndTurn).state
     };
 
     let final_state = run_sequence(setup());

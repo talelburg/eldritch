@@ -20,15 +20,17 @@
 //! declares one marker ability per boundary instead, and the assertion is which
 //! markers fired and in what order.
 
-use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
-use game_core::action::InputResponse;
+use card_dsl::dsl::{self, forced_on_event, native, Ability, EventPattern, EventTiming};
+use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::card_data::{CardKind, CardMetadata};
-use game_core::engine::enumerate::legal_actions;
-use game_core::engine::OptionId;
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::state::{Act, CardCode, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{test_investigator, test_location, GameStateBuilder, MockRegistry};
-use game_core::{apply, Action, Cx, EngineOutcome, EvalContext, PlayerAction, TurnAction};
+use game_core::state::{
+    Act, CardCode, Continuation, GameState, InvestigationResume, InvestigatorId, LocationId, Phase,
+};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 /// The act carrying one marker forced ability per phase boundary.
 const ACT: &str = "TEST-BOUNDARIES";
@@ -97,7 +99,7 @@ fn blank_treachery_metadata() -> CardMetadata {
     }
 }
 
-fn started(phase: card_dsl::dsl::Phase, tag: &'static str) -> Ability {
+fn started(phase: dsl::Phase, tag: &'static str) -> Ability {
     forced_on_event(
         EventPattern::PhaseStarted { phase },
         EventTiming::At,
@@ -105,7 +107,7 @@ fn started(phase: card_dsl::dsl::Phase, tag: &'static str) -> Ability {
     )
 }
 
-fn ended(phase: card_dsl::dsl::Phase, tag: &'static str) -> Ability {
+fn ended(phase: dsl::Phase, tag: &'static str) -> Ability {
     forced_on_event(
         EventPattern::PhaseEnded { phase },
         EventTiming::At,
@@ -114,16 +116,15 @@ fn ended(phase: card_dsl::dsl::Phase, tag: &'static str) -> Ability {
 }
 
 fn boundary_markers() -> Vec<Ability> {
-    use card_dsl::dsl::Phase as P;
     vec![
-        started(P::Mythos, "mark:start-mythos"),
-        started(P::Investigation, "mark:start-investigation"),
-        started(P::Enemy, "mark:start-enemy"),
-        started(P::Upkeep, "mark:start-upkeep"),
-        ended(P::Mythos, "mark:end-mythos"),
-        ended(P::Investigation, "mark:end-investigation"),
-        ended(P::Enemy, "mark:end-enemy"),
-        ended(P::Upkeep, "mark:end-upkeep"),
+        started(dsl::Phase::Mythos, "mark:start-mythos"),
+        started(dsl::Phase::Investigation, "mark:start-investigation"),
+        started(dsl::Phase::Enemy, "mark:start-enemy"),
+        started(dsl::Phase::Upkeep, "mark:start-upkeep"),
+        ended(dsl::Phase::Mythos, "mark:end-mythos"),
+        ended(dsl::Phase::Investigation, "mark:end-investigation"),
+        ended(dsl::Phase::Enemy, "mark:end-enemy"),
+        ended(dsl::Phase::Upkeep, "mark:end-upkeep"),
     ]
 }
 
@@ -175,8 +176,8 @@ fn markers_with_observed_phase(events: &[Event]) -> Vec<(u8, u8)> {
 /// A single investigator mid-Investigation, one turn from the phase's end, with
 /// the marker act current. Mirrors `round_ended`'s fixture: `EndTurn` from here
 /// cascades Investigation → Enemy → Upkeep → Mythos through the real drive loop.
-fn mid_investigation() -> game_core::state::GameState {
-    let mut inv = test_investigator(1);
+fn mid_investigation() -> GameState {
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(10));
     inv.actions_remaining = 0;
     // Non-empty deck so the upkeep 4.4 draw doesn't fire a deckout penalty.
@@ -184,12 +185,12 @@ fn mid_investigation() -> game_core::state::GameState {
 
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
-        .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
-            resume: game_core::state::InvestigationResume::TurnBegins,
+        .with_phase_anchor(Continuation::InvestigationPhase {
+            resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(InvestigatorId(1))
         .build();
@@ -202,8 +203,8 @@ fn mid_investigation() -> game_core::state::GameState {
     state
 }
 
-fn end_turn_action(state: &game_core::state::GameState) -> Action {
-    let idx = legal_actions(state)
+fn end_turn_action(state: &GameState) -> Action {
+    let idx = enumerate::legal_actions(state)
         .iter()
         .position(|a| a == &TurnAction::EndTurn)
         .expect("EndTurn must be a legal open-turn action");
@@ -216,7 +217,7 @@ fn end_turn_action(state: &game_core::state::GameState) -> Action {
 fn every_phase_boundary_fires_its_forced_ability_in_round_order() {
     let state = mid_investigation();
     let end_turn = end_turn_action(&state);
-    let cascade = apply(state, end_turn);
+    let cascade = engine::apply(state, end_turn);
 
     // The cascade runs 2.3 → 3.1 → 3.4 → 4.1 → 4.6 → 1.1 and parks at the
     // step-1.4 encounter-draw prompt.
@@ -247,14 +248,14 @@ fn the_mythos_end_and_the_investigation_start_fire_across_the_draw_prompt() {
     // the draw, driving 1.4 → 1.5 → 2.1.
     let state = mid_investigation();
     let end_turn = end_turn_action(&state);
-    let parked = apply(state, end_turn);
+    let parked = engine::apply(state, end_turn);
     assert!(
         matches!(parked.outcome, EngineOutcome::AwaitingInput { .. }),
         "parked at the step-1.4 encounter draw; got {:?}",
         parked.outcome,
     );
 
-    let resumed = apply(
+    let resumed = engine::apply(
         parked.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Confirm,
@@ -283,7 +284,7 @@ fn a_boundarys_forced_ability_resolves_before_its_drivers_tail_work() {
     // which is the #569 shape this discipline exists to prevent.
     let state = mid_investigation();
     let end_turn = end_turn_action(&state);
-    let cascade = apply(state, end_turn);
+    let cascade = engine::apply(state, end_turn);
 
     assert_eq!(
         markers_with_observed_phase(&cascade.events),

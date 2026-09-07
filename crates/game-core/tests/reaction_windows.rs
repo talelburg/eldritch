@@ -12,21 +12,21 @@
 //! exercise edge cases (multi-controller defeats, two abilities on one
 //! card, `by_controller: false`) that no real Phase-3 card hits.
 
+use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::dsl::{
     choose_one, discover_clue, gain_resources, reaction_on_event, Ability, EventPattern,
     EventTiming, InvestigatorTarget, LocationTarget, SkillTestKind, TestOutcome,
 };
-use game_core::engine::{EngineOutcome, OptionId, OptionTarget};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, OptionTarget, TimingEvent};
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, EnemyId,
-    InvestigatorId, LocationId, Phase, TokenModifiers,
+    AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag,
+    ChaosToken, Continuation, EnemyId, GameState, InvestigatorId, LocationId, Phase,
+    TokenModifiers,
 };
-use game_core::test_support::{
-    apply_no_commits, test_enemy, test_investigator, test_location, GameStateBuilder, MockRegistry,
-};
-use game_core::{assert_event, assert_no_event, Action, InputResponse, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::{assert_event, assert_no_event};
 
 /// Mock: optional reaction "after you defeat an enemy, discover 1 clue
 /// at your location" — the Roland-shape canonical `OnEvent` test card.
@@ -142,11 +142,11 @@ fn install_mock_registry() {
 /// `cards_in_play`.
 fn fight_to_defeat_scenario(
     in_play_cards: &[(&str, u32)],
-) -> (InvestigatorId, EnemyId, LocationId, game_core::GameState) {
+) -> (InvestigatorId, EnemyId, LocationId, GameState) {
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     inv.skills.combat = 3;
     for (code, instance) in in_play_cards {
@@ -155,13 +155,13 @@ fn fight_to_defeat_scenario(
             CardInstanceId(*instance),
         ));
     }
-    let mut enemy = test_enemy(100, "Mock Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 3;
     enemy.max_health = 2;
     enemy.damage = 1;
     enemy.engaged_with = Some(inv_id);
     enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
-    let mut loc = test_location(10, "Mock Location");
+    let mut loc = test_support::test_location(10, "Mock Location");
     loc.clues = 3;
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -181,12 +181,12 @@ fn fight_to_defeat_scenario(
 /// returning the `ResolveInput(PickSingle)` submit the enumeration round-trip
 /// expects. The state must carry an `InvestigatorTurn` frame (so the Fight is
 /// offered). Replaces the typed `PlayerAction::Fight` (removed in 2b, #447).
-fn fight_action(state: &game_core::GameState, inv: InvestigatorId, enemy: EnemyId) -> Action {
+fn fight_action(state: &GameState, inv: InvestigatorId, enemy: EnemyId) -> Action {
     let target = TurnAction::Fight {
         investigator: inv,
         enemy,
     };
-    let idx = game_core::engine::enumerate::legal_actions(state)
+    let idx = enumerate::legal_actions(state)
         .iter()
         .position(|a| a == &target)
         .expect("Fight must be a legal open-turn action");
@@ -198,7 +198,7 @@ fn fight_action(state: &game_core::GameState, inv: InvestigatorId, enemy: EnemyI
 /// Output of [`fight_through_commit_window`]: merged state + events
 /// across the two applies plus the second apply's terminal outcome.
 struct DrivenResult {
-    state: game_core::GameState,
+    state: GameState,
     events: Vec<Event>,
     outcome: EngineOutcome,
 }
@@ -209,15 +209,15 @@ struct DrivenResult {
 /// if no reaction window opened, `AwaitingInput` if one did. Used in
 /// place of [`apply_no_commits`] for tests that want to inspect the
 /// reaction-window paused state directly rather than drive past it.
-fn fight_through_commit_window(state: game_core::GameState, action: Action) -> DrivenResult {
-    let paused = game_core::engine::apply(state, action);
+fn fight_through_commit_window(state: GameState, action: Action) -> DrivenResult {
+    let paused = engine::apply(state, action);
     assert!(
         matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
         "first apply must suspend at the commit window, got {:?}",
         paused.outcome,
     );
     let mut events = paused.events;
-    let after = game_core::engine::apply(
+    let after = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -238,7 +238,7 @@ fn no_in_play_reaction_means_no_window_opens() {
     // the in-play scan is the gate.
     let (inv_id, enemy_id, _loc_id, state) = fight_to_defeat_scenario(&[]);
     let action = fight_action(&state, inv_id, enemy_id);
-    let result = apply_no_commits(state, action);
+    let result = test_support::apply_no_commits(state, action);
 
     assert!(matches!(
         result.outcome,
@@ -291,7 +291,7 @@ fn matching_reaction_opens_window_and_suspends() {
     assert!(
         matches!(
             window.window_timing_event(),
-            Some(game_core::engine::TimingEvent::EnemyDefeated { enemy, by: Some(by), .. })
+            Some(TimingEvent::EnemyDefeated { enemy, by: Some(by), .. })
                 if *enemy == enemy_id && *by == inv_id
         ),
         "reaction window must be after the enemy defeat: {:?}",
@@ -301,9 +301,7 @@ fn matching_reaction_opens_window_and_suspends() {
     assert_eq!(window.pending_candidates().unwrap()[0].controller, inv_id);
     assert_eq!(
         window.pending_candidates().unwrap()[0].source,
-        game_core::state::CandidateSource::Ability(game_core::state::AbilitySource::InPlay(
-            CardInstanceId(1)
-        ))
+        CandidateSource::Ability(AbilitySource::InPlay(CardInstanceId(1)))
     );
     assert_eq!(
         window.pending_candidates().unwrap()[0].address,
@@ -324,7 +322,7 @@ fn pick_index_fires_pending_trigger_and_closes_window() {
         EngineOutcome::AwaitingInput { .. }
     ));
 
-    let resumed = game_core::engine::apply(
+    let resumed = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -364,7 +362,7 @@ fn a_choose_one_inside_a_reaction_anchors_to_the_firing_card() {
     let paused = fight_through_commit_window(state, action);
 
     // Pick the reaction out of its window; its effect's ChooseOne is next.
-    let resumed = game_core::engine::apply(
+    let resumed = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -406,7 +404,7 @@ fn skip_closes_an_optional_only_window_without_firing() {
         EngineOutcome::AwaitingInput { .. }
     ));
 
-    let resumed = game_core::engine::apply(
+    let resumed = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Skip,
@@ -440,22 +438,22 @@ fn by_controller_filter_excludes_unrelated_investigators() {
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
 
-    let mut atk = test_investigator(1);
+    let mut atk = test_support::test_investigator(1);
     atk.current_location = Some(loc_id);
     atk.skills.combat = 3;
-    let mut byst = test_investigator(2);
+    let mut byst = test_support::test_investigator(2);
     byst.current_location = Some(loc_id);
     byst.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(ROLAND_REACTION),
         CardInstanceId(1),
     ));
-    let mut enemy = test_enemy(100, "Mock Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 3;
     enemy.max_health = 2;
     enemy.damage = 1;
     enemy.engaged_with = Some(attacker);
     enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
-    let mut loc = test_location(10, "Mock Location");
+    let mut loc = test_support::test_location(10, "Mock Location");
     loc.clues = 3;
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -471,7 +469,7 @@ fn by_controller_filter_excludes_unrelated_investigators() {
         .build();
 
     let action = fight_action(&state, attacker, enemy_id);
-    let result = apply_no_commits(state, action);
+    let result = test_support::apply_no_commits(state, action);
 
     assert!(matches!(
         result.outcome,
@@ -498,17 +496,17 @@ fn unqualified_pattern_matches_any_defeat() {
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
 
-    let mut atk = test_investigator(1);
+    let mut atk = test_support::test_investigator(1);
     atk.current_location = Some(loc_id);
     atk.skills.combat = 3;
-    let mut byst = test_investigator(2);
+    let mut byst = test_support::test_investigator(2);
     byst.current_location = Some(loc_id);
     byst.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(BYSTANDER_REACTION),
         CardInstanceId(1),
     ));
     let byst_resources_before = byst.resources;
-    let mut enemy = test_enemy(100, "Mock Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 3;
     enemy.max_health = 2;
     enemy.damage = 1;
@@ -522,7 +520,7 @@ fn unqualified_pattern_matches_any_defeat() {
         .with_investigator(atk)
         .with_investigator(byst)
         .with_enemy(enemy)
-        .with_location(test_location(10, "Mock Location"))
+        .with_location(test_support::test_location(10, "Mock Location"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build();
@@ -545,7 +543,7 @@ fn unqualified_pattern_matches_any_defeat() {
         bystander
     );
 
-    let resumed = game_core::engine::apply(
+    let resumed = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -573,7 +571,7 @@ fn pick_index_out_of_bounds_rejects_window_stays_open() {
         EngineOutcome::AwaitingInput { .. }
     ));
 
-    let bad = game_core::engine::apply(
+    let bad = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(99)),
@@ -624,7 +622,7 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
         2,
     );
 
-    let after_first = game_core::engine::apply(
+    let after_first = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -652,7 +650,7 @@ fn multiple_pending_triggers_resolve_one_at_a_time() {
     );
 
     let resources_before = after_first.state.investigators[&inv_id].resources;
-    let after_second = game_core::engine::apply(
+    let after_second = engine::apply(
         after_first.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -708,7 +706,7 @@ fn fight_event_sequence_pins_window_between_enemy_defeated_and_skill_test_ended(
     );
 
     // Drive past the window by firing the single pending trigger.
-    let resumed = game_core::engine::apply(
+    let resumed = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -780,7 +778,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     // step is a no-op without an installed registry entry for the
     // committed card, but the event-order pinning still applies: the
     // window closes BEFORE the discard-and-end sequence.
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     inv.skills.combat = 3;
     inv.cards_in_play.push(CardInPlay::enter_play(
@@ -788,13 +786,13 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
         CardInstanceId(1),
     ));
     inv.hand = vec![CardCode::new("COMMITTED")];
-    let mut enemy = test_enemy(100, "Mock Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 3;
     enemy.max_health = 2;
     enemy.damage = 1;
     enemy.engaged_with = Some(inv_id);
     enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
-    let mut loc = test_location(10, "Mock Location");
+    let mut loc = test_support::test_location(10, "Mock Location");
     loc.clues = 3;
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -810,7 +808,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
 
     // First apply: opens commit window.
     let action = fight_action(&state, inv_id, enemy_id);
-    let paused_commit = game_core::engine::apply(state, action);
+    let paused_commit = engine::apply(state, action);
     assert!(matches!(
         paused_commit.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -818,7 +816,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
 
     // Second apply: commit the card → drives through follow-up →
     // queues window → suspends.
-    let paused_reaction = game_core::engine::apply(
+    let paused_reaction = engine::apply(
         paused_commit.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple {
@@ -834,7 +832,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     // Third apply: fire the reaction → window closes → driver
     // resumes → OnSkillTestResolution step → discard → SkillTestEnded
     // → Done.
-    let resumed = game_core::engine::apply(
+    let resumed = engine::apply(
         paused_reaction.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -895,20 +893,20 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
 
-    let mut atk = test_investigator(1);
+    let mut atk = test_support::test_investigator(1);
     atk.current_location = Some(loc_id);
     atk.skills.combat = 3;
     atk.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(BYSTANDER_REACTION),
         CardInstanceId(1),
     ));
-    let mut byst = test_investigator(2);
+    let mut byst = test_support::test_investigator(2);
     byst.current_location = Some(loc_id);
     byst.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(BYSTANDER_REACTION),
         CardInstanceId(2),
     ));
-    let mut enemy = test_enemy(100, "Mock Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 3;
     enemy.max_health = 2;
     enemy.damage = 1;
@@ -922,7 +920,7 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
         .with_investigator(atk)
         .with_investigator(byst)
         .with_enemy(enemy)
-        .with_location(test_location(10, "Mock Location"))
+        .with_location(test_support::test_location(10, "Mock Location"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build();
@@ -948,9 +946,7 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
     );
     assert_eq!(
         window.pending_candidates().unwrap()[0].source,
-        game_core::state::CandidateSource::Ability(game_core::state::AbilitySource::InPlay(
-            CardInstanceId(1)
-        ))
+        CandidateSource::Ability(AbilitySource::InPlay(CardInstanceId(1)))
     );
     assert_eq!(
         window.pending_candidates().unwrap()[1].controller,
@@ -959,9 +955,7 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
     );
     assert_eq!(
         window.pending_candidates().unwrap()[1].source,
-        game_core::state::CandidateSource::Ability(game_core::state::AbilitySource::InPlay(
-            CardInstanceId(2)
-        ))
+        CandidateSource::Ability(AbilitySource::InPlay(CardInstanceId(2)))
     );
 }
 
@@ -991,7 +985,7 @@ fn skip_after_firing_one_drops_remaining_optionals() {
         2,
     );
 
-    let after_first = game_core::engine::apply(
+    let after_first = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -1003,7 +997,7 @@ fn skip_after_firing_one_drops_remaining_optionals() {
     );
     let resources_after_first = after_first.state.investigators[&inv_id].resources;
 
-    let skipped = game_core::engine::apply(
+    let skipped = engine::apply(
         after_first.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Skip,
@@ -1041,20 +1035,20 @@ fn reaction_trigger_in_threat_area_opens_window() {
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     inv.skills.combat = 3;
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode::new(ROLAND_REACTION),
         CardInstanceId(7),
     ));
-    let mut enemy = test_enemy(100, "Mock Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 3;
     enemy.max_health = 2;
     enemy.damage = 1;
     enemy.engaged_with = Some(inv_id);
     enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
-    let mut loc = test_location(10, "Mock Location");
+    let mut loc = test_support::test_location(10, "Mock Location");
     loc.clues = 3;
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -1086,9 +1080,7 @@ fn reaction_trigger_in_threat_area_opens_window() {
     assert_eq!(window.pending_candidates().unwrap()[0].controller, inv_id);
     assert_eq!(
         window.pending_candidates().unwrap()[0].source,
-        game_core::state::CandidateSource::Ability(game_core::state::AbilitySource::InPlay(
-            CardInstanceId(7)
-        ))
+        CandidateSource::Ability(AbilitySource::InPlay(CardInstanceId(7)))
     );
 }
 
@@ -1133,20 +1125,20 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     inv.skills.combat = 3;
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode::new(ROLAND_REACTION),
         CardInstanceId(7),
     ));
-    let mut enemy = test_enemy(100, "Mock Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 3;
     enemy.max_health = 2;
     enemy.damage = 1;
     enemy.engaged_with = Some(inv_id);
     enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
-    let mut loc = test_location(10, "Mock Location");
+    let mut loc = test_support::test_location(10, "Mock Location");
     loc.clues = 3;
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -1168,7 +1160,7 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
         paused.outcome,
     );
 
-    let resumed = game_core::engine::apply(
+    let resumed = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -1203,10 +1195,10 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
 /// the Investigate succeeds and discovers the clue).
 fn investigate_to_success_scenario(
     in_play_cards: &[(&str, u32)],
-) -> (InvestigatorId, LocationId, game_core::GameState) {
+) -> (InvestigatorId, LocationId, GameState) {
     let id = InvestigatorId(1);
     let loc = LocationId(10);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc);
     inv.skills.intellect = 3;
     for (code, instance) in in_play_cards {
@@ -1215,7 +1207,7 @@ fn investigate_to_success_scenario(
             CardInstanceId(*instance),
         ));
     }
-    let mut loc_meta = test_location(10, "Study");
+    let mut loc_meta = test_support::test_location(10, "Study");
     loc_meta.clues = 1;
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -1239,24 +1231,24 @@ fn investigate_to_success_scenario(
 /// leaving them out would have made both tests below pass for the wrong reason.
 fn investigate_with_a_bystander(
     bystander_card: &str,
-) -> (InvestigatorId, InvestigatorId, game_core::GameState) {
+) -> (InvestigatorId, InvestigatorId, GameState) {
     let tester = InvestigatorId(1);
     let bystander = InvestigatorId(2);
     let loc = LocationId(10);
     let elsewhere = LocationId(11);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc);
     inv.skills.intellect = 3;
 
-    let mut other = test_investigator(2);
+    let mut other = test_support::test_investigator(2);
     other.current_location = Some(elsewhere);
     other.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(bystander_card),
         CardInstanceId(7),
     ));
 
-    let mut loc_meta = test_location(10, "Study");
+    let mut loc_meta = test_support::test_location(10, "Study");
     loc_meta.clues = 1;
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -1266,7 +1258,7 @@ fn investigate_with_a_bystander(
         .with_investigator(inv)
         .with_investigator(other)
         .with_location(loc_meta)
-        .with_location(test_location(11, "Hallway"))
+        .with_location(test_support::test_location(11, "Hallway"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build();
@@ -1275,22 +1267,19 @@ fn investigate_with_a_bystander(
 
 /// Drive `state` through a successful Investigate by the active investigator,
 /// stopping at whatever the engine yields after the commit window closes.
-fn investigate_and_commit_nothing(
-    state: game_core::GameState,
-    inv: InvestigatorId,
-) -> game_core::engine::ApplyResult {
+fn investigate_and_commit_nothing(state: GameState, inv: InvestigatorId) -> ApplyResult {
     let target = TurnAction::Investigate { investigator: inv };
-    let idx = game_core::engine::enumerate::legal_actions(&state)
+    let idx = enumerate::legal_actions(&state)
         .iter()
         .position(|a| a == &target)
         .expect("Investigate must be legal");
-    let paused_commit = game_core::engine::apply(
+    let paused_commit = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         }),
     );
-    game_core::engine::apply(paused_commit.state, commit_nothing())
+    engine::apply(paused_commit.state, commit_nothing())
 }
 
 /// `by_controller: false` is the whole point of the field: the matcher runs
@@ -1310,7 +1299,7 @@ fn an_unqualified_listener_reacts_to_another_investigators_test() {
         paused.outcome,
     );
 
-    let resumed = game_core::engine::apply(
+    let resumed = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -1363,7 +1352,7 @@ fn after_successful_investigate_fires_in_play_reaction() {
 
     let investigate = {
         let target = TurnAction::Investigate { investigator: id };
-        let idx = game_core::engine::enumerate::legal_actions(&state)
+        let idx = enumerate::legal_actions(&state)
             .iter()
             .position(|a| a == &target)
             .expect("Investigate must be legal");
@@ -1371,7 +1360,7 @@ fn after_successful_investigate_fires_in_play_reaction() {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         })
     };
-    let paused_commit = game_core::engine::apply(state, investigate);
+    let paused_commit = engine::apply(state, investigate);
     assert!(matches!(
         paused_commit.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -1379,7 +1368,7 @@ fn after_successful_investigate_fires_in_play_reaction() {
 
     // Commit nothing → test succeeds → clue discovered → after-investigate
     // window opens → suspends.
-    let paused_reaction = game_core::engine::apply(paused_commit.state, commit_nothing());
+    let paused_reaction = engine::apply(paused_commit.state, commit_nothing());
     assert!(
         matches!(paused_reaction.outcome, EngineOutcome::AwaitingInput { .. }),
         "after-investigate reaction window must suspend, got {:?}",
@@ -1387,7 +1376,7 @@ fn after_successful_investigate_fires_in_play_reaction() {
     );
 
     // Fire the reaction → gain 1 resource → resume the test → Done.
-    let resumed = game_core::engine::apply(
+    let resumed = engine::apply(
         paused_reaction.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -1423,7 +1412,7 @@ fn after_successful_investigate_no_window_without_reaction() {
 
     let investigate = {
         let target = TurnAction::Investigate { investigator: id };
-        let idx = game_core::engine::enumerate::legal_actions(&state)
+        let idx = enumerate::legal_actions(&state)
             .iter()
             .position(|a| a == &target)
             .expect("Investigate must be legal");
@@ -1431,8 +1420,8 @@ fn after_successful_investigate_no_window_without_reaction() {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         })
     };
-    let paused_commit = game_core::engine::apply(state, investigate);
-    let resolved = game_core::engine::apply(paused_commit.state, commit_nothing());
+    let paused_commit = engine::apply(state, investigate);
+    let resolved = engine::apply(paused_commit.state, commit_nothing());
 
     // No reaction card is in play, so no AfterSuccessfulInvestigate window can
     // open: the investigate resolves straight through to the open-turn menu in

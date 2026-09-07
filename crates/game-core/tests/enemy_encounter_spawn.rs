@@ -14,11 +14,9 @@
 
 use game_core::action::{Action, EngineRecord};
 use game_core::card_data::{CardKind, CardMetadata, HealthValue, Prey};
+use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, Continuation, InvestigatorId, LocationId};
-use game_core::test_support::{
-    drive, test_investigator, test_location, GameStateBuilder, MockRegistry, ScriptedResolver,
-};
-use game_core::EngineOutcome;
+use game_core::test_support::{self, GameStateBuilder, MockRegistry, ScriptedResolver};
 
 const ENEMY: &str = "_synth_enemy";
 
@@ -60,13 +58,13 @@ fn install() {
 #[test]
 fn enemy_encounter_card_spawns_via_the_disposition_frame() {
     let mut state = GameStateBuilder::new()
-        .with_investigator_at(test_investigator(1), LocationId(1))
-        .with_location(test_location(1, "Here"))
+        .with_investigator_at(test_support::test_investigator(1), LocationId(1))
+        .with_location(test_support::test_location(1, "Here"))
         .with_turn_order([InvestigatorId(1)])
         .build();
     state.encounter_deck.push_back(CardCode::new(ENEMY));
 
-    let result = drive(
+    let result = test_support::drive(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed {
             investigator: InvestigatorId(1),
