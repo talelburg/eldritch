@@ -5,18 +5,19 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use game_core::engine::EngineOutcome;
+use card_dsl::card_data::UseKind;
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId,
-    FastActorScope, FastWindowKind, InvestigatorId, LocationId, Phase, PhaseStep,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    EnemyId, FastActorScope, FastWindowKind, GameState, InvestigatorId, LocationId, Phase,
+    PhaseStep,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, take_turn_action, test_enemy, test_investigator, test_location,
-    GameStateBuilder,
-};
-use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event, card_registry};
 
 const MOM: &str = "01036";
 const OVERPOWER: &str = "01091"; // combat skill icons
@@ -28,21 +29,21 @@ const WEAPON_INST: CardInstanceId = CardInstanceId(900);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Active investigator at `LOC` engaged with a fight-3 enemy. `combat` /
 /// `intellect` are set so a `Numeric(0)` draw makes substitution flip the
 /// outcome (combat fails the fight-3 test, intellect passes). `hand` is the
 /// investigator's starting hand.
-fn board(combat: i8, intellect: i8, hand: Vec<CardCode>) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board(combat: i8, intellect: i8, hand: Vec<CardCode>) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     inv.skills.combat = combat;
     inv.skills.intellect = intellect;
     inv.current_location = Some(LOC);
     inv.hand = hand;
 
-    let mut enemy = test_enemy(100, "Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Ghoul");
     enemy.fight = 3;
     enemy.max_health = 5; // survives so we can read `damage`
     enemy.engaged_with = Some(INV);
@@ -51,7 +52,7 @@ fn board(combat: i8, intellect: i8, hand: Vec<CardCode>) -> game_core::GameState
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_enemy(enemy)
         .with_active_investigator(INV)
         .with_turn_order([INV])
@@ -60,8 +61,8 @@ fn board(combat: i8, intellect: i8, hand: Vec<CardCode>) -> game_core::GameState
         .build()
 }
 
-fn play_card(state: game_core::GameState, hand_index: u8) -> game_core::engine::ApplyResult {
-    take_turn_action(
+fn play_card(state: GameState, hand_index: u8) -> ApplyResult {
+    test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: INV,
@@ -70,8 +71,8 @@ fn play_card(state: game_core::GameState, hand_index: u8) -> game_core::engine::
     )
 }
 
-fn fight(state: game_core::GameState) -> game_core::engine::ApplyResult {
-    take_turn_action(
+fn fight(state: GameState) -> ApplyResult {
+    test_support::take_turn_action(
         state,
         &TurnAction::Fight {
             investigator: INV,
@@ -80,8 +81,8 @@ fn fight(state: game_core::GameState) -> game_core::engine::ApplyResult {
     )
 }
 
-fn pick(state: game_core::GameState, opt: u32) -> game_core::engine::ApplyResult {
-    apply(
+fn pick(state: GameState, opt: u32) -> ApplyResult {
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(opt)),
@@ -89,8 +90,8 @@ fn pick(state: game_core::GameState, opt: u32) -> game_core::engine::ApplyResult
     )
 }
 
-fn commit(state: game_core::GameState, indices: Vec<u32>) -> game_core::engine::ApplyResult {
-    apply(
+fn commit(state: GameState, indices: Vec<u32>) -> ApplyResult {
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple {
@@ -190,20 +191,20 @@ fn substituted_intellect_test_rejects_a_committed_combat_icon() {
 
 #[test]
 fn mind_over_matter_rejected_outside_your_turn() {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LOC);
     inv.hand = vec![CardCode::new(MOM)];
     let state = GameStateBuilder::new()
         .with_phase(Phase::Mythos)
         .with_investigator_at(inv, LOC)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_active_investigator(INV)
         .with_open_window(
             FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
             FastActorScope::Any,
         )
         .build();
-    let r = dispatch_turn_action_unchecked(
+    let r = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: INV,
@@ -223,16 +224,16 @@ fn weapon_fight_substituting_uses_intellect_and_keeps_weapon_damage() {
     // combat 1 + weapon +1 = 2 < fight 3 (would fail); substituting drops the
     // weapon's combat bonus and tests intellect 4 ≥ 3 → success, and the
     // weapon's +1 damage is still dealt (base 1 + 1 = 2).
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.skills.combat = 1;
     inv.skills.intellect = 4;
     inv.current_location = Some(LOC);
     inv.hand = vec![CardCode::new(MOM)];
     let mut weapon = CardInPlay::enter_play(CardCode::new(SPECIAL), WEAPON_INST);
-    weapon.uses.insert(game_core::card_data::UseKind::Ammo, 4);
+    weapon.uses.insert(UseKind::Ammo, 4);
     inv.cards_in_play.push(weapon);
 
-    let mut enemy = test_enemy(100, "Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Ghoul");
     enemy.fight = 3;
     enemy.max_health = 5;
     enemy.engaged_with = Some(INV);
@@ -241,7 +242,7 @@ fn weapon_fight_substituting_uses_intellect_and_keeps_weapon_damage() {
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_enemy(enemy)
         .with_active_investigator(INV)
         .with_turn_order([INV])
@@ -250,7 +251,7 @@ fn weapon_fight_substituting_uses_intellect_and_keeps_weapon_damage() {
         .build();
 
     let r = play_card(state, 0); // MoM
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         r.state,
         &TurnAction::ActivateAbility {
             investigator: INV,

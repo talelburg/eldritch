@@ -27,16 +27,16 @@ use card_dsl::dsl::{
     forced_on_event, gain_resources, reaction_on_event, Ability, Effect, EventPattern, EventTiming,
     InvestigatorTarget,
 };
-use game_core::engine::{apply, EngineOutcome, OptionId};
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::assert_event;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, InvestigatorId, LocationId,
-    Phase,
+    CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, GameState,
+    InvestigationResume, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder, MockRegistry,
-};
-use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 /// `when`-tagged reaction on a card the attacked investigator controls: +4
 /// resources. Declaring interrupt timing on this condition is *accepted* now
@@ -115,7 +115,7 @@ const ATTACKER: EnemyId = EnemyId(7);
 /// condition's own impact is visible on both tracks. `code` selects whether it
 /// carries a forced ability of its own.
 fn attacker(code: &str) -> Enemy {
-    let mut e = test_enemy(7, "Attacker");
+    let mut e = test_support::test_enemy(7, "Attacker");
     e.code = CardCode::new(code);
     e.attack_damage = 1;
     e.attack_horror = 1;
@@ -131,7 +131,7 @@ fn attacker(code: &str) -> Enemy {
 /// No soaker assets, so the attack's damage/horror never prompts the
 /// interactive distribution (#44/K5b) and the only prompts are the cells' own.
 fn board_with(codes: &[&str], enemy_code: &str) -> GameState {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.resources = 0;
     // A spare deck card so Upkeep step 4.4's draw does not hit an empty deck
     // (which would add a horror the damage/horror assertions would then read).
@@ -144,13 +144,13 @@ fn board_with(codes: &[&str], enemy_code: &str) -> GameState {
     }
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_investigator_at(inv, LOC)
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .with_enemy(attacker(enemy_code))
-        .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
-            resume: game_core::state::InvestigationResume::TurnBegins,
+        .with_phase_anchor(Continuation::InvestigationPhase {
+            resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(INV)
         .build()
@@ -167,7 +167,7 @@ struct Run {
 /// a script longer than the prompts panics — so the script length is itself an
 /// assertion about how many cells opened.
 fn end_turn_answering(state: GameState, picks: &[InputResponse]) -> Run {
-    let mut result = take_turn_action(state, &TurnAction::EndTurn);
+    let mut result = test_support::take_turn_action(state, &TurnAction::EndTurn);
     let mut events = std::mem::take(&mut result.events);
     for pick in picks {
         assert!(
@@ -175,7 +175,7 @@ fn end_turn_answering(state: GameState, picks: &[InputResponse]) -> Run {
             "expected a prompt for {pick:?}, got {:?}",
             result.outcome
         );
-        result = apply(
+        result = engine::apply(
             result.state,
             Action::Player(PlayerAction::ResolveInput {
                 response: pick.clone(),

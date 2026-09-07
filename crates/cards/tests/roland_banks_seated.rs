@@ -9,37 +9,35 @@
 //!
 //! Integration test so it can install `cards::REGISTRY` in its own process.
 
+use cards::REGISTRY;
+use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityUsageRecord, ChaosBag, ChaosToken, EnemyId, InvestigatorId, LocationId, Phase,
-    TokenModifiers,
+    AbilityUsageRecord, CardCode, ChaosBag, ChaosToken, EnemyId, GameState, InvestigatorId,
+    LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{
-    test_enemy, test_investigator, test_location, GameStateBuilder, TestSession,
-};
-use game_core::{assert_event, assert_no_event, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, TestSession};
+use game_core::{assert_event, assert_no_event, card_registry};
 
 const ROLAND: &str = "01001";
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Roland engaged with a 1-HP enemy, his investigator card represented ONLY by
 /// `card_code` (the seated shape) — `cards_in_play` is empty, proving the
 /// reaction is found by the new investigator-card scan, not the in-play scan.
-fn seated_roland_with_enemy(
-    round: u32,
-) -> (InvestigatorId, EnemyId, LocationId, game_core::GameState) {
+fn seated_roland_with_enemy(round: u32) -> (InvestigatorId, EnemyId, LocationId, GameState) {
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     // After #448 cp2a the scanner reads investigator_card.code, not card_code.
-    inv.investigator_card.code = game_core::state::CardCode::new(ROLAND);
+    inv.investigator_card.code = CardCode::new(ROLAND);
     inv.current_location = Some(loc_id);
     inv.skills.combat = 4;
     assert!(
@@ -47,14 +45,14 @@ fn seated_roland_with_enemy(
         "seated shape: no in-play injection"
     );
 
-    let mut enemy = test_enemy(100, "Mock Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 1;
     enemy.max_health = 1;
     enemy.damage = 0;
     enemy.engaged_with = Some(inv_id);
     enemy.current_location = Some(loc_id);
 
-    let mut loc = test_location(10, "Study");
+    let mut loc = test_support::test_location(10, "Study");
     loc.clues = 2;
 
     let state = GameStateBuilder::new()

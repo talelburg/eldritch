@@ -6,12 +6,14 @@
 //! ```
 //!
 //! A card-local native (the #276 escape hatch), like agenda 01105 / Crypt
-//! Chill: it enumerates the controller's location and its connections, applies
-//! the choice convention (1 candidate → auto-target, 2+ → suspend via
-//! [`suspend_for_native_choice`]), and on resume deals 3 damage to every enemy
-//! ([`deal_damage_to_enemy`], which handles defeat → victory points / Roland's
-//! reaction) and every investigator ([`take_damage`] — the controller included
-//! if they blast their own location) at the chosen location.
+//! Chill: it enumerates the controller's location and its connections,
+//! applies the choice convention (1 candidate → auto-target, 2+ → suspend via
+//! [`suspend_for_native_choice`](engine::suspend_for_native_choice)), and on
+//! resume deals 3 damage to every enemy
+//! ([`deal_damage_to_enemy`](engine::deal_damage_to_enemy), which handles
+//! defeat → victory points / Roland's reaction) and every investigator
+//! ([`take_damage`](engine::take_damage) — the controller included if they
+//! blast their own location) at the chosen location.
 //!
 //! # Native, not a typed fan-out — on purpose
 //!
@@ -32,11 +34,9 @@
 
 use card_dsl::dsl::{native, on_play, Ability};
 use game_core::card_registry::NativeEffectFn;
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::{self, ChoiceResolution, Cx, EngineOutcome};
 use game_core::state::{EnemyId, InvestigatorId, LocationId};
-use game_core::{
-    deal_damage_to_enemy, resolve_choice_count, suspend_for_native_choice, take_damage,
-    ChoiceResolution, Cx, EngineOutcome, EvalContext,
-};
 
 /// `ArkhamDB` code for Dynamite Blast (original-Core printing).
 pub const CODE: &str = "01024";
@@ -93,7 +93,7 @@ fn dynamite_blast(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         return blast_location(cx, controller, loc);
     }
 
-    match resolve_choice_count(locations.len(), cx.state.interactive_acknowledge) {
+    match engine::resolve_choice_count(locations.len(), cx.state.interactive_acknowledge) {
         // Controller is between locations — no legal target.
         ChoiceResolution::Empty => EngineOutcome::Rejected {
             reason: "01024 blast: controller has no location to target".into(),
@@ -103,7 +103,7 @@ fn dynamite_blast(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         // 2+ → suspend for the controller's pick.
         ChoiceResolution::Suspend => {
             let labels = locations.iter().map(|id| format!("{id:?}")).collect();
-            suspend_for_native_choice(cx, "Choose a location to blast", labels, BLAST, ctx)
+            engine::suspend_for_native_choice(cx, "Choose a location to blast", labels, BLAST, ctx)
         }
     }
 }
@@ -122,7 +122,7 @@ fn blast_location(cx: &mut Cx, controller: InvestigatorId, loc: LocationId) -> E
         .map(|(id, _)| *id)
         .collect();
     for enemy in enemies {
-        deal_damage_to_enemy(cx, enemy, DAMAGE, Some(controller));
+        engine::deal_damage_to_enemy(cx, enemy, DAMAGE, Some(controller));
     }
 
     let investigators: Vec<InvestigatorId> = cx
@@ -133,7 +133,7 @@ fn blast_location(cx: &mut Cx, controller: InvestigatorId, loc: LocationId) -> E
         .map(|(id, _)| *id)
         .collect();
     for inv in investigators {
-        take_damage(cx, inv, DAMAGE);
+        engine::take_damage(cx, inv, DAMAGE);
     }
 
     EngineOutcome::Done
@@ -143,6 +143,8 @@ fn blast_location(cx: &mut Cx, controller: InvestigatorId, loc: LocationId) -> E
 mod tests {
     use super::*;
     use card_dsl::dsl::{Effect, Trigger};
+    use game_core::event::Event;
+    use game_core::test_support::{self, GameStateBuilder};
 
     #[test]
     fn one_on_play_native_blast() {
@@ -166,20 +168,18 @@ mod tests {
 
     #[test]
     fn single_location_blast_surfaces_under_interactive_flag() {
-        use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
-
         // Sole candidate (controller's location, no connections). With
         // interactive_acknowledge on, the blast target must surface as a
         // one-option pick rather than auto-targeting silently (#466).
-        let loc = test_location(1, "Lonely Spot"); // no connections by default
-        let mut inv = test_investigator(1);
+        let loc = test_support::test_location(1, "Lonely Spot"); // no connections by default
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(1));
         let mut state = GameStateBuilder::new()
             .with_investigator(inv)
             .with_location(loc)
             .build();
         state.interactive_acknowledge = true;
-        let mut events: Vec<game_core::Event> = Vec::new();
+        let mut events: Vec<Event> = Vec::new();
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let out = {
             let mut cx = Cx {

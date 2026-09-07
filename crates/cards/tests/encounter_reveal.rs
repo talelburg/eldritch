@@ -38,13 +38,14 @@
 //!   per round.)"* has no trigger here — nothing is defeated. Both his rulings
 //!   (<https://arkhamdb.com/card/01001>) scope that same reaction.
 
-use game_core::action::EngineRecord;
-use game_core::card_data::{CardKind, CardType};
-use game_core::engine::{apply, EngineOutcome};
+use card_dsl::card_data::{CardKind, CardType};
+use cards::REGISTRY;
+use game_core::action::{Action, EngineRecord};
+use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{Agenda, CardCode, GameState, InvestigatorId, Phase};
-use game_core::test_support::{test_investigator, GameStateBuilder};
-use game_core::{assert_event, Action};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event, card_registry};
 
 /// Ancient Evils — *"**Revelation** - Place 1 doom on the current agenda."*
 const ANCIENT_EVILS: &str = "01166";
@@ -57,7 +58,7 @@ const ROLAND: &str = "01001";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Rise of the Ghouls' printed doom threshold, read from the corpus rather than
@@ -82,7 +83,7 @@ fn board() -> GameState {
         code: CardCode::new(RISE_OF_THE_GHOULS),
         doom_threshold: agenda_doom_threshold(RISE_OF_THE_GHOULS),
     }];
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.investigator_card.code = CardCode::new(ROLAND);
     inv.current_location = Some(study);
     state.investigators.insert(InvestigatorId(1), inv);
@@ -101,7 +102,7 @@ fn revealing_ancient_evils_runs_revelation_and_discards() {
     let pre_deck_len = state.encounter_deck.len();
     assert!(pre_deck_len >= 1, "fixture must seed at least one card");
 
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed { investigator: inv1 }),
     );
@@ -150,7 +151,7 @@ fn rejects_when_encounter_deck_and_discard_both_empty() {
     state.encounter_deck.clear();
     assert!(state.encounter_discard.is_empty());
 
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed { investigator: inv1 }),
     );

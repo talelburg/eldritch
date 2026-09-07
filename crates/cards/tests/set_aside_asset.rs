@@ -47,19 +47,18 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use game_core::action::EngineRecord;
+use cards::REGISTRY;
+use game_core::action::{Action, EngineRecord};
 use game_core::card_registry;
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
+use game_core::engine::{self, Cx, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    Act, CardCode, ChaosToken, GameState, InvestigatorId, LocationId, Phase, SkillKind,
+    Act, CardCode, ChaosToken, GameState, InvestigatorId, LocationId, ModifierTarget, Phase,
+    SkillKind,
 };
-use game_core::test_support::{
-    drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
-};
-use game_core::{
-    put_set_aside_card_into_play, Action, Cx, EngineOutcome, EvalContext, ModifiedQuantity,
-    ModifierTarget, ReadContext,
-};
+use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
 
 /// Lita Chantler — the set-aside `Ally` asset act 01109b puts into play.
 const LITA: &str = "01117";
@@ -76,20 +75,20 @@ const INV: InvestigatorId = InvestigatorId(1);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// The act-2 board: an investigator in the Hallway, the Parlor in play but
 /// unrevealed (the barrier is still up), and both set-aside cards in the zone.
 /// Act 01109 is current, with a successor so its advance is non-terminal.
 fn board() -> GameState {
-    let mut hallway = test_location(1, "Hallway");
+    let mut hallway = test_support::test_location(1, "Hallway");
     hallway.code = CardCode::new(HALLWAY);
-    let mut parlor = test_location(2, "Parlor");
+    let mut parlor = test_support::test_location(2, "Parlor");
     parlor.code = CardCode::new(PARLOR);
     parlor.revealed = false;
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     // A real investigator code, so `max_health()` reads from the installed
     // corpus. Skids O'Toole (01003, 8/6).
     inv.investigator_card.code = CardCode::new("01003");
@@ -150,7 +149,7 @@ fn reverse(state: &mut GameState) -> (EngineOutcome, Vec<Event>) {
 fn a_set_aside_asset_enters_play_at_the_named_location() {
     let mut state = board();
     let (outcome, events) = with_cx(&mut state, |cx| {
-        put_set_aside_card_into_play(cx, LITA, Some(PARLOR))
+        engine::put_set_aside_card_into_play(cx, LITA, Some(PARLOR))
     });
 
     assert_eq!(outcome, EngineOutcome::Done, "the asset entered play");
@@ -184,7 +183,7 @@ fn a_set_aside_asset_enters_play_at_the_named_location() {
 fn a_card_put_into_play_at_a_location_is_controlled_by_no_investigator() {
     let mut state = board();
     let (outcome, _) = with_cx(&mut state, |cx| {
-        put_set_aside_card_into_play(cx, LITA, Some(PARLOR))
+        engine::put_set_aside_card_into_play(cx, LITA, Some(PARLOR))
     });
     assert_eq!(outcome, EngineOutcome::Done);
 
@@ -208,7 +207,7 @@ fn a_card_put_into_play_at_a_location_is_controlled_by_no_investigator() {
 fn a_set_aside_asset_without_a_location_is_rejected() {
     let mut state = board();
     let (outcome, events) = with_cx(&mut state, |cx| {
-        put_set_aside_card_into_play(cx, LITA, None)
+        engine::put_set_aside_card_into_play(cx, LITA, None)
     });
 
     assert!(
@@ -228,7 +227,7 @@ fn a_set_aside_asset_without_a_location_is_rejected() {
 fn a_set_aside_asset_named_at_a_location_not_in_play_is_rejected() {
     let mut state = board();
     let (outcome, _) = with_cx(&mut state, |cx| {
-        put_set_aside_card_into_play(cx, LITA, Some("01113")) // the Attic, still set aside
+        engine::put_set_aside_card_into_play(cx, LITA, Some("01113")) // the Attic, still set aside
     });
 
     assert!(
@@ -258,7 +257,7 @@ fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
     // Put her into play where the investigator is standing — the strongest
     // form of the claim: co-location is not control.
     let (outcome, _) = with_cx(&mut state, |cx| {
-        put_set_aside_card_into_play(cx, LITA, Some(HALLWAY))
+        engine::put_set_aside_card_into_play(cx, LITA, Some(HALLWAY))
     });
     assert_eq!(outcome, EngineOutcome::Done);
 
@@ -269,7 +268,7 @@ fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
     resolver.commit_cards(&[]);
     // No pick_single is scripted: a contested point would prompt, and the drive
     // would fail for want of a response.
-    let result = drive(
+    let result = test_support::drive(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed { investigator: INV }),
         resolver,
@@ -300,11 +299,11 @@ fn an_uncontrolled_asset_cannot_soak_damage_for_a_colocated_investigator() {
 fn a_card_at_a_location_is_swept_by_the_modifier_query() {
     let mut state = board();
     let (outcome, _) = with_cx(&mut state, |cx| {
-        put_set_aside_card_into_play(cx, LITA, Some(HALLWAY))
+        engine::put_set_aside_card_into_play(cx, LITA, Some(HALLWAY))
     });
     assert_eq!(outcome, EngineOutcome::Done);
 
-    let combat = game_core::modified_value(
+    let combat = modified_value::modified_value(
         &state,
         card_registry::current(),
         ModifierTarget::Investigator(INV),

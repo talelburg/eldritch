@@ -7,15 +7,16 @@
 //! doom-to-threshold cascade — the firing wiring lives in `advance_agenda`
 //! and is unit-tested there; here we prove the *card effects* resolve.
 
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::state::{CardCode, EnemyId, InvestigatorId, LocationId};
-use game_core::test_support::{
-    fire_forced_on_agenda_advance, test_investigator, test_location, GameStateBuilder,
-};
-use game_core::{apply, Action, EngineOutcome, InputResponse, OptionId, PlayerAction};
+use game_core::test_support::{self, GameStateBuilder};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// 01105's reverse is the lead's interactive `ChooseOne` (Axis A #334): it
@@ -24,7 +25,7 @@ fn install_registry() {
 #[test]
 fn agenda_01105_reverse_choice_lead_takes_two_horror() {
     let lead = InvestigatorId(1);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     // Use a real investigator code so max_sanity() can read from the installed
     // cards registry; TEST_INV is only known to the game-core test registry
     // (#448 cp2a). Skids O'Toole (01003, 8/6) — no implemented abilities.
@@ -37,14 +38,18 @@ fn agenda_01105_reverse_choice_lead_takes_two_horror() {
 
     // Firing the reverse suspends on the lead's choice (Choice frame pushed).
     let mut events = Vec::new();
-    let outcome = fire_forced_on_agenda_advance(&mut state, &mut events, CardCode::new("01105"));
+    let outcome = test_support::fire_forced_on_agenda_advance(
+        &mut state,
+        &mut events,
+        CardCode::new("01105"),
+    );
     assert!(
         matches!(outcome, EngineOutcome::AwaitingInput { .. }),
         "01105's reverse is a lead choice, not a deterministic effect: {outcome:?}",
     );
 
     // Pick branch 1 (option id 1): the lead takes 2 horror.
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(1)),
@@ -68,7 +73,7 @@ fn agenda_01105_reverse_choice_lead_takes_two_horror() {
 fn agenda_01105_reverse_choice_random_discard_each() {
     let lead = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .with_turn_order([lead])
         .build();
     // Seed a single known card into the lead's hand so the random discard is
@@ -81,10 +86,14 @@ fn agenda_01105_reverse_choice_random_discard_each() {
         .push(CardCode::new("01088")); // Emergency Cache (any hand-legal card)
 
     let mut events = Vec::new();
-    let outcome = fire_forced_on_agenda_advance(&mut state, &mut events, CardCode::new("01105"));
+    let outcome = test_support::fire_forced_on_agenda_advance(
+        &mut state,
+        &mut events,
+        CardCode::new("01105"),
+    );
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
 
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -115,9 +124,9 @@ fn agenda_01105_reverse_choice_random_discard_each() {
 #[test]
 fn agenda_01106_reverse_digs_until_a_ghoul_and_the_lead_draws_it() {
     let lead = InvestigatorId(1);
-    let loc = test_location(20, "Here");
+    let loc = test_support::test_location(20, "Here");
     let mut state = GameStateBuilder::new()
-        .with_investigator_at(test_investigator(1), LocationId(20))
+        .with_investigator_at(test_support::test_investigator(1), LocationId(20))
         .with_location(loc)
         .with_turn_order([lead])
         .build();
@@ -125,7 +134,11 @@ fn agenda_01106_reverse_digs_until_a_ghoul_and_the_lead_draws_it() {
     state.encounter_deck.push_back(CardCode::new("01160")); // Ghoul Minion
 
     let mut events = Vec::new();
-    let outcome = fire_forced_on_agenda_advance(&mut state, &mut events, CardCode::new("01106"));
+    let outcome = test_support::fire_forced_on_agenda_advance(
+        &mut state,
+        &mut events,
+        CardCode::new("01106"),
+    );
     assert_eq!(outcome, EngineOutcome::Done);
 
     // The Ghoul Minion was drawn → spawned into play (always reached,
@@ -165,13 +178,17 @@ fn agenda_01106_reverse_digs_until_a_ghoul_and_the_lead_draws_it() {
 fn agenda_01106_reverse_discards_non_ghoul_cards() {
     let lead = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .with_turn_order([lead])
         .build();
     state.encounter_deck.push_back(CardCode::new("01135")); // treachery, no Ghoul
 
     let mut events = Vec::new();
-    let outcome = fire_forced_on_agenda_advance(&mut state, &mut events, CardCode::new("01106"));
+    let outcome = test_support::fire_forced_on_agenda_advance(
+        &mut state,
+        &mut events,
+        CardCode::new("01106"),
+    );
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
         state.encounter_discard,

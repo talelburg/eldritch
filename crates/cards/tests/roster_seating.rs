@@ -3,9 +3,10 @@
 //! it can install `cards::REGISTRY` in its own process (per the test layering
 //! in `docs/agents/standards.md`).
 
+use cards::REGISTRY;
 use game_core::action::RosterEntry;
-use game_core::engine::EngineOutcome;
-use game_core::seat_and_open;
+use game_core::card_registry;
+use game_core::engine::{self, EngineOutcome};
 use game_core::state::{CardCode, InvestigatorId, Skills};
 use game_core::test_support::GameStateBuilder;
 
@@ -14,7 +15,7 @@ use game_core::test_support::GameStateBuilder;
 /// the futile second `install` call.
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 #[test]
@@ -26,7 +27,7 @@ fn seats_roland_with_corpus_stats_and_payload_deck() {
     }];
     let state = GameStateBuilder::new().build();
 
-    let result = seat_and_open(state, &roster);
+    let result = engine::seat_and_open(state, &roster);
 
     // seat_and_open seats the roster and opens the setup mulligan prompt
     // (AwaitingInput) for the first investigator (#348).
@@ -65,7 +66,7 @@ fn rejects_non_investigator_code() {
         deck: vec![],
     }];
     let state = GameStateBuilder::new().build();
-    let result = seat_and_open(state, &roster);
+    let result = engine::seat_and_open(state, &roster);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.round, 0);
     assert!(result.events.is_empty());
@@ -78,7 +79,7 @@ fn seated_investigator_carries_its_card_code() {
         deck: vec![],
     }];
     let state = GameStateBuilder::new().build();
-    let result = seat_and_open(state, &roster);
+    let result = engine::seat_and_open(state, &roster);
     let inv = result
         .state
         .investigators
@@ -94,7 +95,7 @@ fn rejects_unknown_code() {
         deck: vec![],
     }];
     let state = GameStateBuilder::new().build();
-    let result = seat_and_open(state, &roster);
+    let result = engine::seat_and_open(state, &roster);
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.round, 0);
     assert!(result.events.is_empty());

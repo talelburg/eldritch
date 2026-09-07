@@ -3,13 +3,16 @@
 //! Mirrors the `play_card.rs` harness: a process-global registry install and a
 //! one-investigator mid-investigation state.
 
-use game_core::engine::EngineOutcome;
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::state::{CardCode, Continuation, InvestigatorId, Phase, Zone};
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
+use game_core::state::{
+    CardCode, Continuation, GameState, InvestigatorId, LocationId, Phase, Zone,
 };
-use game_core::{apply, Action, InputResponse, LocationId, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder};
 
 const BEAT_COP: &str = "01018"; // Guardian Ally
 const GUARD_DOG: &str = "01021"; // Guardian Ally
@@ -19,15 +22,15 @@ const FLASHLIGHT: &str = "01087"; // single Hand
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// A one-investigator scenario, mid-investigation, with `hand` in hand, plenty
 /// of resources and actions.
-fn play_state(hand: Vec<&str>) -> (game_core::GameState, InvestigatorId) {
+fn play_state(hand: Vec<&str>) -> (GameState, InvestigatorId) {
     let id = InvestigatorId(1);
     let loc_id = LocationId(101);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     inv.resources = 20;
     inv.actions_remaining = 6;
@@ -37,13 +40,13 @@ fn play_state(hand: Vec<&str>) -> (game_core::GameState, InvestigatorId) {
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .build();
     (state, id)
 }
 
-fn play(state: game_core::GameState, id: InvestigatorId) -> game_core::ApplyResult {
-    dispatch_turn_action_unchecked(
+fn play(state: GameState, id: InvestigatorId) -> ApplyResult {
+    test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -52,8 +55,8 @@ fn play(state: game_core::GameState, id: InvestigatorId) -> game_core::ApplyResu
     )
 }
 
-fn resolve(state: game_core::GameState, id: game_core::OptionId) -> game_core::ApplyResult {
-    apply(
+fn resolve(state: GameState, id: OptionId) -> ApplyResult {
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(id),
@@ -62,7 +65,7 @@ fn resolve(state: game_core::GameState, id: game_core::OptionId) -> game_core::A
 }
 
 /// Find the option whose label contains `needle` in an `AwaitingInput` outcome.
-fn pick(outcome: &EngineOutcome, needle: &str) -> game_core::OptionId {
+fn pick(outcome: &EngineOutcome, needle: &str) -> OptionId {
     let EngineOutcome::AwaitingInput { request, .. } = outcome else {
         panic!("expected AwaitingInput, got {outcome:?}");
     };
@@ -183,7 +186,7 @@ fn out_of_range_make_room_pick_is_rejected_and_keeps_the_prompt() {
     assert!(matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }));
 
     // Option 99 is out of range → Rejected, the prompt persists.
-    let r4 = resolve(r3.state, game_core::OptionId(99));
+    let r4 = resolve(r3.state, OptionId(99));
     assert!(
         matches!(r4.outcome, EngineOutcome::Rejected { .. }),
         "out-of-range pick rejects: {:?}",

@@ -32,7 +32,8 @@
 use std::sync::OnceLock;
 
 use card_dsl::card_data::CardMetadata;
-use game_core::card_registry::CardRegistry;
+use card_dsl::dsl::Ability;
+use game_core::card_registry::{CardRegistry, EligibilityFn, NativeConditionFn, NativeEffectFn};
 use game_core::state::CardCode;
 
 pub mod generated;
@@ -60,7 +61,7 @@ pub fn by_code(code: &str) -> Option<&'static CardMetadata> {
 /// `None` for unimplemented cards. Re-exported from
 /// [`impls::abilities_for`].
 #[must_use]
-pub fn abilities_for(code: &str) -> Option<Vec<card_dsl::dsl::Ability>> {
+pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
     impls::abilities_for(code)
 }
 
@@ -80,7 +81,7 @@ fn registry_metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
 }
 
 /// Adapter from [`CardCode`] to [`abilities_for`].
-fn registry_abilities_for(code: &CardCode) -> Option<Vec<card_dsl::dsl::Ability>> {
+fn registry_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     abilities_for(code.as_str())
 }
 
@@ -88,23 +89,23 @@ fn registry_abilities_for(code: &CardCode) -> Option<Vec<card_dsl::dsl::Ability>
 /// printed on a card's **reverse side**. See
 /// [`game_core::card_registry::CardRegistry::back_abilities_for`] for when the
 /// engine reads this side rather than the front.
-fn registry_back_abilities_for(code: &CardCode) -> Option<Vec<card_dsl::dsl::Ability>> {
+fn registry_back_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     impls::back_abilities_for(code.as_str())
 }
 
 /// Adapter from a native-effect tag to its card-local handler.
-fn registry_native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEffectFn> {
+fn registry_native_effect_for(tag: &str) -> Option<NativeEffectFn> {
     impls::native_effect_for(tag)
 }
 
 /// Adapter from an eligibility tag to its card-local predicate.
-fn registry_native_eligibility_for(tag: &str) -> Option<game_core::card_registry::EligibilityFn> {
+fn registry_native_eligibility_for(tag: &str) -> Option<EligibilityFn> {
     impls::native_eligibility_for(tag)
 }
 
 /// Adapter from a [`Condition::Native`](card_dsl::dsl::Condition::Native) tag to
 /// its card-local predicate.
-fn registry_native_condition_for(tag: &str) -> Option<game_core::card_registry::NativeConditionFn> {
+fn registry_native_condition_for(tag: &str) -> Option<NativeConditionFn> {
     impls::native_condition_for(tag)
 }
 
@@ -123,7 +124,8 @@ pub const REGISTRY: CardRegistry = CardRegistry {
 
 #[cfg(test)]
 mod tests {
-    use super::{all, by_code, is_playable, CardType, Class};
+    use super::*;
+    use game_core::state::CardCode;
 
     #[test]
     fn corpus_is_sorted_by_code() {
@@ -187,8 +189,8 @@ mod tests {
     #[test]
     fn abilities_for_returns_some_for_implemented() {
         for code in ["01001", "01030", "01034", "01037", "01039", "01059"] {
-            let abilities = super::abilities_for(code)
-                .unwrap_or_else(|| panic!("expected abilities for {code}"));
+            let abilities =
+                abilities_for(code).unwrap_or_else(|| panic!("expected abilities for {code}"));
             assert!(
                 !abilities.is_empty(),
                 "abilities for {code} should be non-empty"
@@ -198,7 +200,7 @@ mod tests {
 
     #[test]
     fn abilities_for_returns_none_for_unimplemented() {
-        assert!(super::abilities_for("99999").is_none());
+        assert!(abilities_for("99999").is_none());
     }
 
     /// The `REGISTRY` constant must dispatch lookups to this crate's
@@ -207,9 +209,7 @@ mod tests {
     /// (Mystic asset) and an ability implementation.
     #[test]
     fn registry_constant_resolves_known_card() {
-        use game_core::state::CardCode;
-
-        let reg = super::REGISTRY;
+        let reg = REGISTRY;
         let code = CardCode::new("01059");
         let meta = (reg.metadata_for)(&code).expect("Holy Rosary should be in the corpus");
         assert_eq!(meta.code, "01059");
@@ -221,9 +221,7 @@ mod tests {
 
     #[test]
     fn registry_constant_returns_none_for_unknown_code() {
-        use game_core::state::CardCode;
-
-        let reg = super::REGISTRY;
+        let reg = REGISTRY;
         let code = CardCode::new("99999");
         assert!((reg.metadata_for)(&code).is_none());
         assert!((reg.abilities_for)(&code).is_none());

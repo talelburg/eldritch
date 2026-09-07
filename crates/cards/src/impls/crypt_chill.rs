@@ -19,11 +19,10 @@
 use card_dsl::card_data::{CardKind, SkillKind};
 use card_dsl::dsl::{native, revelation, skill_test, Ability};
 use game_core::card_registry::NativeEffectFn;
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::{self, ChoiceResolution, Cx, EngineOutcome};
+use game_core::event::Event;
 use game_core::state::{CardInstanceId, InvestigatorId, Zone};
-use game_core::{
-    resolve_choice_count, suspend_for_native_choice, take_damage, ChoiceResolution, Cx,
-    EngineOutcome, EvalContext, Event,
-};
 
 /// `ArkhamDB` code for Crypt Chill.
 pub const CODE: &str = "01167";
@@ -79,11 +78,11 @@ fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         return discard_asset_instance(cx, controller, instance);
     }
 
-    match resolve_choice_count(assets.len(), cx.state.interactive_acknowledge) {
+    match engine::resolve_choice_count(assets.len(), cx.state.interactive_acknowledge) {
         // Cannot discard an asset → take 2 damage instead (the printed
         // fallback; defeat handled by the kernel helper).
         ChoiceResolution::Empty => {
-            take_damage(cx, controller, 2);
+            engine::take_damage(cx, controller, 2);
             EngineOutcome::Done
         }
         // Exactly one → auto-discard, no input.
@@ -91,7 +90,7 @@ fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         // 2+ → suspend for the controller's choice.
         ChoiceResolution::Suspend => {
             let labels = assets.iter().map(|id| format!("{id:?}")).collect();
-            suspend_for_native_choice(
+            engine::suspend_for_native_choice(
                 cx,
                 "Choose an asset to discard",
                 labels,
@@ -136,6 +135,8 @@ fn discard_asset_instance(
 mod tests {
     use super::*;
     use card_dsl::dsl::Effect;
+    use game_core::state::{CardCode, CardInPlay};
+    use game_core::test_support::{self, GameStateBuilder};
 
     #[test]
     fn revelation_tests_willpower_4_then_native_fail() {
@@ -162,13 +163,10 @@ mod tests {
 
     #[test]
     fn single_asset_discard_surfaces_under_interactive_flag() {
-        use game_core::state::{CardCode, CardInPlay};
-        use game_core::test_support::{test_investigator, GameStateBuilder};
-
         // Exactly one discardable asset (Machete 01020) in play. With
         // interactive_acknowledge on, the fail branch must surface the discard as
         // a one-option pick rather than auto-discarding silently (#466).
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new("01020"),
             CardInstanceId(1),
@@ -198,12 +196,9 @@ mod tests {
 
     #[test]
     fn single_asset_auto_discards_when_flag_off() {
-        use game_core::state::{CardCode, CardInPlay};
-        use game_core::test_support::{test_investigator, GameStateBuilder};
-
         // Flag off (default): the lone asset auto-discards silently, as today —
         // the n=1 regression guard local to this card (#466).
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new("01020"),
             CardInstanceId(1),

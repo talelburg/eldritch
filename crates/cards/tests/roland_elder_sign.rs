@@ -8,22 +8,22 @@
 //! Integration test so it installs the real `cards::REGISTRY` (which carries
 //! Roland's `Trigger::ElderSign` ability) in its own process.
 
+use cards::REGISTRY;
+use game_core::card_registry;
+use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase,
     SkillKind, TokenModifiers,
 };
-use game_core::test_support::{
-    drive_skill_test, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
-};
-use game_core::EngineOutcome;
+use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
 
 const ROLAND: &str = "01001";
 const COVER_UP: &str = "01007";
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Drive a Willpower-3 test at difficulty 3 with the `ElderSign` token, Roland
@@ -39,7 +39,7 @@ fn run_elder_sign_test_with_threat_area(clues: u8, threat_area: Vec<CardInPlay>)
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(10);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     // After #448 cp2a the elder-sign scanner reads investigator_card.code, not card_code.
     inv.investigator_card.code = CardCode::new(ROLAND);
     inv.current_location = Some(loc_id);
@@ -51,7 +51,7 @@ fn run_elder_sign_test_with_threat_area(clues: u8, threat_area: Vec<CardInPlay>)
     );
     inv.threat_area = threat_area;
 
-    let mut loc = test_location(10, "Study");
+    let mut loc = test_support::test_location(10, "Study");
     loc.clues = clues;
 
     let state = GameStateBuilder::new()
@@ -68,7 +68,7 @@ fn run_elder_sign_test_with_threat_area(clues: u8, threat_area: Vec<CardInPlay>)
     // total = 3 + clues; succeed iff total >= 3 (always, here) by margin = clues.
     let mut resolver = ScriptedResolver::new();
     resolver.commit_cards(&[]);
-    let result = drive_skill_test(state, inv_id, SkillKind::Willpower, 3, resolver);
+    let result = test_support::drive_skill_test(state, inv_id, SkillKind::Willpower, 3, resolver);
     assert_eq!(result.outcome, EngineOutcome::Done);
     result.events
 }

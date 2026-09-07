@@ -26,14 +26,17 @@
 //! it is an action and provokes an attack of opportunity (RR p.5). No rulings —
 //! it is listed in `data/arkhamdb-faq/no-rulings.txt`.
 
+use cards::REGISTRY;
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
+use game_core::scenario::ScenarioEnding;
 use game_core::state::{
-    CardCode, Continuation, Enemy, InvestigationResume, InvestigatorId, LocationId, Phase, Status,
+    CardCode, Continuation, Enemy, GameState, InvestigationResume, InvestigatorId, LocationId,
+    Phase, Status,
 };
-use game_core::test_support::{
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
-};
-use game_core::{EngineOutcome, TurnAction};
+use game_core::test_support::{self, GameStateBuilder};
 
 /// Emergency Cache (01088): non-fast event → playing it provokes.
 const EMERGENCY_CACHE: &str = "01088";
@@ -47,12 +50,12 @@ const ELSEWHERE: LocationId = LocationId(102);
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// An enemy engaged with `inv`, ready, hitting for 3 damage.
 fn engaged_attacker(inv: InvestigatorId) -> Enemy {
-    let mut e = test_enemy(7, "Attacker");
+    let mut e = test_support::test_enemy(7, "Attacker");
     e.attack_damage = 3;
     e.attack_horror = 0;
     e.max_health = 5;
@@ -64,8 +67,8 @@ fn engaged_attacker(inv: InvestigatorId) -> Enemy {
 /// Investigator 1 on 7 damage (one attack of opportunity from dead), engaged,
 /// holding Emergency Cache, with the open turn. `turn_order` decides whether the
 /// rotation has anyone left to hand the turn to.
-fn board(turn_order: &[InvestigatorId]) -> game_core::GameState {
-    let mut dying = test_investigator(1);
+fn board(turn_order: &[InvestigatorId]) -> GameState {
+    let mut dying = test_support::test_investigator(1);
     dying.investigator_card.code = CardCode::new(SKIDS);
     dying.investigator_card.accumulated_damage = 7; // 7 + 3 ≥ 8 = max_health
     dying.current_location = Some(HERE);
@@ -73,8 +76,8 @@ fn board(turn_order: &[InvestigatorId]) -> game_core::GameState {
 
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(HERE.0, "Study"))
-        .with_location(test_location(ELSEWHERE.0, "Hallway"))
+        .with_location(test_support::test_location(HERE.0, "Study"))
+        .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
         .with_investigator(dying)
         .with_active_investigator(DYING)
         .with_phase_anchor(Continuation::InvestigationPhase {
@@ -85,7 +88,7 @@ fn board(turn_order: &[InvestigatorId]) -> game_core::GameState {
         .build();
 
     if turn_order.contains(&SURVIVOR) {
-        let mut survivor = test_investigator(2);
+        let mut survivor = test_support::test_investigator(2);
         survivor.investigator_card.code = CardCode::new(SKIDS);
         survivor.current_location = Some(ELSEWHERE);
         state.investigators.insert(SURVIVOR, survivor);
@@ -95,8 +98,8 @@ fn board(turn_order: &[InvestigatorId]) -> game_core::GameState {
 }
 
 /// Play Emergency Cache, provoking the lethal attack of opportunity.
-fn play_into_the_lethal_aoo(state: game_core::GameState) -> game_core::ApplyResult {
-    take_turn_action(
+fn play_into_the_lethal_aoo(state: GameState) -> ApplyResult {
+    test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: DYING,
@@ -199,10 +202,7 @@ fn solo_defeat_ends_the_scenario_instead_of_rotating() {
 
     assert_eq!(result.state.investigators[&DYING].status, Status::Defeated);
     assert!(
-        matches!(
-            result.state.ending,
-            Some(game_core::scenario::ScenarioEnding::NoResolution)
-        ),
+        matches!(result.state.ending, Some(ScenarioEnding::NoResolution)),
         "RR p.10 step 6: no remaining players ⇒ the scenario ends"
     );
     assert!(

@@ -10,14 +10,14 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use game_core::engine::EngineOutcome;
-use game_core::engine::TurnAction;
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::state::{CardCode, Continuation, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{
-    take_turn_action, test_investigator, test_location, GameStateBuilder,
-};
-use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction};
+use game_core::state::{CardCode, Continuation, GameState, InvestigatorId, LocationId, Phase};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event, card_registry};
 
 const LIBRARIAN: &str = "01032";
 const OLD_BOOK: &str = "01031"; // Item. Tome. asset
@@ -28,28 +28,28 @@ const LOC: LocationId = LocationId(10);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Board: the active investigator at `LOC` with Research Librarian in hand
 /// (index 0) and `deck` as their deck.
-fn board(deck: Vec<CardCode>) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board(deck: Vec<CardCode>) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     inv.hand = vec![CardCode::new(LIBRARIAN)];
     inv.deck = deck;
 
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .with_investigator_turn(INV)
         .build()
 }
 
-fn play(state: game_core::GameState) -> game_core::engine::ApplyResult {
-    take_turn_action(
+fn play(state: GameState) -> ApplyResult {
+    test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: INV,
@@ -58,8 +58,8 @@ fn play(state: game_core::GameState) -> game_core::engine::ApplyResult {
     )
 }
 
-fn pick(state: game_core::GameState, option: u32) -> game_core::engine::ApplyResult {
-    apply(
+fn pick(state: GameState, option: u32) -> ApplyResult {
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(option)),

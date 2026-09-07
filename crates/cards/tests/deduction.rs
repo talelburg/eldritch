@@ -11,37 +11,34 @@
 //! icon + the discovery-count bonus both work end-to-end with the
 //! real card and real registry.
 
-use game_core::engine::EngineOutcome;
+use cards::REGISTRY;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase, SkillKind,
+    TokenModifiers,
 };
-use game_core::test_support::{
-    drive_skill_test, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
-    TestSession,
-};
-use game_core::{assert_event, assert_event_count, assert_no_event, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, ScriptedResolver, TestSession};
+use game_core::{assert_event, assert_event_count, assert_no_event, card_registry};
 
 const DEDUCTION: &str = "01039";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Build a state with Deduction in hand, the active investigator at
 /// `LocationId(10)` with `initial_clues` clues there, in the
 /// Investigation phase, against a single-`Numeric(0)` chaos bag.
-fn state_with_deduction(
-    initial_clues: u8,
-    shroud: u8,
-) -> (game_core::GameState, InvestigatorId, LocationId) {
+fn state_with_deduction(initial_clues: u8, shroud: u8) -> (GameState, InvestigatorId, LocationId) {
     let id = InvestigatorId(1);
     let loc = LocationId(10);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc);
     inv.hand = vec![CardCode::new(DEDUCTION)];
-    let mut location = test_location(10, "Study");
+    let mut location = test_support::test_location(10, "Study");
     location.shroud = shroud;
     location.clues = initial_clues;
     let state = GameStateBuilder::new()
@@ -56,7 +53,7 @@ fn state_with_deduction(
     (state, id, loc)
 }
 
-fn drive_committing_deduction(state: game_core::GameState) -> game_core::ApplyResult {
+fn drive_committing_deduction(state: GameState) -> ApplyResult {
     TestSession::new(state)
         .take(&TurnAction::Investigate {
             investigator: InvestigatorId(1),
@@ -170,7 +167,7 @@ fn non_investigate_test_does_not_fire_deductions_bonus() {
     let (state, id, loc) = state_with_deduction(1, 4);
     let mut resolver = ScriptedResolver::new();
     resolver.commit_cards(&[CardCode::new(DEDUCTION)]);
-    let result = drive_skill_test(state, id, SkillKind::Intellect, 4, resolver);
+    let result = test_support::drive_skill_test(state, id, SkillKind::Intellect, 4, resolver);
 
     assert!(matches!(
         result.outcome,

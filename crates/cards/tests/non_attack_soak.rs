@@ -7,25 +7,24 @@
 //! After #426 the damage is one `Deal { amount: N }` not N×`Deal { amount: 1 }`;
 //! the per-point prompt loop still fires via the `DealDamage` frame.
 
-use game_core::action::EngineRecord;
-use game_core::engine::OptionId;
+use cards::REGISTRY;
+use game_core::action::{Action, EngineRecord};
+use game_core::card_registry;
+use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosToken, InvestigatorId, LocationId,
+    CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, InvestigatorId, LocationId,
 };
-use game_core::test_support::{
-    drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
-};
-use game_core::{Action, EngineOutcome};
+use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Investigator 1 at a location, controlling `soaker` (instance 1), with
 /// `treachery` on top of the encounter deck and one rigged chaos token.
-fn board_with_soaker(treachery: &str, soaker: &str, token: ChaosToken) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board_with_soaker(treachery: &str, soaker: &str, token: ChaosToken) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     // Real investigator code so max_health()/max_sanity() reads from the
     // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
     inv.investigator_card.code = CardCode::new("01003");
@@ -35,7 +34,7 @@ fn board_with_soaker(treachery: &str, soaker: &str, token: ChaosToken) -> game_c
     )];
     let mut state = GameStateBuilder::new()
         .with_investigator_at(inv, LocationId(20))
-        .with_location(test_location(20, "Here"))
+        .with_location(test_support::test_location(20, "Here"))
         .with_turn_order([InvestigatorId(1)])
         .build();
     state.chaos_bag.tokens = vec![token];
@@ -46,13 +45,13 @@ fn board_with_soaker(treachery: &str, soaker: &str, token: ChaosToken) -> game_c
 /// Reveal the top encounter card for investigator 1, committing no cards at the
 /// revelation skill-test window, then answering each per-point distribution
 /// prompt with `picks` (each an `OptionId` index into `[self, soaker, …]`).
-fn reveal_distributing(state: game_core::GameState, picks: &[u32]) -> game_core::ApplyResult {
+fn reveal_distributing(state: GameState, picks: &[u32]) -> ApplyResult {
     let mut resolver = ScriptedResolver::new();
     resolver.commit_cards(&[]);
     for &p in picks {
         resolver.pick_single(OptionId(p));
     }
-    drive(
+    test_support::drive(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed {
             investigator: InvestigatorId(1),
@@ -61,7 +60,7 @@ fn reveal_distributing(state: game_core::GameState, picks: &[u32]) -> game_core:
     )
 }
 
-fn dog_damage(result: &game_core::ApplyResult) -> Option<u8> {
+fn dog_damage(result: &ApplyResult) -> Option<u8> {
     result.state.investigators[&InvestigatorId(1)]
         .cards_in_play
         .iter()

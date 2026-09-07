@@ -31,13 +31,16 @@
 //! no `AoO` carve-out — Guard Dog retaliates against `AoO` attacks.
 #![allow(clippy::too_many_lines)]
 
-use game_core::engine::{apply, EngineOutcome, OptionId};
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{take_turn_action, test_enemy, test_investigator, test_location};
-use game_core::{Action, InputResponse, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder};
 
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.
 const DODGE: &str = "01023";
@@ -47,7 +50,7 @@ const GUARD_DOG: &str = "01021";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// The soak-distribution `PickSingle` `OptionId` for the soaker asset (#44/K5b —
@@ -75,7 +78,7 @@ fn engaged_attacker(
     damage: u8,
     max_health: u8,
 ) -> Enemy {
-    let mut e = test_enemy(id, format!("Attacker {id}"));
+    let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
     e.attack_damage = damage;
     e.attack_horror = 0;
     e.max_health = max_health;
@@ -108,12 +111,12 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
     let dest = LocationId(102);
     let enemy_id = EnemyId(7);
 
-    let mut study = test_location(101, "Study");
+    let mut study = test_support::test_location(101, "Study");
     study.connections = vec![dest];
-    let mut hallway = test_location(102, "Hallway");
+    let mut hallway = test_support::test_location(102, "Hallway");
     hallway.connections = vec![from];
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(from);
     // Use a real investigator code so max_health()/max_sanity() can read from
     // the installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
@@ -122,7 +125,7 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
 
     let attacker = engaged_attacker(7, inv_id, from, 2, 3);
 
-    let state = game_core::test_support::GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_location(study)
         .with_location(hallway)
@@ -135,7 +138,7 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
 
     // Step 1: take the Move — AoO fires; Dodge is in hand so the
     // BeforeEnemyAttack cancel window opens and suspends.
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::Move {
             investigator: inv_id,
@@ -165,7 +168,7 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
     );
 
     // Step 2: play Dodge (the single offered candidate) — cancel the AoO.
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -264,12 +267,12 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
     let dest = LocationId(102);
     let enemy_id = EnemyId(7);
 
-    let mut study = test_location(101, "Study");
+    let mut study = test_support::test_location(101, "Study");
     study.connections = vec![dest];
-    let mut hallway = test_location(102, "Hallway");
+    let mut hallway = test_support::test_location(102, "Hallway");
     hallway.connections = vec![from];
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(from);
     // Use a real investigator code so max_health()/max_sanity() can read from
     // the installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
@@ -278,7 +281,7 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
 
     let attacker = engaged_attacker(7, inv_id, from, 2, 5);
 
-    let state = game_core::test_support::GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_location(study)
         .with_location(hallway)
@@ -290,7 +293,7 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
         .build();
 
     // Step 1: Move → AoO → BeforeEnemyAttack window.
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::Move {
             investigator: inv_id,
@@ -304,7 +307,7 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
     ));
 
     // Step 2: skip the cancel window → AoO lands → move completes.
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Skip,
@@ -369,12 +372,12 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
     let dest = LocationId(102);
     let enemy_id = EnemyId(7);
 
-    let mut study = test_location(101, "Study");
+    let mut study = test_support::test_location(101, "Study");
     study.connections = vec![dest];
-    let mut hallway = test_location(102, "Hallway");
+    let mut hallway = test_support::test_location(102, "Hallway");
     hallway.connections = vec![from];
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(from);
     // Guard Dog in play, no Dodge in hand — so no before-attack cancel window.
     investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog)];
@@ -383,7 +386,7 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
     // retaliates. Max health 5 ensures the attacker survives the 1 retaliate.
     let attacker = engaged_attacker(7, inv_id, from, 2, 5);
 
-    let state = game_core::test_support::GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_location(study)
         .with_location(hallway)
@@ -396,20 +399,20 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
 
     // Step 1: Move → AoO → distribution prompt (Guard Dog has capacity, #44/K5b).
     // Assign both AoO damage points onto Guard Dog → soak window opens.
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::Move {
             investigator: inv_id,
             destination: dest,
         },
     );
-    let result = apply(
+    let result = engine::apply(
         result.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(pick_soaker(&result.outcome)),
         }),
     );
-    let result = apply(
+    let result = engine::apply(
         result.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(pick_soaker(&result.outcome)),
@@ -444,7 +447,7 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
     assert_eq!(state.enemies[&enemy_id].damage, 0);
 
     // Step 2: fire Guard Dog's reaction (the single pending trigger).
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),

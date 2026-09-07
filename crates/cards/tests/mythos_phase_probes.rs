@@ -34,21 +34,17 @@
 //! [#138]: https://github.com/talelburg/eldritch/issues/138
 //! [MockRegistry]: game_core::test_support::MockRegistry
 
-use game_core::action::RosterEntry;
-use game_core::card_data::{CardKind, CardMetadata, CardType};
-use game_core::dsl::{choose_one, gain_resources, revelation, Ability, InvestigatorTarget};
-use game_core::engine::{apply, EngineOutcome, OptionId};
+use card_dsl::card_data::{CardKind, CardMetadata, CardType};
+use card_dsl::dsl::{choose_one, gain_resources, revelation, Ability, InvestigatorTarget};
+use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::seat_and_open;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{
-    take_turn_action, test_location, GameStateBuilder, MockRegistry, TEST_INV,
-};
-use game_core::{
-    assert_event, assert_event_sequence, Action, InputResponse, PlayerAction, TurnAction,
-};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry, TEST_INV};
+use game_core::{assert_event, assert_event_sequence};
 
 /// Probe: a treachery whose Revelation is a bare *"You gain 1 resource"* — the
 /// engine primitive "a Revelation that resolves inline and discards", with
@@ -136,7 +132,7 @@ fn install_probe_registry() {
 /// to [`seat_and_open`]. No act or agenda deck: nothing here discovers a clue
 /// or places doom.
 fn board() -> GameState {
-    let mut location = test_location(10, "Probe Location");
+    let mut location = test_support::test_location(10, "Probe Location");
     location.code = CardCode::new(PROBE_LOCATION);
 
     let mut state = GameStateBuilder::new()
@@ -156,7 +152,7 @@ fn with_encounter_deck(state: &mut GameState, codes: &[&str]) {
 
 /// Close one investigator's mulligan prompt, keeping the whole opening hand.
 fn keep_hand(state: GameState) -> GameState {
-    apply(
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -178,23 +174,23 @@ fn roster(seats: usize) -> Vec<RosterEntry> {
 /// through Investigation → Enemy → Upkeep into Mythos (round 2), pausing with
 /// the encounter-draw cursor on inv1.
 fn setup_at_mythos_draw(state: GameState) -> GameState {
-    let state = keep_hand(seat_and_open(state, &roster(1)).state);
-    take_turn_action(state, &TurnAction::EndTurn).state
+    let state = keep_hand(engine::seat_and_open(state, &roster(1)).state);
+    test_support::take_turn_action(state, &TurnAction::EndTurn).state
 }
 
 /// The two-investigator equivalent: both mulliganed, both turns ended — the
 /// second `EndTurn` is the last in `turn_order`, so it ticks into Mythos.
 fn setup_two_investigators_at_mythos_draw(state: GameState) -> GameState {
-    let mut state = keep_hand(keep_hand(seat_and_open(state, &roster(2)).state));
+    let mut state = keep_hand(keep_hand(engine::seat_and_open(state, &roster(2)).state));
     // inv1 ends turn → rotates to inv2.
-    state = take_turn_action(state, &TurnAction::EndTurn).state;
+    state = test_support::take_turn_action(state, &TurnAction::EndTurn).state;
     // inv2 is last in turn_order → auto-advances into Mythos.
-    take_turn_action(state, &TurnAction::EndTurn).state
+    test_support::take_turn_action(state, &TurnAction::EndTurn).state
 }
 
 /// The `Confirm` that answers the step-1.4 encounter-draw prompt.
-fn draw_encounter_card(state: GameState) -> game_core::ApplyResult {
-    apply(
+fn draw_encounter_card(state: GameState) -> ApplyResult {
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Confirm,
@@ -377,7 +373,7 @@ fn revelation_suspending_into_a_choice_discards_after_the_pick() {
 
     // Pick branch 0 (gain 2 resources). The choice resolves, and the framework
     // disposes of the treachery to encounter_discard.
-    let resolved = apply(
+    let resolved = engine::apply(
         drawn.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),

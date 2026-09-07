@@ -26,20 +26,19 @@
 //! Lives at `crates/cards/tests/` so it can install [`cards::REGISTRY`] in its
 //! own integration-test process.
 
-use game_core::action::InputResponse;
-use game_core::dsl::EventTiming;
-use game_core::engine::{EngineOutcome, OptionId, TimingEvent, TurnAction};
+use card_dsl::dsl::EventTiming;
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, EngineOutcome, OptionId, TimingEvent};
 use game_core::event::{Event, LapseReason};
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
-    EnemyId, GameState, Investigator, InvestigatorId, LocationId, Phase, ResolutionCandidate,
-    TimingMode, TokenModifiers,
+    AbilityAddress, CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    Continuation, EnemyId, GameState, Investigator, InvestigatorId, LocationId, Phase,
+    ResolutionCandidate, TimingMode, TokenModifiers,
 };
-use game_core::test_support::{
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder, TestSession,
-};
-use game_core::{apply, assert_event, assert_no_event, Action, PlayerAction};
+use game_core::test_support::{self, GameStateBuilder, TestSession};
+use game_core::{assert_event, assert_no_event, card_registry};
 
 /// `ArkhamDB` code for original-Core Evidence!.
 const EVIDENCE: &str = "01022";
@@ -48,7 +47,7 @@ const ROLAND: &str = "01001";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// A solo investigator engaged with a 1-HP enemy at a `location_clues`-clue
@@ -63,19 +62,19 @@ fn after_defeat_board(
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     inv.skills.combat = 4;
     shape(&mut inv);
 
-    let mut enemy = test_enemy(100, "Mock Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 1;
     enemy.max_health = 1;
     enemy.damage = 0;
     enemy.engaged_with = Some(inv_id);
     enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
 
-    let mut loc = test_location(10, "Study");
+    let mut loc = test_support::test_location(10, "Study");
     loc.clues = location_clues;
 
     let state = GameStateBuilder::new()
@@ -323,7 +322,7 @@ fn firing_a_candidate_whose_card_left_hand_rejects_instead_of_panicking() {
         )],
     });
 
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -351,8 +350,8 @@ fn a_lone_evidence_still_opens_and_resolves_its_window() {
         inv.hand.push(CardCode::new(EVIDENCE));
     });
 
-    let after_fight = take_turn_action(state, &fight_action(inv_id, enemy_id));
-    let opened = apply(
+    let after_fight = test_support::take_turn_action(state, &fight_action(inv_id, enemy_id));
+    let opened = engine::apply(
         after_fight.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -364,7 +363,7 @@ fn a_lone_evidence_still_opens_and_resolves_its_window() {
     assert!(request.options.iter().any(|o| o.label.contains(EVIDENCE)));
     assert_eq!(lapse_count(&opened.events, EVIDENCE), 0);
 
-    let result = apply(
+    let result = engine::apply(
         opened.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),

@@ -42,16 +42,17 @@
 //! can be used is exactly the question of whether a player window stands open
 //! there. Step 3.3's does.
 
-use game_core::engine::{apply, EngineOutcome, InputKind, OptionTarget};
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, FastActorScope,
-    FastWindowKind, InvestigationResume, InvestigatorId, LocationId, Phase, PhaseStep,
+    FastWindowKind, GameState, InvestigationResume, InvestigatorId, LocationId, Phase, PhaseStep,
 };
-use game_core::test_support::{
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
-};
-use game_core::{Action, GameState, InputResponse, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder};
 
 /// Beat Cop (01018): Guardian Ally, `[fast]` *"Discard Beat Cop: Deal 1 damage
 /// to an enemy at your location."*
@@ -60,14 +61,14 @@ const BEAT_COP_INSTANCE: CardInstanceId = CardInstanceId(1);
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// A ready enemy engaged with `inv` at `loc`, dealing 1 damage. `max_health` is
 /// the caller's to choose: 2 leaves it alive through a single point of Beat Cop
 /// damage, 1 lets the Fast play defeat it before it ever attacks.
 fn engaged_attacker(inv: InvestigatorId, loc: LocationId, max_health: u8) -> Enemy {
-    let mut e = test_enemy(7, "Attacker");
+    let mut e = test_support::test_enemy(7, "Attacker");
     e.max_health = max_health;
     e.attack_damage = 1;
     e.current_location = Some(loc);
@@ -82,7 +83,7 @@ fn board(beat_cop: bool, enemy_health: u8) -> (GameState, InvestigatorId, EnemyI
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(101);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     // A real investigator code so max_health()/max_sanity() resolve against the
     // installed corpus; TEST_INV lives only in game-core's test registry.
@@ -99,7 +100,7 @@ fn board(beat_cop: bool, enemy_health: u8) -> (GameState, InvestigatorId, EnemyI
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(inv)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
@@ -118,8 +119,8 @@ fn board(beat_cop: bool, enemy_health: u8) -> (GameState, InvestigatorId, EnemyI
 
 /// `EndTurn`, which cascades out of the Investigation phase and into the Enemy
 /// phase's step-3.3 loop.
-fn end_turn(state: GameState) -> game_core::ApplyResult {
-    take_turn_action(state, &TurnAction::EndTurn)
+fn end_turn(state: GameState) -> ApplyResult {
+    test_support::take_turn_action(state, &TurnAction::EndTurn)
 }
 
 #[test]
@@ -183,7 +184,7 @@ fn before_investigator_attacked_pauses_when_a_fast_play_is_eligible() {
 fn skipping_the_pause_resumes_into_the_attack() {
     let (state, inv_id, enemy_id) = board(true, 2);
     let paused = end_turn(state);
-    let resumed = apply(
+    let resumed = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Skip,
@@ -206,7 +207,7 @@ fn skipping_the_pause_resumes_into_the_attack() {
         .expect("the attacked investigator is always an assignment target")
         .id;
 
-    let assigned = apply(
+    let assigned = engine::apply(
         resumed.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(to_investigator),
@@ -247,7 +248,7 @@ fn taking_the_fast_play_resolves_before_the_attack() {
         .expect("Beat Cop's zero-action ability is the offered play")
         .id;
 
-    let played = apply(
+    let played = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(option),

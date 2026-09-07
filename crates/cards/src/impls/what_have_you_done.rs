@@ -117,7 +117,7 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, EventPattern, EventTiming, Trigger};
+    use card_dsl::dsl::{Effect, EventPattern, EventTiming, Trigger, TriggerKind};
 
     #[test]
     fn abilities_advance_on_ghoul_priest_defeat() {
@@ -131,7 +131,7 @@ mod tests {
                     code: Some("01116".into()),
                 },
                 timing: EventTiming::At,
-                kind: card_dsl::dsl::TriggerKind::Forced,
+                kind: TriggerKind::Forced,
             }
         );
         assert!(matches!(abilities[0].effect, Effect::AdvanceCurrentAct));
@@ -148,7 +148,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::ActAdvanced,
                 timing: EventTiming::After,
-                kind: card_dsl::dsl::TriggerKind::Forced,
+                kind: TriggerKind::Forced,
             }
         );
         let Effect::ChooseOne(branches) = &abilities[1].effect else {

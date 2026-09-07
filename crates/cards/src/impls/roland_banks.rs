@@ -82,7 +82,8 @@ pub fn abilities() -> Vec<Ability> {
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::{
-        Effect, EventPattern, EventTiming, LocationTarget, Trigger, UsageLimit, UsagePeriod,
+        Effect, EventPattern, EventTiming, IntExpr, LocationTarget, Quantity, Trigger, TriggerKind,
+        UsageLimit, UsagePeriod,
     };
 
     #[test]
@@ -97,7 +98,7 @@ mod tests {
                     code: None,
                 },
                 timing: EventTiming::After,
-                kind: card_dsl::dsl::TriggerKind::Reaction,
+                kind: TriggerKind::Reaction,
             },
         );
         assert!(matches!(
@@ -118,7 +119,6 @@ mod tests {
 
     #[test]
     fn abilities_include_elder_sign_clue_count_modifier() {
-        use card_dsl::dsl::{IntExpr, Quantity, Trigger};
         let abilities = super::abilities();
         assert_eq!(abilities.len(), 2);
         // The elder-sign half: +1 for each clue on your location.

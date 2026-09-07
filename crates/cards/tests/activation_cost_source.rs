@@ -14,18 +14,15 @@
 //! without colliding with the real-corpus binaries. Prior art:
 //! `reject_rollback.rs`.
 
-use game_core::state::AbilityAddress;
-
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Uses};
-use game_core::dsl::{activated, gain_resources, Ability, Cost, InvestigatorTarget};
-use game_core::engine::{EngineOutcome, TurnAction};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Uses};
+use card_dsl::dsl::{activated, gain_resources, Ability, Cost, InvestigatorTarget};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::EngineOutcome;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Phase, UseKind,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId,
+    LocationId, Phase, UseKind,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
-    MockRegistry,
-};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 /// Synthetic asset: `Uses (1 supply)`, discards itself when they deplete, and
 /// its ability spends that last supply *and then* exhausts. Not in the corpus.
@@ -97,8 +94,8 @@ fn install_probe_registry() {
 }
 
 /// Depleter at position 0 with its last supply, bystander behind it at 1.
-fn board() -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board() -> GameState {
+    let mut inv = test_support::test_investigator(1);
     let mut depleter = CardInPlay::enter_play(CardCode::new(DEPLETER), DEPLETER_INST);
     depleter.uses.insert(UseKind::Supplies, 1);
     inv.cards_in_play.push(depleter);
@@ -110,7 +107,7 @@ fn board() -> game_core::GameState {
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .with_investigator_turn(INV)
@@ -122,7 +119,7 @@ fn cost_after_the_source_leaves_play_rejects_rather_than_hitting_another_card() 
     let state = board();
     let before = state.clone();
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::ActivateAbility {
             investigator: INV,
@@ -154,7 +151,7 @@ fn cost_after_the_source_leaves_play_rejects_rather_than_hitting_another_card() 
 /// regression guard for the rewrite rather than a pre-existing bug.
 #[test]
 fn costs_land_on_the_source_when_it_is_not_first_in_play() {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(BYSTANDER),
         BYSTANDER_INST,
@@ -168,13 +165,13 @@ fn costs_land_on_the_source_when_it_is_not_first_in_play() {
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .with_investigator_turn(INV)
         .build();
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::ActivateAbility {
             investigator: INV,

@@ -13,12 +13,13 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use game_core::engine::EngineOutcome;
-use game_core::state::{CardCode, EnemyId, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
-};
-use game_core::{apply, Action, InputResponse, OptionId, PlayerAction, TurnAction};
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::state::{CardCode, EnemyId, GameState, InvestigatorId, LocationId, Phase};
+use game_core::test_support::{self, GameStateBuilder};
 
 const DYNAMITE: &str = "01024";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -30,11 +31,11 @@ const ENEMY_B: EnemyId = EnemyId(101);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
-fn play(state: game_core::GameState) -> game_core::engine::ApplyResult {
-    take_turn_action(
+fn play(state: GameState) -> ApplyResult {
+    test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: INV,
@@ -43,8 +44,8 @@ fn play(state: game_core::GameState) -> game_core::engine::ApplyResult {
     )
 }
 
-fn pick(state: game_core::GameState, option: u32) -> game_core::engine::ApplyResult {
-    apply(
+fn pick(state: GameState, option: u32) -> ApplyResult {
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(option)),
@@ -55,8 +56,8 @@ fn pick(state: game_core::GameState, option: u32) -> game_core::engine::ApplyRes
 /// Two connected locations. The controller (Dynamite in hand) and a 3-health
 /// enemy sit at `LOC_A`; a second investigator and a 5-health enemy sit at the
 /// connecting `LOC_B`.
-fn board() -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board() -> GameState {
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LOC_A);
     inv.hand = vec![CardCode::new(DYNAMITE)];
     // Use Skids O'Toole (01003, 8 health / 6 sanity) — real code so
@@ -64,20 +65,20 @@ fn board() -> game_core::GameState {
     // (#448 cp2a), no implemented abilities so no reaction windows fire.
     inv.investigator_card.code = CardCode::new("01003");
 
-    let mut inv2 = test_investigator(2);
+    let mut inv2 = test_support::test_investigator(2);
     inv2.current_location = Some(LOC_B);
     // Same reason as inv above.
     inv2.investigator_card.code = CardCode::new("01003");
 
-    let mut loc_a = test_location(10, "Cellar");
+    let mut loc_a = test_support::test_location(10, "Cellar");
     loc_a.connections = vec![LOC_B];
-    let mut loc_b = test_location(11, "Hallway");
+    let mut loc_b = test_support::test_location(11, "Hallway");
     loc_b.connections = vec![LOC_A];
 
-    let mut enemy_a = test_enemy(100, "Ghoul A");
+    let mut enemy_a = test_support::test_enemy(100, "Ghoul A");
     enemy_a.current_location = Some(LOC_A);
     enemy_a.max_health = 3; // 3 damage defeats it
-    let mut enemy_b = test_enemy(101, "Ghoul B");
+    let mut enemy_b = test_support::test_enemy(101, "Ghoul B");
     enemy_b.current_location = Some(LOC_B);
     enemy_b.max_health = 5; // survives, to assert it's untouched
 
@@ -158,14 +159,14 @@ fn blasts_only_the_chosen_location_then_discards_the_event() {
 #[test]
 fn auto_targets_and_discards_when_your_location_is_the_only_candidate() {
     // A single location with no connections → one candidate → auto, no suspend.
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LOC_A);
     inv.hand = vec![CardCode::new(DYNAMITE)];
     // Real investigator code so max_health() reads from the cards registry (#448 cp2a).
     inv.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
 
-    let loc_a = test_location(10, "Cellar"); // no connections
-    let mut enemy_a = test_enemy(100, "Ghoul A");
+    let loc_a = test_support::test_location(10, "Cellar"); // no connections
+    let mut enemy_a = test_support::test_enemy(100, "Ghoul A");
     enemy_a.current_location = Some(LOC_A);
     enemy_a.max_health = 5; // survives, to assert the 3-damage amount
 

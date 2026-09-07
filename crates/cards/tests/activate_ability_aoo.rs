@@ -38,17 +38,17 @@
 //! `crates/game-core/tests/action_designator_aoo.rs`.
 #![allow(clippy::too_many_lines)]
 
-use game_core::engine::{apply, EngineOutcome, OptionId};
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Enemy, EnemyId,
-    InvestigatorId, LocationId, Phase, UseKind,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    Enemy, EnemyId, Investigator, InvestigatorId, LocationId, Phase, Status, UseKind,
 };
-use game_core::test_support::{
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
-};
-use game_core::{Action, InputResponse, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder};
 
 /// First Aid (01019): Guardian Item, `[action] Spend 1 supply: Heal …`. A
 /// non-fight action ability → provokes an `AoO`.
@@ -69,7 +69,7 @@ const DODGE: &str = "01023";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// An engaged ready enemy at `loc` dealing `damage` / 0 horror with `max_health`.
@@ -80,7 +80,7 @@ fn engaged_attacker(
     damage: u8,
     max_health: u8,
 ) -> Enemy {
-    let mut e = test_enemy(id, format!("Attacker {id}"));
+    let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
     e.attack_damage = damage;
     e.attack_horror = 0;
     e.max_health = max_health;
@@ -108,11 +108,7 @@ fn pick_soaker(outcome: &EngineOutcome) -> OptionId {
 /// investigator carries damage so First Aid's heal has something to remove —
 /// without it the #639 initiation gate refuses the activation outright and the
 /// `AoO` under test never fires.
-fn first_aid_and_guard_dog(
-    inv: &mut game_core::state::Investigator,
-    dog: CardInstanceId,
-    kit: CardInstanceId,
-) {
+fn first_aid_and_guard_dog(inv: &mut Investigator, dog: CardInstanceId, kit: CardInstanceId) {
     let guard_dog = CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog);
     let mut first_aid = CardInPlay::enter_play(CardCode::new(FIRST_AID), kit);
     first_aid.uses.insert(UseKind::Supplies, 3);
@@ -136,7 +132,7 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(loc);
     first_aid_and_guard_dog(&mut investigator, dog, kit);
 
@@ -144,7 +140,7 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
@@ -154,7 +150,7 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
 
     // Activate First Aid (ability 0). Action-cost, non-fight → provokes an AoO
     // after the supply cost is paid and before the heal effect resolves.
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::ActivateAbility {
             investigator: inv_id,
@@ -164,13 +160,13 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
     );
     // The AoO provokes a soak distribution prompt (Guard Dog has capacity, #44/
     // K5b): assign both AoO damage points onto Guard Dog to reproduce the soak.
-    let r2 = apply(
+    let r2 = engine::apply(
         result.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(pick_soaker(&result.outcome)),
         }),
     );
-    let result = apply(
+    let result = engine::apply(
         r2.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(pick_soaker(&r2.outcome)),
@@ -231,7 +227,7 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(loc);
     investigator.cards_in_play = vec![
         CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog),
@@ -242,7 +238,7 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
@@ -252,7 +248,7 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
 
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::ActivateAbility {
             investigator: inv_id,
@@ -303,7 +299,7 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
     let loc = LocationId(101);
     let enemy_id = EnemyId(7);
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(loc);
     investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(BEAT_COP), cop)];
 
@@ -311,7 +307,7 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
@@ -321,7 +317,7 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
 
     // Beat Cop ability 1 is the `[fast]` deal-1-damage (ability 0 is its
     // constant +1 combat).
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::ActivateAbility {
             investigator: inv_id,
@@ -377,7 +373,7 @@ fn activating_an_investigate_designated_ability_while_engaged_provokes_an_aoo() 
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(loc);
     // A real investigator card: the parked investigation reads its intellect
     // out of the corpus once the AoO has resolved.
@@ -390,7 +386,7 @@ fn activating_an_investigate_designated_ability_while_engaged_provokes_an_aoo() 
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
@@ -401,7 +397,7 @@ fn activating_an_investigate_designated_ability_while_engaged_provokes_an_aoo() 
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
 
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::ActivateAbility {
             investigator: inv_id,
@@ -446,7 +442,7 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(loc);
     // Use a real investigator code so max_health()/max_sanity() can read from
     // the installed cards registry (test_investigator uses TEST_INV which only
@@ -468,7 +464,7 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
@@ -478,7 +474,7 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
 
     // Activate First Aid → AoO → Dodge is in hand, so the BeforeEnemyAttack
     // cancel window opens.
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::ActivateAbility {
             investigator: inv_id,
@@ -489,7 +485,7 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
     let state = result.state;
 
     // Play Dodge (the single candidate) → cancel the AoO.
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -512,7 +508,7 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
 
     // Pick the damage branch → 1 damage healed (2 → 1), proving the resumed
     // effect actually resolves.
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -544,7 +540,7 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(loc);
     // Use a real investigator code so max_health()/max_sanity() can read from
     // the installed cards registry (#448 cp2a).
@@ -560,7 +556,7 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
@@ -568,7 +564,7 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
         .with_enemy(attacker)
         .build();
 
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::ActivateAbility {
             investigator: inv_id,
@@ -601,7 +597,7 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
     // The actor was defeated by the AoO.
     assert_ne!(
         state.investigators[&inv_id].status,
-        game_core::state::Status::Active,
+        Status::Active,
         "the lethal AoO defeated the actor"
     );
 }

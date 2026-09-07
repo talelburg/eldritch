@@ -18,20 +18,22 @@
 //! tripped the bug — which is the gap ADR 0016 was written from, and #878
 //! deleted the fixture.
 
+use cards::REGISTRY;
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
-use game_core::state::{CardCode, Continuation, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{
-    take_turn_action, test_investigator, test_location, GameStateBuilder,
+use game_core::state::{
+    CardCode, Continuation, InvestigationResume, InvestigatorId, LocationId, Phase,
 };
-use game_core::TurnAction;
+use game_core::test_support::{self, GameStateBuilder};
 
 const COVER_UP: &str = "01007";
 const HOLY_ROSARY: &str = "01059"; // a real non-weakness asset, deck filler
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 #[test]
@@ -42,7 +44,7 @@ fn upkeep_draw_of_cover_up_does_not_panic_and_cedes_to_the_drive_loop() {
     // Solo investigator mid-Investigation, no enemies (so the Enemy phase
     // resolves quickly), with Cover Up on top of the deck so the Upkeep 4.4
     // draw pulls it. Deck top is drawn first.
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc);
     inv.actions_remaining = 3;
     inv.deck = vec![
@@ -56,10 +58,10 @@ fn upkeep_draw_of_cover_up_does_not_panic_and_cedes_to_the_drive_loop() {
         .with_investigator(inv)
         .with_active_investigator(id)
         .with_turn_order([id])
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         // Mid-Investigation invariant: EndTurn cascades through the phase anchor.
         .with_phase_anchor(Continuation::InvestigationPhase {
-            resume: game_core::state::InvestigationResume::TurnBegins,
+            resume: InvestigationResume::TurnBegins,
         })
         // Open-turn invariant: the InvestigatorTurn frame EndTurn pops.
         .with_investigator_turn(id)
@@ -69,7 +71,7 @@ fn upkeep_draw_of_cover_up_does_not_panic_and_cedes_to_the_drive_loop() {
     // step 4.4 the draw reveals Cover Up and pushes its Revelation. Before the
     // fix this panics at `set_upkeep_resume`'s `unreachable!`; after, 4.4 cedes,
     // the drive loop resolves the Revelation, and 4.5/4.6 run on re-exposure.
-    let result = take_turn_action(state, &TurnAction::EndTurn);
+    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
 
     assert!(
         !matches!(result.outcome, EngineOutcome::Rejected { .. }),

@@ -11,12 +11,12 @@
 //! in play (i.e. while you're at the Study), place that enemy card into the
 //! encounter discard pile without any further effects."
 
-use game_core::action::EngineRecord;
-use game_core::state::{CardCode, InvestigatorId, LocationId};
-use game_core::test_support::{
-    drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
-};
-use game_core::{Action, EngineOutcome};
+use cards::REGISTRY;
+use game_core::action::{Action, EngineRecord};
+use game_core::card_registry;
+use game_core::engine::{ApplyResult, EngineOutcome};
+use game_core::state::{CardCode, GameState, InvestigatorId, LocationId};
+use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
 
 /// Flesh-Eater (01118) — Core enemy, "Spawn - Attic" (location 01113).
 const FLESH_EATER: &str = "01118";
@@ -25,12 +25,12 @@ const STUDY: &str = "01111";
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Reveal the top encounter card for investigator 1.
-fn reveal_top(state: game_core::GameState) -> game_core::ApplyResult {
-    drive(
+fn reveal_top(state: GameState) -> ApplyResult {
+    test_support::drive(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed {
             investigator: InvestigatorId(1),
@@ -43,10 +43,10 @@ fn reveal_top(state: game_core::GameState) -> game_core::ApplyResult {
 fn enemy_with_offboard_spawn_location_is_discarded_not_rejected() {
     // Investigator at the Study; the Attic (Flesh-Eater's spawn location) is
     // NOT in play. Flesh-Eater on top of the encounter deck.
-    let mut study = test_location(20, "Study");
+    let mut study = test_support::test_location(20, "Study");
     study.code = CardCode::new(STUDY);
     let mut state = GameStateBuilder::new()
-        .with_investigator_at(test_investigator(1), LocationId(20))
+        .with_investigator_at(test_support::test_investigator(1), LocationId(20))
         .with_location(study)
         .with_turn_order([InvestigatorId(1)])
         .build();

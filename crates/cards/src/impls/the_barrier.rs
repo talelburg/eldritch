@@ -83,11 +83,9 @@ use card_dsl::dsl::{
     forced_on_event, native, reaction_on_event, Ability, EventPattern, EventTiming,
 };
 use game_core::card_registry::{EligibilityFn, NativeEffectFn};
+use game_core::engine::evaluator::{self, EvalContext};
+use game_core::engine::{self, Cx, EngineOutcome};
 use game_core::state::GameState;
-use game_core::{
-    location_id_by_code, put_set_aside_card_into_play, reveal_location, round_end_advance,
-    round_end_advance_affordable, Cx, EngineOutcome, EvalContext,
-};
 
 /// `ArkhamDB` code for Act 2, "The Barrier".
 pub const CODE: &str = "01109";
@@ -119,7 +117,8 @@ const PARLOR: &str = "01115";
 ///   this as a single candidate (`PickSingle` = advance, Skip = decline); the
 ///   native spends + advances. Affordability is gated by the `01109:can_advance`
 ///   eligibility predicate (shared with the resolve-side
-///   [`round_end_advance_affordable`]), so the candidate isn't offered when the
+///   [`round_end_advance_affordable`](engine::round_end_advance_affordable)),
+///   so the candidate isn't offered when the
 ///   Hallway group can't afford the clue threshold (#470).
 /// - the **reverse** — a Forced on-advance ability (reveal the Parlor + spawn
 ///   the Priest) that fires when the act advances.
@@ -162,7 +161,7 @@ pub(crate) fn native_eligibility_for(tag: &str) -> Option<EligibilityFn> {
 /// True when the Hallway group can afford the current act's clue threshold —
 /// the offer-side gate shared with the resolve-side `round_end_advance`.
 fn can_advance(state: &GameState, _ctx: &EvalContext) -> bool {
-    round_end_advance_affordable(state, HALLWAY)
+    engine::round_end_advance_affordable(state, HALLWAY)
 }
 
 /// Front-objective native: spend the act's `clue_threshold` from Hallway
@@ -170,7 +169,7 @@ fn can_advance(state: &GameState, _ctx: &EvalContext) -> bool {
 /// choice was the round-end `When` window's `PickSingle`. Delegates to the
 /// engine's generic group-spend entry, passing the printed contributor location.
 fn advance_via_clue_spend(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    round_end_advance(cx, HALLWAY)
+    engine::round_end_advance(cx, HALLWAY)
 }
 
 /// Resolve the reverse **in printed order**: reveal the Parlor (01115), put the
@@ -193,7 +192,7 @@ fn advance_via_clue_spend(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
 /// Parlor's own printed grant is written against: *"While Lita Chantler is not
 /// controlled by a player, she gains: '\[action\]: **Parley.** …'"* (#772).
 fn reverse(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    let Some(parlor) = location_id_by_code(cx.state, PARLOR) else {
+    let Some(parlor) = evaluator::location_id_by_code(cx.state, PARLOR) else {
         return EngineOutcome::Rejected {
             reason: "01109 reverse: Parlor (01115) not in play".into(),
         };
@@ -218,18 +217,18 @@ fn reverse(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
             reason: "01109 reverse: Lita Chantler (01117) is not set aside".into(),
         };
     }
-    if location_id_by_code(cx.state, HALLWAY).is_none() {
+    if evaluator::location_id_by_code(cx.state, HALLWAY).is_none() {
         return EngineOutcome::Rejected {
             reason: "01109 reverse: Hallway (01112) not in play".into(),
         };
     }
     // All checks passed — mutate, in the order the card prints.
-    reveal_location(cx, parlor);
-    let lita = put_set_aside_card_into_play(cx, LITA_CHANTLER, Some(PARLOR));
+    engine::reveal_location(cx, parlor);
+    let lita = engine::put_set_aside_card_into_play(cx, LITA_CHANTLER, Some(PARLOR));
     if !matches!(lita, EngineOutcome::Done) {
         return lita;
     }
-    put_set_aside_card_into_play(cx, GHOUL_PRIEST, Some(HALLWAY))
+    engine::put_set_aside_card_into_play(cx, GHOUL_PRIEST, Some(HALLWAY))
 }
 
 #[cfg(test)]

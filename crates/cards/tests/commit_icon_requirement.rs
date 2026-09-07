@@ -10,12 +10,14 @@
 //! ones the pipeline actually compiled, not fabricated fixtures. Own process →
 //! installs the registry, mirroring `commit_cap.rs`.
 
-use game_core::engine::{EngineOutcome, OptionId};
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{perform_skill_test, test_investigator, GameStateBuilder};
-use game_core::{Action, GameState, InputResponse, PlayerAction};
+use game_core::test_support::{self, GameStateBuilder};
 
 /// Overpower — two [combat] icons, no wild.
 const OVERPOWER: &str = "01091";
@@ -30,12 +32,12 @@ const INV: InvestigatorId = InvestigatorId(1);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Investigator holding `hand`, mid-Investigation, with a deterministic bag.
 fn board(hand: &[&str]) -> GameState {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
     // Somewhere for a success draw to land; an empty deck would apply the
     // deck-out horror (#636), irrelevant noise here.
@@ -60,19 +62,19 @@ fn commit(indices: Vec<u32>) -> Action {
 
 /// Drive a difficulty-1 test of `skill` to the commit window and answer it
 /// with `indices`.
-fn commit_to(hand: &[&str], skill: SkillKind, indices: Vec<u32>) -> game_core::ApplyResult {
-    let paused = perform_skill_test(board(hand), INV, skill, 1);
+fn commit_to(hand: &[&str], skill: SkillKind, indices: Vec<u32>) -> ApplyResult {
+    let paused = test_support::perform_skill_test(board(hand), INV, skill, 1);
     assert!(
         matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
         "expected the commit window, got {:?}",
         paused.outcome,
     );
-    game_core::engine::apply(paused.state, commit(indices))
+    engine::apply(paused.state, commit(indices))
 }
 
 /// Assert `result` rejected the commit and left the hand and the in-flight
 /// test exactly as they were (validate-first).
-fn assert_rejected_with_hand_intact(result: &game_core::ApplyResult, hand: &[&str]) {
+fn assert_rejected_with_hand_intact(result: &ApplyResult, hand: &[&str]) {
     assert!(
         matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "expected Rejected, got {:?}",

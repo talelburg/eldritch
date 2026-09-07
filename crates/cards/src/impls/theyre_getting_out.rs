@@ -48,18 +48,19 @@
 //! zero-based act cursor**, so the predicate is `act_index == 2`.
 //!
 //! The act-3 arm is likewise a card-local native effect — a loop over
-//! `turn_order` calling [`defeat_investigator`], not `Effect::ForEach`, whose
-//! evaluator arm is a stub and whose general design is still open (#363). The
-//! loop and the body it fans out to each have one consumer, so both fail the
-//! DSL-primitive threshold independently. **Turn order rather than map order**
-//! because the order is observable on a defeat body: Elimination step 5
-//! reassigns the lead when the lead is eliminated, and step 6's
-//! no-remaining-players check fires on whoever falls last. **One caveat on that
-//! order**: an investigator holding an in-play weakness with a *"when the game
-//! ends"* ability (Cover Up 01007) routes Elimination onto a
-//! `Continuation::Elimination` frame (#638), so their steps 1–6 run after this
-//! synchronous loop rather than inside it. The ending is the same either way —
-//! the frame drains before anything reads it — but the teardown interleaves. Pre-existing to this card, and the shape
+//! `turn_order` calling [`defeat_investigator`](engine::defeat_investigator),
+//! not `Effect::ForEach`, whose evaluator arm is a stub and whose general
+//! design is still open (#363). The loop and the body it fans out to each
+//! have one consumer, so both fail the DSL-primitive threshold independently.
+//! **Turn order rather than map order** because the order is observable on a
+//! defeat body: Elimination step 5 reassigns the lead when the lead is
+//! eliminated, and step 6's no-remaining-players check fires on whoever falls
+//! last. **One caveat on that order**: an investigator holding an in-play
+//! weakness with a *"when the game ends"* ability (Cover Up 01007) routes
+//! Elimination onto a `Continuation::Elimination` frame (#638), so their
+//! steps 1–6 run after this synchronous loop rather than inside it. The
+//! ending is the same either way — the frame drains before anything reads it
+//! — but the teardown interleaves. Pre-existing to this card, and the shape
 //! `Effect::ForEach` will have to answer for whenever #363 lands.
 //!
 //! **The ending is reached by the rules' route, not latched.** Each defeat runs
@@ -70,9 +71,10 @@
 //! The card names no ending on this branch, because the card prints none.
 //!
 //! *"That has not resigned"* needs no filter to be *correct*:
-//! [`defeat_investigator`] no-ops on any investigator who is not `Active`, and a
-//! resigned one is not. The loop reads the status anyway, so that the trauma
-//! announcement fires only for someone this card actually defeated.
+//! [`defeat_investigator`](engine::defeat_investigator) no-ops on any
+//! investigator who is not `Active`, and a resigned one is not. The loop
+//! reads the status anyway, so that the trauma announcement fires only for
+//! someone this card actually defeated.
 //!
 //! **A defeat by a card ability is neither killed nor driven insane.**
 //! `glossary/Defeat.md`: *"An investigator might also be defeated by a card
@@ -104,24 +106,23 @@
 //!
 //! Map note: on The Gathering's star map (Hallway hub ↔ Attic/Cellar/
 //! Parlor), every location has a unique shortest first step toward the
-//! Parlor, so the lowest-`LocationId` tie-break below is unreachable in
-//! this scenario (RR p.12: the controlling player chooses on a tie —
-//! deferred until a map with ties lands). The move goes through
-//! [`relocate_enemy`], so a Ghoul arriving at an investigator's location
-//! engages on arrival per the general engagement rule (#633) — the card
-//! text is positional only, but the framework rule applies regardless.
+//! Parlor, so the lowest-`LocationId` tie-break below is unreachable in this
+//! scenario (RR p.12: the controlling player chooses on a tie — deferred
+//! until a map with ties lands). The move goes through
+//! [`relocate_enemy`](engine::relocate_enemy), so a Ghoul arriving at an
+//! investigator's location engages on arrival per the general engagement rule
+//! (#633) — the card text is positional only, but the framework rule applies
+//! regardless.
 
 use card_dsl::dsl::{
     forced_on_event, if_else, native, native_condition, reach_resolution, Ability, EventPattern,
     EventTiming, Phase,
 };
 use game_core::card_registry::{NativeConditionFn, NativeEffectFn};
-use game_core::event::TraumaKind;
+use game_core::engine::evaluator::{self, EvalContext};
+use game_core::engine::{self, Cx, EngineOutcome};
+use game_core::event::{Event, TraumaKind};
 use game_core::state::{EnemyId, GameState, InvestigatorId, LocationId, Status};
-use game_core::{
-    defeat_investigator, enemy_can_enter_location, location_id_by_code, relocate_enemy,
-    shortest_first_steps, Cx, EngineOutcome, EvalContext, Event,
-};
 
 /// `ArkhamDB` code for Agenda 3, "They're Getting Out!".
 pub const CODE: &str = "01107";
@@ -220,7 +221,7 @@ fn the_ghouls_run_rampant(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
         if cx.state.investigators.get(&investigator).map(|i| i.status) != Some(Status::Active) {
             continue;
         }
-        defeat_investigator(cx, investigator);
+        engine::defeat_investigator(cx, investigator);
         // Announced, not recorded: nothing persists trauma until the phase-9
         // campaign log (#766). Cover Up 01007's mental trauma is the precedent.
         cx.events.push(Event::TraumaSuffered {
@@ -250,7 +251,7 @@ fn is_ghoul(traits: &[String]) -> bool {
 /// scenario unplayable (#811). Same reading as the barricaded first step
 /// below: no move available means no move, never an error.
 fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    let Some(parlor) = location_id_by_code(cx.state, PARLOR) else {
+    let Some(parlor) = evaluator::location_id_by_code(cx.state, PARLOR) else {
         return EngineOutcome::Done;
     };
     // Scan first (shared borrows), then mutate. Deterministic lowest-
@@ -273,9 +274,9 @@ fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
         // enemy with patrol would be compelled to move to a location which is
         // blocked by a card ability, the enemy does not move."* So a
         // barricaded first step is a non-move, never a detour (#797).
-        let mut steps: Vec<LocationId> = shortest_first_steps(cx.state, from, parlor)
+        let mut steps: Vec<LocationId> = engine::shortest_first_steps(cx.state, from, parlor)
             .into_iter()
-            .filter(|&loc| enemy_can_enter_location(cx.state, e, loc))
+            .filter(|&loc| engine::enemy_can_enter_location(cx.state, e, loc))
             .collect();
         steps.sort_unstable();
         if let Some(&to) = steps.first() {
@@ -287,7 +288,7 @@ fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
         // `EnemyMoved` emit, and the engage-on-arrival check the general
         // engagement rule requires of *any* enemy movement — an exhausted
         // (evaded) Ghoul moved by this agenda still arrives unengaged.
-        relocate_enemy(cx, id, to);
+        engine::relocate_enemy(cx, id, to);
     }
     EngineOutcome::Done
 }
@@ -298,7 +299,7 @@ fn move_ghouls_toward_parlor(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
 fn place_round_end_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     let counted: Vec<LocationId> = [HALLWAY, PARLOR]
         .iter()
-        .filter_map(|c| location_id_by_code(cx.state, c))
+        .filter_map(|c| evaluator::location_id_by_code(cx.state, c))
         .collect();
     let count = cx
         .state
@@ -315,13 +316,18 @@ fn place_round_end_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::{Effect, Trigger};
-    use game_core::state::{Agenda, CardCode, Enemy, InvestigatorId, Location};
-    use game_core::test_support::{test_enemy, test_investigator, GameStateBuilder};
-    use game_core::Event;
+    use crate::{impls, REGISTRY};
+    use card_dsl::dsl::{Condition, Effect, Trigger, TriggerKind};
+    use game_core::card_registry;
+    use game_core::event::Event;
+    use game_core::scenario::ScenarioEnding;
+    use game_core::state::{
+        Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, InvestigatorId, Location,
+    };
+    use game_core::test_support::{self, GameStateBuilder};
 
     fn ghoul(id: u32, at: LocationId) -> Enemy {
-        let mut e = test_enemy(id, "Ghoul");
+        let mut e = test_support::test_enemy(id, "Ghoul");
         e.traits = vec!["Humanoid".into(), "Monster".into(), "Ghoul".into()];
         e.current_location = Some(at);
         e
@@ -383,7 +389,7 @@ mod tests {
                     phase: Phase::Enemy
                 },
                 timing: EventTiming::At,
-                kind: card_dsl::dsl::TriggerKind::Forced,
+                kind: TriggerKind::Forced,
             }
         );
         assert!(matches!(&abilities[0].effect, Effect::Native { tag } if tag == MOVE_GHOULS));
@@ -392,7 +398,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::RoundEnded,
                 timing: EventTiming::At,
-                kind: card_dsl::dsl::TriggerKind::Forced,
+                kind: TriggerKind::Forced,
             }
         );
         assert!(matches!(&abilities[1].effect, Effect::Native { tag } if tag == ROUND_END_DOOM));
@@ -409,7 +415,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::AgendaAdvanced,
                 timing: EventTiming::After,
-                kind: card_dsl::dsl::TriggerKind::Forced,
+                kind: TriggerKind::Forced,
             }
         );
         let Effect::If {
@@ -421,7 +427,7 @@ mod tests {
             panic!("the reverse is a branch, got {:?}", abilities[2].effect);
         };
         assert!(
-            matches!(condition, card_dsl::dsl::Condition::Native { tag } if tag == AT_ACT_THREE),
+            matches!(condition, Condition::Native { tag } if tag == AT_ACT_THREE),
             "branches on the card-local act-3 predicate, got {condition:?}",
         );
         assert!(
@@ -455,7 +461,7 @@ mod tests {
         assert!(native_condition_for(AT_ACT_THREE).is_some());
         assert!(native_condition_for("01107:other").is_none());
         assert!(
-            crate::impls::native_condition_for(AT_ACT_THREE).is_some(),
+            impls::native_condition_for(AT_ACT_THREE).is_some(),
             "and is reachable through the crate-level dispatch",
         );
     }
@@ -466,11 +472,11 @@ mod tests {
     /// the defeats rather than latched by the card.
     #[test]
     fn the_act_three_branch_defeats_the_table_and_reaches_no_resolution() {
-        let _ = game_core::card_registry::install(crate::REGISTRY);
+        let _ = card_registry::install(REGISTRY);
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .with_turn_order([a, b])
             .build();
 
@@ -503,7 +509,7 @@ mod tests {
             .any(|e| matches!(e, Event::AllInvestigatorsEliminated)));
         assert_eq!(
             state.ending,
-            Some(game_core::ScenarioEnding::NoResolution),
+            Some(ScenarioEnding::NoResolution),
             "no resolution point: the card prints none on this branch",
         );
     }
@@ -512,11 +518,11 @@ mod tests {
     /// alone, and announces no trauma.
     #[test]
     fn an_investigator_who_has_resigned_is_left_alone() {
-        let _ = game_core::card_registry::install(crate::REGISTRY);
+        let _ = card_registry::install(REGISTRY);
         let (a, b) = (InvestigatorId(1), InvestigatorId(2));
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .with_turn_order([a, b])
             .build();
         state.investigators.get_mut(&a).expect("seated").status = Status::Resigned;
@@ -590,7 +596,7 @@ mod tests {
         // A Barricade (01038) on the Parlor blocks the non-Elite Ghoul's
         // compelled step, so it does not move. Needs the real registry so the
         // attachment's `EnemyMovementBlocked` restriction is read.
-        let _ = game_core::card_registry::install(crate::REGISTRY);
+        let _ = card_registry::install(REGISTRY);
         let mut state = star_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway
         barricade(&mut state, LocationId(5));
@@ -625,12 +631,15 @@ mod tests {
     }
 
     fn barricade(state: &mut GameState, at: LocationId) {
-        state.locations.get_mut(&at).unwrap().attachments.push(
-            game_core::state::CardInPlay::enter_play(
+        state
+            .locations
+            .get_mut(&at)
+            .unwrap()
+            .attachments
+            .push(CardInPlay::enter_play(
                 CardCode::new("01038"),
-                game_core::state::CardInstanceId(900),
-            ),
-        );
+                CardInstanceId(900),
+            ));
     }
 
     /// `glossary/Patrol.md`: *"If an enemy with patrol would be compelled to
@@ -640,7 +649,7 @@ mod tests {
     /// not a detour (#797).
     #[test]
     fn ghoul_does_not_reroute_around_a_barricaded_shortest_step() {
-        let _ = game_core::card_registry::install(crate::REGISTRY);
+        let _ = card_registry::install(REGISTRY);
         let mut state = detour_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
         barricade(&mut state, LocationId(2)); // Hallway — the only shortest step
@@ -668,7 +677,7 @@ mod tests {
 
     #[test]
     fn a_barricade_off_the_shortest_path_does_not_affect_the_move() {
-        let _ = game_core::card_registry::install(crate::REGISTRY);
+        let _ = card_registry::install(REGISTRY);
         let mut state = detour_board();
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(3))); // Attic
         barricade(&mut state, LocationId(6)); // Study — on the long route only
@@ -687,7 +696,7 @@ mod tests {
     #[test]
     fn ghoul_moving_into_the_investigators_location_engages_on_arrival() {
         let mut state = star_board();
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(2)); // Hallway
         state.investigators.insert(InvestigatorId(1), inv);
         state.turn_order = vec![InvestigatorId(1)];
@@ -717,7 +726,7 @@ mod tests {
     #[test]
     fn exhausted_ghoul_moved_into_the_investigators_location_arrives_unengaged() {
         let mut state = star_board();
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(2)); // Hallway
         state.investigators.insert(InvestigatorId(1), inv);
         state.turn_order = vec![InvestigatorId(1)];
@@ -763,7 +772,7 @@ mod tests {
     #[test]
     fn non_ghoul_does_not_move() {
         let mut state = star_board();
-        let mut e = test_enemy(1, "Rat");
+        let mut e = test_support::test_enemy(1, "Rat");
         e.traits = vec!["Creature".into()];
         e.current_location = Some(LocationId(3));
         state.enemies.insert(EnemyId(1), e);
@@ -781,7 +790,7 @@ mod tests {
         state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2))); // Hallway — counts
         state.enemies.insert(EnemyId(2), ghoul(2, LocationId(5))); // Parlor — counts
         state.enemies.insert(EnemyId(3), ghoul(3, LocationId(3))); // Attic — no
-        let mut non_ghoul = test_enemy(4, "Rat");
+        let mut non_ghoul = test_support::test_enemy(4, "Rat");
         non_ghoul.traits = vec!["Creature".into()];
         non_ghoul.current_location = Some(LocationId(2));
         state.enemies.insert(EnemyId(4), non_ghoul); // Hallway non-Ghoul — no

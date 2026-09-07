@@ -15,16 +15,16 @@
 //! mock-registry tests in `crates/game-core/tests/reaction_windows.rs`.
 
 use card_dsl::dsl::{UsageLimit, UsagePeriod};
-use game_core::engine::EngineOutcome;
+use cards::REGISTRY;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId,
-    InvestigatorId, LocationId, Phase, TokenModifiers,
+    GameState, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{
-    test_enemy, test_investigator, test_location, GameStateBuilder, TestSession,
-};
-use game_core::{assert_event, assert_no_event, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, TestSession};
+use game_core::{assert_event, assert_no_event, card_registry};
 
 /// `ArkhamDB` code for original-Core Roland Banks.
 const ROLAND: &str = "01001";
@@ -36,7 +36,7 @@ const ROLAND_INSTANCE: u32 = 1;
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Build a Fight-ready scenario with Roland engaged with an enemy at
@@ -47,12 +47,12 @@ fn install_real_registry() {
 fn roland_at_location_with_enemy(
     location_clues: u8,
     round: u32,
-) -> (InvestigatorId, EnemyId, LocationId, game_core::GameState) {
+) -> (InvestigatorId, EnemyId, LocationId, GameState) {
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     inv.skills.combat = 4; // Roland's printed combat.
     inv.cards_in_play.push(CardInPlay::enter_play(
@@ -60,14 +60,14 @@ fn roland_at_location_with_enemy(
         CardInstanceId(ROLAND_INSTANCE),
     ));
 
-    let mut enemy = test_enemy(100, "Mock Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 1;
     enemy.max_health = 1;
     enemy.damage = 0;
     enemy.engaged_with = Some(inv_id);
     enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
 
-    let mut loc = test_location(10, "Study");
+    let mut loc = test_support::test_location(10, "Study");
     loc.clues = location_clues;
 
     let state = GameStateBuilder::new()
@@ -96,8 +96,7 @@ fn reaction_fires_after_roland_defeats_enemy_and_discovers_clue() {
             enemy: enemy_id,
         })
         .resolve_choices(|c| {
-            c.commit_cards(&[])
-                .pick_single(game_core::engine::OptionId(0));
+            c.commit_cards(&[]).pick_single(OptionId(0));
         })
         .run();
 
@@ -204,8 +203,7 @@ fn lazy_round_reset_re_enables_reaction_in_a_later_round() {
             enemy: enemy_id,
         })
         .resolve_choices(|c| {
-            c.commit_cards(&[])
-                .pick_single(game_core::engine::OptionId(0));
+            c.commit_cards(&[]).pick_single(OptionId(0));
         })
         .run();
 
@@ -334,8 +332,7 @@ fn reaction_not_offered_when_location_has_no_clues() {
 /// downstream code goes through) sees the same shape.
 #[test]
 fn registry_returns_reaction_with_once_per_round_limit() {
-    let abilities =
-        (cards::REGISTRY.abilities_for)(&CardCode::new(ROLAND)).expect("Roland is registered");
+    let abilities = (REGISTRY.abilities_for)(&CardCode::new(ROLAND)).expect("Roland is registered");
     assert_eq!(abilities.len(), 2);
     assert_eq!(
         abilities[0].usage_limit,

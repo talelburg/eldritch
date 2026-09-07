@@ -7,27 +7,28 @@
 //! mechanism are unit-tested in game-core (#286); here we prove the
 //! *card effects* resolve end-to-end against real corpus metadata.
 
-use game_core::action::EngineRecord;
+use cards::REGISTRY;
+use game_core::action::{Action, EngineRecord};
+use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken, InvestigatorId, LocationId, Zone,
+    Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, InvestigatorId,
+    LocationId, Zone,
 };
-use game_core::test_support::{
-    drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
-};
-use game_core::{Action, EngineOutcome};
+use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
+use game_core::{assert_event, assert_event_count, card_registry};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Reveal the top encounter card for investigator 1, auto-committing no
 /// cards at the skill-test commit window (if one opens).
-fn reveal_top(state: game_core::GameState) -> game_core::ApplyResult {
+fn reveal_top(state: GameState) -> ApplyResult {
     let mut resolver = ScriptedResolver::new();
     resolver.commit_cards(&[]);
-    drive(
+    test_support::drive(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed {
             investigator: InvestigatorId(1),
@@ -38,14 +39,14 @@ fn reveal_top(state: game_core::GameState) -> game_core::ApplyResult {
 
 /// Common board: one investigator at a location, the named treachery on
 /// top of the encounter deck, and a single rigged chaos token.
-fn board_with(treachery: &str, token: ChaosToken) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board_with(treachery: &str, token: ChaosToken) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     // Real investigator code so max_health()/max_sanity() reads from the
     // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
     inv.investigator_card.code = CardCode::new("01003");
     let mut state = GameStateBuilder::new()
         .with_investigator_at(inv, LocationId(20))
-        .with_location(test_location(20, "Here"))
+        .with_location(test_support::test_location(20, "Here"))
         .with_turn_order([InvestigatorId(1)])
         .build();
     state.chaos_bag.tokens = vec![token];
@@ -83,8 +84,8 @@ fn grasping_hands_fail_by_two_is_single_deal_of_two_damage() {
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_eq!(result.state.investigators[&InvestigatorId(1)].damage(), 2);
     // Exactly one DamageTaken event, with amount == 2.
-    game_core::assert_event_count!(result.events, 1, Event::DamageTaken { .. });
-    game_core::assert_event!(
+    assert_event_count!(result.events, 1, Event::DamageTaken { .. });
+    assert_event!(
         result.events,
         Event::DamageTaken { investigator, amount: 2 }
             if *investigator == InvestigatorId(1)
@@ -101,8 +102,8 @@ fn rotting_remains_fail_by_two_is_single_deal_of_two_horror() {
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_eq!(result.state.investigators[&InvestigatorId(1)].horror(), 2);
     // Exactly one HorrorTaken event, with amount == 2.
-    game_core::assert_event_count!(result.events, 1, Event::HorrorTaken { .. });
-    game_core::assert_event!(
+    assert_event_count!(result.events, 1, Event::HorrorTaken { .. });
+    assert_event!(
         result.events,
         Event::HorrorTaken { investigator, amount: 2 }
             if *investigator == InvestigatorId(1)
@@ -151,7 +152,7 @@ fn crypt_chill_with_an_asset_discards_the_asset_not_damage() {
         "the asset was discarded out of play",
     );
     assert!(inv.discard.contains(&CardCode::new("01059")));
-    game_core::assert_event!(
+    assert_event!(
         result.events,
         Event::CardDiscarded { investigator, code, from }
             if *investigator == InvestigatorId(1)
@@ -185,10 +186,8 @@ fn crypt_chill_with_two_assets_suspends_and_discards_the_chosen_one() {
     // Commit nothing at the test window, then pick option 1 (the second
     // asset, Magnifying Glass) at the discard choice.
     let mut resolver = ScriptedResolver::new();
-    resolver
-        .commit_cards(&[])
-        .pick_single(game_core::OptionId(1));
-    let result = drive(
+    resolver.commit_cards(&[]).pick_single(OptionId(1));
+    let result = test_support::drive(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed {
             investigator: InvestigatorId(1),

@@ -13,14 +13,15 @@
 //!   install a registry, exercising only validation paths that
 //!   short-circuit before the registry lookup).
 
+use cards::REGISTRY;
+use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
-use game_core::state::{CardCode, InvestigatorId, Phase, Status, Zone};
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
+use game_core::state::{
+    CardCode, CardInstanceId, GameState, InvestigatorId, LocationId, Phase, Status, Zone,
 };
-use game_core::{assert_event_count, assert_event_sequence, assert_no_event};
-use game_core::{LocationId, TurnAction};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event_count, assert_event_sequence, assert_no_event, card_registry};
 
 /// Holy Rosary (01059) — Mystic asset, +1 willpower constant.
 const HOLY_ROSARY: &str = "01059";
@@ -56,19 +57,19 @@ fn install_real_registry() {
     // It's fine if this is `Err` — another test in this binary
     // already installed. The function-pointer struct is `Copy`
     // and stateless, so re-install attempts are harmless.
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Build a one-investigator scenario state at the controller's
 /// location, mid-investigation, with `hand` already in hand.
-fn play_state(hand: Vec<&str>) -> (game_core::GameState, InvestigatorId, LocationId) {
+fn play_state(hand: Vec<&str>) -> (GameState, InvestigatorId, LocationId) {
     let id = InvestigatorId(1);
     let loc_id = LocationId(101);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     inv.hand = hand.into_iter().map(CardCode::new).collect();
 
-    let location = test_location(101, "Study");
+    let location = test_support::test_location(101, "Study");
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -84,7 +85,7 @@ fn play_state(hand: Vec<&str>) -> (game_core::GameState, InvestigatorId, Locatio
 fn play_holy_rosary_emits_card_played_and_lands_in_play() {
     let (state, id, _loc) = play_state(vec![HOLY_ROSARY]);
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -120,12 +121,11 @@ fn play_holy_rosary_emits_card_played_and_lands_in_play() {
 fn asset_enters_play_with_instance_id_from_state_counter() {
     // The per-state counter assigns a fresh CardInstanceId to each
     // asset entering play and advances after each assignment.
-    use game_core::state::CardInstanceId;
 
     let (state, id, _loc) = play_state(vec![HOLY_ROSARY]);
     assert_eq!(state.card_instance_ids.peek(), 0, "counter starts at 0");
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -153,11 +153,10 @@ fn two_copies_of_magnifying_glass_get_distinct_instance_ids() {
     // Magnifying Glass: Hand slot, deck_limit 2 — playing both copies
     // is rules-valid (two Hand slots per investigator). The counter
     // must assign distinct ids so per-instance state stays separable.
-    use game_core::state::CardInstanceId;
 
     let (state, id, _loc) = play_state(vec![MAGNIFYING_GLASS, MAGNIFYING_GLASS]);
 
-    let after_first = dispatch_turn_action_unchecked(
+    let after_first = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -166,7 +165,7 @@ fn two_copies_of_magnifying_glass_get_distinct_instance_ids() {
     );
     assert_eq!(after_first.outcome, EngineOutcome::Done);
 
-    let after_second = dispatch_turn_action_unchecked(
+    let after_second = test_support::dispatch_turn_action_unchecked(
         after_first.state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -196,7 +195,7 @@ fn play_working_a_hunch_resolves_on_play_and_discards() {
     // a separate no-op test below).
     state.locations.get_mut(&loc_id).unwrap().clues = 1;
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -262,7 +261,7 @@ fn play_working_a_hunch_on_empty_location_is_rejected() {
     let (state, id, loc_id) = play_state(vec![WORKING_A_HUNCH]);
     assert_eq!(state.locations[&loc_id].clues, 0);
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -289,7 +288,7 @@ fn play_working_a_hunch_on_empty_location_is_rejected() {
 #[test]
 fn play_unknown_card_code_is_rejected() {
     let (state, id, _loc) = play_state(vec![UNKNOWN_CODE]);
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -312,7 +311,7 @@ fn play_non_event_or_asset_card_is_rejected() {
     // story) all reject. Roland Banks (01001) is the in-corpus
     // sample for the non-playable case.
     let (state, id, _loc) = play_state(vec![ROLAND_BANKS]);
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -335,7 +334,7 @@ fn play_unimplemented_card_is_rejected() {
     // will refuse decks containing unimplemented cards; PlayCard
     // double-checks rather than silently no-op.
     let (state, id, _loc) = play_state(vec![UNIMPLEMENTED_ASSET]);
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -360,7 +359,7 @@ fn normal_event_play_discards_exactly_once() {
     // and no play may be left in progress on Done.
     let (state, id, _loc) = play_state(vec![EMERGENCY_CACHE]);
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -409,7 +408,7 @@ fn asset_play_enters_play_through_the_frame() {
     // cards_in_play and be removed from hand, and no CardDiscarded fires.
     let (state, id, _loc) = play_state(vec![MACHETE]);
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -438,7 +437,7 @@ fn play_card_after_defeat_is_rejected() {
     // Belt-and-suspenders: even with REGISTRY installed, the status
     // check should reject before the registry lookup runs.
     let id = InvestigatorId(1);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.hand = vec![CardCode::new(HOLY_ROSARY)];
     inv.status = Status::Defeated;
 
@@ -448,7 +447,7 @@ fn play_card_after_defeat_is_rejected() {
         .with_active_investigator(id)
         .build();
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -471,7 +470,7 @@ fn play_card_rejected_when_resources_below_cost() {
     let (mut state, id, _loc) = play_state(vec![HOLY_ROSARY]); // cost 2
     state.investigators.get_mut(&id).unwrap().resources = 1;
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -495,7 +494,7 @@ fn play_card_deducts_resource_cost_and_emits_resources_paid() {
     let (mut state, id, _loc) = play_state(vec![HOLY_ROSARY]); // cost 2
     state.investigators.get_mut(&id).unwrap().resources = 5;
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -521,7 +520,7 @@ fn play_card_at_exactly_its_cost_succeeds() {
     let (mut state, id, _loc) = play_state(vec![HOLY_ROSARY]); // cost 2
     state.investigators.get_mut(&id).unwrap().resources = 2;
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -543,7 +542,7 @@ fn play_single_hand_asset_is_not_slot_rejected_on_empty_hands() {
     let (state, id, _loc) = play_state(vec![MACHETE]); // single Hand slot, costs 3
                                                        // test_investigator starts with 5 resources (≥ Machete's cost of 3); no
                                                        // manual override needed.
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -561,7 +560,7 @@ fn play_zero_cost_card_is_free_and_emits_no_resources_paid() {
     let (mut state, id, _loc) = play_state(vec![EMERGENCY_CACHE]);
     state.investigators.get_mut(&id).unwrap().resources = 0;
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,

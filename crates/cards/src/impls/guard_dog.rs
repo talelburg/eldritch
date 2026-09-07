@@ -35,7 +35,8 @@
 
 use card_dsl::dsl::{native, reaction_on_event, Ability, EventPattern, EventTiming};
 use game_core::card_registry::NativeEffectFn;
-use game_core::{deal_damage_to_enemy, Cx, EngineOutcome, EvalContext};
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::{self, Cx, EngineOutcome};
 
 /// `ArkhamDB` code for Guard Dog (original-Core printing).
 pub const CODE: &str = "01021";
@@ -74,20 +75,20 @@ fn retaliate(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
                 .into(),
         };
     };
-    deal_damage_to_enemy(cx, enemy, 1, Some(ctx.controller));
+    engine::deal_damage_to_enemy(cx, enemy, 1, Some(ctx.controller));
     EngineOutcome::Done
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use card_dsl::dsl::{Effect, Trigger};
+    use card_dsl::dsl::{Effect, Trigger, TriggerKind};
     use game_core::event::Event;
-    use game_core::state::{EnemyId, InvestigatorId};
-    use game_core::test_support::{test_enemy, GameStateBuilder};
+    use game_core::state::{EnemyId, GameState, InvestigatorId};
+    use game_core::test_support::{self, GameStateBuilder};
 
     fn cx_apply(
-        state: &mut game_core::state::GameState,
+        state: &mut GameState,
         ctx: &EvalContext,
         f: NativeEffectFn,
     ) -> (EngineOutcome, Vec<Event>) {
@@ -114,7 +115,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::EnemyAttackDamagedSelf,
                 timing: EventTiming::When,
-                kind: card_dsl::dsl::TriggerKind::Reaction,
+                kind: TriggerKind::Reaction,
             }
         );
         assert!(matches!(&abilities[0].effect, Effect::Native { tag } if tag == RETALIATE));
@@ -136,7 +137,7 @@ mod tests {
     #[test]
     fn retaliate_deals_1_damage_to_bound_attacker() {
         let eid = EnemyId(7);
-        let mut enemy = test_enemy(7, "Brute");
+        let mut enemy = test_support::test_enemy(7, "Brute");
         enemy.max_health = 3;
         let mut state = GameStateBuilder::new().build();
         state.enemies.insert(eid, enemy);

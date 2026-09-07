@@ -4,16 +4,17 @@
 //! real card metadata/abilities, so they install `cards::REGISTRY` and live here
 //! rather than in `game-core`'s registry-less unit tests.
 
-use game_core::state::AbilityAddress;
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
-    InvestigationResume, InvestigatorId, Phase,
+    AbilityAddress, AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
+    ChaosToken, Continuation, EnemyId, GameState, InvestigationResume, InvestigatorId, LocationId,
+    Phase, UseKind,
 };
-use game_core::test_support::{test_investigator, test_location, GameStateBuilder};
-use game_core::{
-    legal_actions, Action, EngineOutcome, InputResponse, LocationId, OptionId, PlayerAction,
-    TurnAction,
-};
+use game_core::test_support::{self, GameStateBuilder};
 
 const HOLY_ROSARY: &str = "01059"; // Mystic asset, cost 2, constant +1 willpower.
 const FLASHLIGHT: &str = "01087"; // Asset with an activated ability (uses: Supplies).
@@ -22,14 +23,14 @@ const LOC: LocationId = LocationId(10);
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// A single-investigator open-turn state (`InvestigatorTurn` frame on top of the
 /// `InvestigationPhase` anchor) with `hand` in hand and `in_play` in play, 3
 /// actions, 9 resources, on a revealed location, non-empty chaos bag.
-fn open_turn_state(hand: &[&str], in_play: Vec<CardInPlay>) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn open_turn_state(hand: &[&str], in_play: Vec<CardInPlay>) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LOC);
     // Real investigator code so max_health()/max_sanity() reads from the
     // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
@@ -41,7 +42,7 @@ fn open_turn_state(hand: &[&str], in_play: Vec<CardInPlay>) -> game_core::GameSt
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
-        .with_location(test_location(LOC.0, "Study"))
+        .with_location(test_support::test_location(LOC.0, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -55,16 +56,17 @@ fn open_turn_state(hand: &[&str], in_play: Vec<CardInPlay>) -> game_core::GameSt
 #[test]
 fn play_card_offered_for_a_playable_hand_card() {
     let state = open_turn_state(&[HOLY_ROSARY], Vec::new());
-    assert!(legal_actions(&state).contains(&TurnAction::PlayCard {
-        investigator: INV,
-        hand_index: 0,
-    }));
+    assert!(
+        enumerate::legal_actions(&state).contains(&TurnAction::PlayCard {
+            investigator: INV,
+            hand_index: 0,
+        })
+    );
 }
 
 /// Flashlight in play with 3 Supplies uses, ready — its `ability_index: 0`
 /// activated ability is usable.
 fn flashlight_in_play(instance: CardInstanceId) -> CardInPlay {
-    use game_core::state::UseKind;
     let mut torch = CardInPlay::enter_play(CardCode::new(FLASHLIGHT), instance);
     torch.uses.insert(UseKind::Supplies, 3);
     torch
@@ -75,7 +77,7 @@ fn activate_offered_for_an_in_play_activated_ability() {
     let inst = CardInstanceId(0);
     let state = open_turn_state(&[], vec![flashlight_in_play(inst)]);
     assert!(
-        legal_actions(&state).contains(&TurnAction::ActivateAbility {
+        enumerate::legal_actions(&state).contains(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(inst),
             address: AbilityAddress::Printed(0),
@@ -92,9 +94,9 @@ fn every_enumerated_action_applies_without_rejection_with_registry() {
     let state = open_turn_state(&[HOLY_ROSARY], vec![flashlight_in_play(CardInstanceId(0))]);
     // OptionId round-trip: each enumerated action dispatches via
     // `ResolveInput(PickSingle(OptionId))` at the open turn (#447). None reject.
-    let actions = legal_actions(&state);
+    let actions = enumerate::legal_actions(&state);
     for (i, action) in actions.iter().enumerate() {
-        let result = game_core::apply(
+        let result = engine::apply(
             state.clone(),
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::PickSingle(OptionId(
@@ -112,13 +114,11 @@ fn every_enumerated_action_applies_without_rejection_with_registry() {
 
 #[test]
 fn full_enumeration_covers_every_action_category_and_all_apply() {
-    use game_core::state::{Act, EnemyId};
-
     let inst = CardInstanceId(0);
     let mut state = open_turn_state(&[HOLY_ROSARY], vec![flashlight_in_play(inst)]);
     // A connected destination (Move), an engaged enemy (Fight/Evade), a
     // co-located unengaged enemy (Engage), and an advanceable act (AdvanceAct).
-    let mut other = test_location(11, "Hall");
+    let mut other = test_support::test_location(11, "Hall");
     other.revealed = true;
     state
         .locations
@@ -129,11 +129,11 @@ fn full_enumeration_covers_every_action_category_and_all_apply() {
     let other_id = other.id;
     state.locations.insert(other_id, other);
 
-    let mut foe = game_core::test_support::test_enemy(7, "Ghoul");
+    let mut foe = test_support::test_enemy(7, "Ghoul");
     foe.engaged_with = Some(INV);
     foe.current_location = Some(LOC);
     state.enemies.insert(EnemyId(7), foe);
-    let mut rat = game_core::test_support::test_enemy(8, "Rat");
+    let mut rat = test_support::test_enemy(8, "Rat");
     rat.current_location = Some(LOC);
     state.enemies.insert(EnemyId(8), rat);
 
@@ -149,7 +149,7 @@ fn full_enumeration_covers_every_action_category_and_all_apply() {
         },
     ];
 
-    let actions = legal_actions(&state);
+    let actions = enumerate::legal_actions(&state);
 
     // Every category is represented.
     let has = |p: fn(&TurnAction) -> bool| actions.iter().any(p);
@@ -183,7 +183,7 @@ fn full_enumeration_covers_every_action_category_and_all_apply() {
     // And all of them apply without Rejected — via the OptionId round-trip
     // (`ResolveInput(PickSingle(OptionId))` at the open turn, #447).
     for (i, action) in actions.iter().enumerate() {
-        let result = game_core::apply(
+        let result = engine::apply(
             state.clone(),
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::PickSingle(OptionId(
@@ -218,8 +218,6 @@ const WHATS_GOING_ON: &str = "01105";
 /// reason.
 #[test]
 fn the_corpus_act_and_agenda_are_reachable_but_offer_no_activation() {
-    use game_core::state::{Act, Agenda};
-
     let mut state = open_turn_state(&[], Vec::new());
     state.act_deck = vec![Act {
         code: CardCode::new(TRAPPED),
@@ -230,7 +228,7 @@ fn the_corpus_act_and_agenda_are_reachable_but_offer_no_activation() {
         doom_threshold: 3,
     }];
 
-    let menu = legal_actions(&state);
+    let menu = enumerate::legal_actions(&state);
     for source in [AbilitySource::Act, AbilitySource::Agenda] {
         assert!(
             !menu.iter().any(|a| matches!(
@@ -241,7 +239,7 @@ fn the_corpus_act_and_agenda_are_reachable_but_offer_no_activation() {
              menu was {menu:?}",
         );
 
-        let result = game_core::test_support::dispatch_turn_action_unchecked(
+        let result = test_support::dispatch_turn_action_unchecked(
             state.clone(),
             &TurnAction::ActivateAbility {
                 investigator: INV,

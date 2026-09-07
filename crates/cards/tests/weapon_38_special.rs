@@ -4,46 +4,46 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use game_core::engine::EngineOutcome;
-use game_core::engine::TurnAction;
+use cards::REGISTRY;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId,
-    InvestigatorId, Phase, TokenModifiers, UseKind,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    EnemyId, GameState, InvestigatorId, LocationId, Phase, TokenModifiers, UseKind,
 };
-use game_core::test_support::{test_enemy, test_investigator, GameStateBuilder, TestSession};
-use game_core::{assert_event, assert_no_event};
+use game_core::test_support::{self, GameStateBuilder, TestSession};
+use game_core::{assert_event, assert_no_event, card_registry};
 
 const SPECIAL: &str = "01006";
 const INV: InvestigatorId = InvestigatorId(1);
-const LOC: game_core::state::LocationId = game_core::state::LocationId(10);
+const LOC: LocationId = LocationId(10);
 const ENEMY: EnemyId = EnemyId(100);
 const WEAPON_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Board: .38 Special in play with 4 ammo, the active investigator (combat
 /// 3) at a location holding `loc_clues`, engaged with a fight-**5** enemy
 /// (health 3). Fight 5 distinguishes the modifier branches: +3 → total 8
 /// hits, +1 → total 4 misses. A `Numeric(0)` chaos bag is deterministic.
-fn board(loc_clues: u8) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board(loc_clues: u8) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     inv.skills.combat = 3;
     let mut weapon = CardInPlay::enter_play(CardCode::new(SPECIAL), WEAPON_INST);
     weapon.uses.insert(UseKind::Ammo, 4);
     inv.cards_in_play.push(weapon);
 
-    let mut enemy = test_enemy(100, "Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Ghoul");
     enemy.fight = 5;
     enemy.max_health = 3;
     enemy.engaged_with = Some(INV);
     enemy.current_location = Some(LOC); // co-located: a weapon Fight targets enemies at your location
 
-    let mut location = game_core::test_support::test_location(10, "Study");
+    let mut location = test_support::test_location(10, "Study");
     location.clues = loc_clues;
 
     GameStateBuilder::new()
@@ -59,7 +59,7 @@ fn board(loc_clues: u8) -> game_core::GameState {
         .build()
 }
 
-fn ammo(state: &game_core::GameState) -> u8 {
+fn ammo(state: &GameState) -> u8 {
     state.investigators[&INV]
         .cards_in_play
         .iter()
@@ -68,7 +68,7 @@ fn ammo(state: &game_core::GameState) -> u8 {
         .expect("weapon carries an ammo pool")
 }
 
-fn fire(state: game_core::GameState) -> game_core::engine::ApplyResult {
+fn fire(state: GameState) -> ApplyResult {
     TestSession::new(state)
         .take(&TurnAction::ActivateAbility {
             investigator: INV,

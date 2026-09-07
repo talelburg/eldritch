@@ -37,20 +37,17 @@
 //! own process so `install(cards::REGISTRY)` does not collide with the
 //! other integration test binaries.
 
-use game_core::action::{InputResponse, PlayerAction};
-use game_core::engine::{EngineOutcome, InputKind, OptionTarget};
-use game_core::state::AbilityAddress;
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, EngineOutcome, InputKind, OptionTarget};
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
-    EnemyId, FastActorScope, FastWindowKind, InvestigatorId, LocationId, MythosResume, Phase,
-    PhaseStep, SkillKind,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    Continuation, EnemyId, FastActorScope, FastWindowKind, GameState, InvestigatorId, LocationId,
+    MythosResume, Phase, PhaseStep, SkillKind,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, perform_skill_test, test_enemy, test_investigator,
-    test_location, GameStateBuilder,
-};
-
-use game_core::{apply, Action, TurnAction};
+use game_core::test_support::{self, GameStateBuilder};
 
 /// Beat Cop 01018: *"You get +1 \[combat\]."* / *"\[fast\] Discard Beat Cop:
 /// Deal 1 damage to an enemy at your location."*
@@ -58,7 +55,7 @@ const BEAT_COP: &str = "01018";
 
 #[ctor::ctor(unsafe)]
 fn install_cards_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 #[test]
@@ -72,7 +69,7 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
     // drive cascades through the MythosPhase anchor to the next phase — hence the
     // realistic anchor; the assertion is that the play executed, not the exact
     // post-cascade outcome.)
-    let mut a = test_investigator(1);
+    let mut a = test_support::test_investigator(1);
     a.resources = 5;
     a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast.
     let state = GameStateBuilder::new()
@@ -87,7 +84,7 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
             FastActorScope::Any,
         )
         .build();
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: InvestigatorId(1),
@@ -117,8 +114,8 @@ fn fast_asset_rejected_by_non_owner_even_with_permissive_window() {
     // owner (i.e. on the owner's turn — the active investigator). A
     // non-owner attempting the Fast play remains illegal even if an
     // open window's `fast_actors` scope permits the actor.
-    let a = test_investigator(1);
-    let mut b = test_investigator(2);
+    let a = test_support::test_investigator(1);
+    let mut b = test_support::test_investigator(2);
     b.resources = 5;
     b.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast.
     let state = GameStateBuilder::new()
@@ -131,7 +128,7 @@ fn fast_asset_rejected_by_non_owner_even_with_permissive_window() {
             FastActorScope::Any,
         )
         .build();
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: InvestigatorId(2),
@@ -156,8 +153,8 @@ fn fast_asset_rejected_by_non_owner_even_with_permissive_window() {
 
 #[test]
 fn non_fast_asset_still_rejected_when_not_active_investigator() {
-    let a = test_investigator(1);
-    let mut b = test_investigator(2);
+    let a = test_support::test_investigator(1);
+    let mut b = test_support::test_investigator(2);
     b.resources = 5;
     b.hand.push(CardCode::new("01059")); // Holy Rosary — non-Fast asset, cost 2.
     let state = GameStateBuilder::new()
@@ -170,7 +167,7 @@ fn non_fast_asset_still_rejected_when_not_active_investigator() {
             FastActorScope::Any,
         )
         .build();
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: InvestigatorId(2),
@@ -196,7 +193,7 @@ fn non_fast_asset_still_rejected_when_not_active_investigator() {
 
 #[test]
 fn fast_asset_still_playable_by_active_investigator_during_investigation() {
-    let mut a = test_investigator(1);
+    let mut a = test_support::test_investigator(1);
     a.resources = 5;
     a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast.
     let state = GameStateBuilder::new()
@@ -204,7 +201,7 @@ fn fast_asset_still_playable_by_active_investigator_during_investigation() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .build();
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: InvestigatorId(1),
@@ -222,22 +219,22 @@ fn fast_asset_still_playable_by_active_investigator_during_investigation() {
 /// (instance 1) at a location with a co-located enemy, so the ability has a
 /// live target; A is the active investigator. `open_window` adds a permissive
 /// Mythos player window — the condition the two tests below differ on.
-fn board_with_beat_cop(open_window: bool) -> game_core::GameState {
+fn board_with_beat_cop(open_window: bool) -> GameState {
     let loc = LocationId(101);
-    let a = test_investigator(1);
-    let mut b = test_investigator(2);
+    let a = test_support::test_investigator(1);
+    let mut b = test_support::test_investigator(2);
     b.current_location = Some(loc);
     b.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(BEAT_COP),
         CardInstanceId(1),
     ));
-    let mut enemy = test_enemy(100, "Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Ghoul");
     enemy.max_health = 3;
     enemy.current_location = Some(loc);
     let mut builder = GameStateBuilder::new()
         .with_investigator(a)
         .with_investigator(b)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_enemy(enemy)
         .with_phase(Phase::Mythos)
         .with_active_investigator(InvestigatorId(1));
@@ -264,7 +261,8 @@ const BEAT_COP_FAST: TurnAction = TurnAction::ActivateAbility {
 
 #[test]
 fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits() {
-    let result = dispatch_turn_action_unchecked(board_with_beat_cop(true), &BEAT_COP_FAST);
+    let result =
+        test_support::dispatch_turn_action_unchecked(board_with_beat_cop(true), &BEAT_COP_FAST);
     // The ability activates (its DiscardSelf cost is paid and the damage
     // lands). The #476 fast window may re-prompt afterwards, so assert the
     // activation executed rather than the exact post-activation outcome.
@@ -290,7 +288,8 @@ fn fast_activated_ability_usable_by_non_active_investigator_when_window_permits(
 fn fast_activated_ability_rejected_when_no_permissive_window() {
     // Same board, no open window: B is not the active investigator, so
     // nothing permits the fast activation.
-    let result = dispatch_turn_action_unchecked(board_with_beat_cop(false), &BEAT_COP_FAST);
+    let result =
+        test_support::dispatch_turn_action_unchecked(board_with_beat_cop(false), &BEAT_COP_FAST);
     let reason = match result.outcome {
         EngineOutcome::Rejected { reason } => reason,
         other => panic!("non-active investigator with no permissive window must reject: {other:?}"),
@@ -310,11 +309,11 @@ fn fast_event_play_only_during_turn_rejected_outside_investigation() {
     // "'your turn' is within the Investigation phase." (Was previously, wrongly,
     // accepted while the clause was unenforced.)
     let loc = LocationId(101);
-    let mut a = test_investigator(1);
+    let mut a = test_support::test_investigator(1);
     a.resources = 5;
     a.current_location = Some(loc);
     a.hand.push(CardCode::new("01037"));
-    let mut location = test_location(101, "Study");
+    let mut location = test_support::test_location(101, "Study");
     location.clues = 1;
     let state = GameStateBuilder::new()
         .with_investigator(a)
@@ -326,7 +325,7 @@ fn fast_event_play_only_during_turn_rejected_outside_investigation() {
             FastActorScope::Any,
         )
         .build();
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: InvestigatorId(1),
@@ -354,13 +353,13 @@ fn fast_event_play_only_during_turn_rejected_for_non_owner() {
     // cannot play it — it is not inv 2's turn. The `play_only_during_turn`
     // gate (#322) requires the *active* investigator, so a non-owner is
     // rejected even in a permissive window.
-    let a = test_investigator(1);
+    let a = test_support::test_investigator(1);
     let loc = LocationId(101);
-    let mut b = test_investigator(2);
+    let mut b = test_support::test_investigator(2);
     b.resources = 5;
     b.current_location = Some(loc);
     b.hand.push(CardCode::new("01037"));
-    let mut location = test_location(101, "Study");
+    let mut location = test_support::test_location(101, "Study");
     location.clues = 1;
     let state = GameStateBuilder::new()
         .with_investigator(a)
@@ -373,7 +372,7 @@ fn fast_event_play_only_during_turn_rejected_for_non_owner() {
             FastActorScope::Any,
         )
         .build();
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: InvestigatorId(2),
@@ -395,7 +394,7 @@ fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
     //
     // Magnifying Glass (01030) text: "Fast.\nYou get +1 [intellect]
     // while investigating."
-    let mut a = test_investigator(1);
+    let mut a = test_support::test_investigator(1);
     a.resources = 5;
     a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast asset.
     let state = GameStateBuilder::new()
@@ -404,7 +403,7 @@ fn fast_asset_rejected_by_owner_outside_investigation_with_no_window() {
         .with_active_investigator(InvestigatorId(1))
         // No open window.
         .build();
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: InvestigatorId(1),
@@ -466,7 +465,8 @@ fn corpus_zero_action_ability_is_offered_by_an_engine_opened_player_window() {
     // The window opens before any token is revealed, but the test refuses to
     // start against an empty bag.
     state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
-    let result = perform_skill_test(state, InvestigatorId(2), SkillKind::Willpower, 4);
+    let result =
+        test_support::perform_skill_test(state, InvestigatorId(2), SkillKind::Willpower, 4);
     let EngineOutcome::AwaitingInput { ref request, .. } = result.outcome else {
         panic!(
             "the skill test should park at its ST.1 player window, got {:?}",
@@ -491,7 +491,7 @@ fn corpus_zero_action_ability_is_offered_by_an_engine_opened_player_window() {
     );
 
     let option = request.options[0].id;
-    let picked = apply(
+    let picked = engine::apply(
         result.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(option),
@@ -535,7 +535,7 @@ fn corpus_zero_action_abilities_are_offered_once_per_ability_not_once_per_card()
     const HYPERAWARENESS: CardInstanceId = CardInstanceId(2);
     const PHYSICAL_TRAINING: CardInstanceId = CardInstanceId(3);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.resources = 5;
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new("01034"),
@@ -554,7 +554,8 @@ fn corpus_zero_action_abilities_are_offered_once_per_ability_not_once_per_card()
         .build();
     state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
 
-    let result = perform_skill_test(state, InvestigatorId(1), SkillKind::Willpower, 4);
+    let result =
+        test_support::perform_skill_test(state, InvestigatorId(1), SkillKind::Willpower, 4);
     let EngineOutcome::AwaitingInput { ref request, .. } = result.outcome else {
         panic!(
             "the skill test should park at its ST.1 player window, got {:?}",

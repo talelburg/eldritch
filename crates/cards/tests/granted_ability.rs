@@ -26,19 +26,17 @@
 //! reaches (a granted grant, a grant conditioned on a "you" the recipient has
 //! not got, a granter that leaves play mid-window).
 
-use game_core::dsl::{
+use card_dsl::dsl::{
     activated, constant, control_status, gain_resources, grant, Ability, CmpOp, Condition,
     ControlStatus, GrantTarget, InvestigatorTarget, Quantity,
 };
-use game_core::engine::{legal_actions, EngineOutcome, TurnAction};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::EngineOutcome;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId,
     LocationId, Phase,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
-    MockRegistry,
-};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 /// The **granter**: a location whose printed text grants an ability to
 /// [`RECIPIENT`] while nobody controls it — the Parlor 01115's shape.
@@ -121,14 +119,14 @@ fn install_probe_registry() {
 /// `granter_code`, with the recipient and a second card put into play there
 /// under nobody's control.
 fn board(granter_code: &str) -> GameState {
-    let mut here = test_location(1, "Granting Place");
+    let mut here = test_support::test_location(1, "Granting Place");
     here.code = CardCode::new(granter_code);
     here.clues = 0;
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_investigator_at(test_investigator(1), HERE)
+        .with_investigator_at(test_support::test_investigator(1), HERE)
         .with_location(here)
-        .with_location(test_location(2, "Elsewhere"))
+        .with_location(test_support::test_location(2, "Elsewhere"))
         .with_active_investigator(MINE)
         .with_turn_order([MINE])
         .with_investigator_turn(MINE)
@@ -175,9 +173,9 @@ fn activation(instance: CardInstanceId, address: AbilityAddress) -> TurnAction {
 fn a_granted_ability_is_offered_on_its_recipient() {
     let state = board(GRANTER);
     assert!(
-        legal_actions(&state).contains(&activation(RECIPIENT_INST, granted_address())),
+        enumerate::legal_actions(&state).contains(&activation(RECIPIENT_INST, granted_address())),
         "the granted activation is offered on the recipient, got {:?}",
-        legal_actions(&state),
+        enumerate::legal_actions(&state),
     );
 }
 
@@ -204,9 +202,9 @@ fn a_grant_vanishes_when_its_condition_stops_holding() {
         .push(card);
 
     assert!(
-        !legal_actions(&state).contains(&activation(RECIPIENT_INST, granted_address())),
+        !enumerate::legal_actions(&state).contains(&activation(RECIPIENT_INST, granted_address())),
         "the grant lapses once a player controls the recipient, got {:?}",
-        legal_actions(&state),
+        enumerate::legal_actions(&state),
     );
 }
 
@@ -218,7 +216,7 @@ fn a_grant_vanishes_when_its_condition_stops_holding() {
 #[test]
 fn a_granted_grant_does_not_apply() {
     let state = board(GRANTER);
-    let offered = legal_actions(&state);
+    let offered = enumerate::legal_actions(&state);
     assert!(
         !offered.iter().any(|action| matches!(
             action,
@@ -253,9 +251,9 @@ fn a_condition_needing_a_you_does_not_hold_for_an_uncontrolled_recipient() {
         sub: 0,
     };
     assert!(
-        !legal_actions(&state).contains(&activation(RECIPIENT_INST, address)),
+        !enumerate::legal_actions(&state).contains(&activation(RECIPIENT_INST, address)),
         "a condition needing a controller does not hold on an uncontrolled recipient, got {:?}",
-        legal_actions(&state),
+        enumerate::legal_actions(&state),
     );
 }
 
@@ -270,7 +268,7 @@ fn a_granted_address_resolves_to_nothing_once_the_granter_is_gone() {
     let mut state = board(GRANTER);
     let minted = activation(RECIPIENT_INST, granted_address());
     assert!(
-        legal_actions(&state).contains(&minted),
+        enumerate::legal_actions(&state).contains(&minted),
         "precondition: the activation is live before the granter goes",
     );
 
@@ -282,7 +280,7 @@ fn a_granted_address_resolves_to_nothing_once_the_granter_is_gone() {
         .expect("HERE is on the board")
         .code = CardCode::new("GRANTNIL");
 
-    let result = dispatch_turn_action_unchecked(state, &minted);
+    let result = test_support::dispatch_turn_action_unchecked(state, &minted);
     assert!(
         matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "a stale granted address must reject, got {:?}",
@@ -300,7 +298,7 @@ fn a_granted_address_lapses_when_the_condition_flips_mid_window() {
     let mut state = board(GRANTER);
     let minted = activation(RECIPIENT_INST, granted_address());
     assert!(
-        legal_actions(&state).contains(&minted),
+        enumerate::legal_actions(&state).contains(&minted),
         "precondition: the activation is live while nobody controls the recipient",
     );
 
@@ -317,7 +315,7 @@ fn a_granted_address_lapses_when_the_condition_flips_mid_window() {
         .cards_in_play
         .push(card);
 
-    let result = dispatch_turn_action_unchecked(state, &minted);
+    let result = test_support::dispatch_turn_action_unchecked(state, &minted);
     assert!(
         matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "an address whose grant no longer applies must reject, got {:?}",
@@ -338,9 +336,9 @@ fn a_grant_is_not_offered_to_an_investigator_elsewhere() {
         .expect("investigator present")
         .current_location = Some(THERE);
     assert!(
-        !legal_actions(&state).contains(&activation(RECIPIENT_INST, granted_address())),
+        !enumerate::legal_actions(&state).contains(&activation(RECIPIENT_INST, granted_address())),
         "an investigator elsewhere cannot reach the recipient, got {:?}",
-        legal_actions(&state),
+        enumerate::legal_actions(&state),
     );
 }
 
@@ -351,7 +349,7 @@ fn a_grant_is_not_offered_to_an_investigator_elsewhere() {
 #[test]
 fn resolving_a_grant_as_an_effect_rejects() {
     let state = board(GRANTER);
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::ActivateAbility {
             investigator: MINE,

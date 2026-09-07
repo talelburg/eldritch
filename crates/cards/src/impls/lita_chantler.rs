@@ -132,8 +132,8 @@ use card_dsl::dsl::{
     SkillTestKind, Stat, TestOutcome,
 };
 use game_core::card_registry::EligibilityFn;
-use game_core::state::{GameState, LocationId, SkillTestFollowUp};
-use game_core::EvalContext;
+use game_core::engine::evaluator::EvalContext;
+use game_core::state::{GameState, InvestigatorId, LocationId, SkillTestFollowUp};
 
 /// `ArkhamDB` code for Lita Chantler.
 pub const CODE: &str = "01117";
@@ -217,31 +217,29 @@ fn monster_attacked_here(state: &GameState, ctx: &EvalContext) -> bool {
         .is_some_and(|e| e.traits.iter().any(|t| t == MONSTER))
 }
 
-fn investigator_location(
-    state: &GameState,
-    id: game_core::state::InvestigatorId,
-) -> Option<LocationId> {
+fn investigator_location(state: &GameState, id: InvestigatorId) -> Option<LocationId> {
     state.investigators.get(&id)?.current_location
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::impls;
+    use card_dsl::card_data::SkillKind;
     use card_dsl::dsl::{
-        Condition, ControlStatus, Effect, EventPattern, EventTiming, GrantTarget, ModifierAudience,
-        ModifierScope, SkillTestKind, Stat, TestOutcome, Trigger, TriggerKind,
+        Ability, Condition, ControlStatus, Effect, EventPattern, EventTiming, GrantTarget,
+        ModifierAudience, ModifierScope, SkillTestKind, Stat, TestOutcome, Trigger, TriggerKind,
     };
-    use game_core::card_data::SkillKind;
+    use game_core::engine::evaluator::EvalContext;
     use game_core::state::{
         AbilitySource, CardCode, CardInPlay, CardInstanceId, Continuation, EnemyId, GameState,
         GameStateBuilder, InvestigatorId, LocationId, SkillTestFollowUp, SkillTestId,
     };
-    use game_core::test_support::{test_enemy, test_investigator, test_location, test_skill_test};
-    use game_core::EvalContext;
+    use game_core::test_support;
 
     /// The one thing 01117 prints. Destructured rather than `matches!`-ed with
     /// `..`, so an `Effect::If` wrapper — which the grant sweep skips silently —
     /// fails the test rather than passing it.
-    fn granted() -> Vec<card_dsl::dsl::Ability> {
+    fn granted() -> Vec<Ability> {
         let abilities = super::abilities();
         assert_eq!(
             abilities.len(),
@@ -336,23 +334,23 @@ mod tests {
         const ELSEWHERE: LocationId = LocationId(2);
         let attacker = InvestigatorId(2);
 
-        let mut lita_controller = test_investigator(1);
+        let mut lita_controller = test_support::test_investigator(1);
         lita_controller.current_location = Some(HERE);
         lita_controller.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new(super::CODE),
             CardInstanceId(9),
         ));
 
-        let mut other = test_investigator(2);
+        let mut other = test_support::test_investigator(2);
         other.current_location = Some(if attacker_here { HERE } else { ELSEWHERE });
 
         // A Ghoul from The Gathering (Humanoid. Monster. Ghoul.) and Silver
         // Twilight Acolyte 01102 (Humanoid. Cultist. Silver Twilight.), the
         // corpus's nearest non-[[Monster]] — every enemy in The Gathering itself
         // is a [[Monster]], so the negative case has to come from outside it.
-        let mut ghoul = test_enemy(1, "Ghoul Minion");
+        let mut ghoul = test_support::test_enemy(1, "Ghoul Minion");
         ghoul.traits = vec!["Humanoid".into(), "Monster".into(), "Ghoul".into()];
-        let mut acolyte = test_enemy(2, "Silver Twilight Acolyte");
+        let mut acolyte = test_support::test_enemy(2, "Silver Twilight Acolyte");
         acolyte.code = CardCode::new("01102");
         acolyte.traits = vec![
             "Humanoid".into(),
@@ -363,14 +361,14 @@ mod tests {
         let mut state = GameStateBuilder::new()
             .with_investigator(lita_controller)
             .with_investigator(other)
-            .with_location(test_location(1, "Parlor"))
-            .with_location(test_location(2, "Hallway"))
+            .with_location(test_support::test_location(1, "Parlor"))
+            .with_location(test_support::test_location(2, "Hallway"))
             .with_enemy(ghoul)
             .with_enemy(acolyte)
             .build();
 
         if with_fight {
-            let mut test = test_skill_test(
+            let mut test = test_support::test_skill_test(
                 SkillTestId(1),
                 attacker,
                 SkillKind::Combat,
@@ -449,7 +447,7 @@ mod tests {
     fn the_tag_dispatches_and_an_unknown_one_does_not() {
         assert!(super::native_eligibility_for(super::MONSTER_ATTACKED_HERE_TAG).is_some());
         assert!(super::native_eligibility_for("nope").is_none());
-        assert!(crate::impls::native_eligibility_for(super::MONSTER_ATTACKED_HERE_TAG).is_some());
+        assert!(impls::native_eligibility_for(super::MONSTER_ATTACKED_HERE_TAG).is_some());
     }
 
     #[test]

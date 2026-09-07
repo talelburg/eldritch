@@ -29,16 +29,15 @@ use card_dsl::dsl::{
     gain_resources, reaction_on_event, Ability, Effect, EventPattern, EventTiming,
     InvestigatorTarget,
 };
-use game_core::engine::OptionId;
+use game_core::assert_event;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{ApplyResult, OptionId};
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId,
-    LocationId, Phase,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
+    InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{
-    test_investigator, test_location, GameStateBuilder, MockRegistry, TestSession,
-};
-use game_core::{assert_event, ApplyResult, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry, TestSession};
 
 /// `when`-tagged reaction: +4 resources. Declaring interrupt timing on this
 /// condition is accepted now that it is coordinator-owned — before #703 the
@@ -86,7 +85,7 @@ const LOC: LocationId = LocationId(10);
 /// `Numeric(0)` chaos token so the Intellect-3-vs-shroud-2 Investigate always
 /// succeeds and discovers exactly 1 clue.
 fn board_with(codes: &[&str], location_clues: u8) -> GameState {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.resources = 0;
     for (i, code) in codes.iter().enumerate() {
         inv.threat_area.push(CardInPlay::enter_play(
@@ -94,7 +93,7 @@ fn board_with(codes: &[&str], location_clues: u8) -> GameState {
             CardInstanceId(u32::try_from(i).expect("fixture card count fits u32")),
         ));
     }
-    let mut location = test_location(10, "Study");
+    let mut location = test_support::test_location(10, "Study");
     location.clues = location_clues;
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -144,7 +143,7 @@ fn no_queued_frames(r: &ApplyResult) -> bool {
     !r.state
         .continuations
         .iter()
-        .any(game_core::state::Continuation::is_queued_ability)
+        .any(Continuation::is_queued_ability)
 }
 
 /// The headline claim: the discovery happens *between* the `when` and `at`

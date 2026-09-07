@@ -6,23 +6,23 @@
 //! intellect to investigate tests but not to other intellect tests."
 //! This file closes that loop with the real card and real registry.
 
-use game_core::engine::enumerate::legal_actions;
-use game_core::engine::EngineOutcome;
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase, SkillKind,
+    TokenModifiers,
 };
-use game_core::test_support::{
-    apply_no_commits, perform_skill_test_no_commits, take_turn_action, test_investigator,
-    test_location, GameStateBuilder, TestSession,
-};
-use game_core::{assert_event, Action, InputResponse, OptionId, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, TestSession};
+use game_core::{assert_event, card_registry};
 
 const MAGNIFYING_GLASS: &str = "01030";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Build a state with Magnifying Glass in hand, the controller in the
@@ -31,14 +31,14 @@ fn install_real_registry() {
 /// Skill defaults (3 intellect) plus the card's bonus (when in play)
 /// cleanly cross / miss difficulty 4 depending on whether the bonus
 /// applies.
-fn state_with_mg_in_hand() -> (game_core::GameState, InvestigatorId, LocationId) {
+fn state_with_mg_in_hand() -> (GameState, InvestigatorId, LocationId) {
     let id = InvestigatorId(1);
     let loc_id = LocationId(101);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     inv.hand = vec![CardCode::new(MAGNIFYING_GLASS)];
 
-    let mut location = test_location(101, "Study");
+    let mut location = test_support::test_location(101, "Study");
     location.shroud = 4;
     location.clues = 1;
 
@@ -59,7 +59,7 @@ fn investigate_succeeds_at_shroud_4_after_playing_magnifying_glass() {
     // 3 intellect + 1 (Magnifying Glass) + 0 (token) = 4 vs shroud 4 → succeed by 0.
     let (state, id, _loc) = state_with_mg_in_hand();
 
-    let after_play = take_turn_action(
+    let after_play = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -104,12 +104,12 @@ fn investigate_fails_at_shroud_4_without_magnifying_glass_in_play() {
     let (state, id, _loc) = state_with_mg_in_hand();
     assert!(state.investigators[&id].cards_in_play.is_empty());
 
-    let actions = legal_actions(&state);
+    let actions = enumerate::legal_actions(&state);
     let idx = actions
         .iter()
         .position(|a| a == &TurnAction::Investigate { investigator: id })
         .expect("Investigate must be legal");
-    let result = apply_no_commits(
+    let result = test_support::apply_no_commits(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
@@ -135,7 +135,7 @@ fn bare_intellect_test_unaffected_by_magnifying_glass_in_play() {
     // → fail by 1, even with the card in play.
     let (state, id, _loc) = state_with_mg_in_hand();
 
-    let after_play = take_turn_action(
+    let after_play = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -147,7 +147,8 @@ fn bare_intellect_test_unaffected_by_magnifying_glass_in_play() {
         EngineOutcome::AwaitingInput { .. }
     ));
 
-    let result = perform_skill_test_no_commits(after_play.state, id, SkillKind::Intellect, 4);
+    let result =
+        test_support::perform_skill_test_no_commits(after_play.state, id, SkillKind::Intellect, 4);
     assert!(matches!(
         result.outcome,
         EngineOutcome::AwaitingInput { .. }

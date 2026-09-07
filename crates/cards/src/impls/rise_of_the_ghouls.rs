@@ -9,15 +9,17 @@
 //!
 //! Forced on-advance reverse, fired via `ForcedTriggerPoint::AgendaAdvanced`
 //! from `advance_agenda` (the mirror of the act path). Board-dependent,
-//! single-use scenario logic, so it lives card-locally as an
-//! `Effect::Native` handler (#276), orchestrating engine primitives
-//! ([`reshuffle_encounter_discard`], [`resolve_encounter_card`]) over the
+//! single-use scenario logic, so it lives card-locally as an `Effect::Native`
+//! handler (#276), orchestrating engine primitives
+//! ([`reshuffle_encounter_discard`](engine::reshuffle_encounter_discard),
+//! [`resolve_encounter_card`](engine::resolve_encounter_card)) over the
 //! encounter deck.
 //!
-//! The dug-up enemy is a *generic* `Ghoul` from the encounter deck —
-//! distinct from act-2's set-aside Ghoul Priest (01116, #280). "Draws that
-//! enemy" resolves it through the normal encounter-draw path
-//! ([`resolve_encounter_card`]): `CardRevealed`, any Revelation, then spawn.
+//! The dug-up enemy is a *generic* `Ghoul` from the encounter deck — distinct
+//! from act-2's set-aside Ghoul Priest (01116, #280). "Draws that enemy"
+//! resolves it through the normal encounter-draw path
+//! ([`resolve_encounter_card`](engine::resolve_encounter_card)):
+//! `CardRevealed`, any Revelation, then spawn.
 //!
 //! Empty-deck note: The Gathering's encounter deck isn't assembled yet, so
 //! today the reshuffle finds an empty discard and the dig an empty deck —
@@ -46,9 +48,8 @@
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
 use game_core::card_registry::NativeEffectFn;
-use game_core::{
-    reshuffle_encounter_discard, resolve_encounter_card, Cx, EngineOutcome, EvalContext,
-};
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::{self, Cx, EngineOutcome};
 
 /// `ArkhamDB` code for Agenda 2, "Rise of the Ghouls".
 pub const CODE: &str = "01106";
@@ -82,14 +83,14 @@ fn is_ghoul_enemy(code: &str) -> bool {
 /// have the lead investigator draw it. A deck exhausted without a Ghoul is
 /// a no-op (nothing to draw).
 fn reverse(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
-    reshuffle_encounter_discard(cx);
+    engine::reshuffle_encounter_discard(cx);
     // Pop directly from the deck (not `draw_encounter_top`, which would
     // reshuffle the just-discarded cards back in and loop). The deck is
     // finite and shrinks by one each iteration, so this terminates.
     while let Some(code) = cx.state.encounter_deck.pop_front() {
         if is_ghoul_enemy(code.as_str()) {
             let metadata = crate::by_code(code.as_str()).expect("is_ghoul_enemy looked it up");
-            return resolve_encounter_card(cx, ctx.controller, code, metadata);
+            return engine::resolve_encounter_card(cx, ctx.controller, code, metadata);
         }
         cx.state.encounter_discard.push(code);
     }
@@ -98,7 +99,7 @@ fn reverse(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, EventPattern, EventTiming, Trigger};
+    use card_dsl::dsl::{Effect, EventPattern, EventTiming, Trigger, TriggerKind};
 
     #[test]
     fn abilities_are_one_forced_on_advance_native_reverse() {
@@ -109,7 +110,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::AgendaAdvanced,
                 timing: EventTiming::After,
-                kind: card_dsl::dsl::TriggerKind::Forced,
+                kind: TriggerKind::Forced,
             }
         );
         assert!(

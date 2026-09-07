@@ -11,13 +11,13 @@
 //! `ForcedTriggerPoint::ActAdvanced` when the act advances, before the
 //! next act becomes current. "Discard each enemy in the Study" is a
 //! faithful **no-op** — nothing can spawn into the isolated Act-1 Study
-//! in Slice-1 scope (no encounter path targets the Study). The four rooms
-//! are set aside by the scenario's `setup()` as bare card codes; this
-//! ability puts each into play through
-//! [`put_set_aside_card_into_play`], which mints its `LocationId` and
-//! wires its printed connections from the scenario's layout table, then
-//! relocates investigators to the Hallway (01112) and removes the Study
-//! (01111).
+//! in Slice-1 scope (no encounter path targets the Study). The four rooms are
+//! set aside by the scenario's `setup()` as bare card codes; this ability
+//! puts each into play through
+//! [`put_set_aside_card_into_play`](engine::put_set_aside_card_into_play),
+//! which mints its `LocationId` and wires its printed connections from the
+//! scenario's layout table, then relocates investigators to the Hallway
+//! (01112) and removes the Study (01111).
 //!
 //! The board build is board-dependent, single-use scenario logic, so it
 //! lives card-locally as a [`card_dsl::dsl::Effect::Native`] handler
@@ -38,10 +38,9 @@
 
 use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
 use game_core::card_registry::NativeEffectFn;
-use game_core::{
-    location_id_by_code, put_set_aside_card_into_play, reveal_location, Cx, EngineOutcome,
-    EvalContext, Event,
-};
+use game_core::engine::evaluator::{self, EvalContext};
+use game_core::engine::{self, Cx, EngineOutcome};
+use game_core::event::Event;
 
 /// `ArkhamDB` code for Act 1, "Trapped".
 pub const CODE: &str = "01108";
@@ -94,7 +93,7 @@ fn board_build(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
             };
         }
     }
-    if location_id_by_code(cx.state, STUDY).is_none() {
+    if evaluator::location_id_by_code(cx.state, STUDY).is_none() {
         return EngineOutcome::Rejected {
             reason: format!("01108 board-build: no in-play Study ({STUDY})").into(),
         };
@@ -102,13 +101,13 @@ fn board_build(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     // Put the set-aside rooms into play; each mints its id and wires its
     // printed connections to the rooms already there.
     for code in ROOMS {
-        match put_set_aside_card_into_play(cx, code, None) {
+        match engine::put_set_aside_card_into_play(cx, code, None) {
             EngineOutcome::Done => {}
             other => return other,
         }
     }
     // Relocate all investigators to the Hallway (01112).
-    let Some(dest) = location_id_by_code(cx.state, HALLWAY) else {
+    let Some(dest) = evaluator::location_id_by_code(cx.state, HALLWAY) else {
         unreachable!("01108 board-build: the Hallway just entered play");
     };
     let ids: Vec<_> = cx.state.investigators.keys().copied().collect();
@@ -130,9 +129,9 @@ fn board_build(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
             }
         }
     }
-    reveal_location(cx, dest);
+    engine::reveal_location(cx, dest);
     // Remove the Study (01111) from the game.
-    let Some(study) = location_id_by_code(cx.state, STUDY) else {
+    let Some(study) = evaluator::location_id_by_code(cx.state, STUDY) else {
         unreachable!("01108 board-build: the Study was validated in play above");
     };
     cx.state.locations.remove(&study);
@@ -141,7 +140,7 @@ fn board_build(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, EventPattern, EventTiming, Trigger};
+    use card_dsl::dsl::{Effect, EventPattern, EventTiming, Trigger, TriggerKind};
 
     #[test]
     fn abilities_are_one_forced_on_advance_native_board_build() {
@@ -152,7 +151,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::ActAdvanced,
                 timing: EventTiming::After,
-                kind: card_dsl::dsl::TriggerKind::Forced,
+                kind: TriggerKind::Forced,
             }
         );
         assert!(

@@ -58,13 +58,17 @@
 //! Sibling files: `guard_dog_soak.rs` (the soak pipeline itself),
 //! `enemy_attack_cells.rs` (#704's condition), `clue_discovery_cells.rs` (#703's).
 
-use game_core::engine::{apply, ApplyResult, EngineOutcome, OptionId};
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, InvestigatorId, LocationId, Phase,
+    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, InvestigatorId, LocationId,
+    Phase,
 };
-use game_core::test_support::{take_turn_action, test_enemy, test_investigator, test_location};
-use game_core::{Action, InputResponse, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event_sequence, card_registry};
 
 /// Roland Banks (01001) — the example's investigator, and the source of the
 /// nested sequence that hangs off the Goat Spawn's defeat.
@@ -77,14 +81,14 @@ const AUTOMATIC_45: &str = "01016";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// The Goat Spawn's stand-in: engaged, ready, **2 damage already on it** and 3
 /// health, so Guard Dog's 1 retaliate damage defeats it — the example's setup
 /// exactly. Its attack deals 1 damage and no horror.
 fn goat_spawn(id: u32, inv: InvestigatorId, loc: LocationId) -> Enemy {
-    let mut e = test_enemy(id, "Goat Spawn");
+    let mut e = test_support::test_enemy(id, "Goat Spawn");
     e.max_health = 3;
     e.damage = 2;
     e.attack_damage = 1;
@@ -95,8 +99,8 @@ fn goat_spawn(id: u32, inv: InvestigatorId, loc: LocationId) -> Enemy {
 }
 
 /// Resume the top prompt with `PickSingle(id)`.
-fn resolve(state: game_core::GameState, id: OptionId) -> ApplyResult {
-    apply(
+fn resolve(state: GameState, id: OptionId) -> ApplyResult {
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(id),
@@ -131,7 +135,7 @@ fn assign_to(mut result: ApplyResult, inst: CardInstanceId) -> ApplyResult {
     result
 }
 
-fn guard_dog_damage(state: &game_core::GameState, inv: InvestigatorId, inst: CardInstanceId) -> u8 {
+fn guard_dog_damage(state: &GameState, inv: InvestigatorId, inst: CardInstanceId) -> u8 {
     state.investigators[&inv]
         .cards_in_play
         .iter()
@@ -140,7 +144,7 @@ fn guard_dog_damage(state: &game_core::GameState, inv: InvestigatorId, inst: Car
         .accumulated_damage
 }
 
-fn in_play(state: &game_core::GameState, inv: InvestigatorId, code: &str) -> bool {
+fn in_play(state: &GameState, inv: InvestigatorId, code: &str) -> bool {
     state.investigators[&inv]
         .cards_in_play
         .iter()
@@ -156,7 +160,7 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     let loc = LocationId(101);
     let spawn = EnemyId(7);
 
-    let mut roland = test_investigator(1);
+    let mut roland = test_support::test_investigator(1);
     roland.investigator_card.code = CardCode::new(ROLAND); // 9 health / 5 sanity
     roland.current_location = Some(loc);
     roland.resources = 5; // the .45 costs 4
@@ -170,10 +174,10 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
 
     // A clue at the location for Roland's reaction to discover — the marker
     // that tells us the nested sequence resolved, and when.
-    let mut study = test_location(101, "Study");
+    let mut study = test_support::test_location(101, "Study");
     study.clues = 1;
 
-    let state = game_core::test_support::GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_location(study)
         .with_investigator(roland)
@@ -186,7 +190,7 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     // ── "Roland wishes to play a .45 Automatic, which provokes an attack of
     //    opportunity from the Goat Spawn, dealing 1 damage to Roland. Roland
     //    assigns this damage to his Guard Dog" ────────────────────────────────
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: inv_id,
@@ -292,7 +296,7 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     // emits nothing (asset damage is state, not an event) and the .45's entry
     // into play is a zone move, so both are asserted on state above rather than
     // here.
-    game_core::assert_event_sequence!(
+    assert_event_sequence!(
         log,
         Event::EnemyDamaged { enemy, amount: 1, .. } if *enemy == spawn,
         Event::EnemyDefeated { enemy, .. } if *enemy == spawn,

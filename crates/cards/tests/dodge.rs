@@ -10,18 +10,24 @@
 //! Dodge 01023: "Fast. Play when an enemy attacks an investigator at your
 //! location. Cancel that attack."
 
-use game_core::engine::{apply, EngineOutcome, OptionId};
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::state::{CardCode, Enemy, EnemyId, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{take_turn_action, test_enemy, test_investigator, test_location};
-use game_core::{Action, GameState, InputResponse, PlayerAction, TurnAction};
+use game_core::state::{
+    Agenda, CardCode, Continuation, Enemy, EnemyId, GameState, InvestigationResume, InvestigatorId,
+    LocationId, Phase,
+};
+use game_core::test_support::{self, GameStateBuilder};
 
 /// Dodge (01023): Neutral Tactic, Fast, the before-attack cancel reaction.
 const DODGE: &str = "01023";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// An engaged ready enemy at `loc` dealing 2 damage / 1 horror. Both tracks are
@@ -29,7 +35,7 @@ fn install_real_registry() {
 /// attack that dealt 0 horror because the attacker had none to deal would be a
 /// vacuous assertion.
 fn engaged_attacker(id: u32, inv: InvestigatorId, loc: LocationId) -> Enemy {
-    let mut e = test_enemy(id, format!("Attacker {id}"));
+    let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
     e.attack_damage = 2;
     e.attack_horror = 1;
     e.current_location = Some(loc);
@@ -48,7 +54,7 @@ fn dodge_state() -> (GameState, InvestigatorId, EnemyId) {
     let loc_id = LocationId(101);
     let enemy_id = EnemyId(7);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     // Use a real investigator code so max_health()/max_sanity() can read from
     // the installed cards registry; TEST_INV is only in the game-core test
@@ -63,17 +69,17 @@ fn dodge_state() -> (GameState, InvestigatorId, EnemyId) {
     // obscuring the "Dodge went to discard" assertion.
     inv.deck = vec![CardCode::new("01088")];
 
-    let state = game_core::test_support::GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(inv)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_enemy(engaged_attacker(7, inv_id, loc_id))
         // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
         // InvestigationPhase anchor at investigation_phase_end.
-        .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
-            resume: game_core::state::InvestigationResume::TurnBegins,
+        .with_phase_anchor(Continuation::InvestigationPhase {
+            resume: InvestigationResume::TurnBegins,
         })
         // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
         // EndTurn cascade pops before advancing into the Enemy phase.
@@ -107,7 +113,7 @@ fn acolyte_state() -> (GameState, InvestigatorId, EnemyId) {
     enemy.code = CardCode::new(ACOLYTE);
     enemy.attack_damage = 1;
     enemy.attack_horror = 0;
-    state.agenda_deck = vec![game_core::state::Agenda {
+    state.agenda_deck = vec![Agenda {
         code: CardCode::new("01105"),
         doom_threshold: 3,
     }];
@@ -129,14 +135,14 @@ fn acolyte_state() -> (GameState, InvestigatorId, EnemyId) {
 fn dodging_a_silver_twilight_acolyte_stops_its_forced_doom() {
     let (state, inv_id, enemy_id) = acolyte_state();
 
-    let result = take_turn_action(state, &TurnAction::EndTurn);
+    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
         "the `when` cell offers Dodge: {:?}",
         result.outcome
     );
     // Play Dodge → the attack is prevented, so its `after` cell never runs.
-    let result = apply(
+    let result = engine::apply(
         result.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -174,8 +180,8 @@ fn dodging_a_silver_twilight_acolyte_stops_its_forced_doom() {
 fn an_undodged_silver_twilight_acolyte_places_its_doom_after_the_damage() {
     let (state, inv_id, _) = acolyte_state();
 
-    let result = take_turn_action(state, &TurnAction::EndTurn);
-    let result = apply(
+    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
+    let result = engine::apply(
         result.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Skip,
@@ -209,7 +215,7 @@ fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
 
     // EndTurn → Enemy phase → the attack loop opens the before-attack cancel
     // window and suspends, offering Dodge from hand.
-    let result = take_turn_action(state, &TurnAction::EndTurn);
+    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
     let mut state = result.state;
     assert!(
         matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -220,7 +226,7 @@ fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
     assert_eq!(state.investigators[&inv_id].damage(), 0);
 
     // Play Dodge (the single offered candidate) → cancel the attack.
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -271,7 +277,7 @@ fn dodge_cancels_enemy_phase_attack_no_damage_attacker_exhausts() {
 fn declining_the_before_attack_window_lets_the_attack_land() {
     let (state, inv_id, enemy_id) = dodge_state();
 
-    let result = take_turn_action(state, &TurnAction::EndTurn);
+    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
     let mut state = result.state;
     assert!(matches!(
         result.outcome,
@@ -279,7 +285,7 @@ fn declining_the_before_attack_window_lets_the_attack_land() {
     ));
 
     // Skip the window → the attack resolves normally.
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Skip,

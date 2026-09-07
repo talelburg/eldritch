@@ -40,16 +40,17 @@
 //! (`weakness: true` on 01101, per `crates/cards/src/generated/cards.rs`), which
 //! `game-core`'s own tests cannot see.
 
-use game_core::action::{EngineRecord, InputResponse};
-use game_core::engine::TurnAction;
+use cards::REGISTRY;
+use game_core::action::{Action, EngineRecord, InputResponse, PlayerAction};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, InvestigatorId, LocationId, Phase, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, InvestigatorId, LocationId, Phase,
+    TokenModifiers,
 };
-use game_core::test_support::{
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
-};
-use game_core::{apply, assert_event, Action, PlayerAction};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event, card_registry};
 
 const GHOUL_MINION: &str = "01160";
 const MOB_ENFORCER: &str = "01101";
@@ -57,7 +58,7 @@ const GHOUL_PRIEST: &str = "01116";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// A solo investigator engaged with `code`, one point of damage short of
@@ -69,16 +70,16 @@ fn solo_investigator_facing(
     health: u8,
     fight: i8,
     victory: Option<u8>,
-) -> (InvestigatorId, EnemyId, game_core::GameState) {
+) -> (InvestigatorId, EnemyId, GameState) {
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     inv.skills.combat = 8;
 
-    let mut enemy = test_enemy(100, "Enemy under test");
+    let mut enemy = test_support::test_enemy(100, "Enemy under test");
     enemy.code = CardCode::new(code);
     enemy.fight = fight;
     enemy.max_health = health;
@@ -95,7 +96,7 @@ fn solo_investigator_facing(
         .with_investigator_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build();
@@ -104,19 +105,15 @@ fn solo_investigator_facing(
 
 /// Fight the enemy to death: the Fight suspends on the commit window, and
 /// committing nothing resolves the test, the damage, and the defeat.
-fn fight_to_defeat(
-    state: game_core::GameState,
-    inv_id: InvestigatorId,
-    enemy_id: EnemyId,
-) -> game_core::engine::ApplyResult {
-    let after_fight = take_turn_action(
+fn fight_to_defeat(state: GameState, inv_id: InvestigatorId, enemy_id: EnemyId) -> ApplyResult {
+    let after_fight = test_support::take_turn_action(
         state,
         &TurnAction::Fight {
             investigator: inv_id,
             enemy: enemy_id,
         },
     );
-    let result = apply(
+    let result = engine::apply(
         after_fight.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -152,7 +149,7 @@ fn defeated_ghoul_minion_is_drawn_again_once_the_encounter_deck_runs_out() {
     state.continuations.clear(); // drop the open-turn prompt; draw straight
     state.phase = Phase::Mythos;
 
-    let redraw = apply(
+    let redraw = engine::apply(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed {
             investigator: inv_id,

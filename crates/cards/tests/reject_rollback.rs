@@ -7,15 +7,14 @@
 //! with `game-core`'s registry-free unit tests or the real-corpus
 //! `play_card.rs` binary.
 
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use game_core::dsl::{gain_resources, modify, on_play, seq};
-use game_core::dsl::{InvestigatorTarget, ModifierScope, Stat};
-use game_core::engine::{EngineOutcome, TurnAction};
-use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
-    MockRegistry,
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
+use card_dsl::dsl::{
+    gain_resources, modify, on_play, seq, InvestigatorTarget, ModifierScope, Stat,
 };
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::EngineOutcome;
+use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 /// Code for the synthetic probe card. Not in the real corpus; only the mock
 /// registry below resolves it.
@@ -70,7 +69,7 @@ fn install_probe_registry() {
 fn mid_resolution_reject_leaves_state_and_events_untouched() {
     let id = InvestigatorId(1);
     let loc_id = LocationId(101);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     inv.hand = vec![CardCode::new(PROBE)];
 
@@ -78,13 +77,13 @@ fn mid_resolution_reject_leaves_state_and_events_untouched() {
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .build();
 
     // Capture the pre-action state to compare against byte-for-byte.
     let before = state.clone();
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: id,

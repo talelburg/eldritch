@@ -3,19 +3,16 @@
 //! `cards::REGISTRY`. The activated ability is at index 1 (index 0 is the
 //! constant `+1 [combat]`). Own process → installs `cards::REGISTRY`.
 
+use cards::REGISTRY;
+use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
-use game_core::engine::TurnAction;
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId,
-    Phase, Zone,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
+    InvestigatorId, LocationId, Phase, Zone,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, take_turn_action, test_enemy, test_investigator, test_location,
-    GameStateBuilder,
-};
-use game_core::{assert_event, assert_no_event};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event, assert_no_event, card_registry};
 
 const BEAT_COP: &str = "01018";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -25,25 +22,25 @@ const COP_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Board: Beat Cop in play, the active investigator at `LOC`, and (when
 /// `enemy_present`) a 3-health enemy co-located at `LOC`.
-fn board(enemy_present: bool) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board(enemy_present: bool) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     inv.cards_in_play
         .push(CardInPlay::enter_play(CardCode::new(BEAT_COP), COP_INST));
 
     let mut builder = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .with_investigator_turn(INV);
     if enemy_present {
-        let mut enemy = test_enemy(100, "Ghoul");
+        let mut enemy = test_support::test_enemy(100, "Ghoul");
         enemy.max_health = 3;
         enemy.current_location = Some(LOC);
         builder = builder.with_enemy(enemy);
@@ -59,7 +56,7 @@ const ACTIVATE_ABILITY: TurnAction = TurnAction::ActivateAbility {
 
 #[test]
 fn discards_self_and_deals_one_damage_to_the_co_located_enemy() {
-    let r = take_turn_action(board(true), &ACTIVATE_ABILITY);
+    let r = test_support::take_turn_action(board(true), &ACTIVATE_ABILITY);
     assert_event!(r.events, Event::EnemyDamaged { amount: 1, .. });
     assert_eq!(r.state.enemies[&ENEMY].damage, 1);
     // Beat Cop paid its own discard as the cost.
@@ -84,7 +81,7 @@ fn discards_self_and_deals_one_damage_to_the_co_located_enemy() {
 fn rejects_with_no_enemy_at_location_and_keeps_beat_cop_in_play() {
     // The ability has no valid target (no enemy) — bypass the legal-actions
     // gate since the action won't be offered.
-    let r = dispatch_turn_action_unchecked(board(false), &ACTIVATE_ABILITY);
+    let r = test_support::dispatch_turn_action_unchecked(board(false), &ACTIVATE_ABILITY);
     assert!(matches!(r.outcome, EngineOutcome::Rejected { .. }));
     // Pre-cost target check (#301) rejects before paying ⇒ Beat Cop survives.
     assert_no_event!(r.events, Event::CardDiscarded { .. });

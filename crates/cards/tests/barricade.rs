@@ -13,15 +13,16 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
+use cards::REGISTRY;
+use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, InvestigatorId, LocationId, Phase,
+    CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, GameState,
+    InvestigationResume, Investigator, InvestigatorId, Location, LocationId, Phase,
 };
-use game_core::test_support::{
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
-};
-use game_core::{assert_event, assert_event_sequence, assert_no_event, TurnAction};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event, assert_event_sequence, assert_no_event, card_registry};
 
 const BARRICADE: &str = "01038";
 const GHOUL_PRIEST: &str = "01116"; // Humanoid. Monster. Ghoul. Elite. + Hunter
@@ -33,7 +34,7 @@ const ATT_INST: CardInstanceId = CardInstanceId(900);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// A ready, unengaged ghoul (code `code`) at location `at`, with the printed
@@ -41,7 +42,7 @@ fn install() {
 /// `Enemy.traits` as spawns populate it). Hunter-ness and engagement are the
 /// caller's to set — the two scenarios here want opposite answers.
 fn ghoul(id: u32, code: &str, at: LocationId) -> Enemy {
-    let mut e = test_enemy(id, "Ghoul");
+    let mut e = test_support::test_enemy(id, "Ghoul");
     e.code = CardCode::new(code);
     e.traits = if code == GHOUL_PRIEST {
         vec![
@@ -61,19 +62,19 @@ fn ghoul(id: u32, code: &str, at: LocationId) -> Enemy {
 
 #[test]
 fn playing_barricade_attaches_one_card_and_does_not_discard_the_event() {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(A);
     inv.hand = vec![CardCode::new(BARRICADE)];
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
-        .with_location(test_location(1, "Study"))
+        .with_location(test_support::test_location(1, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .with_investigator_turn(INV)
         .build();
 
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: INV,
@@ -101,16 +102,16 @@ fn playing_barricade_attaches_one_card_and_does_not_discard_the_event() {
 
 /// Linear map A—B with a Barricade attached at B, the investigator at `inv_at`,
 /// and `enemy` on the board.
-fn map_with_barricade_at_b(inv_at: LocationId, enemy: Enemy) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn map_with_barricade_at_b(inv_at: LocationId, enemy: Enemy) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     // Use a real investigator code so max_health()/max_sanity() can read from
     // the installed cards registry; TEST_INV is only in the game-core test
     // registry (#448 cp2a). Skids O'Toole (01003, 8/6) — no implemented abilities.
     inv.investigator_card.code = CardCode::new("01003");
     inv.current_location = Some(inv_at);
-    let mut a = test_location(1, "A");
+    let mut a = test_support::test_location(1, "A");
     a.connections = vec![B];
-    let mut b = test_location(2, "B");
+    let mut b = test_support::test_location(2, "B");
     b.connections = vec![A];
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -122,8 +123,8 @@ fn map_with_barricade_at_b(inv_at: LocationId, enemy: Enemy) -> game_core::GameS
         .with_turn_order([INV])
         // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
         // InvestigationPhase anchor at investigation_phase_end.
-        .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
-            resume: game_core::state::InvestigationResume::TurnBegins,
+        .with_phase_anchor(Continuation::InvestigationPhase {
+            resume: InvestigationResume::TurnBegins,
         })
         // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
         // EndTurn cascade pops before rotating / cascading.
@@ -140,7 +141,7 @@ fn map_with_barricade_at_b(inv_at: LocationId, enemy: Enemy) -> game_core::GameS
 
 /// The hunter-movement scenario: the investigator (prey) at B, a hunter at A,
 /// driven via `EndTurn` into the Enemy phase.
-fn hunter_at_a_moving_toward_b(enemy_code: &str) -> game_core::GameState {
+fn hunter_at_a_moving_toward_b(enemy_code: &str) -> GameState {
     let mut enemy = ghoul(100, enemy_code, A);
     enemy.hunter = true;
     map_with_barricade_at_b(B, enemy)
@@ -148,7 +149,7 @@ fn hunter_at_a_moving_toward_b(enemy_code: &str) -> game_core::GameState {
 
 #[test]
 fn non_elite_hunter_cannot_enter_the_barricaded_location() {
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         hunter_at_a_moving_toward_b(GHOUL_MINION),
         &TurnAction::EndTurn,
     );
@@ -161,7 +162,7 @@ fn non_elite_hunter_cannot_enter_the_barricaded_location() {
 
 #[test]
 fn elite_hunter_enters_the_barricaded_location() {
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         hunter_at_a_moving_toward_b(GHOUL_PRIEST),
         &TurnAction::EndTurn,
     );
@@ -176,7 +177,7 @@ fn elite_hunter_enters_the_barricaded_location() {
 /// ready enemy (code `enemy_code`, 1 damage) engaged with them at A. The move
 /// A→B is the drag-along case: the engaged enemy would ride along, but B is
 /// barricaded.
-fn engaged_map_with_barricade_at_b(enemy_code: &str) -> game_core::GameState {
+fn engaged_map_with_barricade_at_b(enemy_code: &str) -> GameState {
     let mut enemy = ghoul(100, enemy_code, A);
     enemy.engaged_with = Some(INV);
     enemy.attack_damage = 1;
@@ -191,7 +192,7 @@ fn engaged_map_with_barricade_at_b(enemy_code: &str) -> game_core::GameState {
 /// attack of opportunity)."
 #[test]
 fn engaged_non_elite_enemy_disengages_and_stays_behind_at_a_barricade() {
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         engaged_map_with_barricade_at_b(GHOUL_MINION),
         &TurnAction::Move {
             investigator: INV,
@@ -218,7 +219,7 @@ fn engaged_non_elite_enemy_disengages_and_stays_behind_at_a_barricade() {
 /// parenthetical), which in turn precedes the investigator's move.
 #[test]
 fn the_attack_of_opportunity_resolves_before_the_disengage() {
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         engaged_map_with_barricade_at_b(GHOUL_MINION),
         &TurnAction::Move {
             investigator: INV,
@@ -237,7 +238,7 @@ fn the_attack_of_opportunity_resolves_before_the_disengage() {
 /// Barricade names non-Elite only, so an Elite enemy is dragged along as before.
 #[test]
 fn engaged_elite_enemy_is_dragged_into_the_barricaded_location() {
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         engaged_map_with_barricade_at_b(GHOUL_PRIEST),
         &TurnAction::Move {
             investigator: INV,
@@ -256,7 +257,7 @@ fn engaged_elite_enemy_is_dragged_into_the_barricaded_location() {
 fn engaged_non_elite_enemy_follows_when_the_destination_is_unbarricaded() {
     let mut state = engaged_map_with_barricade_at_b(GHOUL_MINION);
     state.locations.get_mut(&B).unwrap().attachments.clear();
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         state,
         &TurnAction::Move {
             investigator: INV,
@@ -271,11 +272,11 @@ fn engaged_non_elite_enemy_follows_when_the_destination_is_unbarricaded() {
 
 #[test]
 fn leaving_the_barricaded_location_discards_barricade() {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(A);
-    let mut a = test_location(1, "A");
+    let mut a = test_support::test_location(1, "A");
     a.connections = vec![B];
-    let mut b = test_location(2, "B");
+    let mut b = test_support::test_location(2, "B");
     b.connections = vec![A];
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -293,7 +294,7 @@ fn leaving_the_barricaded_location_discards_barricade() {
         .attachments
         .push(CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST));
 
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         state,
         &TurnAction::Move {
             investigator: INV,
@@ -324,7 +325,7 @@ fn leaving_the_barricaded_location_discards_barricade() {
 /// discarded with the investigator already at B.
 #[test]
 fn barricade_discards_before_the_departure_lands() {
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         map_leaving_barricaded_a(None),
         &TurnAction::Move {
             investigator: INV,
@@ -359,7 +360,7 @@ fn an_engaged_enemy_still_follows_the_move_that_discards_barricade() {
     enemy.engaged_with = Some(INV);
     enemy.attack_damage = 0;
     enemy.attack_horror = 0;
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         map_leaving_barricaded_a(Some(enemy)),
         &TurnAction::Move {
             investigator: INV,
@@ -402,7 +403,7 @@ fn an_engaged_enemy_still_disengages_on_the_move_that_discards_barricade() {
             CardInstanceId(901),
         ));
 
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         state,
         &TurnAction::Move {
             investigator: INV,
@@ -432,15 +433,15 @@ fn an_engaged_enemy_still_disengages_on_the_move_that_discards_barricade() {
 /// Linear map A—B with a Barricade attached at **A**, the investigator there,
 /// and `enemy` optionally on the board. The move A→B is the one that fires the
 /// card's own forced self-discard.
-fn map_leaving_barricaded_a(enemy: Option<Enemy>) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn map_leaving_barricaded_a(enemy: Option<Enemy>) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     // A real investigator code, so max_health()/max_sanity() read from the
     // installed cards registry (see `map_with_barricade_at_b`).
     inv.investigator_card.code = CardCode::new("01003");
     inv.current_location = Some(A);
-    let mut a = test_location(1, "A");
+    let mut a = test_support::test_location(1, "A");
     a.connections = vec![B];
-    let mut b = test_location(2, "B");
+    let mut b = test_support::test_location(2, "B");
     b.connections = vec![A];
     let mut builder = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -483,16 +484,16 @@ const INV2: InvestigatorId = InvestigatorId(2);
 /// An investigator at `at` with a real card code, so `max_health()` /
 /// `max_sanity()` read from the installed registry (see
 /// `map_with_barricade_at_b`).
-fn inv_at(id: u32, at: LocationId) -> game_core::state::Investigator {
-    let mut inv = test_investigator(id);
+fn inv_at(id: u32, at: LocationId) -> Investigator {
+    let mut inv = test_support::test_investigator(id);
     inv.investigator_card.code = CardCode::new("01003");
     inv.current_location = Some(at);
     inv
 }
 
 /// A location with the given id, name and connections.
-fn linked(id: u32, name: &str, connections: &[LocationId]) -> game_core::state::Location {
-    let mut loc = test_location(id, name);
+fn linked(id: u32, name: &str, connections: &[LocationId]) -> Location {
+    let mut loc = test_support::test_location(id, name);
     loc.connections = connections.to_vec();
     loc
 }
@@ -509,19 +510,19 @@ fn hunter_at(at: LocationId) -> Enemy {
 /// staging the mid-Investigation invariants the `EndTurn` cascade expects, and
 /// attaching a Barricade at each of `barricaded`.
 fn board(
-    locations: Vec<game_core::state::Location>,
-    investigators: Vec<game_core::state::Investigator>,
+    locations: Vec<Location>,
+    investigators: Vec<Investigator>,
     hunter: Enemy,
     barricaded: &[LocationId],
-) -> game_core::GameState {
+) -> GameState {
     let turn_order: Vec<InvestigatorId> = investigators.iter().map(|i| i.id).collect();
     let mut builder = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_enemy(hunter)
         .with_active_investigator(turn_order[0])
         .with_turn_order(turn_order.clone())
-        .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
-            resume: game_core::state::InvestigationResume::TurnBegins,
+        .with_phase_anchor(Continuation::InvestigationPhase {
+            resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(turn_order[0]);
     for loc in locations {
@@ -547,12 +548,9 @@ fn board(
 
 /// Run `EndTurn` once per investigator in turn order, which cascades the
 /// Investigation phase into the Enemy phase and its step-3.2 hunter movement.
-fn end_the_investigation_phase(
-    mut state: game_core::GameState,
-    turns: usize,
-) -> game_core::GameState {
+fn end_the_investigation_phase(mut state: GameState, turns: usize) -> GameState {
     for _ in 0..turns {
-        state = take_turn_action(state, &TurnAction::EndTurn).state;
+        state = test_support::take_turn_action(state, &TurnAction::EndTurn).state;
     }
     state
 }
@@ -562,7 +560,7 @@ fn end_the_investigation_phase(
 /// synthetic board: Hub(1) — Blocked(2, barricaded), and Hub — Mid(3) — Far(4).
 /// Investigator 1 is at Blocked, one connection away; investigator 2 is at
 /// Far, two connections away past an unblocked route.
-fn hallway_attic_cellar() -> game_core::GameState {
+fn hallway_attic_cellar() -> GameState {
     board(
         vec![
             linked(1, "Hub", &[LocationId(2), LocationId(3)]),

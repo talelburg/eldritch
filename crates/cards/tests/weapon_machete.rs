@@ -14,19 +14,17 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use game_core::engine::EngineOutcome;
-use game_core::engine::TurnAction;
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId,
-    InvestigatorId, LocationId, Phase, TokenModifiers,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    EnemyId, GameState, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{
-    apply_no_commits, dispatch_turn_action_unchecked, take_turn_action, test_enemy,
-    test_investigator, test_location, GameStateBuilder, TestSession,
-};
-use game_core::{assert_event, Action, InputResponse, OptionId, PlayerAction};
+use game_core::test_support::{self, GameStateBuilder, TestSession};
+use game_core::{assert_event, card_registry};
 
 const MACHETE: &str = "01020";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -35,13 +33,13 @@ const MACHETE_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Board with Machete in play, `enemy_count` enemies engaged with the actor.
 ///
 /// `combat 4 vs fight 3` with a `Numeric(0)` bag → always succeeds.
-fn board(enemy_count: u32) -> game_core::GameState {
+fn board(enemy_count: u32) -> GameState {
     board_with(enemy_count, 0)
 }
 
@@ -49,13 +47,13 @@ fn board(enemy_count: u32) -> game_core::GameState {
 /// `unengaged` enemies merely *co-located* with them (the scope #451 widened
 /// a Fight to). Engaged enemies take ids `100+n`, unengaged `200+n`, so
 /// the `BTreeMap`-ascending `OptionId` order is engaged-first.
-fn board_with(engaged: u32, unengaged: u32) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board_with(engaged: u32, unengaged: u32) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     inv.skills.combat = 4;
     let machete = CardInPlay::enter_play(CardCode::new(MACHETE), MACHETE_INST);
     inv.cards_in_play.push(machete);
 
-    let location = test_location(10, "Study");
+    let location = test_support::test_location(10, "Study");
 
     let mut builder = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -68,7 +66,7 @@ fn board_with(engaged: u32, unengaged: u32) -> game_core::GameState {
         .with_token_modifiers(TokenModifiers::default());
 
     for n in 0..engaged {
-        let mut enemy = test_enemy(100 + n, "Ghoul");
+        let mut enemy = test_support::test_enemy(100 + n, "Ghoul");
         enemy.fight = 3;
         enemy.max_health = 3;
         enemy.engaged_with = Some(INV);
@@ -76,7 +74,7 @@ fn board_with(engaged: u32, unengaged: u32) -> game_core::GameState {
         builder = builder.with_enemy(enemy);
     }
     for n in 0..unengaged {
-        let mut enemy = test_enemy(200 + n, "Aloof Ghoul");
+        let mut enemy = test_support::test_enemy(200 + n, "Aloof Ghoul");
         enemy.fight = 3;
         enemy.max_health = 3;
         enemy.engaged_with = None;
@@ -87,7 +85,7 @@ fn board_with(engaged: u32, unengaged: u32) -> game_core::GameState {
     builder.build()
 }
 
-fn activate_machete(state: game_core::GameState) -> game_core::engine::ApplyResult {
+fn activate_machete(state: GameState) -> ApplyResult {
     TestSession::new(state)
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
@@ -119,7 +117,7 @@ fn two_enemies_engaged_suspends_for_pick_then_attacks_chosen() {
     let state = board(2);
 
     // Step 1: activate → should suspend for enemy target pick (NOT rejected).
-    let r1 = take_turn_action(
+    let r1 = test_support::take_turn_action(
         state,
         &TurnAction::ActivateAbility {
             investigator: INV,
@@ -135,7 +133,7 @@ fn two_enemies_engaged_suspends_for_pick_then_attacks_chosen() {
 
     // Step 2: pick enemy 100 (OptionId(0) — enemies in BTreeMap ascending order).
     // Then drain the commit window (no commits) to Done.
-    let r2 = apply_no_commits(
+    let r2 = test_support::apply_no_commits(
         r1.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -170,8 +168,8 @@ fn two_enemies_engaged_suspends_for_pick_then_attacks_chosen() {
 
 /// Activate Machete on a board with 2+ candidates: suspend for the target pick,
 /// answer it with `option`, then drain the commit window to the open-turn menu.
-fn activate_and_pick(state: game_core::GameState, option: u32) -> game_core::engine::ApplyResult {
-    let r1 = take_turn_action(
+fn activate_and_pick(state: GameState, option: u32) -> ApplyResult {
+    let r1 = test_support::take_turn_action(
         state,
         &TurnAction::ActivateAbility {
             investigator: INV,
@@ -184,7 +182,7 @@ fn activate_and_pick(state: game_core::GameState, option: u32) -> game_core::eng
         "expected AwaitingInput for target pick; got {:?}",
         r1.outcome
     );
-    apply_no_commits(
+    test_support::apply_no_commits(
         r1.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(option)),
@@ -267,7 +265,7 @@ fn enemy_engaged_with_another_investigator_gets_no_bonus() {
     let mut state = board_with(1, 1);
     // Seat a second investigator at the same location and engage enemy 200
     // with them. The actor remains engaged with enemy 100 only.
-    let mut other = test_investigator(2);
+    let mut other = test_support::test_investigator(2);
     other.current_location = Some(LOC);
     state.investigators.insert(OTHER, other);
     state.enemies.get_mut(&EnemyId(200)).unwrap().engaged_with = Some(OTHER);
@@ -301,7 +299,7 @@ fn enemy_engaged_with_another_investigator_gets_no_bonus() {
 fn no_co_located_enemy_activation_is_rejected_precost() {
     let state = board(0);
     let actions_before = state.investigators[&INV].actions_remaining;
-    let r = dispatch_turn_action_unchecked(
+    let r = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::ActivateAbility {
             investigator: INV,

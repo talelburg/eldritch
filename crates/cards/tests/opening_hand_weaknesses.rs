@@ -46,13 +46,13 @@
 //! none of them can legally occupy, and the purest instance of the impersonation
 //! ADR 0016 forbids.
 
-use game_core::action::RosterEntry;
-use game_core::engine::{apply, EngineOutcome};
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::card_registry;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::seat_and_open;
 use game_core::state::{CardCode, GameState, InvestigatorId, Phase};
-use game_core::test_support::{test_investigator, GameStateBuilder};
-use game_core::{Action, InputResponse, PlayerAction};
+use game_core::test_support::{self, GameStateBuilder};
 
 /// Cover Up — the real Core Set weakness this file sets aside.
 const COVER_UP: &str = "01007";
@@ -70,7 +70,7 @@ fn filler(n: u8) -> CardCode {
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -87,8 +87,8 @@ fn board() -> GameState {
 }
 
 /// Apply a "keep my whole hand" mulligan response (empty `PickMultiple`).
-fn keep_hand(state: GameState) -> game_core::engine::ApplyResult {
-    apply(
+fn keep_hand(state: GameState) -> ApplyResult {
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -125,7 +125,7 @@ fn opening_hand_weakness_set_aside_and_returned_to_deck() {
     }];
 
     // seat_and_open → initial draw + weakness set-aside, then mulligan prompt.
-    let r1 = seat_and_open(board(), &roster);
+    let r1 = engine::seat_and_open(board(), &roster);
     assert!(
         matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt, got {:?}",
@@ -209,7 +209,7 @@ fn opening_hand_weakness_set_aside_and_returned_to_deck() {
 /// `shuffle_player_deck` no-ops below two cards.
 #[test]
 fn mulligan_redraw_weakness_is_set_aside() {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     // Real investigator code so max_health()/max_sanity() read from the
     // installed registry.
     inv.investigator_card.code = CardCode::new(ROLAND);
@@ -235,11 +235,11 @@ fn mulligan_redraw_weakness_is_set_aside() {
     //   → deck empty, break.
     // MulliganPerformed{redrawn_count:1}.
     // Drain: setaside[weakness] → deck, shuffle.
-    let r = apply(
+    let r = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple {
-                selected: vec![game_core::engine::OptionId(0)],
+                selected: vec![OptionId(0)],
             },
         }),
     );
@@ -307,7 +307,7 @@ fn non_weakness_deck_produces_no_weakness_events() {
         deck,
     }];
 
-    let r1 = seat_and_open(board(), &roster);
+    let r1 = engine::seat_and_open(board(), &roster);
     assert!(
         matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt",

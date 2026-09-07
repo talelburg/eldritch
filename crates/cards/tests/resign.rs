@@ -33,18 +33,17 @@
 //! (the steps themselves) and `game-core/tests/action_designator_aoo.rs` (the
 //! designator's attack-of-opportunity exemption, #696).
 
-use game_core::assert_event;
-use game_core::engine::{legal_actions, EngineOutcome, TurnAction};
+use cards::REGISTRY;
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, GameState,
-    InvestigationResume, InvestigatorId, LocationId, Phase, Status,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, Continuation,
+    EliminationCause, GameState, InvestigationResume, InvestigatorId, LocationId, Phase, Status,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location, GameStateBuilder,
-};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event, card_registry};
 
 /// The Parlor.
 const PARLOR_CODE: &str = "01115";
@@ -68,7 +67,7 @@ const RESIGN: u8 = 0;
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// The resigner stands at the Parlor holding 2 clues and 3 resources, with a
@@ -76,7 +75,7 @@ fn install_registry() {
 /// the scenario keeps running. `solo` drops the survivor, which is what makes
 /// Elimination step 6 reachable.
 fn board(solo: bool) -> GameState {
-    let mut resigner = test_investigator(1);
+    let mut resigner = test_support::test_investigator(1);
     resigner.investigator_card.code = CardCode::new(ROLAND);
     resigner.clues = 2;
     resigner.resources = 3;
@@ -86,7 +85,7 @@ fn board(solo: bool) -> GameState {
         CardInstanceId(1),
     )];
 
-    let mut parlor = test_location(1, "Parlor");
+    let mut parlor = test_support::test_location(1, "Parlor");
     parlor.code = CardCode::new(PARLOR_CODE);
     parlor.clues = 1;
 
@@ -103,11 +102,11 @@ fn board(solo: bool) -> GameState {
     builder = if solo {
         builder.with_turn_order([RESIGNER])
     } else {
-        let mut survivor = test_investigator(2);
+        let mut survivor = test_support::test_investigator(2);
         survivor.investigator_card.code = CardCode::new(ROLAND);
         builder
             .with_investigator_at(survivor, HALLWAY)
-            .with_location(test_location(2, "Hallway"))
+            .with_location(test_support::test_location(2, "Hallway"))
             .with_turn_order([RESIGNER, SURVIVOR])
     };
     builder.build()
@@ -121,8 +120,8 @@ fn resign_action() -> TurnAction {
     }
 }
 
-fn resign(state: GameState) -> game_core::ApplyResult {
-    let result = dispatch_turn_action_unchecked(state, &resign_action());
+fn resign(state: GameState) -> ApplyResult {
+    let result = test_support::dispatch_turn_action_unchecked(state, &resign_action());
     assert!(
         !matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "the Parlor's Resign should resolve; got {:?}",
@@ -138,9 +137,9 @@ fn resign(state: GameState) -> game_core::ApplyResult {
 fn standing_at_the_parlor_offers_the_resign_action() {
     let state = board(false);
     assert!(
-        legal_actions(&state).contains(&resign_action()),
+        enumerate::legal_actions(&state).contains(&resign_action()),
         "the Parlor's Resign belongs in the turn menu; menu was {:?}",
-        legal_actions(&state),
+        enumerate::legal_actions(&state),
     );
 }
 
@@ -223,7 +222,7 @@ fn the_resigners_cards_are_removed_from_the_game() {
 #[test]
 fn an_engaged_enemy_is_left_at_the_parlor_and_takes_no_parting_shot() {
     let mut state = board(false);
-    let mut ghoul = test_enemy(1, "Ghoul Minion");
+    let mut ghoul = test_support::test_enemy(1, "Ghoul Minion");
     ghoul.current_location = Some(PARLOR);
     ghoul.engaged_with = Some(RESIGNER);
     let ghoul_id = ghoul.id;

@@ -42,8 +42,8 @@
 
 use card_dsl::dsl::{activated_as, fight, native_condition, seq, Ability, IntExpr};
 use game_core::card_registry::NativeConditionFn;
+use game_core::engine::evaluator::EvalContext;
 use game_core::state::GameState;
-use game_core::EvalContext;
 
 /// `ArkhamDB` code for Machete (original-Core printing).
 pub const CODE: &str = "01020";
@@ -103,7 +103,10 @@ pub(crate) fn native_condition_for(tag: &str) -> Option<NativeConditionFn> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::impls;
     use card_dsl::dsl::{ActionDesignator, Effect, Trigger};
+    use game_core::state::{EnemyId, GameStateBuilder, InvestigatorId};
+    use game_core::test_support;
 
     #[test]
     fn one_costless_activated_fight_ability() {
@@ -150,7 +153,7 @@ mod tests {
         assert!(native_condition_for(SOLE_ENGAGED_TAG).is_some());
         assert!(native_condition_for("nope").is_none());
         assert!(
-            crate::impls::native_condition_for(SOLE_ENGAGED_TAG).is_some(),
+            impls::native_condition_for(SOLE_ENGAGED_TAG).is_some(),
             "the crate-level dispatch must route Machete's tag here",
         );
     }
@@ -160,8 +163,6 @@ mod tests {
     /// enemy throughout; `EnemyId(2)` is a bystander.
     #[test]
     fn sole_engaged_target_is_set_equality_not_a_count() {
-        use game_core::state::{EnemyId, GameStateBuilder, InvestigatorId};
-
         const ACTOR: InvestigatorId = InvestigatorId(1);
         const OTHER: InvestigatorId = InvestigatorId(2);
         const TARGET: EnemyId = EnemyId(1);
@@ -169,10 +170,10 @@ mod tests {
         /// Board where each enemy is engaged with `engaged_with[i]`.
         fn board(engagements: &[(u32, Option<InvestigatorId>)]) -> GameState {
             let mut builder = GameStateBuilder::new()
-                .with_investigator(game_core::test_support::test_investigator(1))
-                .with_investigator(game_core::test_support::test_investigator(2));
+                .with_investigator(test_support::test_investigator(1))
+                .with_investigator(test_support::test_investigator(2));
             for (id, engaged_with) in engagements {
-                let mut enemy = game_core::test_support::test_enemy(*id, "Ghoul");
+                let mut enemy = test_support::test_enemy(*id, "Ghoul");
                 enemy.engaged_with = *engaged_with;
                 builder = builder.with_enemy(enemy);
             }

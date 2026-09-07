@@ -49,13 +49,14 @@
 //!   (<https://arkhamdb.com/card/01002>) is about which action a lose-actions
 //!   effect takes first, and no turn runs here.
 
-use game_core::action::EngineRecord;
-use game_core::card_data::CardType;
-use game_core::engine::{apply, EngineOutcome};
+use card_dsl::card_data::CardType;
+use cards::REGISTRY;
+use game_core::action::{Action, EngineRecord};
+use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::{CardCode, GameState, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{test_investigator, GameStateBuilder};
-use game_core::{assert_event_sequence, Action};
+use game_core::state::{CardCode, Continuation, GameState, InvestigatorId, LocationId, Phase};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event_sequence, card_registry};
 
 /// Flesh-Eater — *"**Spawn** - Attic."*
 const FLESH_EATER: &str = "01118";
@@ -67,7 +68,7 @@ const DAISY: &str = "01002";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// The board both tests start from: the Attic in play with one Flesh-Eater on
@@ -86,7 +87,7 @@ fn board() -> (GameState, LocationId) {
 
 /// Seat `investigator_code` as `id` at `at`, appending to the turn order.
 fn seat(state: &mut GameState, id: InvestigatorId, investigator_code: &str, at: LocationId) {
-    let mut inv = test_investigator(id.0);
+    let mut inv = test_support::test_investigator(id.0);
     inv.investigator_card.code = CardCode::new(investigator_code);
     inv.current_location = Some(at);
     state.investigators.insert(id, inv);
@@ -100,7 +101,7 @@ fn revealing_flesh_eater_spawns_at_the_attic_engaged_with_drawer() {
     seat(&mut state, inv1, ROLAND, attic);
     state.active_investigator = Some(inv1);
 
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed { investigator: inv1 }),
     );
@@ -155,7 +156,7 @@ fn revealing_flesh_eater_with_two_investigators_at_the_attic_suspends_for_lead_p
     // Second investigator co-located at the spawn location.
     seat(&mut state, InvestigatorId(2), DAISY, attic);
 
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed { investigator: inv1 }),
     );
@@ -167,7 +168,7 @@ fn revealing_flesh_eater_with_two_investigators_at_the_attic_suspends_for_lead_p
     );
     assert!(matches!(
         result.state.continuations.last(),
-        Some(game_core::state::Continuation::SpawnEngage(_))
+        Some(Continuation::SpawnEngage(_))
     ));
     let enemy = result.state.enemies.values().next().expect("enemy placed");
     assert_eq!(

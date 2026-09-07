@@ -48,9 +48,10 @@ use card_dsl::dsl::{
     Ability, Effect, EventPattern, EventTiming,
 };
 use game_core::card_registry::{EligibilityFn, NativeEffectFn};
-use game_core::event::TraumaKind;
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::{Cx, EngineOutcome};
+use game_core::event::{Event, TraumaKind};
 use game_core::state::GameState;
-use game_core::{Cx, EngineOutcome, EvalContext, Event};
 
 /// `ArkhamDB` code for Cover Up.
 pub const CODE: &str = "01007";
@@ -193,6 +194,10 @@ fn trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 mod tests {
     use super::*;
     use card_dsl::dsl::{Effect, Trigger};
+    use game_core::state::{
+        AbilitySource, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId,
+    };
+    use game_core::test_support;
 
     #[test]
     fn revelation_places_with_three_clues_plus_interrupt_and_gameend() {
@@ -237,10 +242,6 @@ mod tests {
 
     #[test]
     fn has_clues_predicate_gates_on_source_instance_clues() {
-        use game_core::state::{
-            AbilitySource, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId,
-        };
-
         // Both clue-conditional abilities carry the eligibility tag.
         let abilities = abilities();
         assert_eq!(
@@ -257,9 +258,8 @@ mod tests {
 
         // Predicate: true while the source instance holds clues, false at 0.
         let pred = native_eligibility_for("01007:has_clues").expect("registered");
-        let mut inv = game_core::test_support::test_investigator(1);
-        let mut card =
-            CardInPlay::enter_play(game_core::state::CardCode::new("01007"), CardInstanceId(0));
+        let mut inv = test_support::test_investigator(1);
+        let mut card = CardInPlay::enter_play(CardCode::new("01007"), CardInstanceId(0));
         card.clues = 3;
         inv.threat_area.push(card);
         let mut state = GameStateBuilder::new().with_investigator(inv).build();

@@ -5,20 +5,21 @@
 //! registry. End-to-end defeat->ending via a real Fight is C7b (#245).
 
 use card_dsl::dsl::EventTiming;
+use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::engine::{EngineOutcome, OptionId, OptionTarget, TurnAction};
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, EngineOutcome, InputRequest, OptionId, OptionTarget};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
-use game_core::state::{Act, CardCode, InvestigatorId, Phase};
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_investigator, GameStateBuilder,
-};
+use game_core::state::{Act, CardCode, GameState, InvestigatorId, Phase};
+use game_core::test_support::{self, GameStateBuilder};
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
-fn act3_state() -> game_core::state::GameState {
+fn act3_state() -> GameState {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new().with_turn_order([inv]).build();
     // Act 3 is current and terminal-Won (mirrors the_gathering setup()).
@@ -31,10 +32,10 @@ fn act3_state() -> game_core::state::GameState {
 
 /// Fire 01110's objective and return the prompt its reverse suspends on,
 /// together with the state carrying the suspended choice.
-fn defeat_the_ghoul_priest() -> (game_core::state::GameState, game_core::engine::InputRequest) {
+fn defeat_the_ghoul_priest() -> (GameState, InputRequest) {
     let mut state = act3_state();
     let mut events = Vec::new();
-    let out = game_core::test_support::fire_forced_on_enemy_defeat(
+    let out = test_support::fire_forced_on_enemy_defeat(
         &mut state,
         &mut events,
         CardCode("01116".into()), // the Ghoul Priest
@@ -80,7 +81,7 @@ fn defeating_ghoul_priest_offers_the_lead_both_printed_resolution_points() {
 fn each_printed_bullet_reaches_its_own_resolution() {
     for (pick, expected) in [(0u32, 1u8), (1, 2)] {
         let (state, _) = defeat_the_ghoul_priest();
-        let result = game_core::engine::apply(
+        let result = engine::apply(
             state,
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::PickSingle(OptionId(pick)),
@@ -99,7 +100,7 @@ fn each_printed_bullet_reaches_its_own_resolution() {
 fn defeating_other_enemy_does_not_advance_act_3() {
     let mut state = act3_state();
     let mut events = Vec::new();
-    let out = game_core::test_support::fire_forced_on_enemy_defeat(
+    let out = test_support::fire_forced_on_enemy_defeat(
         &mut state,
         &mut events,
         CardCode("01103".into()), // some other enemy, not the Ghoul Priest
@@ -122,7 +123,7 @@ fn defeating_other_enemy_does_not_advance_act_3() {
 #[test]
 fn advance_act_action_rejected_for_act_3_objective() {
     let inv = InvestigatorId(1);
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.clues = 5; // plenty — reject must be the objective, not affordability
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -136,8 +137,10 @@ fn advance_act_action_rejected_for_act_3_objective() {
         clue_threshold: 0,
     }];
 
-    let result =
-        dispatch_turn_action_unchecked(state, &TurnAction::AdvanceAct { investigator: inv });
+    let result = test_support::dispatch_turn_action_unchecked(
+        state,
+        &TurnAction::AdvanceAct { investigator: inv },
+    );
     assert!(
         matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "AdvanceAct must be rejected for Act 3's non-clue objective"
@@ -157,7 +160,7 @@ fn advance_act_action_rejected_for_act_3_objective() {
 #[test]
 fn advance_act_rejected_for_round_end_advance_act() {
     let inv = InvestigatorId(1);
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.clues = 9; // plenty — reject must be the objective, not affordability
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -170,8 +173,10 @@ fn advance_act_rejected_for_round_end_advance_act() {
         clue_threshold: 3,
     }];
 
-    let result =
-        dispatch_turn_action_unchecked(state, &TurnAction::AdvanceAct { investigator: inv });
+    let result = test_support::dispatch_turn_action_unchecked(
+        state,
+        &TurnAction::AdvanceAct { investigator: inv },
+    );
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert_eq!(result.state.act_index, 0, "act did not advance");
     assert_eq!(result.state.investigators[&inv].clues, 9, "no clues spent");

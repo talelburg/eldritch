@@ -18,19 +18,15 @@
 //! discard has nowhere to go until #708/#644). Prior art:
 //! `activation_cost_source.rs`.
 
-use game_core::state::AbilityAddress;
-
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use game_core::dsl::{activated, gain_resources, heal_damage, Ability, Cost, InvestigatorTarget};
-use game_core::engine::{legal_actions, EngineOutcome, TurnAction};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
+use card_dsl::dsl::{activated, gain_resources, heal_damage, Ability, Cost, InvestigatorTarget};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::EngineOutcome;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId, LocationId,
-    Phase,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId,
+    LocationId, Phase,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
-    MockRegistry, TEST_INV,
-};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry, TEST_INV};
 
 /// Synthetic **treachery** sitting in an investigator's threat area — the card
 /// type the zone actually holds (Rules Reference p.20: *"a play area in which
@@ -136,10 +132,10 @@ fn install_probe_registry() {
 /// an asset in play. Co-location is deliberate — under the control bullet it
 /// must not matter, and it is #708 that makes their threat area reachable.
 fn board() -> GameState {
-    let mut mine = test_investigator(1);
+    let mut mine = test_support::test_investigator(1);
     mine.threat_area
         .push(CardInPlay::enter_play(CardCode::new(WARD), WARD_INST));
-    let mut them = test_investigator(2);
+    let mut them = test_support::test_investigator(2);
     them.cards_in_play
         .push(CardInPlay::enter_play(CardCode::new(THEIRS), THEIRS_INST));
 
@@ -147,7 +143,7 @@ fn board() -> GameState {
         .with_phase(Phase::Investigation)
         .with_investigator_at(mine, LOC)
         .with_investigator_at(them, LOC)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_active_investigator(MINE)
         .with_turn_order([MINE, THEM])
         .with_investigator_turn(MINE)
@@ -173,13 +169,13 @@ fn an_ability_on_your_own_investigator_card_is_offered_and_activatable() {
     let action = activation(AbilitySource::InPlay(my_investigator_card(&state)), LIVE);
 
     assert!(
-        legal_actions(&state).contains(&action),
+        enumerate::legal_actions(&state).contains(&action),
         "the investigator card is a card in play under your control, so its ability \
          belongs in the turn menu; menu was {:?}",
-        legal_actions(&state),
+        enumerate::legal_actions(&state),
     );
 
-    let result = dispatch_turn_action_unchecked(state, &action);
+    let result = test_support::dispatch_turn_action_unchecked(state, &action);
     assert!(
         !matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "the activation should resolve, got {:?}",
@@ -197,12 +193,12 @@ fn an_ability_on_a_card_in_your_own_threat_area_is_offered_and_activatable() {
     let action = activation(AbilitySource::InPlay(WARD_INST), LIVE);
 
     assert!(
-        legal_actions(&state).contains(&action),
+        enumerate::legal_actions(&state).contains(&action),
         "a card in your own threat area is in play and under your control; menu was {:?}",
-        legal_actions(&state),
+        enumerate::legal_actions(&state),
     );
 
-    let result = dispatch_turn_action_unchecked(state, &action);
+    let result = test_support::dispatch_turn_action_unchecked(state, &action);
     assert!(
         !matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "the activation should resolve, got {:?}",
@@ -218,12 +214,12 @@ fn an_ability_on_another_investigators_card_is_neither_offered_nor_activatable()
     let before = state.clone();
 
     assert!(
-        !legal_actions(&state).contains(&action),
+        !enumerate::legal_actions(&state).contains(&action),
         "a card another investigator controls is out of reach; menu was {:?}",
-        legal_actions(&state),
+        enumerate::legal_actions(&state),
     );
 
-    let result = dispatch_turn_action_unchecked(state, &action);
+    let result = test_support::dispatch_turn_action_unchecked(state, &action);
     let EngineOutcome::Rejected { reason } = &result.outcome else {
         panic!("activating another investigator's card must reject, got {result:?}");
     };
@@ -243,7 +239,7 @@ fn an_ability_on_another_investigators_card_is_neither_offered_nor_activatable()
 #[test]
 fn an_unpayable_or_inert_ability_stays_unoffered_from_every_reachable_source() {
     let state = board();
-    let menu = legal_actions(&state);
+    let menu = enumerate::legal_actions(&state);
     for source in [
         AbilitySource::InPlay(my_investigator_card(&state)),
         AbilitySource::InPlay(WARD_INST),
@@ -268,12 +264,12 @@ fn discarding_a_threat_area_source_as_a_cost_sends_it_to_the_encounter_discard()
     let action = activation(AbilitySource::InPlay(WARD_INST), SELF_DISCARDING);
 
     assert!(
-        legal_actions(&state).contains(&action),
+        enumerate::legal_actions(&state).contains(&action),
         "menu was {:?}",
-        legal_actions(&state),
+        enumerate::legal_actions(&state),
     );
 
-    let result = dispatch_turn_action_unchecked(state, &action);
+    let result = test_support::dispatch_turn_action_unchecked(state, &action);
     assert!(
         !matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "the activation should resolve, got {:?}",
@@ -305,7 +301,7 @@ fn discarding_your_investigator_card_as_a_cost_rejects_rather_than_panicking() {
     );
     let before = state.clone();
 
-    let result = dispatch_turn_action_unchecked(state, &action);
+    let result = test_support::dispatch_turn_action_unchecked(state, &action);
     let EngineOutcome::Rejected { reason } = &result.outcome else {
         panic!("discarding the investigator card must reject, got {result:?}");
     };

@@ -5,21 +5,20 @@
 //! the "if no supplies, discard it" depletion-discard come from corpus
 //! metadata (#302). Own process → installs `cards::REGISTRY`.
 
-use game_core::dsl::HarmKind;
-use game_core::engine::EngineOutcome;
-use game_core::engine::TurnAction;
+use card_dsl::dsl::HarmKind;
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{
+    self, ApplyResult, ChoiceOption, EngineOutcome, OptionId, OptionTarget, PromptNature,
+};
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Phase, UseKind,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId,
+    LocationId, Phase, UseKind,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, take_turn_action, test_investigator, test_location,
-    GameStateBuilder,
-};
-use game_core::{
-    apply, assert_event, legal_actions, Action, InputResponse, OptionId, PlayerAction,
-};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event, card_registry};
 
 const FIRST_AID: &str = "01019";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -28,19 +27,19 @@ const KIT_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Board: First Aid in play with `supplies` supplies; the active investigator
 /// at `LOC` carrying 2 damage and 2 horror to heal from.
-fn board(supplies: u8) -> game_core::GameState {
+fn board(supplies: u8) -> GameState {
     board_with_harm(supplies, 2, 2)
 }
 
 /// [`board`] with the controller's harm dialled explicitly — an undamaged,
 /// unhorrored investigator leaves First Aid's heal with nothing to do.
-fn board_with_harm(supplies: u8, damage: u8, horror: u8) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board_with_harm(supplies: u8, damage: u8, horror: u8) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     // Harm accumulates on the investigator card after #448 cp2a.
     inv.investigator_card.accumulated_damage = damage;
     inv.investigator_card.accumulated_horror = horror;
@@ -51,14 +50,14 @@ fn board_with_harm(supplies: u8, damage: u8, horror: u8) -> game_core::GameState
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .with_investigator_turn(INV)
         .build()
 }
 
-fn supplies(state: &game_core::GameState) -> Option<u8> {
+fn supplies(state: &GameState) -> Option<u8> {
     state.investigators[&INV]
         .cards_in_play
         .iter()
@@ -66,8 +65,8 @@ fn supplies(state: &game_core::GameState) -> Option<u8> {
         .map(|c| c.uses.get(&UseKind::Supplies).copied().unwrap_or(0))
 }
 
-fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
-    take_turn_action(
+fn activate(state: GameState) -> ApplyResult {
+    test_support::take_turn_action(
         state,
         &TurnAction::ActivateAbility {
             investigator: INV,
@@ -79,18 +78,15 @@ fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
 
 /// The offered options of a prompt, or a panic naming the outcome that wasn't
 /// one. `why` says what the caller expected to be asked.
-fn offered<'a>(
-    result: &'a game_core::engine::ApplyResult,
-    why: &str,
-) -> &'a [game_core::engine::ChoiceOption] {
+fn offered<'a>(result: &'a ApplyResult, why: &str) -> &'a [ChoiceOption] {
     match &result.outcome {
         EngineOutcome::AwaitingInput { request, .. } => &request.options,
         other => panic!("{why}: {other:?}"),
     }
 }
 
-fn pick(state: game_core::GameState, branch: u32) -> game_core::engine::ApplyResult {
-    apply(
+fn pick(state: GameState, branch: u32) -> ApplyResult {
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(branch)),
@@ -184,7 +180,7 @@ fn an_undamaged_solo_investigator_cannot_activate_first_aid() {
 
     // Bypass the turn menu — which already filters this out (see the sibling
     // test) — to prove the *handler* rejects a directly-submitted activation.
-    let r = dispatch_turn_action_unchecked(
+    let r = test_support::dispatch_turn_action_unchecked(
         before,
         &TurnAction::ActivateAbility {
             investigator: INV,
@@ -221,11 +217,11 @@ fn the_turn_menu_does_not_offer_first_aid_with_nothing_to_heal() {
         address: AbilityAddress::Printed(0),
     };
     assert!(
-        legal_actions(&board_with_harm(3, 2, 2)).contains(&activation),
+        enumerate::legal_actions(&board_with_harm(3, 2, 2)).contains(&activation),
         "sanity: a damaged investigator is offered the activation",
     );
     assert!(
-        !legal_actions(&board_with_harm(3, 0, 0)).contains(&activation),
+        !enumerate::legal_actions(&board_with_harm(3, 0, 0)).contains(&activation),
         "an unharmed investigator is not offered an activation that would reject",
     );
 }
@@ -233,21 +229,21 @@ fn the_turn_menu_does_not_offer_first_aid_with_nothing_to_heal() {
 /// Board: investigator 1 (the healer, holding First Aid) and investigator 2,
 /// both at `LOC`, carrying `healer_damage` / `patient_damage` damage and no
 /// horror. Investigator 1 is the active one.
-fn two_investigators(healer_damage: u8, patient_damage: u8) -> game_core::GameState {
-    let mut healer = test_investigator(1);
+fn two_investigators(healer_damage: u8, patient_damage: u8) -> GameState {
+    let mut healer = test_support::test_investigator(1);
     healer.investigator_card.accumulated_damage = healer_damage;
     let mut kit = CardInPlay::enter_play(CardCode::new(FIRST_AID), KIT_INST);
     kit.uses.insert(UseKind::Supplies, 3);
     healer.cards_in_play.push(kit);
 
-    let mut patient = test_investigator(2);
+    let mut patient = test_support::test_investigator(2);
     patient.investigator_card.accumulated_damage = patient_damage;
 
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator_at(healer, LOC)
         .with_investigator_at(patient, LOC)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .with_investigator_turn(INV)
@@ -444,7 +440,7 @@ fn the_damage_or_horror_choice_anchors_to_the_asset_it_is_printed_on() {
     for option in options {
         assert_eq!(
             option.target,
-            Some(game_core::engine::OptionTarget::CardInstance(KIT_INST)),
+            Some(OptionTarget::CardInstance(KIT_INST)),
             "anchored to the First Aid asset the ability is printed on",
         );
     }
@@ -500,7 +496,7 @@ fn the_choice_keeps_its_anchor_while_first_aid_is_still_in_play() {
     for option in options {
         assert_eq!(
             option.target,
-            Some(game_core::engine::OptionTarget::CardInstance(KIT_INST)),
+            Some(OptionTarget::CardInstance(KIT_INST)),
             "still in play, so still anchored to the asset",
         );
     }
@@ -517,12 +513,10 @@ fn the_choice_keeps_its_anchor_while_first_aid_is_still_in_play() {
 /// the identical trade for un-anchored options).
 #[test]
 fn the_damage_or_horror_choice_is_a_decision_and_the_heal_target_is_a_selection() {
-    use game_core::engine::PromptNature;
-
     let mut state = board(3);
     // Two co-located investigators, both hurt, so the heal's target grounding is
     // a genuine multi-candidate selection rather than an auto-bind.
-    let mut other = test_investigator(2);
+    let mut other = test_support::test_investigator(2);
     other.investigator_card.accumulated_damage = 2;
     other.investigator_card.accumulated_horror = 2;
     other.investigator_card.instance_id = CardInstanceId(50);
