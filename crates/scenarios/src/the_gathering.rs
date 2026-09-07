@@ -105,24 +105,23 @@ pub const ID: &str = "the-gathering";
 /// tokens). Source: `data/campaign-guides/SOURCE.md` (campaign guide
 /// p.1, "Assemble the campaign chaos bag", Standard).
 fn standard_chaos_bag() -> ChaosBag {
-    use ChaosToken::{AutoFail, Cultist, ElderSign, Numeric, Skull, Tablet};
     ChaosBag::new([
-        Numeric(1),
-        Numeric(0),
-        Numeric(0),
-        Numeric(-1),
-        Numeric(-1),
-        Numeric(-1),
-        Numeric(-2),
-        Numeric(-2),
-        Numeric(-3),
-        Numeric(-4),
-        Skull,
-        Skull,
-        Cultist,
-        Tablet,
-        AutoFail,
-        ElderSign,
+        ChaosToken::Numeric(1),
+        ChaosToken::Numeric(0),
+        ChaosToken::Numeric(0),
+        ChaosToken::Numeric(-1),
+        ChaosToken::Numeric(-1),
+        ChaosToken::Numeric(-1),
+        ChaosToken::Numeric(-2),
+        ChaosToken::Numeric(-2),
+        ChaosToken::Numeric(-3),
+        ChaosToken::Numeric(-4),
+        ChaosToken::Skull,
+        ChaosToken::Skull,
+        ChaosToken::Cultist,
+        ChaosToken::Tablet,
+        ChaosToken::AutoFail,
+        ChaosToken::ElderSign,
     ])
 }
 
@@ -305,7 +304,6 @@ pub const MODULE: ScenarioModule = ScenarioModule {
 mod tests {
     use super::*;
     use game_core::card_data::ClueValue;
-    use game_core::state::ChaosToken;
 
     #[test]
     fn setup_reads_card_stats_from_corpus() {

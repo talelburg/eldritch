@@ -6,17 +6,17 @@
 //! `Done`-idle strand). Skipping reaches the open turn; picking the option plays
 //! the asset.
 
-use game_core::action::RosterEntry;
-use game_core::engine::{apply, seat_and_open, EngineOutcome};
+use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
 use game_core::state::{CardCode, ChaosToken, GameState, InvestigatorId, Phase};
-use game_core::test_support::take_turn_action;
-use game_core::{Action, InputKind, InputResponse, OptionId, PlayerAction, TurnAction};
-use scenarios::{the_gathering, REGISTRY};
+use game_core::{card_registry, scenario_registry, test_support};
+use scenarios::the_gathering;
 
 #[ctor::ctor(unsafe)]
 fn install_registries() {
-    let _ = game_core::scenario_registry::install(REGISTRY);
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = scenario_registry::install(scenarios::REGISTRY);
+    let _ = card_registry::install(cards::REGISTRY);
 }
 
 /// Drive to the post-Mythos-draw fast window: Roland holds Magnifying Glass,
@@ -27,8 +27,8 @@ fn to_fast_window() -> (GameState, EngineOutcome) {
         investigator: CardCode("01001".into()),
         deck: vec![],
     }];
-    let mut state = seat_and_open(the_gathering::setup(), &roster).state;
-    state = apply(
+    let mut state = engine::seat_and_open(the_gathering::setup(), &roster).state;
+    state = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -45,15 +45,15 @@ fn to_fast_window() -> (GameState, EngineOutcome) {
         .hand
         .push(CardCode("01030".into()));
 
-    let state = take_turn_action(state, &TurnAction::EndTurn).state;
-    let state = apply(
+    let state = test_support::take_turn_action(state, &TurnAction::EndTurn).state;
+    let state = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Confirm,
         }),
     )
     .state;
-    let r = apply(
+    let r = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -84,7 +84,7 @@ fn parked_fast_window_prompts_instead_of_stranding() {
 #[test]
 fn skipping_the_fast_window_reaches_the_open_turn() {
     let (state, _) = to_fast_window();
-    let r = apply(
+    let r = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Skip,
@@ -100,7 +100,7 @@ fn skipping_the_fast_window_reaches_the_open_turn() {
 fn playing_the_fast_card_puts_magnifying_glass_in_play() {
     let (state, _) = to_fast_window();
     // Option 0 is the only eligible fast play (Magnifying Glass).
-    let r = apply(
+    let r = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),

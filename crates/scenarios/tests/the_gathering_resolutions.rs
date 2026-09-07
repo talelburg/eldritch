@@ -8,15 +8,18 @@
 //! (a controlled chaos bag, a minimal roster deck, seeded health/act state)
 //! are called out at their use sites.
 
-use game_core::action::RosterEntry;
-use game_core::engine::{apply, seat_and_open, EngineOutcome};
+use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{
+    self, ApplyResult, EngineOutcome, OptionId, OptionTarget, PromptNature, TimingEvent,
+};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EliminationCause, GameState, InvestigatorId, Status,
+    AdvanceDeck, AdvanceStep, CardCode, ChaosBag, ChaosToken, Continuation, EliminationCause,
+    EnemyId, GameState, InvestigatorId, Status, TimingMode,
 };
-use game_core::test_support::take_turn_action;
-use game_core::{assert_event, Action, InputResponse, PlayerAction, TurnAction};
+use game_core::{assert_event, card_registry, scenario_registry, test_support};
 
 const ROLAND: &str = "01001";
 /// The Parlor, which enters play only via act 2 (01109)'s reverse.
@@ -25,8 +28,8 @@ const INV: InvestigatorId = InvestigatorId(1);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::scenario_registry::install(scenarios::REGISTRY);
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = scenario_registry::install(scenarios::REGISTRY);
+    let _ = card_registry::install(cards::REGISTRY);
 }
 
 /// The Gathering set up + solo Roland seated and past the mulligan, ready
@@ -48,13 +51,13 @@ fn seated_roland() -> GameState {
     // seat_and_open opens the mulligan prompt (AwaitingInput); each
     // investigator then submits a single mulligan (ResolveInput) before the
     // turn's actions begin.
-    let started = seat_and_open(state, &roster);
+    let started = engine::seat_and_open(state, &roster);
     assert!(
         matches!(started.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt, got {:?}",
         started.outcome
     );
-    let after_mulligan = apply(
+    let after_mulligan = engine::apply(
         started.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -87,9 +90,6 @@ fn solo_roland_is_seated_in_the_study_ready_to_act() {
 /// players proceed "regardless of the outcome".
 #[test]
 fn enemy_attack_defeats_roland_and_latches_no_resolution() {
-    use game_core::state::EnemyId;
-    use game_core::test_support::test_enemy;
-
     let mut state = seated_roland();
 
     // Seed: Roland one hit from death. After cp2a, accumulated_damage is the
@@ -105,7 +105,7 @@ fn enemy_attack_defeats_roland_and_latches_no_resolution() {
     // Seed: a Ghoul Minion engaged with Roland (the `test_enemy` fixture
     // defaults to attack_damage 1 ≥ his 1 remaining health → lethal).
     let enemy_id = EnemyId(900);
-    let mut minion = test_enemy(900, "Ghoul Minion");
+    let mut minion = test_support::test_enemy(900, "Ghoul Minion");
     minion.code = CardCode::new("01160");
     minion.current_location = Some(loc);
     minion.engaged_with = Some(INV);
@@ -113,7 +113,7 @@ fn enemy_attack_defeats_roland_and_latches_no_resolution() {
 
     // Drive: end Roland's turn → tick into the Enemy phase → the engaged
     // enemy attacks → Roland defeated → no remaining players → NoResolution.
-    let result = take_turn_action(state, &TurnAction::EndTurn);
+    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
 
     assert_event!(result.events, Event::AllInvestigatorsEliminated);
     assert_event!(result.events, Event::ScenarioResolved { .. });
@@ -130,13 +130,14 @@ fn enemy_attack_defeats_roland_and_latches_no_resolution() {
 fn advance_to_the_terminal_act(state: GameState) -> GameState {
     // --- Act 1 (real): spend clues to advance → the reverse builds the board
     // and relocates Roland to the Hallway (the act-2 contributor location).
-    let advanced = take_turn_action(state, &TurnAction::AdvanceAct { investigator: INV });
+    let advanced =
+        test_support::take_turn_action(state, &TurnAction::AdvanceAct { investigator: INV });
     assert_eq!(advanced.state.act_index, 1, "act 1 advanced to act 2");
 
     // --- Act 2 (real): end the round → the C3d round-end clue-spend window
     // opens (Roland holds 3 clues in the Hallway) → Confirm spends them →
     // act 2 advances and its reverse spawns the real Ghoul Priest (01116).
-    let round_end = take_turn_action(advanced.state, &TurnAction::EndTurn);
+    let round_end = test_support::take_turn_action(advanced.state, &TurnAction::EndTurn);
     assert!(
         matches!(round_end.outcome, EngineOutcome::AwaitingInput { .. }),
         "EndTurn should open the act-2 round-end window, got {:?}",
@@ -144,16 +145,16 @@ fn advance_to_the_terminal_act(state: GameState) -> GameState {
     );
     assert!(matches!(
         round_end.state.continuations.last(),
-        Some(game_core::state::Continuation::TimingPointWindow {
-            event: game_core::engine::TimingEvent::RoundEnded,
-            mode: game_core::state::TimingMode::Reaction,
+        Some(Continuation::TimingPointWindow {
+            event: TimingEvent::RoundEnded,
+            mode: TimingMode::Reaction,
             ..
         })
     ));
-    let after_confirm = apply(
+    let after_confirm = engine::apply(
         round_end.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     assert!(
@@ -168,7 +169,7 @@ fn advance_to_the_terminal_act(state: GameState) -> GameState {
 
     // Round 2 begins in the Mythos phase; draw the seeded Ancient Evils
     // (1 doom) to advance into Investigation, where Roland can take the Fight.
-    let mythos = apply(
+    let mythos = engine::apply(
         after_confirm.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Confirm,
@@ -248,7 +249,7 @@ fn drive_the_ghoul_priest_defeat_and_pick(pick: u32, expected: u8) {
 
     // --- Drive the defeating Fight: combat 4 + Numeric(0) ≥ fight 4 → success
     // → deal 1 → defeated → act 3 advances → its reverse reaches R1.
-    let paused = take_turn_action(
+    let paused = test_support::take_turn_action(
         state,
         &TurnAction::Fight {
             investigator: INV,
@@ -260,7 +261,7 @@ fn drive_the_ghoul_priest_defeat_and_pick(pick: u32, expected: u8) {
         "Fight should pause at the commit window, got {:?}",
         paused.outcome,
     );
-    let result = apply(
+    let result = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -293,7 +294,7 @@ fn drive_the_ghoul_priest_defeat_and_pick(pick: u32, expected: u8) {
         request
             .options
             .iter()
-            .all(|o| o.target == Some(game_core::engine::OptionTarget::Act)),
+            .all(|o| o.target == Some(OptionTarget::Act)),
         "the choice renders on the act card it is printed on (#555): {request:?}",
     );
     assert!(
@@ -301,10 +302,10 @@ fn drive_the_ghoul_priest_defeat_and_pick(pick: u32, expected: u8) {
         "nothing latches before the pick"
     );
 
-    let result = apply(
+    let result = engine::apply(
         result.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(pick)),
+            response: InputResponse::PickSingle(OptionId(pick)),
         }),
     );
     assert_event!(result.events, Event::ScenarioResolved { .. });
@@ -343,7 +344,7 @@ fn drive_the_ghoul_priest_defeat_and_pick(pick: u32, expected: u8) {
 /// Acts 1 and 2 run through `advance_to_the_terminal_act` with the flag still
 /// off: their prompts are not what the act-3 click count is about, and leaving
 /// them interactive would put the whole scenario's acknowledges in front of it.
-fn interactive_ghoul_priest_defeat() -> game_core::engine::ApplyResult {
+fn interactive_ghoul_priest_defeat() -> ApplyResult {
     let mut state = seated_roland();
     {
         // Same two seeds as the non-interactive walk, for the same reasons.
@@ -371,14 +372,14 @@ fn interactive_ghoul_priest_defeat() -> game_core::engine::ApplyResult {
         .expect("Roland seated")
         .actions_remaining = 3;
 
-    let paused = take_turn_action(
+    let paused = test_support::take_turn_action(
         state,
         &TurnAction::Fight {
             investigator: INV,
             enemy: priest_id,
         },
     );
-    let r = apply(
+    let r = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -386,7 +387,7 @@ fn interactive_ghoul_priest_defeat() -> game_core::engine::ApplyResult {
     );
     // The Fight's own result acknowledge — the skill test's, not the advance's.
     assert_eq!(prompt_of(&r), "Acknowledge the skill-test result.");
-    apply(
+    engine::apply(
         r.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Confirm,
@@ -410,9 +411,6 @@ fn interactive_ghoul_priest_defeat() -> game_core::engine::ApplyResult {
 /// on and counts what the player is asked.
 #[test]
 fn act_3_advances_in_two_clicks_and_its_choice_follows_the_second() {
-    use game_core::engine::OptionTarget;
-    use game_core::state::{AdvanceDeck, AdvanceStep, Continuation};
-
     let r = interactive_ghoul_priest_defeat();
 
     // Click 1 — the flip. The Objective fired and raised nothing of its own, so
@@ -469,14 +467,14 @@ fn act_3_advances_in_two_clicks_and_its_choice_follows_the_second() {
     );
     assert_eq!(
         request.nature,
-        game_core::engine::PromptNature::Decision,
+        PromptNature::Decision,
         "and it presents itself as a decision, so the modal is the surface (ADR 0015)",
     );
 
-    let done = apply(
+    let done = engine::apply(
         r.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     assert_eq!(
@@ -486,7 +484,7 @@ fn act_3_advances_in_two_clicks_and_its_choice_follows_the_second() {
 }
 
 /// The open prompt's text. Panics with the outcome if nothing is awaiting input.
-fn prompt_of(r: &game_core::engine::ApplyResult) -> &str {
+fn prompt_of(r: &ApplyResult) -> &str {
     match &r.outcome {
         EngineOutcome::AwaitingInput { request, .. } => &request.prompt,
         other => panic!("expected a prompt, got {other:?}"),
@@ -494,11 +492,11 @@ fn prompt_of(r: &game_core::engine::ApplyResult) -> &str {
 }
 
 /// Answer whatever single-option prompt is open with `OptionId(0)`.
-fn pick_single(state: GameState) -> game_core::engine::ApplyResult {
-    apply(
+fn pick_single(state: GameState) -> ApplyResult {
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     )
 }
@@ -523,7 +521,7 @@ fn the_terminal_agendas_ghoul_move_is_a_no_op_when_the_parlor_is_not_in_play() {
     );
     state.encounter_deck.clear();
 
-    let result = take_turn_action(state, &TurnAction::EndTurn);
+    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
 
     assert!(
         !matches!(result.outcome, EngineOutcome::Rejected { .. }),
@@ -576,7 +574,7 @@ fn dooming_out_the_terminal_agenda_advances_it_and_its_reverse_reaches_r3() {
     // No encounter draws to interfere; the ending cancels 1.4 anyway.
     state.encounter_deck.clear();
 
-    let result = take_turn_action(state, &TurnAction::EndTurn);
+    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
 
     assert_event!(result.events, Event::AgendaAdvanced { from } if *from == 2);
     assert_event!(result.events, Event::ScenarioResolved { .. });
@@ -609,7 +607,7 @@ fn dooming_out_the_terminal_agenda_at_act_2_also_reaches_r3() {
     state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
     state.encounter_deck.clear();
 
-    let result = take_turn_action(state, &TurnAction::EndTurn);
+    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
 
     assert_eq!(
         result.state.ending,
@@ -646,7 +644,7 @@ fn dooming_out_the_terminal_agenda_at_act_3_defeats_the_table_and_reaches_no_res
     state.agenda_doom = state.agenda_deck[2].doom_threshold - 1;
     state.encounter_deck.clear();
 
-    let result = take_turn_action(state, &TurnAction::EndTurn);
+    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
 
     assert_event!(result.events, Event::AgendaAdvanced { from } if *from == 2);
     assert_event!(
@@ -701,7 +699,7 @@ fn the_terminal_agendas_advance_flip_acknowledge_precedes_the_ending() {
     // Ending the round fires 01107's two Forced *fronts* first — the
     // enemy-phase-end Ghoul move and the round-end doom — each raising its own
     // #466 acknowledge before the Mythos doom tips the threshold.
-    let mut r = take_turn_action(state, &TurnAction::EndTurn);
+    let mut r = test_support::take_turn_action(state, &TurnAction::EndTurn);
     for _ in 0..2 {
         assert_eq!(
             prompt_of(&r),
@@ -721,7 +719,7 @@ fn the_terminal_agendas_advance_flip_acknowledge_precedes_the_ending() {
     assert_eq!(request.options.len(), 1, "one option: {request:?}");
     assert_eq!(
         request.options[0].target,
-        Some(game_core::engine::OptionTarget::Agenda),
+        Some(OptionTarget::Agenda),
         "it anchors to the agenda card the player is being asked to read",
     );
     assert!(r.state.ending.is_none(), "nothing latched before the flip");
@@ -771,13 +769,9 @@ fn walk_start() -> GameState {
 /// Apply `action`, recording it in `log` and asserting it was not `Rejected` so a
 /// mis-ordered step fails here (naming the action) rather than later as a
 /// confusing state mismatch.
-fn apply_logged(
-    state: GameState,
-    action: Action,
-    log: &mut Vec<Action>,
-) -> game_core::engine::ApplyResult {
+fn apply_logged(state: GameState, action: Action, log: &mut Vec<Action>) -> ApplyResult {
     log.push(action.clone());
-    let r = apply(state, action);
+    let r = engine::apply(state, action);
     assert!(
         !matches!(r.outcome, EngineOutcome::Rejected { .. }),
         "logged action {:?} was rejected: {:?}",
@@ -792,18 +786,14 @@ fn apply_logged(
 /// action, which is what a replay actually re-sends. That recording is why this
 /// re-does the enumeration rather than calling `take_turn_action`, which
 /// discards the wire action it builds.
-fn logged_turn(
-    state: GameState,
-    action: &TurnAction,
-    log: &mut Vec<Action>,
-) -> game_core::engine::ApplyResult {
-    let legal = game_core::engine::legal_actions(&state);
+fn logged_turn(state: GameState, action: &TurnAction, log: &mut Vec<Action>) -> ApplyResult {
+    let legal = enumerate::legal_actions(&state);
     let idx = legal
         .iter()
         .position(|a| a == action)
         .unwrap_or_else(|| panic!("logged_turn: {action:?} is not legal; offered: {legal:?}"));
     let wire = Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::PickSingle(game_core::engine::OptionId(
+        response: InputResponse::PickSingle(OptionId(
             u32::try_from(idx).expect("action index fits u32"),
         )),
     });
@@ -850,7 +840,7 @@ fn drive_the_walk() -> (Vec<Action>, usize, GameState) {
     state = apply_logged(
         state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
         &mut log,
     )
@@ -893,7 +883,7 @@ fn drive_the_walk() -> (Vec<Action>, usize, GameState) {
     state = apply_logged(
         ended.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(1)),
+            response: InputResponse::PickSingle(OptionId(1)),
         }),
         &mut log,
     )
@@ -927,7 +917,7 @@ fn a_real_gathering_walk_replays_identically_across_a_serialize_round_trip() {
 
     let mut state = walk_start();
     for action in &log[..split] {
-        state = apply(state, action.clone()).state;
+        state = engine::apply(state, action.clone()).state;
     }
 
     // The split is genuinely in-flight, not a settled resting point: a skill test
@@ -943,7 +933,7 @@ fn a_real_gathering_walk_replays_identically_across_a_serialize_round_trip() {
     let mut state: GameState = serde_json::from_str(&json).expect("deserialize mid-walk state");
 
     for action in &log[split..] {
-        state = apply(state, action.clone()).state;
+        state = engine::apply(state, action.clone()).state;
     }
 
     assert_eq!(

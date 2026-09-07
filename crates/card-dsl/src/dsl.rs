@@ -68,6 +68,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::card_data::{CardType, SkillKind, UseKind};
+
 // ---- triggers --------------------------------------------------
 
 /// The **bold action designator** an activated ability prints (`glossary/Ability.md`,
@@ -490,7 +492,7 @@ pub enum EventPattern {
     /// listener cards instead.
     CardRevealed {
         /// Narrow the match by card type. `None` = any reveal.
-        card_type: Option<crate::card_data::CardType>,
+        card_type: Option<CardType>,
     },
     /// An enemy spawned at a location (entered play from the
     /// encounter deck via the on-draw resolution path).
@@ -821,12 +823,12 @@ pub enum Cost {
     /// reject with a TODO. Test-side seam is
     /// `ChoiceResolver` (in `game_core::test_support`).
     DiscardCardFromHand,
-    /// Spend `count` tokens of the named [`UseKind`](crate::card_data::UseKind)
+    /// Spend `count` tokens of the named [`UseKind`]
     /// from the source asset's runtime uses-pool (".38 Special": "Spend 1
     /// ammo"). Insufficient remaining of that kind rejects the activation.
     SpendUses {
         /// Which uses-kind to spend (Ammo, Charges, …).
-        kind: crate::card_data::UseKind,
+        kind: UseKind,
         /// How many to spend.
         count: u8,
     },
@@ -1206,7 +1208,7 @@ pub enum Effect {
     /// eventually needs to ask *which card a test is on* — no Core or Dunwich
     /// card does — must accept both, not just this one.
     SkillTest {
-        skill: crate::card_data::SkillKind,
+        skill: SkillKind,
         difficulty: u8,
         /// Effect to run **on success** after the test resolves. Frozen in
         /// Fear 01164 discards itself on a successful end-of-turn willpower
@@ -1460,9 +1462,9 @@ pub enum SearchScope {
 pub struct CardFilter {
     /// Required trait (e.g. `"Tome"`). `None` = any trait.
     pub trait_: Option<String>,
-    /// Required card type (e.g. [`CardType::Asset`](crate::card_data::CardType::Asset)).
+    /// Required card type (e.g. [`CardType::Asset`]).
     /// `None` = any type.
-    pub kind: Option<crate::card_data::CardType>,
+    pub kind: Option<CardType>,
 }
 
 // ---- stats and modifier scopes --------------------------------
@@ -1610,7 +1612,7 @@ pub enum Determination {
 pub enum Restriction {
     /// The controller cannot play cards of this type (Dissonant Voices
     /// 01165 declares one per forbidden type — assets and events).
-    CannotPlay(crate::card_data::CardType),
+    CannotPlay(CardType),
     /// Performing one of `actions` costs 1 additional action. When
     /// `first_each_round` is set, only the first matching action each
     /// round is surcharged (Frozen in Fear 01164).
@@ -2587,7 +2589,7 @@ pub fn control_status(code: impl Into<String>, status: ControlStatus) -> Conditi
 /// (the one-shot Revelation treacheries) or success (Frozen in Fear 01164).
 #[must_use]
 pub fn skill_test(
-    skill: crate::card_data::SkillKind,
+    skill: SkillKind,
     difficulty: u8,
     on_success: Option<Effect>,
     on_fail: Option<Effect>,
@@ -3038,7 +3040,7 @@ mod tests {
             SearchScope::EntireDeck,
             Some(CardFilter {
                 trait_: Some("Tome".into()),
-                kind: Some(crate::card_data::CardType::Asset),
+                kind: Some(CardType::Asset),
             }),
         );
         let json = serde_json::to_string(&filtered).expect("serialize");
@@ -3050,7 +3052,6 @@ mod tests {
 
     #[test]
     fn barricade_dsl_variants_round_trip() {
-        use crate::dsl::{attach_self_to_location, restrict, Restriction};
         let attach = attach_self_to_location();
         assert_eq!(attach, Effect::AttachSelfToLocation);
         let block = restrict(Restriction::EnemyMovementBlocked);
@@ -3314,7 +3315,6 @@ mod tests {
     /// doesn't surprise later.
     #[test]
     fn card_revealed_pattern_round_trips_through_serde_json() {
-        use crate::card_data::CardType;
         let any = EventPattern::CardRevealed { card_type: None };
         let treachery = EventPattern::CardRevealed {
             card_type: Some(CardType::Treachery),
@@ -3328,7 +3328,6 @@ mod tests {
 
     #[test]
     fn card_revealed_distinct_from_enemy_defeated() {
-        use crate::card_data::CardType;
         let revealed_treachery = EventPattern::CardRevealed {
             card_type: Some(CardType::Treachery),
         };

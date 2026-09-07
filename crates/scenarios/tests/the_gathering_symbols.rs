@@ -2,34 +2,32 @@
 //! real card registry (Ghoul metadata) + the installed scenario module.
 //! Own process so the global registries can be installed once.
 
-use game_core::engine::{EngineOutcome, OptionId};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use game_core::state::{
-    Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId,
-    Phase, SkillKind, TokenResolution,
+    Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId,
+    LocationId, Phase, SkillKind, TokenResolution,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, drive_skill_test, perform_skill_test_no_commits, terminal_code,
-    test_enemy, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
-};
-use game_core::{assert_event, assert_event_count, TurnAction};
-use scenarios::REGISTRY;
+use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
+use game_core::{assert_event, assert_event_count, scenario_registry};
+use scenarios::the_gathering;
 
 #[ctor::ctor(unsafe)]
 fn install_registries() {
-    let _ = game_core::scenario_registry::install(REGISTRY);
+    let _ = scenario_registry::install(scenarios::REGISTRY);
     // The real registry plus `test_support`'s synthetic terminal card: the
     // victory-display fixtures below end their act deck in one, because a
     // terminal card reaches its resolution point by running an effect on its
     // reverse (ADR 0013) and so needs the registry to serve it.
-    game_core::test_support::install_registry_with_terminal_cards(cards::REGISTRY);
+    test_support::install_registry_with_terminal_cards(cards::REGISTRY);
 }
 
-fn gathering_state(token: ChaosToken, ghouls: u8) -> game_core::state::GameState {
+fn gathering_state(token: ChaosToken, ghouls: u8) -> GameState {
     let inv = InvestigatorId(1);
     let loc = LocationId(1);
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     // Use Skids O'Toole (01003): a real corpus code known to cards::REGISTRY
     // (installed here) with capacity data, so max_health()/max_sanity() work.
     investigator.investigator_card.code = CardCode::new("01003");
@@ -38,11 +36,13 @@ fn gathering_state(token: ChaosToken, ghouls: u8) -> game_core::state::GameState
         .with_investigator(investigator)
         .with_active_investigator(inv)
         .with_chaos_bag(ChaosBag::new([token]))
-        .with_scenario_id(ScenarioId::new(scenarios::the_gathering::ID))
+        .with_scenario_id(ScenarioId::new(the_gathering::ID))
         .build();
-    state.locations.insert(loc, test_location(1, "Study"));
+    state
+        .locations
+        .insert(loc, test_support::test_location(1, "Study"));
     for i in 0..ghouls {
-        let mut e = test_enemy(u32::from(i) + 1, "Ghoul");
+        let mut e = test_support::test_enemy(u32::from(i) + 1, "Ghoul");
         e.traits = vec!["Ghoul".to_string()]; // traits drives ghoul_count; test_enemy's name arg is display-only.
         e.current_location = Some(loc);
         state.enemies.insert(e.id, e);
@@ -50,11 +50,15 @@ fn gathering_state(token: ChaosToken, ghouls: u8) -> game_core::state::GameState
     state
 }
 
-fn perform(state: game_core::state::GameState, difficulty: i8) -> game_core::engine::ApplyResult {
+fn perform(state: GameState, difficulty: i8) -> ApplyResult {
     // perform_skill_test_no_commits drives past the card-commit window (the bare
     // helper stops there with AwaitingInput) so the symbol path resolves end-to-end.
-    let r =
-        perform_skill_test_no_commits(state, InvestigatorId(1), SkillKind::Willpower, difficulty);
+    let r = test_support::perform_skill_test_no_commits(
+        state,
+        InvestigatorId(1),
+        SkillKind::Willpower,
+        difficulty,
+    );
     assert_eq!(r.outcome, EngineOutcome::Done);
     r
 }
@@ -244,7 +248,8 @@ fn tablet_immediate_damage_suspends_on_soak_without_redrawing() {
     let mut resolver = ScriptedResolver::new();
     resolver.commit_cards(&[]); // ST.2 commit window: commit nothing.
     resolver.pick_single(OptionId(1)); // soak the 1 damage onto Guard Dog (option 1).
-    let r = drive_skill_test(state, InvestigatorId(1), SkillKind::Willpower, 0, resolver);
+    let r =
+        test_support::drive_skill_test(state, InvestigatorId(1), SkillKind::Willpower, 0, resolver);
 
     assert_eq!(r.outcome, EngineOutcome::Done);
     let inv = &r.state.investigators[&InvestigatorId(1)];
@@ -281,7 +286,7 @@ const COP_INST: CardInstanceId = CardInstanceId(7);
 /// investigator, a chaos bag holding only `[tablet]` (−2, and 1 damage while a
 /// Ghoul is at your location), and Beat Cop 01018 in play carrying
 /// `cop_damage` damage already.
-fn beat_cop_board(cop_damage: u8) -> game_core::state::GameState {
+fn beat_cop_board(cop_damage: u8) -> GameState {
     let mut state = gathering_state(ChaosToken::Tablet, 1);
     // Pushed after `build()`, so it names its own owner: a player card leaving
     // play goes to its owner's discard pile (#772).
@@ -300,9 +305,7 @@ fn beat_cop_board(cop_damage: u8) -> game_core::state::GameState {
 /// Drive a difficulty-2 Combat test on `state`, committing nothing and soaking
 /// the `[tablet]`'s ST.4 damage onto the ally (option 1 — option 0 is the
 /// investigator).
-fn drive_combat_test_soaking_onto_the_ally(
-    state: game_core::state::GameState,
-) -> game_core::engine::ApplyResult {
+fn drive_combat_test_soaking_onto_the_ally(state: GameState) -> ApplyResult {
     let mut resolver = ScriptedResolver::new();
     // Beat Cop's own [fast] ability makes both RR p.26 player windows live
     // (ST.1→ST.2 and ST.2→ST.3); pass on each.
@@ -310,7 +313,8 @@ fn drive_combat_test_soaking_onto_the_ally(
     resolver.commit_cards(&[]);
     resolver.skip();
     resolver.pick_single(OptionId(1));
-    let r = drive_skill_test(state, InvestigatorId(1), SkillKind::Combat, 2, resolver);
+    let r =
+        test_support::drive_skill_test(state, InvestigatorId(1), SkillKind::Combat, 2, resolver);
     assert_eq!(r.outcome, EngineOutcome::Done);
     r
 }
@@ -391,18 +395,18 @@ fn the_soak_suspension_between_st4_and_st5_does_not_redraw_the_token() {
 
 /// A terminal-act Gathering state with `attic` revealed/cleared or not,
 /// so a single `AdvanceAct` latches Won and triggers the victory scan.
-fn resolvable_state_with_attic(revealed: bool, clues: u8) -> game_core::state::GameState {
+fn resolvable_state_with_attic(revealed: bool, clues: u8) -> GameState {
     let inv = InvestigatorId(1);
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.clues = 1;
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(investigator)
         .with_active_investigator(inv)
         .with_turn_order([inv])
-        .with_scenario_id(ScenarioId::new(scenarios::the_gathering::ID))
+        .with_scenario_id(ScenarioId::new(the_gathering::ID))
         .build();
-    let mut attic = test_location(1, "Attic");
+    let mut attic = test_support::test_location(1, "Attic");
     attic.code = CardCode("01113".into());
     attic.revealed = revealed;
     attic.clues = clues;
@@ -410,14 +414,14 @@ fn resolvable_state_with_attic(revealed: bool, clues: u8) -> game_core::state::G
     state.act_deck = vec![Act {
         // Terminal because it is the only act; advancing it fires the reverse
         // that reaches R1, which is what triggers the victory-display scan.
-        code: terminal_code(1),
+        code: test_support::terminal_code(1),
         clue_threshold: 1,
     }];
     state
 }
 
-fn advance_to_resolution(state: game_core::state::GameState) -> game_core::engine::ApplyResult {
-    let r = dispatch_turn_action_unchecked(
+fn advance_to_resolution(state: GameState) -> ApplyResult {
+    let r = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::AdvanceAct {
             investigator: InvestigatorId(1),
@@ -464,17 +468,17 @@ fn unrevealed_or_clued_victory_location_is_not_placed() {
 #[test]
 fn two_cleared_victory_locations_both_enter_display() {
     let inv = InvestigatorId(1);
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.clues = 1;
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(investigator)
         .with_active_investigator(inv)
         .with_turn_order([inv])
-        .with_scenario_id(ScenarioId::new(scenarios::the_gathering::ID))
+        .with_scenario_id(ScenarioId::new(the_gathering::ID))
         .build();
     for (lid, code, name) in [(1u32, "01113", "Attic"), (2u32, "01114", "Cellar")] {
-        let mut loc = test_location(lid, name);
+        let mut loc = test_support::test_location(lid, name);
         loc.code = CardCode(code.into());
         loc.revealed = true;
         loc.clues = 0;
@@ -483,7 +487,7 @@ fn two_cleared_victory_locations_both_enter_display() {
     state.act_deck = vec![Act {
         // Terminal because it is the only act; advancing it fires the reverse
         // that reaches R1, which is what triggers the victory-display scan.
-        code: terminal_code(1),
+        code: test_support::terminal_code(1),
         clue_threshold: 1,
     }];
     let r = advance_to_resolution(state);

@@ -3,17 +3,17 @@
 //! `ChooseOne`, which suspends. The cascade must let it resolve before the 1.4
 //! draws — no stranded `Effect` frame / `anchor_on_child_pop` panic.
 
-use game_core::action::RosterEntry;
-use game_core::engine::{seat_and_open, ApplyResult, EngineOutcome};
-use game_core::state::{CardCode, GameState};
-use game_core::test_support::take_turn_action;
-use game_core::{apply, Action, InputKind, InputResponse, OptionId, PlayerAction, TurnAction};
-use scenarios::{the_gathering, REGISTRY};
+use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionId, OptionTarget};
+use game_core::state::{CardCode, GameState, InvestigatorId};
+use game_core::{card_registry, scenario_registry, test_support};
+use scenarios::the_gathering;
 
 #[ctor::ctor(unsafe)]
 fn install_registries() {
-    let _ = game_core::scenario_registry::install(REGISTRY);
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = scenario_registry::install(scenarios::REGISTRY);
+    let _ = card_registry::install(cards::REGISTRY);
 }
 
 /// Seat Roland, set agenda doom to threshold-1, give the lead a card (so the
@@ -24,8 +24,8 @@ fn drive_to_mythos_advance(interactive: bool) -> ApplyResult {
         investigator: CardCode("01001".into()),
         deck: vec![],
     }];
-    let mut state: GameState = seat_and_open(the_gathering::setup(), &roster).state;
-    state = apply(
+    let mut state: GameState = engine::seat_and_open(the_gathering::setup(), &roster).state;
+    state = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -43,7 +43,7 @@ fn drive_to_mythos_advance(interactive: bool) -> ApplyResult {
         .unwrap()
         .hand
         .push(CardCode("01088".into()));
-    take_turn_action(state, &TurnAction::EndTurn)
+    test_support::take_turn_action(state, &TurnAction::EndTurn)
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn mythos_agenda_advance_choose_one_resolves_without_panic() {
 
     // Resolve the choice (branch 1 = lead takes 2 horror): the agenda finalizes
     // (cursor bumps) and the cascade proceeds into the 1.4 encounter draw.
-    let r2 = apply(
+    let r2 = engine::apply(
         r.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(1)),
@@ -85,14 +85,13 @@ fn mythos_agenda_advance_choose_one_resolves_without_panic() {
     );
     assert_eq!(
         r2.state.current_encounter_drawer(),
-        Some(game_core::state::InvestigatorId(1)),
+        Some(InvestigatorId(1)),
         "the 1.4 draws run after the advance fully resolved"
     );
 }
 
 #[test]
 fn mythos_agenda_advance_acknowledge_precedes_the_choice() {
-    use game_core::engine::OptionTarget;
     // Flag on (server path): the forced agenda advance surfaces as an on-card
     // flip pick anchored to the agenda, and it precedes the ChooseOne (#558).
     let r = drive_to_mythos_advance(true);
@@ -107,7 +106,7 @@ fn mythos_agenda_advance_acknowledge_precedes_the_choice() {
         "the flip pick anchors to the agenda card"
     );
     // Click the flip → the ChooseOne becomes the live prompt.
-    let r2 = apply(
+    let r2 = engine::apply(
         r.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
