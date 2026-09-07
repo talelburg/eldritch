@@ -3,6 +3,8 @@
 //! through the real card registry. Own process so it can install the
 //! process-global registries against the real `cards` corpus.
 
+use std::collections::BTreeSet;
+
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionId, TimingEvent};
@@ -323,7 +325,7 @@ fn advancing_act_1_rebuilds_the_board() {
     assert_eq!(result.outcome, EngineOutcome::Done);
 
     // Board rebuilt: four locations in play, Study gone, set-aside empty.
-    let codes: std::collections::BTreeSet<String> = result
+    let codes: BTreeSet<String> = result
         .state
         .locations
         .values()

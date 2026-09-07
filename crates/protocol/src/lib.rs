@@ -117,7 +117,7 @@ pub struct CreateGameResponse {
 
 #[cfg(test)]
 mod id_tests {
-    use super::GameId;
+    use super::*;
 
     #[test]
     fn serializes_as_a_bare_string() {

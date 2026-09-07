@@ -3,11 +3,13 @@
 //! `Debug` text. wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
+use game_core::event::Event;
 use leptos::prelude::*;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::event_log::EventLogView;
 use web::store::{ClientState, LogBatch};
+use web_sys::{Element, HtmlElement};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -21,7 +23,7 @@ async fn renders_batches_with_headers_and_event_debug() {
     store.update(|s| {
         s.log.push(LogBatch {
             header: "Move to Cellar".into(),
-            events: vec![game_core::Event::ScenarioStarted],
+            events: vec![Event::ScenarioStarted],
         });
     });
     leptos::task::tick().await;
@@ -31,7 +33,7 @@ async fn renders_batches_with_headers_and_event_debug() {
     let panel = logs
         .item(logs.length() - 1)
         .expect("an .event-log panel")
-        .dyn_into::<web_sys::Element>()
+        .dyn_into::<Element>()
         .expect("Element");
     let text = panel.text_content().unwrap_or_default();
     assert!(text.contains("Move to Cellar"), "header rendered: {text}");
@@ -57,7 +59,7 @@ async fn log_collapses_and_expands() {
     let panel = logs
         .item(logs.length() - 1)
         .expect("an .event-log panel")
-        .dyn_into::<web_sys::Element>()
+        .dyn_into::<Element>()
         .expect("Element");
 
     let scroll = panel
@@ -74,7 +76,7 @@ async fn log_collapses_and_expands() {
         .query_selector(".log-toggle")
         .expect("query ok")
         .expect(".log-toggle present")
-        .dyn_into::<web_sys::HtmlElement>()
+        .dyn_into::<HtmlElement>()
         .expect("HtmlElement");
     toggle.click();
     leptos::task::tick().await;

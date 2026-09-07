@@ -2,16 +2,18 @@
 //! WebSocket, fold inbound frames into the store, forward outbound
 //! actions, and reconnect on close.
 
-use futures::channel::mpsc;
-use futures::{select, SinkExt, StreamExt};
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use futures::{select, SinkExt as _, StreamExt as _};
 use gloo_net::http::Request;
 use gloo_net::websocket::{futures::WebSocket, Message};
 use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
+use web_sys::Storage;
 
 use protocol::{ClientMessage, CreateGameRequest, CreateGameResponse, GameId, ServerMessage};
 
+use crate::picker::CreateTx;
 use crate::store::{reduce, ConnStatus, StoreSignal};
 use crate::url::current_ws_url;
 
@@ -22,7 +24,7 @@ const RECONNECT_MS: u32 = 1000;
 
 /// Sender used by views (the debug button, later P6.7 controls) to
 /// submit actions; cloneable, survives reconnects.
-pub type OutboundTx = mpsc::UnboundedSender<ClientMessage>;
+pub type OutboundTx = UnboundedSender<ClientMessage>;
 
 /// Start the transport: provide an `OutboundTx` and a `CreateTx` into context,
 /// then spawn the bootstrap + connect loop. Call once from `App` (wasm only).
@@ -30,14 +32,14 @@ pub fn start(store: StoreSignal) {
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let (create_tx, create_rx) = mpsc::unbounded::<CreateGameRequest>();
     provide_context(tx);
-    provide_context::<crate::picker::CreateTx>(create_tx);
+    provide_context::<CreateTx>(create_tx);
     spawn_local(run(store, rx, create_rx));
 }
 
 async fn run(
     store: StoreSignal,
-    mut rx: mpsc::UnboundedReceiver<ClientMessage>,
-    mut create_rx: mpsc::UnboundedReceiver<CreateGameRequest>,
+    mut rx: UnboundedReceiver<ClientMessage>,
+    mut create_rx: UnboundedReceiver<CreateGameRequest>,
 ) {
     let mut game_id: GameId = match bootstrap(store, &mut create_rx).await {
         Some(id) => id,
@@ -97,7 +99,7 @@ enum ConnectOutcome {
 /// and create. Returns `None` (and sets `Failed`) if creation fails.
 async fn bootstrap(
     store: StoreSignal,
-    create_rx: &mut mpsc::UnboundedReceiver<CreateGameRequest>,
+    create_rx: &mut UnboundedReceiver<CreateGameRequest>,
 ) -> Option<GameId> {
     if let Some(id) = saved_id() {
         return Some(id);
@@ -109,7 +111,7 @@ async fn bootstrap(
 /// Set status to `AwaitingRoster` and block until the picker sends a request.
 async fn await_roster(
     store: &StoreSignal,
-    create_rx: &mut mpsc::UnboundedReceiver<CreateGameRequest>,
+    create_rx: &mut UnboundedReceiver<CreateGameRequest>,
 ) -> Option<CreateGameRequest> {
     store.update(|s| s.status = ConnStatus::AwaitingRoster);
     create_rx.next().await
@@ -138,7 +140,7 @@ async fn create_game(store: StoreSignal, request: CreateGameRequest) -> Option<G
 async fn connect_once(
     store: &StoreSignal,
     game_id: &GameId,
-    rx: &mut mpsc::UnboundedReceiver<ClientMessage>,
+    rx: &mut UnboundedReceiver<ClientMessage>,
 ) -> ConnectOutcome {
     store.update(|s| s.status = ConnStatus::Connecting);
     let Ok(ws) = WebSocket::open(&current_ws_url(game_id.as_str())) else {
@@ -187,7 +189,7 @@ async fn connect_once(
     }
 }
 
-fn local_storage() -> Option<web_sys::Storage> {
+fn local_storage() -> Option<Storage> {
     web_sys::window()?.local_storage().ok().flatten()
 }
 fn saved_id() -> Option<GameId> {

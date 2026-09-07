@@ -1,10 +1,13 @@
 //! Headless render tests for the `Card` component. wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
-use futures::channel::mpsc;
+use cards::REGISTRY;
+use futures::channel::mpsc::{self, UnboundedReceiver};
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId};
-use game_core::test_support::fixtures::awaiting_pick_single_with;
-use game_core::{ChoiceOption, InputResponse, OptionId, OptionTarget, PlayerAction};
+use game_core::test_support::fixtures;
 use leptos::prelude::*;
 use protocol::ClientMessage;
 use std::collections::BTreeSet;
@@ -14,6 +17,7 @@ use web::card::{Card, HandCardView};
 use web::interaction::{MultiSelect, PendingOptions};
 use web::store::ClientState;
 use web::transport::OutboundTx;
+use web_sys::{Element, HtmlElement};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -26,13 +30,13 @@ fn last_card_html() -> String {
     cards
         .item(cards.length() - 1)
         .expect("at least one .card")
-        .dyn_ref::<web_sys::Element>()
+        .dyn_ref::<Element>()
         .expect("Element")
         .inner_html()
 }
 
 async fn mount_card(code: &str) -> String {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
     let code = CardCode::new(code);
     mount_to_body(move || view! { <Card code=code.clone()/> });
     leptos::task::tick().await;
@@ -69,7 +73,7 @@ async fn guardian_card_carries_class_modifier() {
     let last = cards
         .item(cards.length() - 1)
         .expect("at least one .card")
-        .dyn_into::<web_sys::Element>()
+        .dyn_into::<Element>()
         .expect("Element");
     assert!(
         last.class_list().contains("card--guardian"),
@@ -106,14 +110,14 @@ fn last_card_classes() -> String {
     cards
         .item(cards.length() - 1)
         .expect("at least one .card")
-        .dyn_into::<web_sys::Element>()
+        .dyn_into::<Element>()
         .expect("Element")
         .class_name()
 }
 
 #[wasm_bindgen_test]
 async fn in_play_exhausted_asset_dims_badges_and_shows_soak() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
     // Beat Cop 01018: ally asset, health 2 / sanity 2.
     let mut inst = CardInPlay::enter_play(CardCode::new("01018"), CardInstanceId(0));
     inst.exhausted = true;
@@ -139,7 +143,7 @@ async fn in_play_exhausted_asset_dims_badges_and_shows_soak() {
 
 #[wasm_bindgen_test]
 async fn treachery_renders_generic_face_with_clues() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
     // Cover Up 01007: treachery/weakness, traits "Task.", Revelation text;
     // enters the threat area with clues on the card.
     let mut inst = CardInPlay::enter_play(CardCode::new("01007"), CardInstanceId(0));
@@ -162,7 +166,7 @@ async fn treachery_renders_generic_face_with_clues() {
 
 #[wasm_bindgen_test]
 async fn in_play_ready_asset_is_not_dimmed() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
     let inst = CardInPlay::enter_play(CardCode::new("01018"), CardInstanceId(0));
     mount_to_body(move || view! { <Card code=CardCode::new("01018") in_play=inst.clone()/> });
     leptos::task::tick().await;
@@ -177,11 +181,11 @@ async fn in_play_ready_asset_is_not_dimmed() {
 }
 
 /// The last-mounted `.hand-slot`.
-fn last_slot() -> web_sys::Element {
+fn last_slot() -> Element {
     let slots = document().query_selector_all(".hand-slot").expect("query");
     slots
         .item(slots.length() - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .expect("a .hand-slot")
 }
 
@@ -189,12 +193,9 @@ fn last_slot() -> web_sys::Element {
 /// carrying `outcome`, `PendingOptions` derived from it, a `MultiSelect` whose
 /// `active` reflects the outcome, and a capturing outbound channel.
 async fn mount_hand(
-    outcome: game_core::EngineOutcome,
-) -> (
-    RwSignal<BTreeSet<u32>>,
-    mpsc::UnboundedReceiver<ClientMessage>,
-) {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    outcome: EngineOutcome,
+) -> (RwSignal<BTreeSet<u32>>, UnboundedReceiver<ClientMessage>) {
+    let _ = card_registry::install(REGISTRY);
     let store = RwSignal::new(ClientState::default());
     store.update(|s| s.outcome = Some(outcome));
     let selected = RwSignal::new(BTreeSet::<u32>::new());
@@ -217,7 +218,7 @@ async fn mount_hand(
 
 #[wasm_bindgen_test]
 async fn playable_hand_card_opens_a_play_menu_and_submits() {
-    let outcome = awaiting_pick_single_with(
+    let outcome = fixtures::awaiting_pick_single_with(
         "Choose an action",
         vec![
             ChoiceOption::new(OptionId(0), "Play Machete").at(OptionTarget::HandCard {
@@ -232,14 +233,14 @@ async fn playable_hand_card_opens_a_play_menu_and_submits() {
     assert!(slot.class_name().contains("actionable"), "slot glows");
     slot.query_selector(".menu-hit")
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a .menu-hit")
         .click();
     leptos::task::tick().await;
     let item = slot
         .query_selector(".context-menu .menu-item")
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a menu item");
     assert_eq!(item.text_content().unwrap_or_default(), "Play Machete");
     item.click();
@@ -255,17 +256,14 @@ async fn playable_hand_card_opens_a_play_menu_and_submits() {
 
 #[wasm_bindgen_test]
 async fn multi_select_active_makes_hand_card_toggle_selected() {
-    let (selected, _rx) = mount_hand(game_core::test_support::fixtures::awaiting_commit_input(
-        "Commit cards",
-    ))
-    .await;
+    let (selected, _rx) = mount_hand(fixtures::awaiting_commit_input("Commit cards")).await;
     let slot = last_slot();
     assert!(
         !slot.class_name().contains("actionable"),
         "no Play menu in select mode"
     );
     slot.clone()
-        .dyn_into::<web_sys::HtmlElement>()
+        .dyn_into::<HtmlElement>()
         .expect("HtmlElement")
         .click();
     leptos::task::tick().await;
@@ -280,7 +278,7 @@ async fn multi_select_active_makes_hand_card_toggle_selected() {
 async fn hand_card_glows_for_a_reaction_anchored_by_code() {
     // A HandCardByCode-anchored option (a Fast reaction event) glows the hand
     // card of that code (Machete 01020 as a stand-in) and opens its menu.
-    let outcome = awaiting_pick_single_with(
+    let outcome = fixtures::awaiting_pick_single_with(
         "You may play a card",
         vec![ChoiceOption::new(OptionId(0), "Play Machete from hand").at(
             OptionTarget::HandCardByCode {
@@ -297,13 +295,13 @@ async fn hand_card_glows_for_a_reaction_anchored_by_code() {
     );
     slot.query_selector(".menu-hit")
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a .menu-hit")
         .click();
     leptos::task::tick().await;
     slot.query_selector(".context-menu .menu-item")
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a menu item")
         .click();
     leptos::task::tick().await;

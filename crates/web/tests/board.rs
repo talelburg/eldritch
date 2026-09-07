@@ -23,16 +23,22 @@
 //! carry their name and stats in `GameState` rather than reading the registry.
 #![cfg(target_arch = "wasm32")]
 
-use game_core::state::GameStateBuilder;
-use game_core::state::{Act, Agenda, CardCode, Investigator};
-use game_core::test_support::fixtures::{test_investigator, test_location};
-use game_core::EngineOutcome;
+use cards::REGISTRY;
+use game_core::card_registry;
+use game_core::engine::EngineOutcome;
+use game_core::scenario::{ResolutionId, ScenarioEnding};
+use game_core::state::{
+    Act, Agenda, CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, Investigator,
+    InvestigatorId, Skills,
+};
+use game_core::test_support::fixtures;
 use leptos::prelude::{provide_context, RwSignal, Update};
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
 use web::store::{reduce, ClientState};
+use web_sys::Element;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -66,7 +72,7 @@ fn body_html() -> String {
         .inner_html()
 }
 
-/// `test_investigator(id)` carrying Roland Banks as its investigator card.
+/// `fixtures::test_investigator(id)` carrying Roland Banks as its investigator card.
 ///
 /// Every investigator this file renders needs a code the real registry knows:
 /// the panel reads `max_health()` / `max_sanity()`, and `investigator_capacity`
@@ -75,20 +81,20 @@ fn body_html() -> String {
 /// `TEST_INV` is absent from the corpus, so it is replaced here rather than at
 /// each of the six call sites.
 fn roland(id: u32) -> Investigator {
-    let mut inv = test_investigator(id);
+    let mut inv = fixtures::test_investigator(id);
     inv.investigator_card.code = CardCode::new(ROLAND);
     inv
 }
 
 /// The last mounted element matching `sel` (DOM accumulates across tests on the
 /// shared page — scope to the latest subtree).
-fn last_mounted(sel: &str) -> web_sys::Element {
+fn last_mounted(sel: &str) -> Element {
     let nodes = leptos::prelude::document()
         .query_selector_all(sel)
         .expect("query_selector_all");
     nodes
         .item(nodes.length() - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .unwrap_or_else(|| panic!("at least one {sel}"))
 }
 
@@ -97,7 +103,7 @@ fn last_mounted(sel: &str) -> web_sys::Element {
 /// Names are asserted against `text_content` rather than `inner_html` because
 /// the latter escapes — the apostrophe in "What's Going On?!" arrives as an
 /// entity, and a substring test against it would be testing the escaper.
-fn text_of(el: &web_sys::Element, sel: &str) -> String {
+fn text_of(el: &Element, sel: &str) -> String {
     el.query_selector(sel)
         .expect("query")
         .unwrap_or_else(|| panic!("expected {sel}"))
@@ -106,18 +112,18 @@ fn text_of(el: &web_sys::Element, sel: &str) -> String {
 }
 
 /// How many descendants of `el` match `sel`.
-fn count_in(el: &web_sys::Element, sel: &str) -> u32 {
+fn count_in(el: &Element, sel: &str) -> u32 {
     el.query_selector_all(sel).expect("query").length()
 }
 
 /// Mount `BoardView` against a fresh store and feed it one `Hello`
 /// carrying `state`. Ticks once so CSR effects flush, then returns the
 /// rendered body HTML.
-async fn render_state(state: game_core::state::GameState) -> String {
+async fn render_state(state: GameState) -> String {
     // The real corpus registry: the code→name/kind source, and the source of
     // the investigator capacity the panel reads (#448). Idempotent (OnceLock,
     // first-wins); `web` has no `ctor` dev-dep, so install in-test.
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
     let store = RwSignal::new(ClientState::default());
     leptos::mount::mount_to_body(move || {
         provide_context(store);
@@ -143,7 +149,7 @@ async fn render_state(state: game_core::state::GameState) -> String {
     // Every code it seeds is a real one, so the class must never appear.
     assert!(
         !html.contains("card--unknown"),
-        "a seeded code failed to resolve against cards::REGISTRY: {html}"
+        "a seeded code failed to resolve against REGISTRY: {html}"
     );
     html
 }
@@ -185,7 +191,7 @@ async fn act_agenda_cards_render_name_and_thresholds() {
 
 #[wasm_bindgen_test]
 async fn map_renders_location_name_shroud_clues() {
-    let mut loc = test_location(7, "Rivertown");
+    let mut loc = fixtures::test_location(7, "Rivertown");
     loc.shroud = 3;
     loc.clues = 2;
     let state = GameStateBuilder::new()
@@ -210,8 +216,6 @@ async fn map_renders_location_name_shroud_clues() {
 
 #[wasm_bindgen_test]
 async fn investigators_panel_renders_stats_and_hand() {
-    use game_core::state::{CardInPlay, CardInstanceId, Skills};
-
     let mut inv = roland(1);
     inv.name = "Roland Banks".to_string();
     inv.skills = Skills {
@@ -340,7 +344,6 @@ async fn empty_board_renders_placeholder_without_panels() {
 
 #[wasm_bindgen_test]
 async fn resolution_banner_names_the_resolution_point() {
-    use game_core::{ResolutionId, ScenarioEnding};
     let mut state = GameStateBuilder::new().with_investigator(roland(1)).build();
     state.ending = Some(ScenarioEnding::Resolution(ResolutionId::new(3)));
 
@@ -363,7 +366,6 @@ async fn resolution_banner_names_the_resolution_point() {
 
 #[wasm_bindgen_test]
 async fn resolution_banner_renders_no_resolution_reached() {
-    use game_core::ScenarioEnding;
     let mut state = GameStateBuilder::new().with_investigator(roland(1)).build();
     state.ending = Some(ScenarioEnding::NoResolution);
 
@@ -387,7 +389,7 @@ async fn resolution_banner_renders_no_resolution_reached() {
 async fn map_and_investigators_are_inside_board_main() {
     let state = GameStateBuilder::new()
         .with_investigator(roland(1))
-        .with_location(test_location(1, "Study"))
+        .with_location(fixtures::test_location(1, "Study"))
         .build();
     let _ = render_state(state).await;
 
@@ -413,14 +415,11 @@ async fn map_and_investigators_are_inside_board_main() {
 
 #[wasm_bindgen_test]
 async fn engaged_enemy_renders_as_card_in_threat_area() {
-    use game_core::state::InvestigatorId;
-    use game_core::test_support::fixtures::test_enemy;
-
     // `test_enemy` is a primitive builder (ADR 0016): the `Enemy` struct carries
     // its own name, traits and stats, and `EnemyCard` reads them from state —
     // the registry is consulted only for optional ability text
     // (`crates/web/src/enemy_card.rs:54-63`), and never renders `card--unknown`.
-    let mut enemy = test_enemy(1, "Ghoul Priest");
+    let mut enemy = fixtures::test_enemy(1, "Ghoul Priest");
     enemy.engaged_with = Some(InvestigatorId(1));
     let state = GameStateBuilder::new()
         .with_investigator(roland(1))
@@ -442,8 +441,6 @@ async fn engaged_enemy_renders_as_card_in_threat_area() {
 
 #[wasm_bindgen_test]
 async fn threat_area_treachery_renders_as_card() {
-    use game_core::state::{CardInPlay, CardInstanceId};
-
     let mut inv = roland(1);
     // Seeded the way its Revelation puts it into play — "with 3 clues on it" —
     // so the state matches the card rather than merely occupying the zone.

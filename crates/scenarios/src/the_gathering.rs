@@ -302,6 +302,8 @@ pub const MODULE: ScenarioModule = ScenarioModule {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
     use game_core::card_data::ClueValue;
 
@@ -449,7 +451,7 @@ mod tests {
     #[test]
     fn setup_assembles_encounter_deck_from_the_six_sets() {
         let state = setup();
-        let mut counts: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
         for code in &state.encounter_deck {
             *counts.entry(code.as_str()).or_default() += 1;
         }

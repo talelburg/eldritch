@@ -10,10 +10,11 @@
 //! `tests/board_surfaces.rs`.
 #![cfg(target_arch = "wasm32")]
 
-use futures::channel::mpsc;
+use futures::channel::mpsc::{self, UnboundedReceiver};
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::engine::{ChoiceOption, OptionId, OptionTarget};
 use game_core::state::InvestigatorId;
-use game_core::test_support::fixtures::awaiting_pick_single_with;
-use game_core::{ChoiceOption, InputResponse, OptionId, OptionTarget, PlayerAction};
+use game_core::test_support::fixtures;
 use leptos::prelude::*;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
@@ -22,6 +23,7 @@ use web::controls::AnchoredControl;
 use web::interaction::PendingOptions;
 use web::store::ClientState;
 use web::transport::OutboundTx;
+use web_sys::{Element, HtmlButtonElement, HtmlElement};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -34,9 +36,14 @@ async fn mount(
     class: &'static str,
     target: OptionTarget,
     options: Vec<ChoiceOption>,
-) -> mpsc::UnboundedReceiver<ClientMessage> {
+) -> UnboundedReceiver<ClientMessage> {
     let store = RwSignal::new(ClientState::default());
-    store.update(|s| s.outcome = Some(awaiting_pick_single_with("Choose an action", options)));
+    store.update(|s| {
+        s.outcome = Some(fixtures::awaiting_pick_single_with(
+            "Choose an action",
+            options,
+        ));
+    });
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
     let label = label.to_string();
@@ -55,25 +62,25 @@ async fn mount(
 
 /// The control in the LAST-mounted wrapper — scoped so DOM accumulation across
 /// tests on the one page can't let an earlier mount answer for a later one.
-fn control(class: &str) -> web_sys::HtmlElement {
+fn control(class: &str) -> HtmlElement {
     let roots = document().query_selector_all(".pc-root").expect("query");
     roots
         .item(roots.length() - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .expect("a .pc-root")
         .query_selector(&format!(".{class}"))
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("the control renders")
 }
 
-fn is_disabled(el: &web_sys::HtmlElement) -> bool {
-    el.dyn_ref::<web_sys::HtmlButtonElement>()
+fn is_disabled(el: &HtmlElement) -> bool {
+    el.dyn_ref::<HtmlButtonElement>()
         .expect("a button")
         .disabled()
 }
 
-fn submitted(rx: &mut mpsc::UnboundedReceiver<ClientMessage>) -> InputResponse {
+fn submitted(rx: &mut UnboundedReceiver<ClientMessage>) -> InputResponse {
     match rx.try_recv().expect("a frame was sent after tick") {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },

@@ -5,10 +5,14 @@
 //! Confirm, and cannot be dismissed by anything else. wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
-use futures::channel::mpsc;
-use game_core::state::{ChaosToken, GameStateBuilder, InvestigatorId, SkillKind, TokenResolution};
-use game_core::test_support::fixtures::test_investigator;
-use game_core::{EngineOutcome, Event, InputResponse, PlayerAction};
+use futures::channel::mpsc::{self, UnboundedReceiver};
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::engine::EngineOutcome;
+use game_core::event::{Event, FailureReason};
+use game_core::state::{
+    ChaosToken, GameState, GameStateBuilder, InvestigatorId, SkillKind, TokenResolution,
+};
+use game_core::test_support::fixtures;
 use leptos::prelude::*;
 use protocol::{ClientMessage, ServerMessage};
 use wasm_bindgen::JsCast as _;
@@ -16,12 +20,13 @@ use wasm_bindgen_test::*;
 use web::skill_test_result::SkillTestResultView;
 use web::store::{reduce, ClientState};
 use web::transport::OutboundTx;
+use web_sys::{Element, HtmlElement, PointerEvent, PointerEventInit};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn base_game() -> game_core::state::GameState {
+fn base_game() -> GameState {
     GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
+        .with_investigator(fixtures::test_investigator(1))
         .with_active_investigator(InvestigatorId(1))
         .build()
 }
@@ -30,10 +35,10 @@ fn base_game() -> game_core::state::GameState {
 /// (ADR 0011). The modal only renders while this is live, which is what
 /// guarantees its Confirm always has real engine input to submit.
 fn acknowledge_pause() -> EngineOutcome {
-    game_core::test_support::fixtures::awaiting_confirm_input("Acknowledge the skill-test result.")
+    fixtures::awaiting_confirm_input("Acknowledge the skill-test result.")
 }
 
-fn last_section() -> Option<web_sys::Element> {
+fn last_section() -> Option<Element> {
     let secs = document()
         .query_selector_all(".skill-test-result")
         .expect("query");
@@ -44,7 +49,7 @@ fn last_section() -> Option<web_sys::Element> {
     Some(
         secs.item(n - 1)
             .expect("present")
-            .dyn_into::<web_sys::Element>()
+            .dyn_into::<Element>()
             .expect("Element"),
     )
 }
@@ -133,9 +138,7 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
                     token: ChaosToken::Tablet,
                     resolution: TokenResolution::Modifier(-2),
                 }],
-                outcome: game_core::test_support::fixtures::awaiting_confirm_input(
-                    "Assign the damage.",
-                ),
+                outcome: fixtures::awaiting_confirm_input("Assign the damage."),
             },
         );
         // Batch 3: the resumed test resolves. No reveal in this batch.
@@ -146,7 +149,7 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
                 events: vec![Event::SkillTestFailed {
                     investigator: InvestigatorId(1),
                     skill: SkillKind::Willpower,
-                    reason: game_core::FailureReason::Total,
+                    reason: FailureReason::Total,
                     by: 2,
                 }],
                 outcome: acknowledge_pause(),
@@ -195,10 +198,7 @@ async fn renders_nothing_before_any_resolution() {
 }
 
 /// Mount the modal with a fresh store and a capturing outbound channel.
-fn mount_modal() -> (
-    RwSignal<ClientState>,
-    mpsc::UnboundedReceiver<ClientMessage>,
-) {
+fn mount_modal() -> (RwSignal<ClientState>, UnboundedReceiver<ClientMessage>) {
     let store = RwSignal::new(ClientState::default());
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
@@ -256,7 +256,7 @@ async fn its_confirm_submits_the_acknowledge() {
         .expect("the modal renders")
         .query_selector(".str-confirm")
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("the modal carries its own Confirm")
         .click();
     leptos::task::tick().await;
@@ -279,7 +279,7 @@ async fn the_backdrop_does_not_dismiss_it() {
         .query_selector_all(".str-backdrop")
         .expect("query")
         .item(0)
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a scrim renders behind the modal")
         .click();
     leptos::task::tick().await;
@@ -296,24 +296,24 @@ async fn the_backdrop_does_not_dismiss_it() {
 /// the events are dispatched straight at the modal, and the capture call the
 /// handler makes on a synthetic pointer id is allowed to fail. What is under
 /// test is this module's response to the gesture, not the browser's plumbing.
-fn pointer_at(el: &web_sys::Element, kind: &str, x: i32, y: i32) {
-    let init = web_sys::PointerEventInit::new();
+fn pointer_at(el: &Element, kind: &str, x: i32, y: i32) {
+    let init = PointerEventInit::new();
     init.set_bubbles(true);
     init.set_client_x(x);
     init.set_client_y(y);
-    let ev = web_sys::PointerEvent::new_with_event_init_dict(kind, &init)
-        .expect("construct a pointer event");
+    let ev =
+        PointerEvent::new_with_event_init_dict(kind, &init).expect("construct a pointer event");
     el.dispatch_event(&ev).expect("dispatch");
 }
 
 /// Drag `el` from `(from_x, from_y)` to `(to_x, to_y)`.
-fn drag(el: &web_sys::Element, from: (i32, i32), to: (i32, i32)) {
+fn drag(el: &Element, from: (i32, i32), to: (i32, i32)) {
     pointer_at(el, "pointerdown", from.0, from.1);
     pointer_at(el, "pointermove", to.0, to.1);
     pointer_at(el, "pointerup", to.0, to.1);
 }
 
-fn style_of(el: &web_sys::Element) -> String {
+fn style_of(el: &Element) -> String {
     el.get_attribute("style").unwrap_or_default()
 }
 
@@ -337,7 +337,7 @@ async fn its_confirm_still_submits_after_the_modal_has_been_dragged() {
     section
         .query_selector(".str-confirm")
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("the modal carries its own Confirm")
         .click();
     leptos::task::tick().await;
@@ -362,7 +362,7 @@ async fn the_scrim_fades_once_the_modal_has_been_moved() {
         .expect("query");
     let scrim = scrims
         .item(scrims.length() - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .expect("a scrim renders behind the modal");
 
     assert!(

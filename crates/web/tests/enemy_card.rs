@@ -1,10 +1,11 @@
 //! Headless render tests for the `EnemyCard` component. wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
-use futures::channel::mpsc;
-use game_core::state::EnemyId;
-use game_core::test_support::fixtures::{awaiting_pick_single_with, test_enemy};
-use game_core::{ChoiceOption, InputResponse, OptionId, OptionTarget, PlayerAction};
+use futures::channel::mpsc::{self, UnboundedReceiver};
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
+use game_core::state::{Enemy, EnemyId};
+use game_core::test_support::fixtures;
 use leptos::prelude::*;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
@@ -13,23 +14,24 @@ use web::enemy_card::EnemyCard;
 use web::interaction::{pending_options, PendingOptions};
 use web::store::ClientState;
 use web::transport::OutboundTx;
+use web_sys::{Element, HtmlElement};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn last_card() -> web_sys::Element {
+fn last_card() -> Element {
     let cards = document()
         .query_selector_all(".card")
         .expect("query_selector_all");
     cards
         .item(cards.length() - 1)
         .expect("at least one .card")
-        .dyn_into::<web_sys::Element>()
+        .dyn_into::<Element>()
         .expect("Element")
 }
 
 #[wasm_bindgen_test]
 async fn engaged_enemy_renders_stats_keywords_exhausted() {
-    let mut e = test_enemy(1, "Ghoul Priest");
+    let mut e = fixtures::test_enemy(1, "Ghoul Priest");
     e.fight = 4;
     e.evade = 4;
     e.max_health = 2;
@@ -69,7 +71,7 @@ async fn engaged_enemy_renders_stats_keywords_exhausted() {
 
 #[wasm_bindgen_test]
 async fn ready_enemy_is_not_dimmed() {
-    let e = test_enemy(2, "Swarm of Rats");
+    let e = fixtures::test_enemy(2, "Swarm of Rats");
     mount_to_body(move || view! { <EnemyCard enemy=e.clone()/> });
     leptos::task::tick().await;
     assert!(
@@ -82,10 +84,7 @@ async fn ready_enemy_is_not_dimmed() {
 /// outbound channel, set the store's `outcome` directly (`pending_options` reads
 /// `outcome`, not `game`, so no `GameState` is needed), and return the
 /// submitted-frame receiver.
-async fn mount_enemy(
-    enemy: game_core::state::Enemy,
-    outcome: game_core::EngineOutcome,
-) -> mpsc::UnboundedReceiver<ClientMessage> {
+async fn mount_enemy(enemy: Enemy, outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
     let store = RwSignal::new(ClientState::default());
     // Set the prompt before mount: EnemyCard reads `pending` once at setup (in the
     // app it is re-created inside BoardView's reactive scope on each store change),
@@ -106,8 +105,8 @@ async fn mount_enemy(
 
 #[wasm_bindgen_test]
 async fn actionable_enemy_glows_opens_menu_and_submits() {
-    let e = test_enemy(7, "Ghoul");
-    let outcome = awaiting_pick_single_with(
+    let e = fixtures::test_enemy(7, "Ghoul");
+    let outcome = fixtures::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Fight").at(OptionTarget::Enemy(EnemyId(7)))],
     );
@@ -118,7 +117,7 @@ async fn actionable_enemy_glows_opens_menu_and_submits() {
 
     card.query_selector(".menu-hit")
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a .menu-hit layer")
         .click();
     leptos::task::tick().await;
@@ -126,7 +125,7 @@ async fn actionable_enemy_glows_opens_menu_and_submits() {
     let item = card
         .query_selector(".context-menu .menu-item")
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a menu item");
     assert_eq!(item.text_content().unwrap_or_default(), "Fight");
     item.click();
@@ -143,9 +142,9 @@ async fn actionable_enemy_glows_opens_menu_and_submits() {
 
 #[wasm_bindgen_test]
 async fn enemy_without_a_matching_option_is_inert() {
-    let e = test_enemy(7, "Ghoul");
+    let e = fixtures::test_enemy(7, "Ghoul");
     // Option anchors to a different enemy → this card stays inert.
-    let outcome = awaiting_pick_single_with(
+    let outcome = fixtures::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Fight").at(OptionTarget::Enemy(EnemyId(8)))],
     );

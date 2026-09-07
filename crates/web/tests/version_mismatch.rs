@@ -3,12 +3,16 @@
 //! line in the header. wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
+use game_core::test_support::fixtures;
 use leptos::prelude::*;
+use std::collections::BTreeSet;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::app::Overlays;
+use web::interaction::{ConfirmAnchor, MultiSelect, PendingOptions};
 use web::store::{ClientState, ConnStatus};
 use web::version_mismatch::VersionMismatchView;
+use web_sys::HtmlElement;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -17,11 +21,11 @@ wasm_bindgen_test_configure!(run_in_browser);
 /// browser session, so a document-wide query would see the *other* test's
 /// overlay; scoping every assertion to this test's container is what lets
 /// "renders nothing" be asserted at all.
-fn mount() -> (RwSignal<ClientState>, web_sys::HtmlElement) {
+fn mount() -> (RwSignal<ClientState>, HtmlElement) {
     let container = document()
         .create_element("div")
         .expect("create_element")
-        .dyn_into::<web_sys::HtmlElement>()
+        .dyn_into::<HtmlElement>()
         .expect("HtmlElement");
     document()
         .body()
@@ -119,7 +123,7 @@ async fn the_real_overlay_set_declares_the_mismatch_card_last() {
     let container = document()
         .create_element("div")
         .expect("create_element")
-        .dyn_into::<web_sys::HtmlElement>()
+        .dyn_into::<HtmlElement>()
         .expect("HtmlElement");
     document()
         .body()
@@ -130,12 +134,12 @@ async fn the_real_overlay_set_declares_the_mismatch_card_last() {
     mount_to(container.clone(), move || {
         provide_context(store);
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));
-        provide_context(web::interaction::PendingOptions(pending));
+        provide_context(PendingOptions(pending));
         let anchor = Signal::derive(move || store.with(web::interaction::confirm_anchor));
-        provide_context(web::interaction::ConfirmAnchor(anchor));
-        let selected = RwSignal::new(std::collections::BTreeSet::<u32>::new());
+        provide_context(ConfirmAnchor(anchor));
+        let selected = RwSignal::new(BTreeSet::<u32>::new());
         let active = Signal::derive(move || store.with(web::interaction::is_multi_select));
-        provide_context(web::interaction::MultiSelect { active, selected });
+        provide_context(MultiSelect { active, selected });
         leptos::view! { <Overlays/> }
     })
     .forget();
@@ -145,9 +149,7 @@ async fn the_real_overlay_set_declares_the_mismatch_card_last() {
     // against.
     store.update(|s| {
         s.status = ConnStatus::VersionMismatch;
-        s.outcome = Some(game_core::test_support::fixtures::awaiting_confirm_input(
-            "Continue",
-        ));
+        s.outcome = Some(fixtures::awaiting_confirm_input("Continue"));
     });
     leptos::task::tick().await;
 

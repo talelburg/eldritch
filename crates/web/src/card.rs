@@ -4,8 +4,11 @@
 //! handlers) — interactivity is a later slice.
 
 use game_core::card_data::{CardKind, Class, SkillIcons, Slot};
-use game_core::state::{CardCode, CardInPlay, UseKind};
+use game_core::engine::OptionTarget;
+use game_core::state::{CardCode, CardInPlay, InvestigatorId, UseKind};
 use leptos::prelude::*;
+
+use crate::interaction::{self, MultiSelect, PendingOptions};
 
 /// A parsed run of card text. `Symbol`/`Unknown` carry the bare token without
 /// brackets; the renderer re-adds brackets for `Unknown` so unmapped tokens are
@@ -442,13 +445,9 @@ pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> im
 /// "Play …" [`menu_layer`](crate::interaction::menu_layer) via the card's
 /// `HandCard` anchor. The two modes are mutually exclusive.
 #[component]
-pub fn HandCardView(
-    code: CardCode,
-    investigator: game_core::state::InvestigatorId,
-    index: u8,
-) -> impl IntoView {
+pub fn HandCardView(code: CardCode, investigator: InvestigatorId, index: u8) -> impl IntoView {
     let idx = u32::from(index);
-    if let Some(ms) = use_context::<crate::interaction::MultiSelect>() {
+    if let Some(ms) = use_context::<MultiSelect>() {
         if ms.active.get() {
             let selected = ms.selected;
             return view! {
@@ -467,10 +466,10 @@ pub fn HandCardView(
             .into_any();
         }
     }
-    let pending = use_context::<crate::interaction::PendingOptions>()
+    let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
-    let menu_opts = crate::interaction::options_for_hand_card(&pending, investigator, index, &code);
+    let menu_opts = interaction::options_for_hand_card(&pending, investigator, index, &code);
     let actionable = !menu_opts.is_empty();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
@@ -480,7 +479,7 @@ pub fn HandCardView(
             {
                 // wasm-only Play trigger + menu (web_sys / OutboundTx).
                 #[cfg(target_arch = "wasm32")]
-                actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
+                actionable.then(|| interaction::menu_layer(menu_opts, open))
             }
         </div>
     }
@@ -496,13 +495,10 @@ pub fn HandCardView(
 pub fn InPlayCardView(instance: CardInPlay) -> impl IntoView {
     let code = instance.code.clone();
     let instance_id = instance.instance_id;
-    let pending = use_context::<crate::interaction::PendingOptions>()
+    let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
-    let menu_opts = crate::interaction::options_for(
-        &pending,
-        game_core::OptionTarget::CardInstance(instance_id),
-    );
+    let menu_opts = interaction::options_for(&pending, OptionTarget::CardInstance(instance_id));
     let actionable = !menu_opts.is_empty();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
@@ -512,7 +508,7 @@ pub fn InPlayCardView(instance: CardInPlay) -> impl IntoView {
             {
                 // wasm-only Activate/Trigger trigger + menu (web_sys / OutboundTx).
                 #[cfg(target_arch = "wasm32")]
-                actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
+                actionable.then(|| interaction::menu_layer(menu_opts, open))
             }
         </div>
     }
@@ -543,7 +539,7 @@ pub(crate) fn render_segments(segments: Vec<TextSegment>) -> Vec<AnyView> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use game_core::card_data::{CardKind, Class, SkillIcons, Slot};
+    use game_core::state::{CardInPlay as TestCardInPlay, CardInstanceId};
 
     #[test]
     fn cost_label_handles_value_and_x() {
@@ -706,8 +702,6 @@ mod tests {
             vec![TextSegment::Text("a [b".into())]
         );
     }
-
-    use game_core::state::{CardInPlay as TestCardInPlay, CardInstanceId};
 
     #[test]
     fn live_state_chips_includes_clues_on_card() {

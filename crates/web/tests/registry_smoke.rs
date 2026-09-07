@@ -6,8 +6,10 @@
 //! own `OnceLock`, so the two registries do not collide.
 #![cfg(target_arch = "wasm32")]
 
+use cards::REGISTRY;
+use game_core::card_registry;
 use game_core::state::CardCode;
-use game_core::test_support::fixtures::test_investigator;
+use game_core::test_support::fixtures;
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -18,9 +20,9 @@ wasm_bindgen_test_configure!(run_in_browser);
 ///   Roland Banks (01001): health = 9, sanity = 5.
 #[wasm_bindgen_test]
 fn roland_banks_capacity_resolves_with_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 
-    let mut inv = test_investigator(1);
+    let mut inv = fixtures::test_investigator(1);
     inv.investigator_card.code = CardCode::new("01001");
 
     assert_eq!(inv.max_health(), 9, "Roland Banks health should be 9");

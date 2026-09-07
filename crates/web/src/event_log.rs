@@ -1,8 +1,10 @@
 //! Event-log panel (#505): a read-only, accumulating view of the game's events,
 //! left of the board, newest at the bottom, grouped per submitted action.
 
-use crate::store::use_store;
+use leptos::html::Div;
 use leptos::prelude::*;
+
+use crate::store::use_store;
 
 /// Read-only event log, left of the board. Renders every accumulated `LogBatch`
 /// oldest-first (newest at the bottom); a header line per batch then one Debug
@@ -11,7 +13,7 @@ use leptos::prelude::*;
 pub fn EventLogView() -> impl IntoView {
     let store = use_store();
     let collapsed = RwSignal::new(false);
-    let scroll_ref = NodeRef::<leptos::html::Div>::new();
+    let scroll_ref = NodeRef::<Div>::new();
 
     // Keep the panel pinned to the newest line. Re-runs whenever a batch is
     // appended; the scroll is deferred to the next animation frame so it reads

@@ -2,6 +2,7 @@
 //! printed names, falling back to the raw code/id when unavailable. UI display
 //! only — never used for engine input.
 
+use game_core::card_registry;
 use game_core::state::{CardCode, GameState, LocationId};
 
 /// Printed card name for `code`, or the raw code when the name is unavailable —
@@ -9,7 +10,7 @@ use game_core::state::{CardCode, GameState, LocationId};
 /// (e.g. a headless/native render path). The registry is installed by the web
 /// binary at startup (`main.rs`).
 pub fn card_name(code: &CardCode) -> String {
-    game_core::card_registry::current()
+    card_registry::current()
         .and_then(|r| (r.metadata_for)(code))
         .map_or_else(|| code.to_string(), |m| m.name.clone())
 }
@@ -24,15 +25,16 @@ pub fn location_name(game: &GameState, id: LocationId) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cards::REGISTRY;
     use game_core::state::GameStateBuilder;
-    use game_core::test_support::fixtures::test_location;
+    use game_core::test_support::fixtures;
 
     #[test]
     fn card_name_returns_printed_name_with_registry() {
         // The web crate depends on `cards`; installing its registry is idempotent
         // (OnceLock, first-wins) and safe in the web lib test binary, which has no
         // competing installer.
-        let _ = game_core::card_registry::install(cards::REGISTRY);
+        let _ = card_registry::install(REGISTRY);
         assert_eq!(card_name(&CardCode::new("01030")), "Magnifying Glass");
     }
 
@@ -45,7 +47,7 @@ mod tests {
     #[test]
     fn location_name_returns_state_name_then_falls_back() {
         let state = GameStateBuilder::new()
-            .with_location(test_location(10, "Study"))
+            .with_location(fixtures::test_location(10, "Study"))
             .build();
         assert_eq!(location_name(&state, LocationId(10)), "Study");
         assert_eq!(location_name(&state, LocationId(99)), "loc 99");

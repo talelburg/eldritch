@@ -10,8 +10,7 @@ use common::{install_registry, memory_pool, TEST_SCENARIO_ID};
 use game_core::test_support::TEST_INV;
 use serde_json::Value;
 use server::session::GameSession;
-use server::AppState;
-use server::GameId;
+use server::{AppState, GameId};
 use tower::ServiceExt as _;
 
 #[tokio::test]

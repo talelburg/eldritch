@@ -6,9 +6,8 @@ use axum::Json;
 use game_core::scenario::ScenarioId;
 use protocol::{CreateGameRequest, CreateGameResponse};
 
-use crate::id;
 use crate::session::{GameSession, SessionError};
-use crate::AppState;
+use crate::{id, AppState};
 
 /// `POST /games`: set up a new game from a scenario and return its id.
 ///

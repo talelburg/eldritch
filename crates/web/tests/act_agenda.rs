@@ -3,10 +3,15 @@
 //! `act_agenda_view` directly (no investigator panel → no `TEST_INV` lookup).
 #![cfg(target_arch = "wasm32")]
 
-use futures::channel::mpsc;
-use game_core::state::{Act, Agenda, CardCode, GameStateBuilder};
-use game_core::test_support::fixtures::awaiting_pick_single_with;
-use game_core::{ChoiceOption, InputResponse, OptionId, OptionTarget, PlayerAction};
+use cards::REGISTRY;
+use futures::channel::mpsc::{self, UnboundedReceiver};
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
+use game_core::state::{
+    Act, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, CardCode, Continuation, GameStateBuilder,
+};
+use game_core::test_support::fixtures;
 use leptos::prelude::*;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
@@ -14,6 +19,7 @@ use wasm_bindgen_test::*;
 use web::interaction::PendingOptions;
 use web::store::ClientState;
 use web::transport::OutboundTx;
+use web_sys::{Element, HtmlElement};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -23,14 +29,14 @@ fn section_text() -> String {
         .expect("query ok");
     nodes
         .item(nodes.length() - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .and_then(|el| el.text_content())
         .unwrap_or_default()
 }
 
 #[wasm_bindgen_test]
 async fn act_and_agenda_render_name_text_and_thresholds() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
     // Act 01109 "The Barrier" (Objective text); Agenda 01107 "They're Getting
     // Out!" (Forced text).
     let mut state = GameStateBuilder::new().build();
@@ -66,20 +72,18 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
 
 /// The last-mounted `.card--act` — `mount_to_body` accumulates DOM across tests in
 /// this binary, so scope to the newest card (the `last_slot`/`last_root` precedent).
-fn act_card() -> web_sys::Element {
+fn act_card() -> Element {
     let cards = document().query_selector_all(".card--act").expect("query");
     cards
         .item(cards.length() - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .expect("a .card--act")
 }
 
 /// Mount `act_agenda_view` (act 01109) with a store carrying `outcome`, a derived
 /// `PendingOptions`, an `OutboundTx`, and a capturing channel.
-async fn mount_with_prompt(
-    outcome: game_core::EngineOutcome,
-) -> mpsc::UnboundedReceiver<ClientMessage> {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+async fn mount_with_prompt(outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
+    let _ = card_registry::install(REGISTRY);
     let mut state = GameStateBuilder::new().build();
     state.act_deck = vec![Act {
         code: CardCode::new("01109"),
@@ -107,7 +111,7 @@ async fn mount_with_prompt(
 
 #[wasm_bindgen_test]
 async fn act_card_glows_and_advances_via_menu() {
-    let outcome = awaiting_pick_single_with(
+    let outcome = fixtures::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Advance act").at(OptionTarget::Act)],
     );
@@ -116,14 +120,14 @@ async fn act_card_glows_and_advances_via_menu() {
     assert!(card.class_name().contains("actionable"), "act card glows");
     card.query_selector(".menu-hit")
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a .menu-hit")
         .click();
     leptos::task::tick().await;
     let item = card
         .query_selector(".context-menu .menu-item")
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a menu item");
     assert_eq!(item.text_content().unwrap_or_default(), "Advance act");
     item.click();
@@ -140,7 +144,7 @@ async fn act_card_glows_and_advances_via_menu() {
 #[wasm_bindgen_test]
 async fn act_card_inert_without_an_act_anchored_option() {
     // Option anchors Global (not Act) → the act card stays inert.
-    let outcome = awaiting_pick_single_with(
+    let outcome = fixtures::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "End turn")],
     );
@@ -150,20 +154,20 @@ async fn act_card_inert_without_an_act_anchored_option() {
 
 /// The last-mounted `.card--agenda` — `mount_to_body` accumulates DOM across tests
 /// in this binary, so scope to the newest card (the `act_card` precedent).
-fn agenda_card() -> web_sys::Element {
+fn agenda_card() -> Element {
     let cards = document()
         .query_selector_all(".card--agenda")
         .expect("query");
     cards
         .item(cards.length() - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .expect("a .card--agenda")
 }
 
 #[wasm_bindgen_test]
 async fn agenda_card_glows_and_resolves_via_menu() {
     // An agenda-sourced forced effect anchors its "Resolve" to the agenda card (#556).
-    let outcome = awaiting_pick_single_with(
+    let outcome = fixtures::awaiting_pick_single_with(
         "Forced — They're Getting Out!",
         vec![ChoiceOption::new(OptionId(0), "Resolve").at(OptionTarget::Agenda)],
     );
@@ -175,14 +179,14 @@ async fn agenda_card_glows_and_resolves_via_menu() {
     );
     card.query_selector(".menu-hit")
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a .menu-hit")
         .click();
     leptos::task::tick().await;
     let item = card
         .query_selector(".context-menu .menu-item")
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a menu item");
     assert_eq!(item.text_content().unwrap_or_default(), "Resolve");
     item.click();
@@ -199,7 +203,7 @@ async fn agenda_card_glows_and_resolves_via_menu() {
 #[wasm_bindgen_test]
 async fn agenda_card_inert_without_an_agenda_anchored_option() {
     // Option anchors Global (not Agenda) → the agenda card stays inert.
-    let outcome = awaiting_pick_single_with(
+    let outcome = fixtures::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "End turn")],
     );
@@ -209,13 +213,8 @@ async fn agenda_card_inert_without_an_agenda_anchored_option() {
 
 /// Mount `act_agenda_view` with the given deck's leaving card mid-advance at
 /// `step`. Pushes an `AdvanceReverse` frame as the engine would (#558).
-async fn mount_advancing(
-    deck: game_core::state::AdvanceDeck,
-    code: &str,
-    step: game_core::state::AdvanceStep,
-) {
-    use game_core::state::{AdvanceDeck, AdvanceTrigger, Continuation};
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+async fn mount_advancing(deck: AdvanceDeck, code: &str, step: AdvanceStep) {
+    let _ = card_registry::install(REGISTRY);
     let mut state = GameStateBuilder::new().build();
     match deck {
         AdvanceDeck::Agenda => {
@@ -246,7 +245,6 @@ async fn mount_advancing(
 
 #[wasm_bindgen_test]
 async fn agenda_shows_reverse_face_while_advancing() {
-    use game_core::state::{AdvanceDeck, AdvanceStep};
     // Once the advance has passed its acknowledge, the agenda flips to its reverse
     // (name + on-advance text) and tags `card--reverse`. `Finalize` is the step the
     // client actually observes — `drive` sets it before firing the reverse, so the
@@ -277,7 +275,6 @@ async fn agenda_shows_reverse_face_while_advancing() {
 
 #[wasm_bindgen_test]
 async fn agenda_shows_front_face_before_the_flip() {
-    use game_core::state::{AdvanceDeck, AdvanceStep};
     // Before the flip is clicked (step AwaitAck), the front face is still shown, the
     // card is not tagged reverse, and the doom track is present.
     mount_advancing(AdvanceDeck::Agenda, "01105", AdvanceStep::AwaitAck).await;
@@ -302,7 +299,6 @@ async fn agenda_shows_front_face_before_the_flip() {
 
 #[wasm_bindgen_test]
 async fn act_shows_reverse_face_while_advancing() {
-    use game_core::state::{AdvanceDeck, AdvanceStep};
     // The act side flips too: act 01109 "The Barrier" → reverse "Breaking the
     // Barrier" (back_text reveals the Parlor).
     mount_advancing(AdvanceDeck::Act, "01109", AdvanceStep::Finalize).await;

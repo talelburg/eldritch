@@ -2,7 +2,7 @@
 //! submits a `CreateGameRequest` on the `CreateTx` channel; the transport
 //! creates the game (#459).
 
-use futures::channel::mpsc;
+use futures::channel::mpsc::UnboundedSender;
 use game_core::action::RosterEntry;
 use game_core::state::CardCode;
 use leptos::prelude::*;
@@ -12,7 +12,7 @@ use crate::store::{use_store, ConnStatus};
 
 /// Channel the picker uses to hand a chosen `CreateGameRequest` to the
 /// transport's creation loop. Provided into context by `transport::start`.
-pub type CreateTx = mpsc::UnboundedSender<CreateGameRequest>;
+pub type CreateTx = UnboundedSender<CreateGameRequest>;
 
 /// Placeholder default deck for Roland (01001) until Phase 9 decklist import.
 /// Implemented Guardian/Seeker/neutral cards only, so the opening hand is

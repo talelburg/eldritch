@@ -17,7 +17,8 @@
 
 use std::collections::BTreeSet;
 
-use game_core::{ChoiceOption, EngineOutcome, InputKind, InputResponse, OptionId, OptionTarget};
+use game_core::action::InputResponse;
+use game_core::engine::{ChoiceOption, EngineOutcome, InputKind, OptionId, OptionTarget};
 use leptos::prelude::*;
 
 use crate::interaction::MultiSelect;

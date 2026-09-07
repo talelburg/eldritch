@@ -6,10 +6,12 @@
 //! fake `0/N`. Both cards glow + open a context menu when the live prompt anchors
 //! an option to them (`OptionTarget::Act`/`Agenda`); inert otherwise.
 
-use game_core::state::{Act, AdvanceDeck, Agenda, CardCode, GameState};
+use game_core::engine::OptionTarget;
+use game_core::state::{Act, AdvanceDeck, AdvanceStep, Agenda, CardCode, Continuation, GameState};
 use leptos::prelude::*;
 
 use crate::card::{parse_card_text, render_segments};
+use crate::interaction::{self, PendingOptions};
 
 /// Which face of an act/agenda to show. During an advance the card flips from its
 /// front to its reverse (the "1b" side that carries the on-advance effect) once
@@ -27,7 +29,6 @@ pub enum Face {
 /// passed its acknowledge (`step` ≥ `FireReverse`), else `Front`. `Front` when the
 /// deck isn't advancing (#558).
 pub(crate) fn deck_face(game: &GameState, deck: AdvanceDeck) -> Face {
-    use game_core::state::{AdvanceStep, Continuation};
     for c in &game.continuations {
         if let Continuation::AdvanceReverse { deck: d, step, .. } = c {
             if *d == deck {
@@ -81,10 +82,10 @@ fn name_and_text(code: &CardCode, face: Face) -> (String, Option<Vec<AnyView>>) 
 pub fn ActCard(act: Act, face: Face) -> impl IntoView {
     let (name, text) = name_and_text(&act.code, face);
     let threshold = act.clue_threshold;
-    let pending = use_context::<crate::interaction::PendingOptions>()
+    let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
-    let menu_opts = crate::interaction::options_for(&pending, game_core::OptionTarget::Act);
+    let menu_opts = interaction::options_for(&pending, OptionTarget::Act);
     let actionable = !menu_opts.is_empty();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
@@ -117,7 +118,7 @@ pub fn ActCard(act: Act, face: Face) -> impl IntoView {
                 // wasm-only trigger + menu; host build: empty, `menu_opts` consumed
                 // above by `actionable` (no unused-var warning).
                 #[cfg(target_arch = "wasm32")]
-                actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
+                actionable.then(|| interaction::menu_layer(menu_opts, open))
             }
         </article>
     }
@@ -134,10 +135,10 @@ pub fn ActCard(act: Act, face: Face) -> impl IntoView {
 pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
     let (name, text) = name_and_text(&agenda.code, face);
     let threshold = agenda.doom_threshold;
-    let pending = use_context::<crate::interaction::PendingOptions>()
+    let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
-    let menu_opts = crate::interaction::options_for(&pending, game_core::OptionTarget::Agenda);
+    let menu_opts = interaction::options_for(&pending, OptionTarget::Agenda);
     let actionable = !menu_opts.is_empty();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
@@ -170,7 +171,7 @@ pub fn AgendaCard(agenda: Agenda, doom: u8, face: Face) -> impl IntoView {
                 // wasm-only trigger + menu; host build: empty, `menu_opts` consumed
                 // above by `actionable` (no unused-var warning).
                 #[cfg(target_arch = "wasm32")]
-                actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
+                actionable.then(|| interaction::menu_layer(menu_opts, open))
             }
         </article>
     }

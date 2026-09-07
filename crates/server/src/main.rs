@@ -7,7 +7,8 @@ use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
-use server::{db, AppState};
+use server::db::{self, MIGRATOR};
+use server::AppState;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -20,7 +21,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let database_url =
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:eldritch.db".to_string());
     let pool = db::connect_pool(&database_url).await?;
-    db::MIGRATOR.run(&pool).await?;
+    MIGRATOR.run(&pool).await?;
     tracing::info!("database ready at {database_url}");
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8000));

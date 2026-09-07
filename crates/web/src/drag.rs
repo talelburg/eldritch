@@ -52,6 +52,8 @@
 //! wasm-only.
 
 use leptos::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use web_sys::{Element, PointerEvent};
 
 /// A drag in flight: where the pointer went down, and the offset it started
 /// from. Both are needed because a second drag resumes from where the first
@@ -201,12 +203,12 @@ impl Drag {
 
     /// Begin a drag, unless the press landed on a button.
     #[cfg(target_arch = "wasm32")]
-    pub fn down(self, ev: &web_sys::PointerEvent) {
+    pub fn down(self, ev: &PointerEvent) {
         use wasm_bindgen::JsCast as _;
 
         let on_control = ev
             .target()
-            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+            .and_then(|t| t.dyn_into::<Element>().ok())
             .is_some_and(|el| el.closest("button").ok().flatten().is_some());
         let pointer = (f64::from(ev.client_x()), f64::from(ev.client_y()));
         let Some(gesture) = gesture_from(on_control, pointer, self.offset.get_untracked()) else {
@@ -216,7 +218,7 @@ impl Drag {
         // drag that outruns the cursor doesn't drop the modal mid-gesture.
         if let Some(el) = ev
             .current_target()
-            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+            .and_then(|t| t.dyn_into::<Element>().ok())
         {
             let _ = el.set_pointer_capture(ev.pointer_id());
         }
@@ -225,7 +227,7 @@ impl Drag {
 
     /// Track the pointer while a gesture is in flight.
     #[cfg(target_arch = "wasm32")]
-    pub fn movement(self, ev: &web_sys::PointerEvent) {
+    pub fn movement(self, ev: &PointerEvent) {
         let Some(gesture) = self.gesture.get_untracked() else {
             return;
         };
@@ -235,7 +237,7 @@ impl Drag {
 
     /// End the gesture. The offset stays: the modal keeps where it was put.
     #[cfg(target_arch = "wasm32")]
-    pub fn up(self, _ev: &web_sys::PointerEvent) {
+    pub fn up(self, _ev: &PointerEvent) {
         self.gesture.set(None);
     }
 
