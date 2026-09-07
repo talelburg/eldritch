@@ -49,19 +49,17 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use game_core::action::EngineRecord;
-use game_core::assert_event;
-use game_core::card_registry;
+use cards::REGISTRY;
+use game_core::action::{Action, EngineRecord};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{ApplyResult, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, InvestigatorId, LocationId, Phase, Zone,
+    GameState, InvestigatorId, LocationId, Phase, SkillKind, Zone,
 };
-use game_core::test_support::{
-    drive, take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
-    ScriptedResolver, TestSession,
-};
-use game_core::{legal_actions, Action, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, ScriptedResolver, TestSession};
+use game_core::{assert_event, card_registry};
 
 /// Lita Chantler — the `Ally` the Parlor grants to.
 const LITA: &str = "01117";
@@ -84,7 +82,7 @@ const COP_INST: CardInstanceId = CardInstanceId(51);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// The address the Parley lands at: the Parlor's ability 1 (its grant), first
@@ -110,13 +108,13 @@ fn parley() -> TurnAction {
 /// nobody's control, and a Hallway to stand in instead. `token` is the only
 /// chaos token in the bag, so the test's outcome is fixed.
 fn board(token: ChaosToken) -> GameState {
-    let mut parlor = test_location(1, "Parlor");
+    let mut parlor = test_support::test_location(1, "Parlor");
     parlor.code = CardCode::new(PARLOR);
     parlor.revealed = true;
-    let mut hallway = test_location(2, "Hallway");
+    let mut hallway = test_support::test_location(2, "Hallway");
     hallway.code = CardCode::new("01112");
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.investigator_card.code = CardCode::new(DAISY);
     inv.skills.intellect = 5;
 
@@ -141,7 +139,7 @@ fn board(token: ChaosToken) -> GameState {
 
 /// Drive the Parley to resolution: the activation opens a commit window
 /// (nothing to commit), then the test resolves.
-fn drive_parley(state: GameState) -> game_core::engine::ApplyResult {
+fn drive_parley(state: GameState) -> ApplyResult {
     let mut session = TestSession::new(state).take(&parley());
     session = session.resolve_choices(|c: &mut ScriptedResolver| {
         c.commit_cards(&[]);
@@ -159,9 +157,9 @@ fn drive_parley(state: GameState) -> game_core::engine::ApplyResult {
 fn an_investigator_in_the_parlor_is_offered_litas_parley() {
     let state = board(ChaosToken::Numeric(0));
     assert!(
-        legal_actions(&state).contains(&parley()),
+        enumerate::legal_actions(&state).contains(&parley()),
         "the Parley is offered on Lita, got {:?}",
-        legal_actions(&state),
+        enumerate::legal_actions(&state),
     );
 }
 
@@ -176,9 +174,9 @@ fn an_investigator_elsewhere_is_not_offered_the_parley() {
         .expect("investigator present")
         .current_location = Some(HALLWAY_ID);
     assert!(
-        !legal_actions(&state).contains(&parley()),
+        !enumerate::legal_actions(&state).contains(&parley()),
         "the Parley is out of reach from the Hallway, got {:?}",
-        legal_actions(&state),
+        enumerate::legal_actions(&state),
     );
 }
 
@@ -189,9 +187,9 @@ fn an_investigator_elsewhere_is_not_offered_the_parley() {
 fn the_parley_is_no_longer_offered_once_she_is_controlled() {
     let result = drive_parley(board(ChaosToken::Numeric(0)));
     assert!(
-        !legal_actions(&result.state).contains(&parley()),
+        !enumerate::legal_actions(&result.state).contains(&parley()),
         "the grant lapses the instant a player controls her, got {:?}",
-        legal_actions(&result.state),
+        enumerate::legal_actions(&result.state),
     );
 }
 
@@ -208,7 +206,7 @@ fn a_successful_parley_takes_control_of_lita() {
     assert_event!(
         result.events,
         Event::SkillTestSucceeded {
-            skill: game_core::state::SkillKind::Intellect,
+            skill: SkillKind::Intellect,
             ..
         }
     );
@@ -259,7 +257,7 @@ fn a_failed_parley_leaves_her_where_she_is() {
 #[test]
 fn the_parley_provokes_no_attack_of_opportunity() {
     let mut state = board(ChaosToken::Numeric(0));
-    let mut attacker = test_enemy(100, "Ghoul");
+    let mut attacker = test_support::test_enemy(100, "Ghoul");
     attacker.current_location = Some(PARLOR_ID);
     attacker.engaged_with = Some(INV);
     attacker.attack_damage = 2;
@@ -371,9 +369,9 @@ fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
     resolver.commit_cards(&[]);
     // Option 0 is the investigator, option 1 the one controlled soaker; both
     // points go to her.
-    resolver.pick_single(game_core::engine::OptionId(1));
-    resolver.pick_single(game_core::engine::OptionId(1));
-    let r = drive(
+    resolver.pick_single(OptionId(1));
+    resolver.pick_single(OptionId(1));
+    let r = test_support::drive(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed { investigator: INV }),
         resolver,
@@ -409,7 +407,7 @@ fn eliminating_her_controller_removes_her_to_the_scenarios_pile() {
     let mut state = drive_parley(board(ChaosToken::Numeric(0))).state;
     let mut events = Vec::new();
     // Daisy Walker 01002 has 5 health; 5 damage defeats her outright.
-    game_core::test_support::eliminate_by_damage(&mut state, &mut events, INV, 5);
+    test_support::eliminate_by_damage(&mut state, &mut events, INV, 5);
 
     let inv = &state.investigators[&INV];
     assert!(
@@ -456,7 +454,7 @@ fn lita_leaving_play_while_controlled_is_removed_from_the_game() {
             .expect("Beat Cop is in hand"),
     )
     .expect("hand index fits u8");
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: INV,

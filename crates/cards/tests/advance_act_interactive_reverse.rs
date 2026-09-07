@@ -6,12 +6,10 @@
 use card_dsl::dsl::{
     choose_one, deal_horror, forced_on_event, EventPattern, EventTiming, InvestigatorTarget,
 };
-use game_core::engine::EngineOutcome;
-use game_core::state::{Act, CardCode, InvestigatorId};
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_investigator, GameStateBuilder, MockRegistry,
-};
-use game_core::{InputKind, TurnAction};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{EngineOutcome, InputKind};
+use game_core::state::{Act, CardCode, InvestigatorId, Phase};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 const IACT: &str = "_iact";
 
@@ -35,10 +33,10 @@ fn install() {
 #[test]
 fn interactive_act_reverse_resolves_cleanly() {
     let inv = InvestigatorId(1);
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.clues = 1; // funds the AdvanceAct clue-spend (threshold 1 below)
     let mut state = GameStateBuilder::new()
-        .with_phase(game_core::state::Phase::Investigation)
+        .with_phase(Phase::Investigation)
         .with_active_investigator(inv)
         .with_turn_order([inv])
         .with_investigator(investigator)
@@ -61,7 +59,10 @@ fn interactive_act_reverse_resolves_cleanly() {
 
     // dispatch_turn_action_unchecked bypasses the open-turn enumeration gate (the
     // synthetic state has no InvestigatorTurn frame); the handler still validates.
-    let r = dispatch_turn_action_unchecked(state, &TurnAction::AdvanceAct { investigator: inv });
+    let r = test_support::dispatch_turn_action_unchecked(
+        state,
+        &TurnAction::AdvanceAct { investigator: inv },
+    );
 
     // The act's interactive reverse is the live prompt (it did not strand); the
     // act cursor has NOT bumped yet (Finalize runs after the choice).

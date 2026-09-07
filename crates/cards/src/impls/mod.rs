@@ -73,6 +73,7 @@
 //! - Rise of the Ghouls (01106) — Agenda 2; `Trigger::OnEvent` (`AgendaAdvanced`, `After`) reverse: dig the encounter deck until a Ghoul, lead draws it.
 
 use card_dsl::dsl::Ability;
+use game_core::card_registry::{EligibilityFn, NativeConditionFn, NativeEffectFn};
 
 pub mod ancient_evils;
 pub mod attic;
@@ -205,7 +206,7 @@ pub fn back_abilities_for(code: &str) -> Option<Vec<Ability>> {
 /// card-local Rust fn that implements it. Mirrors [`abilities_for`]'s
 /// per-card delegation; returns `None` for unregistered tags.
 #[must_use]
-pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEffectFn> {
+pub fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
     trapped::native_effect_for(tag)
         .or_else(|| the_barrier::native_effect_for(tag))
         .or_else(|| whats_going_on::native_effect_for(tag))
@@ -222,7 +223,7 @@ pub fn native_effect_for(tag: &str) -> Option<game_core::card_registry::NativeEf
 /// Dispatch a native eligibility-predicate tag to its card-local handler;
 /// returns `None` for unregistered tags.
 #[must_use]
-pub fn native_eligibility_for(tag: &str) -> Option<game_core::card_registry::EligibilityFn> {
+pub fn native_eligibility_for(tag: &str) -> Option<EligibilityFn> {
     cover_up::native_eligibility_for(tag)
         .or_else(|| the_barrier::native_eligibility_for(tag))
         .or_else(|| lita_chantler::native_eligibility_for(tag))
@@ -237,6 +238,6 @@ pub fn native_eligibility_for(tag: &str) -> Option<game_core::card_registry::Eli
 /// is a plain scenario-state read (`act_index == 2`), so it lands here without
 /// firing that trigger.
 #[must_use]
-pub fn native_condition_for(tag: &str) -> Option<game_core::card_registry::NativeConditionFn> {
+pub fn native_condition_for(tag: &str) -> Option<NativeConditionFn> {
     machete::native_condition_for(tag).or_else(|| theyre_getting_out::native_condition_for(tag))
 }

@@ -22,17 +22,17 @@
 //! **Guard Dog (01021):** an ally with printed health 3 — used here only as a
 //! soaker for that damage.
 
-use game_core::action::EngineRecord;
-use game_core::engine::OptionId;
+use cards::REGISTRY;
+use game_core::action::{Action, EngineRecord};
+use game_core::dsl::{IntExpr, Stat};
+use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosToken, InvestigatorId, Lifetime, LocationId,
-    RecordedModifier, SkillTestId, Status,
+    CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, InvestigatorId, Lifetime,
+    LocationId, RecordedModifier, SkillTestId, Status,
 };
-use game_core::test_support::{
-    drive, test_investigator, test_location, GameStateBuilder, ScriptedResolver,
-};
-use game_core::{assert_event_count, Action, EngineOutcome};
+use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
+use game_core::{assert_event_count, card_registry};
 
 const GRASPING_HANDS: &str = "01162";
 const GUARD_DOG: &str = "01021";
@@ -46,14 +46,14 @@ const ANOTHER_TEST: SkillTestId = SkillTestId(99);
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Roland at a location with `damage` already on him and `soakers` in play,
 /// Grasping Hands on top of the encounter deck and a rigged `Numeric(-2)`
 /// token: agility 3 − 2 = 1 vs difficulty 3 → fail by 2 → 2 damage.
-fn board(damage: u8, soakers: &[&str]) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board(damage: u8, soakers: &[&str]) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     // Real investigator code so max_health() reads capacity from the
     // installed corpus registry (#448).
     inv.investigator_card.code = CardCode::new(ROLAND);
@@ -70,7 +70,7 @@ fn board(damage: u8, soakers: &[&str]) -> game_core::GameState {
         .collect();
     let mut state = GameStateBuilder::new()
         .with_investigator_at(inv, LocationId(20))
-        .with_location(test_location(20, "Here"))
+        .with_location(test_support::test_location(20, "Here"))
         .with_turn_order([InvestigatorId(1)])
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];
@@ -86,8 +86,8 @@ fn board(damage: u8, soakers: &[&str]) -> game_core::GameState {
 fn row_for(test: SkillTestId) -> RecordedModifier {
     RecordedModifier::new(
         InvestigatorId(1),
-        game_core::dsl::Stat::Agility,
-        game_core::dsl::IntExpr::Lit(1),
+        Stat::Agility,
+        IntExpr::Lit(1),
         Lifetime::SkillTest(test),
         None,
     )
@@ -95,13 +95,13 @@ fn row_for(test: SkillTestId) -> RecordedModifier {
 
 /// Reveal the top encounter card for investigator 1, committing nothing and
 /// answering each per-point damage-distribution prompt with `picks`.
-fn reveal(state: game_core::GameState, picks: &[u32]) -> game_core::ApplyResult {
+fn reveal(state: GameState, picks: &[u32]) -> ApplyResult {
     let mut resolver = ScriptedResolver::new();
     resolver.commit_cards(&[]);
     for &p in picks {
         resolver.pick_single(OptionId(p));
     }
-    drive(
+    test_support::drive(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed {
             investigator: InvestigatorId(1),
@@ -111,7 +111,7 @@ fn reveal(state: game_core::GameState, picks: &[u32]) -> game_core::ApplyResult 
 }
 
 /// The rows left after a run, as the tests want to read them.
-fn surviving_lifetimes(result: &game_core::ApplyResult) -> Vec<Lifetime> {
+fn surviving_lifetimes(result: &ApplyResult) -> Vec<Lifetime> {
     result
         .state
         .recorded_modifiers

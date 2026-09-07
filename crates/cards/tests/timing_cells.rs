@@ -54,10 +54,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId, Phase,
     SkillKind, TokenModifiers,
 };
-use game_core::test_support::{
-    drive_skill_test, perform_skill_test_no_commits, test_investigator, GameStateBuilder,
-    MockRegistry, ScriptedResolver,
-};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry, ScriptedResolver};
 
 /// `at`-tagged forced: +1 resource.
 const AT: &str = "_tc_at";
@@ -127,7 +124,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// `Effect::DiscardSelf` can remove from), 0 resources, and a single
 /// `Numeric(0)` chaos bag so a difficulty-0 test succeeds deterministically.
 fn board_with(codes: &[&str]) -> GameState {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.resources = 0;
     for (i, code) in codes.iter().enumerate() {
         inv.threat_area.push(CardInPlay::enter_play(
@@ -184,7 +181,12 @@ fn resolved_before_first_gain(events: &[Event]) -> bool {
 /// +1 never fired at all.
 #[test]
 fn an_at_tagged_forced_resolves_before_the_after_cell() {
-    let r = perform_skill_test_no_commits(board_with(&[AT, AFTER]), INV, SkillKind::Intellect, 0);
+    let r = test_support::perform_skill_test_no_commits(
+        board_with(&[AT, AFTER]),
+        INV,
+        SkillKind::Intellect,
+        0,
+    );
     assert_eq!(
         gains(&r.events),
         vec![1, 2],
@@ -211,7 +213,12 @@ fn an_at_tagged_forced_resolves_before_the_after_cell() {
 /// not merely that it happened.
 #[test]
 fn an_empty_cell_is_skipped_without_prompting() {
-    let r = perform_skill_test_no_commits(board_with(&[AFTER]), INV, SkillKind::Intellect, 0);
+    let r = test_support::perform_skill_test_no_commits(
+        board_with(&[AFTER]),
+        INV,
+        SkillKind::Intellect,
+        0,
+    );
     assert_eq!(gains(&r.events), vec![2], "events = {:?}", r.events);
     assert!(
         resolved_before_first_gain(&r.events),
@@ -234,7 +241,7 @@ fn an_empty_cell_is_skipped_without_prompting() {
 fn forced_resolves_before_reaction_within_one_cell() {
     let mut script = ScriptedResolver::new();
     script.commit_cards(&[]).pick_single(OptionId(0));
-    let r = drive_skill_test(
+    let r = test_support::drive_skill_test(
         board_with(&[AT, REACT]),
         INV,
         SkillKind::Intellect,
@@ -255,7 +262,12 @@ fn forced_resolves_before_reaction_within_one_cell() {
 /// would still fire the +2.
 #[test]
 fn each_cell_is_scanned_fresh() {
-    let r = perform_skill_test_no_commits(board_with(&[RESCAN]), INV, SkillKind::Intellect, 0);
+    let r = test_support::perform_skill_test_no_commits(
+        board_with(&[RESCAN]),
+        INV,
+        SkillKind::Intellect,
+        0,
+    );
     assert_eq!(
         gains(&r.events),
         vec![1],
@@ -278,8 +290,12 @@ fn each_cell_is_scanned_fresh() {
 /// `game-core/tests/timing_resolve_step.rs`.
 #[test]
 fn every_cell_resolves_in_order_when_at_after() {
-    let r =
-        perform_skill_test_no_commits(board_with(&[AFTER, WHEN, AT]), INV, SkillKind::Intellect, 0);
+    let r = test_support::perform_skill_test_no_commits(
+        board_with(&[AFTER, WHEN, AT]),
+        INV,
+        SkillKind::Intellect,
+        0,
+    );
     assert_eq!(
         gains(&r.events),
         vec![4, 1, 2],

@@ -5,15 +5,16 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use game_core::engine::TurnAction;
+use cards::REGISTRY;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, InvestigatorId, LocationId, Phase, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, InvestigatorId, LocationId, Phase,
+    TokenModifiers,
 };
-use game_core::test_support::{
-    test_enemy, test_investigator, test_location, GameStateBuilder, TestSession,
-};
-use game_core::{assert_event, EngineOutcome};
+use game_core::test_support::{self, GameStateBuilder, TestSession};
+use game_core::{assert_event, card_registry};
 
 const VICIOUS_BLOW: &str = "01025";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -21,7 +22,7 @@ const ENEMY: EnemyId = EnemyId(100);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Board: the controller (combat 3) engaged with one enemy (fight 2,
@@ -29,12 +30,12 @@ fn install() {
 /// Blow in hand, a `Numeric(0)` chaos bag for a deterministic success.
 fn board() -> GameState {
     let loc_id = LocationId(10);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.skills.combat = 3;
     inv.hand = vec![CardCode::new(VICIOUS_BLOW)];
     inv.current_location = Some(loc_id);
 
-    let mut enemy = test_enemy(100, "Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Ghoul");
     enemy.fight = 2;
     enemy.max_health = 10;
     enemy.engaged_with = Some(INV);
@@ -45,15 +46,13 @@ fn board() -> GameState {
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .with_investigator(inv)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_enemy(enemy)
         .with_investigator_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build()
 }
-
-use game_core::state::GameState;
 
 fn fight_action() -> TurnAction {
     TurnAction::Fight {

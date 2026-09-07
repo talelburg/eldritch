@@ -34,8 +34,10 @@ use card_dsl::dsl::{
     EventTiming, ModifierAudience, ModifierScope, SkillTestKind, Stat, TestOutcome,
 };
 use game_core::card_registry::NativeEffectFn;
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::{self, Cx, EngineOutcome};
+use game_core::event::Event;
 use game_core::state::{CardCode, Zone};
-use game_core::{attach_to_location, Cx, EngineOutcome, EvalContext, Event};
 
 /// `ArkhamDB` code for Obscuring Fog.
 pub const CODE: &str = "01168";
@@ -103,7 +105,7 @@ fn limit1_attach(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         });
         return EngineOutcome::Done;
     }
-    attach_to_location(cx, loc_id, CardCode::new(CODE));
+    engine::attach_to_location(cx, loc_id, CardCode::new(CODE));
     EngineOutcome::Done
 }
 

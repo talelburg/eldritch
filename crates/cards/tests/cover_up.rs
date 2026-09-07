@@ -6,21 +6,18 @@
 //! were first proved by the C5a synthetic fixture; that fixture's test binary is
 //! gone (#871, ADR 0016) and this file is its successor.
 
-use game_core::action::EngineRecord;
+use cards::REGISTRY;
+use game_core::action::{Action, EngineRecord, InputResponse, PlayerAction};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::ScenarioId;
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
-    InvestigatorId, LocationId, Phase,
+    InvestigatorId, LocationId, Phase, TimingMode,
 };
-use game_core::test_support::{
-    drive, take_turn_action, terminal_code, test_investigator, test_location, GameStateBuilder,
-    ScriptedResolver, TestSession,
-};
-use game_core::{
-    apply, assert_event_sequence, assert_no_event, Action, EngineOutcome, InputResponse,
-    PlayerAction, TurnAction,
-};
+use game_core::test_support::{self, GameStateBuilder, ScriptedResolver, TestSession};
+use game_core::{assert_event_sequence, assert_no_event};
 
 const COVER_UP: &str = "01007";
 const DEDUCTION: &str = "01039";
@@ -33,7 +30,7 @@ fn install() {
     // game-end fixtures below end their act deck in one, because a terminal card
     // reaches its resolution point by running an effect on its reverse (ADR
     // 0013) and so needs the registry to serve it.
-    game_core::test_support::install_registry_with_terminal_cards(cards::REGISTRY);
+    test_support::install_registry_with_terminal_cards(REGISTRY);
 }
 
 /// A Cover-Up instance carrying `clues`, pre-placed in the threat area.
@@ -58,15 +55,15 @@ fn cover_up_clues(state: &GameState) -> u8 {
 #[test]
 fn revelation_puts_cover_up_in_threat_area_with_three_clues() {
     let mut state = GameStateBuilder::new()
-        .with_investigator_at(test_investigator(1), LOC)
-        .with_location(test_location(10, "Study"))
+        .with_investigator_at(test_support::test_investigator(1), LOC)
+        .with_location(test_support::test_location(10, "Study"))
         .with_turn_order([INV])
         .build();
     state.encounter_deck.push_back(CardCode::new(COVER_UP));
 
     let mut resolver = ScriptedResolver::new();
     resolver.commit_cards(&[]);
-    let r = drive(
+    let r = test_support::drive(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed { investigator: INV }),
         resolver,
@@ -95,9 +92,9 @@ fn revelation_puts_cover_up_in_threat_area_with_three_clues() {
 /// Cover Up holding `cover_up_clues` in the threat area. +0 chaos token so
 /// the Intellect-3-vs-shroud-2 Investigate always succeeds.
 fn investigate_state(cover_up_clues: u8) -> GameState {
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.threat_area.push(cover_up(cover_up_clues));
-    let mut location = test_location(10, "Study");
+    let mut location = test_support::test_location(10, "Study");
     location.clues = 2;
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -114,9 +111,9 @@ fn investigate_state(cover_up_clues: u8) -> GameState {
 /// Investigate + commit-nothing, returning the state paused at the
 /// clue-discovery interrupt (or resolved if none was offered).
 fn investigate_to_interrupt(state: GameState) -> (GameState, EngineOutcome) {
-    let r = take_turn_action(state, &TurnAction::Investigate { investigator: INV });
+    let r = test_support::take_turn_action(state, &TurnAction::Investigate { investigator: INV });
     assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    let r = apply(
+    let r = engine::apply(
         r.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -131,10 +128,10 @@ fn playing_cover_up_discards_instead_of_discovering() {
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     // Play Cover Up (the single offered candidate) in the before-discover
     // window → discard-from-self + cancel the discovery (Axis D #336).
-    let r = apply(
+    let r = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
@@ -151,7 +148,7 @@ fn playing_cover_up_discards_instead_of_discovering() {
 fn skip_discovers_normally() {
     let (state, outcome) = investigate_to_interrupt(investigate_state(3));
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
-    let r = apply(
+    let r = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Skip,
@@ -170,10 +167,10 @@ fn skip_discovers_normally() {
 /// `held_clues` in the threat area. Intellect 3 + Deduction's 1 intellect icon
 /// + a +0 token vs the default shroud 2 → the Investigate always succeeds.
 fn investigate_state_with_deduction(location_clues: u8, held_clues: u8) -> GameState {
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.threat_area.push(cover_up(held_clues));
     investigator.hand = vec![CardCode::new(DEDUCTION)];
-    let mut location = test_location(10, "Study");
+    let mut location = test_support::test_location(10, "Study");
     location.clues = location_clues;
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -189,12 +186,12 @@ fn investigate_state_with_deduction(location_clues: u8, held_clues: u8) -> GameS
 
 /// Investigate committing Deduction, then play Cover Up at the single
 /// before-discover window it should open.
-fn investigate_with_deduction_and_play_cover_up(state: GameState) -> game_core::ApplyResult {
+fn investigate_with_deduction_and_play_cover_up(state: GameState) -> ApplyResult {
     TestSession::new(state)
         .take(&TurnAction::Investigate { investigator: INV })
         .resolve_choices(|c| {
             c.commit_cards(&[CardCode::new(DEDUCTION)]);
-            c.pick_single(game_core::engine::OptionId(0));
+            c.pick_single(OptionId(0));
         })
         .run()
 }
@@ -320,7 +317,7 @@ fn deduction_discard_is_capped_at_the_clues_cover_up_holds() {
 /// Terminal-act state whose `AdvanceAct` latches a Won resolution, with a
 /// Cover Up holding `cover_up_clues` in the threat area.
 fn resolving_state(cover_up_clues: u8) -> GameState {
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.clues = 1; // meets the act's clue threshold
     investigator.threat_area.push(cover_up(cover_up_clues));
     let mut state = GameStateBuilder::new()
@@ -334,7 +331,7 @@ fn resolving_state(cover_up_clues: u8) -> GameState {
     state.act_deck = vec![Act {
         // Terminal because it is the only act; its reverse reaches R1, which is
         // what ends the scenario and opens the GameEnd point under test.
-        code: terminal_code(1),
+        code: test_support::terminal_code(1),
         clue_threshold: 1,
     }];
     state
@@ -349,8 +346,9 @@ fn resolving_state(cover_up_clues: u8) -> GameState {
 /// are about — the `GameEnd` forced that follows it is — so it is drained here,
 /// with the events from both applies merged so the ordering assertions still read
 /// one sequence.
-fn advance_terminal_act_interactively(state: GameState) -> game_core::engine::ApplyResult {
-    let paused = take_turn_action(state, &TurnAction::AdvanceAct { investigator: INV });
+fn advance_terminal_act_interactively(state: GameState) -> ApplyResult {
+    let paused =
+        test_support::take_turn_action(state, &TurnAction::AdvanceAct { investigator: INV });
     assert!(
         matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
         "expected the terminal act's reverse to raise its forced acknowledge, got {:?}",
@@ -365,10 +363,10 @@ fn advance_terminal_act_interactively(state: GameState) -> game_core::engine::Ap
         paused.events,
     );
     let mut events = paused.events;
-    let mut done = apply(
+    let mut done = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     events.append(&mut done.events);
@@ -389,7 +387,7 @@ fn advance_terminal_act_interactively(state: GameState) -> game_core::engine::Ap
 /// this is asserted as a sequence rather than as two independent presences.
 #[test]
 fn game_end_trauma_resolves_before_the_ending_finalizes() {
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         resolving_state(3),
         &TurnAction::AdvanceAct { investigator: INV },
     );
@@ -406,7 +404,7 @@ fn game_end_trauma_resolves_before_the_ending_finalizes() {
 
 #[test]
 fn game_end_emits_no_trauma_when_cover_up_empty() {
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         resolving_state(0),
         &TurnAction::AdvanceAct { investigator: INV },
     );
@@ -457,10 +455,10 @@ fn interactive_game_end_trauma_surfaces_an_acknowledge_before_resolving() {
         "the trauma lands on the acknowledge, not before it",
     );
 
-    let done = apply(
+    let done = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
 
@@ -543,10 +541,10 @@ fn interactive_game_end_with_a_clueless_cover_up_neither_prompts_nor_resolves_it
 fn two_simultaneous_game_end_forceds_both_resolve() {
     const INV2: InvestigatorId = InvestigatorId(2);
 
-    let mut first = test_investigator(1);
+    let mut first = test_support::test_investigator(1);
     first.clues = 1; // meets the act's clue threshold
     first.threat_area.push(cover_up(3));
-    let mut second = test_investigator(2);
+    let mut second = test_support::test_investigator(2);
     let mut second_cover_up = cover_up(2);
     second_cover_up.instance_id = CardInstanceId(2);
     second.threat_area.push(second_cover_up);
@@ -564,7 +562,7 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
     state.act_deck = vec![Act {
         // Terminal because it is the only act; its reverse reaches R1, which is
         // what ends the scenario and opens the GameEnd point under test.
-        code: terminal_code(1),
+        code: test_support::terminal_code(1),
         clue_threshold: 1,
     }];
 
@@ -580,7 +578,7 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
         matches!(
             state.continuations.last(),
             Some(Continuation::TimingPointWindow {
-                mode: game_core::state::TimingMode::Forced,
+                mode: TimingMode::Forced,
                 ..
             })
         ),
@@ -597,10 +595,10 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
         {
             break;
         }
-        let r = apply(
+        let r = engine::apply(
             state,
             Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+                response: InputResponse::PickSingle(OptionId(0)),
             }),
         );
         assert!(

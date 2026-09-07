@@ -9,26 +9,24 @@
 //! Lives at `crates/cards/tests/` so it can install [`cards::REGISTRY`] in its
 //! own integration-test process.
 
-use game_core::action::InputResponse;
-use game_core::engine::TurnAction;
-use game_core::engine::{EngineOutcome, OptionId};
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, InvestigatorId, LocationId, Phase, TokenModifiers,
-    Zone,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState, InvestigatorId,
+    LocationId, Phase, TokenModifiers, Zone,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, take_turn_action, test_enemy, test_investigator, test_location,
-    GameStateBuilder, TestSession,
-};
-use game_core::{apply, assert_event, assert_no_event, Action, PlayerAction};
+use game_core::test_support::{self, GameStateBuilder, TestSession};
+use game_core::{assert_event, assert_no_event, card_registry};
 
 /// `ArkhamDB` code for original-Core Evidence!.
 const EVIDENCE: &str = "01022";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Solo investigator (NOT Roland — no in-play reaction) engaged with a 1-HP
@@ -37,24 +35,24 @@ fn install_real_registry() {
 /// window.
 fn investigator_with_evidence_and_enemy(
     location_clues: u8,
-) -> (InvestigatorId, EnemyId, LocationId, game_core::GameState) {
+) -> (InvestigatorId, EnemyId, LocationId, GameState) {
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     inv.skills.combat = 4;
     inv.hand.push(CardCode::new(EVIDENCE));
 
-    let mut enemy = test_enemy(100, "Mock Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 1;
     enemy.max_health = 1;
     enemy.damage = 0;
     enemy.engaged_with = Some(inv_id);
     enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
 
-    let mut loc = test_location(10, "Study");
+    let mut loc = test_support::test_location(10, "Study");
     loc.clues = location_clues;
 
     let state = GameStateBuilder::new()
@@ -89,11 +87,11 @@ fn after_defeat_window_opens_and_offers_evidence_with_no_in_play_reaction() {
     // event was removed as redundant with the AwaitingInput channel). The
     // window opens even though no in-play card reacts: the hand match alone
     // opens it, observable as the offered "Play <Evidence> from hand" option.
-    let after_fight = take_turn_action(state, &fight_action(inv_id, enemy_id));
+    let after_fight = test_support::take_turn_action(state, &fight_action(inv_id, enemy_id));
     let EngineOutcome::AwaitingInput { .. } = &after_fight.outcome else {
         panic!("Fight must suspend on the commit window; got {after_fight:?}");
     };
-    let result = apply(
+    let result = engine::apply(
         after_fight.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -108,7 +106,7 @@ fn after_defeat_window_opens_and_offers_evidence_with_no_in_play_reaction() {
             );
             // A non-forced reaction window is a PickSingle the player may pass:
             // the client must offer a Skip control.
-            assert_eq!(request.kind, game_core::InputKind::PickSingle);
+            assert_eq!(request.kind, InputKind::PickSingle);
             assert!(
                 request.skippable,
                 "a non-forced reaction window must be skippable; request = {request:?}",
@@ -134,8 +132,8 @@ fn evidence_not_offered_when_location_has_no_clues() {
     // from hand.
     let (inv_id, enemy_id, loc_id, state) = investigator_with_evidence_and_enemy(0);
 
-    let after_fight = take_turn_action(state, &fight_action(inv_id, enemy_id));
-    let result = apply(
+    let after_fight = test_support::take_turn_action(state, &fight_action(inv_id, enemy_id));
+    let result = engine::apply(
         after_fight.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -178,7 +176,7 @@ fn evidence_cannot_be_played_as_a_standalone_action() {
         "fixture invariant: Evidence! is the only hand card, at index 0",
     );
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: inv_id,
@@ -309,8 +307,8 @@ fn evidence_not_offered_when_resources_below_cost() {
     let (inv_id, enemy_id, _loc_id, mut state) = investigator_with_evidence_and_enemy(2);
     state.investigators.get_mut(&inv_id).unwrap().resources = 0;
 
-    let after_fight = take_turn_action(state, &fight_action(inv_id, enemy_id));
-    let result = apply(
+    let after_fight = test_support::take_turn_action(state, &fight_action(inv_id, enemy_id));
+    let result = engine::apply(
         after_fight.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -336,12 +334,11 @@ fn evidence_not_offered_when_resources_below_cost() {
 
 #[test]
 fn window_offers_both_in_play_reaction_and_hand_evidence() {
-    use game_core::state::{CardInPlay, CardInstanceId};
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(100);
     let loc_id = LocationId(10);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     inv.skills.combat = 4;
     inv.hand.push(CardCode::new(EVIDENCE));
@@ -351,14 +348,14 @@ fn window_offers_both_in_play_reaction_and_hand_evidence() {
         CardInstanceId(1),
     ));
 
-    let mut enemy = test_enemy(100, "Mock Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 1;
     enemy.max_health = 1;
     enemy.damage = 0;
     enemy.engaged_with = Some(inv_id);
     enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
 
-    let mut loc = test_location(10, "Study");
+    let mut loc = test_support::test_location(10, "Study");
     loc.clues = 2;
 
     let state = GameStateBuilder::new()

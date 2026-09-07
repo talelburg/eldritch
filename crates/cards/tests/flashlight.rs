@@ -10,18 +10,16 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use game_core::assert_event;
-use game_core::engine::EngineOutcome;
-use game_core::engine::TurnAction;
+use cards::REGISTRY;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId,
-    LocationId, Phase, SkillKind, TokenModifiers, UseKind,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    GameState, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers, UseKind,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder, TestSession,
-};
+use game_core::test_support::{self, GameStateBuilder, TestSession};
+use game_core::{assert_event, card_registry};
 
 const FLASHLIGHT: &str = "01087";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -30,20 +28,20 @@ const TORCH_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Board: Flashlight in play with 3 supplies; the active investigator at a
 /// revealed `shroud`-shroud location holding 1 clue, with `intellect`
 /// intellect. A `Numeric(0)` chaos bag makes the Investigate deterministic.
-fn board(intellect: i8, shroud: u8, revealed: bool) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board(intellect: i8, shroud: u8, revealed: bool) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     inv.skills.intellect = intellect;
     let mut torch = CardInPlay::enter_play(CardCode::new(FLASHLIGHT), TORCH_INST);
     torch.uses.insert(UseKind::Supplies, 3);
     inv.cards_in_play.push(torch);
 
-    let mut location = test_location(10, "Study");
+    let mut location = test_support::test_location(10, "Study");
     location.shroud = shroud;
     location.clues = 1;
     location.revealed = revealed;
@@ -60,7 +58,7 @@ fn board(intellect: i8, shroud: u8, revealed: bool) -> game_core::GameState {
         .build()
 }
 
-fn supplies(state: &game_core::GameState) -> Option<u8> {
+fn supplies(state: &GameState) -> Option<u8> {
     state.investigators[&INV]
         .cards_in_play
         .iter()
@@ -68,7 +66,7 @@ fn supplies(state: &game_core::GameState) -> Option<u8> {
         .map(|c| c.uses.get(&UseKind::Supplies).copied().unwrap_or(0))
 }
 
-fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
+fn activate(state: GameState) -> ApplyResult {
     TestSession::new(state)
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
@@ -117,7 +115,7 @@ fn rejects_without_a_revealed_location_before_spending_a_supply() {
     // Validate-first: an unrevealed location is not investigatable, so the
     // activation rejects before the supply cost is paid. The ability is not
     // offered (unrevealed location → not legal), so bypass the gate.
-    let r = dispatch_turn_action_unchecked(
+    let r = test_support::dispatch_turn_action_unchecked(
         board(2, 4, false),
         &TurnAction::ActivateAbility {
             investigator: INV,
@@ -141,7 +139,7 @@ fn rejects_without_a_revealed_location_before_spending_a_supply() {
 const FOG: &str = "01168";
 
 /// [`board`], with Obscuring Fog attached to the location.
-fn fogged_board(intellect: i8, shroud: u8) -> game_core::GameState {
+fn fogged_board(intellect: i8, shroud: u8) -> GameState {
     let mut state = board(intellect, shroud, true);
     state
         .locations

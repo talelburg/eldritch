@@ -4,16 +4,16 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use game_core::engine::EngineOutcome;
-use game_core::engine::TurnAction;
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase,
-    TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId,
+    LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{
-    take_turn_action, test_investigator, test_location, GameStateBuilder,
-};
-use game_core::{Action, GameState, InputResponse, PlayerAction};
+use game_core::test_support::{self, GameStateBuilder};
 
 const DR_MILAN: &str = "01033";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -21,7 +21,7 @@ const LOC: LocationId = LocationId(10);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Board: the investigator at a 1-clue location of shroud 2 with **base
@@ -29,14 +29,14 @@ fn install() {
 /// Milan's +1 intellect the Investigate (1 vs 2) would fail; with it
 /// (2 vs 2) it succeeds — so the constant ability is load-bearing here.
 fn board() -> GameState {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LOC);
     inv.skills.intellect = 1;
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(DR_MILAN),
         CardInstanceId(1),
     ));
-    let mut loc = test_location(10, "Study"); // shroud 2 by default
+    let mut loc = test_support::test_location(10, "Study"); // shroud 2 by default
     loc.clues = 1;
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -62,7 +62,8 @@ fn dr_milan_plus_one_intellect_succeeds_then_reaction_gains_resource() {
     let resources_before = state.investigators[&INV].resources;
 
     // Investigate → commit window.
-    let paused_commit = take_turn_action(state, &TurnAction::Investigate { investigator: INV });
+    let paused_commit =
+        test_support::take_turn_action(state, &TurnAction::Investigate { investigator: INV });
     assert!(matches!(
         paused_commit.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -70,7 +71,7 @@ fn dr_milan_plus_one_intellect_succeeds_then_reaction_gains_resource() {
 
     // Commit nothing → intellect 1 + Dr. Milan's +1 = 2 ≥ shroud 2 →
     // success → clue discovered → after-investigate window suspends.
-    let paused_reaction = game_core::engine::apply(paused_commit.state, commit_nothing());
+    let paused_reaction = engine::apply(paused_commit.state, commit_nothing());
     assert!(
         matches!(paused_reaction.outcome, EngineOutcome::AwaitingInput { .. }),
         "the +1 intellect should make the test succeed and open Dr. Milan's window, got {:?}",
@@ -78,10 +79,10 @@ fn dr_milan_plus_one_intellect_succeeds_then_reaction_gains_resource() {
     );
 
     // Fire the reaction → gain 1 resource → resume → Done.
-    let resumed = game_core::engine::apply(
+    let resumed = engine::apply(
         paused_reaction.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     assert!(matches!(
@@ -105,7 +106,7 @@ fn obscuring_fog_forced_discard_precedes_dr_milan_reaction_window() {
     // pre-T5b it was still attached (the forced fired a later driver step).
     let obscuring_fog = "01168";
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LOC);
     // Effective shroud is 2 (printed) + 2 (Obscuring Fog) = 4. Intellect 4 +
     // Dr. Milan's +1 = 5 ≥ 4 → success with a Numeric(0) draw.
@@ -114,7 +115,7 @@ fn obscuring_fog_forced_discard_precedes_dr_milan_reaction_window() {
         CardCode::new(DR_MILAN),
         CardInstanceId(1),
     ));
-    let mut loc = test_location(10, "Study"); // shroud 2
+    let mut loc = test_support::test_location(10, "Study"); // shroud 2
     loc.clues = 1;
     loc.attachments.push(CardInPlay::enter_play(
         CardCode::new(obscuring_fog),
@@ -132,12 +133,13 @@ fn obscuring_fog_forced_discard_precedes_dr_milan_reaction_window() {
         .build();
 
     // Investigate → commit window → commit nothing → success.
-    let paused_commit = take_turn_action(state, &TurnAction::Investigate { investigator: INV });
+    let paused_commit =
+        test_support::take_turn_action(state, &TurnAction::Investigate { investigator: INV });
     assert!(matches!(
         paused_commit.outcome,
         EngineOutcome::AwaitingInput { .. }
     ));
-    let paused_reaction = game_core::engine::apply(paused_commit.state, commit_nothing());
+    let paused_reaction = engine::apply(paused_commit.state, commit_nothing());
 
     // Dr. Milan's reaction window is open (suspended)...
     assert!(
@@ -161,10 +163,10 @@ fn obscuring_fog_forced_discard_precedes_dr_milan_reaction_window() {
     );
 
     // Fire Dr. Milan's reaction → resume → Done.
-    let resumed = game_core::engine::apply(
+    let resumed = engine::apply(
         paused_reaction.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     assert!(matches!(

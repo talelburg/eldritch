@@ -26,16 +26,16 @@
 //! clue …" A fast event → `AoO`-exempt.
 #![allow(clippy::too_many_lines)]
 
-use game_core::engine::{apply, EngineOutcome};
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, InvestigatorId, LocationId, Phase,
+    CardCode, CardInPlay, CardInstanceId, Enemy, InvestigatorId, LocationId, Phase, Status,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, take_turn_action, test_enemy, test_investigator, test_location,
-    GameStateBuilder,
-};
-use game_core::{Action, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder};
 
 /// Emergency Cache (01088): non-fast event, `OnPlay` gain 3 resources → provokes.
 const EMERGENCY_CACHE: &str = "01088";
@@ -48,14 +48,14 @@ const MACHETE: &str = "01020";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Resolve a soak-distribution prompt (#44/K5b — an `AoO` against an investigator
 /// with a soaker prompts for the damage distribution) by assigning every point
 /// onto the soaker asset, then to the investigator once it is full. Returns the
 /// first result that is no longer a distribution prompt.
-fn soak_onto_asset(mut result: game_core::ApplyResult) -> game_core::ApplyResult {
+fn soak_onto_asset(mut result: ApplyResult) -> ApplyResult {
     while let EngineOutcome::AwaitingInput { request, .. } = &result.outcome {
         if !request.prompt.contains("to which target") {
             break;
@@ -67,10 +67,10 @@ fn soak_onto_asset(mut result: game_core::ApplyResult) -> game_core::ApplyResult
             .or_else(|| request.options.iter().find(|o| o.label == "Investigator"))
             .expect("a distribution option")
             .id;
-        result = apply(
+        result = engine::apply(
             result.state,
             Action::Player(PlayerAction::ResolveInput {
-                response: game_core::InputResponse::PickSingle(id),
+                response: InputResponse::PickSingle(id),
             }),
         );
     }
@@ -85,7 +85,7 @@ fn engaged_attacker(
     damage: u8,
     max_health: u8,
 ) -> Enemy {
-    let mut e = test_enemy(id, format!("Attacker {id}"));
+    let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
     e.attack_damage = damage;
     e.attack_horror = 0;
     e.max_health = max_health;
@@ -108,7 +108,7 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     // Real investigator code so max_health() reads from installed registry (#448 cp2a).
     investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
     investigator.current_location = Some(loc);
@@ -120,7 +120,7 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
@@ -128,7 +128,7 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
         .with_enemy(attacker)
         .build();
 
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: inv_id,
@@ -181,7 +181,7 @@ fn playing_a_non_fast_event_spends_one_action() {
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     // Real investigator code so max_health() reads from installed registry (#448 cp2a).
     investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
     investigator.current_location = Some(loc);
@@ -191,14 +191,14 @@ fn playing_a_non_fast_event_spends_one_action() {
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
         .build();
 
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: inv_id,
@@ -228,7 +228,7 @@ fn playing_a_non_fast_card_with_no_actions_is_rejected() {
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     // Real investigator code so max_health() reads from installed registry (#448 cp2a).
     investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
     investigator.current_location = Some(loc);
@@ -237,7 +237,7 @@ fn playing_a_non_fast_card_with_no_actions_is_rejected() {
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
@@ -245,7 +245,7 @@ fn playing_a_non_fast_card_with_no_actions_is_rejected() {
         .build();
 
     // 0 actions remaining → PlayCard not offered; bypass the gate.
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: inv_id,
@@ -279,7 +279,7 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     // Real investigator code so max_health() reads from installed registry (#448 cp2a).
     investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
     investigator.current_location = Some(loc);
@@ -287,7 +287,7 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
     investigator.hand = vec![CardCode::new(WORKING_A_HUNCH)];
     investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog)];
 
-    let mut location = test_location(101, "Study");
+    let mut location = test_support::test_location(101, "Study");
     location.clues = 1;
 
     let attacker = engaged_attacker(7, inv_id, loc, 2, 5);
@@ -302,7 +302,7 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
         .with_enemy(attacker)
         .build();
 
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: inv_id,
@@ -354,7 +354,7 @@ fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     // Real investigator code so max_health() reads from installed registry (#448 cp2a).
     investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
     investigator.current_location = Some(loc);
@@ -367,7 +367,7 @@ fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
@@ -375,7 +375,7 @@ fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
         .with_enemy(attacker)
         .build();
 
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: inv_id,
@@ -386,7 +386,7 @@ fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
 
     assert_ne!(
         state.investigators[&inv_id].status,
-        game_core::state::Status::Active,
+        Status::Active,
         "the lethal AoO defeated the actor"
     );
     // Elimination zeroes the wallet, so assert on the absent event, not the value.
@@ -431,7 +431,7 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     // Real investigator code so max_health() reads from installed registry (#448 cp2a).
     investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
     investigator.current_location = Some(loc);
@@ -443,7 +443,7 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
@@ -454,7 +454,7 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
     // Step 1: play Machete → AoO soaks onto Guard Dog → soak window; Machete is
     // mid-play — it left hand when the play commenced and enters play only once
     // the play completes.
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: inv_id,
@@ -483,10 +483,10 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
 
     // Step 2: fire Guard Dog's reaction (closes the soak window) → the play
     // resumes → Machete enters play.
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
-            response: game_core::InputResponse::PickSingle(game_core::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     let state = result.state;
@@ -514,7 +514,7 @@ fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
     let inv_id = InvestigatorId(1);
     let loc = LocationId(101);
 
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     // Real investigator code so max_health() reads from installed registry (#448 cp2a).
     investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
     investigator.current_location = Some(loc);
@@ -526,7 +526,7 @@ fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
@@ -534,7 +534,7 @@ fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
         .with_enemy(attacker)
         .build();
 
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: inv_id,
@@ -545,7 +545,7 @@ fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
 
     assert_ne!(
         state.investigators[&inv_id].status,
-        game_core::state::Status::Active,
+        Status::Active,
         "the lethal AoO defeated the actor"
     );
     assert!(

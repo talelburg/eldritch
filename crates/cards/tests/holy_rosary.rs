@@ -8,21 +8,21 @@
 //! modifier query (#92). Setup uses `PlayCard` to land the rosary in
 //! `cards_in_play` so the action log mirrors a real session.
 
+use cards::REGISTRY;
+use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{
-    perform_skill_test_no_commits, take_turn_action, test_investigator, GameStateBuilder,
-};
-use game_core::{assert_event, TurnAction};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event, card_registry};
 
 const HOLY_ROSARY: &str = "01059";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Build a state where the controller has Holy Rosary in hand, is the
@@ -30,9 +30,9 @@ fn install_real_registry() {
 /// chaos bag (a single Zero token so the skill-test arithmetic is
 /// trivially `skill + 0 vs. difficulty`), and starts with 3 willpower
 /// + 3 intellect from the fixture defaults.
-fn state_with_rosary_in_hand() -> (game_core::GameState, InvestigatorId) {
+fn state_with_rosary_in_hand() -> (GameState, InvestigatorId) {
     let id = InvestigatorId(1);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.hand = vec![CardCode::new(HOLY_ROSARY)];
 
     let state = GameStateBuilder::new()
@@ -57,7 +57,7 @@ fn willpower_test_succeeds_at_difficulty_4_after_playing_holy_rosary() {
     let (state, id) = state_with_rosary_in_hand();
 
     // Play Holy Rosary out of hand.
-    let after_play = take_turn_action(
+    let after_play = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -73,7 +73,8 @@ fn willpower_test_succeeds_at_difficulty_4_after_playing_holy_rosary() {
     assert_eq!(in_play[0].code, CardCode::new(HOLY_ROSARY));
 
     // Difficulty-4 willpower test — +1 from the rosary should carry it.
-    let result = perform_skill_test_no_commits(after_play.state, id, SkillKind::Willpower, 4);
+    let result =
+        test_support::perform_skill_test_no_commits(after_play.state, id, SkillKind::Willpower, 4);
     assert!(matches!(
         result.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -90,7 +91,7 @@ fn willpower_test_fails_at_difficulty_5_even_with_holy_rosary() {
     // +1 isn't a free pass: 3 + 1 + 0 < 5 still fails.
     let (state, id) = state_with_rosary_in_hand();
 
-    let after_play = take_turn_action(
+    let after_play = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -102,7 +103,8 @@ fn willpower_test_fails_at_difficulty_5_even_with_holy_rosary() {
         EngineOutcome::AwaitingInput { .. }
     ));
 
-    let result = perform_skill_test_no_commits(after_play.state, id, SkillKind::Willpower, 5);
+    let result =
+        test_support::perform_skill_test_no_commits(after_play.state, id, SkillKind::Willpower, 5);
     assert!(matches!(
         result.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -121,7 +123,7 @@ fn intellect_test_unaffected_by_holy_rosary_in_play() {
     // the rosary being in play.
     let (state, id) = state_with_rosary_in_hand();
 
-    let after_play = take_turn_action(
+    let after_play = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: id,
@@ -133,7 +135,8 @@ fn intellect_test_unaffected_by_holy_rosary_in_play() {
         EngineOutcome::AwaitingInput { .. }
     ));
 
-    let result = perform_skill_test_no_commits(after_play.state, id, SkillKind::Intellect, 4);
+    let result =
+        test_support::perform_skill_test_no_commits(after_play.state, id, SkillKind::Intellect, 4);
     assert!(matches!(
         result.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -154,7 +157,7 @@ fn willpower_test_without_rosary_in_play_uses_base_value_only() {
     assert!(!state.investigators[&id].hand.is_empty());
     assert!(state.investigators[&id].cards_in_play.is_empty());
 
-    let result = perform_skill_test_no_commits(state, id, SkillKind::Willpower, 4);
+    let result = test_support::perform_skill_test_no_commits(state, id, SkillKind::Willpower, 4);
     assert!(matches!(
         result.outcome,
         EngineOutcome::AwaitingInput { .. }

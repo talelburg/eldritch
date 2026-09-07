@@ -31,18 +31,16 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use game_core::action::{EngineRecord, InputResponse};
-use game_core::engine::{InputKind, InputRequest, OptionId};
-use game_core::event::Event;
+use cards::REGISTRY;
+use game_core::action::{Action, EngineRecord, InputResponse};
+use game_core::engine::{ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId};
+use game_core::event::{Event, TraumaKind};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosToken, InvestigatorId, LocationId, Status, Zone,
+    CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, InvestigatorId, LocationId,
+    Status, Zone,
 };
-use game_core::test_support::{
-    drive, test_investigator, test_location, ChoiceResolver, GameStateBuilder, ScriptedResolver,
-};
-use game_core::{
-    assert_event, assert_event_count, assert_no_event, Action, EngineOutcome, GameState,
-};
+use game_core::test_support::{self, ChoiceResolver, GameStateBuilder, ScriptedResolver};
+use game_core::{assert_event, assert_event_count, assert_no_event, card_registry};
 
 /// Roland Banks — health 9, sanity 5.
 const ROLAND: &str = "01001";
@@ -53,7 +51,7 @@ const DISSONANT_VOICES: &str = "01165";
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Roland at a location with `damage` already on him, `hand` in hand, and
@@ -62,7 +60,7 @@ fn install_registry() {
 /// `reveal_committing` puts him through an Agility(3) test he fails by 2 — or by
 /// 1 when Survival Instinct's single [agility] icon is committed.
 fn board_at_lethal_range(damage: u8, hand: &[&str], threat: &[(&str, u8)]) -> GameState {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     // Real investigator code so max_health() reads from the installed cards
     // registry (#448 cp2a). Roland Banks (01001, 9/5).
     inv.investigator_card.code = CardCode::new(ROLAND);
@@ -82,7 +80,7 @@ fn board_at_lethal_range(damage: u8, hand: &[&str], threat: &[(&str, u8)]) -> Ga
         .collect();
     let mut state = GameStateBuilder::new()
         .with_investigator_at(inv, LocationId(20))
-        .with_location(test_location(20, "Here"))
+        .with_location(test_support::test_location(20, "Here"))
         .with_turn_order([InvestigatorId(1)])
         .build();
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];
@@ -99,12 +97,12 @@ fn board_at_lethal_range(damage: u8, hand: &[&str], threat: &[(&str, u8)]) -> Ga
 /// is a stand-in whose only job is to keep the game running.
 fn board_with_survivor(damage: u8, threat: &[(&str, u8)]) -> GameState {
     let mut state = board_at_lethal_range(damage, &[], threat);
-    let mut survivor = test_investigator(2);
+    let mut survivor = test_support::test_investigator(2);
     survivor.investigator_card.code = CardCode::new(ROLAND);
     survivor.current_location = Some(LocationId(21));
     state
         .locations
-        .insert(LocationId(21), test_location(21, "Elsewhere"));
+        .insert(LocationId(21), test_support::test_location(21, "Elsewhere"));
     state.investigators.insert(InvestigatorId(2), survivor);
     state.turn_order = vec![InvestigatorId(1), InvestigatorId(2)];
     state
@@ -112,10 +110,10 @@ fn board_with_survivor(damage: u8, threat: &[(&str, u8)]) -> GameState {
 
 /// Reveal the top encounter card for investigator 1, committing `commit` at the
 /// revelation skill-test window.
-fn reveal_committing(state: GameState, commit: &[&str]) -> game_core::ApplyResult {
+fn reveal_committing(state: GameState, commit: &[&str]) -> ApplyResult {
     let mut resolver = ScriptedResolver::new();
     resolver.commit_cards(&commit.iter().map(|c| CardCode::new(*c)).collect::<Vec<_>>());
-    drive(
+    test_support::drive(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed {
             investigator: InvestigatorId(1),
@@ -285,7 +283,7 @@ fn eliminated_investigator_fires_cover_ups_game_end_trauma() {
     let r = reveal_committing(board_at_lethal_range(8, &[], &[(COVER_UP, 3)]), &[]);
 
     assert_event!(r.events, Event::TraumaSuffered {
-        investigator, kind: game_core::event::TraumaKind::Mental, amount: 1
+        investigator, kind: TraumaKind::Mental, amount: 1
     } if *investigator == InvestigatorId(1));
     // Exactly once. Solo, so the death also latches NoResolution and the
     // ordinary scenario-end `GameEnd` scan runs — it must not fire this a second
@@ -328,7 +326,7 @@ fn cover_ups_trauma_fires_on_elimination_while_the_scenario_continues() {
     assert_no_event!(r.events, Event::ScenarioResolved { .. });
 
     assert_event!(r.events, Event::TraumaSuffered {
-        investigator, kind: game_core::event::TraumaKind::Mental, amount: 1
+        investigator, kind: TraumaKind::Mental, amount: 1
     } if *investigator == InvestigatorId(1));
 }
 
@@ -392,7 +390,7 @@ fn interactive_elimination_with_a_clueless_cover_up_raises_no_acknowledge() {
     let resolver = RecordingResolver {
         prompts: Rc::clone(&prompts),
     };
-    let r = drive(
+    let r = test_support::drive(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed {
             investigator: InvestigatorId(1),
@@ -426,7 +424,7 @@ fn eliminated_investigator_fires_no_further_round_end_forced() {
     let before = r.state.encounter_discard.len();
 
     let mut events = Vec::new();
-    let _ = game_core::test_support::fire_forced_on_round_end(&mut r.state, &mut events);
+    let _ = test_support::fire_forced_on_round_end(&mut r.state, &mut events);
 
     assert_eq!(
         r.state.encounter_discard.len(),

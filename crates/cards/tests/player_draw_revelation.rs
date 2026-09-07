@@ -2,29 +2,29 @@
 //! player deck during play reveals it and resolves its Revelation — Cover Up
 //! enters the controller's threat area with 3 clues instead of staying in hand.
 
+use cards::REGISTRY;
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
-use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
-};
-use game_core::TurnAction;
+use game_core::state::{CardCode, GameState, InvestigatorId, LocationId, Phase};
+use game_core::test_support::{self, GameStateBuilder};
 
 const COVER_UP: &str = "01007";
 const HOLY_ROSARY: &str = "01059"; // a non-weakness asset, for the negative case
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Solo investigator at a revealed location, mid-Investigation, 3 actions, no
 /// enemies (so the Draw action's `AoO` loop is empty and resolves synchronously),
 /// with `deck_top` as the top card of an otherwise-filler deck.
-fn draw_state(deck_top: &str) -> (game_core::GameState, InvestigatorId) {
+fn draw_state(deck_top: &str) -> (GameState, InvestigatorId) {
     let id = InvestigatorId(1);
     let loc = LocationId(101);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc);
     inv.actions_remaining = 3;
     // Top of deck is drawn first (draw_cards drains from the front).
@@ -37,7 +37,7 @@ fn draw_state(deck_top: &str) -> (game_core::GameState, InvestigatorId) {
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(id)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .build();
     (state, id)
 }
@@ -46,7 +46,8 @@ fn draw_state(deck_top: &str) -> (game_core::GameState, InvestigatorId) {
 fn drawing_cover_up_reveals_it_into_the_threat_area() {
     let (state, id) = draw_state(COVER_UP);
 
-    let result = dispatch_turn_action_unchecked(state, &TurnAction::Draw { investigator: id });
+    let result =
+        test_support::dispatch_turn_action_unchecked(state, &TurnAction::Draw { investigator: id });
 
     assert!(
         !matches!(result.outcome, EngineOutcome::Rejected { .. }),
@@ -80,7 +81,8 @@ fn drawing_cover_up_reveals_it_into_the_threat_area() {
 fn drawing_a_non_weakness_leaves_it_in_hand() {
     let (state, id) = draw_state(HOLY_ROSARY);
 
-    let result = dispatch_turn_action_unchecked(state, &TurnAction::Draw { investigator: id });
+    let result =
+        test_support::dispatch_turn_action_unchecked(state, &TurnAction::Draw { investigator: id });
 
     let inv = &result.state.investigators[&id];
     assert!(

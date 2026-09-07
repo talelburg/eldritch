@@ -61,17 +61,18 @@
 //! group need card shapes the corpus cannot supply; they are in
 //! `mythos_phase_probes.rs` with their probes inline.
 
-use game_core::action::RosterEntry;
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::card_data::{CardKind, CardType};
-use game_core::engine::{apply, EngineOutcome};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind};
 use game_core::event::Event;
-use game_core::seat_and_open;
 use game_core::state::{
     Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, Continuation, FastWindowKind, GameState,
     InvestigatorId, LocationId, Phase, PhaseStep,
 };
-use game_core::test_support::{take_turn_action, GameStateBuilder};
-use game_core::{assert_event, Action, InputKind, InputResponse, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event, card_registry};
 
 /// Ancient Evils — *"**Revelation** - Place 1 doom on the current agenda. This
 /// effect can cause the current agenda to advance."*
@@ -91,7 +92,7 @@ const DAISY: &str = "01002";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Rise of the Ghouls' printed doom threshold, read from the corpus rather
@@ -139,7 +140,7 @@ fn with_encounter_deck(state: &mut GameState, codes: &[&str]) {
 
 /// Close one investigator's mulligan prompt, keeping the whole opening hand.
 fn keep_hand(state: GameState) -> GameState {
-    apply(
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -159,11 +160,11 @@ fn setup_at_mythos_draw(state: GameState) -> GameState {
         deck: vec![],
     }];
     // seat_and_open opens the mulligan prompt; close it (keep hand).
-    let state = keep_hand(seat_and_open(state, &roster).state);
+    let state = keep_hand(engine::seat_and_open(state, &roster).state);
     // Sole investigator ends their turn → auto-advance through
     // Investigation → Enemy → Upkeep → Mythos (round 2).
     // Pauses with the encounter-draw cursor on inv1.
-    take_turn_action(state, &TurnAction::EndTurn).state
+    test_support::take_turn_action(state, &TurnAction::EndTurn).state
 }
 
 /// The two-investigator equivalent: Roland and Daisy, both seated at the
@@ -180,16 +181,16 @@ fn setup_two_investigators_at_mythos_draw(state: GameState) -> GameState {
             deck: vec![],
         },
     ];
-    let mut state = keep_hand(keep_hand(seat_and_open(state, &roster).state));
+    let mut state = keep_hand(keep_hand(engine::seat_and_open(state, &roster).state));
     // inv1 ends turn → rotates to inv2.
-    state = take_turn_action(state, &TurnAction::EndTurn).state;
+    state = test_support::take_turn_action(state, &TurnAction::EndTurn).state;
     // inv2 is the last in turn_order → ticks through phases into Mythos.
-    take_turn_action(state, &TurnAction::EndTurn).state
+    test_support::take_turn_action(state, &TurnAction::EndTurn).state
 }
 
 /// The `Confirm` that answers the step-1.4 encounter-draw prompt.
-fn draw_encounter_card(state: GameState) -> game_core::ApplyResult {
-    apply(
+fn draw_encounter_card(state: GameState) -> ApplyResult {
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Confirm,
@@ -362,7 +363,7 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
             .expect("InvestigatorId(2) among offered options")
             .id
     };
-    let resumed = apply(
+    let resumed = engine::apply(
         suspended.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(pick),
@@ -636,7 +637,7 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
     );
 
     // Now close the window with Skip (player decides not to use the Fast ability).
-    let skip_result = apply(
+    let skip_result = engine::apply(
         draw_result.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Skip,

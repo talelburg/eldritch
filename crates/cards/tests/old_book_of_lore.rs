@@ -10,20 +10,17 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use game_core::engine::EngineOutcome;
-use game_core::engine::TurnAction;
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Phase,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId,
+    LocationId, Phase,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, take_turn_action, test_investigator, test_location,
-    GameStateBuilder,
-};
-use game_core::{
-    apply, assert_event, legal_actions, Action, InputResponse, OptionId, PlayerAction,
-};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event, card_registry};
 
 const OLD_BOOK: &str = "01031";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -32,13 +29,13 @@ const BOOK_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Board: Old Book of Lore in play, the active investigator alone at `LOC` with
 /// a known 4-card deck (top 3 distinct, plus a 4th below the searched region).
-fn board() -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board() -> GameState {
+    let mut inv = test_support::test_investigator(1);
     inv.cards_in_play
         .push(CardInPlay::enter_play(CardCode::new(OLD_BOOK), BOOK_INST));
     inv.deck = vec![
@@ -51,15 +48,15 @@ fn board() -> game_core::GameState {
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .with_investigator_turn(INV)
         .build()
 }
 
-fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
-    take_turn_action(
+fn activate(state: GameState) -> ApplyResult {
+    test_support::take_turn_action(
         state,
         &TurnAction::ActivateAbility {
             investigator: INV,
@@ -69,8 +66,8 @@ fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
     )
 }
 
-fn pick(state: game_core::GameState, option: u32) -> game_core::engine::ApplyResult {
-    apply(
+fn pick(state: GameState, option: u32) -> ApplyResult {
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(option)),
@@ -131,14 +128,14 @@ fn an_empty_deck_cannot_be_searched() {
     // validator); dispatch straight to the handler to prove *it* rejects a
     // directly-submitted activation.
     assert!(
-        !legal_actions(&state).contains(&TurnAction::ActivateAbility {
+        !enumerate::legal_actions(&state).contains(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(BOOK_INST),
             address: AbilityAddress::Printed(0),
         }),
         "the turn menu does not offer an activation the validator would reject",
     );
-    let r = dispatch_turn_action_unchecked(
+    let r = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::ActivateAbility {
             investigator: INV,

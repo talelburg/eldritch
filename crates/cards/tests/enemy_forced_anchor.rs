@@ -21,16 +21,16 @@
 //! pause), which is where the anchor is readable. The `after` cell is the one
 //! the card prints, and the module's own header quotes it.
 
+use cards::REGISTRY;
+use game_core::card_registry;
 use game_core::dsl::EventTiming;
 use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::state::{Agenda, CardCode, EnemyId, InvestigatorId};
-use game_core::test_support::{
-    fire_forced_on_enemy_attack, test_enemy, test_investigator, GameStateBuilder,
-};
+use game_core::test_support::{self, GameStateBuilder};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 #[test]
@@ -39,9 +39,9 @@ fn enemy_01102_forced_ack_anchors_to_the_attacking_enemy() {
     let attacker_id = EnemyId(7);
     // Skids O'Toole (01003) has no implemented abilities — a real code so any
     // registry-backed lookup resolves (mirrors `agenda_forced_anchor.rs`).
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.investigator_card.code = CardCode::new("01003");
-    let mut attacker = test_enemy(7, "Silver Twilight Acolyte");
+    let mut attacker = test_support::test_enemy(7, "Silver Twilight Acolyte");
     attacker.code = CardCode::new("01102");
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
@@ -58,7 +58,7 @@ fn enemy_01102_forced_ack_anchors_to_the_attacking_enemy() {
     state.interactive_acknowledge = true;
 
     let mut events = Vec::new();
-    let out = fire_forced_on_enemy_attack(
+    let out = test_support::fire_forced_on_enemy_attack(
         &mut state,
         &mut events,
         attacker_id,

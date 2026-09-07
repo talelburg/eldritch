@@ -59,7 +59,7 @@ pub fn abilities() -> Vec<Ability> {
 mod tests {
     use card_dsl::dsl::{
         Effect, EventPattern, EventTiming, InvestigatorTarget, ModifierAudience, ModifierScope,
-        SkillTestKind, Stat, TestOutcome, Trigger,
+        SkillTestKind, Stat, TestOutcome, Trigger, TriggerKind,
     };
 
     #[test]
@@ -87,7 +87,7 @@ mod tests {
                     by_controller: true,
                 },
                 timing: EventTiming::After,
-                kind: card_dsl::dsl::TriggerKind::Reaction,
+                kind: TriggerKind::Reaction,
             },
         );
         assert_eq!(

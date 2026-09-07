@@ -4,32 +4,30 @@
 //! process so it can install the process-global registry against the real
 //! corpus.
 
-use game_core::action::{EngineRecord, InputResponse, PlayerAction};
-use game_core::engine::OptionId;
-use game_core::state::AbilityAddress;
+use cards::REGISTRY;
+use game_core::action::{Action, EngineRecord, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
-    AbilitySource, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    Continuation, EnemyId, InvestigatorId, Location, LocationId, Phase, TokenModifiers,
-    UpkeepResume, UseKind,
+    AbilityAddress, AbilitySource, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
+    ChaosToken, Continuation, EnemyId, GameState, InvestigationResume, InvestigatorId, Location,
+    LocationId, ModifierTarget, Phase, SkillKind, TokenModifiers, UpkeepResume, UseKind,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, drive, fire_forced_on_round_end, run_upkeep_round_end,
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
-    ScriptedResolver, TestSession,
-};
-use game_core::{apply, Action, EngineOutcome, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, ScriptedResolver, TestSession};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Reveal the top encounter card for investigator 1, committing no cards
 /// at any skill-test commit window that opens.
-fn reveal_top(state: game_core::GameState) -> game_core::ApplyResult {
+fn reveal_top(state: GameState) -> ApplyResult {
     let mut resolver = ScriptedResolver::new();
     resolver.commit_cards(&[]);
-    drive(
+    test_support::drive(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed {
             investigator: InvestigatorId(1),
@@ -40,10 +38,10 @@ fn reveal_top(state: game_core::GameState) -> game_core::ApplyResult {
 
 /// One investigator at location 20 (printed shroud 2), with `treachery`
 /// on top of the encounter deck.
-fn board_with(treachery: &str) -> game_core::GameState {
+fn board_with(treachery: &str) -> GameState {
     let mut state = GameStateBuilder::new()
-        .with_investigator_at(test_investigator(1), LocationId(20))
-        .with_location(test_location(20, "Here"))
+        .with_investigator_at(test_support::test_investigator(1), LocationId(20))
+        .with_location(test_support::test_location(20, "Here"))
         .with_turn_order([InvestigatorId(1)])
         .build();
     state.encounter_deck.push_back(CardCode::new(treachery));
@@ -68,12 +66,12 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
 
     // +2 shroud: printed 2 → modified 4.
     assert_eq!(
-        game_core::modified_value(
+        modified_value::modified_value(
             &result.state,
-            Some(&cards::REGISTRY),
-            game_core::ModifierTarget::Location(loc.id),
-            game_core::ModifiedQuantity::Shroud,
-            game_core::ReadContext::from_state(&result.state),
+            Some(&REGISTRY),
+            ModifierTarget::Location(loc.id),
+            ModifiedQuantity::Shroud,
+            ReadContext::from_state(&result.state),
         )
         .total(),
         4,
@@ -86,14 +84,14 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
     // forced collector reads `tested_location` off that frame to scan the
     // location's attachment zone (the lean, location-free timing event derives
     // the location from the stack rather than carrying it).
-    let mut loc = test_location(20, "Here");
+    let mut loc = test_support::test_location(20, "Here");
     loc.shroud = 0; // effective 0 + 2 (Obscuring Fog) = 2; intellect 3 clears it
     loc.clues = 1;
     loc.attachments.push(CardInPlay::enter_play(
         CardCode::new("01168"),
         CardInstanceId(1),
     ));
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(20));
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -147,7 +145,7 @@ fn dissonant_voices_enters_threat_area_and_discards_on_round_end() {
     // Forced — at the end of the round, discard Dissonant Voices.
     let mut state = result.state;
     let mut events = Vec::new();
-    let outcome = fire_forced_on_round_end(&mut state, &mut events);
+    let outcome = test_support::fire_forced_on_round_end(&mut state, &mut events);
     assert_eq!(outcome, EngineOutcome::Done);
     assert!(
         state.investigators[&InvestigatorId(1)]
@@ -162,7 +160,7 @@ fn dissonant_voices_enters_threat_area_and_discards_on_round_end() {
 fn dissonant_voices_forbids_playing_an_asset() {
     // Investigator mid-investigation with a playable asset (Holy Rosary,
     // 01059) in hand and Dissonant Voices in their threat area.
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(101));
     inv.hand = vec![CardCode::new("01059")];
     inv.threat_area.push(CardInPlay::enter_play(
@@ -173,10 +171,10 @@ fn dissonant_voices_forbids_playing_an_asset() {
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(InvestigatorId(1))
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .build();
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::PlayCard {
             investigator: InvestigatorId(1),
@@ -205,7 +203,7 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
     // round-end coordinator (not the bare `queue_forced_triggers`), which is the
     // production route for 2+ simultaneous forced.
     let loc = |id, code: &str, name| Location::new(LocationId(id), CardCode::new(code), name, 1, 0);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode::new("01165"),
         CardInstanceId(0),
@@ -220,7 +218,7 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
         .with_location(loc(2, "01112", "Hallway"))
         .with_location(loc(5, "01115", "Parlor"))
         .build();
-    let mut ghoul = test_enemy(1, "Ghoul");
+    let mut ghoul = test_support::test_enemy(1, "Ghoul");
     ghoul.traits = vec!["Monster".into(), "Ghoul".into()];
     ghoul.current_location = Some(LocationId(2)); // Hallway
     state.enemies.insert(EnemyId(1), ghoul);
@@ -232,14 +230,14 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
 
     // Walk the round-end coordinator: 2+ At-forced → the lead orders them.
     let mut events = Vec::new();
-    let opened = run_upkeep_round_end(&mut state, &mut events);
+    let opened = test_support::run_upkeep_round_end(&mut state, &mut events);
     assert!(
         matches!(opened, EngineOutcome::AwaitingInput { .. }),
         "two simultaneous RoundEnded forced present the lead an ordering choice: {opened:?}",
     );
     // Resolve the forced run in the lead's chosen order: first pick, then the
     // remaining one, ending Done — both fire, neither rejects.
-    let after_first = apply(
+    let after_first = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -250,7 +248,7 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
         "the second forced is still pending after the first resolves: {:?}",
         after_first.outcome,
     );
-    let done = apply(
+    let done = engine::apply(
         after_first.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -280,7 +278,7 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
 
 #[test]
 fn frozen_in_fear_surcharges_first_move_each_round_only() {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(1));
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode::new("01164"),
@@ -290,15 +288,15 @@ fn frozen_in_fear_surcharges_first_move_each_round_only() {
         .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_active_investigator(InvestigatorId(1))
-        .with_location(test_location(1, "A"))
-        .with_location(test_location(2, "B"))
+        .with_location(test_support::test_location(1, "A"))
+        .with_location(test_support::test_location(2, "B"))
         .with_investigator_turn(InvestigatorId(1))
         .build();
     state.connect(LocationId(1), LocationId(2));
     assert_eq!(state.investigators[&InvestigatorId(1)].actions_remaining, 3);
 
     // First move this round costs 2 (base 1 + surcharge 1): 3 → 1.
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         state,
         &TurnAction::Move {
             investigator: InvestigatorId(1),
@@ -313,7 +311,7 @@ fn frozen_in_fear_surcharges_first_move_each_round_only() {
     );
 
     // Second move this round costs 1 (surcharge already spent): 1 → 0.
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         r.state,
         &TurnAction::Move {
             investigator: InvestigatorId(1),
@@ -330,8 +328,8 @@ fn frozen_in_fear_surcharges_first_move_each_round_only() {
 
 /// Build a two-investigator Investigation-phase board with Frozen in Fear
 /// in investigator 1's threat area and a single rigged chaos token.
-fn frozen_in_fear_board(token: ChaosToken) -> game_core::GameState {
-    let mut inv1 = test_investigator(1);
+fn frozen_in_fear_board(token: ChaosToken) -> GameState {
+    let mut inv1 = test_support::test_investigator(1);
     inv1.threat_area.push(CardInPlay::enter_play(
         CardCode::new("01164"),
         CardInstanceId(0),
@@ -339,13 +337,13 @@ fn frozen_in_fear_board(token: ChaosToken) -> game_core::GameState {
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv1)
-        .with_investigator(test_investigator(2))
+        .with_investigator(test_support::test_investigator(2))
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         // Mid-Investigation invariant (slice 1a): EndTurn rotates / cascades
         // through the InvestigationPhase anchor.
         .with_phase_anchor(Continuation::InvestigationPhase {
-            resume: game_core::state::InvestigationResume::TurnBegins,
+            resume: InvestigationResume::TurnBegins,
         })
         // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
         // EndTurn pops (or strands a skill test below, then pops on resume).
@@ -355,7 +353,7 @@ fn frozen_in_fear_board(token: ChaosToken) -> game_core::GameState {
     state
 }
 
-fn end_turn_committing_nothing(state: game_core::GameState) -> game_core::ApplyResult {
+fn end_turn_committing_nothing(state: GameState) -> ApplyResult {
     TestSession::new(state)
         .take(&TurnAction::EndTurn)
         .resolve_choices(|c| {
@@ -422,7 +420,7 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
     // rather than abandoning it. After both resolve, the end-of-turn tail runs
     // (rotation to the next investigator).
 
-    let mut inv1 = test_investigator(1);
+    let mut inv1 = test_support::test_investigator(1);
     inv1.threat_area.push(CardInPlay::enter_play(
         CardCode::new("01164"),
         CardInstanceId(0),
@@ -434,13 +432,13 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv1)
-        .with_investigator(test_investigator(2))
+        .with_investigator(test_support::test_investigator(2))
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         // Mid-Investigation invariant (slice 1a): EndTurn rotates / cascades
         // through the InvestigationPhase anchor.
         .with_phase_anchor(Continuation::InvestigationPhase {
-            resume: game_core::state::InvestigationResume::TurnBegins,
+            resume: InvestigationResume::TurnBegins,
         })
         // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
         // EndTurn pops (or strands a skill test below, then pops on resume).
@@ -528,8 +526,8 @@ fn obscuring_fog_limit_one_per_location_discards_the_second_copy() {
 /// designator, so per the Official FAQ it *counts as a Fight action* — and
 /// Frozen in Fear surcharges *"the first time you perform one of the following
 /// actions (move, fight, or evade) each round"*, one budget across the three.
-fn frozen_in_fear_with_weapon_board() -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn frozen_in_fear_with_weapon_board() -> GameState {
+    let mut inv = test_support::test_investigator(1);
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode::new("01164"),
         CardInstanceId(0),
@@ -538,7 +536,7 @@ fn frozen_in_fear_with_weapon_board() -> game_core::GameState {
     weapon.uses.insert(UseKind::Ammo, 4);
     inv.cards_in_play.push(weapon);
 
-    let mut enemy = test_enemy(100, "Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Ghoul");
     enemy.fight = 3;
     enemy.max_health = 9;
     enemy.engaged_with = Some(InvestigatorId(1));
@@ -547,7 +545,7 @@ fn frozen_in_fear_with_weapon_board() -> game_core::GameState {
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LocationId(20))
-        .with_location(test_location(20, "Here"))
+        .with_location(test_support::test_location(20, "Here"))
         .with_enemy(enemy)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
@@ -558,7 +556,7 @@ fn frozen_in_fear_with_weapon_board() -> game_core::GameState {
 }
 
 /// Fire the .45 Automatic, committing nothing to the attack's skill test.
-fn fire_weapon(state: game_core::GameState) -> game_core::ApplyResult {
+fn fire_weapon(state: GameState) -> ApplyResult {
     TestSession::new(state)
         .take(&TurnAction::ActivateAbility {
             investigator: InvestigatorId(1),
@@ -648,7 +646,7 @@ fn the_action_menu_hides_a_designated_fight_the_surcharge_makes_unaffordable() {
         address: AbilityAddress::Printed(0),
     };
     assert!(
-        game_core::engine::enumerate::legal_actions(&state).contains(&activation),
+        enumerate::legal_actions(&state).contains(&activation),
         "with 3 actions the surcharged Fight (cost 2) is affordable",
     );
 
@@ -658,7 +656,7 @@ fn the_action_menu_hides_a_designated_fight_the_surcharge_makes_unaffordable() {
         .expect("investigator 1")
         .actions_remaining = 1;
     assert!(
-        !game_core::engine::enumerate::legal_actions(&state).contains(&activation),
+        !enumerate::legal_actions(&state).contains(&activation),
         "1 action left cannot pay the surcharged cost of 2, so the menu omits it",
     );
 }
@@ -670,7 +668,7 @@ fn dissonant_voices_keeps_a_fast_event_out_of_a_player_window() {
     // your turn. / Discover 1 clue at your location.") is fast-eligible on this
     // board, so an engine-opened ST.1 player window enumerates it — but
     // Dissonant Voices forbids playing events, so it must not be offered.
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(101));
     inv.resources = 5;
     inv.hand = vec![CardCode::new("01037")];
@@ -678,7 +676,7 @@ fn dissonant_voices_keeps_a_fast_event_out_of_a_player_window() {
         CardCode::new("01165"),
         CardInstanceId(0),
     ));
-    let mut loc = test_location(101, "Study");
+    let mut loc = test_support::test_location(101, "Study");
     loc.clues = 2;
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -689,12 +687,8 @@ fn dissonant_voices_keeps_a_fast_event_out_of_a_player_window() {
         .build();
     state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
 
-    let result = game_core::test_support::perform_skill_test(
-        state,
-        InvestigatorId(1),
-        game_core::state::SkillKind::Willpower,
-        4,
-    );
+    let result =
+        test_support::perform_skill_test(state, InvestigatorId(1), SkillKind::Willpower, 4);
     if let EngineOutcome::AwaitingInput { ref request, .. } = result.outcome {
         assert!(
             request.options.is_empty(),

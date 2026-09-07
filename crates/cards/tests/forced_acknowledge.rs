@@ -7,31 +7,31 @@
 //! interactive pause is then resumed through the public `apply(ResolveInput)`
 //! path (the same way a host resumes an `AwaitingInput`).
 
-use game_core::engine::{EngineOutcome, OptionTarget};
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{CardCode, Continuation, GameState, InvestigatorId, LocationId};
-use game_core::test_support::{
-    fire_forced_on_enter, test_investigator, test_location, GameStateBuilder,
-};
-use game_core::{Action, InputResponse, OptionId, PlayerAction};
+use game_core::test_support::{self, GameStateBuilder};
 
 const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(1);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// One investigator standing on a location whose card `code` carries a forced
 /// on-enter ability, with `interactive_acknowledge` set as given.
 fn state_on_location(code: &str, interactive: bool) -> GameState {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LOC);
     // Back the investigator with a real corpus card so the harm path's defeat
     // check (max_health/max_sanity, read from the registry) resolves — Roland
     // Banks (01001), 9 health / 5 sanity, so 1 harm never defeats.
     inv.investigator_card.code = CardCode::new("01001");
-    let mut loc = test_location(1, "Forced Location");
+    let mut loc = test_support::test_location(1, "Forced Location");
     loc.code = CardCode::new(code);
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
@@ -42,8 +42,8 @@ fn state_on_location(code: &str, interactive: bool) -> GameState {
     state
 }
 
-fn resume_single_option(state: GameState) -> game_core::engine::ApplyResult {
-    game_core::apply(
+fn resume_single_option(state: GameState) -> ApplyResult {
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -55,7 +55,7 @@ fn resume_single_option(state: GameState) -> game_core::engine::ApplyResult {
 fn attic_forced_acknowledges_before_horror_when_interactive() {
     let mut state = state_on_location("01113", true); // the Attic — 1 horror
     let mut events = Vec::new();
-    let out = fire_forced_on_enter(&mut state, &mut events, INV, LOC);
+    let out = test_support::fire_forced_on_enter(&mut state, &mut events, INV, LOC);
     match out {
         EngineOutcome::AwaitingInput { request, .. } => {
             assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
@@ -94,7 +94,7 @@ fn attic_forced_acknowledges_before_horror_when_interactive() {
 fn attic_forced_resolves_synchronously_when_not_interactive() {
     let mut state = state_on_location("01113", false);
     let mut events = Vec::new();
-    let out = fire_forced_on_enter(&mut state, &mut events, INV, LOC);
+    let out = test_support::fire_forced_on_enter(&mut state, &mut events, INV, LOC);
     assert!(
         matches!(out, EngineOutcome::Done),
         "flag off: no suspend, got {out:?}"
@@ -110,7 +110,7 @@ fn attic_forced_resolves_synchronously_when_not_interactive() {
 fn cellar_forced_acknowledges_before_damage_when_interactive() {
     let mut state = state_on_location("01114", true); // the Cellar — 1 damage
     let mut events = Vec::new();
-    let out = fire_forced_on_enter(&mut state, &mut events, INV, LOC);
+    let out = test_support::fire_forced_on_enter(&mut state, &mut events, INV, LOC);
     match out {
         EngineOutcome::AwaitingInput { request, .. } => {
             assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
@@ -141,7 +141,7 @@ fn cellar_forced_acknowledges_before_damage_when_interactive() {
 fn cellar_forced_resolves_synchronously_when_not_interactive() {
     let mut state = state_on_location("01114", false);
     let mut events = Vec::new();
-    let out = fire_forced_on_enter(&mut state, &mut events, INV, LOC);
+    let out = test_support::fire_forced_on_enter(&mut state, &mut events, INV, LOC);
     assert!(
         matches!(out, EngineOutcome::Done),
         "flag off: no suspend, got {out:?}"

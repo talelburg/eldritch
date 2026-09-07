@@ -13,15 +13,14 @@
 //! tests (which deliberately don't install one and would see
 //! `metadata_for == None`, contributing zero icons).
 
-use game_core::engine::EngineOutcome;
+use cards::REGISTRY;
+use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, InvestigatorId, SkillKind, TokenModifiers, Zone,
+    CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, SkillKind, TokenModifiers, Zone,
 };
-use game_core::test_support::{
-    drive_skill_test, perform_skill_test, test_investigator, GameStateBuilder, ScriptedResolver,
-};
-use game_core::{assert_event, assert_event_count, assert_no_event};
+use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
+use game_core::{assert_event, assert_event_count, assert_no_event, card_registry};
 
 const PERCEPTION: &str = "01090";
 const UNEXPECTED_COURAGE: &str = "01093";
@@ -32,16 +31,16 @@ const OVERPOWER: &str = "01091";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Hand contents for the test. Builds a state with the named cards in
 /// the active investigator's hand, base intellect 3, and a single-
 /// `Numeric(0)` chaos bag (so the token-modifier contribution is
 /// always 0).
-fn state_with_hand(hand: &[&str]) -> (game_core::GameState, InvestigatorId) {
+fn state_with_hand(hand: &[&str]) -> (GameState, InvestigatorId) {
     let id = InvestigatorId(1);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
     // Cards for the draw-skills' success draws to land on. Without them the
     // draw hits an empty deck, which now applies the deck-out horror (#636) —
@@ -62,15 +61,11 @@ fn state_with_hand(hand: &[&str]) -> (game_core::GameState, InvestigatorId) {
 /// Start an Intellect-vs-5 plain skill test and drive it through with the
 /// supplied commit codes. Uses `drive_skill_test` so the resolver can translate
 /// codes → indices using the in-flight state at resolve time.
-fn drive_with_commits(
-    state: game_core::GameState,
-    id: InvestigatorId,
-    commit: &[&str],
-) -> game_core::ApplyResult {
+fn drive_with_commits(state: GameState, id: InvestigatorId, commit: &[&str]) -> ApplyResult {
     let mut resolver = ScriptedResolver::new();
     let codes: Vec<CardCode> = commit.iter().map(|c| CardCode::new(*c)).collect();
     resolver.commit_cards(&codes);
-    drive_skill_test(state, id, SkillKind::Intellect, 5, resolver)
+    test_support::drive_skill_test(state, id, SkillKind::Intellect, 5, resolver)
 }
 
 #[test]
@@ -213,7 +208,7 @@ fn awaiting_input_emits_between_started_and_revealed_for_real_card_state() {
     // `apply` returns AwaitingInput; the chaos token hasn't been
     // drawn yet.
     let (state, id) = state_with_hand(&[PERCEPTION]);
-    let paused = perform_skill_test(state, id, SkillKind::Intellect, 5);
+    let paused = test_support::perform_skill_test(state, id, SkillKind::Intellect, 5);
     assert!(matches!(
         paused.outcome,
         EngineOutcome::AwaitingInput { .. }

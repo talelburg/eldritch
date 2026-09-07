@@ -22,18 +22,16 @@
 //! use \[fast\] fast actions as many times as you want, as long as you can
 //! pay the cost; there is no limit."*).
 
-use game_core::engine::{ApplyResult, EngineOutcome, TurnAction};
+use cards::REGISTRY;
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState,
-    InvestigatorId, Phase, SkillKind, TokenModifiers,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    GameState, InvestigatorId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, drive_skill_test, perform_skill_test,
-    perform_skill_test_no_commits, test_investigator, GameStateBuilder, TakeOneFastPlay,
-};
-use game_core::{assert_event, assert_no_event};
+use game_core::test_support::{self, GameStateBuilder, TakeOneFastPlay};
+use game_core::{assert_event, assert_no_event, card_registry};
 
 const HYPERAWARENESS: &str = "01034";
 
@@ -42,7 +40,7 @@ const AGILITY_ABILITY: usize = 1;
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Build a state with one Hyperawareness already in play (instance
@@ -53,7 +51,7 @@ fn install_real_registry() {
 fn state_with_hyperawareness() -> (GameState, InvestigatorId, CardInstanceId) {
     let id = InvestigatorId(1);
     let instance_id = CardInstanceId(0);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(HYPERAWARENESS),
         instance_id,
@@ -80,7 +78,7 @@ fn test_buying(
     difficulty: i8,
     option_index: usize,
 ) -> ApplyResult {
-    drive_skill_test(
+    test_support::drive_skill_test(
         state,
         id,
         skill,
@@ -158,7 +156,8 @@ fn the_buff_does_not_survive_into_the_next_test() {
         }
     );
 
-    let second = perform_skill_test_no_commits(first.state, id, SkillKind::Intellect, 4);
+    let second =
+        test_support::perform_skill_test_no_commits(first.state, id, SkillKind::Intellect, 4);
     assert_event!(
         second.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
@@ -181,7 +180,7 @@ fn activation_with_no_test_in_flight_is_rejected_and_buffs_nothing_later() {
     };
 
     assert!(
-        !game_core::engine::legal_actions(&state).contains(&action),
+        !enumerate::legal_actions(&state).contains(&action),
         "the open-turn menu must not offer a buff that cannot be bought",
     );
 
@@ -190,7 +189,7 @@ fn activation_with_no_test_in_flight_is_rejected_and_buffs_nothing_later() {
     // the menu above. (The evaluator's own "no skill test in flight" rejection
     // sits behind it, for the non-activation paths; it is unit-tested in
     // `engine::evaluator`.)
-    let rejected = dispatch_turn_action_unchecked(state, &action);
+    let rejected = test_support::dispatch_turn_action_unchecked(state, &action);
     let reason = match &rejected.outcome {
         EngineOutcome::Rejected { reason } => reason.to_string(),
         other => panic!("expected a rejection, got {other:?}"),
@@ -207,7 +206,8 @@ fn activation_with_no_test_in_flight_is_rejected_and_buffs_nothing_later() {
     assert!(rejected.state.recorded_modifiers.is_empty());
 
     // And the test that follows is unbuffed: 3 intellect vs difficulty 4.
-    let after_test = perform_skill_test_no_commits(rejected.state, id, SkillKind::Intellect, 4);
+    let after_test =
+        test_support::perform_skill_test_no_commits(rejected.state, id, SkillKind::Intellect, 4);
     assert_event!(
         after_test.events,
         Event::SkillTestFailed { investigator, skill: SkillKind::Intellect, by: 1, .. }
@@ -221,9 +221,9 @@ fn activation_rejects_when_controller_lacks_a_resource() {
     // wallet: the cost gate refuses and nothing is recorded.
     let (mut state, id, instance_id) = state_with_hyperawareness();
     state.investigators.get_mut(&id).unwrap().resources = 0;
-    let started = perform_skill_test(state, id, SkillKind::Intellect, 4);
+    let started = test_support::perform_skill_test(state, id, SkillKind::Intellect, 4);
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         started.state,
         &TurnAction::ActivateAbility {
             investigator: id,

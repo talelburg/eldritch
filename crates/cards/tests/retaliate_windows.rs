@@ -36,16 +36,17 @@
 //!   - Guard Dog's ability triggers only on damage, not horror.
 #![allow(clippy::too_many_lines)]
 
-use game_core::engine::{apply, EngineOutcome, OptionId};
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, Enemy, EnemyId,
-    InvestigatorId, LocationId, Phase, TokenModifiers,
+    GameState, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
-};
-use game_core::{Action, InputResponse, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder};
 
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.
 const DODGE: &str = "01023";
@@ -55,14 +56,14 @@ const GUARD_DOG: &str = "01021";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Resolve a soak-distribution prompt (#44/K5b — a retaliate attack against an
 /// investigator with a soaker prompts for the damage distribution) by assigning
 /// every point onto the soaker asset. Returns the first result that is no longer
 /// a distribution prompt.
-fn soak_onto_asset(mut result: game_core::ApplyResult) -> game_core::ApplyResult {
+fn soak_onto_asset(mut result: ApplyResult) -> ApplyResult {
     while let EngineOutcome::AwaitingInput { request, .. } = &result.outcome {
         if !request.prompt.contains("to which target") {
             break;
@@ -74,7 +75,7 @@ fn soak_onto_asset(mut result: game_core::ApplyResult) -> game_core::ApplyResult
             .or_else(|| request.options.iter().find(|o| o.label == "Investigator"))
             .expect("a distribution option")
             .id;
-        result = apply(
+        result = engine::apply(
             result.state,
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::PickSingle(id),
@@ -97,7 +98,7 @@ fn retaliate_enemy(
     attack_damage: u8,
     max_health: u8,
 ) -> Enemy {
-    let mut e = test_enemy(id, format!("Retaliate Enemy {id}"));
+    let mut e = test_support::test_enemy(id, format!("Retaliate Enemy {id}"));
     e.fight = fight;
     e.max_health = max_health;
     e.attack_damage = attack_damage;
@@ -115,11 +116,11 @@ fn fight_state(
     enemy: Enemy,
     hand: Vec<CardCode>,
     cards_in_play: Vec<CardInPlay>,
-) -> (game_core::GameState, InvestigatorId, LocationId) {
+) -> (GameState, InvestigatorId, LocationId) {
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(101);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
     // Low combat so the test always fails: 1 + Numeric(0) = 1 < 5 (enemy fight).
     inv.skills.combat = 1;
@@ -128,7 +129,7 @@ fn fight_state(
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(inv)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
@@ -146,12 +147,12 @@ fn fight_state(
 /// chaos token is drawn and the skill test is resolved (failed → retaliate).
 /// Returns the `ApplyResult` from submitting the empty commit.
 fn submit_empty_commit(
-    state: game_core::GameState,
+    state: GameState,
     investigator: InvestigatorId,
     enemy: EnemyId,
-) -> game_core::engine::ApplyResult {
+) -> ApplyResult {
     // Step 1: initiate the Fight — suspends at the commit window.
-    let result = take_turn_action(
+    let result = test_support::take_turn_action(
         state,
         &TurnAction::Fight {
             investigator,
@@ -166,7 +167,7 @@ fn submit_empty_commit(
 
     // Step 2: submit an empty commit — the chaos token is drawn, the test
     // resolves (failed), and fire_retaliate_if_any is called.
-    apply(
+    engine::apply(
         result.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -245,7 +246,7 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
     );
 
     // Fire Guard Dog's reaction (PickSingle(0) = the single offered trigger).
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -371,7 +372,7 @@ fn dodge_cancels_retaliate_and_skill_test_ends() {
     );
 
     // Play Dodge (PickSingle(0) = the single cancel candidate).
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),

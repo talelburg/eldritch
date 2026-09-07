@@ -2,25 +2,27 @@
 //! across themselves and eligible soakers, one point at a time (RR p.7),
 //! driven through the real `apply` enemy-phase path against the corpus registry.
 
-use game_core::engine::OptionId;
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, InvestigatorId, LocationId, Phase,
+    CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, GameState, InvestigationResume,
+    InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
-};
-use game_core::{Action, EngineOutcome, InputResponse, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder};
 
 const GUARD_DOG: &str = "01021"; // Ally, 3 health / 1 sanity, retaliate reaction
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// One engaged ready enemy at the investigator's location dealing `damage` / 0 horror.
 fn engaged_attacker(id: u32, inv: InvestigatorId, loc: LocationId, damage: u8) -> Enemy {
-    let mut e = test_enemy(id, format!("Attacker {id}"));
+    let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
     e.max_health = 5;
     e.attack_damage = damage;
     e.attack_horror = 0;
@@ -31,13 +33,10 @@ fn engaged_attacker(id: u32, inv: InvestigatorId, loc: LocationId, damage: u8) -
 
 /// Investigation-phase state: one active investigator controlling `assets`, with
 /// `enemy` engaged. `EndTurn` advances into the Enemy phase and runs the attack.
-fn attack_state(
-    assets: Vec<(&str, CardInstanceId)>,
-    enemy: Enemy,
-) -> (game_core::GameState, InvestigatorId) {
+fn attack_state(assets: Vec<(&str, CardInstanceId)>, enemy: Enemy) -> (GameState, InvestigatorId) {
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(101);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     // Real investigator code so max_health()/max_sanity() reads from the
     // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
     inv.investigator_card.code = CardCode::new("01003");
@@ -52,13 +51,13 @@ fn attack_state(
     inv.deck = vec![CardCode::new(GUARD_DOG); 5];
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_location(test_location(101, "Study"))
+        .with_location(test_support::test_location(101, "Study"))
         .with_investigator(inv)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_enemy(enemy)
         .with_phase_anchor(Continuation::InvestigationPhase {
-            resume: game_core::state::InvestigationResume::TurnBegins,
+            resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(inv_id)
         .build();
@@ -92,8 +91,8 @@ fn pick(outcome: &EngineOutcome, needle: &str) -> OptionId {
         .id
 }
 
-fn resolve(state: game_core::GameState, id: OptionId) -> game_core::ApplyResult {
-    game_core::engine::apply(
+fn resolve(state: GameState, id: OptionId) -> ApplyResult {
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(id),
@@ -101,11 +100,7 @@ fn resolve(state: game_core::GameState, id: OptionId) -> game_core::ApplyResult 
     )
 }
 
-fn guard_dog_damage(
-    state: &game_core::GameState,
-    inv: InvestigatorId,
-    inst: CardInstanceId,
-) -> Option<u8> {
+fn guard_dog_damage(state: &GameState, inv: InvestigatorId, inst: CardInstanceId) -> Option<u8> {
     state.investigators[&inv]
         .cards_in_play
         .iter()
@@ -122,7 +117,7 @@ fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
     );
 
     // EndTurn → enemy phase → distribution prompt (Guard Dog has capacity).
-    let r1 = take_turn_action(state, &TurnAction::EndTurn);
+    let r1 = test_support::take_turn_action(state, &TurnAction::EndTurn);
     // First point → Guard Dog; still contested → second prompt → self.
     let r2 = resolve(r1.state, pick(&r1.outcome, "Asset"));
     let r3 = resolve(r2.state, pick(&r2.outcome, "Investigator"));
@@ -170,7 +165,7 @@ fn player_may_decline_to_soak_taking_all_damage() {
         engaged_attacker(7, InvestigatorId(1), LocationId(101), 2),
     );
 
-    let r1 = take_turn_action(state, &TurnAction::EndTurn);
+    let r1 = test_support::take_turn_action(state, &TurnAction::EndTurn);
     // Both points to the investigator — decline to soak.
     let r2 = resolve(r1.state, pick(&r1.outcome, "Investigator"));
     let r3 = resolve(r2.state, pick(&r2.outcome, "Investigator"));
@@ -197,7 +192,7 @@ fn a_full_soaker_drops_out_of_the_next_prompt() {
     // Pre-damage Guard Dog to 2 (health 3) → 1 remaining capacity.
     state.investigators.get_mut(&inv).unwrap().cards_in_play[0].accumulated_damage = 2;
 
-    let r1 = take_turn_action(state, &TurnAction::EndTurn);
+    let r1 = test_support::take_turn_action(state, &TurnAction::EndTurn);
     // First point → Guard Dog (its last point of capacity).
     let r2 = resolve(r1.state, pick(&r1.outcome, "Asset"));
 

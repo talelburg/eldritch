@@ -39,16 +39,14 @@ use game_core::assert_event;
 use game_core::dsl::{
     activated, gain_resources, heal_damage, Ability, InvestigatorTarget, UsageLimit, UsagePeriod,
 };
-use game_core::engine::{legal_actions, EngineOutcome, TurnAction};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::EngineOutcome;
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, Act, Agenda, CardCode, GameState, InvestigatorId, LocationId, Phase,
+    AbilityAddress, AbilitySource, Act, Agenda, CardCode, GameState, InvestigatorId, LocationId,
+    Phase,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, test_investigator, test_location, GameStateBuilder,
-    MockRegistry,
-};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 /// Synthetic **act**, standing in for Uncovering the Conspiracy 01123.
 const ACT_ONE: &str = "SRCACT01";
@@ -105,10 +103,10 @@ fn install_probe_registry() {
 fn board() -> GameState {
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_investigator_at(test_investigator(1), HERE)
-        .with_investigator_at(test_investigator(2), THERE)
-        .with_location(test_location(1, "Study"))
-        .with_location(test_location(2, "Hallway"))
+        .with_investigator_at(test_support::test_investigator(1), HERE)
+        .with_investigator_at(test_support::test_investigator(2), THERE)
+        .with_location(test_support::test_location(1, "Study"))
+        .with_location(test_support::test_location(2, "Hallway"))
         .with_active_investigator(MINE)
         .with_turn_order([MINE, NEIGHBOUR])
         .with_investigator_turn(MINE)
@@ -145,13 +143,13 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
 fn assert_offered_and_activatable(state: GameState, source: AbilitySource, why: &str) {
     let action = activation(source, LIVE);
     assert!(
-        legal_actions(&state).contains(&action),
+        enumerate::legal_actions(&state).contains(&action),
         "{why}, so its ability belongs in the turn menu; menu was {:?}",
-        legal_actions(&state),
+        enumerate::legal_actions(&state),
     );
 
     let before = state.investigators[&MINE].resources;
-    let result = dispatch_turn_action_unchecked(state, &action);
+    let result = test_support::dispatch_turn_action_unchecked(state, &action);
     assert!(
         !matches!(result.outcome, EngineOutcome::Rejected { .. }),
         "{why}, so the activation should resolve; got {:?}",
@@ -216,7 +214,10 @@ fn both_are_reachable_from_anywhere_on_the_board() {
 /// has none, so the event has to say what actually carried the ability.
 #[test]
 fn the_activation_event_names_the_board_card_it_came_from() {
-    let result = dispatch_turn_action_unchecked(board(), &activation(AbilitySource::Act, LIVE));
+    let result = test_support::dispatch_turn_action_unchecked(
+        board(),
+        &activation(AbilitySource::Act, LIVE),
+    );
     assert_event!(
         result.events,
         Event::AbilityActivated {
@@ -236,7 +237,8 @@ fn an_act_that_is_no_longer_current_is_not_reachable() {
     let mut state = board();
     state.act_index = 1;
 
-    let result = dispatch_turn_action_unchecked(state, &activation(AbilitySource::Act, LIVE));
+    let result =
+        test_support::dispatch_turn_action_unchecked(state, &activation(AbilitySource::Act, LIVE));
     assert_event!(
         result.events,
         Event::AbilityActivated { code, .. } if code.as_str() == ACT_TWO
@@ -258,7 +260,7 @@ fn an_absent_act_or_agenda_is_out_of_reach() {
     let mut state = board();
     state.act_deck.clear();
     state.agenda_deck.clear();
-    let menu = legal_actions(&state);
+    let menu = enumerate::legal_actions(&state);
 
     for source in [AbilitySource::Act, AbilitySource::Agenda] {
         assert!(
@@ -266,7 +268,8 @@ fn an_absent_act_or_agenda_is_out_of_reach() {
             "{source:?} must stay out of the turn menu with no deck loaded; menu was {menu:?}",
         );
         let before = state.clone();
-        let result = dispatch_turn_action_unchecked(state.clone(), &activation(source, LIVE));
+        let result =
+            test_support::dispatch_turn_action_unchecked(state.clone(), &activation(source, LIVE));
         let EngineOutcome::Rejected { reason } = &result.outcome else {
             panic!("activating {source:?} with no deck loaded must reject; got {result:?}");
         };
@@ -288,7 +291,7 @@ fn an_absent_act_or_agenda_is_out_of_reach() {
 #[test]
 fn an_inert_ability_stays_unoffered_from_the_board_cards() {
     let state = board();
-    let menu = legal_actions(&state);
+    let menu = enumerate::legal_actions(&state);
     for source in [AbilitySource::Act, AbilitySource::Agenda] {
         assert!(
             !menu.contains(&activation(source, INERT)),
@@ -310,12 +313,12 @@ fn a_usage_limited_board_ability_rejects_naming_699_rather_than_panicking() {
         let before = state.clone();
 
         assert!(
-            !legal_actions(&state).contains(&action),
+            !enumerate::legal_actions(&state).contains(&action),
             "an ability the engine cannot cap must not be offered; menu was {:?}",
-            legal_actions(&state),
+            enumerate::legal_actions(&state),
         );
 
-        let result = dispatch_turn_action_unchecked(state.clone(), &action);
+        let result = test_support::dispatch_turn_action_unchecked(state.clone(), &action);
         let EngineOutcome::Rejected { reason } = &result.outcome else {
             panic!("a usage-limited ability on {source:?} must reject, got {result:?}");
         };

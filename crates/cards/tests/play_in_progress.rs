@@ -36,12 +36,13 @@
 //! stale-index cases; neither has an `OnPlay` ability, so the play's only
 //! observable is where the card lands.
 
-use game_core::engine::EngineOutcome;
-use game_core::state::{CardCode, EnemyId, InvestigatorId, LocationId, Phase, Status};
-use game_core::test_support::{
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder,
-};
-use game_core::{apply, Action, InputResponse, OptionId, PlayerAction, TurnAction};
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::state::{CardCode, EnemyId, GameState, InvestigatorId, LocationId, Phase, Status};
+use game_core::test_support::{self, GameStateBuilder};
 
 const DYNAMITE: &str = "01024";
 const DODGE: &str = "01023";
@@ -54,11 +55,11 @@ const LOC_B: LocationId = LocationId(11);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
-fn pick(state: game_core::GameState, option: u32) -> game_core::engine::ApplyResult {
-    apply(
+fn pick(state: GameState, option: u32) -> ApplyResult {
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(option)),
@@ -70,8 +71,8 @@ fn pick(state: game_core::GameState, option: u32) -> game_core::engine::ApplyRes
 /// `resources` to spend, engaged by one ready enemy — so a non-fast play provokes
 /// an attack of opportunity. The attacker survives a Dynamite Blast (9 health) and
 /// deals 2 damage, so nothing but the play under test is in flight.
-fn board(hand: &[&str], resources: u8) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board(hand: &[&str], resources: u8) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LOC_A);
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
     inv.resources = resources;
@@ -79,12 +80,12 @@ fn board(hand: &[&str], resources: u8) -> game_core::GameState {
     // reads from the installed registry.
     inv.investigator_card.code = CardCode::new("01003");
 
-    let mut loc_a = test_location(10, "Cellar");
+    let mut loc_a = test_support::test_location(10, "Cellar");
     loc_a.connections = vec![LOC_B];
-    let mut loc_b = test_location(11, "Hallway");
+    let mut loc_b = test_support::test_location(11, "Hallway");
     loc_b.connections = vec![LOC_A];
 
-    let mut attacker = test_enemy(100, "Ghoul");
+    let mut attacker = test_support::test_enemy(100, "Ghoul");
     attacker.current_location = Some(LOC_A);
     attacker.engaged_with = Some(INV);
     attacker.max_health = 9;
@@ -119,7 +120,7 @@ fn board(hand: &[&str], resources: u8) -> game_core::GameState {
 fn dodging_the_aoo_of_a_non_fast_event_does_not_erase_it() {
     // Play Dynamite Blast (hand_index 0). Non-fast → action spent, cost paid,
     // card commences being played (leaves hand), then the AoO resolves.
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         board(&[DYNAMITE, DODGE], 6),
         &TurnAction::PlayCard {
             investigator: INV,
@@ -190,7 +191,7 @@ fn defeated_by_its_own_aoo_the_mid_play_event_is_removed_not_discarded() {
         .expect("attacker present")
         .attack_damage = 8; // Skids O'Toole is 8 health
 
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: INV,
@@ -246,7 +247,7 @@ fn defeated_by_its_own_aoo_the_mid_play_event_is_removed_not_discarded() {
 #[test]
 fn a_hand_shifting_reaction_does_not_swap_the_asset_that_enters_play() {
     // Machete 3 + Dodge 1 = 4 resources.
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         board(&[DODGE, MACHETE, KNIFE], 4),
         &TurnAction::PlayCard {
             investigator: INV,
@@ -295,7 +296,7 @@ fn a_hand_shifting_reaction_does_not_swap_the_asset_that_enters_play() {
 /// cover.
 #[test]
 fn a_hand_shifting_reaction_does_not_panic_on_a_short_hand() {
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         board(&[DODGE, MACHETE], 4),
         &TurnAction::PlayCard {
             investigator: INV,

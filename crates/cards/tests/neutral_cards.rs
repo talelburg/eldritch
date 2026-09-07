@@ -10,14 +10,16 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use game_core::engine::TurnAction;
-use game_core::engine::{EngineOutcome, OptionId};
+use cards::REGISTRY;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, InvestigatorId, Phase, SkillKind, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{take_turn_action, test_investigator, GameStateBuilder};
-use game_core::{assert_event, assert_no_event, Action, GameState, InputResponse, PlayerAction};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event, assert_no_event, card_registry};
 
 const EMERGENCY_CACHE: &str = "01088";
 const GUTS: &str = "01089";
@@ -25,12 +27,12 @@ const INV: InvestigatorId = InvestigatorId(1);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 #[test]
 fn emergency_cache_play_gains_three_resources() {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.hand = vec![CardCode::new(EMERGENCY_CACHE)];
     let before = inv.resources;
     let state = GameStateBuilder::new()
@@ -41,7 +43,7 @@ fn emergency_cache_play_gains_three_resources() {
         .with_investigator(inv)
         .build();
 
-    let r = take_turn_action(
+    let r = test_support::take_turn_action(
         state,
         &TurnAction::PlayCard {
             investigator: INV,
@@ -56,7 +58,7 @@ fn emergency_cache_play_gains_three_resources() {
 /// Guts holding `GUTS` + spare deck cards, willpower `wp`, with a chaos bag
 /// of `token` (`Numeric(0)` → success vs difficulty 1; `AutoFail` → failure).
 fn guts_board(wp: i8, token: ChaosToken) -> GameState {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.skills.willpower = wp;
     inv.hand = vec![CardCode::new(GUTS)];
     inv.deck = vec![CardCode::new("spare-1"), CardCode::new("spare-2")];
@@ -70,9 +72,9 @@ fn guts_board(wp: i8, token: ChaosToken) -> GameState {
         .build()
 }
 
-fn perform_and_commit_guts(state: GameState) -> game_core::engine::ApplyResult {
-    let paused = game_core::test_support::perform_skill_test(state, INV, SkillKind::Willpower, 1);
-    game_core::engine::apply(
+fn perform_and_commit_guts(state: GameState) -> ApplyResult {
+    let paused = test_support::perform_skill_test(state, INV, SkillKind::Willpower, 1);
+    engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple {

@@ -58,18 +58,18 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use game_core::card_registry;
-use game_core::engine::modified_value::{ModifiedQuantity, ReadContext};
+use cards::REGISTRY;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
+use game_core::engine::{ApplyResult, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     EnemyId, GameState, InvestigatorId, LocationId, ModifierTarget, Phase, SkillKind,
     TokenModifiers,
 };
-use game_core::test_support::{
-    test_enemy, test_investigator, test_location, GameStateBuilder, ScriptedResolver, TestSession,
-};
-use game_core::{assert_event, OptionId, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, ScriptedResolver, TestSession};
+use game_core::{assert_event, card_registry};
 
 /// Lita Chantler.
 const LITA: &str = "01117";
@@ -100,7 +100,7 @@ const MACHETE_INST: CardInstanceId = CardInstanceId(51);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// How the board is arranged for one case.
@@ -136,12 +136,12 @@ impl Board {
         // Skids O'Toole 01003 (8 health / 6 sanity), for both: the fixture's
         // own code is not in the real registry, and Dynamite Blast's damage
         // reads an investigator's printed health off it.
-        let mut keeper = test_investigator(1);
+        let mut keeper = test_support::test_investigator(1);
         keeper.investigator_card.code = CardCode::new(SKIDS);
         keeper.current_location = Some(PARLOR);
         keeper.skills.combat = 3;
 
-        let mut other = test_investigator(2);
+        let mut other = test_support::test_investigator(2);
         other.investigator_card.code = CardCode::new(SKIDS);
         other.current_location = Some(self.other_at);
         other.skills.combat = 3;
@@ -169,14 +169,14 @@ impl Board {
 
         // Health well clear of anything dealt below, so every case is read off
         // `damage` rather than off a defeat.
-        let mut ghoul = test_enemy(100, "Ghoul");
+        let mut ghoul = test_support::test_enemy(100, "Ghoul");
         ghoul.traits = vec!["Humanoid".into(), "Monster".into(), "Ghoul".into()];
         ghoul.fight = 3;
         ghoul.max_health = 9;
         ghoul.engaged_with = Some(self.actor);
         ghoul.current_location = Some(self.enemies_at);
 
-        let mut acolyte = test_enemy(101, "Silver Twilight Acolyte");
+        let mut acolyte = test_support::test_enemy(101, "Silver Twilight Acolyte");
         acolyte.code = CardCode::new(ACOLYTE);
         acolyte.traits = vec![
             "Humanoid".into(),
@@ -191,8 +191,8 @@ impl Board {
             .with_phase(Phase::Investigation)
             .with_investigator(keeper)
             .with_investigator(other)
-            .with_location(test_location(1, "Parlor"))
-            .with_location(test_location(2, "Hallway"))
+            .with_location(test_support::test_location(1, "Parlor"))
+            .with_location(test_support::test_location(2, "Hallway"))
             .with_enemy(ghoul)
             .with_enemy(acolyte)
             .with_active_investigator(self.actor)
@@ -216,7 +216,7 @@ impl Board {
 
 /// An investigator's modified `[combat]`, read the way the engine reads it.
 fn combat(state: &GameState, who: InvestigatorId) -> i32 {
-    game_core::modified_value(
+    modified_value::modified_value(
         state,
         card_registry::current(),
         ModifierTarget::Investigator(who),
@@ -282,7 +282,7 @@ fn drive(
     state: GameState,
     action: &TurnAction,
     script: impl FnOnce(&mut ScriptedResolver),
-) -> game_core::engine::ApplyResult {
+) -> ApplyResult {
     TestSession::new(state)
         .take(action)
         .resolve_choices(script)

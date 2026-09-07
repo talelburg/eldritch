@@ -16,18 +16,17 @@
 //! divergence only reproduces with cards whose printed icons and Fast play
 //! gates come from `cards::REGISTRY`.
 
+use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::engine::enumerate::{legal_actions, TurnAction};
-use game_core::engine::{EngineOutcome, InputRequest, OptionId};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{ApplyResult, EngineOutcome, InputRequest, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase, TokenModifiers,
     Zone,
 };
-use game_core::test_support::{
-    drive, test_investigator, test_location, ChoiceResolver, GameStateBuilder,
-};
-use game_core::{assert_event, assert_event_count};
+use game_core::test_support::{self, ChoiceResolver, GameStateBuilder};
+use game_core::{assert_event, assert_event_count, card_registry};
 
 /// Working a Hunch — `01037`. "Fast. Play only during your turn. / Discover 1
 /// clue at your location." Two intellect icons; costs 2 resources.
@@ -38,7 +37,7 @@ const DEDUCTION: &str = "01039";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Investigation-phase board with one investigator at a 3-clue, shroud-2
@@ -49,11 +48,11 @@ fn board(hand: &[&str], resources: u8) -> (GameState, InvestigatorId, LocationId
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(20);
 
-    let mut loc = test_location(20, "Study");
+    let mut loc = test_support::test_location(20, "Study");
     loc.clues = 3;
     loc.shroud = 2;
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
     inv.resources = resources;
     inv.current_location = Some(loc_id);
@@ -164,16 +163,21 @@ fn investigate(
     inv_id: InvestigatorId,
     commit: &[&str],
     play: Option<&str>,
-) -> (game_core::ApplyResult, CommitThenPlay) {
+) -> (ApplyResult, CommitThenPlay) {
     let want = TurnAction::Investigate {
         investigator: inv_id,
     };
-    let idx = legal_actions(&state)
+    let idx = enumerate::legal_actions(&state)
         .iter()
         .position(|a| *a == want)
-        .unwrap_or_else(|| panic!("Investigate not legal; offered {:?}", legal_actions(&state)));
+        .unwrap_or_else(|| {
+            panic!(
+                "Investigate not legal; offered {:?}",
+                enumerate::legal_actions(&state)
+            )
+        });
     let mut resolver = CommitThenPlay::new(commit, play);
-    let result = drive(
+    let result = test_support::drive(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).expect("fits"))),
@@ -186,7 +190,7 @@ fn investigate(
 /// The drive ends where a resolver-driven drive always ends for a completed
 /// turn action: back at the open-turn action menu, with the skill test fully
 /// torn down.
-fn assert_turn_resolved(r: &game_core::ApplyResult) {
+fn assert_turn_resolved(r: &ApplyResult) {
     match &r.outcome {
         EngineOutcome::AwaitingInput { request, .. } => {
             assert_eq!(request.prompt, "Choose an action");

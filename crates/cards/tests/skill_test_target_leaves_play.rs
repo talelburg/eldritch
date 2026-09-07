@@ -43,18 +43,17 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
+use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::engine::enumerate::{legal_actions, TurnAction};
-use game_core::engine::{EngineOutcome, InputKind, InputRequest, OptionId};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState, InvestigatorId,
     LocationId, Phase, TokenModifiers, Zone,
 };
-use game_core::test_support::{
-    drive, test_enemy, test_investigator, test_location, ChoiceResolver, GameStateBuilder,
-};
-use game_core::{assert_event, assert_no_event};
+use game_core::test_support::{self, ChoiceResolver, GameStateBuilder};
+use game_core::{assert_event, assert_no_event, card_registry};
 
 const BEAT_COP: &str = "01018";
 /// Unexpected Courage 01093: *"Max 1 committed per skill test."*, two wild
@@ -68,7 +67,7 @@ const COP_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install_cards_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Commit `commit` at the commit window, skip the ST.1 window, and — when
@@ -118,12 +117,12 @@ impl ChoiceResolver for StTwoWindow {
 /// hand, and a 1-health enemy there, engaged — so both Fight and Evade are
 /// legal against it, and one point of damage defeats it.
 fn board_with_hand(hand: &[&str]) -> GameState {
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.cards_in_play
         .push(CardInPlay::enter_play(CardCode::new(BEAT_COP), COP_INST));
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
 
-    let mut enemy = test_enemy(100, "Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Ghoul");
     enemy.max_health = 1;
     enemy.current_location = Some(LOC);
     enemy.engaged_with = Some(INV);
@@ -131,7 +130,7 @@ fn board_with_hand(hand: &[&str]) -> GameState {
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_enemy(enemy)
         .with_active_investigator(INV)
         .with_turn_order([INV])
@@ -147,16 +146,12 @@ fn board() -> GameState {
 
 /// Take `action` on `state` through `resolver`, resolving the enumerated turn
 /// action by its index exactly as a client would.
-fn take(
-    state: GameState,
-    action: &TurnAction,
-    resolver: StTwoWindow,
-) -> game_core::engine::ApplyResult {
-    let idx = legal_actions(&state)
+fn take(state: GameState, action: &TurnAction, resolver: StTwoWindow) -> ApplyResult {
+    let idx = enumerate::legal_actions(&state)
         .iter()
         .position(|a| a == action)
         .unwrap_or_else(|| panic!("{action:?} is not legal on this board"));
-    drive(
+    test_support::drive(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(
@@ -173,7 +168,7 @@ fn attack_then_kill_the_target_on(
     state: GameState,
     action: &TurnAction,
     commit: Vec<OptionId>,
-) -> game_core::engine::ApplyResult {
+) -> ApplyResult {
     take(
         state,
         action,
@@ -187,13 +182,13 @@ fn attack_then_kill_the_target_on(
 
 /// [`attack_then_kill_the_target_on`] against the bare board, committing
 /// nothing.
-fn attack_then_kill_the_target(action: &TurnAction) -> game_core::engine::ApplyResult {
+fn attack_then_kill_the_target(action: &TurnAction) -> ApplyResult {
     attack_then_kill_the_target_on(board(), action, Vec::new())
 }
 
 /// The core assertion, shared by Fight and Evade: the enemy is gone, the test
 /// ended without a verdict, and nothing of it is left on the board.
-fn assert_abandoned(result: &game_core::engine::ApplyResult) {
+fn assert_abandoned(result: &ApplyResult) {
     assert_event!(result.events, Event::EnemyDefeated { enemy, .. } if *enemy == ENEMY);
     assert!(
         !result.state.enemies.contains_key(&ENEMY),

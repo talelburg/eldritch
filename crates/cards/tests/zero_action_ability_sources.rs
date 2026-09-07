@@ -78,20 +78,17 @@
 //! Investigation-phase board would satisfy the first disjunct and mask the one
 //! under test.
 
-use game_core::action::{InputResponse, PlayerAction};
+use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::dsl::{activated, gain_resources, Ability, InvestigatorTarget};
-use game_core::engine::{EngineOutcome, InputKind, OptionTarget, TurnAction};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionTarget};
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    Continuation, EnemyId, GameState, InvestigatorId, LocationId, MythosResume, Phase, SkillKind,
+    AbilityAddress, AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
+    ChaosToken, Continuation, EnemyId, GameState, InvestigatorId, LocationId, MythosResume, Phase,
+    SkillKind,
 };
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, perform_skill_test, test_enemy, test_investigator,
-    test_location, GameStateBuilder, MockRegistry,
-};
-use game_core::{apply, Action, ApplyResult};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 use game_core::{assert_event, assert_no_event};
 
 /// Synthetic **location** card, standing in for Ten-Acre Meadow 02246. Two
@@ -173,31 +170,31 @@ fn install_probe_registry() {
 /// with mine and ready, which is what makes the attack-of-opportunity case
 /// meaningful.
 fn board() -> GameState {
-    let mut mine = test_investigator(1);
+    let mut mine = test_support::test_investigator(1);
     mine.actions_remaining = ACTIONS;
 
-    let mut neighbour = test_investigator(2);
+    let mut neighbour = test_support::test_investigator(2);
     neighbour
         .threat_area
         .push(CardInPlay::enter_play(CardCode::new(WARD), NEIGHBOURS_WARD));
 
-    let mut stranger = test_investigator(3);
+    let mut stranger = test_support::test_investigator(3);
     stranger
         .threat_area
         .push(CardInPlay::enter_play(CardCode::new(WARD), STRANGERS_WARD));
 
-    let mut here = test_location(1, "Ten-Acre Meadow");
+    let mut here = test_support::test_location(1, "Ten-Acre Meadow");
     here.code = CardCode::new(HALL);
-    let mut there = test_location(2, "Far Meadow");
+    let mut there = test_support::test_location(2, "Far Meadow");
     there.code = CardCode::new(HALL);
-    let mut far = test_location(3, "Empty Field");
+    let mut far = test_support::test_location(3, "Empty Field");
     far.code = CardCode::new(EMPTY_HALL);
 
-    let mut nearby = test_enemy(1, "Cultist");
+    let mut nearby = test_support::test_enemy(1, "Cultist");
     nearby.code = CardCode::new(CULTIST);
     nearby.current_location = Some(HERE);
     nearby.engaged_with = Some(MINE);
-    let mut distant = test_enemy(2, "Far Cultist");
+    let mut distant = test_support::test_enemy(2, "Far Cultist");
     distant.code = CardCode::new(CULTIST);
     distant.current_location = Some(THERE);
 
@@ -240,7 +237,7 @@ fn board() -> GameState {
 /// auto-skip the window and land on the commit prompt instead, and a test that
 /// mistook one for the other would pass for the wrong reason.
 fn at_player_window(state: GameState) -> (GameState, Vec<OptionTarget>) {
-    let result = perform_skill_test(state, MINE, SkillKind::Willpower, 4);
+    let result = test_support::perform_skill_test(state, MINE, SkillKind::Willpower, 4);
     let EngineOutcome::AwaitingInput { ref request, .. } = result.outcome else {
         panic!(
             "the skill test should park at its ST.1 player window, got {:?}",
@@ -271,7 +268,7 @@ fn activation(source: AbilitySource, ability_index: u8) -> TurnAction {
 
 /// Submit `source`'s zero-action ability as `MINE` at the open player window.
 fn activate_at_window(state: GameState, source: AbilitySource) -> ApplyResult {
-    dispatch_turn_action_unchecked(state, &activation(source, ZERO_ACTION_ABILITY))
+    test_support::dispatch_turn_action_unchecked(state, &activation(source, ZERO_ACTION_ABILITY))
 }
 
 /// The window offers this source's zero-action ability, and `MINE` can take it:
@@ -483,7 +480,7 @@ fn the_act_and_agenda_stay_reachable_from_nowhere_at_all() {
 #[test]
 fn an_action_costed_ability_on_the_same_source_is_not_opened_by_the_window() {
     let (state, _) = at_player_window(board());
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &activation(AbilitySource::Location(HERE), ACTION_COSTED_ABILITY),
     );
@@ -543,7 +540,7 @@ fn a_zero_action_ability_on_a_new_source_provokes_no_attack_of_opportunity() {
 fn passing_the_window_uses_nothing() {
     let (state, _) = at_player_window(board());
     let before = state.investigators[&MINE].resources;
-    let result = apply(
+    let result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Skip,

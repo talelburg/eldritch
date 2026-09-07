@@ -41,6 +41,7 @@ pub fn abilities() -> Vec<Ability> {
 mod tests {
     use card_dsl::dsl::{
         Effect, EventPattern, EventTiming, HarmKind, IntExpr, InvestigatorTarget, Trigger,
+        TriggerKind,
     };
 
     #[test]
@@ -52,7 +53,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::EnteredLocation,
                 timing: EventTiming::After,
-                kind: card_dsl::dsl::TriggerKind::Forced,
+                kind: TriggerKind::Forced,
             }
         );
         assert!(matches!(

@@ -10,21 +10,23 @@
 //! anchors to the agenda too; the second test below pins that, because an
 //! un-anchored option is silently rendered in the banner instead.
 
+use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::engine::{EngineOutcome, OptionId, OptionTarget};
+use game_core::card_registry;
+use game_core::engine::{self, EngineOutcome, OptionId, OptionTarget, PromptNature};
 use game_core::state::{Agenda, CardCode, GameState, InvestigatorId};
-use game_core::test_support::{fire_forced_on_agenda_advance, test_investigator, GameStateBuilder};
+use game_core::test_support::{self, GameStateBuilder};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 fn state_on_agenda_01105() -> GameState {
     let lead = InvestigatorId(1);
     // A real investigator code so any registry-backed lookup resolves; Skids
     // O'Toole (01003) has no implemented abilities (mirrors agenda_reverses.rs).
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.investigator_card.code = CardCode::new("01003");
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
@@ -46,7 +48,11 @@ fn state_on_agenda_01105() -> GameState {
 fn agenda_01105_forced_ack_anchors_to_the_agenda_card() {
     let mut state = state_on_agenda_01105();
     let mut events = Vec::new();
-    let out = fire_forced_on_agenda_advance(&mut state, &mut events, CardCode::new("01105"));
+    let out = test_support::fire_forced_on_agenda_advance(
+        &mut state,
+        &mut events,
+        CardCode::new("01105"),
+    );
     match out {
         EngineOutcome::AwaitingInput { request, .. } => {
             assert_eq!(
@@ -72,13 +78,17 @@ fn agenda_01105_forced_ack_anchors_to_the_agenda_card() {
 fn agenda_01105_choose_one_anchors_to_the_agenda_card_under_its_printed_labels() {
     let mut state = state_on_agenda_01105();
     let mut events = Vec::new();
-    let out = fire_forced_on_agenda_advance(&mut state, &mut events, CardCode::new("01105"));
+    let out = test_support::fire_forced_on_agenda_advance(
+        &mut state,
+        &mut events,
+        CardCode::new("01105"),
+    );
     assert!(
         matches!(out, EngineOutcome::AwaitingInput { .. }),
         "the interactive forced-ack comes first: {out:?}",
     );
     // Acknowledge, so the effect — and its ChooseOne — resolves.
-    let resumed = game_core::engine::apply(
+    let resumed = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -109,11 +119,13 @@ fn agenda_01105_choose_one_anchors_to_the_agenda_card_under_its_printed_labels()
 /// for another click on the agenda card.
 #[test]
 fn agenda_01105_choose_one_is_a_decision_prompt() {
-    use game_core::engine::PromptNature;
-
     let mut state = state_on_agenda_01105();
     let mut events = Vec::new();
-    let out = fire_forced_on_agenda_advance(&mut state, &mut events, CardCode::new("01105"));
+    let out = test_support::fire_forced_on_agenda_advance(
+        &mut state,
+        &mut events,
+        CardCode::new("01105"),
+    );
     let EngineOutcome::AwaitingInput { request, .. } = &out else {
         panic!("expected the forced-acknowledge suspend, got {out:?}");
     };
@@ -123,7 +135,7 @@ fn agenda_01105_choose_one_is_a_decision_prompt() {
         "the forced acknowledge offers the agenda's ability, a board entity: {request:?}",
     );
 
-    let resumed = game_core::engine::apply(
+    let resumed = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),

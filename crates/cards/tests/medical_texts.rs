@@ -12,17 +12,17 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
-use game_core::assert_event;
+use cards::REGISTRY;
 use game_core::dsl::HarmKind;
-use game_core::engine::EngineOutcome;
-use game_core::engine::TurnAction;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId,
-    LocationId, Phase, TokenModifiers,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    GameState, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{test_investigator, test_location, GameStateBuilder, TestSession};
+use game_core::test_support::{self, GameStateBuilder, TestSession};
+use game_core::{assert_event, card_registry};
 
 const MEDICAL_TEXTS: &str = "01035";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -31,15 +31,15 @@ const BOOK_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 }
 
 /// Board: Medical Texts in play; the active investigator with `intellect`
 /// intellect and `damage` damage, alone at `LOC`. A `Numeric(0)` chaos bag
 /// makes the intellect(2) test deterministic — intellect 3 succeeds, 1 fails,
 /// both off the difficulty boundary.
-fn board(intellect: i8, damage: u8) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board(intellect: i8, damage: u8) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     // Real investigator code so max_health()/max_sanity() reads from the
     // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
     inv.investigator_card.code = CardCode::new("01003");
@@ -54,7 +54,7 @@ fn board(intellect: i8, damage: u8) -> game_core::GameState {
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .with_investigator_turn(INV)
@@ -63,7 +63,7 @@ fn board(intellect: i8, damage: u8) -> game_core::GameState {
         .build()
 }
 
-fn activate(state: game_core::GameState) -> game_core::engine::ApplyResult {
+fn activate(state: GameState) -> ApplyResult {
     TestSession::new(state)
         .take(&TurnAction::ActivateAbility {
             investigator: INV,

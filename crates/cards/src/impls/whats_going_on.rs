@@ -53,7 +53,8 @@ use card_dsl::dsl::{
     InvestigatorTarget,
 };
 use game_core::card_registry::NativeEffectFn;
-use game_core::{discard_random_from_hand, Cx, EngineOutcome, EvalContext};
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::{self, Cx, EngineOutcome};
 
 /// `ArkhamDB` code for Agenda 1, "What's Going On?!".
 pub const CODE: &str = "01105";
@@ -101,14 +102,17 @@ fn random_discard_each(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     let ids: Vec<_> = cx.state.investigators.keys().copied().collect();
     for id in ids {
         // Empty hand ⇒ no-op (helper returns None); not an error.
-        let _ = discard_random_from_hand(cx, id);
+        let _ = engine::discard_random_from_hand(cx, id);
     }
     EngineOutcome::Done
 }
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, EventPattern, EventTiming, HarmKind, Trigger};
+    use card_dsl::dsl::{
+        Effect, EventPattern, EventTiming, HarmKind, IntExpr, InvestigatorTarget, Trigger,
+        TriggerKind,
+    };
 
     #[test]
     fn abilities_are_one_forced_on_advance_choose_one() {
@@ -119,7 +123,7 @@ mod tests {
             Trigger::OnEvent {
                 pattern: EventPattern::AgendaAdvanced,
                 timing: EventTiming::After,
-                kind: card_dsl::dsl::TriggerKind::Forced,
+                kind: TriggerKind::Forced,
             }
         );
         let Effect::ChooseOne(branches) = &abilities[0].effect else {
@@ -135,8 +139,8 @@ mod tests {
                 &branches[1].effect,
                 Effect::Deal {
                     kind: HarmKind::Horror,
-                    target: card_dsl::dsl::InvestigatorTarget::You,
-                    amount: card_dsl::dsl::IntExpr::Lit(2)
+                    target: InvestigatorTarget::You,
+                    amount: IntExpr::Lit(2)
                 }
             ),
             "branch B is the lead taking 2 horror",
