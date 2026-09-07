@@ -1,8 +1,7 @@
 //! What an activation names: the **ability source**.
 
-use serde::{Deserialize, Serialize};
-
 use crate::state::{CardCode, CardInstanceId, EnemyId, LocationId};
+use serde::{Deserialize, Serialize};
 
 /// The thing whose ability is being used — the descriptor an activation
 /// names instead of a bare card instance (#707).
@@ -166,6 +165,7 @@ impl AbilityAddress {
 mod tests {
     use super::*;
 
+    use crate::dsl::{self, Effect};
     use crate::state::{ActionResume, CandidateSource};
 
     /// The descriptor rides the wire twice: inside a parked
@@ -190,8 +190,8 @@ mod tests {
             source: AbilitySource::InPlay(CardInstanceId(7)),
             // Flashlight 01087's shape: the designated action rides the frame
             // beside the (empty) residual effect (#805).
-            designator: Some(card_dsl::dsl::investigate(-2i8)),
-            effect: card_dsl::dsl::Effect::Seq(vec![]),
+            designator: Some(dsl::investigate(-2i8)),
+            effect: Effect::Seq(vec![]),
         };
         let json = serde_json::to_string(&resume).expect("serializes");
         assert_eq!(

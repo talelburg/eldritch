@@ -1,10 +1,9 @@
 //! Investigators: the players' avatars in the game.
 
-use serde::{Deserialize, Serialize};
-
 use crate::card_data::CardKind;
 use crate::card_registry;
 use crate::state::{CardCode, CardInPlay, CardInstanceId, LocationId, Skills};
+use serde::{Deserialize, Serialize};
 
 /// Stable identifier for an investigator within a scenario.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

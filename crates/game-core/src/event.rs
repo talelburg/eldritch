@@ -11,16 +11,15 @@
 //!
 //! [`Action`]: crate::Action
 
-use serde::{Deserialize, Serialize};
-
-use card_dsl::card_data::CardType;
-
+use crate::card_data::CardType;
 use crate::dsl::{Determination, HarmKind};
 use crate::scenario::ScenarioEnding;
 use crate::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, ChaosToken, EliminationCause, EnemyId,
     InvestigatorId, LocationId, Phase, SkillKind, TokenResolution, UseKind, Zone,
 };
+
+use serde::{Deserialize, Serialize};
 
 /// One state-change record emitted by the engine.
 ///

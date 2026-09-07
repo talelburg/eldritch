@@ -1,10 +1,9 @@
 //! Enemies: hostile creatures that engage investigators, attack, and
 //! are defeated through combat.
 
-use serde::{Deserialize, Serialize};
-
 use crate::card_data::Prey;
 use crate::state::{CardCode, CardInPlay, InvestigatorId, LocationId};
+use serde::{Deserialize, Serialize};
 
 crate::state::define_id! {
     /// Stable identifier for an enemy within a scenario.

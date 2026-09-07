@@ -1,10 +1,9 @@
 //! Locations: places investigators move between.
 
-use serde::{Deserialize, Serialize};
-
-use card_dsl::card_data::ClueValue;
-
+use crate::card_data::ClueValue;
 use crate::state::{CardCode, CardInPlay};
+
+use serde::{Deserialize, Serialize};
 
 crate::state::define_id! {
     /// Stable identifier for a location within a scenario.

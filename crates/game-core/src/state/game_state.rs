@@ -2,11 +2,12 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use serde::{Deserialize, Serialize};
-
-use crate::card_data::{CardKind, CardMetadata};
-use crate::dsl::{Determination, EventTiming, IntExpr, SkillTestKind, Stat};
-use crate::engine::{EvalContext, TimingEvent};
+use crate::card_data::{CardKind, CardMetadata, SkillKind};
+use crate::dsl::{
+    ActionDesignator, Determination, Effect, EventTiming, IntExpr, SkillTestKind, Stat,
+};
+use crate::engine::evaluator::EvalContext;
+use crate::engine::TimingEvent;
 use crate::event::FailureReason;
 use crate::rng::RngState;
 use crate::scenario::{ScenarioEnding, ScenarioId};
@@ -14,7 +15,8 @@ use crate::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, Counter, Enemy,
     EnemyId, Investigator, InvestigatorId, Location, LocationId, Phase, TokenModifiers,
 };
-use card_dsl::card_data::SkillKind;
+
+use serde::{Deserialize, Serialize};
 
 /// The full state of a scenario at a single point in time.
 ///
@@ -174,7 +176,7 @@ pub struct GameState {
     // [`Self::current_encounter_drawer`]. The former `mythos_draw_pending:
     // Option<InvestigatorId>` cursor is removed — the continuation stack is the
     // single source of truth (mirroring the `mulligan_pending` fold).
-    /// Set by [`Effect::Cancel`](crate::dsl::Effect::Cancel) while a `when`-cell
+    /// Set by [`Effect::Cancel`] while a `when`-cell
     /// reaction window resolves, to skip the prevented impact (Axis D #336).
     /// Read-and-cleared by whoever owns the condition's resolution: the timing
     /// coordinator at its resolve step for a coordinator-owned condition (clue
@@ -310,7 +312,7 @@ pub struct GameState {
 /// advance it. Card *effect* text is out of scope (per-scenario content),
 /// and so is the printed `(→R#)` resolution point on its reverse — a
 /// terminal agenda reaches its ending by *running*
-/// [`Effect::ReachResolution`](crate::dsl::Effect::ReachResolution) from
+/// [`Effect::ReachResolution`] from
 /// that reverse, and it is terminal because it is the last card in
 /// [`GameState::agenda_deck`], not because it carries a flag. See
 /// `docs/adr/0013-a-resolution-point-is-a-printed-effect.md`.
@@ -535,7 +537,7 @@ pub enum AssetEntry {
     /// via the `EnteredPlay` timing event.
     PlayedFromHand,
     /// Control of an already-in-play card was taken
-    /// ([`Effect::TakeControl`](crate::dsl::Effect::TakeControl)). Not
+    /// ([`Effect::TakeControl`]). Not
     /// announced: the card never left play, so it does not re-enter it.
     ControlTaken,
 }
@@ -1080,7 +1082,7 @@ pub enum EffectFrame {
     /// child pop, complete when `next == effects.len()`.
     Seq {
         /// The sequence's effects.
-        effects: Vec<card_dsl::dsl::Effect>,
+        effects: Vec<Effect>,
         /// Index of the next child to run.
         next: usize,
         /// The evaluation context for this sequence.
@@ -1096,7 +1098,7 @@ pub enum EffectFrame {
     /// validate-first) instead of suspending.
     Leaf {
         /// The effect node to evaluate.
-        effect: Box<card_dsl::dsl::Effect>,
+        effect: Box<Effect>,
         /// The evaluation context for this node.
         ctx: EvalContext,
     },
@@ -1114,7 +1116,7 @@ pub enum EffectFrame {
     /// (Machete's `sole_engaged_target`) binds identically either way.
     Designated {
         /// The bold action designator, carrying the ability's modification.
-        designator: Box<card_dsl::dsl::ActionDesignator>,
+        designator: Box<ActionDesignator>,
         /// The evaluation context for the designated action.
         ctx: EvalContext,
     },
@@ -1154,10 +1156,10 @@ pub enum ActionResume {
         /// `effect` is. Flashlight 01087's **Investigate** is performed here,
         /// after the loop; a designated **Fight** or **Resign** never reaches
         /// this frame at all, being AoO-exempt.
-        designator: Option<card_dsl::dsl::ActionDesignator>,
+        designator: Option<ActionDesignator>,
         /// The ability's residual effect, resolved at activation, run after the
         /// designated action. Empty for every ability implemented today.
-        effect: card_dsl::dsl::Effect,
+        effect: Effect,
     },
     /// Complete a non-fast card play after its `AoO` loop (#378): run the card's
     /// `OnPlay` effects and, for an asset, move it into play. The card has
@@ -1829,13 +1831,13 @@ pub struct InFlightSkillTest {
     /// `None` for action tests, which have only the success-side
     /// [`follow_up`](Self::follow_up). Orthogonal to `follow_up` —
     /// success and margin-keyed-failure are separate axes.
-    pub on_fail: Option<card_dsl::dsl::Effect>,
+    pub on_fail: Option<Effect>,
     /// Effect to run **on success** after the chaos token resolves (the
     /// success-side mirror of [`on_fail`](Self::on_fail)). Carried by
     /// `Effect::SkillTest` with a success branch — Frozen in Fear 01164's
     /// end-of-turn willpower test discards the card on success. `None` for
     /// action tests and failure-only card tests.
-    pub on_success: Option<card_dsl::dsl::Effect>,
+    pub on_success: Option<Effect>,
     /// The firing ability's source, parked so the `on_success` / `on_fail`
     /// eval-contexts are rebuilt with it after the suspension. `None` for basic
     /// action tests and for effects with no originating source.
@@ -1845,7 +1847,7 @@ pub struct InFlightSkillTest {
     /// would otherwise be destroyed at exactly this boundary: an act's
     /// `on_fail: ChooseOne` would be anchored before the chaos draw and
     /// un-anchored after it (#834). The projection is what
-    /// [`Effect::DiscardSelf`](card_dsl::dsl::Effect::DiscardSelf) reads back
+    /// [`Effect::DiscardSelf`] reads back
     /// out to find itself.
     pub source: Option<AbilitySource>,
     /// Where the resolution driver should resume on the next call to
@@ -1857,7 +1859,7 @@ pub struct InFlightSkillTest {
     /// that field), not in the cursor payloads.
     pub continuation: SkillTestStep,
     /// Bonus damage added to this attack, accumulated at commit time by
-    /// [`Effect::BoostAttackDamage`](crate::dsl::Effect::BoostAttackDamage)
+    /// [`Effect::BoostAttackDamage`]
     /// (Vicious Blow 01025). Read **only** by the `Fight` follow-up, which
     /// deals `1 + extra_damage + bonus_attack_damage` on success — so it
     /// is inert for non-Fight tests. `0` for every test that no
@@ -1865,7 +1867,7 @@ pub struct InFlightSkillTest {
     pub bonus_attack_damage: u8,
     /// Bonus clues added to this investigation's discovery, accumulated at
     /// commit time by
-    /// [`Effect::DiscoverAdditionalClues`](crate::dsl::Effect::DiscoverAdditionalClues)
+    /// [`Effect::DiscoverAdditionalClues`]
     /// (Deduction 01039). Read **only** by the `Investigate` follow-up, which
     /// makes **one** discovery of `1 + bonus_clues_discovered` on success — so
     /// it is inert for non-Investigate tests. The sibling of
@@ -1892,7 +1894,7 @@ pub struct InFlightSkillTest {
     /// symbol has no `on_fail`. Held here (a sibling of [`on_fail`](Self::on_fail)
     /// / [`on_success`](Self::on_success)) because it is a non-`Copy` `Effect`
     /// needed several steps after the token is drawn. (Slice D #423.)
-    pub symbol_on_fail: Option<card_dsl::dsl::Effect>,
+    pub symbol_on_fail: Option<Effect>,
 }
 
 /// The outcome of a skill test's chaos-token resolution (RR ST.6), stored on
@@ -2068,7 +2070,7 @@ pub enum SkillTestStep {
     /// belong after the token is resolved, but **before**
     /// [`ApplyFollowUp`](Self::ApplyFollowUp) reads the
     /// `bonus_attack_damage` accumulator they populate. Collected into one
-    /// [`Effect::Seq`](crate::dsl::Effect::Seq) and pushed for the drive loop
+    /// [`Effect::Seq`] and pushed for the drive loop
     /// (nothing pushed if no committed card carries an `OnCommit` trigger);
     /// pre-advances to [`ApplyFollowUp`](Self::ApplyFollowUp).
     ///
@@ -2095,7 +2097,7 @@ pub enum SkillTestStep {
     /// the ST.7 result effects (after the card `on_fail` of
     /// [`ApplyResultEffect`](Self::ApplyResultEffect)); RR lets the test-performer
     /// order multiple results, the engine sequences deterministically. Pushed
-    /// via [`Effect::Deal`](crate::dsl::Effect::Deal) so a sanity-soak (Holy
+    /// via [`Effect::Deal`] so a sanity-soak (Holy
     /// Rosary 01028) suspends cleanly. Pre-advances to
     /// [`FireOnResolution`](Self::FireOnResolution). (Slice D #423.)
     ApplySymbolOnFail,
@@ -2639,7 +2641,7 @@ pub enum ModifierTarget {
 #[non_exhaustive]
 pub enum DifficultyBasis {
     /// A number printed on the initiating card — a Revelation test's
-    /// difficulty ([`Effect::SkillTest`](crate::dsl::Effect::SkillTest)).
+    /// difficulty ([`Effect::SkillTest`]).
     Fixed(i8),
     /// A location's modified shroud (an investigation).
     Shroud(LocationId),
@@ -3907,7 +3909,7 @@ mod scenario_end_cancellation_tests {
 #[cfg(test)]
 mod effect_frame_tests {
     use crate::dsl::Effect;
-    use crate::engine::EvalContext;
+    use crate::engine::evaluator::EvalContext;
     use crate::state::{Continuation, EffectFrame, InvestigatorId};
 
     #[test]

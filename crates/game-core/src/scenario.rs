@@ -27,11 +27,10 @@
 //! engine looks the module up by id — the action log replays
 //! deterministically.
 
-use serde::{Deserialize, Serialize};
-
 use crate::event::Event;
 use crate::scenario_registry;
 use crate::state::{ChaosToken, GameState, InvestigatorId, LocationId};
+use serde::{Deserialize, Serialize};
 
 /// Stable, serializable identifier for a scenario module.
 ///

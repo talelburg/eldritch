@@ -36,7 +36,8 @@ use std::sync::OnceLock;
 
 use crate::card_data::CardMetadata;
 use crate::dsl::Ability;
-use crate::engine::{Cx, EngineOutcome, EvalContext};
+use crate::engine::evaluator::EvalContext;
+use crate::engine::{Cx, EngineOutcome};
 use crate::state::{CardCode, GameState};
 
 /// A card-local Rust effect: mutates state and emits events through the
