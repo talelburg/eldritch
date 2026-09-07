@@ -8,14 +8,17 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use common::{install_registry, memory_pool, TEST_SCENARIO_ID};
 use game_core::test_support::TEST_INV;
-use server::{GameId, GameSession};
-use tower::ServiceExt;
+use serde_json::Value;
+use server::session::GameSession;
+use server::AppState;
+use server::GameId;
+use tower::ServiceExt as _;
 
 #[tokio::test]
 async fn post_games_creates_game_and_returns_id() {
     install_registry();
     let pool = memory_pool().await;
-    let app = server::app(server::AppState::new(pool.clone()));
+    let app = server::app(AppState::new(pool.clone()));
 
     let request = Request::builder()
         .method("POST")
@@ -31,7 +34,7 @@ async fn post_games_creates_game_and_returns_id() {
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let json: Value = serde_json::from_slice(&bytes).unwrap();
     let game_id = json["game_id"].as_str().expect("game_id is a string");
 
     // The created game is persisted and loadable.
@@ -48,7 +51,7 @@ async fn post_games_creates_game_and_returns_id() {
 async fn post_games_unknown_scenario_is_bad_request() {
     install_registry();
     let pool = memory_pool().await;
-    let app = server::app(server::AppState::new(pool));
+    let app = server::app(AppState::new(pool));
 
     let request = Request::builder()
         .method("POST")

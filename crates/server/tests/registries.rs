@@ -12,7 +12,8 @@ use common::memory_pool;
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
 use scenarios::the_gathering::ID as GATHERING_SCENARIO_ID;
-use tower::ServiceExt;
+use server::AppState;
+use tower::ServiceExt as _;
 
 /// A real card with both corpus metadata and a hand-written `abilities()`
 /// impl — Dr. Milan Christopher 01033.
@@ -45,7 +46,7 @@ fn install_registries_resolves_the_gathering_and_real_cards() {
 async fn post_games_creates_the_gathering_against_installed_registries() {
     server::install_registries();
     let pool = memory_pool().await;
-    let app = server::app(server::AppState::new(pool));
+    let app = server::app(AppState::new(pool));
 
     // Seat Roland Banks (01001) — a real investigator from the production
     // card registry.

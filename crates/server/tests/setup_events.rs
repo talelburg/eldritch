@@ -11,9 +11,10 @@ mod common;
 use common::{
     connect, install_registry, memory_pool, recv, roster, spawn_server, TEST_SCENARIO_ID,
 };
+use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use protocol::ServerMessage;
-use server::GameSession;
+use server::session::GameSession;
 
 #[tokio::test]
 async fn hello_carries_setup_events_after_reload_from_db() {
@@ -42,9 +43,7 @@ async fn hello_carries_setup_events_after_reload_from_db() {
             );
             // ScenarioStarted is always emitted at setup, so it must be present.
             assert!(
-                events
-                    .iter()
-                    .any(|e| matches!(e, game_core::Event::ScenarioStarted)),
+                events.iter().any(|e| matches!(e, Event::ScenarioStarted)),
                 "setup events should include ScenarioStarted; got {events:?}",
             );
         }

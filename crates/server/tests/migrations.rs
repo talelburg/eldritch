@@ -1,6 +1,7 @@
 //! Schema-migration smoke test: a fresh database brought up by the
 //! embedded migrator has the action-log tables.
 
+use server::db::MIGRATOR;
 use sqlx::sqlite::SqlitePoolOptions;
 
 #[tokio::test]
@@ -14,10 +15,7 @@ async fn migrations_create_games_and_actions_tables() {
         .await
         .expect("open in-memory sqlite");
 
-    server::db::MIGRATOR
-        .run(&pool)
-        .await
-        .expect("run migrations");
+    MIGRATOR.run(&pool).await.expect("run migrations");
 
     let (count,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM sqlite_master \

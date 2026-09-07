@@ -4,11 +4,16 @@
 //! round-1 mulligan-pending, so a `ResolveInput(PickMultiple{selected:[]})` is
 //! accepted and a `ResolveInput` selecting a non-existent card is rejected).
 
-use game_core::scenario::{ScenarioId, ScenarioModule, ScenarioRegistry};
-use game_core::state::GameStateBuilder;
-use game_core::state::{ChaosBag, ChaosToken, GameState, InvestigatorId};
-use game_core::{EngineOutcome, Event, InputResponse, OptionId, PlayerAction, ScenarioEnding};
-use server::session::GameSession;
+use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::engine::{EngineOutcome, OptionId};
+use game_core::event::Event;
+use game_core::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry};
+use game_core::state::{
+    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
+};
+use game_core::{scenario_registry, test_support};
+use server::db::MIGRATOR;
+use server::session::{GameSession, SessionError};
 use server::GameId;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
@@ -39,13 +44,13 @@ fn module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
 /// Install the mock scenario registry + the synthetic card registry
 /// (idempotent: within a process, second install is a harmless no-op).
 fn install_registry() {
-    let _ = game_core::scenario_registry::install(ScenarioRegistry { module_for });
-    game_core::test_support::install_test_registry();
+    let _ = scenario_registry::install(ScenarioRegistry { module_for });
+    test_support::install_test_registry();
 }
 
-fn roster() -> Vec<game_core::action::RosterEntry> {
-    vec![game_core::action::RosterEntry {
-        investigator: game_core::state::CardCode::new(game_core::test_support::TEST_INV),
+fn roster() -> Vec<RosterEntry> {
+    vec![RosterEntry {
+        investigator: CardCode::new(test_support::TEST_INV),
         deck: vec![],
     }]
 }
@@ -56,7 +61,7 @@ async fn memory_pool() -> SqlitePool {
         .connect("sqlite::memory:")
         .await
         .expect("open in-memory sqlite");
-    server::db::MIGRATOR.run(&pool).await.expect("migrate");
+    MIGRATOR.run(&pool).await.expect("migrate");
     pool
 }
 
@@ -132,10 +137,7 @@ async fn create_rejects_unknown_scenario() {
     let result =
         GameSession::create(pool, "game-x", ScenarioId::new("no-such-scenario"), vec![]).await;
 
-    assert!(matches!(
-        result,
-        Err(server::session::SessionError::UnknownScenario(_))
-    ));
+    assert!(matches!(result, Err(SessionError::UnknownScenario(_))));
 }
 
 #[tokio::test]
@@ -145,8 +147,8 @@ async fn create_rejects_bad_roster() {
 
     // Use an obviously-unknown investigator code; the synthetic registry
     // resolves nothing for it, so seating rejects.
-    let bad_roster = vec![game_core::action::RosterEntry {
-        investigator: game_core::state::CardCode::new("99999"),
+    let bad_roster = vec![RosterEntry {
+        investigator: CardCode::new("99999"),
         deck: vec![],
     }];
 
@@ -159,7 +161,7 @@ async fn create_rejects_bad_roster() {
     .await;
 
     assert!(
-        matches!(result, Err(server::session::SessionError::Seating(_))),
+        matches!(result, Err(SessionError::Seating(_))),
         "unknown investigator code must produce SessionError::Seating"
     );
 
@@ -311,7 +313,7 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
 
     // A mulligan pick of a card that isn't in hand: accepted by serde, rejected
     // by the engine.
-    let doomed = serde_json::to_string(&game_core::Action::Player(PlayerAction::ResolveInput {
+    let doomed = serde_json::to_string(&Action::Player(PlayerAction::ResolveInput {
         response: InputResponse::PickMultiple {
             selected: vec![OptionId(999_999)],
         },
@@ -329,7 +331,7 @@ async fn load_fails_loudly_on_a_log_it_cannot_replay() {
         panic!("a log that cannot be replayed must fail the load");
     };
     assert!(
-        matches!(err, server::session::SessionError::Replay { seq: 0, .. }),
+        matches!(err, SessionError::Replay { seq: 0, .. }),
         "the failure must name the offending action, got {err:?}",
     );
 }

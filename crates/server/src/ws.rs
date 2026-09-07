@@ -8,12 +8,14 @@ use std::sync::Arc;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::response::Response;
+use axum::Error;
 use futures_util::stream::SplitSink;
-use futures_util::{SinkExt, StreamExt};
-use game_core::EngineOutcome;
-use tokio::sync::{broadcast, Mutex};
-
+use futures_util::{SinkExt as _, StreamExt as _};
+use game_core::engine::EngineOutcome;
 use protocol::{ClientMessage, ServerMessage};
+use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::broadcast::Sender;
+use tokio::sync::{broadcast, Mutex};
 
 use crate::id::GameId;
 use crate::session::GameSession;
@@ -29,7 +31,7 @@ const BROADCAST_CAPACITY: usize = 256;
 /// connections) and the broadcast channel its connections subscribe to.
 pub(crate) struct GameRoom {
     session: Mutex<GameSession>,
-    tx: broadcast::Sender<ServerMessage>,
+    tx: Sender<ServerMessage>,
 }
 
 /// The server's map of live games, keyed by [`GameId`].
@@ -109,8 +111,8 @@ async fn handle_socket(socket: WebSocket, state: AppState, game_id: GameId) {
                         break;
                     }
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => {}
-                Err(broadcast::error::RecvError::Closed) => break,
+                Err(RecvError::Lagged(_)) => {}
+                Err(RecvError::Closed) => break,
             },
             incoming = stream.next() => {
                 let Some(Ok(message)) = incoming else { break };
@@ -180,7 +182,7 @@ async fn handle_client_message(room: &GameRoom, message: Message) -> Option<Disp
 async fn send_msg(
     sink: &mut SplitSink<WebSocket, Message>,
     msg: &ServerMessage,
-) -> Result<(), axum::Error> {
+) -> Result<(), Error> {
     let json = serde_json::to_string(msg).expect("ServerMessage always serializes");
     sink.send(Message::Text(json.into())).await
 }

@@ -2,10 +2,13 @@
 //! not already exist (so first boot on a clean host just works).
 
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use server::db;
 
 fn unique_db_path() -> PathBuf {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
     std::env::temp_dir().join(format!("eldritch-connect-pool-{nanos}.db"))
@@ -17,7 +20,7 @@ async fn connect_pool_creates_database_file_if_missing() {
     assert!(!path.exists(), "precondition: db file must not pre-exist");
 
     let url = format!("sqlite:{}", path.display());
-    let pool = server::db::connect_pool(&url)
+    let pool = db::connect_pool(&url)
         .await
         .expect("connect_pool should open (and create) the database");
 

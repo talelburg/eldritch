@@ -3,7 +3,7 @@
 //! layer only moves strings in and out of `SQLite`.
 
 use game_core::scenario::ScenarioId;
-use sqlx::SqlitePool;
+use sqlx::{Error, SqlitePool};
 
 use crate::id::GameId;
 
@@ -16,7 +16,7 @@ pub(crate) async fn insert_game(
     seed_outcome: &str,
     setup_events: &str,
     created_at: &str,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), Error> {
     sqlx::query(
         "INSERT INTO games (game_id, scenario_id, seed_state, seed_outcome, setup_events, created_at) VALUES (?, ?, ?, ?, ?, ?)",
     )
@@ -37,7 +37,7 @@ pub(crate) async fn insert_action(
     game_id: &GameId,
     seq: i64,
     action: &str,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), Error> {
     sqlx::query("INSERT INTO actions (game_id, seq, action) VALUES (?, ?, ?)")
         .bind(game_id.as_str())
         .bind(seq)
@@ -53,7 +53,7 @@ pub(crate) async fn insert_action(
 pub(crate) async fn load_game(
     db: &SqlitePool,
     game_id: &GameId,
-) -> Result<Option<(String, String, String, String)>, sqlx::Error> {
+) -> Result<Option<(String, String, String, String)>, Error> {
     sqlx::query_as(
         "SELECT scenario_id, seed_state, seed_outcome, setup_events FROM games WHERE game_id = ?",
     )
@@ -63,10 +63,7 @@ pub(crate) async fn load_game(
 }
 
 /// Fetch a game's action JSON blobs in `seq` order.
-pub(crate) async fn load_actions(
-    db: &SqlitePool,
-    game_id: &GameId,
-) -> Result<Vec<String>, sqlx::Error> {
+pub(crate) async fn load_actions(db: &SqlitePool, game_id: &GameId) -> Result<Vec<String>, Error> {
     let rows: Vec<(String,)> =
         sqlx::query_as("SELECT action FROM actions WHERE game_id = ? ORDER BY seq")
             .bind(game_id.as_str())

@@ -15,11 +15,13 @@ mod common;
 use common::{
     connect, install_registry, memory_pool, recv, roster, send, spawn_server, TEST_SCENARIO_ID,
 };
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::engine::EngineOutcome;
+use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use game_core::state::GameState;
-use game_core::{EngineOutcome, Event, InputResponse, PlayerAction};
 use protocol::{ClientMessage, ServerMessage};
-use server::GameSession;
+use server::session::GameSession;
 
 fn submit(action: PlayerAction) -> ClientMessage {
     ClientMessage::Submit { action }

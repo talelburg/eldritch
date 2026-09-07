@@ -7,11 +7,14 @@
 //! action to the log; [`GameSession::load`] reconstructs a session by
 //! replaying that log over the seed, reproducing state bit-for-bit.
 
-use game_core::action::RosterEntry;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use game_core::action::{Action, PlayerAction, RosterEntry};
+use game_core::engine::EngineOutcome;
+use game_core::event::Event;
 use game_core::rng::RngState;
 use game_core::scenario::ScenarioId;
 use game_core::state::GameState;
-use game_core::{Action, EngineOutcome, Event, PlayerAction};
 use sqlx::SqlitePool;
 
 use crate::id::GameId;
@@ -241,7 +244,7 @@ impl GameSession {
 /// Milliseconds since the Unix epoch, as a string, for the `created_at`
 /// column. Diagnostic only — never replay-load-bearing.
 fn unix_millis_string() -> String {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .map_or_else(|_| "0".to_string(), |d| d.as_millis().to_string())
 }

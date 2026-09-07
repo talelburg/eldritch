@@ -21,8 +21,11 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::Router;
+use game_core::{card_registry, scenario_registry};
 use sqlx::SqlitePool;
 use tower_http::services::{ServeDir, ServeFile};
+
+use crate::ws::Rooms;
 
 /// Shared application state handed to every Axum handler.
 #[derive(Clone)]
@@ -30,7 +33,7 @@ pub struct AppState {
     /// Connection pool for the `SQLite` action-log database.
     pub db: SqlitePool,
     /// Live games keyed by `game_id`, each with its broadcast group.
-    rooms: ws::Rooms,
+    rooms: Rooms,
     /// Directory holding the built client bundle (`index.html`, JS, wasm),
     /// served as the router fallback.
     dist_dir: PathBuf,
@@ -68,8 +71,8 @@ impl AppState {
 /// Idempotent: a second call is a no-op (the underlying `OnceLock`s reject
 /// re-installation).
 pub fn install_registries() {
-    let _ = game_core::scenario_registry::install(scenarios::REGISTRY);
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = scenario_registry::install(scenarios::REGISTRY);
+    let _ = card_registry::install(cards::REGISTRY);
 }
 
 /// Build the application router with all routes and shared state. The

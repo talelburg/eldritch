@@ -7,12 +7,17 @@ mod common;
 use common::{
     connect, install_registry, memory_pool, recv, roster, send, spawn_server, TEST_SCENARIO_ID,
 };
-use game_core::scenario::ScenarioId;
-use game_core::{EngineOutcome, InputResponse, OptionId, PlayerAction};
-use protocol::{ClientMessage, ServerMessage};
+use std::time::Duration;
 
-async fn seed_game(pool: &sqlx::SqlitePool, game_id: &str) {
-    server::GameSession::create(
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::engine::{EngineOutcome, OptionId};
+use game_core::scenario::ScenarioId;
+use protocol::{ClientMessage, ServerMessage};
+use server::session::GameSession;
+use sqlx::SqlitePool;
+
+async fn seed_game(pool: &SqlitePool, game_id: &str) {
+    GameSession::create(
         pool.clone(),
         game_id,
         ScenarioId::new(TEST_SCENARIO_ID),
@@ -118,7 +123,7 @@ async fn rejected_action_returns_rejected_to_sender_only() {
     }
 
     // B sees nothing: rejections are not broadcast.
-    let quiet = tokio::time::timeout(std::time::Duration::from_millis(200), recv(&mut b)).await;
+    let quiet = tokio::time::timeout(Duration::from_millis(200), recv(&mut b)).await;
     assert!(
         quiet.is_err(),
         "B must receive nothing for a rejected action"
