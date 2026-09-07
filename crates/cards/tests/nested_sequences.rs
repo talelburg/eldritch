@@ -60,8 +60,6 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::assert_event_sequence;
-use game_core::card_registry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
@@ -70,6 +68,7 @@ use game_core::state::{
     Phase,
 };
 use game_core::test_support::{self, GameStateBuilder};
+use game_core::{assert_event_sequence, card_registry};
 
 /// Roland Banks (01001) — the example's investigator, and the source of the
 /// nested sequence that hangs off the Goat Spawn's defeat.

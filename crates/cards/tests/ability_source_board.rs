@@ -35,10 +35,10 @@
 //! until #644. Purpose-built abilities prove reachability directly. Prior art:
 //! `ability_source_colocation.rs`.
 
-use game_core::assert_event;
-use game_core::dsl::{
+use card_dsl::dsl::{
     activated, gain_resources, heal_damage, Ability, InvestigatorTarget, UsageLimit, UsagePeriod,
 };
+use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;

@@ -78,8 +78,8 @@
 //! Investigation-phase board would satisfy the first disjunct and mask the one
 //! under test.
 
+use card_dsl::dsl::{activated, gain_resources, Ability, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::dsl::{activated, gain_resources, Ability, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionTarget};
 use game_core::event::Event;

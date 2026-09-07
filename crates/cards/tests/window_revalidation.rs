@@ -26,9 +26,9 @@
 //! Lives at `crates/cards/tests/` so it can install [`cards::REGISTRY`] in its
 //! own integration-test process.
 
+use card_dsl::dsl::EventTiming;
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::dsl::EventTiming;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, OptionId, TimingEvent};
 use game_core::event::{Event, LapseReason};

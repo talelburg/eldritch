@@ -117,7 +117,8 @@ const PARLOR: &str = "01115";
 ///   this as a single candidate (`PickSingle` = advance, Skip = decline); the
 ///   native spends + advances. Affordability is gated by the `01109:can_advance`
 ///   eligibility predicate (shared with the resolve-side
-///   [`round_end_advance_affordable`](engine::round_end_advance_affordable)), so the candidate isn't offered when the
+///   [`round_end_advance_affordable`](engine::round_end_advance_affordable)),
+///   so the candidate isn't offered when the
 ///   Hallway group can't afford the clue threshold (#470).
 /// - the **reverse** — a Forced on-advance ability (reveal the Parlor + spawn
 ///   the Priest) that fires when the act advances.

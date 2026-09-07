@@ -18,8 +18,8 @@
 //! discard has nowhere to go until #708/#644). Prior art:
 //! `activation_cost_source.rs`.
 
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use game_core::dsl::{activated, gain_resources, heal_damage, Ability, Cost, InvestigatorTarget};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
+use card_dsl::dsl::{activated, gain_resources, heal_damage, Ability, Cost, InvestigatorTarget};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::EngineOutcome;
 use game_core::state::{

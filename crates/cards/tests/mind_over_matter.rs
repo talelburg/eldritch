@@ -5,9 +5,9 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
+use card_dsl::card_data::UseKind;
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_data::UseKind;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;

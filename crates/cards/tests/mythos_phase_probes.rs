@@ -34,9 +34,9 @@
 //! [#138]: https://github.com/talelburg/eldritch/issues/138
 //! [MockRegistry]: game_core::test_support::MockRegistry
 
+use card_dsl::card_data::{CardKind, CardMetadata, CardType};
+use card_dsl::dsl::{choose_one, gain_resources, revelation, Ability, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
-use game_core::card_data::{CardKind, CardMetadata, CardType};
-use game_core::dsl::{choose_one, gain_resources, revelation, Ability, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;

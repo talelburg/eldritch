@@ -26,7 +26,7 @@
 //! reaches (a granted grant, a grant conditioned on a "you" the recipient has
 //! not got, a granter that leaves play mid-window).
 
-use game_core::dsl::{
+use card_dsl::dsl::{
     activated, constant, control_status, gain_resources, grant, Ability, CmpOp, Condition,
     ControlStatus, GrantTarget, InvestigatorTarget, Quantity,
 };

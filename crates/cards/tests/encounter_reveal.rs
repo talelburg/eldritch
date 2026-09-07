@@ -38,9 +38,9 @@
 //!   per round.)"* has no trigger here — nothing is defeated. Both his rulings
 //!   (<https://arkhamdb.com/card/01001>) scope that same reaction.
 
+use card_dsl::card_data::{CardKind, CardType};
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
-use game_core::card_data::{CardKind, CardType};
 use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{Agenda, CardCode, GameState, InvestigatorId, Phase};

@@ -4,13 +4,11 @@
 //! from the pinned snapshot into the generated corpus, and that the
 //! `is_weakness()` accessor round-trips through the registry.
 
-use cards::by_code;
-
 #[test]
 fn cover_up_is_a_weakness() {
     // Cover Up (01007) is Roland Banks' signature weakness — `subtype_code:
     // "weakness"` in the ArkhamDB snapshot.
-    let meta = by_code("01007").expect("Cover Up (01007) must be in the corpus");
+    let meta = cards::by_code("01007").expect("Cover Up (01007) must be in the corpus");
     assert_eq!(meta.name, "Cover Up");
     assert!(
         meta.is_weakness(),
@@ -21,7 +19,7 @@ fn cover_up_is_a_weakness() {
 #[test]
 fn holy_rosary_is_not_a_weakness() {
     // Holy Rosary (01059) is a regular Mystic asset — no `subtype_code`.
-    let meta = by_code("01059").expect("Holy Rosary (01059) must be in the corpus");
+    let meta = cards::by_code("01059").expect("Holy Rosary (01059) must be in the corpus");
     assert_eq!(meta.name, "Holy Rosary");
     assert!(
         !meta.is_weakness(),
@@ -40,7 +38,8 @@ fn holy_rosary_is_not_a_weakness() {
 /// '–' have no cost that can be paid, and therefore cannot be played."*
 #[test]
 fn a_dash_cost_and_an_x_cost_ingest_differently() {
-    let necronomicon = by_code("01009").expect("The Necronomicon (01009) must be in the corpus");
+    let necronomicon =
+        cards::by_code("01009").expect("The Necronomicon (01009) must be in the corpus");
     assert_eq!(necronomicon.name, "The Necronomicon");
     assert_eq!(
         necronomicon.play_cost(),
@@ -48,7 +47,8 @@ fn a_dash_cost_and_an_x_cost_ingest_differently() {
         "a printed \"–\" cost must ingest as None"
     );
 
-    let twin_45s = by_code("02010").expect("Jenny's Twin .45s (02010) must be in the corpus");
+    let twin_45s =
+        cards::by_code("02010").expect("Jenny's Twin .45s (02010) must be in the corpus");
     assert_eq!(twin_45s.name, "Jenny's Twin .45s");
     assert_eq!(
         twin_45s.play_cost(),

@@ -14,8 +14,8 @@
 //! without colliding with the real-corpus binaries. Prior art:
 //! `reject_rollback.rs`.
 
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Uses};
-use game_core::dsl::{activated, gain_resources, Ability, Cost, InvestigatorTarget};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Uses};
+use card_dsl::dsl::{activated, gain_resources, Ability, Cost, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::state::{

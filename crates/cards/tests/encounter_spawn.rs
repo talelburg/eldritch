@@ -49,9 +49,9 @@
 //!   (<https://arkhamdb.com/card/01002>) is about which action a lose-actions
 //!   effect takes first, and no turn runs here.
 
+use card_dsl::card_data::CardType;
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
-use game_core::card_data::CardType;
 use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{CardCode, Continuation, GameState, InvestigatorId, LocationId, Phase};

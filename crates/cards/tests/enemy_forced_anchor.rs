@@ -21,9 +21,9 @@
 //! pause), which is where the anchor is readable. The `after` cell is the one
 //! the card prints, and the module's own header quotes it.
 
+use card_dsl::dsl::EventTiming;
 use cards::REGISTRY;
 use game_core::card_registry;
-use game_core::dsl::EventTiming;
 use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::state::{Agenda, CardCode, EnemyId, InvestigatorId};
 use game_core::test_support::{self, GameStateBuilder};

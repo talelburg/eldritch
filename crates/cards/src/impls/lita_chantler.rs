@@ -224,11 +224,11 @@ fn investigator_location(state: &GameState, id: InvestigatorId) -> Option<Locati
 #[cfg(test)]
 mod tests {
     use crate::impls;
+    use card_dsl::card_data::SkillKind;
     use card_dsl::dsl::{
         Ability, Condition, ControlStatus, Effect, EventPattern, EventTiming, GrantTarget,
         ModifierAudience, ModifierScope, SkillTestKind, Stat, TestOutcome, Trigger, TriggerKind,
     };
-    use game_core::card_data::SkillKind;
     use game_core::engine::evaluator::EvalContext;
     use game_core::state::{
         AbilitySource, CardCode, CardInPlay, CardInstanceId, Continuation, EnemyId, GameState,

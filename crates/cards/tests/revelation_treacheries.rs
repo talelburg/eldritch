@@ -9,7 +9,6 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
-use game_core::card_registry;
 use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
@@ -17,7 +16,7 @@ use game_core::state::{
     LocationId, Zone,
 };
 use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
-use game_core::{assert_event, assert_event_count};
+use game_core::{assert_event, assert_event_count, card_registry};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {

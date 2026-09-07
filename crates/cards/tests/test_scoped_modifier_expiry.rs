@@ -22,9 +22,9 @@
 //! **Guard Dog (01021):** an ally with printed health 3 — used here only as a
 //! soaker for that damage.
 
+use card_dsl::dsl::{IntExpr, Stat};
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
-use game_core::dsl::{IntExpr, Stat};
 use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{

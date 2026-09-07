@@ -15,8 +15,8 @@
 //! `CardMetadata::play_only_during_turn()`), enforced by the play-card gate —
 //! no per-card play-timing code here.
 
+use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{native, on_play, Ability};
-use game_core::card_data::SkillKind;
 use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{Cx, EngineOutcome};

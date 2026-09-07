@@ -12,8 +12,8 @@
 //!
 //! Own process → installs `cards::REGISTRY`.
 
+use card_dsl::dsl::HarmKind;
 use cards::REGISTRY;
-use game_core::dsl::HarmKind;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;

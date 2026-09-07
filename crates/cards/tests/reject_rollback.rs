@@ -7,8 +7,8 @@
 //! with `game-core`'s registry-free unit tests or the real-corpus
 //! `play_card.rs` binary.
 
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use game_core::dsl::{
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
+use card_dsl::dsl::{
     gain_resources, modify, on_play, seq, InvestigatorTarget, ModifierScope, Stat,
 };
 use game_core::engine::enumerate::TurnAction;

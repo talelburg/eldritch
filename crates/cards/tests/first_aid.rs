@@ -5,9 +5,9 @@
 //! the "if no supplies, discard it" depletion-discard come from corpus
 //! metadata (#302). Own process → installs `cards::REGISTRY`.
 
+use card_dsl::dsl::HarmKind;
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::dsl::HarmKind;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{
     self, ApplyResult, ChoiceOption, EngineOutcome, OptionId, OptionTarget, PromptNature,

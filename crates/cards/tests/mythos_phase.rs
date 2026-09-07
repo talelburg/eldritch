@@ -61,9 +61,9 @@
 //! group need card shapes the corpus cannot supply; they are in
 //! `mythos_phase_probes.rs` with their probes inline.
 
+use card_dsl::card_data::{CardKind, CardType};
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
-use game_core::card_data::{CardKind, CardType};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind};
 use game_core::event::Event;
