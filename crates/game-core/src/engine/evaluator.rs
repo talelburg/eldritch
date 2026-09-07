@@ -49,7 +49,7 @@
 //! - [`Effect::ChooseOne`] and the `*::Chosen` targets resolve
 //!   interactively via the frame-driven choice machinery (`step_choose_one` /
 //!   `ground_chosen_targets`): each auto-binds 0/1 options and suspends on 2+ by
-//!   leaving the node's own [`EffectFrame::Leaf`](crate::state::EffectFrame::Leaf)
+//!   leaving the node's own [`EffectFrame::Leaf`]
 //!   on the stack as the prompt; resume sets `chosen_option` and re-steps it (no
 //!   replay — #422). A `Chosen` target
 //!   honors its scope: `Anywhere` offers all investigators / locations,
@@ -67,18 +67,29 @@
 //! state, events, and RNG position on `Rejected` — so validate-first
 //! here is about cheap, precise rejections, not state safety.
 
-use serde::{Deserialize, Serialize};
-
-use crate::card_registry::CardRegistry;
+use crate::card_data::CardType;
+use crate::card_registry::{self, CardRegistry};
 use crate::dsl::{
-    Ability, CmpOp, Condition, ControlStatus, Determination, Effect, EnemyTarget, HarmKind,
-    IntExpr, InvestigatorTarget, LocationTarget, ModifierScope, Quantity, Trigger,
+    Ability, ActionClass, ActionDesignator, CardFilter, ChoiceBranch, CmpOp, Condition,
+    ControlStatus, Determination, Effect, EnemyTarget, EntityScope, HarmKind, IntExpr,
+    InvestigatorTarget, LocationSet, LocationTarget, ModifierAudience, ModifierScope, Quantity,
+    Restriction, SearchScope, SkillTestKind, Stat, Trigger,
 };
+use crate::engine::dispatch::choice::ChoiceResolution;
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::{
+    self, act_agenda, actions, cards, choice, combat, elimination, emit, skill_test, threat_area,
+};
+use crate::engine::outcome::{EngineOutcome, OptionId, OptionTarget};
+use crate::engine::{designator, Cx};
 use crate::event::Event;
-use crate::state::{CandidateSource, GameState, InvestigatorId};
-
-use super::outcome::EngineOutcome;
-use super::Cx;
+use crate::scenario::{ResolutionId, ScenarioEnding};
+use crate::state::{
+    AbilitySource, AdvanceTrigger, CandidateSource, CardCode, CardInstanceId, Continuation,
+    DamageSource, DifficultyBasis, EffectFrame, EnemyId, GameState, InvestigatorId, Lifetime,
+    LocationId, RecordedModifier, SkillTestFollowUp, Zone,
+};
+use serde::{Deserialize, Serialize};
 
 /// Failure margin of the just-resolved skill test (bound only while running an
 /// `on_fail` effect). Innermost-only: same-kind test nesting is carried by the
@@ -105,7 +116,7 @@ pub struct DiscoveryBinding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnemyAttackBinding {
     /// The enemy whose attack is being reacted to.
-    pub attacking_enemy: crate::state::EnemyId,
+    pub attacking_enemy: EnemyId,
 }
 
 /// Controller picks bound while grounding `*::Chosen` targets. Cohesive: the
@@ -116,11 +127,11 @@ pub struct ChoiceBinding {
     /// `InvestigatorTarget::Chosen` pick.
     pub investigator: Option<InvestigatorId>,
     /// `LocationTarget::Chosen` pick.
-    pub location: Option<crate::state::LocationId>,
+    pub location: Option<LocationId>,
     /// `EnemyTarget::Chosen` pick.
-    pub enemy: Option<crate::state::EnemyId>,
+    pub enemy: Option<EnemyId>,
     /// Native-leaf option pick.
-    pub option: Option<crate::engine::OptionId>,
+    pub option: Option<OptionId>,
 }
 
 /// Per-evaluation context the effect needs to resolve targets and
@@ -162,7 +173,7 @@ pub struct EvalContext {
     /// an effect-internal [`Effect::ChooseOne`] anchors its options to (#555)
     /// wants the whole descriptor, act and agenda included; the in-play
     /// instance [`Effect::DiscardSelf`] removes, and that a
-    /// [`RecordedModifier`](crate::state::RecordedModifier) names as its
+    /// [`RecordedModifier`] names as its
     /// origin, wants the [`source_instance`](Self::source_instance) projection.
     /// One field carries both because the narrow reading is a function of the
     /// wide one (#834).
@@ -171,10 +182,10 @@ pub struct EvalContext {
     /// choices stay un-anchored, rendering in the prompt banner. One case is
     /// not a missing anchor but a missing *address*: a card played from hand
     /// (`play_fast_event`, `complete_play`) has no descriptor to carry, because
-    /// [`OptionTarget::HandCard`](crate::engine::OptionTarget::HandCard) needs
-    /// a `hand_index` and neither [`AbilitySource`](crate::state::AbilitySource)
+    /// [`OptionTarget::HandCard`] needs
+    /// a `hand_index` and neither [`AbilitySource`]
     /// nor `CandidateSource` carries one.
-    pub ability_source: Option<crate::state::AbilitySource>,
+    pub ability_source: Option<AbilitySource>,
 }
 
 impl EvalContext {
@@ -194,15 +205,12 @@ impl EvalContext {
     }
 
     /// Construct a context for an effect resolving from a known
-    /// [`AbilitySource`](crate::state::AbilitySource) — the activation, forced
+    /// [`AbilitySource`] — the activation, forced
     /// and reaction paths, which all hold one. The source is what a nested
     /// [`Effect::ChooseOne`] anchors to and what [`Self::source_instance`] projects for
     /// `DiscardSelf` and recorded-modifier provenance.
     #[must_use]
-    pub fn for_controller_with_source(
-        controller: InvestigatorId,
-        source: crate::state::AbilitySource,
-    ) -> Self {
+    pub fn for_controller_with_source(controller: InvestigatorId, source: AbilitySource) -> Self {
         Self::for_controller_with_optional_source(controller, Some(source))
     }
 
@@ -215,7 +223,7 @@ impl EvalContext {
     #[must_use]
     pub fn for_controller_with_optional_source(
         controller: InvestigatorId,
-        source: Option<crate::state::AbilitySource>,
+        source: Option<AbilitySource>,
     ) -> Self {
         Self {
             ability_source: source,
@@ -234,15 +242,14 @@ impl EvalContext {
     /// this way.
     ///
     /// `None` for exactly the board sources (a location, an enemy, the act, the
-    /// agenda), which carry no [`CardInstanceId`](crate::state::CardInstanceId)
+    /// agenda), which carry no [`CardInstanceId`]
     /// — so a reader wanting *"the card this effect is printed on, as a thing
     /// with per-instance state"* gets an honest `None` rather than a fabricated
     /// id. Read by [`Effect::DiscardSelf`] and by the recorded-modifier rows
     /// that name their origin.
     #[must_use]
-    pub fn source_instance(&self) -> Option<crate::state::CardInstanceId> {
-        self.ability_source
-            .and_then(crate::state::AbilitySource::instance)
+    pub fn source_instance(&self) -> Option<CardInstanceId> {
+        self.ability_source.and_then(AbilitySource::instance)
     }
 
     /// Just-resolved skill test's failure margin (bound only while running an
@@ -261,7 +268,7 @@ impl EvalContext {
     /// Attacking enemy bound while resolving an enemy-attack `DamageAssigned`
     /// reaction (Guard Dog 01021's retaliate).
     #[must_use]
-    pub fn attacking_enemy(&self) -> Option<crate::state::EnemyId> {
+    pub fn attacking_enemy(&self) -> Option<EnemyId> {
         self.enemy_attack.map(|b| b.attacking_enemy)
     }
     /// Investigator picked for an `InvestigatorTarget::Chosen`.
@@ -271,17 +278,17 @@ impl EvalContext {
     }
     /// Location picked for a `LocationTarget::Chosen`.
     #[must_use]
-    pub fn chosen_location(&self) -> Option<crate::state::LocationId> {
+    pub fn chosen_location(&self) -> Option<LocationId> {
         self.choice.and_then(|c| c.location)
     }
     /// Enemy picked for an `EnemyTarget::Chosen`.
     #[must_use]
-    pub fn chosen_enemy(&self) -> Option<crate::state::EnemyId> {
+    pub fn chosen_enemy(&self) -> Option<EnemyId> {
         self.choice.and_then(|c| c.enemy)
     }
     /// Option picked for a native leaf that suspended for a choice.
     #[must_use]
-    pub fn chosen_option(&self) -> Option<crate::engine::OptionId> {
+    pub fn chosen_option(&self) -> Option<OptionId> {
         self.choice.and_then(|c| c.option)
     }
 
@@ -296,7 +303,7 @@ impl EvalContext {
         });
     }
     /// Bind the attacking enemy (see [`Self::attacking_enemy`]).
-    pub fn set_attacking_enemy(&mut self, enemy: crate::state::EnemyId) {
+    pub fn set_attacking_enemy(&mut self, enemy: EnemyId) {
         self.enemy_attack = Some(EnemyAttackBinding {
             attacking_enemy: enemy,
         });
@@ -308,15 +315,15 @@ impl EvalContext {
             .investigator = Some(id);
     }
     /// Bind the chosen location (see [`Self::chosen_location`]).
-    pub fn set_chosen_location(&mut self, id: crate::state::LocationId) {
+    pub fn set_chosen_location(&mut self, id: LocationId) {
         self.choice.get_or_insert_with(Default::default).location = Some(id);
     }
     /// Bind the chosen enemy (see [`Self::chosen_enemy`]).
-    pub fn set_chosen_enemy(&mut self, id: crate::state::EnemyId) {
+    pub fn set_chosen_enemy(&mut self, id: EnemyId) {
         self.choice.get_or_insert_with(Default::default).enemy = Some(id);
     }
     /// Bind (or clear) the native-leaf chosen option (see [`Self::chosen_option`]).
-    pub fn set_chosen_option(&mut self, opt: Option<crate::engine::OptionId>) {
+    pub fn set_chosen_option(&mut self, opt: Option<OptionId>) {
         // Match the old flat-field semantics exactly: a `None` pick must NOT
         // materialize an otherwise-empty `choice` binding (which would make
         // `EvalContext` compare unequal to a never-touched one). Only create the
@@ -341,16 +348,13 @@ impl EvalContext {
 pub(crate) fn push_effect(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) {
     cx.state
         .continuations
-        .push(crate::state::Continuation::Effect(frame_of(
-            effect, eval_ctx,
-        )));
+        .push(Continuation::Effect(frame_of(effect, eval_ctx)));
 }
 
 /// Build the [`EffectFrame`](crate::state::EffectFrame) for an effect node:
 /// control nodes get their own stateful frame; everything else (leaves, `If`,
 /// `ChooseOne`, `SearchDeck`, `Native`) is a `Leaf` evaluated by [`step_leaf`].
-fn frame_of(effect: &Effect, ctx: EvalContext) -> crate::state::EffectFrame {
-    use crate::state::EffectFrame;
+fn frame_of(effect: &Effect, ctx: EvalContext) -> EffectFrame {
     match effect {
         Effect::Seq(effects) => EffectFrame::Seq {
             effects: effects.clone(),
@@ -371,7 +375,6 @@ fn frame_of(effect: &Effect, ctx: EvalContext) -> crate::state::EffectFrame {
 /// `Continuation::Effect` arm (for effect frames parked across an `apply()`
 /// boundary).
 pub(crate) fn step_effect_frame(cx: &mut Cx) -> EngineOutcome {
-    use crate::state::{Continuation, EffectFrame};
     let Some(Continuation::Effect(frame)) = cx.state.continuations.pop() else {
         unreachable!("step_effect_frame: top frame is not a Continuation::Effect");
     };
@@ -401,17 +404,15 @@ pub(crate) fn step_effect_frame(cx: &mut Cx) -> EngineOutcome {
 /// ability that is not an effect.
 pub(crate) fn push_designated_action(
     cx: &mut Cx,
-    designator: &crate::dsl::ActionDesignator,
+    designator: &ActionDesignator,
     eval_ctx: EvalContext,
 ) {
     cx.state
         .continuations
-        .push(crate::state::Continuation::Effect(
-            crate::state::EffectFrame::Designated {
-                designator: Box::new(designator.clone()),
-                ctx: eval_ctx,
-            },
-        ));
+        .push(Continuation::Effect(EffectFrame::Designated {
+            designator: Box::new(designator.clone()),
+            ctx: eval_ctx,
+        }));
 }
 
 /// Step a [`EffectFrame::Designated`](crate::state::EffectFrame::Designated)
@@ -423,10 +424,10 @@ pub(crate) fn push_designated_action(
 /// else needs no grounding and performs immediately.
 fn step_designated(
     cx: &mut Cx,
-    designator: &crate::dsl::ActionDesignator,
+    designator: &ActionDesignator,
     eval_ctx: EvalContext,
 ) -> EngineOutcome {
-    let eval_ctx = if matches!(designator, crate::dsl::ActionDesignator::Fight { .. })
+    let eval_ctx = if matches!(designator, ActionDesignator::Fight { .. })
         && eval_ctx.chosen_enemy().is_none()
     {
         match ground_fight_target_choice(cx, eval_ctx) {
@@ -466,24 +467,22 @@ fn step_designated(
 /// with them.
 fn perform_designated(
     cx: &mut Cx,
-    designator: &crate::dsl::ActionDesignator,
+    designator: &ActionDesignator,
     eval_ctx: &EvalContext,
 ) -> EngineOutcome {
-    use crate::dsl::ActionDesignator as D;
     match designator {
-        D::Fight {
+        ActionDesignator::Fight {
             combat_modifier,
             extra_damage,
         } => perform_designated_fight(cx, eval_ctx, combat_modifier, extra_damage),
-        D::Investigate { shroud_modifier } => {
-            let Some(location_id) =
-                crate::engine::designator::investigate_location(cx.state, eval_ctx.controller)
+        ActionDesignator::Investigate { shroud_modifier } => {
+            let Some(location_id) = designator::investigate_location(cx.state, eval_ctx.controller)
             else {
                 return EngineOutcome::Rejected {
                     reason: "Investigate: no revealed location to investigate".into(),
                 };
             };
-            crate::engine::dispatch::actions::perform_investigate(
+            actions::perform_investigate(
                 cx,
                 eval_ctx.controller,
                 location_id,
@@ -491,20 +490,20 @@ fn perform_designated(
                 eval_ctx.ability_source,
             )
         }
-        D::Resign => {
-            crate::engine::dispatch::elimination::resign_investigator(cx, eval_ctx.controller);
+        ActionDesignator::Resign => {
+            elimination::resign_investigator(cx, eval_ctx.controller);
             EngineOutcome::Done
         }
         // `glossary/Parley.md` in full: *"Some abilities are identified with a
         // **Parley** action designator. Such abilities are initiated using the
         // 'Activate' action."* No procedure, so nothing to perform — the
         // ability's whole content is its residual effect.
-        D::Parley => EngineOutcome::Done,
+        ActionDesignator::Parley => EngineOutcome::Done,
         // Unreachable through the activation path: `can_perform` rejects both
         // pre-cost, since no implemented card prints either (`TODO(#818)`).
         // Shares that rejection's wording so the two cannot drift.
-        D::Evade | D::Move => EngineOutcome::Rejected {
-            reason: crate::engine::designator::unimplemented_designator(designator),
+        ActionDesignator::Evade | ActionDesignator::Move => EngineOutcome::Rejected {
+            reason: designator::unimplemented_designator(designator),
         },
     }
 }
@@ -546,7 +545,7 @@ fn perform_designated_fight(
         cx.state.enemies.contains_key(&enemy_id),
         "Fight chosen_enemy returned an id absent from state.enemies",
     );
-    crate::engine::dispatch::actions::perform_fight(
+    actions::perform_fight(
         cx,
         eval_ctx.controller,
         enemy_id,
@@ -561,15 +560,13 @@ fn perform_designated_fight(
 fn suspend_leaf_in_place(cx: &mut Cx, effect: &Effect, ctx: EvalContext) {
     cx.state
         .continuations
-        .push(crate::state::Continuation::Effect(
-            crate::state::EffectFrame::Leaf {
-                effect: Box::new(effect.clone()),
-                ctx,
-            },
-        ));
+        .push(Continuation::Effect(EffectFrame::Leaf {
+            effect: Box::new(effect.clone()),
+            ctx,
+        }));
 }
 
-/// Evaluate one non-control effect node (the [`EffectFrame::Leaf`](crate::state::EffectFrame::Leaf)
+/// Evaluate one non-control effect node (the [`EffectFrame::Leaf`]
 /// step). Grounds any `*::Chosen` target, then dispatches: a terminal effect
 /// runs; `If` pushes its chosen branch; `ChooseOne`/`SearchDeck`/`Native` push a
 /// branch or **suspend in place** (re-pushing this `Leaf` so resume re-steps it
@@ -621,9 +618,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         Effect::Seq(_) => {
             cx.state
                 .continuations
-                .push(crate::state::Continuation::Effect(frame_of(
-                    effect, eval_ctx,
-                )));
+                .push(Continuation::Effect(frame_of(effect, eval_ctx)));
             EngineOutcome::Done
         }
         Effect::Modify {
@@ -649,14 +644,11 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             if holds {
                 cx.state
                     .continuations
-                    .push(crate::state::Continuation::Effect(frame_of(then, eval_ctx)));
+                    .push(Continuation::Effect(frame_of(then, eval_ctx)));
             } else if let Some(else_branch) = else_ {
                 cx.state
                     .continuations
-                    .push(crate::state::Continuation::Effect(frame_of(
-                        else_branch,
-                        eval_ctx,
-                    )));
+                    .push(Continuation::Effect(frame_of(else_branch, eval_ctx)));
             }
             EngineOutcome::Done
         }
@@ -673,16 +665,16 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
             difficulty,
             on_success,
             on_fail,
-        } => crate::engine::dispatch::skill_test::start_skill_test(
+        } => skill_test::start_skill_test(
             cx,
             eval_ctx.controller,
             *skill,
-            crate::dsl::SkillTestKind::Plain,
+            SkillTestKind::Plain,
             // A Revelation skill test takes its difficulty as printed: the
             // number is a base value on the card, not a snapshot of
             // anything on the board.
-            crate::state::DifficultyBasis::Fixed(i8::try_from(*difficulty).unwrap_or(i8::MAX)),
-            crate::state::SkillTestFollowUp::None,
+            DifficultyBasis::Fixed(i8::try_from(*difficulty).unwrap_or(i8::MAX)),
+            SkillTestFollowUp::None,
             on_success.as_ref().map(|b| (**b).clone()),
             on_fail.as_ref().map(|b| (**b).clone()),
             eval_ctx.ability_source,
@@ -691,10 +683,10 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
         Effect::Cancel => cancel_current_impact(cx),
         Effect::PutIntoThreatArea { code, clues } => {
-            let inst = crate::engine::dispatch::threat_area::place_in_threat_area(
+            let inst = threat_area::place_in_threat_area(
                 cx,
                 eval_ctx.controller,
-                crate::state::CardCode::new(code.clone()),
+                CardCode::new(code.clone()),
             );
             let placed = inst.and_then(|id| {
                 cx.state
@@ -717,9 +709,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                      engine::abilities_in_effect, never executed"
                 .into(),
         },
-        Effect::TakeControl { code } => {
-            crate::engine::dispatch::take_control(cx, eval_ctx.controller, code)
-        }
+        Effect::TakeControl { code } => dispatch::take_control(cx, eval_ctx.controller, code),
         Effect::BoostAttackDamage(amount) => boost_attack_damage_effect(cx, *amount),
         Effect::DiscoverAdditionalClues(amount) => discover_additional_clues_effect(cx, *amount),
         Effect::DrawCards { target, count } => draw_cards_effect(cx, eval_ctx, *target, *count),
@@ -790,13 +780,10 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
 /// effect, not a board state.
 fn step_choose_one(
     cx: &mut Cx,
-    branches: &[crate::dsl::ChoiceBranch],
+    branches: &[ChoiceBranch],
     eval_ctx: EvalContext,
     node: &Effect,
 ) -> EngineOutcome {
-    use crate::engine::dispatch::choice::{
-        awaiting_decision, resolve_choice_count, ChoiceResolution,
-    };
     let live: Vec<usize> = branches
         .iter()
         .enumerate()
@@ -809,23 +796,20 @@ fn step_choose_one(
     let push_branch = |cx: &mut Cx, i: usize| {
         cx.state
             .continuations
-            .push(crate::state::Continuation::Effect(frame_of(
-                &branches[i].effect,
-                {
-                    let mut ctx = eval_ctx;
-                    ctx.set_chosen_option(None);
-                    ctx
-                },
-            )));
+            .push(Continuation::Effect(frame_of(&branches[i].effect, {
+                let mut ctx = eval_ctx;
+                ctx.set_chosen_option(None);
+                ctx
+            })));
         EngineOutcome::Done
     };
-    match resolve_choice_count(live.len(), cx.state.interactive_acknowledge) {
+    match choice::resolve_choice_count(live.len(), cx.state.interactive_acknowledge) {
         ChoiceResolution::Empty => EngineOutcome::Rejected {
             reason: "Effect::ChooseOne with no branches".into(),
         },
         ChoiceResolution::Auto(i) => push_branch(cx, live[i]),
         ChoiceResolution::Suspend => {
-            if let Some(crate::engine::OptionId(i)) = eval_ctx.chosen_option() {
+            if let Some(OptionId(i)) = eval_ctx.chosen_option() {
                 let Some(&branch) = live.get(i as usize) else {
                     return EngineOutcome::Rejected {
                         reason: format!("ChooseOne pick {i} out of range (0..{})", live.len())
@@ -836,10 +820,10 @@ fn step_choose_one(
             } else {
                 let anchor = eval_ctx
                     .ability_source
-                    .and_then(|s| crate::engine::OptionTarget::for_live_source(s, cx.state));
+                    .and_then(|s| OptionTarget::for_live_source(s, cx.state));
                 let labels = live.iter().map(|&i| branches[i].label.clone()).collect();
                 suspend_leaf_in_place(cx, node, eval_ctx);
-                awaiting_decision("Choose one", labels, anchor)
+                choice::awaiting_decision("Choose one", labels, anchor)
             }
         }
     }
@@ -852,7 +836,7 @@ fn step_choose_one(
 /// side effect (standalone contract) so re-invocation is idempotent up to the
 /// suspension — no double-apply (#422, #334).
 fn step_native(cx: &mut Cx, tag: &str, eval_ctx: EvalContext, node: &Effect) -> EngineOutcome {
-    let Some(reg) = crate::card_registry::current() else {
+    let Some(reg) = card_registry::current() else {
         return EngineOutcome::Rejected {
             reason: format!("Native effect {tag:?}: no card registry installed").into(),
         };
@@ -908,7 +892,7 @@ fn draw_cards_effect(
             reason: format!("DrawCards: investigator {target_id:?} is not in the state").into(),
         };
     }
-    crate::engine::dispatch::cards::draw_with_deckout(cx, target_id, count);
+    cards::draw_with_deckout(cx, target_id, count);
     EngineOutcome::Done
 }
 
@@ -923,17 +907,10 @@ fn apply_search_deck(
     cx: &mut Cx,
     eval_ctx: EvalContext,
     target: InvestigatorTarget,
-    scope: crate::dsl::SearchScope,
-    filter: Option<&crate::dsl::CardFilter>,
+    scope: SearchScope,
+    filter: Option<&CardFilter>,
     node: &Effect,
 ) -> EngineOutcome {
-    use crate::dsl::SearchScope;
-    use crate::engine::dispatch::cards::shuffle_player_deck;
-    use crate::engine::dispatch::choice::{
-        awaiting_choice, resolve_choice_count, ChoiceResolution,
-    };
-    use crate::engine::OptionId;
-
     // 1. Whose deck. `Chosen` is bound by ground_chosen_targets; You/Active
     //    resolve directly.
     let who = match resolve_investigator_target(cx.state, eval_ctx, target) {
@@ -957,7 +934,7 @@ fn apply_search_deck(
         SearchScope::Top(n) => usize::from(n).min(inv.deck.len()),
         SearchScope::EntireDeck => inv.deck.len(),
     };
-    let eligible: Vec<(usize, crate::state::CardCode)> = inv.deck[..region]
+    let eligible: Vec<(usize, CardCode)> = inv.deck[..region]
         .iter()
         .enumerate()
         .filter(|(_, code)| match filter {
@@ -969,7 +946,7 @@ fn apply_search_deck(
 
     // 3. Choice convention — but 0 ⇒ find nothing (not reject).
     let chosen_deck_index: Option<usize> =
-        match resolve_choice_count(eligible.len(), cx.state.interactive_acknowledge) {
+        match choice::resolve_choice_count(eligible.len(), cx.state.interactive_acknowledge) {
             ChoiceResolution::Empty => None,
             ChoiceResolution::Auto(i) => Some(eligible[i].0),
             ChoiceResolution::Suspend => {
@@ -989,7 +966,7 @@ fn apply_search_deck(
                 } else {
                     let labels = eligible.iter().map(|(_, c)| c.0.clone()).collect();
                     suspend_leaf_in_place(cx, node, eval_ctx);
-                    return awaiting_choice("Search: choose a card to take", labels);
+                    return choice::awaiting_choice("Search: choose a card to take", labels);
                 }
             }
         };
@@ -1007,7 +984,7 @@ fn apply_search_deck(
 
     // 5. Shuffle (RR p.18 entire-deck mandatory; Old Book "shuffle the
     //    remaining cards into the deck"). RNG-replayable; no-op on <2 cards.
-    shuffle_player_deck(cx, who);
+    cards::shuffle_player_deck(cx, who);
     EngineOutcome::Done
 }
 
@@ -1016,8 +993,8 @@ fn apply_search_deck(
 /// metadata. Returns `false` with no registry (a filtered search finds nothing
 /// rather than panicking — only the registry-less test paths, which never use
 /// a filter, hit this).
-fn filter_matches(f: &crate::dsl::CardFilter, code: &crate::state::CardCode) -> bool {
-    let Some(reg) = crate::card_registry::current() else {
+fn filter_matches(f: &CardFilter, code: &CardCode) -> bool {
+    let Some(reg) = card_registry::current() else {
         return false;
     };
     let Some(meta) = (reg.metadata_for)(code) else {
@@ -1063,7 +1040,7 @@ fn apply_attach_self_to_location(cx: &mut Cx) -> EngineOutcome {
             .enumerate()
             .rev()
             .find_map(|(i, frame)| match frame {
-                crate::state::Continuation::PlayFromHand {
+                Continuation::PlayFromHand {
                     investigator,
                     card: Some(_),
                 } => Some((i, *investigator)),
@@ -1088,7 +1065,7 @@ fn apply_attach_self_to_location(cx: &mut Cx) -> EngineOutcome {
     let (code, _owner) = cx.state.continuations[frame_idx]
         .take_play_in_progress(investigator)
         .expect("AttachSelfToLocation: the located frame still holds its card");
-    crate::engine::dispatch::threat_area::attach_to_location(cx, location, code);
+    threat_area::attach_to_location(cx, location, code);
     EngineOutcome::Done
 }
 
@@ -1128,8 +1105,6 @@ fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
 /// (cards in play → owner discard) when a player card first needs to
 /// discard itself by source instance.
 fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
-    use crate::event::Event;
-    use crate::state::Zone;
     let Some(source) = eval_ctx.source_instance() else {
         return EngineOutcome::Rejected {
             reason: "DiscardSelf: no source instance in context".into(),
@@ -1179,14 +1154,12 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
         // `Treachery`) to the encounter discard. Without a registry the type is
         // unknown, so default to the encounter discard (preserves the
         // pre-Barricade behavior).
-        let is_player_card = crate::card_registry::current()
+        let is_player_card = card_registry::current()
             .and_then(|reg| (reg.metadata_for)(&card.code))
             .is_some_and(|m| {
                 matches!(
                     m.card_type(),
-                    crate::card_data::CardType::Asset
-                        | crate::card_data::CardType::Event
-                        | crate::card_data::CardType::Skill
+                    CardType::Asset | CardType::Event | CardType::Skill
                 )
             });
         if is_player_card {
@@ -1296,7 +1269,7 @@ pub(crate) fn eval_condition(
             })
         }
         Condition::Native { tag } => {
-            let reg = crate::card_registry::current()
+            let reg = card_registry::current()
                 .ok_or_else(|| format!("Native condition {tag:?}: no card registry installed"))?;
             let predicate = (reg.native_condition_for)(tag)
                 .ok_or_else(|| format!("Native condition {tag:?}: no predicate registered"))?;
@@ -1388,7 +1361,7 @@ pub(super) fn eval_int_expr(
 ///   either path cleanly. Reject loudly so the card author notices.
 /// - [`ModifierScope::ThisSkillTest`]: recorded onto
 ///   [`GameState::recorded_modifiers`] as a
-///   [`RecordedModifier`](crate::state::RecordedModifier) stamped with the
+///   [`RecordedModifier`] stamped with the
 ///   in-flight test's [`SkillTestId`](crate::state::SkillTestId), and
 ///   expired by that test's teardown. This arm is where the card author's
 ///   [`ModifierScope`] becomes the engine's
@@ -1414,17 +1387,17 @@ pub(super) fn eval_int_expr(
 fn modify(
     cx: &mut Cx,
     eval_ctx: EvalContext,
-    stat: crate::dsl::Stat,
+    stat: Stat,
     delta: i8,
     scope: ModifierScope,
-    audience: crate::dsl::ModifierAudience,
+    audience: ModifierAudience,
 ) -> EngineOutcome {
     // A recorded row carries only the controller today (see
     // `RecordedModifier`), so a wider audience under a non-constant
     // scope has nowhere to be written down. Reject loudly rather than
     // silently narrowing it to the controller — recorded rows that can
     // name an arbitrary target are #676's.
-    if audience != crate::dsl::ModifierAudience::Controller {
+    if audience != ModifierAudience::Controller {
         return EngineOutcome::Rejected {
             reason: format!(
                 "Modify with audience {audience:?} under scope {scope:?}: only \
@@ -1447,20 +1420,18 @@ fn modify(
                     .into(),
                 };
             };
-            let lifetime = crate::state::Lifetime::SkillTest(test.id);
-            cx.state
-                .recorded_modifiers
-                .push(crate::state::RecordedModifier::new(
-                    eval_ctx.controller,
-                    stat,
-                    // The DSL's `Modify` carries a literal delta, so every row
-                    // written today is a `Lit`. The row is expression-valued
-                    // regardless (ADR 0005): what is stored is evaluated at
-                    // read time, not at push time.
-                    IntExpr::Lit(delta),
-                    lifetime,
-                    eval_ctx.source_instance(),
-                ));
+            let lifetime = Lifetime::SkillTest(test.id);
+            cx.state.recorded_modifiers.push(RecordedModifier::new(
+                eval_ctx.controller,
+                stat,
+                // The DSL's `Modify` carries a literal delta, so every row
+                // written today is a `Lit`. The row is expression-valued
+                // regardless (ADR 0005): what is stored is evaluated at
+                // read time, not at push time.
+                IntExpr::Lit(delta),
+                lifetime,
+                eval_ctx.source_instance(),
+            ));
             EngineOutcome::Done
         }
         ModifierScope::WhileInPlay | ModifierScope::WhileInPlayDuring(_) => {
@@ -1490,7 +1461,7 @@ fn modify(
 /// > fail or to automatically succeed.
 ///
 /// The determination is written as a
-/// [`RecordedModifier`](crate::state::RecordedModifier) row stamped with the
+/// [`RecordedModifier`] row stamped with the
 /// running test's [`SkillTestId`](crate::state::SkillTestId) — the same
 /// population, the same identity check and the same teardown sweep the
 /// `[auto_fail]` chaos token's row goes through (#685), so a card-latched
@@ -1533,10 +1504,10 @@ fn auto_resolve(cx: &mut Cx, eval_ctx: EvalContext, determination: Determination
     let (test_id, investigator) = (test.id, test.investigator);
     cx.state
         .recorded_modifiers
-        .push(crate::state::RecordedModifier::determination(
+        .push(RecordedModifier::determination(
             investigator,
             determination,
-            crate::state::Lifetime::SkillTest(test_id),
+            Lifetime::SkillTest(test_id),
             eval_ctx.source_instance(),
         ));
     cx.events.push(Event::SkillTestDeterminationLatched {
@@ -1592,7 +1563,7 @@ fn gain_resources(
             reason: format!("GainResources: investigator {target_id:?} is not in the state").into(),
         };
     }
-    crate::engine::dispatch::cards::grant_resources(cx, target_id, amount);
+    cards::grant_resources(cx, target_id, amount);
     EngineOutcome::Done
 }
 
@@ -1670,9 +1641,9 @@ fn discover_clue(
     // `Done` when nothing was queued *and* when a `when` window was, and the
     // `drive` loop owns both. The pre-#703 code peeked at the top frame here to
     // tell those apart, which is the shape the ADR forbids.
-    crate::engine::dispatch::emit::queue_event(
+    emit::queue_event(
         cx,
-        &crate::engine::dispatch::emit::TimingEvent::DiscoverClues {
+        &TimingEvent::DiscoverClues {
             investigator: eval_ctx.controller,
             location: location_id,
             count: capped,
@@ -1720,7 +1691,7 @@ fn cancel_current_impact(cx: &mut Cx) -> EngineOutcome {
 /// discovery (#471).
 pub(crate) fn perform_discovery(
     cx: &mut Cx,
-    location_id: crate::state::LocationId,
+    location_id: LocationId,
     count: u8,
     controller: InvestigatorId,
 ) {
@@ -1790,13 +1761,7 @@ fn deal_effect(
         HarmKind::Damage => (amount, 0),
         HarmKind::Horror => (0, amount),
     };
-    crate::engine::dispatch::combat::begin_deal_damage(
-        cx,
-        target_id,
-        damage,
-        horror,
-        crate::state::DamageSource::Effect,
-    )
+    combat::begin_deal_damage(cx, target_id, damage, horror, DamageSource::Effect)
 }
 
 /// Resolve [`Effect::DealDamageToEnemy`]: ground the chosen enemy (already bound
@@ -1820,12 +1785,7 @@ fn deal_damage_to_enemy_effect(
             }
         }
     };
-    crate::engine::dispatch::combat::deal_damage_to_enemy(
-        cx,
-        enemy,
-        amount,
-        Some(eval_ctx.controller),
-    );
+    combat::deal_damage_to_enemy(cx, enemy, amount, Some(eval_ctx.controller));
     EngineOutcome::Done
 }
 
@@ -1874,7 +1834,6 @@ fn heal_effect(
 /// Resolve [`Effect::AdvanceCurrentAct`]: advance the act deck. A terminal act
 /// advances like any other (ADR 0013) — its reverse is what ends the scenario.
 fn apply_advance_current_act(cx: &mut Cx) -> EngineOutcome {
-    use crate::engine::dispatch::act_agenda::advance_act;
     if cx.state.act_deck.is_empty() {
         return EngineOutcome::Rejected {
             reason: "AdvanceCurrentAct: no act deck is modeled".into(),
@@ -1883,7 +1842,7 @@ fn apply_advance_current_act(cx: &mut Cx) -> EngineOutcome {
     // AdvanceCurrentAct is only reached from a Forced ability (01110's
     // Ghoul-Priest-defeat advance) — a game-forced advance, so it prompts
     // the on-card flip (#558).
-    advance_act(cx, crate::state::AdvanceTrigger::Forced);
+    act_agenda::advance_act(cx, AdvanceTrigger::Forced);
     EngineOutcome::Done
 }
 
@@ -1898,10 +1857,7 @@ fn apply_advance_current_act(cx: &mut Cx) -> EngineOutcome {
 /// reached from a terminal card's reverse cancels nothing already under way
 /// (ADR 0004), including the `AdvanceReverse` frame that fired the reverse.
 fn apply_reach_resolution(cx: &mut Cx, n: u8) -> EngineOutcome {
-    crate::engine::dispatch::act_agenda::end_scenario(
-        cx.state,
-        crate::scenario::ScenarioEnding::Resolution(crate::scenario::ResolutionId::new(n)),
-    );
+    act_agenda::end_scenario(cx.state, ScenarioEnding::Resolution(ResolutionId::new(n)));
     EngineOutcome::Done
 }
 
@@ -1947,9 +1903,9 @@ fn apply_place_doom_on_current_agenda(
     if n == 0 {
         return EngineOutcome::Done;
     }
-    crate::engine::dispatch::act_agenda::place_doom_on_agenda(cx, n);
+    act_agenda::place_doom_on_agenda(cx, n);
     if may_advance {
-        crate::engine::dispatch::act_agenda::check_doom_threshold(cx);
+        act_agenda::check_doom_threshold(cx);
     }
     EngineOutcome::Done
 }
@@ -2026,20 +1982,17 @@ fn resolve_grounded_choice<Id: Copy>(
     empty_reason: &'static str,
     prompt: &'static str,
     label: impl Fn(&Id) -> String,
-    target: impl Fn(&Id) -> Option<crate::engine::OptionTarget>,
+    target: impl Fn(&Id) -> Option<OptionTarget>,
     bind: impl Fn(Id) -> EvalContext,
     interactive: bool,
 ) -> Result<EvalContext, EngineOutcome> {
-    use crate::engine::dispatch::choice::{
-        awaiting_choice_anchored, resolve_choice_count, ChoiceResolution,
-    };
-    match resolve_choice_count(candidates.len(), interactive) {
+    match choice::resolve_choice_count(candidates.len(), interactive) {
         ChoiceResolution::Empty => Err(EngineOutcome::Rejected {
             reason: empty_reason.into(),
         }),
         ChoiceResolution::Auto(i) => Ok(bind(candidates[i])),
         ChoiceResolution::Suspend => {
-            if let Some(crate::engine::OptionId(i)) = eval_ctx.chosen_option() {
+            if let Some(OptionId(i)) = eval_ctx.chosen_option() {
                 match candidates.get(i as usize) {
                     Some(&id) => Ok(bind(id)),
                     None => Err(EngineOutcome::Rejected {
@@ -2055,7 +2008,7 @@ fn resolve_grounded_choice<Id: Copy>(
                     .iter()
                     .map(|id| (label(id), target(id)))
                     .collect();
-                Err(awaiting_choice_anchored(prompt, options))
+                Err(choice::awaiting_choice_anchored(prompt, options))
             }
         }
     }
@@ -2086,7 +2039,7 @@ fn resolve_grounded_choice<Id: Copy>(
 fn ground_investigator_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
-    scope: crate::dsl::EntityScope,
+    scope: EntityScope,
     effect: &Effect,
 ) -> Result<EvalContext, EngineOutcome> {
     let in_scope = investigator_candidates(cx.state, eval_ctx.controller, scope);
@@ -2121,7 +2074,7 @@ fn ground_investigator_choice(
 fn ground_location_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
-    set: crate::dsl::LocationSet,
+    set: LocationSet,
 ) -> Result<EvalContext, EngineOutcome> {
     let candidates = location_candidates(cx.state, eval_ctx.controller, set);
     resolve_grounded_choice(
@@ -2130,7 +2083,7 @@ fn ground_location_choice(
         "Chosen location: no candidate in scope",
         "Choose a location",
         |id| format!("{id:?}"),
-        |id| Some(crate::engine::OptionTarget::Location(*id)),
+        |id| Some(OptionTarget::Location(*id)),
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_location(id);
@@ -2146,17 +2099,16 @@ fn ground_location_choice(
 fn ground_enemy_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
-    scope: crate::dsl::EntityScope,
+    scope: EntityScope,
 ) -> Result<EvalContext, EngineOutcome> {
-    let candidates =
-        crate::engine::dispatch::combat::enemies_in_scope(cx.state, eval_ctx.controller, scope);
+    let candidates = combat::enemies_in_scope(cx.state, eval_ctx.controller, scope);
     resolve_grounded_choice(
         eval_ctx,
         &candidates,
         "Chosen enemy: no candidate in scope",
         "Choose an enemy",
         |id| format!("{id:?}"),
-        |id| Some(crate::engine::OptionTarget::Enemy(*id)),
+        |id| Some(OptionTarget::Enemy(*id)),
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_enemy(id);
@@ -2187,18 +2139,15 @@ fn ground_fight_target_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
 ) -> Result<EvalContext, EngineOutcome> {
-    let candidates = crate::engine::dispatch::combat::enemies_in_scope(
-        cx.state,
-        eval_ctx.controller,
-        crate::engine::dispatch::combat::fight_target_scope(),
-    );
+    let candidates =
+        combat::enemies_in_scope(cx.state, eval_ctx.controller, combat::fight_target_scope());
     resolve_grounded_choice(
         eval_ctx,
         &candidates,
         "Fight: no enemy at your location",
         "Choose an enemy to attack",
         |id| format!("{id:?}"),
-        |id| Some(crate::engine::OptionTarget::Enemy(*id)),
+        |id| Some(OptionTarget::Enemy(*id)),
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_enemy(id);
@@ -2214,9 +2163,8 @@ fn ground_fight_target_choice(
 fn investigator_candidates(
     state: &GameState,
     controller: InvestigatorId,
-    scope: crate::dsl::EntityScope,
+    scope: EntityScope,
 ) -> Vec<InvestigatorId> {
-    use crate::dsl::{EntityScope, LocationSet};
     let EntityScope::At(set) = scope;
     match set {
         LocationSet::Anywhere => state.investigators.keys().copied().collect(),
@@ -2242,9 +2190,8 @@ fn investigator_candidates(
 fn location_candidates(
     state: &GameState,
     controller: InvestigatorId,
-    set: crate::dsl::LocationSet,
-) -> Vec<crate::state::LocationId> {
-    use crate::dsl::LocationSet;
+    set: LocationSet,
+) -> Vec<LocationId> {
     match set {
         LocationSet::Anywhere => state.locations.keys().copied().collect(),
         // the singleton your-location, or empty when between locations
@@ -2323,7 +2270,7 @@ pub(crate) fn ability_can_initiate(
     let Some(tag) = ability.eligibility.as_deref() else {
         return true;
     };
-    let Some(reg) = crate::card_registry::current() else {
+    let Some(reg) = card_registry::current() else {
         return false;
     };
     let Some(pred) = (reg.native_eligibility_for)(tag) else {
@@ -2477,7 +2424,7 @@ fn resolve_location_target(
     state: &GameState,
     ctx: EvalContext,
     target: LocationTarget,
-) -> Result<crate::state::LocationId, &'static str> {
+) -> Result<LocationId, &'static str> {
     match target {
         LocationTarget::YourLocation => state
             .investigators
@@ -2500,10 +2447,7 @@ fn resolve_location_target(
     }
 }
 
-fn resolve_enemy_target(
-    ctx: EvalContext,
-    target: EnemyTarget,
-) -> Result<crate::state::EnemyId, &'static str> {
+fn resolve_enemy_target(ctx: EvalContext, target: EnemyTarget) -> Result<EnemyId, &'static str> {
     match target {
         EnemyTarget::Chosen(_) => ctx.chosen_enemy().ok_or(
             "EnemyTarget::Chosen resolved before target-grounding bound it \
@@ -2521,7 +2465,7 @@ pub fn play_is_prohibited(
     state: &GameState,
     registry: &CardRegistry,
     investigator: InvestigatorId,
-    card_type: crate::card_data::CardType,
+    card_type: CardType,
 ) -> bool {
     let Some(inv) = state.investigators.get(&investigator) else {
         return false;
@@ -2534,7 +2478,7 @@ pub fn play_is_prohibited(
                 a.trigger == Trigger::Constant
                     && matches!(
                         &a.effect,
-                        Effect::Restrict(crate::dsl::Restriction::CannotPlay(t)) if *t == card_type
+                        Effect::Restrict(Restriction::CannotPlay(t)) if *t == card_type
                     )
             })
     })
@@ -2570,9 +2514,8 @@ pub fn pending_action_surcharge(
     state: &GameState,
     registry: &CardRegistry,
     investigator: InvestigatorId,
-    action_class: crate::dsl::ActionClass,
-) -> (u8, Vec<crate::state::CardInstanceId>) {
-    use crate::dsl::Restriction;
+    action_class: ActionClass,
+) -> (u8, Vec<CardInstanceId>) {
     let Some(inv) = state.investigators.get(&investigator) else {
         return (0, Vec::new());
     };
@@ -2615,7 +2558,7 @@ pub fn pending_action_surcharge(
 /// no in-play location carries it. Public so card-local
 /// [`Effect::Native`] handlers can resolve a board location by its
 /// printed code.
-pub fn location_id_by_code(state: &GameState, code: &str) -> Option<crate::state::LocationId> {
+pub fn location_id_by_code(state: &GameState, code: &str) -> Option<LocationId> {
     state
         .locations
         .iter()
@@ -2625,36 +2568,33 @@ pub fn location_id_by_code(state: &GameState, code: &str) -> Option<crate::state
 
 #[cfg(test)]
 mod tests {
-    use crate::card_registry::CardRegistry;
+    use super::*;
+    use crate::action::InputResponse;
+    use crate::card_data::CardMetadata;
     use crate::dsl::{
         boost_attack_damage, choose_one, constant, deal_damage, deal_damage_to_enemy, deal_horror,
-        discover_clue, draw_cards, gain_resources, heal, modify, on_play, search_deck, seq,
-        Ability, Choose, Effect, EnemyTarget, HarmKind, InvestigatorTarget, LocationSet,
-        LocationTarget, ModifierScope, SkillTestKind, Stat,
+        discover_additional_clues, discover_clue, draw_cards, gain_resources, heal, if_, if_else,
+        modify, on_play, put_into_threat_area_with_clues, restrict, search_deck, seq, Choose,
+        TestOutcome,
     };
-    use crate::event::Event;
+    use crate::engine::dispatch::coordinator;
     use crate::state::{
-        CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, SkillKind,
+        Act, Agenda, CardInPlay, DifficultyBasis, FastActorScope, FastWindowKind,
+        InFlightSkillTest, PhaseStep, RecordedModifierKind, SkillKind, SkillTestFollowUp,
+        SkillTestId, SkillTestStep, Status,
     };
-    use crate::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
     use crate::{assert_event, assert_no_event};
-
-    use super::{
-        effect_can_change_state, eval_condition, eval_int_expr, eval_quantity, push_effect,
-        step_effect_frame, EngineOutcome, EvalContext,
-    };
-    use crate::dsl::Condition;
-    use crate::engine::Cx;
 
     fn ctx(id: u32) -> EvalContext {
         EvalContext::for_controller(InvestigatorId(id))
     }
 
     /// A state with investigator 1 standing on location 10, which holds `clues`.
-    fn state_with_clues_at_location(clues: u8) -> crate::state::GameState {
-        let mut inv = test_investigator(1);
+    fn state_with_clues_at_location(clues: u8) -> GameState {
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(10));
-        let mut loc = test_location(10, "Study");
+        let mut loc = test_support::test_location(10, "Study");
         loc.clues = clues;
         GameStateBuilder::new()
             .with_investigator(inv)
@@ -2729,10 +2669,11 @@ mod tests {
 
     /// Investigator 1 (and, when `others` is non-empty, further investigators)
     /// on location 10, each seeded `(damage, horror, deck_len)`. #639 fixtures.
-    fn state_with_harm(seeds: &[(u32, u8, u8, usize)]) -> crate::state::GameState {
-        let mut builder = GameStateBuilder::new().with_location(test_location(10, "Study"));
+    fn state_with_harm(seeds: &[(u32, u8, u8, usize)]) -> GameState {
+        let mut builder =
+            GameStateBuilder::new().with_location(test_support::test_location(10, "Study"));
         for &(id, damage, horror, deck_len) in seeds {
-            let mut inv = test_investigator(id);
+            let mut inv = test_support::test_investigator(id);
             inv.current_location = Some(LocationId(10));
             inv.investigator_card.accumulated_damage = damage;
             inv.investigator_card.accumulated_horror = horror;
@@ -2811,7 +2752,7 @@ mod tests {
         // mandatory shuffle reorders it even on a fruitless search).
         let search = search_deck(
             InvestigatorTarget::chosen_at_your_location(),
-            crate::dsl::SearchScope::Top(3),
+            SearchScope::Top(3),
             None,
         );
         assert!(effect_can_change_state(
@@ -2841,27 +2782,20 @@ mod tests {
     /// clues move at the coordinator's resolve step. Stopping at the `EmitEvent`
     /// frame would leave the effect half-resolved in a way `apply` never does.
     fn drive_effect_run_to(cx: &mut Cx, base: usize) -> EngineOutcome {
-        use crate::state::Continuation;
         loop {
             if cx.state.continuations.len() <= base {
                 return EngineOutcome::Done;
             }
             let outcome = match cx.state.continuations.last() {
                 Some(Continuation::Effect(_)) => step_effect_frame(cx),
-                Some(Continuation::EmitEvent { .. }) => {
-                    crate::engine::dispatch::coordinator::dispatch_emit_event(cx)
-                }
-                Some(Continuation::TimingPoint { .. }) => {
-                    crate::engine::dispatch::coordinator::dispatch_timing_point(cx)
-                }
+                Some(Continuation::EmitEvent { .. }) => coordinator::dispatch_emit_event(cx),
+                Some(Continuation::TimingPoint { .. }) => coordinator::dispatch_timing_point(cx),
                 // `Effect::Deal` parks one of these and returns in tail position
                 // (#727): the two steps of dealing the damage are the frame's,
                 // not the effect walk's. The real `drive` loop dispatches it, so
                 // this bounded stand-in must too, or `Deal` in a unit test
                 // assigns damage that is never placed.
-                Some(Continuation::DealDamage { .. }) => {
-                    crate::engine::dispatch::combat::drive_deal_damage(cx)
-                }
+                Some(Continuation::DealDamage { .. }) => combat::drive_deal_damage(cx),
                 _ => return EngineOutcome::Done,
             };
             match outcome {
@@ -2886,17 +2820,10 @@ mod tests {
     /// `Leaf` via `resume_effect_choice` (which now just cedes to the global
     /// loop), then drives the resumed top effect run **bounded** — in a unit
     /// test there is no `apply()`→`drive()` afterward to step it (Slice D #423).
-    fn resume_pick(
-        state: &mut crate::state::GameState,
-        events: &mut Vec<Event>,
-        i: u32,
-    ) -> EngineOutcome {
-        use crate::state::Continuation;
+    fn resume_pick(state: &mut GameState, events: &mut Vec<Event>, i: u32) -> EngineOutcome {
         let mut cx = Cx { state, events };
-        let recorded = crate::engine::dispatch::choice::resume_effect_choice(
-            &mut cx,
-            &crate::action::InputResponse::PickSingle(crate::engine::OptionId(i)),
-        );
+        let recorded =
+            choice::resume_effect_choice(&mut cx, &InputResponse::PickSingle(OptionId(i)));
         // A reject (bad pick / top not a Leaf) propagates as-is; otherwise the
         // pick is recorded and the resumed run is driven bounded (base = depth
         // just below the top contiguous Effect run, so fixtures stay untouched).
@@ -2922,11 +2849,11 @@ mod tests {
     }
 
     /// Build a `GameState` with `clue_count` clues at `InvestigatorId(1)`'s location.
-    fn with_clues(clue_count: u8) -> crate::state::GameState {
+    fn with_clues(clue_count: u8) -> GameState {
         let loc_id = LocationId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(loc_id);
-        let mut loc = test_location(1, "Study");
+        let mut loc = test_support::test_location(1, "Study");
         loc.clues = clue_count;
         GameStateBuilder::new()
             .with_investigator(inv)
@@ -2936,13 +2863,11 @@ mod tests {
 
     /// Assert the top frame is an effect node suspended in place for a pick.
     #[track_caller]
-    fn assert_suspended_leaf(state: &crate::state::GameState) {
+    fn assert_suspended_leaf(state: &GameState) {
         assert!(
             matches!(
                 state.continuations.last(),
-                Some(crate::state::Continuation::Effect(
-                    crate::state::EffectFrame::Leaf { .. }
-                )),
+                Some(Continuation::Effect(EffectFrame::Leaf { .. })),
             ),
             "expected a suspended effect Leaf frame on top, got {:?}",
             state.continuations.last(),
@@ -2951,13 +2876,12 @@ mod tests {
 
     #[test]
     fn location_has_clues_condition_tracks_clue_count() {
-        use card_dsl::dsl::{CmpOp, Quantity};
         let inv_id = InvestigatorId(1);
         let loc_id = LocationId(1);
         let with_clues_local = |clue_count: u8| {
-            let mut inv = test_investigator(1);
+            let mut inv = test_support::test_investigator(1);
             inv.current_location = Some(loc_id);
-            let mut loc = test_location(1, "Study");
+            let mut loc = test_support::test_location(1, "Study");
             loc.clues = clue_count;
             GameStateBuilder::new()
                 .with_investigator(inv)
@@ -2990,7 +2914,6 @@ mod tests {
 
     #[test]
     fn eval_quantity_reads_clues_engaged_and_margin() {
-        use card_dsl::dsl::Quantity;
         // clues at location
         let (state, inv) = state_with_cards_in_play(&[]);
         let ctx = EvalContext::for_controller(inv);
@@ -3012,7 +2935,6 @@ mod tests {
 
     #[test]
     fn eval_count_and_compare_over_clues() {
-        use card_dsl::dsl::{CmpOp, Condition, IntExpr, Quantity};
         let (_s, inv) = state_with_cards_in_play(&[]);
         let ctx = EvalContext::for_controller(inv);
         // Count
@@ -3065,13 +2987,10 @@ mod tests {
     /// `source` came back `None`.
     #[test]
     fn eval_context_round_trips_a_board_source_the_instance_projection_would_lose() {
-        let ctx = EvalContext::for_controller_with_source(
-            InvestigatorId(1),
-            crate::state::AbilitySource::Act,
-        );
+        let ctx = EvalContext::for_controller_with_source(InvestigatorId(1), AbilitySource::Act);
         let json = serde_json::to_string(&ctx).expect("serialize");
         let back: EvalContext = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.ability_source, Some(crate::state::AbilitySource::Act));
+        assert_eq!(back.ability_source, Some(AbilitySource::Act));
         assert_eq!(
             back.source_instance(),
             None,
@@ -3086,7 +3005,7 @@ mod tests {
     fn an_in_play_source_projects_to_its_own_instance() {
         let ctx = EvalContext::for_controller_with_source(
             InvestigatorId(1),
-            crate::state::AbilitySource::InPlay(CardInstanceId(7)),
+            AbilitySource::InPlay(CardInstanceId(7)),
         );
         assert_eq!(ctx.source_instance(), Some(CardInstanceId(7)));
     }
@@ -3095,7 +3014,7 @@ mod tests {
     fn gain_resources_increments_target_wallet_and_emits_event() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let resources_before = state.investigators[&id].resources;
         let mut events = Vec::new();
@@ -3124,7 +3043,7 @@ mod tests {
     fn push_effect_then_drive_runs_to_completion() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let resources_before = state.investigators[&id].resources;
         let mut events = Vec::new();
@@ -3135,14 +3054,11 @@ mod tests {
 
         push_effect(&mut cx, &gain_resources(InvestigatorTarget::You, 3), ctx(1));
         assert!(
-            matches!(
-                cx.state.continuations.last(),
-                Some(crate::state::Continuation::Effect(_))
-            ),
+            matches!(cx.state.continuations.last(), Some(Continuation::Effect(_))),
             "the effect root frame is pushed for the loop",
         );
 
-        let out = crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        let out = dispatch::drive(&mut cx, EngineOutcome::Done);
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(state.investigators[&id].resources, resources_before + 3);
         assert!(state.continuations.is_empty(), "effect frame popped");
@@ -3156,7 +3072,7 @@ mod tests {
         // active investigator doesn't reject for amount=0.
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let resources_before = state.investigators[&id].resources;
         let mut events = Vec::new();
@@ -3180,7 +3096,7 @@ mod tests {
         // No active investigator (default phase is Mythos), so
         // InvestigatorTarget::Active should fail to resolve.
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
 
@@ -3198,9 +3114,8 @@ mod tests {
 
     #[test]
     fn cancel_effect_sets_pending_cancellation() {
-        use crate::state::{Continuation, FastActorScope, FastWindowKind, PhaseStep};
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         // Effect::Cancel asserts an open window frame is present; push a minimal one.
         state.continuations.push(Continuation::FastWindow {
@@ -3226,9 +3141,9 @@ mod tests {
     fn discover_clue_moves_one_clue_from_location_to_controller() {
         let inv_id = InvestigatorId(1);
         let loc_id = LocationId(10);
-        let mut investigator = test_investigator(1);
+        let mut investigator = test_support::test_investigator(1);
         investigator.current_location = Some(loc_id);
-        let mut location = test_location(10, "Study");
+        let mut location = test_support::test_location(10, "Study");
         location.clues = 3;
 
         let mut state = GameStateBuilder::new()
@@ -3266,9 +3181,9 @@ mod tests {
         // Regression guard for the seam's "fall through" path (C5a #236).
         let inv_id = InvestigatorId(1);
         let loc_id = LocationId(10);
-        let mut investigator = test_investigator(1);
+        let mut investigator = test_support::test_investigator(1);
         investigator.current_location = Some(loc_id);
-        let mut location = test_location(10, "Study");
+        let mut location = test_support::test_location(10, "Study");
         location.clues = 3;
 
         let mut state = GameStateBuilder::new()
@@ -3300,9 +3215,9 @@ mod tests {
         // Card asks for 3 clues but the location only has 1 — take
         // what's there, no error.
         let loc_id = LocationId(10);
-        let mut investigator = test_investigator(1);
+        let mut investigator = test_support::test_investigator(1);
         investigator.current_location = Some(loc_id);
-        let mut location = test_location(10, "Study");
+        let mut location = test_support::test_location(10, "Study");
         location.clues = 1;
 
         let mut state = GameStateBuilder::new()
@@ -3337,9 +3252,9 @@ mod tests {
         // Per the rulebook: a discover-clue effect against an empty
         // location is a no-op, not a rejection.
         let loc_id = LocationId(10);
-        let mut investigator = test_investigator(1);
+        let mut investigator = test_support::test_investigator(1);
         investigator.current_location = Some(loc_id);
-        let location = test_location(10, "Study"); // 0 clues by default
+        let location = test_support::test_location(10, "Study"); // 0 clues by default
 
         let mut state = GameStateBuilder::new()
             .with_investigator(investigator)
@@ -3367,7 +3282,7 @@ mod tests {
         // "You" has no current_location — LocationTarget::
         // YourLocation can't resolve.
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1)) // current_location = None
+            .with_investigator(test_support::test_investigator(1)) // current_location = None
             .build();
         let mut events = Vec::new();
 
@@ -3393,11 +3308,11 @@ mod tests {
         // discover lands at the tested location.
         let tested = LocationId(20);
         let elsewhere = LocationId(30);
-        let mut investigator = test_investigator(1);
+        let mut investigator = test_support::test_investigator(1);
         investigator.current_location = Some(elsewhere);
-        let mut tested_loc = test_location(20, "Study");
+        let mut tested_loc = test_support::test_location(20, "Study");
         tested_loc.clues = 2;
-        let elsewhere_loc = test_location(30, "Hall");
+        let elsewhere_loc = test_support::test_location(30, "Hall");
 
         let mut state = GameStateBuilder::new()
             .with_investigator(investigator)
@@ -3406,26 +3321,24 @@ mod tests {
             .build();
         state
             .continuations
-            .push(crate::state::Continuation::SkillTest(
-                crate::state::InFlightSkillTest {
-                    id: crate::state::SkillTestId(0),
-                    investigator: InvestigatorId(1),
-                    skill: SkillKind::Intellect,
-                    kind: SkillTestKind::Investigate,
-                    difficulty_basis: crate::state::DifficultyBasis::Fixed(2),
-                    committed_by_active: Vec::new(),
-                    tested_location: Some(tested),
-                    follow_up: crate::state::SkillTestFollowUp::Investigate,
-                    on_fail: None,
-                    on_success: None,
-                    source: None,
-                    continuation: crate::state::SkillTestStep::AwaitingCommit,
-                    bonus_attack_damage: 0,
-                    bonus_clues_discovered: 0,
-                    resolved: None,
-                    symbol_on_fail: None,
-                },
-            ));
+            .push(Continuation::SkillTest(InFlightSkillTest {
+                id: SkillTestId(0),
+                investigator: InvestigatorId(1),
+                skill: SkillKind::Intellect,
+                kind: SkillTestKind::Investigate,
+                difficulty_basis: DifficultyBasis::Fixed(2),
+                committed_by_active: Vec::new(),
+                tested_location: Some(tested),
+                follow_up: SkillTestFollowUp::Investigate,
+                on_fail: None,
+                on_success: None,
+                source: None,
+                continuation: SkillTestStep::AwaitingCommit,
+                bonus_attack_damage: 0,
+                bonus_clues_discovered: 0,
+                resolved: None,
+                symbol_on_fail: None,
+            }));
         let mut events = Vec::new();
 
         let outcome = run(
@@ -3449,7 +3362,7 @@ mod tests {
     #[test]
     fn boost_attack_damage_accumulates_on_in_flight_test() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
 
@@ -3466,26 +3379,24 @@ mod tests {
 
         state
             .continuations
-            .push(crate::state::Continuation::SkillTest(
-                crate::state::InFlightSkillTest {
-                    id: crate::state::SkillTestId(0),
-                    investigator: InvestigatorId(1),
-                    skill: SkillKind::Combat,
-                    kind: SkillTestKind::Fight,
-                    difficulty_basis: crate::state::DifficultyBasis::Fixed(3),
-                    committed_by_active: Vec::new(),
-                    tested_location: None,
-                    follow_up: crate::state::SkillTestFollowUp::None,
-                    on_fail: None,
-                    on_success: None,
-                    source: None,
-                    continuation: crate::state::SkillTestStep::AwaitingCommit,
-                    bonus_attack_damage: 0,
-                    bonus_clues_discovered: 0,
-                    resolved: None,
-                    symbol_on_fail: None,
-                },
-            ));
+            .push(Continuation::SkillTest(InFlightSkillTest {
+                id: SkillTestId(0),
+                investigator: InvestigatorId(1),
+                skill: SkillKind::Combat,
+                kind: SkillTestKind::Fight,
+                difficulty_basis: DifficultyBasis::Fixed(3),
+                committed_by_active: Vec::new(),
+                tested_location: None,
+                follow_up: SkillTestFollowUp::None,
+                on_fail: None,
+                on_success: None,
+                source: None,
+                continuation: SkillTestStep::AwaitingCommit,
+                bonus_attack_damage: 0,
+                bonus_clues_discovered: 0,
+                resolved: None,
+                symbol_on_fail: None,
+            }));
 
         for _ in 0..2 {
             run(
@@ -3511,7 +3422,7 @@ mod tests {
     #[test]
     fn discover_additional_clues_accumulates_on_in_flight_test() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
 
@@ -3521,33 +3432,31 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &crate::dsl::discover_additional_clues(1),
+            &discover_additional_clues(1),
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
 
         state
             .continuations
-            .push(crate::state::Continuation::SkillTest(
-                crate::state::InFlightSkillTest {
-                    id: crate::state::SkillTestId(0),
-                    investigator: InvestigatorId(1),
-                    skill: SkillKind::Intellect,
-                    kind: SkillTestKind::Investigate,
-                    difficulty_basis: crate::state::DifficultyBasis::Fixed(3),
-                    committed_by_active: Vec::new(),
-                    tested_location: None,
-                    follow_up: crate::state::SkillTestFollowUp::Investigate,
-                    on_fail: None,
-                    on_success: None,
-                    source: None,
-                    continuation: crate::state::SkillTestStep::AwaitingCommit,
-                    bonus_attack_damage: 0,
-                    bonus_clues_discovered: 0,
-                    resolved: None,
-                    symbol_on_fail: None,
-                },
-            ));
+            .push(Continuation::SkillTest(InFlightSkillTest {
+                id: SkillTestId(0),
+                investigator: InvestigatorId(1),
+                skill: SkillKind::Intellect,
+                kind: SkillTestKind::Investigate,
+                difficulty_basis: DifficultyBasis::Fixed(3),
+                committed_by_active: Vec::new(),
+                tested_location: None,
+                follow_up: SkillTestFollowUp::Investigate,
+                on_fail: None,
+                on_success: None,
+                source: None,
+                continuation: SkillTestStep::AwaitingCommit,
+                bonus_attack_damage: 0,
+                bonus_clues_discovered: 0,
+                resolved: None,
+                symbol_on_fail: None,
+            }));
 
         for _ in 0..2 {
             run(
@@ -3555,7 +3464,7 @@ mod tests {
                     state: &mut state,
                     events: &mut events,
                 },
-                &crate::dsl::discover_additional_clues(1),
+                &discover_additional_clues(1),
                 ctx(1),
             );
         }
@@ -3570,7 +3479,7 @@ mod tests {
     /// target and emits `CardsDrawn`; `count == 0` is a no-op.
     #[test]
     fn draw_cards_effect_draws_for_target() {
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.deck = vec![
             CardCode::new("d1"),
             CardCode::new("d2"),
@@ -3612,12 +3521,12 @@ mod tests {
     #[test]
     fn tested_location_rejects_without_in_flight_test() {
         // No in-flight skill test → TestedLocation can't resolve.
-        let mut investigator = test_investigator(1);
+        let mut investigator = test_support::test_investigator(1);
         investigator.current_location = Some(LocationId(10));
         let mut state = GameStateBuilder::new()
             .with_investigator(investigator)
             .with_location({
-                let mut l = test_location(10, "Study");
+                let mut l = test_support::test_location(10, "Study");
                 l.clues = 1;
                 l
             })
@@ -3639,47 +3548,44 @@ mod tests {
 
     // ---- Effect::If + Condition::SkillTestKind tests -------------
 
-    fn state_with_in_flight_kind(kind: SkillTestKind) -> crate::state::GameState {
+    fn state_with_in_flight_kind(kind: SkillTestKind) -> GameState {
         let mut state = GameStateBuilder::new()
             .with_investigator({
-                let mut inv = test_investigator(1);
+                let mut inv = test_support::test_investigator(1);
                 inv.current_location = Some(LocationId(10));
                 inv
             })
             .with_location({
-                let mut l = test_location(10, "Study");
+                let mut l = test_support::test_location(10, "Study");
                 l.clues = 2;
                 l
             })
             .build();
         state
             .continuations
-            .push(crate::state::Continuation::SkillTest(
-                crate::state::InFlightSkillTest {
-                    id: crate::state::SkillTestId(0),
-                    investigator: InvestigatorId(1),
-                    skill: SkillKind::Intellect,
-                    kind,
-                    difficulty_basis: crate::state::DifficultyBasis::Fixed(2),
-                    committed_by_active: Vec::new(),
-                    tested_location: Some(LocationId(10)),
-                    follow_up: crate::state::SkillTestFollowUp::None,
-                    on_fail: None,
-                    on_success: None,
-                    source: None,
-                    continuation: crate::state::SkillTestStep::AwaitingCommit,
-                    bonus_attack_damage: 0,
-                    bonus_clues_discovered: 0,
-                    resolved: None,
-                    symbol_on_fail: None,
-                },
-            ));
+            .push(Continuation::SkillTest(InFlightSkillTest {
+                id: SkillTestId(0),
+                investigator: InvestigatorId(1),
+                skill: SkillKind::Intellect,
+                kind,
+                difficulty_basis: DifficultyBasis::Fixed(2),
+                committed_by_active: Vec::new(),
+                tested_location: Some(LocationId(10)),
+                follow_up: SkillTestFollowUp::None,
+                on_fail: None,
+                on_success: None,
+                source: None,
+                continuation: SkillTestStep::AwaitingCommit,
+                bonus_attack_damage: 0,
+                bonus_clues_discovered: 0,
+                resolved: None,
+                symbol_on_fail: None,
+            }));
         state
     }
 
     #[test]
     fn if_skill_test_kind_runs_then_branch_when_kind_matches() {
-        use crate::dsl::{discover_clue, if_, Condition};
         let mut state = state_with_in_flight_kind(SkillTestKind::Investigate);
         let mut events = Vec::new();
         let effect = if_(
@@ -3703,7 +3609,6 @@ mod tests {
 
     #[test]
     fn if_skill_test_kind_skips_then_branch_when_kind_differs() {
-        use crate::dsl::{discover_clue, if_, Condition};
         let mut state = state_with_in_flight_kind(SkillTestKind::Plain);
         let mut events = Vec::new();
         let effect = if_(
@@ -3729,7 +3634,6 @@ mod tests {
 
     #[test]
     fn if_skill_test_kind_runs_else_branch_when_present_and_kind_differs() {
-        use crate::dsl::{discover_clue, gain_resources, if_else, Condition, InvestigatorTarget};
         let mut state = state_with_in_flight_kind(SkillTestKind::Fight);
         let mut events = Vec::new();
         let effect = if_else(
@@ -3759,9 +3663,8 @@ mod tests {
 
     #[test]
     fn if_skill_test_kind_rejects_without_in_flight_test() {
-        use crate::dsl::{discover_clue, if_, Condition};
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
         let effect = if_(
@@ -3788,7 +3691,6 @@ mod tests {
         // preferred path for resolution-time outcome-gated effects is
         // Trigger::OnSkillTestResolution; the condition is reserved
         // for a future past-test reaction model.
-        use crate::dsl::{discover_clue, if_, Condition, TestOutcome};
         let mut state = state_with_in_flight_kind(SkillTestKind::Investigate);
         let mut events = Vec::new();
         let effect = if_(
@@ -3823,30 +3725,28 @@ mod tests {
         // In-flight test exists but tested_location is None (e.g.
         // a bare plain skill test invoked while between locations).
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         state
             .continuations
-            .push(crate::state::Continuation::SkillTest(
-                crate::state::InFlightSkillTest {
-                    id: crate::state::SkillTestId(0),
-                    investigator: InvestigatorId(1),
-                    skill: SkillKind::Willpower,
-                    kind: SkillTestKind::Plain,
-                    difficulty_basis: crate::state::DifficultyBasis::Fixed(2),
-                    committed_by_active: Vec::new(),
-                    tested_location: None,
-                    follow_up: crate::state::SkillTestFollowUp::None,
-                    on_fail: None,
-                    on_success: None,
-                    source: None,
-                    continuation: crate::state::SkillTestStep::AwaitingCommit,
-                    bonus_attack_damage: 0,
-                    bonus_clues_discovered: 0,
-                    resolved: None,
-                    symbol_on_fail: None,
-                },
-            ));
+            .push(Continuation::SkillTest(InFlightSkillTest {
+                id: SkillTestId(0),
+                investigator: InvestigatorId(1),
+                skill: SkillKind::Willpower,
+                kind: SkillTestKind::Plain,
+                difficulty_basis: DifficultyBasis::Fixed(2),
+                committed_by_active: Vec::new(),
+                tested_location: None,
+                follow_up: SkillTestFollowUp::None,
+                on_fail: None,
+                on_success: None,
+                source: None,
+                continuation: SkillTestStep::AwaitingCommit,
+                bonus_attack_damage: 0,
+                bonus_clues_discovered: 0,
+                resolved: None,
+                symbol_on_fail: None,
+            }));
         let mut events = Vec::new();
 
         let outcome = run(
@@ -3866,9 +3766,9 @@ mod tests {
     fn seq_runs_effects_in_order_then_done() {
         let inv_id = InvestigatorId(1);
         let loc_id = LocationId(10);
-        let mut investigator = test_investigator(1);
+        let mut investigator = test_support::test_investigator(1);
         investigator.current_location = Some(loc_id);
-        let mut location = test_location(10, "Study");
+        let mut location = test_support::test_location(10, "Study");
         location.clues = 1;
 
         let mut state = GameStateBuilder::new()
@@ -3901,9 +3801,9 @@ mod tests {
         // First effect rejects (Active without active_investigator);
         // second effect should not run.
         let loc_id = LocationId(10);
-        let mut investigator = test_investigator(1);
+        let mut investigator = test_support::test_investigator(1);
         investigator.current_location = Some(loc_id);
-        let mut location = test_location(10, "Study");
+        let mut location = test_support::test_location(10, "Study");
         location.clues = 1;
 
         let mut state = GameStateBuilder::new()
@@ -3951,28 +3851,26 @@ mod tests {
     /// One investigator, with the test identified by `test_id` in flight —
     /// what a `ThisSkillTest` modifier needs in order to have an identity to
     /// be stamped with.
-    fn state_during_test(test_id: crate::state::SkillTestId) -> crate::state::GameState {
+    fn state_during_test(test_id: SkillTestId) -> GameState {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         state
             .continuations
-            .push(crate::state::Continuation::SkillTest(
-                crate::test_support::test_skill_test(
-                    test_id,
-                    InvestigatorId(1),
-                    SkillKind::Intellect,
-                    SkillTestKind::Plain,
-                    2,
-                ),
-            ));
+            .push(Continuation::SkillTest(test_support::test_skill_test(
+                test_id,
+                InvestigatorId(1),
+                SkillKind::Intellect,
+                SkillTestKind::Plain,
+                2,
+            )));
         state
     }
 
     #[test]
     fn modify_with_this_skill_test_scope_records_a_row_stamped_with_the_test() {
         let id = InvestigatorId(1);
-        let test_id = crate::state::SkillTestId(4);
+        let test_id = SkillTestId(4);
         let mut state = state_during_test(test_id);
         let mut events = Vec::new();
         let outcome = run(
@@ -3990,13 +3888,13 @@ mod tests {
         assert_eq!(m.investigator, id);
         assert_eq!(
             m.kind,
-            crate::state::RecordedModifierKind::Delta {
+            RecordedModifierKind::Delta {
                 stat: Stat::Intellect,
-                delta: crate::dsl::IntExpr::Lit(1),
+                delta: IntExpr::Lit(1),
             },
             "the row stores an expression, not a resolved integer",
         );
-        assert_eq!(m.lifetime, crate::state::Lifetime::SkillTest(test_id));
+        assert_eq!(m.lifetime, Lifetime::SkillTest(test_id));
         assert_eq!(m.source, None, "no source on a bare for_controller ctx");
     }
 
@@ -4006,7 +3904,7 @@ mod tests {
     #[test]
     fn modify_with_this_skill_test_scope_rejects_outside_a_test() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
         let outcome = run(
@@ -4030,10 +3928,9 @@ mod tests {
     fn modify_records_source_when_ctx_has_one() {
         let id = InvestigatorId(1);
         let src = CardInstanceId(42);
-        let mut state = state_during_test(crate::state::SkillTestId(0));
+        let mut state = state_during_test(SkillTestId(0));
         let mut events = Vec::new();
-        let ctx_with_src =
-            EvalContext::for_controller_with_source(id, crate::state::AbilitySource::InPlay(src));
+        let ctx_with_src = EvalContext::for_controller_with_source(id, AbilitySource::InPlay(src));
         let outcome = run(
             &mut Cx {
                 state: &mut state,
@@ -4074,7 +3971,7 @@ mod tests {
         // 1 legal option ⇒ auto-bind, no input round-trip.
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
@@ -4183,7 +4080,7 @@ mod tests {
     fn choose_one_two_branches_suspends_with_a_choice_frame() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
@@ -4216,7 +4113,7 @@ mod tests {
         // Resuming with pick = branch 1 runs the +3 branch.
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
@@ -4251,7 +4148,7 @@ mod tests {
         // applied) and resumes without double-applying the first step (#422).
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let before = state.investigators[&id].resources;
         let effect = Effect::Seq(vec![
@@ -4299,7 +4196,7 @@ mod tests {
         // 1 investigator ⇒ auto-bind, no input.
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let before = state.investigators[&id].resources;
         let mut events = Vec::new();
@@ -4319,8 +4216,8 @@ mod tests {
     #[test]
     fn chosen_investigator_two_candidates_suspends_then_binds_the_pick() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .build();
         let before1 = state.investigators[&InvestigatorId(1)].resources;
         let before2 = state.investigators[&InvestigatorId(2)].resources;
@@ -4359,8 +4256,8 @@ mod tests {
         // case the old single-pass replay model rejected (#346). The parent
         // ChooseOne pop leaves the branch's grounding to suspend independently.
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .build();
         let before1 = state.investigators[&InvestigatorId(1)].resources;
         let before2 = state.investigators[&InvestigatorId(2)].resources;
@@ -4405,7 +4302,7 @@ mod tests {
     #[test]
     fn attach_self_to_location_rejects_with_no_pending_event() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
         let outcome = run(
@@ -4424,7 +4321,7 @@ mod tests {
         // One card in the deck top; no filter ⇒ sole eligible ⇒ auto-take.
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         state.investigators.get_mut(&id).unwrap().deck = vec![CardCode::new("90001")];
         let mut events = Vec::new();
@@ -4433,11 +4330,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &search_deck(
-                InvestigatorTarget::You,
-                crate::dsl::SearchScope::Top(3),
-                None,
-            ),
+            &search_deck(InvestigatorTarget::You, SearchScope::Top(3), None),
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4452,7 +4345,7 @@ mod tests {
         // may legally find nothing; it is NOT a rejection).
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         state.investigators.get_mut(&id).unwrap().deck.clear();
         let mut events = Vec::new();
@@ -4461,11 +4354,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &search_deck(
-                InvestigatorTarget::You,
-                crate::dsl::SearchScope::Top(3),
-                None,
-            ),
+            &search_deck(InvestigatorTarget::You, SearchScope::Top(3), None),
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4476,7 +4365,7 @@ mod tests {
     fn search_deck_top_n_suspends_on_two_eligible_then_takes_pick() {
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         state.investigators.get_mut(&id).unwrap().deck = vec![
             CardCode::new("90001"),
@@ -4484,11 +4373,7 @@ mod tests {
             CardCode::new("90003"),
         ];
         let mut events = Vec::new();
-        let effect = search_deck(
-            InvestigatorTarget::You,
-            crate::dsl::SearchScope::Top(3),
-            None,
-        );
+        let effect = search_deck(InvestigatorTarget::You, SearchScope::Top(3), None);
         let outcome = run(
             &mut Cx {
                 state: &mut state,
@@ -4516,8 +4401,8 @@ mod tests {
         // completes. Drives `resume_effect_choice` (via `resume_pick`) — the same
         // path `apply(ResolveInput)` routes to.
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
             .build();
         let before2 = state.investigators[&InvestigatorId(2)].resources;
         let effect = choose_one([
@@ -4565,9 +4450,9 @@ mod tests {
     #[test]
     fn chosen_location_two_candidates_suspends() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_location(test_location(1, "A"))
-            .with_location(test_location(2, "B"))
+            .with_investigator(test_support::test_investigator(1))
+            .with_location(test_support::test_location(1, "A"))
+            .with_location(test_support::test_location(2, "B"))
             .build();
         let mut events = Vec::new();
         let outcome = run(
@@ -4589,9 +4474,9 @@ mod tests {
         // singleton ⇒ auto-bind (no Choice frame), unlike `Anywhere` which
         // would offer both and suspend.
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_location(test_location(1, "A"))
-            .with_location(test_location(2, "B"))
+            .with_investigator(test_support::test_investigator(1))
+            .with_location(test_support::test_location(1, "A"))
+            .with_location(test_support::test_location(2, "B"))
             .build();
         state
             .investigators
@@ -4629,10 +4514,10 @@ mod tests {
         // auto-bind it (1 candidate ⇒ no suspend) — `Anywhere` would see 2 and
         // suspend.
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
-            .with_location(test_location(1, "A"))
-            .with_location(test_location(2, "B"))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
+            .with_location(test_support::test_location(1, "A"))
+            .with_location(test_support::test_location(2, "B"))
             .build();
         state
             .investigators
@@ -4668,9 +4553,9 @@ mod tests {
     #[test]
     fn chosen_at_your_location_suspends_when_two_are_co_located() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
-            .with_location(test_location(1, "A"))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
+            .with_location(test_support::test_location(1, "A"))
             .build();
         state
             .investigators
@@ -4704,7 +4589,7 @@ mod tests {
     fn chosen_at_your_location_rejects_when_controller_between_locations() {
         // test_investigator defaults to current_location = None.
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
         let outcome = run(
@@ -4722,17 +4607,17 @@ mod tests {
     #[test]
     fn deal_damage_to_chosen_enemy_at_your_location_auto_binds_and_damages() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_location(test_location(1, "A"))
-            .with_location(test_location(2, "B"))
+            .with_investigator(test_support::test_investigator(1))
+            .with_location(test_support::test_location(1, "A"))
+            .with_location(test_support::test_location(2, "B"))
             .with_enemy({
-                let mut e = test_enemy(100, "Ghoul");
+                let mut e = test_support::test_enemy(100, "Ghoul");
                 e.max_health = 3;
                 e.current_location = Some(LocationId(1));
                 e
             })
             .with_enemy({
-                let mut e = test_enemy(101, "Faraway");
+                let mut e = test_support::test_enemy(101, "Faraway");
                 e.max_health = 3;
                 e.current_location = Some(LocationId(2));
                 e
@@ -4772,15 +4657,15 @@ mod tests {
     #[test]
     fn deal_damage_to_chosen_enemy_suspends_when_two_are_co_located() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_location(test_location(1, "A"))
+            .with_investigator(test_support::test_investigator(1))
+            .with_location(test_support::test_location(1, "A"))
             .with_enemy({
-                let mut e = test_enemy(100, "G1");
+                let mut e = test_support::test_enemy(100, "G1");
                 e.current_location = Some(LocationId(1));
                 e
             })
             .with_enemy({
-                let mut e = test_enemy(101, "G2");
+                let mut e = test_support::test_enemy(101, "G2");
                 e.current_location = Some(LocationId(1));
                 e
             })
@@ -4807,8 +4692,8 @@ mod tests {
     #[test]
     fn deal_damage_to_chosen_enemy_rejects_when_none_co_located() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_location(test_location(1, "A"))
+            .with_investigator(test_support::test_investigator(1))
+            .with_location(test_support::test_location(1, "A"))
             .build();
         state
             .investigators
@@ -4830,9 +4715,9 @@ mod tests {
 
     #[test]
     fn heal_reduces_horror_saturating_and_emits_event() {
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         state
             .investigators
@@ -4864,12 +4749,12 @@ mod tests {
 
     #[test]
     fn heal_target_chosen_at_your_location_auto_binds() {
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
-            .with_location(test_location(1, "A"))
-            .with_location(test_location(2, "B"))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
+            .with_location(test_support::test_location(1, "A"))
+            .with_location(test_support::test_location(2, "B"))
             .build();
         state
             .investigators
@@ -4912,9 +4797,9 @@ mod tests {
     #[test]
     fn heal_target_chosen_suspends_when_two_are_co_located() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
-            .with_location(test_location(1, "A"))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
+            .with_location(test_support::test_location(1, "A"))
             .build();
         state
             .investigators
@@ -4964,7 +4849,7 @@ mod tests {
     /// Mock registry that maps a small hardcoded set of codes to
     /// abilities. Keeps the constant-modifier query tests isolated
     /// from the global `OnceLock` and from the cards crate.
-    fn mock_registry(_: &CardCode) -> Option<&'static crate::card_data::CardMetadata> {
+    fn mock_registry(_: &CardCode) -> Option<&'static CardMetadata> {
         None
     }
 
@@ -5018,19 +4903,13 @@ mod tests {
                 2,
                 ModifierScope::WhileInPlay,
             ))]),
-            "cannot-play-assets" => Some(vec![constant(crate::dsl::restrict(
-                crate::dsl::Restriction::CannotPlay(crate::card_data::CardType::Asset),
-            ))]),
-            "frozen-surcharge" => Some(vec![constant(crate::dsl::restrict(
-                crate::dsl::Restriction::ExtraActionCost {
-                    actions: vec![
-                        crate::dsl::ActionClass::Move,
-                        crate::dsl::ActionClass::Fight,
-                        crate::dsl::ActionClass::Evade,
-                    ],
-                    first_each_round: true,
-                },
-            ))]),
+            "cannot-play-assets" => Some(vec![constant(restrict(Restriction::CannotPlay(
+                CardType::Asset,
+            )))]),
+            "frozen-surcharge" => Some(vec![constant(restrict(Restriction::ExtraActionCost {
+                actions: vec![ActionClass::Move, ActionClass::Fight, ActionClass::Evade],
+                first_each_round: true,
+            }))]),
             _ => None,
         }
     }
@@ -5043,9 +4922,9 @@ mod tests {
         }
     }
 
-    fn state_with_cards_in_play(codes: &[&str]) -> (crate::state::GameState, InvestigatorId) {
+    fn state_with_cards_in_play(codes: &[&str]) -> (GameState, InvestigatorId) {
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.cards_in_play = codes
             .iter()
             .enumerate()
@@ -5063,10 +4942,8 @@ mod tests {
 
     #[test]
     fn discard_self_removes_threat_area_instance_to_encounter_discard() {
-        use crate::event::Event;
-        use crate::state::Zone;
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let inst = CardInstanceId(5);
         state
@@ -5083,7 +4960,7 @@ mod tests {
             };
             let c = EvalContext::for_controller_with_source(
                 InvestigatorId(1),
-                crate::state::AbilitySource::InPlay(inst),
+                AbilitySource::InPlay(inst),
             );
             run(&mut cx, &Effect::DiscardSelf, c)
         };
@@ -5100,16 +4977,13 @@ mod tests {
 
     #[test]
     fn discard_self_removes_location_attachment_to_encounter_discard() {
-        use crate::event::Event;
-        use crate::state::Zone;
-        use crate::test_support::test_location;
-        let mut loc = test_location(3, "Study");
+        let mut loc = test_support::test_location(3, "Study");
         loc.attachments.push(CardInPlay::enter_play(
             CardCode::new("01168"),
             CardInstanceId(9),
         ));
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_location(loc)
             .build();
         let mut events = Vec::new();
@@ -5120,7 +4994,7 @@ mod tests {
             };
             let c = EvalContext::for_controller_with_source(
                 InvestigatorId(1),
-                crate::state::AbilitySource::InPlay(CardInstanceId(9)),
+                AbilitySource::InPlay(CardInstanceId(9)),
             );
             run(&mut cx, &Effect::DiscardSelf, c)
         };
@@ -5136,7 +5010,7 @@ mod tests {
     #[test]
     fn discard_self_rejects_without_source() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -5153,10 +5027,9 @@ mod tests {
 
     #[test]
     fn put_into_threat_area_with_clues_seeds_the_placed_instance() {
-        use crate::dsl::put_into_threat_area_with_clues;
         let id = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -5179,8 +5052,6 @@ mod tests {
 
     #[test]
     fn play_is_prohibited_matches_only_the_forbidden_type() {
-        use super::play_is_prohibited;
-        use crate::card_data::CardType;
         let (state, id) = state_with_cards_in_play(&["cannot-play-assets"]);
         let reg = fake_registry();
         assert!(play_is_prohibited(&state, &reg, id, CardType::Asset));
@@ -5189,8 +5060,6 @@ mod tests {
 
     #[test]
     fn surcharge_charges_first_matching_action_then_not_again_until_reset() {
-        use super::pending_action_surcharge;
-        use crate::dsl::ActionClass;
         let (mut state, id) = state_with_cards_in_play(&["frozen-surcharge"]);
         let reg = fake_registry();
 
@@ -5225,8 +5094,6 @@ mod tests {
 
     #[test]
     fn surcharge_two_sources_each_charge_the_first_action() {
-        use super::pending_action_surcharge;
-        use crate::dsl::ActionClass;
         let (state, id) = state_with_cards_in_play(&["frozen-surcharge", "frozen-surcharge"]);
         let reg = fake_registry();
         let (extra, to_mark) = pending_action_surcharge(&state, &reg, id, ActionClass::Move);
@@ -5239,8 +5106,6 @@ mod tests {
 
     #[test]
     fn play_is_prohibited_false_with_no_restriction() {
-        use super::play_is_prohibited;
-        use crate::card_data::CardType;
         let (state, id) = state_with_cards_in_play(&["willpower-plus-1"]);
         let reg = fake_registry();
         assert!(!play_is_prohibited(&state, &reg, id, CardType::Asset));
@@ -5249,7 +5114,7 @@ mod tests {
     #[test]
     fn deal_damage_adds_damage_and_emits_event() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
             .build();
         let mut events = Vec::new();
@@ -5273,7 +5138,7 @@ mod tests {
     #[test]
     fn deal_horror_adds_horror_and_emits_event() {
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
             .build();
         let mut events = Vec::new();
@@ -5296,14 +5161,13 @@ mod tests {
 
     #[test]
     fn deal_damage_at_max_health_defeats_investigator() {
-        use crate::state::Status;
         // Apply damage that exactly reaches max_health (8 from TEST_INV) via
         // Effect::Deal and assert the investigator is Defeated and
         // InvestigatorEliminated is emitted. Pre-load 5 accumulated_damage so
         // 5 + 3 = 8 = defeated with a 3-damage deal.
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.investigator_card.accumulated_damage = 5;
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
         let mut events = Vec::new();
@@ -5325,14 +5189,13 @@ mod tests {
 
     #[test]
     fn deal_amount_can_be_a_count_of_failure_margin() {
-        use crate::dsl::{IntExpr, Quantity};
         // Build a Deal whose amount is the failure margin; fail-by 2 → 2 damage.
         let effect = deal_damage(
             InvestigatorTarget::You,
             IntExpr::Count(Quantity::SkillTestFailedBy),
         );
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(InvestigatorId(1))
             .build();
         let mut events = Vec::new();
@@ -5352,8 +5215,6 @@ mod tests {
 
     #[test]
     fn advance_current_act_non_terminal_bumps_cursor() {
-        use crate::state::{Act, CardCode, InvestigatorId};
-        use crate::test_support::GameStateBuilder;
         let mut state = GameStateBuilder::new()
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -5380,7 +5241,7 @@ mod tests {
         assert_eq!(out, EngineOutcome::Done);
         // The advance is deferred to an AdvanceReverse frame (#482); drive it
         // (no registry ⇒ the reverse fires nothing ⇒ it drives straight through).
-        crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        dispatch::drive(&mut cx, EngineOutcome::Done);
         assert_eq!(state.act_index, 1);
         assert!(state.ending.is_none());
     }
@@ -5391,16 +5252,13 @@ mod tests {
     /// (ADR 0013).
     #[test]
     fn advance_current_act_on_a_terminal_act_lets_its_reverse_end_the_scenario() {
-        use crate::scenario::{ResolutionId, ScenarioEnding};
-        use crate::state::{Act, InvestigatorId};
-        use crate::test_support::{terminal_code, test_investigator, GameStateBuilder};
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_turn_order([InvestigatorId(1)])
             .build();
         state.act_deck = vec![Act {
-            code: terminal_code(1),
+            code: test_support::terminal_code(1),
             clue_threshold: 0,
         }];
         let mut events = Vec::new();
@@ -5414,7 +5272,7 @@ mod tests {
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(out, EngineOutcome::Done);
-        crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        dispatch::drive(&mut cx, EngineOutcome::Done);
         assert_eq!(state.act_index, 0, "terminal act does not move the cursor");
         assert_eq!(
             state.ending,
@@ -5428,9 +5286,6 @@ mod tests {
     /// care which card ran it.
     #[test]
     fn reach_resolution_latches_the_printed_resolution_point() {
-        use crate::scenario::{ResolutionId, ScenarioEnding};
-        use crate::state::InvestigatorId;
-        use crate::test_support::GameStateBuilder;
         let mut state = GameStateBuilder::new().build();
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -5454,9 +5309,6 @@ mod tests {
     /// this scenario stands (ADR 0004's first-writer-wins).
     #[test]
     fn reach_resolution_does_not_overwrite_an_ending_already_latched() {
-        use crate::scenario::{ResolutionId, ScenarioEnding};
-        use crate::state::InvestigatorId;
-        use crate::test_support::GameStateBuilder;
         let mut state = GameStateBuilder::new().build();
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -5473,9 +5325,7 @@ mod tests {
     }
 
     /// A two-agenda fixture with the given doom threshold on the current one.
-    fn state_with_agenda(threshold: u8) -> crate::state::GameState {
-        use crate::state::{Agenda, CardCode, InvestigatorId};
-        use crate::test_support::GameStateBuilder;
+    fn state_with_agenda(threshold: u8) -> GameState {
         let mut state = GameStateBuilder::new()
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -5494,8 +5344,6 @@ mod tests {
 
     #[test]
     fn place_doom_on_current_agenda_below_threshold_only_places() {
-        use crate::dsl::IntExpr;
-        use crate::state::InvestigatorId;
         let mut state = state_with_agenda(3);
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -5517,8 +5365,6 @@ mod tests {
 
     #[test]
     fn place_doom_on_current_agenda_advances_at_threshold() {
-        use crate::dsl::IntExpr;
-        use crate::state::InvestigatorId;
         let mut state = state_with_agenda(1);
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -5536,7 +5382,7 @@ mod tests {
         assert_eq!(out, EngineOutcome::Done);
         // The advance is deferred to an AdvanceReverse frame (#482); drive it
         // (no registry ⇒ the reverse fires nothing ⇒ it drives straight through).
-        crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        dispatch::drive(&mut cx, EngineOutcome::Done);
         assert_eq!(
             state.agenda_index, 1,
             "Ancient Evils 01166: `This effect can cause the current agenda to advance`"
@@ -5554,8 +5400,6 @@ mod tests {
     /// So the doom lands and stays landed, even sitting on the threshold.
     #[test]
     fn place_doom_without_the_advance_clause_does_not_advance_at_threshold() {
-        use crate::dsl::IntExpr;
-        use crate::state::InvestigatorId;
         let mut state = state_with_agenda(1);
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -5571,7 +5415,7 @@ mod tests {
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(out, EngineOutcome::Done);
-        crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        dispatch::drive(&mut cx, EngineOutcome::Done);
         assert_eq!(
             state.agenda_index, 0,
             "no printed advance clause ⇒ the threshold check waits for Mythos 1.3"
@@ -5584,8 +5428,6 @@ mod tests {
     /// an agenda the first already advanced past.
     #[test]
     fn place_doom_places_the_whole_count_before_checking_the_threshold() {
-        use crate::dsl::IntExpr;
-        use crate::state::InvestigatorId;
         let mut state = state_with_agenda(2);
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -5601,7 +5443,7 @@ mod tests {
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(out, EngineOutcome::Done);
-        crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        dispatch::drive(&mut cx, EngineOutcome::Done);
         assert_eq!(state.agenda_index, 1, "both doom landed, then it advanced");
         assert_eq!(state.agenda_doom, 0);
     }
@@ -5610,8 +5452,6 @@ mod tests {
     /// the variant carries an [`IntExpr`] rather than a `u8`.
     #[test]
     fn place_doom_evaluates_a_computed_count() {
-        use crate::dsl::IntExpr;
-        use crate::state::InvestigatorId;
         let mut state = state_with_agenda(9);
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -5623,7 +5463,7 @@ mod tests {
         let out = run(
             &mut cx,
             &Effect::PlaceDoomOnCurrentAgenda {
-                count: IntExpr::Count(crate::dsl::Quantity::SkillTestFailedBy),
+                count: IntExpr::Count(Quantity::SkillTestFailedBy),
                 may_advance: true,
             },
             eval_ctx,
@@ -5638,8 +5478,6 @@ mod tests {
     /// branch; Blood on the Altar 02195 places 1 under an `If`-on-failure.
     #[test]
     fn place_doom_composes_as_a_sub_effect() {
-        use crate::dsl::IntExpr;
-        use crate::state::InvestigatorId;
         let mut state = state_with_agenda(9);
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -5661,7 +5499,7 @@ mod tests {
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(out, EngineOutcome::Done);
-        crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        dispatch::drive(&mut cx, EngineOutcome::Done);
         assert_eq!(state.agenda_doom, 3);
     }
 
@@ -5669,8 +5507,6 @@ mod tests {
     /// single branch auto-resolves, so this needs no input round-trip.
     #[test]
     fn place_doom_nests_in_choose_one_and_if() {
-        use crate::dsl::{CmpOp, Condition, IntExpr, Quantity};
-        use crate::state::InvestigatorId;
         let mut state = state_with_agenda(9);
         let mut events = Vec::new();
         let mut cx = Cx {
@@ -5703,7 +5539,7 @@ mod tests {
             ),
             EngineOutcome::Done
         );
-        crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        dispatch::drive(&mut cx, EngineOutcome::Done);
         assert_eq!(state.agenda_doom, 2, "both nestings placed their doom");
     }
 
@@ -5712,8 +5548,6 @@ mod tests {
     /// doom it never placed.
     #[test]
     fn place_doom_of_zero_does_not_run_the_threshold_check() {
-        use crate::dsl::IntExpr;
-        use crate::state::InvestigatorId;
         let mut state = state_with_agenda(1);
         state.agenda_doom = 1;
         let mut events = Vec::new();
@@ -5730,7 +5564,7 @@ mod tests {
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(out, EngineOutcome::Done);
-        crate::engine::dispatch::drive(&mut cx, EngineOutcome::Done);
+        dispatch::drive(&mut cx, EngineOutcome::Done);
         assert_eq!(
             state.agenda_index, 0,
             "no placement ⇒ no check ⇒ no advance"
@@ -5740,9 +5574,6 @@ mod tests {
 
     #[test]
     fn place_doom_without_an_agenda_deck_is_a_no_op() {
-        use crate::dsl::IntExpr;
-        use crate::state::InvestigatorId;
-        use crate::test_support::GameStateBuilder;
         let mut state = GameStateBuilder::new()
             .with_turn_order([InvestigatorId(1)])
             .build();
@@ -5766,10 +5597,9 @@ mod tests {
 
     #[test]
     fn grounded_choice_anchors_enemy_options() {
-        use crate::engine::{EngineOutcome, OptionTarget};
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let cands = [EnemyId(4), EnemyId(9)];
-        let out = super::resolve_grounded_choice(
+        let out = resolve_grounded_choice(
             ctx,
             &cands,
             "empty",
@@ -5796,10 +5626,9 @@ mod tests {
 
     #[test]
     fn grounded_choice_investigator_stays_unanchored() {
-        use crate::engine::EngineOutcome;
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let cands = [InvestigatorId(1), InvestigatorId(2)];
-        let out = super::resolve_grounded_choice(
+        let out = resolve_grounded_choice(
             ctx,
             &cands,
             "empty",

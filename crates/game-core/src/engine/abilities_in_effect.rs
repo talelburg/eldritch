@@ -90,6 +90,7 @@
 
 use crate::card_registry::{self, CardRegistry};
 use crate::dsl::{Ability, Condition, Effect, GrantTarget, Trigger};
+use crate::engine::evaluator::{self, EvalContext};
 use crate::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, GameState, InvestigatorId, LocationId,
 };
@@ -408,17 +409,16 @@ fn try_condition(
         // uncontrolled recipient — which is the whole case the Parlor 01115's
         // grant serves.
         Condition::ControlStatus { code, status } => {
-            Some(crate::engine::evaluator::card_control_status(state, code) == *status)
+            Some(evaluator::card_control_status(state, code) == *status)
         }
         other => {
             let you = you?;
-            let eval_ctx =
-                crate::engine::evaluator::EvalContext::for_controller_with_source(you, source);
+            let eval_ctx = EvalContext::for_controller_with_source(you, source);
             // An unexpressible condition is card data, not an engine invariant,
             // and a constant sweep has no rejection channel — so it does not
             // hold, exactly as the modified-value sweep skips an `IntExpr` it
             // cannot resolve rather than counting it as zero.
-            Some(crate::engine::evaluator::eval_condition(state, &eval_ctx, other).unwrap_or(false))
+            Some(evaluator::eval_condition(state, &eval_ctx, other).unwrap_or(false))
         }
     }
 }

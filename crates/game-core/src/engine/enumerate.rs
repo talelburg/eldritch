@@ -3,8 +3,14 @@
 //! (2b) — this module shares the handlers' legality predicates so the
 //! enumeration matches handler-acceptance by construction.
 
+use crate::card_registry;
+use crate::dsl::ActionClass;
+use crate::engine::dispatch::{act_agenda, actions, movement, reaction_windows};
+use crate::engine::outcome::OptionTarget;
+use crate::engine::{abilities_in_effect, ability_source};
 use crate::state::{
     AbilityAddress, AbilitySource, Continuation, EnemyId, GameState, InvestigatorId, LocationId,
+    Phase, Status,
 };
 
 /// The enumerated open-turn actions for the active investigator.
@@ -142,8 +148,7 @@ impl TurnAction {
     /// anchors are implicit — Investigate acts at the investigator's current
     /// location, which is not a field on the variant.
     #[must_use]
-    pub fn target(&self, state: &GameState) -> Option<crate::engine::OptionTarget> {
-        use crate::engine::OptionTarget;
+    pub fn target(&self, state: &GameState) -> Option<OptionTarget> {
         Some(match self {
             // The three open-turn "global" actions are not un-anchored — they are
             // anchored to surfaces the board renders per investigator (ADR 0011).
@@ -220,7 +225,7 @@ pub fn legal_actions(state: &GameState) -> Vec<TurnAction> {
 /// `check_advance_act`, registry-free (act decks are scenario state, not card
 /// data).
 fn push_act_actions(state: &GameState, investigator: InvestigatorId, out: &mut Vec<TurnAction>) {
-    if crate::engine::dispatch::act_agenda::check_advance_act(state, investigator).is_ok() {
+    if act_agenda::check_advance_act(state, investigator).is_ok() {
         out.push(TurnAction::AdvanceAct { investigator });
     }
 }
@@ -231,7 +236,7 @@ fn push_act_actions(state: &GameState, investigator: InvestigatorId, out: &mut V
 /// Fidelity is by delegation: the enumerator calls the same `check_play_card` /
 /// `check_activate_ability` the handlers call.
 fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut Vec<TurnAction>) {
-    if crate::card_registry::current().is_none() {
+    if card_registry::current().is_none() {
         return;
     }
     let Some(inv) = state.investigators.get(&investigator) else {
@@ -244,13 +249,7 @@ fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut 
     let hand_len = inv.hand.len();
     for idx in 0..hand_len {
         let hand_index = u8::try_from(idx).unwrap_or(u8::MAX);
-        if crate::engine::dispatch::reaction_windows::check_play_card(
-            state,
-            investigator,
-            hand_index,
-        )
-        .is_ok()
-        {
+        if reaction_windows::check_play_card(state, investigator, hand_index).is_ok() {
             out.push(TurnAction::PlayCard {
                 investigator,
                 hand_index,
@@ -265,18 +264,11 @@ fn push_card_actions(state: &GameState, investigator: InvestigatorId, out: &mut 
     // granted (#772), each carrying the address that names it;
     // `check_activate_ability` filters to the activated, payable,
     // window-eligible ones (so a non-`Activated` ability is simply not offered).
-    for (source, code) in crate::engine::ability_source::reachable_source_codes(state, investigator)
-    {
-        let abilities = crate::engine::abilities_in_effect::for_source(state, source, &code)
-            .unwrap_or_default();
+    for (source, code) in ability_source::reachable_source_codes(state, investigator) {
+        let abilities = abilities_in_effect::for_source(state, source, &code).unwrap_or_default();
         for (address, _) in abilities {
-            if crate::engine::dispatch::reaction_windows::check_activate_ability(
-                state,
-                investigator,
-                source,
-                &address,
-            )
-            .is_ok()
+            if reaction_windows::check_activate_ability(state, investigator, source, &address)
+                .is_ok()
             {
                 out.push(TurnAction::ActivateAbility {
                     investigator,
@@ -301,18 +293,16 @@ fn push_combat_engage_actions(
     investigator: InvestigatorId,
     out: &mut Vec<TurnAction>,
 ) {
-    use crate::engine::dispatch::actions::{action_cost, validate_basic_action};
-
     // The shared basic-action prologue gates Fight/Evade/Engage alike; if it
     // fails (wrong phase / not active / no action), none are legal.
-    let Ok(inv) = validate_basic_action(state, "enumerate", investigator) else {
+    let Ok(inv) = actions::validate_basic_action(state, "enumerate", investigator) else {
         return;
     };
     let actions_remaining = inv.actions_remaining;
     let fight_affordable =
-        action_cost(state, investigator, crate::dsl::ActionClass::Fight) <= actions_remaining;
+        actions::action_cost(state, investigator, ActionClass::Fight) <= actions_remaining;
     let evade_affordable =
-        action_cost(state, investigator, crate::dsl::ActionClass::Evade) <= actions_remaining;
+        actions::action_cost(state, investigator, ActionClass::Evade) <= actions_remaining;
     let inv_location = inv.current_location;
 
     // One pass over the enemies; the three actions' conditions are independent
@@ -352,15 +342,13 @@ fn push_combat_engage_actions(
 /// at the open turn (the handler only needs an active investigator, guaranteed
 /// here). Later tasks add Resource/Draw/Investigate/Move.
 fn push_basic_actions(state: &GameState, investigator: InvestigatorId, out: &mut Vec<TurnAction>) {
-    use crate::engine::dispatch::actions::{action_cost, validate_basic_action};
-
     // EndTurn: always legal at the open turn (no action point required).
     out.push(TurnAction::EndTurn);
 
     // Resource / Draw / Investigate share the basic-action prologue (phase +
     // active + Status::Active + actions_remaining >= 1). Investigate adds a
     // revealed-current-location gate.
-    if let Ok(inv) = validate_basic_action(state, "enumerate", investigator) {
+    if let Ok(inv) = actions::validate_basic_action(state, "enumerate", investigator) {
         out.push(TurnAction::Resource { investigator });
         out.push(TurnAction::Draw { investigator });
         if let Some(loc_id) = inv.current_location {
@@ -376,16 +364,16 @@ fn push_basic_actions(state: &GameState, investigator: InvestigatorId, out: &mut
     let Some(inv) = state.investigators.get(&investigator) else {
         return;
     };
-    if state.phase != crate::state::Phase::Investigation
+    if state.phase != Phase::Investigation
         || state.active_investigator != Some(investigator)
-        || inv.status != crate::state::Status::Active
+        || inv.status != Status::Active
     {
         return;
     }
     let Some(from) = inv.current_location else {
         return;
     };
-    if action_cost(state, investigator, crate::dsl::ActionClass::Move) > inv.actions_remaining {
+    if actions::action_cost(state, investigator, ActionClass::Move) > inv.actions_remaining {
         return;
     }
     let Some(from_loc) = state.locations.get(&from) else {
@@ -398,7 +386,7 @@ fn push_basic_actions(state: &GameState, investigator: InvestigatorId, out: &mut
         // distance across it.
         if dest != from
             && state.locations.contains_key(&dest)
-            && crate::engine::dispatch::movement::investigator_can_enter_location(state, dest)
+            && movement::investigator_can_enter_location(state, dest)
         {
             out.push(TurnAction::Move {
                 investigator,
@@ -410,26 +398,27 @@ fn push_basic_actions(state: &GameState, investigator: InvestigatorId, out: &mut
 
 #[cfg(test)]
 mod tests {
-    use crate::engine::enumerate::{legal_actions, TurnAction};
+    use super::*;
+    use crate::action::{Action, InputResponse, PlayerAction};
+    use crate::engine;
+    use crate::engine::outcome::{EngineOutcome, OptionId};
     use crate::state::{
-        AbilityAddress, AbilitySource, Continuation, InvestigationResume, InvestigatorId, Phase,
+        Act, CardCode, CardInstanceId, ChaosBag, ChaosToken, Enemy, InvestigationResume,
     };
-    use crate::test_support::{test_investigator, GameStateBuilder};
+    use crate::test_support::{self, GameStateBuilder};
 
     /// Build a single-investigator open-turn state (`InvestigatorTurn` frame on
     /// top of the `InvestigationPhase` anchor), the shape `legal_actions` enumerates.
-    fn open_turn_state() -> crate::state::GameState {
+    fn open_turn_state() -> GameState {
         GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Investigation)
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1)])
             // A realistic board has a non-empty chaos bag — skill-test-initiating
             // actions (Investigate) reject on an empty bag (a malformed-state
             // guard the enumerator does not replicate; real bags are never empty).
-            .with_chaos_bag(crate::state::ChaosBag::new([
-                crate::state::ChaosToken::Numeric(0),
-            ]))
+            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
             .with_phase_anchor(Continuation::InvestigationPhase {
                 resume: InvestigationResume::TurnBegins,
             })
@@ -439,8 +428,7 @@ mod tests {
 
     /// An open-turn state with an advanceable act (threshold `t`) and the
     /// investigator holding `clues`.
-    fn open_turn_with_act(threshold: u8, clues: u8) -> crate::state::GameState {
-        use crate::state::{Act, CardCode};
+    fn open_turn_with_act(threshold: u8, clues: u8) -> GameState {
         let mut state = open_turn_state();
         state
             .investigators
@@ -480,8 +468,8 @@ mod tests {
     }
 
     /// An enemy engaged with investigator 1 at `loc`, ready.
-    fn engaged_enemy(id: u32, loc: crate::state::LocationId) -> crate::state::Enemy {
-        let mut e = crate::test_support::test_enemy(id, "Ghoul");
+    fn engaged_enemy(id: u32, loc: LocationId) -> Enemy {
+        let mut e = test_support::test_enemy(id, "Ghoul");
         e.engaged_with = Some(InvestigatorId(1));
         e.current_location = Some(loc);
         e
@@ -496,7 +484,7 @@ mod tests {
     #[test]
     fn fight_and_evade_offered_for_each_engaged_enemy() {
         let mut state = open_turn_state();
-        let loc = crate::test_support::test_location(10, "Study");
+        let loc = test_support::test_location(10, "Study");
         let loc_id = loc.id;
         state.locations.insert(loc_id, loc);
         state
@@ -515,11 +503,11 @@ mod tests {
         let actions = legal_actions(&state);
         assert!(actions.contains(&TurnAction::Fight {
             investigator: InvestigatorId(1),
-            enemy: crate::state::EnemyId(7),
+            enemy: EnemyId(7),
         }));
         assert!(actions.contains(&TurnAction::Evade {
             investigator: InvestigatorId(1),
-            enemy: crate::state::EnemyId(7),
+            enemy: EnemyId(7),
         }));
     }
 
@@ -529,7 +517,7 @@ mod tests {
         // engagement-only (RR p.11). An unengaged enemy at the investigator's
         // location is a Fight target but not an Evade target.
         let mut state = open_turn_state();
-        let loc = crate::test_support::test_location(10, "Study");
+        let loc = test_support::test_location(10, "Study");
         let loc_id = loc.id;
         state.locations.insert(loc_id, loc);
         state
@@ -542,18 +530,18 @@ mod tests {
             .get_mut(&InvestigatorId(1))
             .unwrap()
             .actions_remaining = 3;
-        let mut e = crate::test_support::test_enemy(7, "Ghoul");
+        let mut e = test_support::test_enemy(7, "Ghoul");
         e.current_location = Some(loc_id); // co-located, but engaged with nobody
         state.enemies.insert(e.id, e);
 
         let actions = legal_actions(&state);
         assert!(actions.contains(&TurnAction::Fight {
             investigator: InvestigatorId(1),
-            enemy: crate::state::EnemyId(7),
+            enemy: EnemyId(7),
         }));
         assert!(!actions.contains(&TurnAction::Evade {
             investigator: InvestigatorId(1),
-            enemy: crate::state::EnemyId(7),
+            enemy: EnemyId(7),
         }));
     }
 
@@ -562,8 +550,8 @@ mod tests {
         // An enemy elsewhere (and unengaged) is neither a Fight nor an Evade
         // target (#401: Fight needs co-location).
         let mut state = open_turn_state();
-        let here = crate::test_support::test_location(10, "Study");
-        let there = crate::test_support::test_location(11, "Attic");
+        let here = test_support::test_location(10, "Study");
+        let there = test_support::test_location(11, "Attic");
         let (here_id, there_id) = (here.id, there.id);
         state.locations.insert(here_id, here);
         state.locations.insert(there_id, there);
@@ -577,7 +565,7 @@ mod tests {
             .get_mut(&InvestigatorId(1))
             .unwrap()
             .actions_remaining = 3;
-        let mut e = crate::test_support::test_enemy(7, "Ghoul");
+        let mut e = test_support::test_enemy(7, "Ghoul");
         e.current_location = Some(there_id);
         state.enemies.insert(e.id, e);
         assert!(!legal_actions(&state)
@@ -588,7 +576,7 @@ mod tests {
     #[test]
     fn negative_fight_value_offers_evade_only() {
         let mut state = open_turn_state();
-        let loc = crate::test_support::test_location(10, "Study");
+        let loc = test_support::test_location(10, "Study");
         let loc_id = loc.id;
         state.locations.insert(loc_id, loc);
         state
@@ -608,11 +596,11 @@ mod tests {
         let actions = legal_actions(&state);
         assert!(!actions.contains(&TurnAction::Fight {
             investigator: InvestigatorId(1),
-            enemy: crate::state::EnemyId(7),
+            enemy: EnemyId(7),
         }));
         assert!(actions.contains(&TurnAction::Evade {
             investigator: InvestigatorId(1),
-            enemy: crate::state::EnemyId(7),
+            enemy: EnemyId(7),
         }));
     }
 
@@ -620,7 +608,7 @@ mod tests {
     fn no_actions_when_not_the_open_turn() {
         // No InvestigatorTurn frame on top (empty stack) → nothing to offer.
         let state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Investigation)
             .with_active_investigator(InvestigatorId(1))
             .build();
@@ -631,7 +619,7 @@ mod tests {
     fn basic_actions_offered_with_a_revealed_location_and_an_action() {
         let mut state = open_turn_state();
         // Place the investigator on a revealed location so Investigate is legal.
-        let loc = crate::test_support::test_location(10, "Study");
+        let loc = test_support::test_location(10, "Study");
         let loc_id = loc.id;
         state.locations.insert(loc_id, loc);
         state.locations.get_mut(&loc_id).unwrap().revealed = true;
@@ -673,7 +661,7 @@ mod tests {
     #[test]
     fn investigate_absent_on_an_unrevealed_location() {
         let mut state = open_turn_state();
-        let mut loc = crate::test_support::test_location(10, "Study");
+        let mut loc = test_support::test_location(10, "Study");
         loc.revealed = false;
         let loc_id = loc.id;
         state.locations.insert(loc_id, loc);
@@ -695,8 +683,8 @@ mod tests {
     #[test]
     fn move_offers_one_option_per_connected_destination() {
         let mut state = open_turn_state();
-        let mut a = crate::test_support::test_location(10, "A");
-        let b = crate::test_support::test_location(11, "B");
+        let mut a = test_support::test_location(10, "A");
+        let b = test_support::test_location(11, "B");
         a.connections = vec![b.id];
         let (a_id, b_id) = (a.id, b.id);
         state.locations.insert(a_id, a);
@@ -727,8 +715,8 @@ mod tests {
     #[test]
     fn move_absent_when_unaffordable() {
         let mut state = open_turn_state();
-        let mut a = crate::test_support::test_location(10, "A");
-        let b = crate::test_support::test_location(11, "B");
+        let mut a = test_support::test_location(10, "A");
+        let b = test_support::test_location(11, "B");
         a.connections = vec![b.id];
         let (a_id, b_id) = (a.id, b.id);
         state.locations.insert(a_id, a);
@@ -754,8 +742,8 @@ mod tests {
         // Two investigators so an enemy can be engaged with the *other* one.
         state
             .investigators
-            .insert(InvestigatorId(2), test_investigator(2));
-        let loc = crate::test_support::test_location(10, "Study");
+            .insert(InvestigatorId(2), test_support::test_investigator(2));
+        let loc = test_support::test_location(10, "Study");
         let loc_id = loc.id;
         state.locations.insert(loc_id, loc);
         state
@@ -769,22 +757,22 @@ mod tests {
             .unwrap()
             .actions_remaining = 3;
         // Enemy at my location, engaged with investigator 2 → I may engage it.
-        let mut e = crate::test_support::test_enemy(7, "Ghoul");
+        let mut e = test_support::test_enemy(7, "Ghoul");
         e.current_location = Some(loc_id);
         e.engaged_with = Some(InvestigatorId(2));
         state.enemies.insert(e.id, e);
 
         assert!(legal_actions(&state).contains(&TurnAction::Engage {
             investigator: InvestigatorId(1),
-            enemy: crate::state::EnemyId(7),
+            enemy: EnemyId(7),
         }));
     }
 
     #[test]
     fn no_engage_for_an_enemy_already_engaged_with_me_or_elsewhere() {
         let mut state = open_turn_state();
-        let loc = crate::test_support::test_location(10, "Study");
-        let other = crate::test_support::test_location(11, "Hall");
+        let loc = test_support::test_location(10, "Study");
+        let other = test_support::test_location(11, "Hall");
         let (loc_id, other_id) = (loc.id, other.id);
         state.locations.insert(loc_id, loc);
         state.locations.insert(other_id, other);
@@ -803,7 +791,7 @@ mod tests {
         mine.current_location = Some(loc_id);
         state.enemies.insert(mine.id, mine);
         // At a different location → not engageable.
-        let mut away = crate::test_support::test_enemy(8, "Rat");
+        let mut away = test_support::test_enemy(8, "Rat");
         away.current_location = Some(other_id);
         state.enemies.insert(away.id, away);
 
@@ -825,10 +813,10 @@ mod tests {
         //
         // install_test_registry: EndTurn (and other actions) reads max_health /
         // max_sanity on the investigator card; the test registry provides those.
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let mut state = open_turn_state();
-        let mut a = crate::test_support::test_location(10, "A");
-        let b = crate::test_support::test_location(11, "B");
+        let mut a = test_support::test_location(10, "A");
+        let b = test_support::test_location(11, "B");
         a.connections = vec![b.id];
         let (a_id, _b_id) = (a.id, b.id);
         state.locations.insert(a_id, a);
@@ -844,13 +832,13 @@ mod tests {
             .unwrap()
             .actions_remaining = 3;
         // An enemy engaged with the active investigator → Fight + Evade enumerated.
-        let mut foe = crate::test_support::test_enemy(7, "Ghoul");
+        let mut foe = test_support::test_enemy(7, "Ghoul");
         foe.engaged_with = Some(InvestigatorId(1));
         foe.current_location = Some(a_id);
         state.enemies.insert(foe.id, foe);
         // A co-located unengaged enemy → Engage enumerated (its AoO comes from
         // the engaged foe above; that is enemy_attack, never a Rejected).
-        let mut engageable = crate::test_support::test_enemy(8, "Rat");
+        let mut engageable = test_support::test_enemy(8, "Rat");
         engageable.current_location = Some(a_id);
         state.enemies.insert(engageable.id, engageable);
         // An advanceable act (threshold met) → AdvanceAct enumerated; a second
@@ -861,28 +849,28 @@ mod tests {
             .unwrap()
             .clues = 2;
         state.act_deck = vec![
-            crate::state::Act {
-                code: crate::state::CardCode("_act1".into()),
+            Act {
+                code: CardCode("_act1".into()),
                 clue_threshold: 2,
             },
-            crate::state::Act {
-                code: crate::state::CardCode("_act2".into()),
+            Act {
+                code: CardCode("_act2".into()),
                 clue_threshold: 99,
             },
         ];
 
         let actions = legal_actions(&state);
         for (i, action) in actions.iter().enumerate() {
-            let result = crate::apply(
+            let result = engine::apply(
                 state.clone(),
-                crate::Action::Player(crate::action::PlayerAction::ResolveInput {
-                    response: crate::action::InputResponse::PickSingle(crate::engine::OptionId(
+                Action::Player(PlayerAction::ResolveInput {
+                    response: InputResponse::PickSingle(OptionId(
                         u32::try_from(i).expect("action index fits u32"),
                     )),
                 }),
             );
             assert!(
-                !matches!(result.outcome, crate::EngineOutcome::Rejected { .. }),
+                !matches!(result.outcome, EngineOutcome::Rejected { .. }),
                 "enumerated {action:?} (OptionId {i}) rejected: {:?}",
                 result.outcome,
             );
@@ -896,23 +884,23 @@ mod tests {
         // idles Done (pre-flip).
         //
         // install_test_registry: EndTurn reads max_health / max_sanity.
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let state = open_turn_state();
         let actions = legal_actions(&state);
         let idx = actions
             .iter()
             .position(|a| *a == TurnAction::EndTurn)
             .expect("EndTurn offered");
-        let result = crate::apply(
+        let result = engine::apply(
             state,
-            crate::Action::Player(crate::action::PlayerAction::ResolveInput {
-                response: crate::action::InputResponse::PickSingle(crate::engine::OptionId(
+            Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::PickSingle(OptionId(
                     u32::try_from(idx).expect("action index fits u32"),
                 )),
             }),
         );
         assert!(
-            !matches!(result.outcome, crate::EngineOutcome::Rejected { .. }),
+            !matches!(result.outcome, EngineOutcome::Rejected { .. }),
             "open-turn OptionId dispatch rejected: {:?}",
             result.outcome
         );
@@ -920,13 +908,10 @@ mod tests {
 
     #[test]
     fn target_maps_each_variant() {
-        use crate::engine::OptionTarget;
-        use crate::state::{CardInstanceId, EnemyId, LocationId};
-
         // A state where investigator 1 stands on a location, so Investigate's
         // implicit anchor resolves to that location.
         let mut state = open_turn_state();
-        let loc = crate::test_support::test_location(10, "Study");
+        let loc = test_support::test_location(10, "Study");
         let loc_id = loc.id;
         state.locations.insert(loc_id, loc);
         state
