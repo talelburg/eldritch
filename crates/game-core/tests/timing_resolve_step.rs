@@ -26,7 +26,7 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{Cx, EngineOutcome, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
-    Act, CardCode, CardInPlay, CardInstanceId, EmitStep, GameState, InvestigatorId, Phase,
+    self, Act, CardCode, CardInPlay, CardInstanceId, EmitStep, GameState, InvestigatorId,
 };
 use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
@@ -106,7 +106,7 @@ fn install() {
 fn state_with_act(act: &str) -> GameState {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Upkeep)
+        .with_phase(state::Phase::Upkeep)
         .with_investigator(test_support::test_investigator(1))
         .with_turn_order([inv])
         .build();
@@ -126,7 +126,7 @@ fn caller_owned_condition_rejects_a_declared_interrupt() {
         &mut state,
         &mut events,
         TimingEvent::PhaseEnded {
-            phase: Phase::Upkeep,
+            phase: state::Phase::Upkeep,
         },
     );
     let EngineOutcome::Rejected { reason } = out else {
@@ -158,7 +158,7 @@ fn caller_owned_condition_walks_the_cells_after_its_resolve_step() {
         &mut state,
         &mut events,
         TimingEvent::PhaseEnded {
-            phase: Phase::Upkeep,
+            phase: state::Phase::Upkeep,
         },
     );
     assert!(

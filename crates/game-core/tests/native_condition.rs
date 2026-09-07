@@ -12,7 +12,7 @@ use card_dsl::dsl::{
 };
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::EngineOutcome;
-use game_core::state::{Agenda, CardCode, GameState, InvestigatorId, Phase};
+use game_core::state::{self, Agenda, CardCode, GameState, InvestigatorId};
 use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 const AGENDA: &str = "TEST-AGENDA";
@@ -78,7 +78,7 @@ fn native_condition_holding_takes_the_then_branch() {
     let outcome = test_support::fire_forced_on_phase_end(
         &mut state,
         &mut events,
-        Phase::Enemy,
+        state::Phase::Enemy,
         EventTiming::After,
     );
     assert_eq!(outcome, EngineOutcome::Done);
@@ -93,7 +93,7 @@ fn native_condition_failing_takes_the_else_branch() {
     let outcome = test_support::fire_forced_on_phase_end(
         &mut state,
         &mut events,
-        Phase::Enemy,
+        state::Phase::Enemy,
         EventTiming::After,
     );
     assert_eq!(outcome, EngineOutcome::Done);
@@ -110,7 +110,7 @@ fn native_condition_rejects_unknown_tag() {
     let outcome = test_support::fire_forced_on_phase_end(
         &mut state,
         &mut events,
-        Phase::Enemy,
+        state::Phase::Enemy,
         EventTiming::After,
     );
     assert!(

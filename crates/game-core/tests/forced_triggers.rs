@@ -22,8 +22,8 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, EnemyId,
-    GameState, InvestigationResume, InvestigatorId, LocationId, Phase, TokenModifiers,
+    self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
+    EnemyId, GameState, InvestigationResume, InvestigatorId, LocationId, TokenModifiers,
     UpkeepResume,
 };
 use game_core::test_support::{self, GameStateBuilder, MockRegistry};
@@ -282,7 +282,7 @@ fn move_into_forced_location_fires_its_effect() {
         .with_investigator(inv)
         .with_location(from)
         .with_location(attic)
-        .with_phase(Phase::Investigation)
+        .with_phase(state::Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
         .with_investigator_turn(InvestigatorId(1))
@@ -375,7 +375,7 @@ fn forced_on_enemy_phase_end_fires_agenda_ability() {
     let outcome = test_support::fire_forced_on_phase_end(
         &mut state,
         &mut events,
-        Phase::Enemy,
+        state::Phase::Enemy,
         EventTiming::After,
     );
 
@@ -399,7 +399,7 @@ fn forced_on_phase_end_wrong_phase_fires_nothing() {
     let outcome = test_support::fire_forced_on_phase_end(
         &mut state,
         &mut events,
-        Phase::Mythos,
+        state::Phase::Mythos,
         EventTiming::After,
     );
 
@@ -419,7 +419,11 @@ fn forced_on_phase_end_wrong_phase_fires_nothing() {
 /// exercises the `dsl_phase` mapping's negative side.
 #[test]
 fn dsl_phase_mapping_non_enemy_phases_produce_no_hits() {
-    for phase in [Phase::Mythos, Phase::Investigation, Phase::Upkeep] {
+    for phase in [
+        state::Phase::Mythos,
+        state::Phase::Investigation,
+        state::Phase::Upkeep,
+    ] {
         let mut state = state_with_doom_agenda();
         let mut events = Vec::new();
         let outcome = test_support::fire_forced_on_phase_end(
@@ -464,7 +468,7 @@ fn forced_on_phase_end_no_op_when_agenda_has_no_abilities() {
     let outcome = test_support::fire_forced_on_phase_end(
         &mut state,
         &mut events,
-        Phase::Enemy,
+        state::Phase::Enemy,
         EventTiming::After,
     );
 
@@ -487,7 +491,7 @@ fn forced_on_phase_end_no_op_when_no_act_or_agenda() {
     let outcome = test_support::fire_forced_on_phase_end(
         &mut state,
         &mut events,
-        Phase::Enemy,
+        state::Phase::Enemy,
         EventTiming::After,
     );
 
@@ -505,7 +509,7 @@ fn forced_on_phase_end_no_op_when_no_lead_investigator() {
     let outcome = test_support::fire_forced_on_phase_end(
         &mut state,
         &mut events,
-        Phase::Enemy,
+        state::Phase::Enemy,
         EventTiming::After,
     );
 
@@ -536,7 +540,7 @@ fn forced_on_phase_end_fires_act_ability() {
     let outcome = test_support::fire_forced_on_phase_end(
         &mut state,
         &mut events,
-        Phase::Enemy,
+        state::Phase::Enemy,
         EventTiming::After,
     );
 
@@ -622,7 +626,7 @@ fn end_turn_fires_end_of_turn_forced_for_the_ending_investigator() {
     let state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_location(test_support::test_location(10, "Study"))
-        .with_phase(Phase::Investigation)
+        .with_phase(state::Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
         // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
@@ -730,7 +734,7 @@ fn successful_investigate_fires_after_location_investigated_forced() {
     loc.shroud = 0;
     loc.clues = 1;
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
+        .with_phase(state::Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
         .with_investigator_turn(InvestigatorId(1))
@@ -794,7 +798,7 @@ fn two_simultaneous_forced_triggers_present_a_choice() {
         .with_investigator(inv)
         .with_location(from)
         .with_location(double)
-        .with_phase(Phase::Investigation)
+        .with_phase(state::Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
         .with_investigator_turn(InvestigatorId(1))
@@ -832,7 +836,7 @@ fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
         .with_investigator(inv)
         .with_location(from)
         .with_location(double)
-        .with_phase(Phase::Investigation)
+        .with_phase(state::Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
         .with_investigator_turn(InvestigatorId(1))
@@ -877,7 +881,7 @@ fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
 
 /// Both mock board cards carry a `PhaseEnded { Enemy }` forced ability, so step
 /// 3.4 has two simultaneous hits and the lead orders them (#213) — a suspension
-/// that outlives the `engine::apply()`.
+/// that outlives `engine::apply()`.
 ///
 /// Regression (#569): `enemy_phase_end` used to pop the Enemy anchor *before*
 /// emitting and push the Upkeep anchor only after, so the ordering run closed
@@ -925,7 +929,7 @@ fn two_forced_at_enemy_phase_end_resolve_and_the_phase_still_transitions() {
     );
     assert_ne!(
         second.state.phase,
-        Phase::Enemy,
+        state::Phase::Enemy,
         "the Enemy → Upkeep transition must run once the forced run closes, \
          not stall the phase; stack = {:?}",
         second.state.continuations,
@@ -967,7 +971,7 @@ fn suspending_left_location_forced_still_engages_and_fires_entered_location() {
         .with_investigator(inv)
         .with_location(from)
         .with_location(attic)
-        .with_phase(Phase::Investigation)
+        .with_phase(state::Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
         .with_investigator_turn(InvestigatorId(1))
@@ -1062,7 +1066,7 @@ fn a_when_cell_left_location_forced_resolves_before_the_departure_lands() {
         .with_investigator(inv)
         .with_location(from)
         .with_location(attic)
-        .with_phase(Phase::Investigation)
+        .with_phase(state::Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
         .with_investigator_turn(InvestigatorId(1))
@@ -1125,7 +1129,7 @@ fn the_destination_reveal_belongs_to_the_arrival_not_the_departure() {
         .with_investigator(inv)
         .with_location(from)
         .with_location(attic)
-        .with_phase(Phase::Investigation)
+        .with_phase(state::Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
         .with_investigator_turn(InvestigatorId(1))
@@ -1182,7 +1186,7 @@ fn a_suspended_when_cell_sees_the_investigator_still_at_the_location_they_are_le
         .with_investigator(inv)
         .with_location(from)
         .with_location(attic)
-        .with_phase(Phase::Investigation)
+        .with_phase(state::Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
         .with_investigator_turn(InvestigatorId(1))
@@ -1236,7 +1240,7 @@ fn upkeep_phase_end_forced_resolves_before_the_round_end() {
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_location(test_support::test_location(10, "Study"))
-        .with_phase(Phase::Upkeep)
+        .with_phase(state::Phase::Upkeep)
         .with_turn_order([InvestigatorId(1)])
         .with_phase_anchor(Continuation::UpkeepPhase {
             resume: UpkeepResume::Begins,
@@ -1284,7 +1288,7 @@ fn board_with_two_phase_end_forced() -> GameState {
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_location(test_support::test_location(10, "Study"))
-        .with_phase(Phase::Investigation)
+        .with_phase(state::Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
         .with_phase_anchor(Continuation::InvestigationPhase {

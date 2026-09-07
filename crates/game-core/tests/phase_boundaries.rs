@@ -28,7 +28,7 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    Act, CardCode, Continuation, GameState, InvestigationResume, InvestigatorId, LocationId, Phase,
+    self, Act, CardCode, Continuation, GameState, InvestigationResume, InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
@@ -58,12 +58,12 @@ fn mark(cx: &mut Cx, ctx: &EvalContext, amount: u8) -> EngineOutcome {
 }
 
 /// Encode a `Phase` as a marker amount, disjoint from the boundary ids.
-fn observed(phase: Phase) -> u8 {
+fn observed(phase: state::Phase) -> u8 {
     match phase {
-        Phase::Mythos => 51,
-        Phase::Investigation => 52,
-        Phase::Enemy => 53,
-        Phase::Upkeep => 54,
+        state::Phase::Mythos => 51,
+        state::Phase::Investigation => 52,
+        state::Phase::Enemy => 53,
+        state::Phase::Upkeep => 54,
     }
 }
 
@@ -186,7 +186,7 @@ fn mid_investigation() -> GameState {
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_location(test_support::test_location(10, "Study"))
-        .with_phase(Phase::Investigation)
+        .with_phase(state::Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
         .with_phase_anchor(Continuation::InvestigationPhase {
@@ -263,7 +263,7 @@ fn the_mythos_end_and_the_investigation_start_fire_across_the_draw_prompt() {
     );
     assert_eq!(
         resumed.state.phase,
-        Phase::Investigation,
+        state::Phase::Investigation,
         "confirming the draw runs 1.5 and the Mythos → Investigation transition",
     );
     assert_eq!(
@@ -289,12 +289,12 @@ fn a_boundarys_forced_ability_resolves_before_its_drivers_tail_work() {
     assert_eq!(
         markers_with_observed_phase(&cascade.events),
         vec![
-            (END_INVESTIGATION, observed(Phase::Investigation)),
-            (START_ENEMY, observed(Phase::Enemy)),
-            (END_ENEMY, observed(Phase::Enemy)),
-            (START_UPKEEP, observed(Phase::Upkeep)),
-            (END_UPKEEP, observed(Phase::Upkeep)),
-            (START_MYTHOS, observed(Phase::Mythos)),
+            (END_INVESTIGATION, observed(state::Phase::Investigation)),
+            (START_ENEMY, observed(state::Phase::Enemy)),
+            (END_ENEMY, observed(state::Phase::Enemy)),
+            (START_UPKEEP, observed(state::Phase::Upkeep)),
+            (END_UPKEEP, observed(state::Phase::Upkeep)),
+            (START_MYTHOS, observed(state::Phase::Mythos)),
         ],
         "each boundary's forced ability resolves while its own phase is still \
          current — the transition to the next one runs after it, from the \
