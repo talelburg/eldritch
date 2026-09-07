@@ -47,8 +47,14 @@
 use std::collections::VecDeque;
 
 use crate::action::{Action, InputResponse, PlayerAction};
-use crate::engine::{apply, ApplyResult, EngineOutcome, InputKind, InputRequest};
-use crate::state::{CardCode, GameState, InvestigatorId, LocationId};
+use crate::engine::enumerate::TurnAction;
+use crate::engine::{
+    self, enumerate, ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId,
+};
+use crate::scenario_registry;
+use crate::state::{
+    CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
+};
 
 /// Provide a response for an `AwaitingInput` prompt during a
 /// [`drive`]-style session.
@@ -121,7 +127,7 @@ impl ScriptedResolver {
     }
 
     /// Respond with [`InputResponse::PickSingle`] (the Axis-A choice contract).
-    pub fn pick_single(&mut self, id: crate::engine::OptionId) -> &mut Self {
+    pub fn pick_single(&mut self, id: OptionId) -> &mut Self {
         self.push(InputResponse::PickSingle(id))
     }
 
@@ -180,7 +186,7 @@ impl ChoiceResolver for ScriptedResolver {
             ScriptedStep::CommitCards(codes) => InputResponse::PickMultiple {
                 selected: resolve_commit_codes(&codes, state, &request.prompt)
                     .into_iter()
-                    .map(crate::engine::OptionId)
+                    .map(OptionId)
                     .collect(),
             },
             ScriptedStep::PickByLabel(label) => {
@@ -314,7 +320,7 @@ impl ChoiceResolver for TakeOneFastPlay {
 ///
 /// Tests that don't care about the commit window (they're exercising
 /// the rest of skill-test resolution) call this instead of
-/// [`apply`] and treat the returned
+/// [`apply`](crate::engine::apply) and treat the returned
 /// [`ApplyResult`] exactly as they used to — `events` accumulates
 /// across `SkillTestStarted`, the empty `ResolveInput`, and the
 /// post-commit resolution chain; `outcome` is the terminal
@@ -336,7 +342,7 @@ impl ChoiceResolver for TakeOneFastPlay {
 /// skill-test ST.1/ST.2 windows never surface a reaction prompt (they carry no
 /// `Trigger::OnEvent` candidates).
 pub fn apply_no_commits(state: GameState, action: Action) -> ApplyResult {
-    drive_to_terminal_no_commits(apply(state, action))
+    drive_to_terminal_no_commits(engine::apply(state, action))
 }
 
 /// Whether `state` is paused at the open-turn action menu (2b, #447): an
@@ -348,7 +354,7 @@ pub fn apply_no_commits(state: GameState, action: Action) -> ApplyResult {
 fn at_open_turn_menu(state: &GameState) -> bool {
     matches!(
         state.continuations.last(),
-        Some(crate::state::Continuation::InvestigatorTurn { ending: false, .. })
+        Some(Continuation::InvestigatorTurn { ending: false, .. })
     )
 }
 
@@ -361,7 +367,7 @@ fn at_open_turn_menu(state: &GameState) -> bool {
 pub fn perform_skill_test_no_commits(
     state: GameState,
     investigator: InvestigatorId,
-    skill: crate::state::SkillKind,
+    skill: SkillKind,
     difficulty: i8,
 ) -> ApplyResult {
     drive_to_terminal_no_commits(perform_skill_test(state, investigator, skill, difficulty))
@@ -426,7 +432,7 @@ fn drive_to_terminal_no_commits(first: ApplyResult) -> ApplyResult {
             "drive_to_terminal_no_commits: exceeded {MAX_ITERATIONS} iterations without a \
              terminal outcome; the engine appears to be cycling (re-parking a window?)",
         );
-        let r = apply(
+        let r = engine::apply(
             state,
             Action::Player(PlayerAction::ResolveInput { response: next }),
         );
@@ -454,7 +460,7 @@ fn drive_to_terminal_no_commits(first: ApplyResult) -> ApplyResult {
 /// engine is still emitting `AwaitingInput`, or if the loop exceeds an
 /// internal iteration cap (a sign of a broken resolver or engine cycle).
 pub fn drive<R: ChoiceResolver>(state: GameState, action: Action, mut resolver: R) -> ApplyResult {
-    drive_with_applier(state, action, &mut resolver, apply)
+    drive_with_applier(state, action, &mut resolver, engine::apply)
 }
 
 /// Loop body of [`drive`] with the engine entry point parameterized.
@@ -484,14 +490,14 @@ where
 pub fn drive_skill_test<R: ChoiceResolver>(
     state: GameState,
     investigator: InvestigatorId,
-    skill: crate::state::SkillKind,
+    skill: SkillKind,
     difficulty: i8,
     mut resolver: R,
 ) -> ApplyResult {
     drain_with_applier(
         perform_skill_test(state, investigator, skill, difficulty),
         &mut resolver,
-        apply,
+        engine::apply,
     )
 }
 
@@ -577,25 +583,22 @@ where
 ///
 /// Panics if `action` is not currently legal (a test-authoring bug) — the
 /// rejection message lists the offered actions.
-pub fn take_turn_action(
-    state: GameState,
-    action: &crate::engine::enumerate::TurnAction,
-) -> ApplyResult {
-    let actions = crate::engine::enumerate::legal_actions(&state);
+pub fn take_turn_action(state: GameState, action: &TurnAction) -> ApplyResult {
+    let actions = enumerate::legal_actions(&state);
     let idx = actions.iter().position(|a| a == action).unwrap_or_else(|| {
         panic!("take_turn_action: {action:?} is not legal; offered: {actions:?}")
     });
-    apply(
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(crate::engine::OptionId(
+            response: InputResponse::PickSingle(OptionId(
                 u32::try_from(idx).expect("action index fits u32"),
             )),
         }),
     )
 }
 
-/// Dispatch a [`TurnAction`](crate::engine::enumerate::TurnAction) straight to
+/// Dispatch a [`TurnAction`] straight to
 /// its handler, **bypassing the enumeration gate** that
 /// [`take_turn_action`] routes through.
 ///
@@ -603,7 +606,7 @@ pub fn take_turn_action(
 /// is not offered — so it cannot reach a handler against deliberately corrupt
 /// state (the corrupt action is excluded from the enumeration). This seam runs
 /// the action through the same `Cx` build, transactional restore, and
-/// resolution-latch firing as [`apply`] (via the shared
+/// resolution-latch firing as [`apply`](crate::engine::apply) (via the shared
 /// `apply_via` scaffolding), but dispatches via the internal
 /// `dispatch_turn_action` + `drive` instead of the enumeration round-trip. Two
 /// legitimate uses:
@@ -614,13 +617,10 @@ pub fn take_turn_action(
 /// 2. Proving a handler *itself* rejects an action the enumerator already
 ///    filters out — a real client can submit one over the wire without
 ///    consulting the menu (#639's activation initiation gate).
-pub fn dispatch_turn_action_unchecked(
-    state: GameState,
-    action: &crate::engine::enumerate::TurnAction,
-) -> ApplyResult {
-    crate::engine::apply_via(state, crate::scenario_registry::current(), |cx| {
-        let outcome = crate::engine::dispatch_turn_action(cx, action);
-        crate::engine::drive(cx, outcome)
+pub fn dispatch_turn_action_unchecked(state: GameState, action: &TurnAction) -> ApplyResult {
+    engine::apply_via(state, scenario_registry::current(), |cx| {
+        let outcome = engine::dispatch_turn_action(cx, action);
+        engine::drive(cx, outcome)
     })
 }
 
@@ -633,16 +633,16 @@ pub fn dispatch_turn_action_unchecked(
 /// normally initiated by a real action (Investigate / Fight / Evade) or a card
 /// effect; this lets a test exercise skill-test resolution in isolation with an
 /// arbitrary skill + difficulty. Runs through the same `Cx` build / `drive` loop
-/// as [`apply`], via the shared `apply_via` scaffolding.
+/// as [`apply`](crate::engine::apply), via the shared `apply_via` scaffolding.
 pub fn perform_skill_test(
     state: GameState,
     investigator: InvestigatorId,
-    skill: crate::state::SkillKind,
+    skill: SkillKind,
     difficulty: i8,
 ) -> ApplyResult {
-    crate::engine::apply_via(state, crate::scenario_registry::current(), |cx| {
-        let outcome = crate::engine::start_plain_skill_test(cx, investigator, skill, difficulty);
-        crate::engine::drive(cx, outcome)
+    engine::apply_via(state, scenario_registry::current(), |cx| {
+        let outcome = engine::start_plain_skill_test(cx, investigator, skill, difficulty);
+        engine::drive(cx, outcome)
     })
 }
 
@@ -660,7 +660,7 @@ pub struct TestSession {
     resolver: ScriptedResolver,
 }
 
-impl crate::state::GameStateBuilder {
+impl GameStateBuilder {
     /// Build into a [`TestSession`] for driving the engine with a
     /// scripted [`ChoiceResolver`].
     ///
@@ -699,13 +699,13 @@ impl TestSession {
     /// # Panics
     ///
     /// Panics if `action` is not currently legal (a test-authoring bug).
-    pub fn take(self, action: &crate::engine::enumerate::TurnAction) -> Self {
-        let idx = crate::engine::enumerate::legal_actions(&self.state)
+    pub fn take(self, action: &TurnAction) -> Self {
+        let idx = enumerate::legal_actions(&self.state)
             .iter()
             .position(|a| a == action)
             .unwrap_or_else(|| panic!("TestSession::take: {action:?} not legal"));
         self.apply(Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(crate::engine::OptionId(
+            response: InputResponse::PickSingle(OptionId(
                 u32::try_from(idx).expect("action index fits u32"),
             )),
         }))
@@ -746,29 +746,27 @@ impl TestSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::action::{Action, InputResponse, PlayerAction};
-    use crate::engine::{EngineOutcome, InputRequest, OptionId, ResumeToken};
+
+    use crate::dsl::SkillTestKind;
+    use crate::engine::ResumeToken;
     use crate::event::Event;
-    use crate::state::{CardCode, InvestigatorId, Phase};
-    use crate::test_support::{test_investigator, test_location, GameStateBuilder};
+    use crate::state::{ChaosBag, ChaosToken, InvestigationResume, Phase, SkillTestId};
+    use crate::test_support;
 
     #[test]
     fn take_turn_action_resolves_end_turn_via_optionid() {
-        use crate::engine::enumerate::TurnAction;
         // EndTurn reads max_health / max_sanity on the investigator card.
-        crate::test_support::install_test_registry();
+        test_support::install_test_registry();
         let state = GameStateBuilder::default()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_phase(Phase::Investigation)
-            .with_active_investigator(crate::state::InvestigatorId(1))
-            .with_turn_order([crate::state::InvestigatorId(1)])
-            .with_chaos_bag(crate::state::ChaosBag::new([
-                crate::state::ChaosToken::Numeric(0),
-            ]))
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_active_investigator(InvestigatorId(1))
+            .with_turn_order([InvestigatorId(1)])
+            .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
-            .with_investigator_turn(crate::state::InvestigatorId(1))
+            .with_investigator_turn(InvestigatorId(1))
             .build();
         let result = take_turn_action(state, &TurnAction::EndTurn);
         assert!(
@@ -817,22 +815,19 @@ mod tests {
     /// hand and an in-flight skill test parked on it. Used by the
     /// commit-card resolution tests below.
     fn state_with_in_flight_hand(hand: &[&str]) -> GameState {
-        use crate::dsl::SkillTestKind;
         let id = InvestigatorId(1);
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
         state
             .continuations
-            .push(crate::state::Continuation::SkillTest(
-                crate::test_support::test_skill_test(
-                    crate::state::SkillTestId(0),
-                    id,
-                    crate::state::SkillKind::Intellect,
-                    SkillTestKind::Plain,
-                    1,
-                ),
-            ));
+            .push(Continuation::SkillTest(test_support::test_skill_test(
+                SkillTestId(0),
+                id,
+                SkillKind::Intellect,
+                SkillTestKind::Plain,
+                1,
+            )));
         state
     }
 
@@ -1100,20 +1095,19 @@ mod tests {
 
     #[test]
     fn test_session_fluent_round_trip() {
-        use crate::engine::enumerate::TurnAction;
         let id = InvestigatorId(1);
         // Two investigators so the first EndTurn is a mid-round rotation
         // (reaches Done immediately) rather than a round-ending cascade — the
         // latter would now pause at the Mythos encounter-draw prompt (#348).
         let result = GameStateBuilder::new()
             .with_phase(Phase::Investigation)
-            .with_investigator(test_investigator(1))
-            .with_investigator(test_investigator(2))
-            .with_location(test_location(10, "Study"))
+            .with_investigator(test_support::test_investigator(1))
+            .with_investigator(test_support::test_investigator(2))
+            .with_location(test_support::test_location(10, "Study"))
             .with_active_investigator(id)
             .with_turn_order([id, InvestigatorId(2)])
-            .with_phase_anchor(crate::state::Continuation::InvestigationPhase {
-                resume: crate::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(id)
             .session()
@@ -1137,13 +1131,9 @@ mod tests {
     /// dispatch-level Confirm routing end-to-end through `apply`).
     #[test]
     fn flag_on_no_commits_drive_auto_confirms_acknowledge() {
-        use crate::event::Event;
-        use crate::state::{ChaosToken, InvestigatorId, SkillKind};
-        use crate::test_support::{test_investigator, GameStateBuilder};
-
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_active_investigator(inv)
             .build();
         state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];

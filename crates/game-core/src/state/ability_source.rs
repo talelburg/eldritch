@@ -1,10 +1,7 @@
 //! What an activation names: the **ability source**.
 
+use crate::state::{CardCode, CardInstanceId, EnemyId, LocationId};
 use serde::{Deserialize, Serialize};
-
-use super::card::CardInstanceId;
-use super::enemy::EnemyId;
-use super::location::LocationId;
 
 /// The thing whose ability is being used — the descriptor an activation
 /// names instead of a bare card instance (#707).
@@ -132,11 +129,11 @@ pub enum AbilityAddress {
     ///
     /// The recipient is already named by the candidate's own source, and the
     /// granter's clause means the same thing whichever copy of the granter is
-    /// in play, so the granter is a [`CardCode`](crate::state::CardCode) rather
+    /// in play, so the granter is a [`CardCode`] rather
     /// than an [`AbilitySource`].
     Granted {
         /// Printed code of the card declaring the grant.
-        granter: super::card::CardCode,
+        granter: CardCode,
         /// Index of the granter's printed `Effect::Grant` ability, on the side
         /// of the granter that is in effect.
         ability: u8,
@@ -167,7 +164,9 @@ impl AbilityAddress {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::ActionResume;
+
+    use crate::dsl::{self, Effect};
+    use crate::state::{ActionResume, CandidateSource};
 
     /// The descriptor rides the wire twice: inside a parked
     /// [`ActionResume::ActivateAbility`] frame in serialized game state, and in
@@ -191,8 +190,8 @@ mod tests {
             source: AbilitySource::InPlay(CardInstanceId(7)),
             // Flashlight 01087's shape: the designated action rides the frame
             // beside the (empty) residual effect (#805).
-            designator: Some(card_dsl::dsl::investigate(-2i8)),
-            effect: card_dsl::dsl::Effect::Seq(vec![]),
+            designator: Some(dsl::investigate(-2i8)),
+            effect: Effect::Seq(vec![]),
         };
         let json = serde_json::to_string(&resume).expect("serializes");
         assert_eq!(
@@ -235,7 +234,6 @@ mod tests {
     /// deliberately and without a migration (same posture as #707/#709).
     #[test]
     fn a_candidate_source_round_trips_through_serialization() {
-        use crate::state::CandidateSource;
         for source in [
             CandidateSource::Ability(AbilitySource::InPlay(CardInstanceId(7))),
             CandidateSource::Ability(AbilitySource::Location(LocationId(4))),
@@ -277,7 +275,7 @@ mod tests {
         for address in [
             AbilityAddress::Printed(3),
             AbilityAddress::Granted {
-                granter: super::super::card::CardCode::new("01115"),
+                granter: CardCode::new("01115"),
                 ability: 1,
                 sub: 0,
             },
@@ -298,7 +296,7 @@ mod tests {
         assert_eq!(AbilityAddress::Printed(2).printed_index(), Some(2));
         assert_eq!(
             AbilityAddress::Granted {
-                granter: super::super::card::CardCode::new("01115"),
+                granter: CardCode::new("01115"),
                 ability: 1,
                 sub: 0,
             }

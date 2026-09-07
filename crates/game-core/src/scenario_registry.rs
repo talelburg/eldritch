@@ -64,7 +64,8 @@ pub fn current() -> Option<&'static ScenarioRegistry> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ScenarioRegistry, REGISTRY};
+    use super::*;
+
     use crate::event::Event;
     use crate::scenario::{ScenarioEnding, ScenarioId, ScenarioModule};
     use crate::state::GameState;
@@ -117,12 +118,12 @@ mod tests {
     /// test robust to scheduling.
     #[test]
     fn install_is_idempotent_and_current_reflects_installed_value() {
-        let first_attempt = super::install(fake_registry());
-        let installed = super::current().expect("registry should be present after install");
+        let first_attempt = install(fake_registry());
+        let installed = current().expect("registry should be present after install");
         let id = ScenarioId::new("fake");
         let _ = (installed.module_for)(&id);
         if first_attempt.is_ok() {
-            assert!(super::install(fake_registry()).is_err());
+            assert!(install(fake_registry()).is_err());
         }
         assert!(REGISTRY.get().is_some());
     }

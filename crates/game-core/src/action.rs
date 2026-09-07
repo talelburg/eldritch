@@ -14,9 +14,9 @@
 //!   engine generates these itself so the action log is replayable;
 //!   clients never construct them.
 
-use serde::{Deserialize, Serialize};
-
+use crate::engine::OptionId;
 use crate::state::{CardCode, InvestigatorId};
+use serde::{Deserialize, Serialize};
 
 /// A single entry in the action log.
 ///
@@ -125,19 +125,19 @@ pub enum InputResponse {
     Skip,
     /// Pick one option from a structured choice prompt
     /// ([`InputRequest::pick_single`](crate::engine::InputRequest::pick_single)),
-    /// echoing back its [`OptionId`](crate::engine::OptionId). The
+    /// echoing back its [`OptionId`]. The
     /// single-selection family (umbrella §3): the Axis-A choice machinery, and
     /// the location/investigator-pick windows (hunter move/engage, spawn engage)
     /// whose offered options index the candidate list.
-    PickSingle(crate::engine::OptionId),
+    PickSingle(OptionId),
     /// Select a subset of the offered options, echoing back their
-    /// [`OptionId`](crate::engine::OptionId)s (umbrella §3). The multi-selection
+    /// [`OptionId`]s (umbrella §3). The multi-selection
     /// family — the skill-test commit window and the upkeep hand-size discard
     /// fold into this; min/exact-count constraints live on the request/frame,
     /// not here. For those windows an `OptionId(i)` denotes hand index `i`.
     PickMultiple {
         /// The chosen option ids (hand indices, for commit/discard windows).
-        selected: Vec<crate::engine::OptionId>,
+        selected: Vec<OptionId>,
     },
 }
 
@@ -162,7 +162,6 @@ mod input_response_tests {
 
     #[test]
     fn pick_multiple_input_serde_roundtrip() {
-        use crate::engine::OptionId;
         let original = InputResponse::PickMultiple {
             selected: vec![OptionId(0), OptionId(3), OptionId(7)],
         };
@@ -173,7 +172,6 @@ mod input_response_tests {
 
     #[test]
     fn pick_single_input_serde_roundtrip() {
-        use crate::engine::OptionId;
         let original = InputResponse::PickSingle(OptionId(2));
         let json = serde_json::to_string(&original).expect("serialize");
         let back: InputResponse = serde_json::from_str(&json).expect("deserialize");

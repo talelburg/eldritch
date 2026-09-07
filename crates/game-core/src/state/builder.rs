@@ -441,13 +441,14 @@ mod set_aside_cards_tests {
 #[cfg(test)]
 mod with_open_window_tests {
     use super::*;
+
     use crate::state::PhaseStep;
-    use crate::test_support::test_investigator;
+    use crate::test_support;
 
     #[test]
     fn with_open_window_pushes_onto_the_stack() {
         let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_open_window(
                 FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
                 FastActorScope::Any,
@@ -470,7 +471,7 @@ mod with_open_window_tests {
     #[test]
     fn with_open_window_stacks_in_order() {
         let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .with_open_window(
                 FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
                 FastActorScope::Any,
@@ -496,16 +497,19 @@ mod with_open_window_tests {
 mod owner_stamp_tests {
     use super::*;
 
+    use crate::state::{CardCode, CardInPlay, CardInstanceId};
+    use crate::test_support;
+
     /// **A card in an investigator's play area at construction time is theirs.**
     /// The builder stamps the owner so every board assembled from parts — every
     /// fixture included — routes a discarded player card to its owner's pile
     /// rather than out of the game (#772).
     #[test]
     fn build_stamps_the_owner_on_cards_in_an_investigators_play_area() {
-        let mut inv = crate::test_support::test_investigator(1);
-        inv.cards_in_play.push(crate::state::CardInPlay::enter_play(
-            crate::state::CardCode::new("_asset"),
-            crate::state::CardInstanceId(1),
+        let mut inv = test_support::test_investigator(1);
+        inv.cards_in_play.push(CardInPlay::enter_play(
+            CardCode::new("_asset"),
+            CardInstanceId(1),
         ));
         let state = GameStateBuilder::new().with_investigator(inv).build();
         let inv = &state.investigators[&InvestigatorId(1)];
@@ -521,13 +525,10 @@ mod owner_stamp_tests {
     /// only through `Effect::TakeControl`, long after `build()`.
     #[test]
     fn build_does_not_overwrite_an_owner_that_is_already_set() {
-        let mut inv = crate::test_support::test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.cards_in_play.push(
-            crate::state::CardInPlay::enter_play(
-                crate::state::CardCode::new("_asset"),
-                crate::state::CardInstanceId(1),
-            )
-            .owned_by(Some(InvestigatorId(7))),
+            CardInPlay::enter_play(CardCode::new("_asset"), CardInstanceId(1))
+                .owned_by(Some(InvestigatorId(7))),
         );
         let state = GameStateBuilder::new().with_investigator(inv).build();
         assert_eq!(
