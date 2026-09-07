@@ -15,20 +15,18 @@
 //! No corpus card carries a modal `on_success` yet, so a mock is the only way to
 //! reach the shape.
 
+use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::dsl::{
     activated, choose_one, heal_damage, heal_horror, skill_test, Ability, InvestigatorTarget,
 };
-use game_core::engine::EngineOutcome;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionTarget};
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId,
-    LocationId, Phase, SkillKind, TokenModifiers,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    GameState, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{
-    test_investigator, test_location, GameStateBuilder, MockRegistry, TestSession,
-};
-use game_core::TurnAction;
+use game_core::test_support::{self, GameStateBuilder, MockRegistry, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Mock: `[action] Test intellect(2). If you succeed, heal 1 damage or horror
@@ -66,8 +64,8 @@ fn install_mock_registry() {
 /// Board: the mock asset in play, the investigator at `LOC` carrying `damage`
 /// damage and `horror` horror, and an all-`Numeric(0)` chaos bag so the
 /// intellect(2) test's outcome is decided by the investigator's stats alone.
-fn board(damage: u8, horror: u8) -> game_core::GameState {
-    let mut inv = test_investigator(1);
+fn board(damage: u8, horror: u8) -> GameState {
+    let mut inv = test_support::test_investigator(1);
     inv.investigator_card.accumulated_damage = damage;
     inv.investigator_card.accumulated_horror = horror;
     inv.cards_in_play.push(CardInPlay::enter_play(
@@ -78,7 +76,7 @@ fn board(damage: u8, horror: u8) -> game_core::GameState {
     GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .with_investigator_turn(INV)
@@ -87,7 +85,7 @@ fn board(damage: u8, horror: u8) -> game_core::GameState {
         .build()
 }
 
-fn activate(state: game_core::GameState) -> game_core::ApplyResult {
+fn activate(state: GameState) -> ApplyResult {
     TestSession::new(state)
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
@@ -153,7 +151,7 @@ fn every_mode_dead_under_a_skill_test_skips_rather_than_rejecting() {
 #[test]
 fn a_modal_on_success_keeps_the_activating_cards_anchor_across_the_test() {
     // Both modes live, so the ChooseOne suspends instead of auto-resolving.
-    let started = game_core::test_support::take_turn_action(
+    let started = test_support::take_turn_action(
         board(2, 2),
         &TurnAction::ActivateAbility {
             investigator: INV,
@@ -161,10 +159,10 @@ fn a_modal_on_success_keeps_the_activating_cards_anchor_across_the_test() {
             address: AbilityAddress::Printed(0),
         },
     );
-    let r = game_core::apply(
+    let r = engine::apply(
         started.state,
-        game_core::Action::Player(game_core::PlayerAction::ResolveInput {
-            response: game_core::InputResponse::PickMultiple { selected: vec![] },
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
         }),
     );
     let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
@@ -181,7 +179,7 @@ fn a_modal_on_success_keeps_the_activating_cards_anchor_across_the_test() {
     for option in &request.options {
         assert_eq!(
             option.target,
-            Some(game_core::engine::OptionTarget::CardInstance(INST)),
+            Some(OptionTarget::CardInstance(INST)),
             "still anchored to the activated card after the test resolved",
         );
     }

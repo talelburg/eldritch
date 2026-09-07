@@ -12,20 +12,18 @@
 //! weapon ability yet — Roland's .38 Special (C5c) is the first; until
 //! then a mock card exercises the full path.
 
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::assert_event;
 use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
 use game_core::dsl::{activated_as, fight, seq, Cost, IntExpr};
-use game_core::engine::EngineOutcome;
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::state::AbilityAddress;
 use game_core::state::{
-    AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId,
-    LocationId, Phase, TokenModifiers,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
+    EnemyId, GameState, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{
-    apply_no_commits, dispatch_turn_action_unchecked, test_enemy, test_investigator, test_location,
-    GameStateBuilder, MockRegistry,
-};
-use game_core::{apply, assert_event, Action, InputResponse, OptionId, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 /// Mock firearm: `Uses (4 ammo)`, `[action] Spend 1 ammo: Fight. +1
 /// [combat], +1 damage.`
@@ -125,7 +123,7 @@ const LOC: LocationId = LocationId(1);
 /// at [`LOC`] and engaged with `enemy_count` enemies (fight 3, health 3) that
 /// are co-located there. A `Numeric(0)` chaos bag makes the combat total
 /// deterministic.
-fn board_with_weapon(enemy_count: u32) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
+fn board_with_weapon(enemy_count: u32) -> (GameState, InvestigatorId, CardInstanceId) {
     board_with_enemies(enemy_count, true)
 }
 
@@ -136,11 +134,11 @@ fn board_with_weapon(enemy_count: u32) -> (game_core::GameState, InvestigatorId,
 fn board_with_enemies(
     enemy_count: u32,
     engaged: bool,
-) -> (game_core::GameState, InvestigatorId, CardInstanceId) {
+) -> (GameState, InvestigatorId, CardInstanceId) {
     let id = InvestigatorId(1);
     let weapon_inst = CardInstanceId(0);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.skills.combat = 3;
     let mut weapon = CardInPlay::enter_play(CardCode::new(WEAPON), weapon_inst);
     weapon.uses.insert(UseKind::Ammo, 4); // seeded as play_card would
@@ -150,11 +148,11 @@ fn board_with_enemies(
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
         .with_investigator_turn(id)
-        .with_location(test_location(1, "Study"))
+        .with_location(test_support::test_location(1, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default());
     for n in 0..enemy_count {
-        let mut enemy = test_enemy(100 + n, "Ghoul");
+        let mut enemy = test_support::test_enemy(100 + n, "Ghoul");
         enemy.fight = 3;
         enemy.max_health = 3;
         enemy.current_location = Some(LOC);
@@ -165,7 +163,7 @@ fn board_with_enemies(
     (state, id, weapon_inst)
 }
 
-fn ammo_remaining(state: &game_core::GameState, inv: InvestigatorId, weapon: CardInstanceId) -> u8 {
+fn ammo_remaining(state: &GameState, inv: InvestigatorId, weapon: CardInstanceId) -> u8 {
     state.investigators[&inv]
         .cards_in_play
         .iter()
@@ -177,7 +175,7 @@ fn ammo_remaining(state: &game_core::GameState, inv: InvestigatorId, weapon: Car
 #[test]
 fn play_card_seeds_the_ammo_pool_from_metadata() {
     let id = InvestigatorId(1);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.hand.push(CardCode::new(WEAPON));
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -186,7 +184,7 @@ fn play_card_seeds_the_ammo_pool_from_metadata() {
         .with_investigator(inv)
         .build();
 
-    let idx = game_core::engine::enumerate::legal_actions(&state)
+    let idx = enumerate::legal_actions(&state)
         .iter()
         .position(|a| {
             a == &TurnAction::PlayCard {
@@ -195,7 +193,7 @@ fn play_card_seeds_the_ammo_pool_from_metadata() {
             }
         })
         .expect("PlayCard must be legal");
-    let result = apply_no_commits(
+    let result = test_support::apply_no_commits(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
@@ -219,7 +217,7 @@ fn weapon_fight_spends_ammo_and_deals_bonus_damage() {
 
     // Activate → pays 1 ammo up front, then the Combat test resolves
     // (combat 3 + modifier 1 vs fight 3 → success) dealing 1 + 1 = 2.
-    let idx = game_core::engine::enumerate::legal_actions(&state)
+    let idx = enumerate::legal_actions(&state)
         .iter()
         .position(|a| {
             a == &TurnAction::ActivateAbility {
@@ -229,7 +227,7 @@ fn weapon_fight_spends_ammo_and_deals_bonus_damage() {
             }
         })
         .expect("ability must be legal");
-    let result = apply_no_commits(
+    let result = test_support::apply_no_commits(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
@@ -251,10 +249,7 @@ fn weapon_fight_spends_ammo_and_deals_bonus_damage() {
     assert_event!(result.events, Event::SkillTestStarted { difficulty: 3, .. });
     assert_event!(result.events, Event::EnemyDamaged { amount: 2, .. });
     assert_eq!(ammo_remaining(&result.state, id, weapon), 3);
-    assert_eq!(
-        result.state.enemies[&game_core::state::EnemyId(100)].damage,
-        2
-    );
+    assert_eq!(result.state.enemies[&EnemyId(100)].damage, 2);
 }
 
 #[test]
@@ -266,12 +261,12 @@ fn weapon_fight_targets_a_co_located_unengaged_enemy() {
     // mirroring the single-engaged case.
     let (state, id, weapon) = board_with_enemies(1, false);
     assert_eq!(
-        state.enemies[&game_core::state::EnemyId(100)].engaged_with,
+        state.enemies[&EnemyId(100)].engaged_with,
         None,
         "precondition: the enemy is co-located but NOT engaged"
     );
 
-    let idx = game_core::engine::enumerate::legal_actions(&state)
+    let idx = enumerate::legal_actions(&state)
         .iter()
         .position(|a| {
             a == &TurnAction::ActivateAbility {
@@ -281,7 +276,7 @@ fn weapon_fight_targets_a_co_located_unengaged_enemy() {
             }
         })
         .expect("ability must be legal");
-    let result = apply_no_commits(
+    let result = test_support::apply_no_commits(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
@@ -296,16 +291,13 @@ fn weapon_fight_targets_a_co_located_unengaged_enemy() {
     assert_event!(
         result.events,
         Event::EnemyDamaged {
-            enemy: game_core::state::EnemyId(100),
+            enemy: EnemyId(100),
             amount: 2,
             ..
         }
     );
     assert_eq!(ammo_remaining(&result.state, id, weapon), 3);
-    assert_eq!(
-        result.state.enemies[&game_core::state::EnemyId(100)].damage,
-        2
-    );
+    assert_eq!(result.state.enemies[&EnemyId(100)].damage, 2);
 }
 
 #[test]
@@ -317,26 +309,26 @@ fn weapon_fight_rejects_an_enemy_at_a_different_location() {
     let weapon_inst = CardInstanceId(0);
     let other = LocationId(2);
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.skills.combat = 3;
     let mut weapon = CardInPlay::enter_play(CardCode::new(WEAPON), weapon_inst);
     weapon.uses.insert(UseKind::Ammo, 4);
     inv.cards_in_play.push(weapon);
 
-    let mut enemy = test_enemy(100, "Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Ghoul");
     enemy.fight = 3;
     enemy.max_health = 3;
     enemy.current_location = Some(other); // elsewhere, not the controller's LOC
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
-        .with_location(test_location(1, "Study"))
-        .with_location(test_location(2, "Hallway"))
+        .with_location(test_support::test_location(1, "Study"))
+        .with_location(test_support::test_location(2, "Hallway"))
         .with_enemy(enemy)
         .with_investigator_at(inv, LOC)
         .build();
 
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
@@ -353,10 +345,7 @@ fn weapon_fight_rejects_an_enemy_at_a_different_location() {
          precondition; got: {reason}"
     );
     assert_eq!(ammo_remaining(&result.state, id, weapon_inst), 4);
-    assert_eq!(
-        result.state.enemies[&game_core::state::EnemyId(100)].damage,
-        0
-    );
+    assert_eq!(result.state.enemies[&EnemyId(100)].damage, 0);
 }
 
 #[test]
@@ -365,7 +354,7 @@ fn weapon_fight_rejects_when_no_co_located_enemy() {
     // anything.
     let (state, id, weapon) = board_with_weapon(0);
     let actions_before = state.investigators[&id].actions_remaining;
-    let result = dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::ActivateAbility {
             investigator: id,
@@ -391,7 +380,7 @@ fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
     let (state, id, weapon) = board_with_weapon(2);
 
     // Step 1: activation suspends for the target pick.
-    let idx = game_core::engine::enumerate::legal_actions(&state)
+    let idx = enumerate::legal_actions(&state)
         .iter()
         .position(|a| {
             a == &TurnAction::ActivateAbility {
@@ -401,7 +390,7 @@ fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
             }
         })
         .expect("ability must be legal");
-    let r1 = apply(
+    let r1 = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
@@ -414,7 +403,7 @@ fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
     );
 
     // Step 2: pick enemy 100 (OptionId(0)), then commit nothing to resolve the test.
-    let r2 = apply_no_commits(
+    let r2 = test_support::apply_no_commits(
         r1.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -429,13 +418,13 @@ fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
     assert_event!(
         r2.events,
         Event::EnemyDamaged {
-            enemy: game_core::state::EnemyId(100),
+            enemy: EnemyId(100),
             amount: 2,
             ..
         }
     );
-    assert_eq!(r2.state.enemies[&game_core::state::EnemyId(100)].damage, 2);
-    assert_eq!(r2.state.enemies[&game_core::state::EnemyId(101)].damage, 0);
+    assert_eq!(r2.state.enemies[&EnemyId(100)].damage, 2);
+    assert_eq!(r2.state.enemies[&EnemyId(101)].damage, 0);
     // Ammo was spent on activation.
     assert_eq!(ammo_remaining(&r2.state, id, weapon), 3);
 }
@@ -463,7 +452,7 @@ fn weapon_fight_with_two_enemies_suspends_for_pick_then_attacks_chosen() {
 fn a_designated_fight_is_a_fight_action() {
     /// The board of [`board_with_weapon`], with the bare-Fight asset in play
     /// instead of the firearm.
-    fn board_with_bare_asset() -> (game_core::GameState, InvestigatorId, CardInstanceId) {
+    fn board_with_bare_asset() -> (GameState, InvestigatorId, CardInstanceId) {
         let (mut state, id, inst) = board_with_weapon(1);
         let card = state.investigators.get_mut(&id).expect("controller");
         card.cards_in_play.clear();
@@ -481,8 +470,8 @@ fn a_designated_fight_is_a_fight_action() {
         events[start..].iter().map(|e| format!("{e:?}")).collect()
     }
 
-    fn take(state: &game_core::GameState, action: &TurnAction) -> Action {
-        let idx = game_core::engine::enumerate::legal_actions(state)
+    fn take(state: &GameState, action: &TurnAction) -> Action {
+        let idx = enumerate::legal_actions(state)
             .iter()
             .position(|a| a == action)
             .unwrap_or_else(|| panic!("{action:?} must be legal"));
@@ -496,9 +485,9 @@ fn a_designated_fight_is_a_fight_action() {
     /// window: a `Lifetime::SkillTest` row is swept when the test resolves, so
     /// after resolution both paths read empty and the comparison would be
     /// vacuous.
-    fn rows_mid_test(state: game_core::GameState, action: &TurnAction) -> usize {
+    fn rows_mid_test(state: GameState, action: &TurnAction) -> usize {
         let a = take(&state, action);
-        let r = apply(state, a);
+        let r = engine::apply(state, a);
         assert!(
             matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
             "expected the commit window with the test in flight; got {:?}",
@@ -507,9 +496,9 @@ fn a_designated_fight_is_a_fight_action() {
         r.state.recorded_modifiers.len()
     }
 
-    fn resolve(state: game_core::GameState, action: &TurnAction) -> game_core::engine::ApplyResult {
+    fn resolve(state: GameState, action: &TurnAction) -> ApplyResult {
         let a = take(&state, action);
-        apply_no_commits(state, a)
+        test_support::apply_no_commits(state, a)
     }
 
     let (designated_board, id, asset) = board_with_bare_asset();
@@ -527,7 +516,7 @@ fn a_designated_fight_is_a_fight_action() {
         basic_board,
         &TurnAction::Fight {
             investigator: id,
-            enemy: game_core::state::EnemyId(100),
+            enemy: EnemyId(100),
         },
     );
 
@@ -538,8 +527,8 @@ fn a_designated_fight_is_a_fight_action() {
          Fight action does",
     );
     assert_eq!(
-        designated.state.enemies[&game_core::state::EnemyId(100)].damage,
-        basic.state.enemies[&game_core::state::EnemyId(100)].damage,
+        designated.state.enemies[&EnemyId(100)].damage,
+        basic.state.enemies[&EnemyId(100)].damage,
     );
     // The one licensed difference, pinned in both directions while the test is
     // still in flight: the designated Fight carries the ability's modification
@@ -564,7 +553,7 @@ fn a_designated_fight_is_a_fight_action() {
             basic_board,
             &TurnAction::Fight {
                 investigator: id,
-                enemy: game_core::state::EnemyId(100),
+                enemy: EnemyId(100),
             },
         ),
         0,

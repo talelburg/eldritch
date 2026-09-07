@@ -11,22 +11,20 @@
 //! follow-up issue (#39 Deduction) is the first consumer. Until then,
 //! mock cards are the only way to exercise the full path.
 
+use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::dsl::{
     constant, discover_clue, modify, on_skill_test_resolution, LocationTarget, ModifierScope, Stat,
     TestOutcome,
 };
-use game_core::engine::EngineOutcome;
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase, SkillKind,
+    TokenModifiers,
 };
-use game_core::test_support::{
-    drive, drive_skill_test, perform_skill_test_no_commits, test_investigator, test_location,
-    GameStateBuilder, MockRegistry, ScriptedResolver,
-};
-use game_core::{
-    assert_event, assert_event_count, assert_no_event, Action, InputResponse, PlayerAction,
-};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry, ScriptedResolver};
+use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// Mock: success-gated `OnSkillTestResolution` → discover 1 clue at
 /// the tested location. The Deduction-shape (without kind narrowing,
@@ -77,13 +75,13 @@ fn install_mock_registry() {
 fn state_with_hand_and_location(
     hand: &[&str],
     initial_clues: u8,
-) -> (game_core::GameState, InvestigatorId, LocationId) {
+) -> (GameState, InvestigatorId, LocationId) {
     let id = InvestigatorId(1);
     let loc = LocationId(10);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc);
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
-    let mut location = test_location(10, "Study");
+    let mut location = test_support::test_location(10, "Study");
     location.clues = initial_clues;
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -102,28 +100,24 @@ fn state_with_hand_and_location(
 /// entry point) against `difficulty` and drive it through with the supplied
 /// commit codes.
 fn skill_test_with_commits(
-    state: game_core::GameState,
+    state: GameState,
     id: InvestigatorId,
     difficulty: i8,
     commit: &[&str],
-) -> game_core::ApplyResult {
+) -> ApplyResult {
     let mut resolver = ScriptedResolver::new();
     let codes: Vec<CardCode> = commit.iter().map(|c| CardCode::new(*c)).collect();
     resolver.commit_cards(&codes);
-    drive_skill_test(state, id, SkillKind::Intellect, difficulty, resolver)
+    test_support::drive_skill_test(state, id, SkillKind::Intellect, difficulty, resolver)
 }
 
 /// Drive a pre-built skill-test-initiating `action` (e.g. an Investigate
 /// `ResolveInput`) through with the supplied commit codes.
-fn drive_with_commits(
-    state: game_core::GameState,
-    action: Action,
-    commit: &[&str],
-) -> game_core::ApplyResult {
+fn drive_with_commits(state: GameState, action: Action, commit: &[&str]) -> ApplyResult {
     let mut resolver = ScriptedResolver::new();
     let codes: Vec<CardCode> = commit.iter().map(|c| CardCode::new(*c)).collect();
     resolver.commit_cards(&codes);
-    drive(state, action, resolver)
+    test_support::drive(state, action, resolver)
 }
 
 #[test]
@@ -219,7 +213,7 @@ fn uncommitted_resolution_triggered_card_does_not_fire() {
     let (state, id, loc) = state_with_hand_and_location(&[BONUS_CLUE_SUCCESS], 3);
     // Apply with an empty commit list (apply_no_commits drives the
     // commit window with `[]`).
-    let result = perform_skill_test_no_commits(state, id, SkillKind::Intellect, 2);
+    let result = test_support::perform_skill_test_no_commits(state, id, SkillKind::Intellect, 2);
 
     assert!(matches!(
         result.outcome,
@@ -302,10 +296,7 @@ fn investigate_canonical_event_order_with_on_resolution() {
     // Submit the open-turn Investigate via the enumeration round-trip (the typed
     // `PlayerAction::Investigate` removed in 2b, #447).
     let investigate = {
-        use game_core::engine::enumerate::legal_actions;
-        use game_core::engine::OptionId;
-        use game_core::TurnAction;
-        let idx = legal_actions(&state)
+        let idx = enumerate::legal_actions(&state)
             .iter()
             .position(|a| a == &TurnAction::Investigate { investigator: id })
             .expect("Investigate must be a legal open-turn action");

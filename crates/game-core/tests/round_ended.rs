@@ -4,11 +4,15 @@
 use card_dsl::dsl::{
     deal_horror, forced_on_event, native, EventPattern, EventTiming, InvestigatorTarget,
 };
-use game_core::state::{Agenda, CardCode, InvestigatorId};
-use game_core::test_support::{
-    fire_forced_on_round_end, test_investigator, GameStateBuilder, MockRegistry,
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::{self, Cx, EngineOutcome, OptionId};
+use game_core::state::{
+    Agenda, CardCode, CardInPlay, CardInstanceId, Continuation, InvestigationResume,
+    InvestigatorId, LocationId, Phase,
 };
-use game_core::{Cx, EngineOutcome, EvalContext};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 const AGENDA: &str = "TEST-AGENDA";
 
@@ -49,7 +53,7 @@ fn install() {
 #[test]
 fn round_ended_fires_agenda_forced_ability() {
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .with_turn_order([InvestigatorId(1)])
         .build();
     state.agenda_deck = vec![Agenda {
@@ -58,7 +62,7 @@ fn round_ended_fires_agenda_forced_ability() {
     }];
     state.agenda_index = 0;
     let mut events = Vec::new();
-    let outcome = fire_forced_on_round_end(&mut state, &mut events);
+    let outcome = test_support::fire_forced_on_round_end(&mut state, &mut events);
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.agenda_doom, 5, "RoundEnded fired the agenda ability");
 }
@@ -71,14 +75,8 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     // closes the run, whose `UpkeepAfterRoundEnded` continuation resumes the
     // upkeep tail — the Upkeep→Mythos transition — that a terminal close would
     // have dropped.
-    use game_core::action::InputResponse;
-    use game_core::engine::enumerate::legal_actions;
-    use game_core::engine::OptionId;
-    use game_core::state::{CardInPlay, CardInstanceId, LocationId, Phase};
-    use game_core::test_support::test_location;
-    use game_core::{apply, Action, PlayerAction, TurnAction};
 
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(10));
     inv.actions_remaining = 0;
     // Non-empty deck so the upkeep 4.4 draw doesn't fire a deckout horror
@@ -91,14 +89,14 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
 
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
         // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
         // InvestigationPhase anchor at investigation_phase_end.
-        .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
-            resume: game_core::state::InvestigationResume::TurnBegins,
+        .with_phase_anchor(Continuation::InvestigationPhase {
+            resume: InvestigationResume::TurnBegins,
         })
         // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
         // EndTurn cascade pops before advancing past Investigation.
@@ -116,7 +114,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     // transitioning to Mythos. Submitted via the enumeration round-trip
     // (the typed `PlayerAction::EndTurn` removed in 2b, #447).
     let end_turn = {
-        let idx = legal_actions(&state)
+        let idx = enumerate::legal_actions(&state)
             .iter()
             .position(|a| a == &TurnAction::EndTurn)
             .expect("EndTurn must be a legal open-turn action");
@@ -124,7 +122,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
             response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
         })
     };
-    let paused = apply(state, end_turn);
+    let paused = engine::apply(state, end_turn);
     assert!(
         matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
         "two round-end forced must present the lead a choice; got {:?}",
@@ -142,7 +140,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     assert_eq!(paused.state.investigators[&InvestigatorId(1)].horror(), 0);
 
     // Resolve the first ordered forced; the second is still pending.
-    let after_first = apply(
+    let after_first = engine::apply(
         paused.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -162,7 +160,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     // Resolve the second: the forced run closes, its UpkeepAfterRoundEnded
     // continuation runs the upkeep tail (no act round-end window here) and
     // transitions Upkeep → Mythos.
-    let done = apply(
+    let done = engine::apply(
         after_first.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),

@@ -13,13 +13,13 @@
 //! it, not about hunter movement at large. The spawn-engagement tie that also
 //! lived in that file went to real cards under #877.
 
-use game_core::action::{InputResponse, PlayerAction};
-use game_core::engine::{apply, OptionId};
-use game_core::state::{EnemyId, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{
-    take_turn_action, test_enemy, test_investigator, test_location, GameStateBuilder, MockRegistry,
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, OptionId};
+use game_core::state::{
+    Continuation, EnemyId, GameState, InvestigationResume, InvestigatorId, LocationId, Phase,
 };
-use game_core::{Action, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 #[ctor::ctor(unsafe)]
 fn install() {
@@ -30,18 +30,18 @@ fn install() {
 
 #[test]
 fn hunter_move_tie_break_replays_identically() {
-    fn diamond_state() -> game_core::state::GameState {
-        let mut loc_a = test_location(1, "A");
-        let mut loc_b = test_location(2, "B");
-        let mut loc_c = test_location(3, "C");
-        let mut loc_d = test_location(4, "D");
+    fn diamond_state() -> GameState {
+        let mut loc_a = test_support::test_location(1, "A");
+        let mut loc_b = test_support::test_location(2, "B");
+        let mut loc_c = test_support::test_location(3, "C");
+        let mut loc_d = test_support::test_location(4, "D");
         loc_a.connections = vec![LocationId(2), LocationId(3)];
         loc_b.connections = vec![LocationId(1), LocationId(4)];
         loc_c.connections = vec![LocationId(1), LocationId(4)];
         loc_d.connections = vec![LocationId(2), LocationId(3)];
-        let mut inv = test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         inv.current_location = Some(LocationId(4));
-        let mut hunter = test_enemy(1, "Hunter");
+        let mut hunter = test_support::test_enemy(1, "Hunter");
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
         GameStateBuilder::new()
@@ -56,8 +56,8 @@ fn hunter_move_tie_break_replays_identically() {
             .with_enemy(hunter)
             // Mid-Investigation invariant (slice 1a): the end_turn cascade pops
             // the InvestigationPhase anchor at investigation_phase_end.
-            .with_phase_anchor(game_core::state::Continuation::InvestigationPhase {
-                resume: game_core::state::InvestigationResume::TurnBegins,
+            .with_phase_anchor(Continuation::InvestigationPhase {
+                resume: InvestigationResume::TurnBegins,
             })
             // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame
             // the end_turn cascade pops before advancing into the Enemy phase.
@@ -69,8 +69,8 @@ fn hunter_move_tie_break_replays_identically() {
     // so LocationId(3) is offered option id 1.
 
     let mut s1 = diamond_state();
-    s1 = take_turn_action(s1, &TurnAction::EndTurn).state;
-    s1 = apply(
+    s1 = test_support::take_turn_action(s1, &TurnAction::EndTurn).state;
+    s1 = engine::apply(
         s1,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(1)),
@@ -78,8 +78,8 @@ fn hunter_move_tie_break_replays_identically() {
     )
     .state;
     let mut s2 = diamond_state();
-    s2 = take_turn_action(s2, &TurnAction::EndTurn).state;
-    s2 = apply(
+    s2 = test_support::take_turn_action(s2, &TurnAction::EndTurn).state;
+    s2 = engine::apply(
         s2,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(1)),

@@ -12,16 +12,14 @@
 //! shell. No scenario registry is installed, so the resolution hook is skipped
 //! and the round cannot end mid-cascade.
 
-use game_core::action::RosterEntry;
-use game_core::engine::{apply, EngineOutcome, OptionId};
-use game_core::seat_and_open;
+use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::state::{
-    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase,
+    Act, Agenda, CardCode, ChaosBag, ChaosToken, Continuation, GameState, InvestigatorId,
+    LocationId, Phase,
 };
-use game_core::test_support::{
-    take_turn_action, terminal_code, test_location, GameStateBuilder, MockRegistry, TEST_INV,
-};
-use game_core::{Action, InputResponse, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry, TEST_INV};
 
 /// Per-binary code prefix. Nothing here is looked up in the registry — the
 /// hand-size discard path only moves cards between hand and discard — so the
@@ -48,9 +46,9 @@ fn install() {
 
 /// The locally-built scenario shell's state: one revealed location to seat onto,
 /// a chaos bag, and two-card act/agenda decks ending in a terminal card. Phase =
-/// Mythos, round = 0 — ready for [`seat_and_open`].
+/// Mythos, round = 0 — ready for [`engine::seat_and_open`].
 fn setup() -> GameState {
-    let mut location = test_location(10, "Upkeep Location");
+    let mut location = test_support::test_location(10, "Upkeep Location");
     location.code = CardCode::new(format!("{PREFIX}loc"));
 
     let mut state = GameStateBuilder::new()
@@ -70,7 +68,7 @@ fn setup() -> GameState {
         },
         Agenda {
             // Terminal: last in the deck (ADR 0013). Its reverse reaches R2.
-            code: terminal_code(2),
+            code: test_support::terminal_code(2),
             doom_threshold: 2,
         },
     ];
@@ -81,7 +79,7 @@ fn setup() -> GameState {
         },
         Act {
             // Terminal: last in the deck. Its reverse reaches R1.
-            code: terminal_code(1),
+            code: test_support::terminal_code(1),
             clue_threshold: 2,
         },
     ];
@@ -113,14 +111,14 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     let inv1 = InvestigatorId(1);
 
     // seat_and_open → mulligan (keep hand).
-    let r1 = seat_and_open(setup(), &roster());
+    let r1 = engine::seat_and_open(setup(), &roster());
     assert!(
         matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
         "seat_and_open opens the mulligan prompt, got {:?}",
         r1.outcome
     );
 
-    let r2 = apply(
+    let r2 = engine::apply(
         r1.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -138,7 +136,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     assert!(
         !matches!(
             state.continuations.last(),
-            Some(game_core::state::Continuation::HandSizeDiscard(_))
+            Some(Continuation::HandSizeDiscard(_))
         ),
         "no discard should be pending before the round-ending EndTurn"
     );
@@ -146,7 +144,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     // Act 1: the round-ending EndTurn cascades Investigation → Enemy →
     // Upkeep (4.2 reset, 4.3 ready, 4.4 draw +1, 4.5 hand-size check).
     // The +1 draw pushes the hand to 12 (> cap), so 4.5 suspends.
-    let r3 = take_turn_action(state, &TurnAction::EndTurn);
+    let r3 = test_support::take_turn_action(state, &TurnAction::EndTurn);
 
     assert!(
         matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -156,7 +154,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     assert!(
         matches!(
             r3.state.continuations.last(),
-            Some(game_core::state::Continuation::HandSizeDiscard(_))
+            Some(Continuation::HandSizeDiscard(_))
         ),
         "a HandSizeDiscard frame must be on the stack while awaiting the discard"
     );
@@ -174,7 +172,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     // Act 2: submit PickMultiple with exactly (hand_len - cap) indices.
     let discard_count = hand_at_check - HAND_SIZE_LIMIT;
     let indices: Vec<u32> = (0..u32::try_from(discard_count).unwrap()).collect();
-    let r4 = apply(
+    let r4 = engine::apply(
         r3.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple {
@@ -201,7 +199,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     assert!(
         !matches!(
             r4.state.continuations.last(),
-            Some(game_core::state::Continuation::HandSizeDiscard(_))
+            Some(Continuation::HandSizeDiscard(_))
         ),
         "discard-pending must be cleared once the queue drains"
     );
@@ -231,8 +229,8 @@ fn upkeep_hand_size_discard_replay_is_deterministic() {
 
     // Drive the same sequence twice to verify replay determinism.
     let run_sequence = |initial: GameState| -> GameState {
-        let mut state = seat_and_open(initial, &roster()).state;
-        state = apply(
+        let mut state = engine::seat_and_open(initial, &roster()).state;
+        state = engine::apply(
             state,
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::PickMultiple { selected: vec![] },
@@ -242,8 +240,8 @@ fn upkeep_hand_size_discard_replay_is_deterministic() {
         // Pad hand to 11 so that the upkeep draw (4.4) pushes it to 12,
         // triggering the hand-size discard prompt at 4.5.
         pad_hand(&mut state);
-        state = take_turn_action(state, &TurnAction::EndTurn).state;
-        apply(
+        state = test_support::take_turn_action(state, &TurnAction::EndTurn).state;
+        engine::apply(
             state,
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::PickMultiple {

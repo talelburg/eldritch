@@ -15,16 +15,14 @@
 //! play, so the `at` forced fires (one clue). The difference is the re-scan.
 
 use card_dsl::dsl::{forced_on_event, native, reaction_on_event, EventPattern, EventTiming};
-use game_core::action::{InputResponse, PlayerAction};
-use game_core::engine::OptionId;
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, Continuation, GameState, InvestigatorId, Phase,
     UpkeepResume,
 };
-use game_core::test_support::{
-    run_upkeep_round_end, test_investigator, GameStateBuilder, MockRegistry,
-};
-use game_core::{apply, Action, Cx, EngineOutcome, EvalContext};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 const TEST_ACT: &str = "TESTACT";
 const TEST_X: &str = "TESTX";
@@ -73,7 +71,7 @@ fn install() {
 /// source) in their threat area with 0 clues.
 fn rescan_state() -> GameState {
     let inv = InvestigatorId(1);
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.clues = 0;
     investigator.threat_area.push(CardInPlay::enter_play(
         CardCode::new(TEST_X),
@@ -99,14 +97,14 @@ fn rescan_state() -> GameState {
 fn when_cell_picked_suppresses_the_at_forced() {
     let mut state = rescan_state();
     let mut events = Vec::new();
-    let out = run_upkeep_round_end(&mut state, &mut events);
+    let out = test_support::run_upkeep_round_end(&mut state, &mut events);
     assert!(
         matches!(out, EngineOutcome::AwaitingInput { .. }),
         "the `when` reaction window opens: {out:?}"
     );
     // Pick the `when` reaction (sole candidate): it removes TESTX before the
     // `at` cell is scanned, so the `at` forced never fires.
-    let r = apply(
+    let r = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -125,8 +123,8 @@ fn when_cell_skipped_leaves_the_at_forced_eligible() {
     // fires (one clue). Isolates "the re-scan suppressed it" from "it never fired".
     let mut state = rescan_state();
     let mut events = Vec::new();
-    let _ = run_upkeep_round_end(&mut state, &mut events);
-    let r = apply(
+    let _ = test_support::run_upkeep_round_end(&mut state, &mut events);
+    let r = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Skip,

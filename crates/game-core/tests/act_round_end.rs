@@ -4,21 +4,20 @@
 //! `ResolveInput(PickSingle)` fires the advance / `Skip` declines.
 
 use card_dsl::dsl::{native, reaction_on_event, Ability, EventPattern, EventTiming};
-use game_core::action::{InputResponse, PlayerAction};
-use game_core::engine::{OptionId, TimingEvent};
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::{self, Cx, EngineOutcome, OptionId, TimingEvent};
 use game_core::state::{
-    Act, CardCode, Continuation, GameState, InvestigatorId, Location, LocationId, Phase, TimingMode,
+    Act, CardCode, Continuation, GameState, InvestigatorId, Location, LocationId, Phase,
+    TimingMode, UpkeepResume,
 };
-use game_core::test_support::{
-    run_upkeep_round_end, test_investigator, GameStateBuilder, MockRegistry,
-};
-use game_core::{apply, round_end_advance, Action, Cx, EngineOutcome, EvalContext};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 /// The advance logic lives in the registry (01109's `When`-`RoundEnded` reaction
 /// native), so the coordinator fires it through the effect evaluator when its
 /// candidate is picked. A minimal mock registry stands in for `cards`.
 fn advance_native(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
-    round_end_advance(cx, "01112") // the Hallway
+    engine::round_end_advance(cx, "01112") // the Hallway
 }
 
 fn advance_reaction() -> Vec<Ability> {
@@ -42,12 +41,12 @@ fn install() {
 fn upkeep_round_end_state(clues: u8) -> GameState {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .with_turn_order([inv])
         .with_phase(Phase::Upkeep)
         // UpkeepPhase anchor (slice 1a): the round-end teardown pops it.
         .with_phase_anchor(Continuation::UpkeepPhase {
-            resume: game_core::state::UpkeepResume::Begins,
+            resume: UpkeepResume::Begins,
         })
         .with_location(Location::new(
             LocationId(2),
@@ -79,7 +78,7 @@ fn upkeep_round_end_state(clues: u8) -> GameState {
 fn opened_round_end_window(clues: u8) -> GameState {
     let mut state = upkeep_round_end_state(clues);
     let mut events = Vec::new();
-    let out = run_upkeep_round_end(&mut state, &mut events);
+    let out = test_support::run_upkeep_round_end(&mut state, &mut events);
     assert!(
         matches!(out, EngineOutcome::AwaitingInput { .. }),
         "the round-end `when` act-advance window should open: {out:?}"
@@ -103,7 +102,7 @@ fn opened_round_end_window(clues: u8) -> GameState {
 fn resolve_pick_fires_advance() {
     let state = opened_round_end_window(3);
     // The act-advance is the window's sole candidate (OptionId(0)).
-    let r = apply(
+    let r = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
@@ -123,7 +122,7 @@ fn resolve_pick_fires_advance() {
 #[test]
 fn resolve_skip_declines_advance() {
     let state = opened_round_end_window(3);
-    let r = apply(
+    let r = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::Skip,

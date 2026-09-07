@@ -14,21 +14,20 @@
 //! this file's rather than the `scenarios` crate's. Building it locally also
 //! makes it structural that nothing under `src/` can start a toy scenario.
 
+use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::card_data::{CardKind, CardMetadata};
 use game_core::dsl::{gain_resources, revelation, InvestigatorTarget};
-use game_core::engine::apply;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
 use game_core::scenario::{
     ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry,
 };
-use game_core::seat_and_open;
 use game_core::state::{
     Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{
-    take_turn_action, terminal_code, test_location, GameStateBuilder, MockRegistry, TEST_INV,
-};
-use game_core::{assert_event, Action, EngineOutcome, InputResponse, PlayerAction, TurnAction};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry, TEST_INV};
+use game_core::{assert_event, scenario_registry};
 
 /// Per-binary code prefix (ADR 0016: probe cards are test-local).
 const PREFIX: &str = "_sr_";
@@ -62,7 +61,7 @@ fn treachery_metadata() -> CardMetadata {
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = game_core::scenario_registry::install(ScenarioRegistry { module_for });
+    let _ = scenario_registry::install(ScenarioRegistry { module_for });
     // `install` composes `abilities_for_terminal`, which serves the reverses of
     // the terminal act/agenda cards `setup` seeds — without them a terminal
     // advance would reach no ending (ADR 0013).
@@ -82,7 +81,7 @@ fn install() {
 /// encounter card, and two-card act and agenda decks whose **last** card is the
 /// synthetic terminal card (ADR 0013) — act → R1, agenda → R2.
 fn setup() -> GameState {
-    let mut location = test_location(10, "Resolution Location");
+    let mut location = test_support::test_location(10, "Resolution Location");
     location.code = CardCode::new(format!("{PREFIX}loc"));
 
     let mut state = GameStateBuilder::new()
@@ -100,7 +99,7 @@ fn setup() -> GameState {
             doom_threshold: 2,
         },
         Agenda {
-            code: terminal_code(2),
+            code: test_support::terminal_code(2),
             doom_threshold: 2,
         },
     ];
@@ -110,7 +109,7 @@ fn setup() -> GameState {
             clue_threshold: 2,
         },
         Act {
-            code: terminal_code(1),
+            code: test_support::terminal_code(1),
             clue_threshold: 2,
         },
     ];
@@ -132,8 +131,8 @@ fn module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
     (id.as_str() == SCENARIO_ID).then_some(&MODULE)
 }
 
-fn roster() -> Vec<game_core::action::RosterEntry> {
-    vec![game_core::action::RosterEntry {
+fn roster() -> Vec<RosterEntry> {
+    vec![RosterEntry {
         investigator: CardCode::new(TEST_INV),
         deck: vec![],
     }]
@@ -143,7 +142,7 @@ fn roster() -> Vec<game_core::action::RosterEntry> {
 /// Both tests start from Investigation, round 1, and neither asserts on the
 /// events the close emits.
 fn keep_opening_hand(state: GameState) -> GameState {
-    apply(
+    engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickMultiple { selected: vec![] },
@@ -157,16 +156,16 @@ fn scenario_resolves_won_via_act_advance() {
     let inv = InvestigatorId(1);
 
     // seat_and_open + close the mulligan window -> Investigation, round 1.
-    let mut state = keep_opening_hand(seat_and_open(setup(), &roster()).state);
+    let mut state = keep_opening_hand(engine::seat_and_open(setup(), &roster()).state);
     assert_eq!(state.phase, Phase::Investigation);
 
     // Seed enough clues to advance both acts (2 + 2), then spend twice.
     state.investigators.get_mut(&inv).unwrap().clues = 4;
     let mut all_events = Vec::new();
-    let r = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv }); // act 0 -> 1
+    let r = test_support::take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv }); // act 0 -> 1
     all_events.extend(r.events);
     let state = r.state;
-    let r = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv }); // act 1 -> Won
+    let r = test_support::take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv }); // act 1 -> Won
     all_events.extend(r.events);
     let (state, events) = (r.state, all_events);
 
@@ -181,7 +180,7 @@ fn scenario_resolves_won_via_act_advance() {
 #[test]
 fn scenario_resolves_lost_via_doom() {
     // seat_and_open + close mulligan -> Investigation, round 1.
-    let mut state = keep_opening_hand(seat_and_open(setup(), &roster()).state);
+    let mut state = keep_opening_hand(engine::seat_and_open(setup(), &roster()).state);
 
     // Each round: EndTurn cascades into Mythos, which adds doom (and may
     // advance the agenda) before pausing at step 1.4 for the encounter
@@ -196,7 +195,7 @@ fn scenario_resolves_lost_via_doom() {
     // drift and only draws when a Mythos draw is actually pending.
     let mut all_events = Vec::new();
     for _ in 0..12 {
-        let r1 = take_turn_action(state, &TurnAction::EndTurn);
+        let r1 = test_support::take_turn_action(state, &TurnAction::EndTurn);
         all_events.extend(r1.events);
         let latched = r1.state.ending.is_some();
         if latched {
@@ -220,7 +219,7 @@ fn scenario_resolves_lost_via_doom() {
             break;
         }
         if state.current_encounter_drawer().is_some() {
-            let r2 = apply(
+            let r2 = engine::apply(
                 state,
                 Action::Player(PlayerAction::ResolveInput {
                     response: InputResponse::Confirm,

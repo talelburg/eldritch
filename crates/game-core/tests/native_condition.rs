@@ -7,14 +7,13 @@
 //! `apply_effect` is `pub(crate)` — same shape as `native_effect.rs`.
 
 use card_dsl::dsl::{
-    forced_on_event, gain_resources, if_else, native_condition, Ability, EventPattern, EventTiming,
-    InvestigatorTarget,
+    self, forced_on_event, gain_resources, if_else, native_condition, Ability, EventPattern,
+    EventTiming, InvestigatorTarget,
 };
-use game_core::state::{Agenda, CardCode, GameState, InvestigatorId, Phase};
-use game_core::test_support::{
-    fire_forced_on_phase_end, test_investigator, GameStateBuilder, MockRegistry,
-};
-use game_core::{EngineOutcome, EvalContext};
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::EngineOutcome;
+use game_core::state::{self, Agenda, CardCode, GameState, InvestigatorId};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 const AGENDA: &str = "TEST-AGENDA";
 const AGENDA_BAD: &str = "TEST-AGENDA-BAD";
@@ -25,7 +24,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 fn gated(tag: &'static str) -> Vec<Ability> {
     vec![forced_on_event(
         EventPattern::PhaseEnded {
-            phase: card_dsl::dsl::Phase::Enemy,
+            phase: dsl::Phase::Enemy,
         },
         EventTiming::After,
         if_else(
@@ -55,7 +54,7 @@ fn state_with_agenda(code: &str, doom: u8) -> GameState {
     // `turn_order` must be non-empty: `PhaseEnded` forced dispatch binds
     // the controller to `turn_order.first()` and returns no hits otherwise.
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .with_turn_order([INV])
         .build();
     state.agenda_deck = vec![Agenda {
@@ -76,8 +75,12 @@ fn native_condition_holding_takes_the_then_branch() {
     let mut state = state_with_agenda(AGENDA, 1);
     let before = resources(&state);
     let mut events = Vec::new();
-    let outcome =
-        fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy, EventTiming::After);
+    let outcome = test_support::fire_forced_on_phase_end(
+        &mut state,
+        &mut events,
+        state::Phase::Enemy,
+        EventTiming::After,
+    );
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(resources(&state), before + 2, "predicate true → `then`");
 }
@@ -87,8 +90,12 @@ fn native_condition_failing_takes_the_else_branch() {
     let mut state = state_with_agenda(AGENDA, 0);
     let before = resources(&state);
     let mut events = Vec::new();
-    let outcome =
-        fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy, EventTiming::After);
+    let outcome = test_support::fire_forced_on_phase_end(
+        &mut state,
+        &mut events,
+        state::Phase::Enemy,
+        EventTiming::After,
+    );
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(resources(&state), before + 5, "predicate false → `else_`");
 }
@@ -100,8 +107,12 @@ fn native_condition_rejects_unknown_tag() {
     let mut state = state_with_agenda(AGENDA_BAD, 1);
     let before = resources(&state);
     let mut events = Vec::new();
-    let outcome =
-        fire_forced_on_phase_end(&mut state, &mut events, Phase::Enemy, EventTiming::After);
+    let outcome = test_support::fire_forced_on_phase_end(
+        &mut state,
+        &mut events,
+        state::Phase::Enemy,
+        EventTiming::After,
+    );
     assert!(
         matches!(outcome, EngineOutcome::Rejected { .. }),
         "unknown tag rejects; got {outcome:?}"

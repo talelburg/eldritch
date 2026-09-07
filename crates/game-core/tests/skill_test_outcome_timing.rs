@@ -14,12 +14,10 @@ use game_core::dsl::{
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase,
-    SkillKind, TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId,
+    LocationId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{
-    perform_skill_test_no_commits, test_investigator, test_location, GameStateBuilder, MockRegistry,
-};
+use game_core::test_support::{self, GameStateBuilder, MockRegistry};
 
 /// Mock threat-area card: a **forced** ability keyed to *any* successful skill
 /// test (`kind: None`), dealing 1 horror to the controller. Forced (not a
@@ -48,9 +46,9 @@ fn install_mock_registry() {
 
 /// Build a state with the investigator at `LocationId(10)`, a single-`Numeric(0)`
 /// chaos bag, and the given threat-area card codes in play.
-fn state_with_threat_area(threat: &[&str]) -> (game_core::GameState, InvestigatorId) {
+fn state_with_threat_area(threat: &[&str]) -> (GameState, InvestigatorId) {
     let id = InvestigatorId(1);
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(10));
     for (i, code) in threat.iter().enumerate() {
         inv.threat_area.push(CardInPlay::enter_play(
@@ -62,7 +60,7 @@ fn state_with_threat_area(threat: &[&str]) -> (game_core::GameState, Investigato
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
         .with_investigator(inv)
-        .with_location(test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build();
@@ -75,7 +73,7 @@ fn general_timing_point_fires_for_non_investigate_test() {
     // 3 + Numeric(0) = 3 >= difficulty 2 -> success. The forced ability keyed to
     // `SkillTestResolved { Success, kind: None }` must fire on this Plain test.
     let (state, id) = state_with_threat_area(&[ANY_SUCCESS_FORCED]);
-    let result = perform_skill_test_no_commits(state, id, SkillKind::Intellect, 2);
+    let result = test_support::perform_skill_test_no_commits(state, id, SkillKind::Intellect, 2);
 
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_event!(
@@ -96,7 +94,7 @@ fn general_timing_point_opens_no_window_without_a_listener() {
     // A passing Plain test with no listening card resolves straight to Done and
     // takes no horror — generalizing the emit adds no spurious window/prompt.
     let (state, id) = state_with_threat_area(&[]);
-    let result = perform_skill_test_no_commits(state, id, SkillKind::Intellect, 2);
+    let result = test_support::perform_skill_test_no_commits(state, id, SkillKind::Intellect, 2);
 
     assert_eq!(
         result.outcome,
