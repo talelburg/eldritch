@@ -1,21 +1,22 @@
 //! Headless render tests for the turn tracker. wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
+use game_core::engine::EngineOutcome;
 use game_core::state::{GameStateBuilder, Phase};
-use game_core::test_support::fixtures::test_investigator;
-use game_core::EngineOutcome;
+use game_core::test_support::fixtures;
 use leptos::prelude::{document, provide_context, RwSignal, Update};
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
-use web::store::{reduce, ClientState};
+use web::store::{self, ClientState};
 use web::turn_tracker::TurnTrackerView;
+use web_sys::Element;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
 async fn mount_at(phase: Phase, round: u32) {
     let state = GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
+        .with_investigator(fixtures::test_investigator(1))
         .with_phase(phase)
         .with_round(round)
         .build();
@@ -25,7 +26,7 @@ async fn mount_at(phase: Phase, round: u32) {
         leptos::view! { <TurnTrackerView/> }
     });
     store.update(|s| {
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Hello {
                 state: Box::new(state),
@@ -37,13 +38,13 @@ async fn mount_at(phase: Phase, round: u32) {
     leptos::task::tick().await;
 }
 
-fn last_tracker() -> web_sys::Element {
+fn last_tracker() -> Element {
     let nodes = document()
         .query_selector_all(".turn-tracker")
         .expect("query ok");
     nodes
         .item(nodes.length() - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .expect("a .turn-tracker")
 }
 

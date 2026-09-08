@@ -5,9 +5,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use game_core::card_data::CardKind;
+use game_core::engine::{ChoiceOption, OptionTarget};
 use game_core::state::{CardCode, CardInPlay, GameState, Location, LocationId};
-use game_core::ChoiceOption;
 use leptos::prelude::*;
+
+use crate::interaction::{self, PendingOptions};
+use crate::names;
 
 /// Authored grid cell `(col, row)` for a known location code — the layout the
 /// client ships for scenarios it knows. The Gathering: the Study sits isolated
@@ -226,12 +229,9 @@ fn card_token(
     note: &'static str,
     pending: &[ChoiceOption],
 ) -> impl IntoView {
-    let name = crate::names::card_name(&card.code);
+    let name = names::card_name(&card.code);
     let exhausted = card.exhausted;
-    let menu_opts = crate::interaction::options_for(
-        pending,
-        game_core::OptionTarget::CardInstance(card.instance_id),
-    );
+    let menu_opts = interaction::options_for(pending, OptionTarget::CardInstance(card.instance_id));
     let actionable = !menu_opts.is_empty();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
@@ -244,7 +244,7 @@ fn card_token(
                 // wasm-only OutboundTx. On host the block is empty; `menu_opts`
                 // is still used above by `actionable`, so no unused-var warning.
                 #[cfg(target_arch = "wasm32")]
-                actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
+                actionable.then(|| interaction::menu_layer(menu_opts, open))
             }
         </div>
     }
@@ -257,11 +257,7 @@ fn rail_has_options(loc: &Location, pending: &[ChoiceOption]) -> bool {
         .iter()
         .chain(loc.attachments.iter())
         .any(|c| {
-            !crate::interaction::options_for(
-                pending,
-                game_core::OptionTarget::CardInstance(c.instance_id),
-            )
-            .is_empty()
+            !interaction::options_for(pending, OptionTarget::CardInstance(c.instance_id)).is_empty()
         })
 }
 
@@ -280,7 +276,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
 
     // The live prompt's options, for glow + per-node context menus (#536).
     // Absent (native / no prompt) → empty → no node is actionable.
-    let pending = use_context::<crate::interaction::PendingOptions>()
+    let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
 
@@ -336,9 +332,9 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                 "left:{left}px;top:{top}px;width:{NODE_W}px;\
                  --loc-card-w:{CARD_W}px;--loc-card-h:{CARD_H}px;"
             );
-            let menu_opts = crate::interaction::options_for(
+            let menu_opts = interaction::options_for(
                 &pending,
-                game_core::OptionTarget::Location(loc.id),
+                OptionTarget::Location(loc.id),
             );
             let actionable = !menu_opts.is_empty();
             #[cfg(target_arch = "wasm32")]
@@ -425,7 +421,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                         // the wasm-only OutboundTx. On host the block is empty; `menu_opts`
                         // is still used above by `actionable`, so no unused-var warning.
                         #[cfg(target_arch = "wasm32")]
-                        actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
+                        actionable.then(|| interaction::menu_layer(menu_opts, open))
                     }
                 </div>
             }
@@ -444,10 +440,10 @@ pub fn location_map(game: &GameState) -> impl IntoView {
 
 #[cfg(test)]
 mod tests {
-    use super::{layout_positions, location_grid_pos, rail_has_options};
-    use game_core::state::{CardCode, CardInPlay, CardInstanceId, LocationId};
-    use game_core::test_support::fixtures::test_location;
-    use game_core::{ChoiceOption, OptionId, OptionTarget};
+    use super::*;
+    use game_core::engine::OptionId;
+    use game_core::state::CardInstanceId;
+    use game_core::test_support::fixtures;
 
     #[test]
     fn known_gathering_codes_have_authored_cells() {
@@ -515,7 +511,7 @@ mod tests {
     #[test]
     fn a_rail_card_anchored_option_is_seen_by_the_node() {
         let lita = CardInstanceId(60);
-        let mut parlor = test_location(5, "Parlor");
+        let mut parlor = fixtures::test_location(5, "Parlor");
         parlor
             .cards_at_location
             .push(CardInPlay::enter_play(CardCode::new("01117"), lita));
@@ -536,7 +532,7 @@ mod tests {
     #[test]
     fn an_attachment_anchored_option_is_seen_too() {
         let fog = CardInstanceId(61);
-        let mut parlor = test_location(5, "Parlor");
+        let mut parlor = fixtures::test_location(5, "Parlor");
         parlor
             .attachments
             .push(CardInPlay::enter_play(CardCode::new("01168"), fog));

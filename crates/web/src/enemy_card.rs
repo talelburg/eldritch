@@ -4,10 +4,13 @@
 //! built around registry lookup + a `CardInPlay`). Shares the card CSS / chip
 //! vocabulary and the text renderer. Display-only.
 
+use game_core::card_registry;
+use game_core::engine::OptionTarget;
 use game_core::state::Enemy;
 use leptos::prelude::*;
 
 use crate::card::{parse_card_text, render_segments};
+use crate::interaction::{self, PendingOptions};
 
 /// Combat stat chips for an enemy: fight, evade, health (damage/max), attack
 /// (damage + horror), in that order.
@@ -57,7 +60,7 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
     } else {
         format!("{}.", enemy.traits.join(". "))
     };
-    let text_view = game_core::card_registry::current()
+    let text_view = card_registry::current()
         .and_then(|r| (r.metadata_for)(&enemy.code))
         .and_then(|m| m.text.as_deref())
         .map(|t| render_segments(parse_card_text(t)));
@@ -66,11 +69,10 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
         exhausted.then(|| view! { <span class="card-exhausted">"Exhausted"</span> });
     // Interactivity (#537): route the live prompt's options to this enemy; glow +
     // open a context menu of its offered actions (Fight/Evade) when non-empty.
-    let pending = use_context::<crate::interaction::PendingOptions>()
+    let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
-    let menu_opts =
-        crate::interaction::options_for(&pending, game_core::OptionTarget::Enemy(enemy.id));
+    let menu_opts = interaction::options_for(&pending, OptionTarget::Enemy(enemy.id));
     let actionable = !menu_opts.is_empty();
     #[cfg(target_arch = "wasm32")]
     let open = RwSignal::new(None::<(i32, i32)>);
@@ -105,7 +107,7 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
                 // wasm-only trigger + menu (web_sys / OutboundTx); host: empty,
                 // `menu_opts` used above by `actionable` (no unused-var warning).
                 #[cfg(target_arch = "wasm32")]
-                actionable.then(|| crate::interaction::menu_layer(menu_opts, open))
+                actionable.then(|| interaction::menu_layer(menu_opts, open))
             }
         </div>
     }
@@ -114,11 +116,11 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use game_core::test_support::fixtures::test_enemy;
+    use game_core::test_support::fixtures;
 
     #[test]
     fn stat_chips_in_order() {
-        let mut e = test_enemy(1, "Ghoul");
+        let mut e = fixtures::test_enemy(1, "Ghoul");
         e.fight = 3;
         e.evade = 2;
         e.max_health = 3;
@@ -138,7 +140,7 @@ mod tests {
 
     #[test]
     fn keyword_chips_only_when_present() {
-        let mut e = test_enemy(1, "Ghoul Priest");
+        let mut e = fixtures::test_enemy(1, "Ghoul Priest");
         e.hunter = true;
         e.retaliate = true;
         e.victory = Some(2);
@@ -154,7 +156,7 @@ mod tests {
 
     #[test]
     fn keyword_chips_empty_for_plain_enemy() {
-        let e = test_enemy(2, "Swarm of Rats");
+        let e = fixtures::test_enemy(2, "Swarm of Rats");
         assert!(enemy_keyword_chips(&e).is_empty());
     }
 }

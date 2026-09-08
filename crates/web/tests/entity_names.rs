@@ -3,14 +3,16 @@
 //! `cards::REGISTRY` (a code→name source) without colliding with other binaries.
 #![cfg(target_arch = "wasm32")]
 
+use cards::REGISTRY;
+use game_core::card_registry;
+use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::fixtures::{test_investigator, test_location};
-use game_core::EngineOutcome;
+use game_core::test_support::fixtures;
 use leptos::prelude::{provide_context, RwSignal, Update};
 use protocol::ServerMessage;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
-use web::store::{reduce, ClientState};
+use web::store::{self, ClientState};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -18,10 +20,10 @@ wasm_bindgen_test_configure!(run_in_browser);
 async fn board_renders_card_and_location_names() {
     // Install the real corpus registry (the code→name source). Idempotent
     // (OnceLock, first-wins); `web` has no `ctor` dev-dep, so install in-test.
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
 
     let inv_id = InvestigatorId(1);
-    let mut inv = test_investigator(1);
+    let mut inv = fixtures::test_investigator(1);
     // Use a real investigator code so the board's max-health/sanity reads resolve
     // against cards::REGISTRY (the synthetic TEST_INV code is absent from it).
     inv.investigator_card.code = CardCode::new("01001"); // Roland Banks
@@ -31,7 +33,7 @@ async fn board_renders_card_and_location_names() {
     let state = GameStateBuilder::new()
         .with_active_investigator(inv_id)
         .with_investigator(inv)
-        .with_location(test_location(10, "Study"))
+        .with_location(fixtures::test_location(10, "Study"))
         .build();
 
     let store = RwSignal::new(ClientState::default());
@@ -40,7 +42,7 @@ async fn board_renders_card_and_location_names() {
         leptos::view! { <BoardView/> }
     });
     store.update(|s| {
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Hello {
                 state: Box::new(state),

@@ -15,12 +15,17 @@
 //!
 //! [`live_decision`] is pure and native-tested; the view's submit is wasm-only.
 
-use game_core::state::{AdvanceDeck, GameState};
-use game_core::{ChoiceOption, EngineOutcome, OptionTarget, PromptNature};
+#[cfg(target_arch = "wasm32")]
+use game_core::action::InputResponse;
+use game_core::engine::{ChoiceOption, EngineOutcome, OptionTarget, PromptNature};
+use game_core::state::{AdvanceDeck, GameState, Investigator};
 use leptos::prelude::*;
 
 use crate::act_agenda::{deck_face, name_and_text_src, Face};
-use crate::store::ClientState;
+#[cfg(target_arch = "wasm32")]
+use crate::controls;
+use crate::drag::Drag;
+use crate::store::{self, ClientState};
 
 /// The card a decision came from, as the modal names it: the printed name and
 /// the printed text of the **face the board is showing** — an advancing act or
@@ -113,7 +118,7 @@ fn decision_source(game: &GameState, target: &OptionTarget) -> Option<DecisionSo
         OptionTarget::CardInstance(instance_id) => (
             game.investigators
                 .values()
-                .flat_map(game_core::state::Investigator::controlled_card_instances)
+                .flat_map(Investigator::controlled_card_instances)
                 .find(|card| card.instance_id == *instance_id)?
                 .code
                 .clone(),
@@ -139,11 +144,11 @@ fn decision_source(game: &GameState, target: &OptionTarget) -> Option<DecisionSo
 /// a press that lands on a branch button starts no drag.
 #[component]
 pub fn DecisionView() -> impl IntoView {
-    let store = crate::store::use_store();
+    let store = store::use_store();
     // The prompt's fingerprint: which applied batch a live modal is up for. The
     // batch count is what tells one prompt from the next when liveness does not
     // — one decision answered straight into another (#857).
-    let drag = crate::drag::Drag::per_prompt(move || {
+    let drag = Drag::per_prompt(move || {
         let st = store.get();
         modal_is_live(&st).then_some(st.log.len())
     });
@@ -175,8 +180,8 @@ pub fn DecisionView() -> impl IntoView {
                                 #[cfg(target_arch = "wasm32")]
                                 {
                                     move |_| {
-                                        crate::controls::submit(
-                                            game_core::InputResponse::PickSingle(id),
+                                        controls::submit(
+                                            InputResponse::PickSingle(id),
                                             header.clone(),
                                         );
                                     }
@@ -216,12 +221,19 @@ pub fn DecisionView() -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cards::REGISTRY;
+    use game_core::card_data::SkillKind;
+    use game_core::card_registry;
+    use game_core::engine::{InputRequest, OptionId};
+    use game_core::event::Event;
     use game_core::state::{
-        Act, Agenda, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId,
-        UseKind,
+        Act, AdvanceStep, AdvanceTrigger, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken,
+        Continuation, GameStateBuilder, InvestigatorId, TokenResolution, UseKind,
     };
-    use game_core::test_support::fixtures::test_investigator;
-    use game_core::{InputRequest, OptionId};
+    use game_core::test_support::fixtures;
+
+    use crate::skill_test_result;
+    use crate::store::ConnStatus;
 
     const FIRST_AID: &str = "01019";
     const AGENDA_1: &str = "01105";
@@ -230,20 +242,20 @@ mod tests {
 
     /// The continuation the engine pushes while `deck`'s advance fires its
     /// reverse — the step a decision printed on that reverse arises from.
-    fn advancing(deck: AdvanceDeck, code: CardCode) -> game_core::state::Continuation {
-        game_core::state::Continuation::AdvanceReverse {
+    fn advancing(deck: AdvanceDeck, code: CardCode) -> Continuation {
+        Continuation::AdvanceReverse {
             deck,
             from: 0,
             leaving_code: code,
-            step: game_core::state::AdvanceStep::FireReverse,
-            trigger: game_core::state::AdvanceTrigger::Forced,
+            step: AdvanceStep::FireReverse,
+            trigger: AdvanceTrigger::Forced,
         }
     }
 
     fn install_registry() {
         // Idempotent (`OnceLock`, first-wins) and safe in the web lib test
         // binary, which has no competing installer.
-        let _ = game_core::card_registry::install(cards::REGISTRY);
+        let _ = card_registry::install(REGISTRY);
     }
 
     fn branches() -> Vec<ChoiceOption> {
@@ -257,14 +269,14 @@ mod tests {
     fn awaiting(game: Option<GameState>, request: InputRequest) -> ClientState {
         ClientState {
             game,
-            outcome: Some(game_core::test_support::fixtures::awaiting_request(request)),
+            outcome: Some(fixtures::awaiting_request(request)),
             ..Default::default()
         }
     }
 
     /// First Aid in play, so a `CardInstance` anchor resolves.
     fn board_with_first_aid() -> GameState {
-        let mut inv = test_investigator(1);
+        let mut inv = fixtures::test_investigator(1);
         let mut kit = CardInPlay::enter_play(CardCode::new(FIRST_AID), KIT);
         kit.uses.insert(UseKind::Supplies, 3);
         inv.cards_in_play.push(kit);
@@ -320,7 +332,7 @@ mod tests {
     fn an_advancing_agenda_is_named_by_its_reverse() {
         install_registry();
         let mut game = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(fixtures::test_investigator(1))
             .build();
         game.agenda_deck = vec![Agenda {
             code: CardCode::new(AGENDA_1),
@@ -397,25 +409,22 @@ mod tests {
         );
         assert!(modal_is_live(&decision));
         assert!(
-            !crate::skill_test_result::modal_is_live(&decision),
+            !skill_test_result::modal_is_live(&decision),
             "a decision is a PickSingle, so the result modal stands down",
         );
 
         let mut ack = ClientState {
             last_skill_test_difficulty: Some(3),
-            last_revealed_token: Some((
-                game_core::state::ChaosToken::Numeric(0),
-                game_core::state::TokenResolution::Modifier(0),
-            )),
-            last_skill_test_result: Some(game_core::Event::SkillTestSucceeded {
+            last_revealed_token: Some((ChaosToken::Numeric(0), TokenResolution::Modifier(0))),
+            last_skill_test_result: Some(Event::SkillTestSucceeded {
                 investigator: InvestigatorId(1),
-                skill: game_core::state::SkillKind::Willpower,
+                skill: SkillKind::Willpower,
                 margin: 0,
             }),
             ..awaiting(None, InputRequest::confirm("Acknowledge"))
         };
-        ack.status = crate::store::ConnStatus::Connected;
-        assert!(crate::skill_test_result::modal_is_live(&ack));
+        ack.status = ConnStatus::Connected;
+        assert!(skill_test_result::modal_is_live(&ack));
         assert!(
             !modal_is_live(&ack),
             "the acknowledge pause is a Confirm, so the decision modal stands down",
@@ -431,7 +440,7 @@ mod tests {
     fn an_advancing_act_is_named_and_quoted_by_its_reverse() {
         install_registry();
         let mut game = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(fixtures::test_investigator(1))
             .build();
         game.act_deck = vec![Act {
             code: CardCode::new(ACT_3),
@@ -470,7 +479,7 @@ mod tests {
     fn an_act_anchor_resolves_to_the_current_act() {
         install_registry();
         let mut game = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(fixtures::test_investigator(1))
             .build();
         game.act_deck = vec![Act {
             code: CardCode::new("01110"),

@@ -7,9 +7,11 @@
 //! `TurnControl` anchor rather than by its text.
 #![cfg(target_arch = "wasm32")]
 
-use futures::channel::mpsc;
-use game_core::test_support::fixtures::{awaiting_commit_input, awaiting_skippable_commit_input};
-use game_core::{InputResponse, OptionId, PlayerAction};
+use futures::channel::mpsc::{self, UnboundedReceiver};
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
+use game_core::state::InvestigatorId;
+use game_core::test_support::fixtures;
 use leptos::prelude::*;
 use protocol::ClientMessage;
 use std::collections::BTreeSet;
@@ -19,15 +21,13 @@ use web::interaction::MultiSelect;
 use web::prompt_banner::PromptBanner;
 use web::store::ClientState;
 use web::transport::OutboundTx;
+use web_sys::{Element, HtmlElement};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
 /// Mount `PromptBanner` with a store carrying `outcome`, a `MultiSelect` whose
 /// `selected` starts as `preselected`, and a capturing channel.
-async fn mount(
-    outcome: game_core::EngineOutcome,
-    preselected: &[u32],
-) -> mpsc::UnboundedReceiver<ClientMessage> {
+async fn mount(outcome: EngineOutcome, preselected: &[u32]) -> UnboundedReceiver<ClientMessage> {
     let store = RwSignal::new(ClientState::default());
     store.update(|s| s.outcome = Some(outcome));
     let selected = RwSignal::new(preselected.iter().copied().collect::<BTreeSet<u32>>());
@@ -46,19 +46,19 @@ async fn mount(
 
 /// The last-mounted `.pb-root` wrapper — scopes queries to this test's mount so
 /// DOM accumulation across tests can't shadow an "absence" assertion.
-fn last_root() -> web_sys::Element {
+fn last_root() -> Element {
     let roots = document().query_selector_all(".pb-root").expect("query");
     roots
         .item(roots.length() - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .expect("a .pb-root")
 }
 
-fn last_banner() -> web_sys::Element {
+fn last_banner() -> Element {
     last_root()
         .query_selector(".prompt-banner")
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .expect("a .prompt-banner")
 }
 
@@ -66,14 +66,14 @@ fn click(sel: &str) {
     last_banner()
         .query_selector(sel)
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("element")
         .click();
 }
 
 #[wasm_bindgen_test]
 async fn confirm_submits_the_selected_indices() {
-    let mut rx = mount(awaiting_commit_input("Commit"), &[0, 2]).await;
+    let mut rx = mount(fixtures::awaiting_commit_input("Commit"), &[0, 2]).await;
     click(".confirm");
     leptos::task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
@@ -92,7 +92,7 @@ async fn confirm_submits_the_selected_indices() {
 
 #[wasm_bindgen_test]
 async fn confirm_with_no_selection_submits_empty() {
-    let mut rx = mount(awaiting_commit_input("Commit"), &[]).await;
+    let mut rx = mount(fixtures::awaiting_commit_input("Commit"), &[]).await;
     click(".confirm");
     leptos::task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
@@ -106,7 +106,7 @@ async fn confirm_with_no_selection_submits_empty() {
 
 #[wasm_bindgen_test]
 async fn skippable_prompt_shows_pass_that_submits_skip() {
-    let mut rx = mount(awaiting_skippable_commit_input("Commit"), &[]).await;
+    let mut rx = mount(fixtures::awaiting_skippable_commit_input("Commit"), &[]).await;
     click(".pass");
     leptos::task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
@@ -120,7 +120,11 @@ async fn skippable_prompt_shows_pass_that_submits_skip() {
 
 #[wasm_bindgen_test]
 async fn renders_the_prompt_text() {
-    let _rx = mount(awaiting_commit_input("Redraw your opening hand"), &[]).await;
+    let _rx = mount(
+        fixtures::awaiting_commit_input("Redraw your opening hand"),
+        &[],
+    )
+    .await;
     assert!(
         last_banner()
             .text_content()
@@ -136,11 +140,7 @@ async fn an_unanchored_confirm_gets_text_and_a_confirm_button() {
     // client does not specifically home still tells the player the engine is
     // waiting — and an un-anchored `Confirm` the result modal is not carrying gets
     // a Confirm here rather than being unreachable.
-    let mut rx = mount(
-        game_core::test_support::fixtures::awaiting_confirm_input("Something happened"),
-        &[],
-    )
-    .await;
+    let mut rx = mount(fixtures::awaiting_confirm_input("Something happened"), &[]).await;
     assert!(last_banner()
         .text_content()
         .unwrap_or_default()
@@ -160,8 +160,7 @@ async fn an_anchored_confirm_gets_text_but_no_banner_confirm() {
     // The Mythos draw's button lives on the encounter deck. The banner still
     // names the prompt — the floor — but must not render a second Confirm, which
     // is the duplication the bar retirement exists to end.
-    use game_core::{EngineOutcome, OptionTarget};
-    let mut outcome = game_core::test_support::fixtures::awaiting_confirm_input("Draw");
+    let mut outcome = fixtures::awaiting_confirm_input("Draw");
     if let EngineOutcome::AwaitingInput { request, .. } = &mut outcome {
         request.target = Some(OptionTarget::EncounterDeck);
     }
@@ -177,8 +176,7 @@ async fn an_anchored_confirm_gets_text_but_no_banner_confirm() {
 #[wasm_bindgen_test]
 async fn skippable_window_shows_prompt_and_pass_submits_skip() {
     // A skippable PickSingle (reaction/Fast window) → banner with prompt + Pass.
-    let outcome =
-        game_core::test_support::fixtures::awaiting_skippable_pick_single_input("You may trigger");
+    let outcome = fixtures::awaiting_skippable_pick_single_input("You may trigger");
     let mut rx = mount(outcome, &[]).await;
     assert!(
         last_banner()
@@ -204,11 +202,7 @@ async fn the_open_turn_menu_is_suppressed_by_its_anchor() {
     // `TurnControl` anchor the engine attaches, never by matching "Choose an
     // action" — the string coupling ADR 0011 exists to prevent. Reserving the one
     // persistent surface means not spending it on every ordinary turn.
-    use game_core::state::InvestigatorId;
-    use game_core::test_support::fixtures::awaiting_pick_single_with;
-    use game_core::ChoiceOption;
-    use game_core::{EngineOutcome, OptionTarget};
-    let mut outcome = awaiting_pick_single_with(
+    let mut outcome = fixtures::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "End turn")
             .at(OptionTarget::TurnControl(InvestigatorId(1)))],
@@ -232,10 +226,7 @@ async fn the_open_turn_menu_suppresses_its_text_but_not_its_controls() {
     // with no current location, EndTurn off-frame, both pinned by engine tests —
     // has no board home, so suppressing the whole banner would make it
     // unreachable rather than merely misplaced (ADR 0011's floor).
-    use game_core::state::InvestigatorId;
-    use game_core::test_support::fixtures::awaiting_pick_single_with;
-    use game_core::{ChoiceOption, EngineOutcome, OptionTarget};
-    let mut outcome = awaiting_pick_single_with(
+    let mut outcome = fixtures::awaiting_pick_single_with(
         "Choose an action",
         vec![
             ChoiceOption::new(OptionId(0), "End turn")
@@ -273,7 +264,7 @@ async fn an_unanchored_pick_single_still_reaches_the_banner() {
     // Not skippable, not multi, no board home: with the flat bar gone the banner
     // is the only thing between this option and being unreachable (#541). The
     // fixture's two options are un-anchored.
-    let outcome = game_core::test_support::fixtures::awaiting_pick_single_input("Choose one");
+    let outcome = fixtures::awaiting_pick_single_input("Choose one");
     let mut rx = mount(outcome, &[]).await;
     let banner = last_banner();
     assert!(banner
@@ -302,14 +293,14 @@ async fn skippable_window_renders_options_that_submit_pick_single() {
     // The round-end-advance fix (#549): a skippable window's options render as
     // banner buttons (not only Pass), so a Board/Global option is reachable.
     let mut rx = mount(
-        game_core::test_support::fixtures::awaiting_skippable_pick_single_input("You may advance"),
+        fixtures::awaiting_skippable_pick_single_input("You may advance"),
         &[],
     )
     .await;
     let btn = last_banner()
         .query_selector(".banner-option")
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("an option button");
     assert_eq!(btn.text_content().unwrap_or_default(), "Resolve");
     btn.click();
@@ -327,9 +318,7 @@ async fn skippable_window_renders_options_that_submit_pick_single() {
 async fn banner_renders_only_unanchored_options() {
     // S5 (#540): once the round-end advance is anchored to the act card, the banner
     // stops duplicating anchored options — it renders only un-anchored ones.
-    use game_core::test_support::fixtures::awaiting_skippable_pick_single_with;
-    use game_core::{ChoiceOption, OptionTarget};
-    let outcome = awaiting_skippable_pick_single_with(
+    let outcome = fixtures::awaiting_skippable_pick_single_with(
         "You may advance",
         vec![
             ChoiceOption::new(OptionId(0), "Advance act").at(OptionTarget::Act),
@@ -346,7 +335,7 @@ async fn banner_renders_only_unanchored_options() {
     );
     let btn = btns
         .item(0)
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("the one banner button");
     assert_eq!(btn.text_content().unwrap_or_default(), "Some global");
     btn.click();

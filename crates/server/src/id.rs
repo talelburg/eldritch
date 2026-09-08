@@ -4,12 +4,14 @@
 //! contract). Generation uses `uuid`, a persistence concern, so it stays
 //! here rather than in the wasm-safe `protocol` crate.
 
+use uuid::Uuid;
+
 pub use protocol::GameId;
 
 /// Generate a fresh random game id (UUID v4).
 #[must_use]
 pub fn random_game_id() -> GameId {
-    GameId::new(uuid::Uuid::new_v4().to_string())
+    GameId::new(Uuid::new_v4().to_string())
 }
 
 /// Generate a fresh random RNG seed for a new game's setup shuffle (#467).
@@ -24,12 +26,12 @@ pub fn random_game_id() -> GameId {
 /// persisted as the frozen seed, so replay stays deterministic.
 #[must_use]
 pub fn random_seed() -> u64 {
-    uuid::Uuid::new_v4().as_u64_pair().0
+    Uuid::new_v4().as_u64_pair().0
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{random_game_id, random_seed};
+    use super::*;
 
     #[test]
     fn random_ids_are_distinct() {

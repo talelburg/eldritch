@@ -1,7 +1,8 @@
 //! Reactive client store: `ClientState` + the pure `ServerMessage` reducer.
 
+use game_core::engine::EngineOutcome;
+use game_core::event::Event;
 use game_core::state::{ChaosToken, GameState, TokenResolution};
-use game_core::EngineOutcome;
 use leptos::prelude::*;
 use protocol::ServerMessage;
 
@@ -27,7 +28,7 @@ pub struct LogBatch {
     /// (e.g. "Play 01059 from hand"); a generic fallback when unknown.
     pub header: String,
     /// The events emitted by that submit, in order.
-    pub events: Vec<game_core::Event>,
+    pub events: Vec<Event>,
 }
 
 /// Everything the UI renders. `game`/`outcome`/`last_rejection` come
@@ -62,7 +63,7 @@ pub struct ClientState {
     /// splits the batch.
     /// Cleared by `SkillTestEnded`, by a new test's `SkillTestStarted`, and by
     /// `Hello`.
-    pub last_skill_test_result: Option<game_core::Event>,
+    pub last_skill_test_result: Option<Event>,
     /// Full accumulated event history, grouped per applied submit, oldest
     /// first. Cleared by `Hello`. The event-log panel (#505) renders this.
     pub log: Vec<LogBatch>,
@@ -131,7 +132,7 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
                     // (a) a reconnect mid-pause (`Hello` clears this cache) and
                     // (b) the first card that does move it mid-test. Revisit when
                     // either lands.
-                    game_core::Event::SkillTestStarted { difficulty, .. } => {
+                    Event::SkillTestStarted { difficulty, .. } => {
                         state.last_skill_test_difficulty = Some(*difficulty);
                         // A new test invalidates the previous test's token and
                         // result. The difficulty needs no such clear — every test
@@ -142,11 +143,10 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
                         state.last_revealed_token = None;
                         state.last_skill_test_result = None;
                     }
-                    game_core::Event::ChaosTokenRevealed { token, resolution } => {
+                    Event::ChaosTokenRevealed { token, resolution } => {
                         state.last_revealed_token = Some((*token, *resolution));
                     }
-                    game_core::Event::SkillTestSucceeded { .. }
-                    | game_core::Event::SkillTestFailed { .. } => {
+                    Event::SkillTestSucceeded { .. } | Event::SkillTestFailed { .. } => {
                         state.last_skill_test_result = Some(event.clone());
                     }
                     // ST.8 teardown: the test is over, so its result stops being
@@ -154,7 +154,7 @@ pub fn reduce(state: &mut ClientState, msg: ServerMessage) {
                     // other guard — an un-anchored `Confirm` (ADR 0011) — would be
                     // all that stands between a stale result and the next
                     // acknowledge-shaped pause.
-                    game_core::Event::SkillTestEnded { .. } => {
+                    Event::SkillTestEnded { .. } => {
                         state.last_skill_test_result = None;
                     }
                     _ => {}
@@ -196,9 +196,10 @@ pub fn use_store() -> StoreSignal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use game_core::state::{GameStateBuilder, InvestigatorId, SkillKind};
-    use game_core::test_support::fixtures::test_investigator;
-    use game_core::Event;
+    use game_core::card_data::SkillKind;
+    use game_core::event::FailureReason;
+    use game_core::state::{GameStateBuilder, InvestigatorId};
+    use game_core::test_support::fixtures;
 
     /// An `Applied` frame carrying `events` and nothing else of interest.
     fn applied(events: Vec<Event>) -> ServerMessage {
@@ -227,7 +228,7 @@ mod tests {
 
     fn sample_state() -> GameState {
         GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(fixtures::test_investigator(1))
             .build()
     }
 
@@ -273,9 +274,6 @@ mod tests {
 
     #[test]
     fn applied_logs_the_batch_and_captures_difficulty() {
-        use game_core::state::{InvestigatorId, SkillKind};
-        use game_core::Event;
-
         let mut s = ClientState::default();
         reduce(
             &mut s,
@@ -297,9 +295,6 @@ mod tests {
     /// ST.4 effect suspends for input. The latch is what carries the token over.
     #[test]
     fn applied_latches_the_revealed_token_across_batches() {
-        use game_core::state::{InvestigatorId, SkillKind};
-        use game_core::{Event, FailureReason};
-
         let mut s = ClientState::default();
         reduce(
             &mut s,
@@ -341,9 +336,6 @@ mod tests {
     /// previous test's token must not survive into it (#787).
     #[test]
     fn a_new_test_clears_the_previous_tests_token() {
-        use game_core::state::{InvestigatorId, SkillKind};
-        use game_core::Event;
-
         let mut s = ClientState {
             last_revealed_token: Some((ChaosToken::Tablet, TokenResolution::Modifier(-2))),
             ..Default::default()
@@ -370,9 +362,6 @@ mod tests {
     /// case — still ends with the token latched.
     #[test]
     fn a_start_and_reveal_in_one_batch_latches_the_token() {
-        use game_core::state::{InvestigatorId, SkillKind};
-        use game_core::Event;
-
         let mut s = ClientState::default();
         reduce(
             &mut s,

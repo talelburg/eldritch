@@ -28,7 +28,7 @@ pub fn current_ws_url(game_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::ws_url;
+    use super::*;
 
     #[test]
     fn plain_http_uses_ws_and_keeps_port() {

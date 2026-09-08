@@ -103,7 +103,7 @@ impl RngState {
 
 #[cfg(test)]
 mod tests {
-    use super::RngState;
+    use super::*;
 
     #[test]
     fn same_seed_same_draws_produces_same_value() {

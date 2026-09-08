@@ -5,6 +5,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use wasm_bindgen_test::*;
+use web::app::App;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -12,7 +13,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 fn app_renders_greeting() {
     // Mount the app into the document body; it stays mounted (attached to
     // the DOM) for the assertion.
-    leptos::mount::mount_to_body(web::app::App);
+    leptos::mount::mount_to_body(App);
 
     let body = leptos::prelude::document()
         .body()

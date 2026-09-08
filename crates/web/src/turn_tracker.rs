@@ -13,6 +13,7 @@ use game_core::state::Phase;
 use leptos::prelude::*;
 
 use crate::store::use_store;
+use Step::{Framework, Window};
 
 /// One entry in a phase's ordered outline.
 enum Step {
@@ -27,8 +28,6 @@ struct PhaseOutline {
     label: &'static str,
     steps: &'static [Step],
 }
-
-use Step::{Framework, Window};
 
 const ROUND: &[PhaseOutline] = &[
     PhaseOutline {

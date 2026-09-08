@@ -13,16 +13,21 @@
 //! `tests/map.rs` installs the synthetic one.
 #![cfg(target_arch = "wasm32")]
 
-use game_core::state::{CardCode, CardInPlay, CardInstanceId, GameStateBuilder, LocationId};
-use game_core::test_support::fixtures::awaiting_pick_single_with;
-use game_core::test_support::fixtures::{test_investigator, test_location};
-use game_core::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
+use cards::REGISTRY;
+use game_core::card_registry;
+use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
+use game_core::state::{
+    CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, LocationId,
+};
+use game_core::test_support::fixtures;
 use leptos::prelude::*;
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
-use web::store::{reduce, ClientState};
+use web::interaction::PendingOptions;
+use web::store::{self, ClientState};
+use web_sys::{Element, HtmlElement};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -53,8 +58,8 @@ fn inject_style() {
 /// The Parlor (01115) with Lita Chantler (01117) at it, and `investigators`
 /// investigators standing in it. Real card codes throughout — the real registry
 /// is installed, so the investigator's capacity lookup needs a real code.
-fn parlor_state(investigators: usize) -> game_core::state::GameState {
-    let mut parlor = test_location(5, "Parlor");
+fn parlor_state(investigators: usize) -> GameState {
+    let mut parlor = fixtures::test_location(5, "Parlor");
     parlor.code = CardCode::new("01115");
     parlor.revealed = true;
     parlor
@@ -66,7 +71,7 @@ fn parlor_state(investigators: usize) -> game_core::state::GameState {
         .take(investigators)
         .enumerate()
     {
-        let mut inv = test_investigator(u32::try_from(i).expect("small index") + 1);
+        let mut inv = fixtures::test_investigator(u32::try_from(i).expect("small index") + 1);
         inv.name = name.to_string();
         inv.investigator_card.code = CardCode::new(code);
         builder = builder.with_investigator_at(inv, PARLOR);
@@ -76,26 +81,23 @@ fn parlor_state(investigators: usize) -> game_core::state::GameState {
 
 /// Mount `BoardView` with `state`, tick, and return the wrapper this mount put
 /// the board in (each test mounts into the same document body).
-async fn mount(state: game_core::state::GameState) -> web_sys::Element {
+async fn mount(state: GameState) -> Element {
     mount_with(state, EngineOutcome::Done).await
 }
 
 /// As [`mount`], but with a live `outcome` so the board has options to anchor.
-async fn mount_with(
-    state: game_core::state::GameState,
-    outcome: EngineOutcome,
-) -> web_sys::Element {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+async fn mount_with(state: GameState, outcome: EngineOutcome) -> Element {
+    let _ = card_registry::install(REGISTRY);
     inject_style();
     let store = RwSignal::new(ClientState::default());
     mount_to_body(move || {
         provide_context(store);
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));
-        provide_context(web::interaction::PendingOptions(pending));
+        provide_context(PendingOptions(pending));
         view! { <div class="layout-probe"><BoardView/></div> }
     });
     store.update(|s| {
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Hello {
                 state: Box::new(state),
@@ -110,7 +112,7 @@ async fn mount_with(
         .expect("query");
     roots
         .item(roots.length() - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .expect("a .layout-probe root")
 }
 
@@ -118,7 +120,7 @@ async fn mount_with(
 /// box, and that the node is not scrolling content out of sight.
 async fn assert_parlor_tokens_visible(investigators: usize) {
     let root = mount(parlor_state(investigators)).await;
-    let node: web_sys::HtmlElement = root
+    let node: HtmlElement = root
         .query_selector(".map-location[data-loc=\"Parlor\"]")
         .expect("query")
         .expect("the Parlor node")
@@ -133,7 +135,7 @@ async fn assert_parlor_tokens_visible(investigators: usize) {
         "expected one token per investigator plus Lita's",
     );
     for i in 0..tokens.length() {
-        let token: web_sys::HtmlElement = tokens
+        let token: HtmlElement = tokens
             .item(i)
             .and_then(|n| n.dyn_into().ok())
             .expect("HtmlElement token");
@@ -184,12 +186,12 @@ async fn parlor_tokens_are_visible_with_an_empty_parlor() {
 #[wasm_bindgen_test]
 async fn a_tall_node_does_not_overlap_the_row_above_it() {
     let mut state = parlor_state(2);
-    let mut hallway = test_location(6, "Hallway");
+    let mut hallway = fixtures::test_location(6, "Hallway");
     hallway.code = CardCode::new("01112");
     hallway.revealed = true;
     state.locations.insert(LocationId(6), hallway);
     let root = mount(state).await;
-    let node = |name: &str| -> web_sys::HtmlElement {
+    let node = |name: &str| -> HtmlElement {
         root.query_selector(&format!(".map-location[data-loc=\"{name}\"]"))
             .expect("query")
             .unwrap_or_else(|| panic!("the {name} node"))
@@ -221,7 +223,7 @@ async fn a_tall_node_does_not_overlap_the_row_above_it() {
 /// space. Asserted by measurement: every endpoint lands inside some card's box.
 #[wasm_bindgen_test]
 async fn every_connection_line_ends_inside_a_card() {
-    let mut hallway = test_location(6, "Hallway");
+    let mut hallway = fixtures::test_location(6, "Hallway");
     hallway.code = CardCode::new("01112");
     hallway.revealed = false; // the short card
     let mut state = parlor_state(1);
@@ -234,11 +236,11 @@ async fn every_connection_line_ends_inside_a_card() {
     let nodes = root.query_selector_all(".map-location").expect("query");
     let mut cards = Vec::new();
     for i in 0..nodes.length() {
-        let node: web_sys::HtmlElement = nodes
+        let node: HtmlElement = nodes
             .item(i)
             .and_then(|n| n.dyn_into().ok())
             .expect("HtmlElement node");
-        let card: web_sys::HtmlElement = node
+        let card: HtmlElement = node
             .query_selector(".loc-card")
             .expect("query")
             .expect("every node has a card")
@@ -260,7 +262,7 @@ async fn every_connection_line_ends_inside_a_card() {
     assert_eq!(lines.length(), 1, "the connected pair draws one line");
     let line = lines.item(0).expect("the line");
     let coord = |name: &str| -> i32 {
-        line.dyn_ref::<web_sys::Element>()
+        line.dyn_ref::<Element>()
             .expect("Element")
             .get_attribute(name)
             .expect("the attribute")
@@ -283,7 +285,7 @@ async fn every_connection_line_ends_inside_a_card() {
 /// promises a click the rail can't take. Glow and cursor belong on the card.
 #[wasm_bindgen_test]
 async fn only_the_card_advertises_the_location_menu() {
-    let outcome = awaiting_pick_single_with(
+    let outcome = fixtures::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Investigate").at(OptionTarget::Location(PARLOR))],
     );

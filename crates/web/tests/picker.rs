@@ -9,6 +9,7 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::picker::{CreateTx, PickerView};
 use web::store::{ClientState, ConnStatus};
+use web_sys::HtmlElement;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -30,7 +31,7 @@ async fn create_button_sends_a_roster() {
         .query_selector(".create-game")
         .unwrap()
         .unwrap()
-        .dyn_into::<web_sys::HtmlElement>()
+        .dyn_into::<HtmlElement>()
         .unwrap();
     btn.click();
 

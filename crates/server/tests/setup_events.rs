@@ -8,17 +8,16 @@
 
 mod common;
 
-use common::{
-    connect, install_registry, memory_pool, recv, roster, spawn_server, TEST_SCENARIO_ID,
-};
+use common::TEST_SCENARIO_ID;
+use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use protocol::ServerMessage;
-use server::GameSession;
+use server::session::GameSession;
 
 #[tokio::test]
 async fn hello_carries_setup_events_after_reload_from_db() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     // Create + persist a game (as `POST /games` does), then spin a server that
     // serves it purely from the DB — proving the events come from the persisted
     // column, not a retained in-memory session.
@@ -26,14 +25,14 @@ async fn hello_carries_setup_events_after_reload_from_db() {
         pool.clone(),
         "g-setup-events",
         ScenarioId::new(TEST_SCENARIO_ID),
-        roster(),
+        common::roster(),
     )
     .await
     .expect("seed game");
-    let addr = spawn_server(pool).await;
+    let addr = common::spawn_server(pool).await;
 
-    let mut c = connect(addr, "g-setup-events").await;
-    match recv(&mut c).await {
+    let mut c = common::connect(addr, "g-setup-events").await;
+    match common::recv(&mut c).await {
         ServerMessage::Hello { events, .. } => {
             assert!(
                 !events.is_empty(),
@@ -42,9 +41,7 @@ async fn hello_carries_setup_events_after_reload_from_db() {
             );
             // ScenarioStarted is always emitted at setup, so it must be present.
             assert!(
-                events
-                    .iter()
-                    .any(|e| matches!(e, game_core::Event::ScenarioStarted)),
+                events.iter().any(|e| matches!(e, Event::ScenarioStarted)),
                 "setup events should include ScenarioStarted; got {events:?}",
             );
         }

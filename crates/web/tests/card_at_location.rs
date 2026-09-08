@@ -16,17 +16,21 @@
 //! since the registry install is first-wins per process.
 #![cfg(target_arch = "wasm32")]
 
-use game_core::state::{CardCode, CardInPlay, CardInstanceId, GameStateBuilder, LocationId};
-use game_core::test_support::fixtures::{
-    awaiting_pick_single_with, test_investigator, test_location,
+use cards::REGISTRY;
+use game_core::card_registry;
+use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
+use game_core::state::{
+    CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, LocationId,
 };
-use game_core::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
+use game_core::test_support::fixtures;
 use leptos::prelude::*;
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
-use web::store::{reduce, ClientState};
+use web::interaction::PendingOptions;
+use web::store::{self, ClientState};
+use web_sys::{Element, HtmlElement};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -36,8 +40,8 @@ const FOG: CardInstanceId = CardInstanceId(61);
 
 /// The Parlor with Lita Chantler at it, Roland standing in it, and — when
 /// `attached` — Obscuring Fog 01168 attached to the location.
-fn parlor_state(attached: bool) -> game_core::state::GameState {
-    let mut parlor = test_location(5, "Parlor");
+fn parlor_state(attached: bool) -> GameState {
+    let mut parlor = fixtures::test_location(5, "Parlor");
     parlor.code = CardCode::new("01115");
     parlor.revealed = true;
     parlor
@@ -50,7 +54,7 @@ fn parlor_state(attached: bool) -> game_core::state::GameState {
     }
     // The real registry is installed, so the investigator card must be a real
     // code — the panel's capacity lookup reads it.
-    let mut inv = test_investigator(1);
+    let mut inv = fixtures::test_investigator(1);
     inv.name = "Roland Banks".into();
     inv.investigator_card.code = CardCode::new("01001");
     GameStateBuilder::new()
@@ -61,24 +65,24 @@ fn parlor_state(attached: bool) -> game_core::state::GameState {
 
 /// A live open-turn prompt whose single option is anchored to `instance`.
 fn option_anchored_to(instance: CardInstanceId) -> EngineOutcome {
-    awaiting_pick_single_with(
+    fixtures::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Parley: Lita Chantler")
             .at(OptionTarget::CardInstance(instance))],
     )
 }
 
-async fn mount(state: game_core::state::GameState, outcome: EngineOutcome) -> web_sys::Element {
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+async fn mount(state: GameState, outcome: EngineOutcome) -> Element {
+    let _ = card_registry::install(REGISTRY);
     let store = RwSignal::new(ClientState::default());
     mount_to_body(move || {
         provide_context(store);
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));
-        provide_context(web::interaction::PendingOptions(pending));
+        provide_context(PendingOptions(pending));
         view! { <div class="cal-root"><BoardView/></div> }
     });
     store.update(|s| {
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Hello {
                 state: Box::new(state),
@@ -91,11 +95,11 @@ async fn mount(state: game_core::state::GameState, outcome: EngineOutcome) -> we
     let roots = document().query_selector_all(".cal-root").expect("query");
     roots
         .item(roots.length() - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .expect("a .cal-root")
 }
 
-fn query(root: &web_sys::Element, selector: &str) -> Option<web_sys::Element> {
+fn query(root: &Element, selector: &str) -> Option<Element> {
     root.query_selector(selector).expect("query")
 }
 
@@ -118,7 +122,7 @@ async fn the_parley_anchored_to_lita_is_actionable_on_her_token() {
         "Lita's token should be actionable for the option anchored to her, got {:?}",
         token.class_name(),
     );
-    let hit: web_sys::HtmlElement = query(&root, ".at-location-token .menu-hit")
+    let hit: HtmlElement = query(&root, ".at-location-token .menu-hit")
         .expect("her token's hit-layer")
         .dyn_into()
         .expect("HtmlElement");

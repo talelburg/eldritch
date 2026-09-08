@@ -7,6 +7,7 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::status_bar::StatusBarView;
 use web::store::{ClientState, ConnStatus};
+use web_sys::Element;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -34,7 +35,7 @@ async fn version_mismatch_status_renders_actionable_message() {
     let html = lines
         .item(lines.length() - 1)
         .expect("at least one .status line")
-        .dyn_ref::<web_sys::Element>()
+        .dyn_ref::<Element>()
         .expect("Element")
         .inner_html();
 
@@ -60,7 +61,7 @@ async fn status_bar_renders_a_new_game_button() {
     let last = bars
         .item(bars.length() - 1)
         .expect("at least one .status-bar")
-        .dyn_into::<web_sys::Element>()
+        .dyn_into::<Element>()
         .expect("Element");
     assert!(
         last.query_selector(".new-game").expect("query").is_some(),

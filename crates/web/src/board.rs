@@ -2,10 +2,14 @@
 //! helper fns; `BoardView` is the only component. Cards and locations render as
 //! their names via `crate::names` (the client installs `cards::REGISTRY`).
 
+use game_core::engine::OptionTarget;
+use game_core::scenario::ScenarioEnding;
 use game_core::state::GameState;
-use game_core::ScenarioEnding;
 use leptos::prelude::*;
 
+use crate::card::{HandCardView, InPlayCardView};
+use crate::controls::{AnchoredControl, PlayerDeckView};
+use crate::enemy_card::EnemyCard;
 use crate::store::use_store;
 
 /// Read-only board. Always renders a status line (connection status +
@@ -55,7 +59,7 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                 .map(|(i, code)| {
                     let index = u8::try_from(i).unwrap_or(u8::MAX);
                     view! {
-                        <crate::card::HandCardView code=code investigator=inv_id index=index/>
+                        <HandCardView code=code investigator=inv_id index=index/>
                     }
                 })
                 .collect();
@@ -63,20 +67,20 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                 .cards_in_play
                 .iter()
                 .cloned()
-                .map(|c| view! { <crate::card::InPlayCardView instance=c/> })
+                .map(|c| view! { <InPlayCardView instance=c/> })
                 .collect();
             let threat: Vec<_> = inv
                 .threat_area
                 .iter()
                 .cloned()
-                .map(|c| view! { <crate::card::InPlayCardView instance=c/> })
+                .map(|c| view! { <InPlayCardView instance=c/> })
                 .collect();
             let engaged: Vec<_> = game
                 .enemies
                 .values()
                 .filter(|e| e.engaged_with == Some(inv.id))
                 .cloned()
-                .map(|e| view! { <crate::enemy_card::EnemyCard enemy=e/> })
+                .map(|e| view! { <EnemyCard enemy=e/> })
                 .collect();
             let vitals = view! {
                 <div class="inv-vitals">
@@ -101,7 +105,7 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                     <div class="inv-zones-bottom">
                         <div class="investigator-block">
                             <div class="investigator-card">
-                                <crate::card::InPlayCardView instance=inv.investigator_card.clone()/>
+                                <InPlayCardView instance=inv.investigator_card.clone()/>
                                 {vitals}
                             </div>
                             <div class="inv-meta">
@@ -110,10 +114,10 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                                     "resources " {inv.resources}
                                     // The Gain-resource affordance sits with the
                                     // number it changes (#541).
-                                    <crate::controls::AnchoredControl
+                                    <AnchoredControl
                                         label="Gain resource".to_string()
                                         class="resource-control"
-                                        target=game_core::OptionTarget::ResourcePool(inv_id)
+                                        target=OptionTarget::ResourcePool(inv_id)
                                     />
                                 </span>
                                 <span class="inv-clues">"clues " {inv.clues}</span>
@@ -122,15 +126,15 @@ fn investigators_panel(game: &GameState) -> impl IntoView {
                             // End turn lives on the investigator's own panel, in
                             // the same place all game — greyed out off-turn rather
                             // than vanishing (#541).
-                            <crate::controls::AnchoredControl
+                            <AnchoredControl
                                 label="End turn".to_string()
                                 class="turn-control"
-                                target=game_core::OptionTarget::TurnControl(inv_id)
+                                target=OptionTarget::TurnControl(inv_id)
                             />
                         </div>
                         // Each investigator shows their *own* deck, so a
                         // multiplayer board never leaves a count ambiguous.
-                        <crate::controls::PlayerDeckView
+                        <PlayerDeckView
                             investigator=inv_id
                             remaining=deck_remaining
                         />

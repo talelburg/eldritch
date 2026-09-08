@@ -4,19 +4,22 @@
 
 mod common;
 
-use common::{
-    connect, install_registry, memory_pool, recv, roster, send, spawn_server, TEST_SCENARIO_ID,
-};
-use game_core::scenario::ScenarioId;
-use game_core::{EngineOutcome, InputResponse, OptionId, PlayerAction};
-use protocol::{ClientMessage, ServerMessage};
+use common::TEST_SCENARIO_ID;
+use std::time::Duration;
 
-async fn seed_game(pool: &sqlx::SqlitePool, game_id: &str) {
-    server::GameSession::create(
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::engine::{EngineOutcome, OptionId};
+use game_core::scenario::ScenarioId;
+use protocol::{ClientMessage, ServerMessage};
+use server::session::GameSession;
+use sqlx::SqlitePool;
+
+async fn seed_game(pool: &SqlitePool, game_id: &str) {
+    GameSession::create(
         pool.clone(),
         game_id,
         ScenarioId::new(TEST_SCENARIO_ID),
-        roster(),
+        common::roster(),
     )
     .await
     .expect("seed game");
@@ -24,14 +27,14 @@ async fn seed_game(pool: &sqlx::SqlitePool, game_id: &str) {
 
 #[tokio::test]
 async fn connect_receives_hello_with_current_state() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     seed_game(&pool, "g-hello").await;
-    let addr = spawn_server(pool).await;
+    let addr = common::spawn_server(pool).await;
 
-    let mut ws = connect(addr, "g-hello").await;
+    let mut ws = common::connect(addr, "g-hello").await;
 
-    match recv(&mut ws).await {
+    match common::recv(&mut ws).await {
         ServerMessage::Hello { state, outcome, .. } => {
             // create seats the roster: round is 1, mulligan is pending.
             assert_eq!(state.round, 1);
@@ -46,20 +49,20 @@ async fn connect_receives_hello_with_current_state() {
 
 #[tokio::test]
 async fn accepted_action_broadcasts_applied_to_all_clients() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     seed_game(&pool, "g-bcast").await;
-    let addr = spawn_server(pool).await;
+    let addr = common::spawn_server(pool).await;
 
-    let mut a = connect(addr, "g-bcast").await;
-    let mut b = connect(addr, "g-bcast").await;
+    let mut a = common::connect(addr, "g-bcast").await;
+    let mut b = common::connect(addr, "g-bcast").await;
     // Draining each Hello guarantees both connections have subscribed
     // before the submit, so neither misses the broadcast.
-    let _ = recv(&mut a).await;
-    let _ = recv(&mut b).await;
+    let _ = common::recv(&mut a).await;
+    let _ = common::recv(&mut b).await;
 
     // Resolve the setup mulligan (keep the full hand — empty redraw).
-    send(
+    common::send(
         &mut a,
         &ClientMessage::Submit {
             action: PlayerAction::ResolveInput {
@@ -70,7 +73,7 @@ async fn accepted_action_broadcasts_applied_to_all_clients() {
     .await;
 
     for ws in [&mut a, &mut b] {
-        match recv(ws).await {
+        match common::recv(ws).await {
             ServerMessage::Applied {
                 outcome, events, ..
             } => {
@@ -88,19 +91,19 @@ async fn accepted_action_broadcasts_applied_to_all_clients() {
 
 #[tokio::test]
 async fn rejected_action_returns_rejected_to_sender_only() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     seed_game(&pool, "g-reject").await;
-    let addr = spawn_server(pool).await;
+    let addr = common::spawn_server(pool).await;
 
-    let mut a = connect(addr, "g-reject").await;
-    let mut b = connect(addr, "g-reject").await;
-    let _ = recv(&mut a).await;
-    let _ = recv(&mut b).await;
+    let mut a = common::connect(addr, "g-reject").await;
+    let mut b = common::connect(addr, "g-reject").await;
+    let _ = common::recv(&mut a).await;
+    let _ = common::recv(&mut b).await;
 
     // Post-create the mulligan is pending. Selecting a non-existent hand
     // index (OptionId(999_999)) is rejected by the mulligan handler.
-    send(
+    common::send(
         &mut a,
         &ClientMessage::Submit {
             action: PlayerAction::ResolveInput {
@@ -112,13 +115,13 @@ async fn rejected_action_returns_rejected_to_sender_only() {
     )
     .await;
 
-    match recv(&mut a).await {
+    match common::recv(&mut a).await {
         ServerMessage::Rejected { .. } => {}
         other => panic!("expected Rejected, got {other:?}"),
     }
 
     // B sees nothing: rejections are not broadcast.
-    let quiet = tokio::time::timeout(std::time::Duration::from_millis(200), recv(&mut b)).await;
+    let quiet = tokio::time::timeout(Duration::from_millis(200), common::recv(&mut b)).await;
     assert!(
         quiet.is_err(),
         "B must receive nothing for a rejected action"

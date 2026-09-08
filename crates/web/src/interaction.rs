@@ -4,10 +4,27 @@
 //! native-tested; `ContextMenu` is wasm-only (it submits via the wasm-only
 //! `OutboundTx`).
 
-use game_core::{ChoiceOption, EngineOutcome, OptionTarget};
-use leptos::prelude::Signal;
+use std::collections::BTreeSet;
 
+#[cfg(target_arch = "wasm32")]
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::engine::{ChoiceOption, EngineOutcome, InputKind, OptionTarget};
+use game_core::state::{CardCode, InvestigatorId};
+#[cfg(target_arch = "wasm32")]
+use leptos::prelude::IntoView;
+use leptos::prelude::{RwSignal, Signal};
+#[cfg(target_arch = "wasm32")]
+use protocol::ClientMessage;
+#[cfg(target_arch = "wasm32")]
+use web_sys::MouseEvent;
+
+#[cfg(target_arch = "wasm32")]
+use crate::decision;
+#[cfg(target_arch = "wasm32")]
+use crate::store::use_store;
 use crate::store::ClientState;
+#[cfg(target_arch = "wasm32")]
+use crate::transport::OutboundTx;
 
 /// The live prompt's offered options — the `AwaitingInput` request's `options`,
 /// else empty (`Done` / `Rejected` / no outcome). Pure.
@@ -48,7 +65,7 @@ pub fn prompt_anchor(state: &ClientState) -> Option<OptionTarget> {
 }
 
 /// The anchor of a live **option-less** prompt — a
-/// [`Confirm`](game_core::InputKind::Confirm) — else `None`.
+/// [`Confirm`](InputKind::Confirm) — else `None`.
 ///
 /// The request anchor is read only for option-less prompts (ADR 0011): a
 /// `PickSingle`/`PickMultiple` routes per-option. This is what tells the Mythos
@@ -58,7 +75,7 @@ pub fn prompt_anchor(state: &ClientState) -> Option<OptionTarget> {
 pub fn confirm_anchor(state: &ClientState) -> Option<OptionTarget> {
     match &state.outcome {
         Some(EngineOutcome::AwaitingInput { request, .. })
-            if request.kind == game_core::InputKind::Confirm =>
+            if request.kind == InputKind::Confirm =>
         {
             request.target.clone()
         }
@@ -79,9 +96,9 @@ pub struct ConfirmAnchor(pub Signal<Option<OptionTarget>>);
 #[must_use]
 pub fn options_for_hand_card(
     options: &[ChoiceOption],
-    investigator: game_core::state::InvestigatorId,
+    investigator: InvestigatorId,
     index: u8,
-    code: &game_core::state::CardCode,
+    code: &CardCode,
 ) -> Vec<ChoiceOption> {
     options
         .iter()
@@ -113,7 +130,7 @@ pub struct MultiSelect {
     /// True iff the live outcome is `AwaitingInput { kind: PickMultiple }`.
     pub active: Signal<bool>,
     /// The chosen hand indices (each `OptionId(i)` = hand index `i`).
-    pub selected: leptos::prelude::RwSignal<std::collections::BTreeSet<u32>>,
+    pub selected: RwSignal<BTreeSet<u32>>,
 }
 
 /// True iff the live outcome is an `AwaitingInput` whose kind is `PickMultiple`
@@ -123,7 +140,7 @@ pub fn is_multi_select(state: &ClientState) -> bool {
     matches!(
         &state.outcome,
         Some(EngineOutcome::AwaitingInput { request, .. })
-            if request.kind == game_core::InputKind::PickMultiple
+            if request.kind == InputKind::PickMultiple
     )
 }
 
@@ -137,15 +154,9 @@ pub fn is_multi_select(state: &ClientState) -> bool {
 #[leptos::component]
 pub fn ContextMenu(
     options: Vec<ChoiceOption>,
-    open: leptos::prelude::RwSignal<Option<(i32, i32)>>,
-) -> impl leptos::prelude::IntoView {
+    open: RwSignal<Option<(i32, i32)>>,
+) -> impl IntoView {
     use leptos::prelude::*;
-
-    use game_core::{InputResponse, PlayerAction};
-    use protocol::ClientMessage;
-
-    use crate::store::use_store;
-    use crate::transport::OutboundTx;
 
     let store = use_store();
     let tx = use_context::<OutboundTx>();
@@ -213,18 +224,15 @@ pub fn ContextMenu(
 /// untouched — it stays on the anchor, and on the source card it is the
 /// provenance signal saying where the choice came from.
 #[cfg(target_arch = "wasm32")]
-pub fn menu_layer(
-    options: Vec<ChoiceOption>,
-    open: leptos::prelude::RwSignal<Option<(i32, i32)>>,
-) -> impl leptos::prelude::IntoView {
+pub fn menu_layer(options: Vec<ChoiceOption>, open: RwSignal<Option<(i32, i32)>>) -> impl IntoView {
     use leptos::prelude::*;
-    if crate::decision::menus_are_suppressed() {
+    if decision::menus_are_suppressed() {
         return ().into_any();
     }
     view! {
         <div
             class="menu-hit"
-            on:click=move |ev: web_sys::MouseEvent| {
+            on:click=move |ev: MouseEvent| {
                 ev.stop_propagation();
                 open.set(Some((ev.client_x(), ev.client_y())));
             }
@@ -237,8 +245,9 @@ pub fn menu_layer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use game_core::engine::OptionId;
     use game_core::state::{EnemyId, LocationId};
-    use game_core::OptionId;
+    use game_core::test_support::fixtures;
 
     fn opt(id: u32, target: OptionTarget) -> ChoiceOption {
         ChoiceOption::new(OptionId(id), format!("opt{id}")).at(target)
@@ -258,12 +267,10 @@ mod tests {
     #[test]
     fn pending_options_returns_the_awaiting_requests_options() {
         let state = ClientState {
-            outcome: Some(
-                game_core::test_support::fixtures::awaiting_pick_single_with(
-                    "x",
-                    vec![opt(0, OptionTarget::Location(LocationId(10)))],
-                ),
-            ),
+            outcome: Some(fixtures::awaiting_pick_single_with(
+                "x",
+                vec![opt(0, OptionTarget::Location(LocationId(10)))],
+            )),
             ..Default::default()
         };
         assert_eq!(pending_options(&state).len(), 1);
@@ -284,7 +291,6 @@ mod tests {
 
     #[test]
     fn options_route_to_the_four_new_anchors() {
-        use game_core::state::InvestigatorId;
         let inv = InvestigatorId(1);
         let opts = vec![
             opt(0, OptionTarget::TurnControl(inv)),
@@ -306,13 +312,10 @@ mod tests {
 
     #[test]
     fn prompt_anchor_reads_the_request_not_the_options() {
-        use game_core::state::InvestigatorId;
         assert_eq!(prompt_anchor(&ClientState::default()), None);
 
         let mut state = ClientState {
-            outcome: Some(
-                game_core::test_support::fixtures::awaiting_pick_single_with("x", vec![loose(0)]),
-            ),
+            outcome: Some(fixtures::awaiting_pick_single_with("x", vec![loose(0)])),
             ..Default::default()
         };
         assert_eq!(prompt_anchor(&state), None, "un-anchored request");
@@ -331,7 +334,7 @@ mod tests {
         // The Mythos draw and the skill-test acknowledge are both option-less
         // `Confirm`s; only the request anchor separates them (ADR 0011).
         let mut ack = ClientState {
-            outcome: Some(game_core::test_support::fixtures::awaiting_confirm_input(
+            outcome: Some(fixtures::awaiting_confirm_input(
                 "Acknowledge the skill-test result.",
             )),
             ..Default::default()
@@ -350,12 +353,10 @@ mod tests {
         // A PickSingle anchored there is not option-less, so its anchor is not
         // read at the request level — the Draw button stays dark.
         let pick = ClientState {
-            outcome: Some(
-                game_core::test_support::fixtures::awaiting_pick_single_with(
-                    "x",
-                    vec![opt(0, OptionTarget::EncounterDeck)],
-                ),
-            ),
+            outcome: Some(fixtures::awaiting_pick_single_with(
+                "x",
+                vec![opt(0, OptionTarget::EncounterDeck)],
+            )),
             ..Default::default()
         };
         assert_eq!(confirm_anchor(&pick), None);
@@ -369,19 +370,15 @@ mod tests {
         state.outcome = Some(EngineOutcome::Done);
         assert!(!is_multi_select(&state));
 
-        state.outcome = Some(game_core::test_support::fixtures::awaiting_commit_input(
-            "Commit",
-        ));
+        state.outcome = Some(fixtures::awaiting_commit_input("Commit"));
         assert!(is_multi_select(&state));
 
-        state.outcome =
-            Some(game_core::test_support::fixtures::awaiting_pick_single_with("x", vec![loose(0)]));
+        state.outcome = Some(fixtures::awaiting_pick_single_with("x", vec![loose(0)]));
         assert!(!is_multi_select(&state));
     }
 
     #[test]
     fn options_for_hand_card_matches_index_and_code() {
-        use game_core::state::{CardCode, InvestigatorId};
         let inv = InvestigatorId(1);
         let code = CardCode::new("01022");
         let opts = vec![

@@ -34,11 +34,10 @@ pub mod dsl;
 pub use card_data::{
     CardKind, CardMetadata, CardType, Class, SkillIcons, SkillKind, Skills, Slot, Spawn,
 };
-pub use dsl::ActionDesignator;
 pub use dsl::{
     activated, activated_as, choose_one, constant, discover_clue, for_each, gain_resources, if_,
     if_else, modify, on_commit, on_event, on_play, on_skill_test_resolution, seq, Ability,
-    Condition, Cost, Effect, EventPattern, EventTiming, InvestigatorTarget, InvestigatorTargetSet,
-    LocationTarget, ModifierScope, SkillTestKind, Stat, TestOutcome, Trigger, UsageLimit,
-    UsagePeriod,
+    ActionDesignator, Condition, Cost, Effect, EventPattern, EventTiming, InvestigatorTarget,
+    InvestigatorTargetSet, LocationTarget, ModifierScope, SkillTestKind, Stat, TestOutcome,
+    Trigger, UsageLimit, UsagePeriod,
 };

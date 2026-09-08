@@ -5,22 +5,26 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use axum::response::Response;
+use axum::Router;
+use server::db::MIGRATOR;
+use server::AppState;
 use sqlx::sqlite::SqlitePoolOptions;
-use tower::ServiceExt;
+use tower::ServiceExt as _;
 
 const FIXTURE_DIST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/dist");
 
-async fn app_with_fixture_dist() -> axum::Router {
+async fn app_with_fixture_dist() -> Router {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
         .connect("sqlite::memory:")
         .await
         .expect("open in-memory sqlite");
-    server::db::MIGRATOR.run(&pool).await.expect("migrate");
-    server::app(server::AppState::new_with_dist(pool, FIXTURE_DIST.into()))
+    MIGRATOR.run(&pool).await.expect("migrate");
+    server::app(AppState::new_with_dist(pool, FIXTURE_DIST.into()))
 }
 
-async fn body_string(response: axum::response::Response) -> String {
+async fn body_string(response: Response) -> String {
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();

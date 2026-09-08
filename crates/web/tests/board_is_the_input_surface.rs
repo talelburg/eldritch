@@ -13,21 +13,29 @@
 //! own binary per the `tests/location_card.rs` first-wins-registry precedent.
 #![cfg(target_arch = "wasm32")]
 
-use futures::channel::mpsc;
-use game_core::state::CardInPlay;
+use cards::REGISTRY;
+use futures::channel::mpsc::{self, UnboundedReceiver};
+use game_core::action::Action;
+use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::EngineOutcome;
 use game_core::state::{
-    CardCode, Continuation, GameState, GameStateBuilder, InvestigationResume, InvestigatorId, Phase,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
+    GameStateBuilder, InvestigationResume, InvestigatorId, LocationId, Phase, UseKind,
 };
-use game_core::test_support::fixtures::test_investigator;
-use game_core::{Action, EngineOutcome};
+use game_core::test_support::fixtures;
 use leptos::prelude::*;
 use protocol::{ClientMessage, ServerMessage};
+use std::collections::BTreeSet;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::app::Overlays;
 use web::board::BoardView;
-use web::store::{reduce, ClientState};
+use web::decision::DecisionLive;
+use web::interaction::{ConfirmAnchor, MultiSelect, PendingOptions};
+use web::store::{self, ClientState};
 use web::transport::OutboundTx;
+use web_sys::{Element, HtmlButtonElement, HtmlElement};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -40,14 +48,12 @@ const ROTTING_REMAINS: &str = "01163";
 /// End turn is the only thing left — the shortest honest route from an open turn
 /// into the Mythos encounter draw.
 fn open_turn_with_one_action() -> GameState {
-    let mut inv = test_investigator(1);
+    let mut inv = fixtures::test_investigator(1);
     inv.actions_remaining = 1;
     // A real investigator card, so panel capacity resolves against the real
     // corpus this binary installs — and a real encounter card can be drawn.
-    inv.investigator_card = CardInPlay::enter_play(
-        CardCode::new(ROLAND),
-        game_core::state::CardInstanceId(u32::MAX - 1),
-    );
+    inv.investigator_card =
+        CardInPlay::enter_play(CardCode::new(ROLAND), CardInstanceId(u32::MAX - 1));
     inv.deck = vec![CardCode::new("01020"), CardCode::new("01021")];
     let mut state = GameStateBuilder::default()
         .with_investigator(inv)
@@ -61,9 +67,7 @@ fn open_turn_with_one_action() -> GameState {
         .with_investigator_turn(INV)
         // A one-token bag makes the test's outcome deterministic: +1 against
         // Willpower 3 vs difficulty 3 passes, so the flow is stable run to run.
-        .with_chaos_bag(game_core::state::ChaosBag::new([
-            game_core::state::ChaosToken::Numeric(1),
-        ]))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(1)]))
         .build();
     // Rotting Remains 01163: "Revelation - Test [willpower] (3)." Drawing it is
     // what carries the flow from the encounter deck into a skill test, and so to
@@ -79,7 +83,7 @@ fn open_turn_with_one_action() -> GameState {
 /// the UI submits, and folds the result back into the store.
 struct Harness {
     store: RwSignal<ClientState>,
-    rx: mpsc::UnboundedReceiver<ClientMessage>,
+    rx: UnboundedReceiver<ClientMessage>,
     state: Option<GameState>,
 }
 
@@ -90,7 +94,7 @@ impl Harness {
         // The real corpus, not the synthetic registry: this flow draws a real
         // encounter card and reads a real investigator card's capacity. Its own
         // binary, per the `tests/location_card.rs` first-wins-registry precedent.
-        let _ = game_core::card_registry::install(cards::REGISTRY);
+        let _ = card_registry::install(REGISTRY);
         let store = RwSignal::new(ClientState::default());
         let (tx, rx) = mpsc::unbounded::<ClientMessage>();
         let tx_for_mount: OutboundTx = tx;
@@ -99,18 +103,18 @@ impl Harness {
             provide_context(store);
             provide_context::<OutboundTx>(tx_for_mount.clone());
             let pending = Signal::derive(move || store.with(web::interaction::pending_options));
-            provide_context(web::interaction::PendingOptions(pending));
+            provide_context(PendingOptions(pending));
             let anchor = Signal::derive(move || store.with(web::interaction::confirm_anchor));
-            provide_context(web::interaction::ConfirmAnchor(anchor));
-            let selected = RwSignal::new(std::collections::BTreeSet::<u32>::new());
+            provide_context(ConfirmAnchor(anchor));
+            let selected = RwSignal::new(BTreeSet::<u32>::new());
             let active = Signal::derive(move || store.with(web::interaction::is_multi_select));
-            provide_context(web::interaction::MultiSelect { active, selected });
+            provide_context(MultiSelect { active, selected });
             let decision = Signal::derive(move || store.with(web::decision::modal_is_live));
-            provide_context(web::decision::DecisionLive(decision));
+            provide_context(DecisionLive(decision));
             view! { <div class="e2e-root"><BoardView/><Overlays/></div> }
         });
         store.update(|s| {
-            reduce(
+            store::reduce(
                 s,
                 ServerMessage::Hello {
                     state: Box::new(seed),
@@ -147,7 +151,7 @@ impl Harness {
         let store = self.store;
         self.state = Some(result.state.clone());
         store.update(|s| {
-            reduce(
+            store::reduce(
                 s,
                 ServerMessage::Applied {
                     state: Box::new(result.state),
@@ -164,19 +168,19 @@ impl Harness {
     }
 }
 
-fn root() -> web_sys::Element {
+fn root() -> Element {
     let roots = document().query_selector_all(".e2e-root").expect("query");
     roots
         .item(roots.length() - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .expect("an .e2e-root")
 }
 
-fn find(sel: &str) -> web_sys::HtmlElement {
+fn find(sel: &str) -> HtmlElement {
     root()
         .query_selector(sel)
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .unwrap_or_else(|| panic!("no `{sel}` on the board"))
 }
 
@@ -187,7 +191,7 @@ fn absent(sel: &str) -> bool {
 
 fn is_disabled(sel: &str) -> bool {
     find(sel)
-        .dyn_ref::<web_sys::HtmlButtonElement>()
+        .dyn_ref::<HtmlButtonElement>()
         .expect("a button")
         .disabled()
 }
@@ -199,7 +203,7 @@ async fn a_whole_turn_is_driven_from_the_board_alone() {
     // in the test.
     let seeded = game_core::test_support::resolver::take_turn_action(
         open_turn_with_one_action(),
-        &game_core::TurnAction::Resource { investigator: INV },
+        &TurnAction::Resource { investigator: INV },
     );
     let mut h = Harness::mount(seeded.state, seeded.outcome).await;
 
@@ -258,19 +262,16 @@ async fn a_whole_turn_is_driven_from_the_board_alone() {
 }
 
 const FIRST_AID: &str = "01019";
-const KIT: game_core::state::CardInstanceId = game_core::state::CardInstanceId(7);
+const KIT: CardInstanceId = CardInstanceId(7);
 
 /// An open turn with First Aid 01019 in play and harm to heal, so its `[action]
 /// Spend 1 supply: Heal 1 damage or horror from an investigator at your
 /// location` is offered on the asset.
 fn open_turn_with_first_aid() -> GameState {
-    use game_core::state::UseKind;
-    let mut inv = test_investigator(1);
+    let mut inv = fixtures::test_investigator(1);
     inv.actions_remaining = 2;
-    inv.investigator_card = CardInPlay::enter_play(
-        CardCode::new(ROLAND),
-        game_core::state::CardInstanceId(u32::MAX - 1),
-    );
+    inv.investigator_card =
+        CardInPlay::enter_play(CardCode::new(ROLAND), CardInstanceId(u32::MAX - 1));
     inv.investigator_card.accumulated_damage = 2;
     inv.investigator_card.accumulated_horror = 2;
     let mut kit = CardInPlay::enter_play(CardCode::new(FIRST_AID), KIT);
@@ -278,10 +279,8 @@ fn open_turn_with_first_aid() -> GameState {
     inv.cards_in_play.push(kit);
     GameStateBuilder::default()
         .with_phase(Phase::Investigation)
-        .with_investigator_at(inv, game_core::state::LocationId(10))
-        .with_location(game_core::test_support::fixtures::test_location(
-            10, "Study",
-        ))
+        .with_investigator_at(inv, LocationId(10))
+        .with_location(fixtures::test_location(10, "Study"))
         .with_turn_order([INV])
         .with_active_investigator(INV)
         .with_round(1)
@@ -305,7 +304,7 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
     // nothing about the anchors is reconstructed by the test.
     let seeded = game_core::test_support::resolver::take_turn_action(
         open_turn_with_first_aid(),
-        &game_core::TurnAction::Resource { investigator: INV },
+        &TurnAction::Resource { investigator: INV },
     );
     let mut h = Harness::mount(seeded.state, seeded.outcome).await;
 

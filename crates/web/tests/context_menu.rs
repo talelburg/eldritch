@@ -3,7 +3,7 @@
 //! `ResolveInput(PickSingle)` and closes the menu; a closed menu renders nothing.
 #![cfg(target_arch = "wasm32")]
 
-use futures::channel::mpsc;
+use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::state::LocationId;
 use game_core::{ChoiceOption, InputResponse, OptionId, OptionTarget, PlayerAction};
 use leptos::prelude::*;
@@ -13,6 +13,7 @@ use wasm_bindgen_test::*;
 use web::interaction::ContextMenu;
 use web::store::ClientState;
 use web::transport::OutboundTx;
+use web_sys::{Element, HtmlElement, NodeList};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -23,7 +24,7 @@ async fn mount(
     open_initial: bool,
 ) -> (
     RwSignal<Option<(i32, i32)>>,
-    mpsc::UnboundedReceiver<ClientMessage>,
+    UnboundedReceiver<ClientMessage>,
 ) {
     let store = RwSignal::new(ClientState::default());
     let open = RwSignal::new(if open_initial { Some((0, 0)) } else { None });
@@ -44,11 +45,11 @@ async fn mount(
 /// The `.menu-item` buttons in the LAST-mounted `.tc-root` — scoped to this
 /// test's wrapper so DOM accumulation across tests (one page) can't let a prior
 /// test's open menu shadow a "renders nothing" assertion.
-fn menu_items() -> web_sys::NodeList {
+fn menu_items() -> NodeList {
     let roots = document().query_selector_all(".tc-root").expect("query");
     roots
         .item(roots.length() - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .expect("a .tc-root wrapper")
         .query_selector_all(".menu-item")
         .expect("query")
@@ -82,7 +83,7 @@ async fn clicking_an_item_submits_pick_single_and_closes() {
     let items = menu_items();
     items
         .item(0)
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("HtmlElement")
         .click();
     leptos::task::tick().await;

@@ -16,22 +16,32 @@
 //! Everything here renders on the host build too; only the click handlers are
 //! wasm-gated (they submit through the wasm-only `OutboundTx`).
 
+#[cfg(target_arch = "wasm32")]
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::engine::{ChoiceOption, OptionTarget};
 use game_core::state::{GameState, InvestigatorId};
-use game_core::{ChoiceOption, OptionTarget};
 use leptos::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use protocol::ClientMessage;
+
+use crate::interaction::{self, ConfirmAnchor, PendingOptions};
+#[cfg(target_arch = "wasm32")]
+use crate::store;
+#[cfg(target_arch = "wasm32")]
+use crate::transport::OutboundTx;
 
 /// The first option the live prompt anchors to `target`, else `None`. The three
 /// named controls carry at most one option each, so "the option" is well-defined.
 fn live_option(target: OptionTarget) -> Option<ChoiceOption> {
-    let pending = use_context::<crate::interaction::PendingOptions>()
+    let pending = use_context::<PendingOptions>()
         .map(|p| p.0.get())
         .unwrap_or_default();
-    crate::interaction::options_for(&pending, target)
+    interaction::options_for(&pending, target)
         .into_iter()
         .next()
 }
 
-/// Submit one [`InputResponse`](game_core::InputResponse) to the engine,
+/// Submit one [`InputResponse`](game_core::action::InputResponse) to the engine,
 /// recording `label` as the next `Applied` batch's event-log header.
 ///
 /// **The one place the client sends player input.** Every surface that submits —
@@ -41,12 +51,9 @@ fn live_option(target: OptionTarget) -> Option<ChoiceOption> {
 /// from context and absent in render-only mounts, so a missing one is a no-op
 /// rather than a panic.
 #[cfg(target_arch = "wasm32")]
-pub fn submit(response: game_core::InputResponse, label: impl Into<String>) {
-    use game_core::PlayerAction;
-    use protocol::ClientMessage;
-
-    let store = crate::store::use_store();
-    if let Some(tx) = use_context::<crate::transport::OutboundTx>() {
+pub fn submit(response: InputResponse, label: impl Into<String>) {
+    let store = store::use_store();
+    if let Some(tx) = use_context::<OutboundTx>() {
         store.update(|s| s.pending_label = Some(label.into()));
         let _ = tx.unbounded_send(ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
@@ -77,7 +84,7 @@ pub fn AnchoredControl(
         let label = label.clone();
         move |_| {
             if let Some(opt) = option.clone() {
-                submit(game_core::InputResponse::PickSingle(opt.id), label.clone());
+                submit(InputResponse::PickSingle(opt.id), label.clone());
             }
         }
     };
@@ -132,7 +139,7 @@ pub fn PlayerDeckView(investigator: InvestigatorId, remaining: usize) -> impl In
 /// skill-test acknowledge pause, which is the same shape on the wire (ADR 0011).
 pub fn encounter_deck_view(game: &GameState) -> impl IntoView {
     let remaining = game.encounter_deck.len();
-    let live = use_context::<crate::interaction::ConfirmAnchor>()
+    let live = use_context::<ConfirmAnchor>()
         .and_then(|a| a.0.get())
         .is_some_and(|a| a == OptionTarget::EncounterDeck);
     view! {
@@ -149,7 +156,7 @@ pub fn encounter_deck_view(game: &GameState) -> impl IntoView {
                     {
                         move |_| {
                             if live {
-                                submit(game_core::InputResponse::Confirm, "Draw encounter card");
+                                submit(InputResponse::Confirm, "Draw encounter card");
                             }
                         }
                     }

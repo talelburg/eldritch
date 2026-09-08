@@ -1,9 +1,28 @@
 //! The root Leptos component for the Eldritch web client.
 
+use std::collections::BTreeSet;
+
 use leptos::prelude::*;
 
 use crate::board::BoardView;
+#[cfg(target_arch = "wasm32")]
+use crate::decision::DecisionView;
+use crate::decision::{self, DecisionLive};
+use crate::event_log::EventLogView;
+use crate::interaction::{self, ConfirmAnchor, MultiSelect, PendingOptions};
+#[cfg(target_arch = "wasm32")]
+use crate::picker::PickerView;
+#[cfg(target_arch = "wasm32")]
+use crate::prompt_banner::PromptBanner;
+#[cfg(target_arch = "wasm32")]
+use crate::skill_test_result::SkillTestResultView;
+use crate::status_bar::StatusBarView;
 use crate::store::provide_store;
+#[cfg(target_arch = "wasm32")]
+use crate::transport;
+use crate::turn_tracker::TurnTrackerView;
+#[cfg(target_arch = "wasm32")]
+use crate::version_mismatch::VersionMismatchView;
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -11,31 +30,31 @@ pub fn App() -> impl IntoView {
 
     // Derive the live prompt's options and expose them so board entities can
     // route each option to itself and open a context menu (#536).
-    let pending = Signal::derive(move || store.with(crate::interaction::pending_options));
-    provide_context(crate::interaction::PendingOptions(pending));
+    let pending = Signal::derive(move || store.with(interaction::pending_options));
+    provide_context(PendingOptions(pending));
 
     // The option-less counterpart: an anchored `Confirm` (the Mythos encounter
     // draw) has no option to route, so the encounter deck reads the *request*
     // anchor instead (ADR 0011).
-    let confirm_anchor = Signal::derive(move || store.with(crate::interaction::confirm_anchor));
-    provide_context(crate::interaction::ConfirmAnchor(confirm_anchor));
+    let confirm_anchor = Signal::derive(move || store.with(interaction::confirm_anchor));
+    provide_context(ConfirmAnchor(confirm_anchor));
 
     // "A decision modal is up" — the board's cards read it to keep their glow
     // while giving up their context menu, since the modal is a decision's sole
     // surface (#856).
-    let decision_live = Signal::derive(move || store.with(crate::decision::modal_is_live));
-    provide_context(crate::decision::DecisionLive(decision_live));
+    let decision_live = Signal::derive(move || store.with(decision::modal_is_live));
+    provide_context(DecisionLive(decision_live));
 
     // Multi-select (PickMultiple) selection state, shared by the hand cards and
     // the prompt banner; cleared whenever a PickMultiple isn't live (#538).
-    let selected = RwSignal::new(std::collections::BTreeSet::<u32>::new());
-    let multi_active = Signal::derive(move || store.with(crate::interaction::is_multi_select));
+    let selected = RwSignal::new(BTreeSet::<u32>::new());
+    let multi_active = Signal::derive(move || store.with(interaction::is_multi_select));
     Effect::new(move |_| {
         if !multi_active.get() {
-            selected.set(std::collections::BTreeSet::new());
+            selected.set(BTreeSet::new());
         }
     });
-    provide_context(crate::interaction::MultiSelect {
+    provide_context(MultiSelect {
         active: multi_active,
         selected,
     });
@@ -44,22 +63,22 @@ pub fn App() -> impl IntoView {
     // builds render from a signal that tests drive directly.
     #[cfg(target_arch = "wasm32")]
     {
-        crate::transport::start(store);
+        transport::start(store);
     }
 
     view! {
         <main>
             <header class="app-header">
                 <h1>"Eldritch"</h1>
-                <crate::status_bar::StatusBarView/>
+                <StatusBarView/>
             </header>
             <div class="layout">
-                <crate::event_log::EventLogView/>
+                <EventLogView/>
                 <div class="main-column">
                     <BoardView/>
                     <Overlays/>
                 </div>
-                <crate::turn_tracker::TurnTrackerView/>
+                <TurnTrackerView/>
             </div>
         </main>
     }
@@ -82,11 +101,11 @@ pub fn Overlays() -> impl IntoView {
         {
             #[cfg(target_arch = "wasm32")]
             { view! {
-                <crate::picker::PickerView/>
-                <crate::skill_test_result::SkillTestResultView/>
-                <crate::decision::DecisionView/>
-                <crate::prompt_banner::PromptBanner/>
-                <crate::version_mismatch::VersionMismatchView/>
+                <PickerView/>
+                <SkillTestResultView/>
+                <DecisionView/>
+                <PromptBanner/>
+                <VersionMismatchView/>
             }.into_any() }
             #[cfg(not(target_arch = "wasm32"))]
             { ().into_any() }

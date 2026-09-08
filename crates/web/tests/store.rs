@@ -2,14 +2,14 @@
 //! the DOM rendered from it. wasm32-only (browser DOM); native jobs skip.
 #![cfg(target_arch = "wasm32")]
 
+use game_core::engine::EngineOutcome;
 use game_core::state::GameStateBuilder;
-use game_core::test_support::fixtures::test_investigator;
-use game_core::EngineOutcome;
-use leptos::prelude::Update;
+use game_core::test_support::fixtures;
+use leptos::prelude::{RwSignal, Update};
 use protocol::ServerMessage;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
-use web::store::{reduce, ClientState};
+use web::store::{self, ClientState};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -26,7 +26,7 @@ async fn hello_renders_state_present() {
     // which resolve the investigator card's capacity from the registry (#448).
     // The fixture investigator uses the synthetic `TEST_INV` code (8/8).
     game_core::test_support::install_test_registry();
-    let store = leptos::prelude::RwSignal::new(ClientState::default());
+    let store = RwSignal::new(ClientState::default());
     // Provide the same signal the component reads, then mount the board;
     // it stays mounted (attached to the DOM) for the assertions.
     leptos::mount::mount_to_body(move || {
@@ -41,10 +41,10 @@ async fn hello_renders_state_present() {
     );
 
     let game = GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
+        .with_investigator(fixtures::test_investigator(1))
         .build();
     store.update(|s| {
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Hello {
                 state: Box::new(game),

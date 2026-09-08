@@ -10,11 +10,17 @@
 //! acknowledge pause's only one — rather than a panel beside a button in the
 //! retired action bar.
 
+#[cfg(target_arch = "wasm32")]
+use game_core::action::InputResponse;
+use game_core::engine::{EngineOutcome, InputKind};
+use game_core::event::{Event, FailureReason};
 use game_core::state::{ChaosToken, TokenResolution};
-use game_core::{Event, FailureReason};
 use leptos::prelude::*;
 
-use crate::store::use_store;
+#[cfg(target_arch = "wasm32")]
+use crate::controls;
+use crate::drag::Drag;
+use crate::store::{use_store, ClientState};
 
 /// The data the result panel renders: a display string for the drawn token, the
 /// final total vs difficulty, and a player-facing outcome line.
@@ -44,7 +50,7 @@ pub struct SkillTestSummary {
 /// releasing them at `SkillTestEnded`. `None` for the token means no token was
 /// drawn at all, and renders the em dash.
 #[must_use]
-pub fn summarize(state: &crate::store::ClientState) -> Option<SkillTestSummary> {
+pub fn summarize(state: &ClientState) -> Option<SkillTestSummary> {
     let difficulty = state.last_skill_test_difficulty?;
     let token = state
         .last_revealed_token
@@ -99,12 +105,12 @@ fn token_display(token: ChaosToken, resolution: TokenResolution) -> String {
 /// Confirm, so the banner must not render a second one (#541). The rule lives here,
 /// with the view it governs, rather than being re-derived by the banner. Pure.
 #[must_use]
-pub fn modal_is_live(state: &crate::store::ClientState) -> bool {
+pub fn modal_is_live(state: &ClientState) -> bool {
     summarize(state).is_some()
         && matches!(
             &state.outcome,
-            Some(game_core::EngineOutcome::AwaitingInput { request, .. })
-                if request.kind == game_core::InputKind::Confirm && request.target.is_none()
+            Some(EngineOutcome::AwaitingInput { request, .. })
+                if request.kind == InputKind::Confirm && request.target.is_none()
         )
 }
 
@@ -131,7 +137,7 @@ pub fn SkillTestResultView() -> impl IntoView {
     // batch count is what tells one prompt from the next when neither liveness
     // nor the rendered content does — two identical tests running back to back
     // (#857).
-    let drag = crate::drag::Drag::per_prompt(move || {
+    let drag = Drag::per_prompt(move || {
         let st = store.get();
         modal_is_live(&st).then_some(st.log.len())
     });
@@ -165,8 +171,8 @@ pub fn SkillTestResultView() -> impl IntoView {
                             #[cfg(target_arch = "wasm32")]
                             {
                                 move |_| {
-                                    crate::controls::submit(
-                                        game_core::InputResponse::Confirm,
+                                    controls::submit(
+                                        InputResponse::Confirm,
                                         "Confirm",
                                     );
                                 }
@@ -187,9 +193,8 @@ pub fn SkillTestResultView() -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::ClientState;
-    use game_core::state::{ChaosToken, InvestigatorId, SkillKind, TokenResolution};
-    use game_core::{Event, FailureReason};
+    use game_core::card_data::SkillKind;
+    use game_core::state::InvestigatorId;
 
     /// A store holding what the panel renders from: the difficulty announced at
     /// ST.1, the token drawn (or none), and the resolution. The three arrive in

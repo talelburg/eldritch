@@ -19,10 +19,13 @@ use std::path::PathBuf;
 
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing;
 use axum::Router;
+use game_core::{card_registry, scenario_registry};
 use sqlx::SqlitePool;
 use tower_http::services::{ServeDir, ServeFile};
+
+use crate::ws::Rooms;
 
 /// Shared application state handed to every Axum handler.
 #[derive(Clone)]
@@ -30,7 +33,7 @@ pub struct AppState {
     /// Connection pool for the `SQLite` action-log database.
     pub db: SqlitePool,
     /// Live games keyed by `game_id`, each with its broadcast group.
-    rooms: ws::Rooms,
+    rooms: Rooms,
     /// Directory holding the built client bundle (`index.html`, JS, wasm),
     /// served as the router fallback.
     dist_dir: PathBuf,
@@ -68,8 +71,8 @@ impl AppState {
 /// Idempotent: a second call is a no-op (the underlying `OnceLock`s reject
 /// re-installation).
 pub fn install_registries() {
-    let _ = game_core::scenario_registry::install(scenarios::REGISTRY);
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = scenario_registry::install(scenarios::REGISTRY);
+    let _ = card_registry::install(cards::REGISTRY);
 }
 
 /// Build the application router with all routes and shared state. The
@@ -84,9 +87,9 @@ pub fn app(state: AppState) -> Router {
     let static_files = ServeDir::new(&state.dist_dir).fallback(ServeFile::new(index_html));
 
     Router::new()
-        .route("/health", get(health))
-        .route("/games", post(lifecycle::create_game))
-        .route("/ws/{game_id}", get(ws::game_ws))
+        .route("/health", routing::get(health))
+        .route("/games", routing::post(lifecycle::create_game))
+        .route("/ws/{game_id}", routing::get(ws::game_ws))
         .fallback_service(static_files)
         .with_state(state)
 }

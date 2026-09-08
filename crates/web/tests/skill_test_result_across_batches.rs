@@ -34,17 +34,20 @@
 //! per process.
 #![cfg(not(target_arch = "wasm32"))]
 
+use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::card_registry;
+use game_core::engine::enumerate::TurnAction;
+use game_core::engine::{EngineOutcome, InputKind, OptionId};
+use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState, InvestigatorId,
-    LocationId, Phase, TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{test_enemy, test_investigator, test_location, GameStateBuilder};
-use game_core::{EngineOutcome, Event, InputKind, OptionId, TurnAction};
+use game_core::test_support::fixtures;
 use protocol::ServerMessage;
-use web::skill_test_result::{modal_is_live, summarize};
-use web::store::{reduce, ClientState};
+use web::skill_test_result;
+use web::store::{self, ClientState};
 
 /// Lita Chantler.
 const LITA: &str = "01117";
@@ -64,7 +67,7 @@ const GHOUL: EnemyId = EnemyId(100);
 /// acknowledge. Everything else — the `+0` bag that makes the attack succeed,
 /// the `[[Monster]]` Ghoul, both investigators in the Parlor — is fixed.
 fn board(lita_in_play: bool) -> GameState {
-    let mut keeper = test_investigator(1);
+    let mut keeper = fixtures::test_investigator(1);
     keeper.investigator_card.code = CardCode::new(SKIDS);
     keeper.current_location = Some(PARLOR);
     keeper.skills.combat = 3;
@@ -75,14 +78,14 @@ fn board(lita_in_play: bool) -> GameState {
         ));
     }
 
-    let mut other = test_investigator(2);
+    let mut other = fixtures::test_investigator(2);
     other.investigator_card.code = CardCode::new(SKIDS);
     other.current_location = Some(PARLOR);
     other.skills.combat = 3;
 
     // Health well clear of the attack, so the Fight resolves without a defeat
     // queueing windows of its own.
-    let mut ghoul = test_enemy(100, "Ghoul");
+    let mut ghoul = fixtures::test_enemy(100, "Ghoul");
     ghoul.traits = vec!["Humanoid".into(), "Monster".into(), "Ghoul".into()];
     ghoul.fight = 3;
     ghoul.max_health = 9;
@@ -93,7 +96,7 @@ fn board(lita_in_play: bool) -> GameState {
         .with_phase(Phase::Investigation)
         .with_investigator(keeper)
         .with_investigator(other)
-        .with_location(test_location(1, "Parlor"))
+        .with_location(fixtures::test_location(1, "Parlor"))
         .with_enemy(ghoul)
         .with_active_investigator(OTHER)
         .with_turn_order([KEEPER, OTHER])
@@ -118,7 +121,7 @@ struct Pause {
 /// any offered reaction (the only `PickSingle` in flight is Lita's window) and
 /// commits no cards. Returns one entry per pause the client rendered.
 fn fight_ghoul(lita_in_play: bool) -> Vec<Pause> {
-    let _ = card_registry::install(cards::REGISTRY);
+    let _ = card_registry::install(REGISTRY);
     let state = board(lita_in_play);
 
     let fight = TurnAction::Fight {
@@ -143,7 +146,7 @@ fn fight_ghoul(lita_in_play: bool) -> Vec<Pause> {
     // Generous bound: the longest path here is four applies. A runaway loop is a
     // failure, not a hang.
     for _ in 0..16 {
-        reduce(
+        store::reduce(
             &mut client,
             ServerMessage::Applied {
                 state: Box::new(result.state.clone()),
@@ -156,7 +159,7 @@ fn fight_ghoul(lita_in_play: bool) -> Vec<Pause> {
         };
         pauses.push(Pause {
             prompt: request.kind,
-            modal_live: modal_is_live(&client),
+            modal_live: skill_test_result::modal_is_live(&client),
         });
         // The test is over once ST.8 has torn it down; past that is turn
         // plumbing, which drives into the next action menu.
@@ -215,14 +218,14 @@ fn an_attack_through_litas_reaction_window_still_shows_the_result_modal() {
 #[test]
 fn the_result_does_not_survive_the_end_of_its_own_test() {
     let mut client = ClientState::default();
-    reduce(
+    store::reduce(
         &mut client,
         ServerMessage::Applied {
             state: Box::new(board(false)),
             events: vec![
                 Event::SkillTestSucceeded {
                     investigator: OTHER,
-                    skill: game_core::state::SkillKind::Combat,
+                    skill: SkillKind::Combat,
                     margin: 1,
                 },
                 Event::SkillTestEnded {
@@ -233,7 +236,7 @@ fn the_result_does_not_survive_the_end_of_its_own_test() {
         },
     );
     assert!(
-        summarize(&client).is_none(),
+        skill_test_result::summarize(&client).is_none(),
         "SkillTestEnded clears the retained result",
     );
 }

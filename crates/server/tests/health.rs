@@ -3,8 +3,10 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use server::db::MIGRATOR;
+use server::AppState;
 use sqlx::sqlite::SqlitePoolOptions;
-use tower::ServiceExt; // for `oneshot`
+use tower::ServiceExt as _;
 
 #[tokio::test]
 async fn health_returns_ok_when_database_reachable() {
@@ -13,12 +15,9 @@ async fn health_returns_ok_when_database_reachable() {
         .connect("sqlite::memory:")
         .await
         .expect("open in-memory sqlite");
-    server::db::MIGRATOR
-        .run(&pool)
-        .await
-        .expect("run migrations");
+    MIGRATOR.run(&pool).await.expect("run migrations");
 
-    let app = server::app(server::AppState::new(pool));
+    let app = server::app(AppState::new(pool));
 
     let response = app
         .oneshot(

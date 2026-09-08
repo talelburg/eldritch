@@ -683,7 +683,7 @@ impl CardMetadata {
 
 #[cfg(test)]
 mod skills_tests {
-    use super::{SkillKind, Skills};
+    use super::*;
 
     #[test]
     fn skills_value_indexes_each_kind() {
@@ -1178,7 +1178,7 @@ mod is_weakness_tests {
 
 #[cfg(test)]
 mod skill_icon_tests {
-    use super::{SkillIcons, SkillKind};
+    use super::*;
 
     const ALL: [SkillKind; 4] = [
         SkillKind::Willpower,

@@ -1,30 +1,33 @@
 //! Eldritch server binary: opens the `SQLite` action-log database, applies
 //! migrations, and serves the HTTP/WS router.
 
+use std::error::Error;
 use std::net::SocketAddr;
 
-use server::{app, db, install_registries, AppState};
+use tokio::net::TcpListener;
+use tracing_subscriber::EnvFilter;
+
+use server::db::{self, MIGRATOR};
+use server::AppState;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
 
-    install_registries();
+    server::install_registries();
 
     let database_url =
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:eldritch.db".to_string());
     let pool = db::connect_pool(&database_url).await?;
-    db::MIGRATOR.run(&pool).await?;
+    MIGRATOR.run(&pool).await?;
     tracing::info!("database ready at {database_url}");
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8000));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let listener = TcpListener::bind(addr).await?;
     tracing::info!("eldritch server listening on http://{addr}");
 
-    axum::serve(listener, app(AppState::new(pool))).await?;
+    axum::serve(listener, server::app(AppState::new(pool))).await?;
     Ok(())
 }

@@ -1219,13 +1219,7 @@ const GENERATED_HEADER: &str = "\
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        classify, classify_against, clue_value_lit, emit_card, has_keyword, health_value_opt_lit,
-        map_card_type, map_class, normalize, parse_commit_limit, parse_prey, parse_slots,
-        parse_spawn_name, parse_traits, parse_uses, prey_lit, process_raw, read_packs, repo_root,
-        spawn_lit, strip_html_bold, vendored_pack_files, Discrepancy, Manifest, NormalizedCard,
-        PreyParse, RawCard, RawPack, SNAPSHOT_DIR,
-    };
+    use super::*;
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
 

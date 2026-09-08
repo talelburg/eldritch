@@ -8,10 +8,11 @@
 //! but for that anchor, and the bar rendered both as an identical "Confirm".
 #![cfg(target_arch = "wasm32")]
 
-use futures::channel::mpsc;
+use futures::channel::mpsc::{self, UnboundedReceiver};
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::state::{CardCode, GameStateBuilder};
-use game_core::test_support::fixtures::{awaiting_confirm_input, test_investigator};
-use game_core::{EngineOutcome, InputResponse, OptionTarget, PlayerAction};
+use game_core::test_support::fixtures;
 use leptos::prelude::*;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
@@ -19,12 +20,13 @@ use wasm_bindgen_test::*;
 use web::interaction::ConfirmAnchor;
 use web::store::ClientState;
 use web::transport::OutboundTx;
+use web_sys::{Element, HtmlButtonElement, HtmlElement};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
 /// A `Confirm` prompt anchored to the encounter deck — the Mythos draw.
 fn encounter_draw_prompt() -> EngineOutcome {
-    let mut outcome = awaiting_confirm_input("Mythos step 1.4: draws an encounter card.");
+    let mut outcome = fixtures::awaiting_confirm_input("Mythos step 1.4: draws an encounter card.");
     if let EngineOutcome::AwaitingInput { request, .. } = &mut outcome {
         request.target = Some(OptionTarget::EncounterDeck);
     }
@@ -33,9 +35,9 @@ fn encounter_draw_prompt() -> EngineOutcome {
 
 /// Mount the encounter-deck element for a game whose encounter deck holds
 /// `deck_size` cards, with `outcome` live.
-async fn mount(deck_size: usize, outcome: EngineOutcome) -> mpsc::UnboundedReceiver<ClientMessage> {
+async fn mount(deck_size: usize, outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
     let mut state = GameStateBuilder::new()
-        .with_investigator(test_investigator(1))
+        .with_investigator(fixtures::test_investigator(1))
         .build();
     state.encounter_deck = (0..deck_size)
         .map(|i| CardCode::new(format!("_enc{i}")))
@@ -55,24 +57,24 @@ async fn mount(deck_size: usize, outcome: EngineOutcome) -> mpsc::UnboundedRecei
     rx
 }
 
-fn last_root() -> web_sys::Element {
+fn last_root() -> Element {
     let roots = document().query_selector_all(".ed-root").expect("query");
     roots
         .item(roots.length() - 1)
-        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        .and_then(|n| n.dyn_into::<Element>().ok())
         .expect("an .ed-root")
 }
 
-fn draw_button() -> web_sys::HtmlElement {
+fn draw_button() -> HtmlElement {
     last_root()
         .query_selector(".encounter-draw")
         .expect("query")
-        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("the encounter deck's Draw button renders")
 }
 
-fn is_disabled(el: &web_sys::HtmlElement) -> bool {
-    el.dyn_ref::<web_sys::HtmlButtonElement>()
+fn is_disabled(el: &HtmlElement) -> bool {
+    el.dyn_ref::<HtmlButtonElement>()
         .expect("a button")
         .disabled()
 }
@@ -112,7 +114,7 @@ async fn draw_is_dark_for_the_unanchored_acknowledge_confirm() {
     // them, and this is the assertion that says so.
     let _ = mount(
         5,
-        awaiting_confirm_input("Acknowledge the skill-test result."),
+        fixtures::awaiting_confirm_input("Acknowledge the skill-test result."),
     )
     .await;
     assert!(

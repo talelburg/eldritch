@@ -3,28 +3,27 @@
 //! through the real card registry. Own process so it can install the
 //! process-global registries against the real `cards` corpus.
 
-use game_core::action::RosterEntry;
-use game_core::engine::{apply, seat_and_open, EngineOutcome};
-use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{
-    dispatch_turn_action_unchecked, fire_forced_on_enter, take_turn_action, test_investigator,
-    test_location, GameStateBuilder,
+use std::collections::BTreeSet;
+
+use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{self, EngineOutcome, OptionId, TimingEvent};
+use game_core::state::{
+    CardCode, Continuation, GameState, InvestigatorId, LocationId, Phase, TimingMode,
 };
-use game_core::{Action, InputResponse, PlayerAction, TurnAction};
-use scenarios::{the_gathering, REGISTRY};
+use game_core::test_support::{self, GameStateBuilder};
+use game_core::{card_registry, scenario_registry};
+use scenarios::the_gathering;
 
 #[ctor::ctor(unsafe)]
 fn install_registries() {
-    let _ = game_core::scenario_registry::install(REGISTRY);
-    let _ = game_core::card_registry::install(cards::REGISTRY);
+    let _ = scenario_registry::install(scenarios::REGISTRY);
+    let _ = card_registry::install(cards::REGISTRY);
 }
 
 /// Apply one action, asserting it is not `Rejected`.
-fn apply_checked(
-    state: game_core::state::GameState,
-    action: &Action,
-) -> game_core::state::GameState {
-    let r = apply(state, action.clone());
+fn apply_checked(state: GameState, action: &Action) -> GameState {
+    let r = engine::apply(state, action.clone());
     assert!(
         !matches!(r.outcome, EngineOutcome::Rejected { .. }),
         "action {action:?} was rejected: {:?}",
@@ -34,12 +33,12 @@ fn apply_checked(
 }
 
 /// Seat solo Roland (01001, empty deck) and close the mulligan window.
-fn setup_and_seat() -> game_core::state::GameState {
+fn setup_and_seat() -> GameState {
     let roster = vec![RosterEntry {
         investigator: CardCode("01001".into()),
         deck: vec![],
     }];
-    let mut state = seat_and_open(the_gathering::setup(), &roster).state;
+    let mut state = engine::seat_and_open(the_gathering::setup(), &roster).state;
     state = apply_checked(
         state,
         &Action::Player(PlayerAction::ResolveInput {
@@ -67,7 +66,7 @@ fn roster_seating_places_investigator_at_study() {
 }
 
 /// The set-aside zone as printed codes, in order.
-fn set_aside_codes(state: &game_core::GameState) -> Vec<String> {
+fn set_aside_codes(state: &GameState) -> Vec<String> {
     state
         .set_aside_cards
         .iter()
@@ -78,7 +77,7 @@ fn set_aside_codes(state: &game_core::GameState) -> Vec<String> {
 /// Act 2's reverse leaves the Parlor (01115) revealed with Lita Chantler
 /// (01117) in play *at* it under nobody's control — lines 1 and 2 of the three
 /// it prints (#772).
-fn assert_parlor_revealed_with_lita(state: &game_core::state::GameState) {
+fn assert_parlor_revealed_with_lita(state: &GameState) {
     let parlor = state
         .locations
         .values()
@@ -114,7 +113,8 @@ fn drives_act_1_then_act_2_via_round_end_window() {
 
     // Act 1: the normal Investigation-phase clue spend. Board builds and the
     // investigator relocates to the Hallway (01112) — the act-2 contributors.
-    state = take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv }).state;
+    state =
+        test_support::take_turn_action(state, &TurnAction::AdvanceAct { investigator: inv }).state;
     assert_eq!(state.act_index, 1, "act 1 advanced to act 2");
 
     // #774: the board act 1 builds puts the Parlor (01115) into play
@@ -129,7 +129,7 @@ fn drives_act_1_then_act_2_via_round_end_window() {
         !state.locations[&parlor_id].revealed,
         "the Parlor enters play unrevealed",
     );
-    let offered = game_core::engine::legal_actions(&state);
+    let offered = enumerate::legal_actions(&state);
     assert!(
         !offered.contains(&TurnAction::Move {
             investigator: inv,
@@ -151,7 +151,7 @@ fn drives_act_1_then_act_2_via_round_end_window() {
 
     // End the round: the cascade reaches step 4.6 and opens act 2's round-end
     // window (Hallway investigator holds >= 3 clues).
-    let r = take_turn_action(state, &TurnAction::EndTurn);
+    let r = test_support::take_turn_action(state, &TurnAction::EndTurn);
     assert!(
         matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
         "round end opens the act-2 clue-spend window, got {:?}",
@@ -159,19 +159,19 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     );
     assert!(matches!(
         r.state.continuations.last(),
-        Some(game_core::state::Continuation::TimingPointWindow {
-            event: game_core::engine::TimingEvent::RoundEnded,
-            mode: game_core::state::TimingMode::Reaction,
+        Some(Continuation::TimingPointWindow {
+            event: TimingEvent::RoundEnded,
+            mode: TimingMode::Reaction,
             ..
         })
     ));
 
     // Pick the act-advance candidate (the window's sole option): act 2 advances
     // to act 3 via 01109's `When`-RoundEnded group clue-spend (#434).
-    let r = apply(
+    let r = engine::apply(
         r.state,
         Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(game_core::engine::OptionId(0)),
+            response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
     assert!(
@@ -222,16 +222,13 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     // point of 01109b's *"The barrier blocking passage into the parlor has
     // vanished. Reveal the Parlor."* The Hallway investigator can now move in.
     assert!(
-        game_core::engine::investigator_can_enter_location(
-            &r.state,
-            location_id(&r.state, "01115"),
-        ),
+        engine::investigator_can_enter_location(&r.state, location_id(&r.state, "01115")),
         "the reveal lifts the barrier",
     );
 }
 
 /// The id of the in-play location with `code`.
-fn location_id(state: &game_core::GameState, code: &str) -> LocationId {
+fn location_id(state: &GameState, code: &str) -> LocationId {
     state
         .locations
         .values()
@@ -245,11 +242,11 @@ fn attic_forced_enter_deals_one_horror() {
     // A bare board with the Attic (01113); fire the forced
     // EnteredLocation trigger directly via the test helper (live entry
     // isn't reachable until C1b's Door-on-the-Floor transition).
-    let mut attic = test_location(20, "Attic");
+    let mut attic = test_support::test_location(20, "Attic");
     attic.code = CardCode("01113".into());
     // Use Skids O'Toole (01003) as the investigator card code: a real corpus
     // code known to cards::REGISTRY (installed here) with capacity data.
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.investigator_card.code = CardCode::new("01003");
     let mut state = GameStateBuilder::new()
         .with_investigator_at(inv, LocationId(20))
@@ -257,7 +254,12 @@ fn attic_forced_enter_deals_one_horror() {
         .build();
     let mut events = Vec::new();
 
-    let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(20));
+    let outcome = test_support::fire_forced_on_enter(
+        &mut state,
+        &mut events,
+        InvestigatorId(1),
+        LocationId(20),
+    );
     assert!(matches!(outcome, EngineOutcome::Done));
     assert_eq!(
         state
@@ -272,11 +274,11 @@ fn attic_forced_enter_deals_one_horror() {
 
 #[test]
 fn cellar_forced_enter_deals_one_damage() {
-    let mut cellar = test_location(21, "Cellar");
+    let mut cellar = test_support::test_location(21, "Cellar");
     cellar.code = CardCode("01114".into());
     // Use Skids O'Toole (01003) as the investigator card code: a real corpus
     // code known to cards::REGISTRY (installed here) with capacity data.
-    let mut inv = test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.investigator_card.code = CardCode::new("01003");
     let mut state = GameStateBuilder::new()
         .with_investigator_at(inv, LocationId(21))
@@ -284,7 +286,12 @@ fn cellar_forced_enter_deals_one_damage() {
         .build();
     let mut events = Vec::new();
 
-    let outcome = fire_forced_on_enter(&mut state, &mut events, InvestigatorId(1), LocationId(21));
+    let outcome = test_support::fire_forced_on_enter(
+        &mut state,
+        &mut events,
+        InvestigatorId(1),
+        LocationId(21),
+    );
     assert!(matches!(outcome, EngineOutcome::Done));
     assert_eq!(
         state
@@ -303,7 +310,7 @@ fn advancing_act_1_rebuilds_the_board() {
 
     // Seat one investigator at the Study with the 2 clues Act 1 needs.
     let inv = InvestigatorId(1);
-    let mut investigator = test_investigator(1);
+    let mut investigator = test_support::test_investigator(1);
     investigator.current_location = state.starting_location;
     investigator.clues = 2;
     state.investigators.insert(inv, investigator);
@@ -311,12 +318,14 @@ fn advancing_act_1_rebuilds_the_board() {
     state.active_investigator = Some(inv);
     state.phase = Phase::Investigation;
 
-    let result =
-        dispatch_turn_action_unchecked(state, &TurnAction::AdvanceAct { investigator: inv });
+    let result = test_support::dispatch_turn_action_unchecked(
+        state,
+        &TurnAction::AdvanceAct { investigator: inv },
+    );
     assert_eq!(result.outcome, EngineOutcome::Done);
 
     // Board rebuilt: four locations in play, Study gone, set-aside empty.
-    let codes: std::collections::BTreeSet<String> = result
+    let codes: BTreeSet<String> = result
         .state
         .locations
         .values()
