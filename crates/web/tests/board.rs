@@ -32,12 +32,12 @@ use game_core::state::{
     InvestigatorId, Skills,
 };
 use game_core::test_support::fixtures;
-use leptos::prelude::{provide_context, RwSignal, Update};
+use leptos::prelude::{document, provide_context, RwSignal, Update};
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
-use web::store::{reduce, ClientState};
+use web::store::{self, ClientState};
 use web_sys::Element;
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -66,10 +66,7 @@ const ACT_TRAPPED: &str = "01108";
 const AGENDA_WHATS_GOING_ON: &str = "01105";
 
 fn body_html() -> String {
-    leptos::prelude::document()
-        .body()
-        .expect("body")
-        .inner_html()
+    document().body().expect("body").inner_html()
 }
 
 /// `fixtures::test_investigator(id)` carrying Roland Banks as its investigator card.
@@ -89,7 +86,7 @@ fn roland(id: u32) -> Investigator {
 /// The last mounted element matching `sel` (DOM accumulates across tests on the
 /// shared page — scope to the latest subtree).
 fn last_mounted(sel: &str) -> Element {
-    let nodes = leptos::prelude::document()
+    let nodes = document()
         .query_selector_all(sel)
         .expect("query_selector_all");
     nodes
@@ -130,7 +127,7 @@ async fn render_state(state: GameState) -> String {
         leptos::view! { <BoardView/> }
     });
     store.update(|s| {
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Hello {
                 state: Box::new(state),

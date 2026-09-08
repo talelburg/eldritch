@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing;
 use axum::Router;
 use game_core::{card_registry, scenario_registry};
 use sqlx::SqlitePool;
@@ -87,9 +87,9 @@ pub fn app(state: AppState) -> Router {
     let static_files = ServeDir::new(&state.dist_dir).fallback(ServeFile::new(index_html));
 
     Router::new()
-        .route("/health", get(health))
-        .route("/games", post(lifecycle::create_game))
-        .route("/ws/{game_id}", get(ws::game_ws))
+        .route("/health", routing::get(health))
+        .route("/games", routing::post(lifecycle::create_game))
+        .route("/ws/{game_id}", routing::get(ws::game_ws))
         .fallback_service(static_files)
         .with_state(state)
 }

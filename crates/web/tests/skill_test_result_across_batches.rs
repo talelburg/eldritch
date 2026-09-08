@@ -46,8 +46,8 @@ use game_core::state::{
 };
 use game_core::test_support::fixtures;
 use protocol::ServerMessage;
-use web::skill_test_result::{modal_is_live, summarize};
-use web::store::{reduce, ClientState};
+use web::skill_test_result;
+use web::store::{self, ClientState};
 
 /// Lita Chantler.
 const LITA: &str = "01117";
@@ -146,7 +146,7 @@ fn fight_ghoul(lita_in_play: bool) -> Vec<Pause> {
     // Generous bound: the longest path here is four applies. A runaway loop is a
     // failure, not a hang.
     for _ in 0..16 {
-        reduce(
+        store::reduce(
             &mut client,
             ServerMessage::Applied {
                 state: Box::new(result.state.clone()),
@@ -159,7 +159,7 @@ fn fight_ghoul(lita_in_play: bool) -> Vec<Pause> {
         };
         pauses.push(Pause {
             prompt: request.kind,
-            modal_live: modal_is_live(&client),
+            modal_live: skill_test_result::modal_is_live(&client),
         });
         // The test is over once ST.8 has torn it down; past that is turn
         // plumbing, which drives into the next action menu.
@@ -218,7 +218,7 @@ fn an_attack_through_litas_reaction_window_still_shows_the_result_modal() {
 #[test]
 fn the_result_does_not_survive_the_end_of_its_own_test() {
     let mut client = ClientState::default();
-    reduce(
+    store::reduce(
         &mut client,
         ServerMessage::Applied {
             state: Box::new(board(false)),
@@ -236,7 +236,7 @@ fn the_result_does_not_survive_the_end_of_its_own_test() {
         },
     );
     assert!(
-        summarize(&client).is_none(),
+        skill_test_result::summarize(&client).is_none(),
         "SkillTestEnded clears the retained result",
     );
 }

@@ -20,6 +20,7 @@ use game_core::state::{
     EnemyId, GameState, InvestigatorId, Status, TimingMode,
 };
 use game_core::{assert_event, card_registry, scenario_registry, test_support};
+use scenarios::the_gathering;
 
 const ROLAND: &str = "01001";
 /// The Parlor, which enters play only via act 2 (01109)'s reverse.
@@ -37,7 +38,7 @@ fn install() {
 /// Standard bag (which contains `AutoFail`) is replaced with a single-token
 /// `Numeric(0)` bag so skill tests resolve predictably.
 fn seated_roland() -> GameState {
-    let mut state = scenarios::the_gathering::setup();
+    let mut state = the_gathering::setup();
     // Stand-in: deterministic chaos bag (production serves Standard).
     state.chaos_bag = ChaosBag::new([ChaosToken::Numeric(0)]);
 
@@ -556,7 +557,7 @@ fn the_terminal_agendas_ghoul_move_is_a_no_op_when_the_parlor_is_not_in_play() {
 ///
 /// Here rather than in `crates/cards/tests/` — which is where the rest of 01107's
 /// integration coverage lives — because reaching agenda 3 needs
-/// `scenarios::the_gathering::setup()`, and `scenarios` depends on `cards`, not the
+/// `the_gathering::setup()`, and `scenarios` depends on `cards`, not the
 /// other way round. This target installs `cards::REGISTRY` too, so it is the same
 /// real-corpus seam.
 #[test]

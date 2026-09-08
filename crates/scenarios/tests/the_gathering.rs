@@ -222,7 +222,7 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     // point of 01109b's *"The barrier blocking passage into the parlor has
     // vanished. Reveal the Parlor."* The Hallway investigator can now move in.
     assert!(
-        engine::investigator_can_enter_location(&r.state, location_id(&r.state, "01115"),),
+        engine::investigator_can_enter_location(&r.state, location_id(&r.state, "01115")),
         "the reveal lifts the barrier",
     );
 }

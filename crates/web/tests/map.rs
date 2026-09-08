@@ -13,7 +13,7 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
 use web::interaction::PendingOptions;
-use web::store::{reduce, ClientState};
+use web::store::{self, ClientState};
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
 
@@ -29,7 +29,7 @@ async fn mount_state(state: GameState) {
         leptos::view! { <BoardView/> }
     });
     store.update(|s| {
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Hello {
                 state: Box::new(state),
@@ -317,7 +317,7 @@ async fn mount_interactive(
         leptos::view! { <BoardView/> }
     });
     store.update(|s| {
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Hello {
                 state: Box::new(state),

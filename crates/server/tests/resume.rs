@@ -11,9 +11,7 @@
 
 mod common;
 
-use common::{
-    connect, install_registry, memory_pool, recv, roster, send, spawn_server, TEST_SCENARIO_ID,
-};
+use common::TEST_SCENARIO_ID;
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
@@ -26,7 +24,7 @@ async fn seed(pool: &SqlitePool, game_id: &str) {
         pool.clone(),
         game_id,
         ScenarioId::new(TEST_SCENARIO_ID),
-        roster(),
+        common::roster(),
     )
     .await
     .expect("seed game");
@@ -34,14 +32,14 @@ async fn seed(pool: &SqlitePool, game_id: &str) {
 
 #[tokio::test]
 async fn reconnect_delivers_in_flight_awaiting_input() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     seed(&pool, "g-resume").await;
-    let addr = spawn_server(pool).await;
+    let addr = common::spawn_server(pool).await;
 
     // Connection A's first Hello is already AwaitingInput (the mulligan).
-    let mut a = connect(addr, "g-resume").await;
-    match recv(&mut a).await {
+    let mut a = common::connect(addr, "g-resume").await;
+    match common::recv(&mut a).await {
         ServerMessage::Hello { outcome, .. } => {
             assert!(
                 matches!(outcome, EngineOutcome::AwaitingInput { .. }),
@@ -52,8 +50,8 @@ async fn reconnect_delivers_in_flight_awaiting_input() {
     }
 
     // A fresh connection also sees the in-flight prompt in its Hello.
-    let mut b = connect(addr, "g-resume").await;
-    match recv(&mut b).await {
+    let mut b = common::connect(addr, "g-resume").await;
+    match common::recv(&mut b).await {
         ServerMessage::Hello { outcome, .. } => {
             assert!(
                 matches!(outcome, EngineOutcome::AwaitingInput { .. }),
@@ -66,16 +64,16 @@ async fn reconnect_delivers_in_flight_awaiting_input() {
 
 #[tokio::test]
 async fn restart_restores_awaiting_input_from_persisted_seed_outcome() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     seed(&pool, "g-restart").await;
 
     // "Restart": a fresh server with empty rooms over the same database.
     // The game has zero logged actions; AwaitingInput is restored from the
     // persisted seed_outcome (not from log replay).
-    let addr = spawn_server(pool).await;
-    let mut c = connect(addr, "g-restart").await;
-    match recv(&mut c).await {
+    let addr = common::spawn_server(pool).await;
+    let mut c = common::connect(addr, "g-restart").await;
+    match common::recv(&mut c).await {
         ServerMessage::Hello { outcome, .. } => {
             assert!(
                 matches!(outcome, EngineOutcome::AwaitingInput { .. }),
@@ -88,19 +86,19 @@ async fn restart_restores_awaiting_input_from_persisted_seed_outcome() {
 
 #[tokio::test]
 async fn resolve_input_resumes_and_completes() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     seed(&pool, "g-do-resolve").await;
-    let addr = spawn_server(pool).await;
+    let addr = common::spawn_server(pool).await;
 
-    let mut a = connect(addr, "g-do-resolve").await;
-    let _ = recv(&mut a).await; // Hello (AwaitingInput — mulligan already pending)
+    let mut a = common::connect(addr, "g-do-resolve").await;
+    let _ = common::recv(&mut a).await; // Hello (AwaitingInput — mulligan already pending)
 
     // Resolve: keep the whole hand (empty redraw). The mulligan completes and
     // the engine drives forward into the Investigation phase, surfacing the
     // open-turn action menu (`AwaitingInput`) — i.e. the resolve is accepted and
     // makes progress, not rejected.
-    send(
+    common::send(
         &mut a,
         &ClientMessage::Submit {
             action: PlayerAction::ResolveInput {
@@ -109,7 +107,7 @@ async fn resolve_input_resumes_and_completes() {
         },
     )
     .await;
-    match recv(&mut a).await {
+    match common::recv(&mut a).await {
         ServerMessage::Applied { outcome, .. } => {
             assert!(
                 !matches!(outcome, EngineOutcome::Rejected { .. }),
@@ -122,18 +120,18 @@ async fn resolve_input_resumes_and_completes() {
 
 #[tokio::test]
 async fn invalid_mulligan_response_is_rejected() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     seed(&pool, "g-busy").await;
-    let addr = spawn_server(pool).await;
+    let addr = common::spawn_server(pool).await;
 
-    let mut a = connect(addr, "g-busy").await;
-    let _ = recv(&mut a).await; // Hello (AwaitingInput — mulligan already pending)
+    let mut a = common::connect(addr, "g-busy").await;
+    let _ = common::recv(&mut a).await; // Hello (AwaitingInput — mulligan already pending)
 
     // Submitting a ResolveInput with an out-of-range option against the
     // mulligan is rejected: OptionId(999_999) is out of bounds since the
     // deck is empty (hand size 0).
-    send(
+    common::send(
         &mut a,
         &ClientMessage::Submit {
             action: PlayerAction::ResolveInput {
@@ -144,7 +142,7 @@ async fn invalid_mulligan_response_is_rejected() {
         },
     )
     .await;
-    match recv(&mut a).await {
+    match common::recv(&mut a).await {
         ServerMessage::Rejected { .. } => {}
         other => panic!("expected Rejected while awaiting input, got {other:?}"),
     }

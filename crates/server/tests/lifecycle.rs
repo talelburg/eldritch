@@ -6,7 +6,7 @@ mod common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use common::{install_registry, memory_pool, TEST_SCENARIO_ID};
+use common::TEST_SCENARIO_ID;
 use game_core::test_support::TEST_INV;
 use serde_json::Value;
 use server::session::GameSession;
@@ -15,8 +15,8 @@ use tower::ServiceExt as _;
 
 #[tokio::test]
 async fn post_games_creates_game_and_returns_id() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     let app = server::app(AppState::new(pool.clone()));
 
     let request = Request::builder()
@@ -48,8 +48,8 @@ async fn post_games_creates_game_and_returns_id() {
 
 #[tokio::test]
 async fn post_games_unknown_scenario_is_bad_request() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     let app = server::app(AppState::new(pool));
 
     let request = Request::builder()

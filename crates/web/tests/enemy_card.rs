@@ -11,7 +11,7 @@ use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::enemy_card::EnemyCard;
-use web::interaction::{pending_options, PendingOptions};
+use web::interaction::{self, PendingOptions};
 use web::store::ClientState;
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement};
@@ -95,7 +95,7 @@ async fn mount_enemy(enemy: Enemy, outcome: EngineOutcome) -> UnboundedReceiver<
     mount_to_body(move || {
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());
-        let pending = Signal::derive(move || store.with(pending_options));
+        let pending = Signal::derive(move || store.with(interaction::pending_options));
         provide_context(PendingOptions(pending));
         view! { <EnemyCard enemy=enemy.clone()/> }
     });

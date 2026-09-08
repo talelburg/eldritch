@@ -8,7 +8,7 @@ use leptos::prelude::{document, provide_context, RwSignal, Update};
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
-use web::store::{reduce, ClientState};
+use web::store::{self, ClientState};
 use web::turn_tracker::TurnTrackerView;
 use web_sys::Element;
 
@@ -26,7 +26,7 @@ async fn mount_at(phase: Phase, round: u32) {
         leptos::view! { <TurnTrackerView/> }
     });
     store.update(|s| {
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Hello {
                 state: Box::new(state),

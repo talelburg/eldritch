@@ -9,7 +9,7 @@ use leptos::prelude::{RwSignal, Update};
 use protocol::ServerMessage;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
-use web::store::{reduce, ClientState};
+use web::store::{self, ClientState};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -44,7 +44,7 @@ async fn hello_renders_state_present() {
         .with_investigator(fixtures::test_investigator(1))
         .build();
     store.update(|s| {
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Hello {
                 state: Box::new(game),

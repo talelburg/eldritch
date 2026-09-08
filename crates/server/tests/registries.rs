@@ -8,7 +8,7 @@ mod common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use common::memory_pool;
+
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
 use scenarios::the_gathering::ID as GATHERING_SCENARIO_ID;
@@ -45,7 +45,7 @@ fn install_registries_resolves_the_gathering_and_real_cards() {
 #[tokio::test]
 async fn post_games_creates_the_gathering_against_installed_registries() {
     server::install_registries();
-    let pool = memory_pool().await;
+    let pool = common::memory_pool().await;
     let app = server::app(AppState::new(pool));
 
     // Seat Roland Banks (01001) — a real investigator from the production

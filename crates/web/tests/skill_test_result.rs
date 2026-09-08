@@ -18,7 +18,7 @@ use protocol::{ClientMessage, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::skill_test_result::SkillTestResultView;
-use web::store::{reduce, ClientState};
+use web::store::{self, ClientState};
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlElement, PointerEvent, PointerEventInit};
 
@@ -60,7 +60,7 @@ async fn renders_token_total_and_outcome_after_resolution() {
 
     // Batch 1: the test started at difficulty 3 (captures difficulty).
     store.update(|s| {
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Applied {
                 state: Box::new(base_game()),
@@ -77,7 +77,7 @@ async fn renders_token_total_and_outcome_after_resolution() {
 
     // Batch 2: resolution — +1 token, succeeded by 2 (total 5).
     store.update(|s| {
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Applied {
                 state: Box::new(base_game()),
@@ -116,7 +116,7 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
 
     store.update(|s| {
         // Batch 1: the test starts at difficulty 3.
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Applied {
                 state: Box::new(base_game()),
@@ -130,7 +130,7 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
         );
         // Batch 2: the Tablet is revealed and its ST.4 damage suspends for the
         // soak prompt — no outcome yet.
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Applied {
                 state: Box::new(base_game()),
@@ -142,7 +142,7 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
             },
         );
         // Batch 3: the resumed test resolves. No reveal in this batch.
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Applied {
                 state: Box::new(base_game()),
@@ -214,7 +214,7 @@ fn mount_modal() -> (RwSignal<ClientState>, UnboundedReceiver<ClientMessage>) {
 /// with `outcome` live in the final batch.
 async fn resolve_a_test(store: RwSignal<ClientState>, outcome: EngineOutcome) {
     store.update(|s| {
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Applied {
                 state: Box::new(base_game()),
@@ -226,7 +226,7 @@ async fn resolve_a_test(store: RwSignal<ClientState>, outcome: EngineOutcome) {
                 outcome: EngineOutcome::Done,
             },
         );
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Applied {
                 state: Box::new(base_game()),

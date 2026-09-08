@@ -16,7 +16,7 @@ use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
 use web::interaction::PendingOptions;
-use web::store::{reduce, ClientState};
+use web::store::{self, ClientState};
 use web_sys::{Element, HtmlButtonElement};
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -34,7 +34,7 @@ async fn mount(state: GameState) -> Element {
         view! { <div class="bs-root"><BoardView/></div> }
     });
     store.update(|s| {
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Hello {
                 state: Box::new(state),

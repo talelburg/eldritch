@@ -12,7 +12,7 @@ use leptos::prelude::{provide_context, RwSignal, Update};
 use protocol::ServerMessage;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
-use web::store::{reduce, ClientState};
+use web::store::{self, ClientState};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -42,7 +42,7 @@ async fn board_renders_card_and_location_names() {
         leptos::view! { <BoardView/> }
     });
     store.update(|s| {
-        reduce(
+        store::reduce(
             s,
             ServerMessage::Hello {
                 state: Box::new(state),

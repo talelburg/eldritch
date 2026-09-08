@@ -33,7 +33,7 @@ use web::app::Overlays;
 use web::board::BoardView;
 use web::decision::DecisionLive;
 use web::interaction::{ConfirmAnchor, MultiSelect, PendingOptions};
-use web::store::{reduce, ClientState};
+use web::store::{self, ClientState};
 use web::transport::OutboundTx;
 use web_sys::{Element, HtmlButtonElement, HtmlElement};
 
@@ -114,7 +114,7 @@ impl Harness {
             view! { <div class="e2e-root"><BoardView/><Overlays/></div> }
         });
         store.update(|s| {
-            reduce(
+            store::reduce(
                 s,
                 ServerMessage::Hello {
                     state: Box::new(seed),
@@ -151,7 +151,7 @@ impl Harness {
         let store = self.store;
         self.state = Some(result.state.clone());
         store.update(|s| {
-            reduce(
+            store::reduce(
                 s,
                 ServerMessage::Applied {
                     state: Box::new(result.state),
