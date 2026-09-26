@@ -246,3 +246,80 @@ fn new_encounter_kinds_have_no_class_and_right_type() {
     };
     assert_eq!(agenda.card_type(), CardType::Agenda);
 }
+
+#[test]
+fn slots_reads_asset_slots_and_empty_elsewhere() {
+    let two_handed = CardMetadata {
+        code: "x".into(),
+        name: "X".into(),
+        text: None,
+        traits: vec![],
+        back_name: None,
+        back_text: None,
+        pack_code: "core".into(),
+        weakness: false,
+        kind: CardKind::Asset {
+            class: Class::Guardian,
+            cost: Some(5),
+            xp: Some(4),
+            slots: vec![Slot::Hand, Slot::Hand],
+            health: None,
+            sanity: None,
+            skill_icons: SkillIcons::default(),
+            is_fast: false,
+            deck_limit: 2,
+            uses: None,
+            play_only_during_turn: false,
+        },
+    };
+    assert_eq!(two_handed.slots(), &[Slot::Hand, Slot::Hand]);
+
+    let event = CardMetadata {
+        code: "y".into(),
+        name: "Y".into(),
+        text: None,
+        traits: vec![],
+        back_name: None,
+        back_text: None,
+        pack_code: "core".into(),
+        weakness: false,
+        kind: CardKind::Event {
+            class: Class::Seeker,
+            cost: Some(1),
+            xp: Some(0),
+            skill_icons: SkillIcons::default(),
+            is_fast: false,
+            deck_limit: 2,
+            play_only_during_turn: false,
+        },
+    };
+    assert!(event.slots().is_empty());
+}
+
+fn make_treachery(weakness: bool) -> CardMetadata {
+    CardMetadata {
+        code: "_test".into(),
+        name: "Test".into(),
+        text: None,
+        traits: Vec::new(),
+        back_name: None,
+        back_text: None,
+        pack_code: "_test".into(),
+        weakness,
+        kind: CardKind::Treachery {
+            surge: false,
+            peril: false,
+            quantity: 1,
+        },
+    }
+}
+
+#[test]
+fn is_weakness_true_when_field_is_true() {
+    assert!(make_treachery(true).is_weakness());
+}
+
+#[test]
+fn is_weakness_false_when_field_is_false() {
+    assert!(!make_treachery(false).is_weakness());
+}
