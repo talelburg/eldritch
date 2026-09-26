@@ -33,7 +33,7 @@
 use rand_chacha::rand_core::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
-/// Deterministic RNG state for [`GameState`](crate::GameState).
+/// Deterministic RNG state for [`GameState`](crate::state::GameState).
 ///
 /// Constructed via [`new`](Self::new) with a seed; the engine advances
 /// `draws` as it consumes random values.

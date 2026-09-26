@@ -466,7 +466,7 @@ pub enum EventPattern {
     EnemyDefeated {
         /// If `true`, only fires when the controller of this ability
         /// is credited with the defeat (the `by` field of
-        /// `game_core::Event::EnemyDefeated`). If `false`, any defeat
+        /// `game_core::event::Event::EnemyDefeated`). If `false`, any defeat
         /// matches.
         by_controller: bool,
         /// Narrow the match to a specific defeated enemy printed code
@@ -817,7 +817,7 @@ pub enum Cost {
     /// with a `[fast] no exhaust` ability simply don't list this cost.)
     Exhaust,
     /// Discard a card from the controller's hand. Requires a target
-    /// selection via `AwaitingInput` (the `game_core::EngineOutcome` variant)
+    /// selection via `AwaitingInput` (the `game_core::engine::EngineOutcome` variant)
     /// and a `ResolveInput` dispatch. No card uses this cost yet, so
     /// the engine consumer hasn't landed; activations with this cost
     /// reject with a TODO. Test-side seam is

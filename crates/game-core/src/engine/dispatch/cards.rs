@@ -382,7 +382,7 @@ pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Op
 /// in its owner's discard with [`Event::CardDiscarded`] `{ from: Zone::InPlay }`.
 /// A **scenario-owned** card (`owner: None`) has no discard pile to land in and
 /// is removed from the game instead, with
-/// [`Event::CardRemovedFromGame`](crate::Event::CardRemovedFromGame). Lita
+/// [`Event::CardRemovedFromGame`](crate::event::Event::CardRemovedFromGame). Lita
 /// Chantler 01117's ruling states the derivation
 /// (<https://arkhamdb.com/card/01117>): *"If Lita leaves play while a player
 /// controls her temporarily during 'The Gathering' scenario **(i.e. while she is

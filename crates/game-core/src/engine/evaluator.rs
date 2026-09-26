@@ -1097,7 +1097,7 @@ fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
 /// Resolve [`Effect::DiscardSelf`]: remove `eval_ctx.source_instance()` from
 /// whichever threat area or location attachment holds it, push its code
 /// to `encounter_discard`, and emit
-/// [`Event::CardDiscarded`](crate::Event::CardDiscarded) with the
+/// [`Event::CardDiscarded`](crate::event::Event::CardDiscarded) with the
 /// matching `from` zone. Rejects loudly if there is no source or the
 /// instance is not found.
 ///

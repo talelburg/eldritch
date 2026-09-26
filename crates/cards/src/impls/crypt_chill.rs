@@ -11,9 +11,9 @@
 //! **Interactive choice (Axis A, #334).** The fail branch enumerates the
 //! controller's in-play assets and applies the resolve convention: 0 assets →
 //! the printed "take 2 damage" fallback; 1 → auto-discard; 2+ → suspend for a
-//! controller pick via [`game_core::suspend_for_native_choice`]. On resume the
+//! controller pick via [`game_core::engine::suspend_for_native_choice`]. On resume the
 //! native re-runs with the pick threaded through
-//! [`EvalContext::chosen_option`](game_core::EvalContext::chosen_option),
+//! [`EvalContext::chosen_option`](game_core::engine::evaluator::EvalContext::chosen_option),
 //! re-enumerating in the same order and indexing by it.
 
 use card_dsl::card_data::{CardKind, SkillKind};

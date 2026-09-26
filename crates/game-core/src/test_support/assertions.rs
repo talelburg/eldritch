@@ -47,7 +47,7 @@
 //! assert_no_event!(result.events, Event::ScenarioStarted);
 //! ```
 
-/// Assert that at least one [`Event`](crate::Event) in the slice
+/// Assert that at least one [`Event`](crate::event::Event) in the slice
 /// matches the given pattern (with optional guard).
 ///
 /// On failure, panics with the pattern source plus a debug-printed
@@ -67,7 +67,7 @@ macro_rules! assert_event {
     }};
 }
 
-/// Assert that NO [`Event`](crate::Event) in the slice matches the
+/// Assert that NO [`Event`](crate::event::Event) in the slice matches the
 /// given pattern (with optional guard).
 ///
 /// On failure, panics with the pattern source plus a debug-printed
@@ -118,7 +118,7 @@ macro_rules! assert_total_event_count {
     }};
 }
 
-/// Assert that exactly `$count` [`Event`](crate::Event)s in the slice
+/// Assert that exactly `$count` [`Event`](crate::event::Event)s in the slice
 /// match the given pattern (with optional guard).
 ///
 /// On failure, panics with the pattern source, the expected count, the

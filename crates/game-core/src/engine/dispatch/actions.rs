@@ -590,7 +590,7 @@ pub(super) fn resolve_departure(
     // each engaged enemy alongside the investigator's own move.
     //
     // Deliberately *not* through the relocation funnel
-    // [`relocate_enemy`](crate::relocate_enemy) (#633): an enemy that follows
+    // [`relocate_enemy`](crate::engine::relocate_enemy) (#633): an enemy that follows
     // is already engaged, and `glossary/Enemy_Engagement.md` says such an
     // enemy "remains engaged and moves to the new location simultaneously with
     // the investigator" — there is no engage-on-arrival check to run, and no

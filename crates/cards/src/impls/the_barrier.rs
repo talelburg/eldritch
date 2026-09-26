@@ -40,7 +40,7 @@
 //! Like 01108's board build, the reverse is board-dependent, single-use
 //! scenario logic, so it lives card-locally as a [`card_dsl::dsl::Effect::Native`]
 //! handler (#276) rather than as shared `Effect` variants. The spawn reuses
-//! the engine's [`game_core::put_set_aside_card_into_play`], which reads
+//! the engine's [`game_core::engine::put_set_aside_card_into_play`], which reads
 //! the Priest's cardtype back from the corpus metadata and mints his
 //! combat stats / keywords / per-investigator health from it.
 //!

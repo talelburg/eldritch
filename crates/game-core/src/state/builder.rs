@@ -30,7 +30,7 @@
 //!     .build();
 //!
 //! let result = take_turn_action(state, &TurnAction::EndTurn);
-//! assert!(!matches!(result.outcome, game_core::EngineOutcome::Rejected { .. }));
+//! assert!(!matches!(result.outcome, game_core::engine::EngineOutcome::Rejected { .. }));
 //! ```
 
 use std::collections::{BTreeMap, VecDeque};
@@ -46,7 +46,7 @@ use crate::state::{
 ///
 /// Construct with [`GameStateBuilder::new`], chain `.with_*` setters and
 /// adders, then call [`build`](GameStateBuilder::build) to get a `GameState`
-/// ready for [`apply`](crate::apply).
+/// ready for [`apply`](crate::engine::apply).
 #[derive(Debug, Clone)]
 #[must_use = "GameStateBuilder is a builder; call .build() to produce a GameState"]
 pub struct GameStateBuilder {
@@ -182,7 +182,7 @@ impl GameStateBuilder {
 
     /// Mark an investigator as the active one. The id must refer to an
     /// investigator already added via [`with_investigator`]; this is
-    /// not enforced at build time but later [`apply`](crate::apply)
+    /// not enforced at build time but later [`apply`](crate::engine::apply)
     /// calls will surface state-corruption invariant violations
     /// loudly.
     ///

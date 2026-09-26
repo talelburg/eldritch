@@ -43,7 +43,7 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum PlayerAction {
-    /// Respond to an [`AwaitingInput`](crate::EngineOutcome::AwaitingInput)
+    /// Respond to an [`AwaitingInput`](crate::engine::EngineOutcome::AwaitingInput)
     /// prompt the engine emitted. The shape of `response` is dictated by the
     /// active prompt — the open-turn action menu and every framework suspension
     /// (mulligan, encounter draw, skill-test commit, reaction/Fast windows,

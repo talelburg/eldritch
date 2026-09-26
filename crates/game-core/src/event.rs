@@ -9,7 +9,7 @@
 //! Events are derived from action application and are useful as a
 //! denormalized "what happened" stream.
 //!
-//! [`Action`]: crate::Action
+//! [`Action`]: crate::action::Action
 
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{Determination, HarmKind};

@@ -29,7 +29,7 @@
 //!
 //! The random-discard branch is a card-local `Effect::Native` looping over
 //! every investigator and discarding one card at random from each via
-//! [`game_core::discard_random_from_hand`]. The randomness replays
+//! [`game_core::engine::discard_random_from_hand`]. The randomness replays
 //! deterministically from the engine's `(seed, draws)` RNG (no `EngineRecord`
 //! is needed — see that helper's docs); the earlier "needs recorded
 //! randomness" deferral note was incorrect.

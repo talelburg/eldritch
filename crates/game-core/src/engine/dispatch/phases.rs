@@ -4146,12 +4146,12 @@ mod start_scenario_tests {
     use crate::action::RosterEntry;
     use crate::state::{CardCode, GameStateBuilder, SkillSubstitution};
     use crate::test_support::TEST_INV;
-    use crate::{seat_and_open, test_support};
+    use crate::{engine, test_support};
 
     #[test]
     fn start_scenario_rejects_when_roster_would_seat_zero_investigators() {
         let state = GameStateBuilder::new().build();
-        let result = seat_and_open(state, &[]);
+        let result = engine::seat_and_open(state, &[]);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.round, 0, "state unchanged on reject");
         assert!(result.events.is_empty(), "no events on reject");
@@ -4193,7 +4193,7 @@ mod start_scenario_tests {
     fn seat_and_open_rejects_an_empty_roster() {
         test_support::install_test_registry();
         let state = GameStateBuilder::new().build();
-        let result = seat_and_open(state, &[]);
+        let result = engine::seat_and_open(state, &[]);
         assert!(
             matches!(result.outcome, EngineOutcome::Rejected { .. }),
             "an empty roster must reject, got {:?}",
@@ -4224,7 +4224,7 @@ mod start_scenario_tests {
             deck: vec![],
         }];
 
-        let result = seat_and_open(state, &roster);
+        let result = engine::seat_and_open(state, &roster);
 
         assert!(matches!(
             result.outcome,
@@ -4248,7 +4248,7 @@ mod start_scenario_tests {
             investigator: CardCode::new("01001"),
             deck: vec![],
         }];
-        let result = seat_and_open(state, &roster);
+        let result = engine::seat_and_open(state, &roster);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.round, 0, "state unchanged on reject");
         assert!(result.events.is_empty());

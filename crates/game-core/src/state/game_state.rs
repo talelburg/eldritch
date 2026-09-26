@@ -1752,7 +1752,7 @@ pub enum TimingSub {
 /// (Investigate), deal damage (Fight), disengage and exhaust (Evade),
 /// or nothing (a bare plain skill test).
 ///
-/// [`SkillTestStarted`]: crate::Event::SkillTestStarted
+/// [`SkillTestStarted`]: crate::event::Event::SkillTestStarted
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct InFlightSkillTest {
@@ -1913,11 +1913,11 @@ pub struct ResolvedTest {
     /// effect (Grasping Hands 01162, Rotting Remains 01163).
     pub failed_by: u8,
     /// Success margin (`total - difficulty`, ≥ 0 on success); supplied to the
-    /// logged [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) at the
+    /// logged [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) at the
     /// `DetermineOutcome` step. Negative on failure (unused there).
     pub margin: i8,
     /// Why the test failed (meaningful only when `!succeeded`); supplied to the
-    /// logged [`SkillTestFailed`](crate::Event::SkillTestFailed).
+    /// logged [`SkillTestFailed`](crate::event::Event::SkillTestFailed).
     pub fail_reason: FailureReason,
 }
 
@@ -1928,23 +1928,23 @@ pub struct ResolvedTest {
 /// walks a fixed sequence of steps:
 ///
 /// 1. Validate commits + draw chaos token + emit
-///    [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
-///    [`SkillTestFailed`](crate::Event::SkillTestFailed)
+///    [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) /
+///    [`SkillTestFailed`](crate::event::Event::SkillTestFailed)
 /// 2. Apply the action-specific
 ///    [`SkillTestFollowUp`] (Investigate / Fight / Evade / None) —
 ///    this is where `damage_enemy` may emit
-///    [`EnemyDefeated`](crate::Event::EnemyDefeated) and queue an
+///    [`EnemyDefeated`](crate::event::Event::EnemyDefeated) and queue an
 ///    an after-enemy-defeated reaction window
 /// 3. Fire
 ///    [`OnSkillTestResolution`](card_dsl::dsl::Trigger::OnSkillTestResolution)
 ///    triggers on committed cards
 /// 4. Discard committed cards + emit
-///    [`SkillTestEnded`](crate::Event::SkillTestEnded) + drain
+///    [`SkillTestEnded`](crate::event::Event::SkillTestEnded) + drain
 ///    pending modifiers
 ///
 /// After each step that *can* queue a reaction window, the driver checks
 /// whether that window is now the top frame; if so it suspends with
-/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput) and yields to the
+/// [`AwaitingInput`](crate::engine::EngineOutcome::AwaitingInput) and yields to the
 /// `drive` loop, which dispatches the window. On the window's close the loop
 /// re-dispatches this `SkillTest` frame, which reads its cursor and jumps to
 /// the matching step (Slice C-plumbing). This is the rules-correct shape per
@@ -2022,8 +2022,8 @@ pub enum SkillTestStep {
     /// RR ST.5–ST.7 boundary. Sum the modified skill value (ST.5) from the
     /// board as it stands *now* — after the ST.4 symbol effects — compare it
     /// against the difficulty (ST.6), then emit the logged
-    /// [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
-    /// [`SkillTestFailed`](crate::Event::SkillTestFailed) and fire the general
+    /// [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) /
+    /// [`SkillTestFailed`](crate::event::Event::SkillTestFailed) and fire the general
     /// skill-test-outcome timing point (`TimingEvent::SkillTestResolved`) for
     /// **every** test and both outcomes — "after you successfully investigate"
     /// (Obscuring Fog 01168 forced + Dr. Milan 01033 reaction) is the
@@ -2126,7 +2126,7 @@ pub enum SkillTestStep {
     PostRetaliate,
     /// Step 3 (`OnSkillTestResolution`) is complete. The next driver
     /// iteration discards committed cards, emits
-    /// [`SkillTestEnded`](crate::Event::SkillTestEnded), and clears
+    /// [`SkillTestEnded`](crate::event::Event::SkillTestEnded), and clears
     /// the in-flight record.
     PostOnResolution,
 }
@@ -2583,7 +2583,7 @@ pub enum ModifierTarget {
 ///
 /// **A test whose difficulty target leaves play before ST.6 is abandoned**:
 /// its frame is torn down, its committed cards are discarded, its test-scoped
-/// modifier rows expire, [`SkillTestEnded`](crate::Event::SkillTestEnded)
+/// modifier rows expire, [`SkillTestEnded`](crate::event::Event::SkillTestEnded)
 /// fires, and no success or failure is ever declared. The gate is in
 /// `skill_test::advance`'s loop preamble, beside the eliminated-tester one it
 /// mirrors (#564). Reachable solo: Beat Cop 01018's *"\[fast\] Discard Beat

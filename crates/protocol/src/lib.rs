@@ -2,9 +2,10 @@
 //! client and the server. The server is authoritative; clients submit
 //! [`PlayerAction`]s and render the state the server broadcasts.
 
-use game_core::action::RosterEntry;
+use game_core::action::{PlayerAction, RosterEntry};
+use game_core::engine::EngineOutcome;
+use game_core::event::Event;
 use game_core::state::GameState;
-use game_core::{EngineOutcome, Event, PlayerAction};
 use serde::{Deserialize, Serialize};
 
 /// A message sent from a client to the server.
@@ -137,8 +138,6 @@ mod tests {
 
     #[test]
     fn hello_round_trips_through_json() {
-        use game_core::Event;
-
         let state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
             .build();

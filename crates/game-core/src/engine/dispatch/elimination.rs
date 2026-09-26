@@ -496,7 +496,7 @@ pub(crate) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8)
 /// The single-source-damage twin of `take_horror` — called by
 /// `Effect::Deal`'s evaluator (the `HarmKind::Damage` arm).
 ///
-/// Re-exported at `game_core::take_damage` so card-local native effects
+/// Re-exported at `game_core::engine::take_damage` so card-local native effects
 /// (#276) can deal damage without re-implementing the defeat check — the
 /// first such consumer is Crypt Chill's (01167) no-asset failure branch.
 pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
@@ -522,7 +522,7 @@ pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
 /// remaining players, the scenario ends"*, which is how a card that defeats the
 /// last active investigator reaches
 /// [`ScenarioEnding::NoResolution`](crate::scenario::ScenarioEnding::NoResolution)
-/// without latching it itself. Re-exported at `game_core::defeat_investigator`.
+/// without latching it itself. Re-exported at `game_core::engine::defeat_investigator`.
 ///
 /// **No-ops on an investigator who is not `Active`** — one who has already been
 /// killed, driven insane, or resigned is not defeated again. That is what lets a

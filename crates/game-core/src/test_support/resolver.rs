@@ -10,8 +10,8 @@
 //!
 //! [`drive`] runs an action through the engine and drains any
 //! `AwaitingInput` outcomes through the resolver until the engine
-//! returns [`Done`](crate::EngineOutcome::Done) or
-//! [`Rejected`](crate::EngineOutcome::Rejected). [`TestSession`] is the
+//! returns [`Done`](crate::engine::EngineOutcome::Done) or
+//! [`Rejected`](crate::engine::EngineOutcome::Rejected). [`TestSession`] is the
 //! fluent wrapper that pairs a [`GameState`] with a resolver script.
 //!
 //! # Engine consumers

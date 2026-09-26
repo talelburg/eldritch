@@ -54,7 +54,7 @@ impl fmt::Display for CardCode {
 }
 
 /// A card-bearing zone, used as the `from` field on movement events
-/// (e.g. [`Event::CardDiscarded`](crate::Event::CardDiscarded)).
+/// (e.g. [`Event::CardDiscarded`](crate::event::Event::CardDiscarded)).
 ///
 /// Phase-3 minimal set. Discard is a destination but never a `from`
 /// in the current event set; encounter / weakness / out-of-game zones
@@ -83,7 +83,7 @@ pub enum Zone {
     /// game is placed away from the game area and has no further interaction
     /// with the game in any manner for the duration of its removal."* Used as
     /// the `to` zone of
-    /// [`Event::CardRemovedFromGame`](crate::Event::CardRemovedFromGame) — the
+    /// [`Event::CardRemovedFromGame`](crate::event::Event::CardRemovedFromGame) — the
     /// zone the field docs above already anticipated (*"out-of-game zones land
     /// when they're needed"*).
     RemovedFromGame,

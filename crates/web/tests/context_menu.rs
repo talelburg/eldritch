@@ -4,8 +4,9 @@
 #![cfg(target_arch = "wasm32")]
 
 use futures::channel::mpsc::{self, UnboundedReceiver};
+use game_core::action::{InputResponse, PlayerAction};
+use game_core::engine::{ChoiceOption, OptionId, OptionTarget};
 use game_core::state::LocationId;
-use game_core::{ChoiceOption, InputResponse, OptionId, OptionTarget, PlayerAction};
 use leptos::prelude::*;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;

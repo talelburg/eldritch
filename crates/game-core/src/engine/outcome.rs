@@ -19,7 +19,7 @@ use crate::state::{
 /// - [`AwaitingInput`](EngineOutcome::AwaitingInput) — the action
 ///   triggered a choice point and needs the active player to respond
 ///   before the engine can continue. The next action must be a
-///   [`PlayerAction::ResolveInput`](crate::PlayerAction::ResolveInput).
+///   [`PlayerAction::ResolveInput`](crate::action::PlayerAction::ResolveInput).
 /// - [`Rejected`](EngineOutcome::Rejected) — the action was illegal in
 ///   the current state (e.g. trying to investigate during the Mythos
 ///   phase) and was not applied. The state and event list returned
@@ -196,7 +196,7 @@ impl ChoiceOption {
 
     /// Anchor this option to `target` when there is one. For the callers that
     /// build options from an anchor that is *already* optional — every site that
-    /// maps a [`TurnAction::target`](crate::TurnAction::target) or an
+    /// maps a [`TurnAction::target`](crate::engine::enumerate::TurnAction::target) or an
     /// evaluator-supplied anchor — so none of them re-writes the same
     /// `match … { Some(t) => opt.at(t), None => opt }` by hand.
     #[must_use]
@@ -385,7 +385,7 @@ impl InputRequest {
 /// Opaque continuation token returned alongside [`AwaitingInput`].
 ///
 /// The engine uses this to identify which choice point a
-/// [`ResolveInput`](crate::PlayerAction::ResolveInput) is answering.
+/// [`ResolveInput`](crate::action::PlayerAction::ResolveInput) is answering.
 /// The inner field is `pub(crate)` so external crates cannot fabricate
 /// tokens; they receive them from the engine and pass them back.
 ///

@@ -285,7 +285,7 @@ pub(in crate::engine) fn resume_substitution_choice(
 
 /// Commit-stage entry to the skill-test resolution driver. Handles the
 /// response to the
-/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput) the engine emitted at
+/// [`AwaitingInput`](crate::engine::EngineOutcome::AwaitingInput) the engine emitted at
 /// the commit window: validate the supplied indices, persist them onto the
 /// in-flight record, pre-advance the cursor to [`SkillTestStep::PreTokenWindow`],
 /// and return [`EngineOutcome::Done`] so the `drive` loop's `SkillTest` arm runs
@@ -664,8 +664,8 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) {
 /// difficulty (ST.6), stashing the verdict on
 /// [`InFlightSkillTest::resolved`](crate::state::InFlightSkillTest::resolved);
 /// then emit the logged
-/// [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
-/// [`SkillTestFailed`](crate::Event::SkillTestFailed) and fire the general
+/// [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) /
+/// [`SkillTestFailed`](crate::event::Event::SkillTestFailed) and fire the general
 /// `SkillTestResolved` timing point for **every** test and both outcomes (the
 /// `{ Investigate, Success }` narrowing is Obscuring Fog 01168 forced with
 /// Dr. Milan 01033 reaction; one `queue_event` so forced precedes reaction —
@@ -930,7 +930,7 @@ fn open_skill_test_player_window(
 ///
 /// Each loop iteration starts by checking for a queued reaction
 /// window: if one is pending, the driver opens it and returns
-/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput). The window's
+/// [`AwaitingInput`](crate::engine::EngineOutcome::AwaitingInput). The window's
 /// close path ([`close_reaction_window`]) re-enters this driver on
 /// resume.
 ///
@@ -970,7 +970,7 @@ fn open_skill_test_player_window(
 ///   (failed Fight vs ready retaliate enemy); advance to
 ///   [`PostOnResolution`](SkillTestStep::PostOnResolution).
 /// - [`PostOnResolution`](SkillTestStep::PostOnResolution) → ST.8: discard
-///   committed cards, emit [`SkillTestEnded`](crate::Event::SkillTestEnded),
+///   committed cards, emit [`SkillTestEnded`](crate::event::Event::SkillTestEnded),
 ///   drain pending modifiers, tear down the frame, return `Done`.
 ///
 /// [`close_reaction_window`]: super::reaction_windows::close_reaction_window
@@ -1860,12 +1860,13 @@ mod tests {
 
     use super::*;
     use crate::engine::dispatch;
+    use crate::engine::InputKind;
     use crate::event::Event;
     use crate::scenario::TokenEffect;
     use crate::state::{
         EffectFrame, EnemyId, GameStateBuilder, LocationId, SkillSubstitution, SkillTestId,
     };
-    use crate::{test_support, InputKind};
+    use crate::test_support;
 
     /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
     /// reading the commit-time accumulator off the in-flight record

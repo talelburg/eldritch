@@ -607,7 +607,7 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
 
 /// Seat a roster and drive to the first `AwaitingInput` (the setup mulligan),
 /// without going through a logged `PlayerAction`. The engine entry point
-/// [`crate::seat_and_open`] wraps this in the shared `apply_via` scaffolding.
+/// [`crate::engine::seat_and_open`] wraps this in the shared `apply_via` scaffolding.
 /// Used at game creation (server `GameSession::create`); the action log that
 /// follows is `ResolveInput`-only.
 pub(crate) fn seat_and_open(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutcome {

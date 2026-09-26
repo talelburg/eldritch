@@ -3,7 +3,7 @@
 //!
 //! **Native, not wasm** — every other file in this directory drives the DOM in a
 //! headless browser; this one drives the *engine*. It mirrors the server exactly:
-//! one `game_core::apply` call is one `ServerMessage::Applied` frame
+//! one `game_core::engine::apply` call is one `ServerMessage::Applied` frame
 //! (`crates/server/src/session.rs`), so applying one at a time and folding each
 //! result through the real `store::reduce` reproduces the batch boundaries the
 //! client actually sees. The bug lives in those boundaries and nowhere else — a
@@ -36,8 +36,8 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{EngineOutcome, InputKind, OptionId};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
@@ -127,11 +127,11 @@ fn fight_ghoul(lita_in_play: bool) -> Vec<Pause> {
         investigator: OTHER,
         enemy: GHOUL,
     };
-    let idx = game_core::engine::enumerate::legal_actions(&state)
+    let idx = enumerate::legal_actions(&state)
         .iter()
         .position(|a| *a == fight)
         .expect("the Fight is a legal action on this board");
-    let mut result = game_core::apply(
+    let mut result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(
@@ -177,7 +177,7 @@ fn fight_ghoul(lita_in_play: bool) -> Vec<Pause> {
             InputKind::PickSingle => InputResponse::PickSingle(OptionId(0)),
             other => panic!("unexpected prompt kind {other:?}"),
         };
-        result = game_core::apply(
+        result = engine::apply(
             result.state.clone(),
             Action::Player(PlayerAction::ResolveInput { response }),
         );

@@ -1182,7 +1182,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
 /// Play the hand Fast-event `candidate` from the open resolution run (Axis C,
 /// #335) — the [`CandidateSource::Hand`] resolution of [`fire_pending_trigger`].
 /// Commences the play via the shared [`super::cards::commence_play`] (emit
-/// [`crate::Event::CardPlayed`], leave hand — RR Appendix I step 3), then pushes a
+/// [`crate::event::Event::CardPlayed`], leave hand — RR Appendix I step 3), then pushes a
 /// [`Continuation::PlayFromHand`] frame **holding that card** (above the live
 /// reaction window) and the `OnEvent` effect for the drive loop. On the effect's
 /// completion, [`super::cards::dispose_play_from_hand`] places the event in

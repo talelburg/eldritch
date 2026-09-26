@@ -3,7 +3,7 @@
 //!
 //! It renders whenever an `AwaitingInput` is live, with one exception: the
 //! open-turn menu, which the engine anchors to
-//! [`TurnControl`](game_core::OptionTarget::TurnControl) so the banner can
+//! [`TurnControl`](game_core::engine::OptionTarget::TurnControl) so the banner can
 //! suppress its "Choose an action" noise **structurally** rather than by matching
 //! the prompt string (ADR 0011). Every other prompt gets at least its text here,
 //! so a prompt the client does not specifically home still says the engine is

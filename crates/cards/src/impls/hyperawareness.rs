@@ -27,7 +27,7 @@
 //! [`TurnAction::ActivateAbility`] action carries the index, so
 //! tests and clients must pick the matching slot.
 //!
-//! [`TurnAction::ActivateAbility`]: game_core::TurnAction::ActivateAbility
+//! [`TurnAction::ActivateAbility`]: game_core::engine::enumerate::TurnAction::ActivateAbility
 
 use card_dsl::dsl::{self, Ability, Cost, ModifierScope, Stat};
 

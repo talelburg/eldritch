@@ -179,12 +179,13 @@ pub(super) fn resume(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
 mod tests {
     use super::*;
     use crate::engine::dispatch;
+    use crate::engine::InputKind;
     use crate::scenario::{ResolutionId, ScenarioEnding};
     use crate::state::{
         Act, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, CardCode, Continuation, GameState,
         GameStateBuilder, InvestigatorId,
     };
-    use crate::{test_support, InputKind};
+    use crate::test_support;
 
     fn state_advancing_agenda(interactive: bool) -> GameState {
         let mut state = GameStateBuilder::new().build();

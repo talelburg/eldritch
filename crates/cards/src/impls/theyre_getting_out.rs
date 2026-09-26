@@ -67,7 +67,7 @@
 //! Rules Reference p.10 Elimination, and step 6 — *"If there are no remaining
 //! players, the scenario ends. Refer to "no resolution was reached" entry for
 //! that scenario in the campaign guide."* — is what produces
-//! [`ScenarioEnding::NoResolution`](game_core::ScenarioEnding::NoResolution).
+//! [`ScenarioEnding::NoResolution`](game_core::scenario::ScenarioEnding::NoResolution).
 //! The card names no ending on this branch, because the card prints none.
 //!
 //! *"That has not resigned"* needs no filter to be *correct*:
@@ -82,8 +82,8 @@
 //! — *"Taking trauma may cause an investigator to be killed or driven insane"* —
 //! and these investigators take one physical trauma, the first step on that
 //! track rather than its end. So the defeat carries
-//! [`game_core::EliminationCause::CardAbility`] and leaves
-//! [`game_core::Status::Defeated`], both distinct from the damage
+//! [`game_core::state::EliminationCause::CardAbility`] and leaves
+//! [`game_core::state::Status::Defeated`], both distinct from the damage
 //! and horror values.
 //!
 //! **The physical trauma is announced, not recorded.** `Event::TraumaSuffered`
