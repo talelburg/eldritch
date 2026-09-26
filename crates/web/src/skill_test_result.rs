@@ -192,9 +192,10 @@ pub fn SkillTestResultView() -> impl IntoView {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::card_data::SkillKind;
     use game_core::state::InvestigatorId;
+
+    use super::*;
 
     /// A store holding what the panel renders from: the difficulty announced at
     /// ST.1, the token drawn (or none), and the resolution. The three arrive in

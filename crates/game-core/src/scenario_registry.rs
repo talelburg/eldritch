@@ -65,7 +65,6 @@ pub fn current() -> Option<&'static ScenarioRegistry> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use crate::event::Event;
     use crate::scenario::{ScenarioEnding, ScenarioId, ScenarioModule};
     use crate::state::{GameState, GameStateBuilder};

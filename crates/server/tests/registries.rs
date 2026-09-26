@@ -8,7 +8,6 @@ mod common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
 use scenarios::the_gathering::ID as GATHERING_SCENARIO_ID;

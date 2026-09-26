@@ -34,11 +34,12 @@
 
 use std::sync::OnceLock;
 
+use card_dsl::card_data::CardMetadata;
+use card_dsl::dsl::Ability;
+
 use crate::card_registry::{self, CardRegistry, EligibilityFn, NativeConditionFn, NativeEffectFn};
 use crate::state::CardCode;
 use crate::test_support;
-use card_dsl::card_data::CardMetadata;
-use card_dsl::dsl::Ability;
 
 /// A per-code abilities producer. Boxed rather than a `fn` pointer so a caller
 /// can close over locals — a `Vec<Ability>` is built fresh per lookup, which is

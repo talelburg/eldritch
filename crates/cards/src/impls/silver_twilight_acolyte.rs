@@ -69,8 +69,9 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, IntExpr, Trigger, TriggerKind};
+
+    use super::*;
 
     #[test]
     fn forced_after_it_attacks_places_doom() {

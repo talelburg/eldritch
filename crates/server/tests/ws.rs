@@ -4,7 +4,6 @@
 
 mod common;
 
-use crate::common::TEST_SCENARIO_ID;
 use std::time::Duration;
 
 use game_core::action::{InputResponse, PlayerAction};
@@ -13,6 +12,8 @@ use game_core::scenario::ScenarioId;
 use protocol::{ClientMessage, ServerMessage};
 use server::session::GameSession;
 use sqlx::SqlitePool;
+
+use crate::common::TEST_SCENARIO_ID;
 
 async fn seed_game(pool: &SqlitePool, game_id: &str) {
     GameSession::create(

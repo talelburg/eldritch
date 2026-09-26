@@ -244,10 +244,11 @@ pub fn menu_layer(options: Vec<ChoiceOption>, open: RwSignal<Option<(i32, i32)>>
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use game_core::engine::OptionId;
     use game_core::state::{EnemyId, LocationId};
     use game_core::test_support;
+
+    use super::*;
 
     fn opt(id: u32, target: OptionTarget) -> ChoiceOption {
         ChoiceOption::new(OptionId(id), format!("opt{id}")).at(target)

@@ -37,8 +37,9 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{ActionDesignator, Effect, IntExpr, Trigger};
+
+    use super::*;
 
     #[test]
     fn one_activated_fight_ability_spending_ammo() {

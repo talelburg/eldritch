@@ -1,9 +1,10 @@
 //! Enemies: hostile creatures that engage investigators, attack, and
 //! are defeated through combat.
 
-use crate::state::{CardCode, CardInPlay, InvestigatorId, LocationId};
 use card_dsl::card_data::Prey;
 use serde::{Deserialize, Serialize};
+
+use crate::state::{CardCode, CardInPlay, InvestigatorId, LocationId};
 
 crate::state::define_id! {
     /// Stable identifier for an enemy within a scenario.
@@ -101,7 +102,6 @@ pub struct Enemy {
 #[cfg(test)]
 mod hunter_prey_field_tests {
     use super::*;
-
     use crate::test_support;
 
     #[test]

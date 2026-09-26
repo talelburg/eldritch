@@ -1,6 +1,9 @@
 //! Card-related dispatch handlers: deck management, drawing, mulligan,
 //! resource grants, and card play.
 
+use card_dsl::card_data::{CardMetadata, CardType};
+use card_dsl::dsl::{Ability, Effect, Trigger};
+
 use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::emit::TimingEvent;
@@ -16,8 +19,6 @@ use crate::state::{
     ActionResume, AssetEntry, CardCode, CardInPlay, CardInstanceId, Continuation, InvestigatorId,
     Zone,
 };
-use card_dsl::card_data::{CardMetadata, CardType};
-use card_dsl::dsl::{Ability, Effect, Trigger};
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
 /// each investigator draws 5 cards before mulligan.

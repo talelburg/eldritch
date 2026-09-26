@@ -67,6 +67,15 @@
 //! state, events, and RNG position on `Rejected` — so validate-first
 //! here is about cheap, precise rejections, not state safety.
 
+use card_dsl::card_data::CardType;
+use card_dsl::dsl::{
+    Ability, ActionClass, ActionDesignator, CardFilter, ChoiceBranch, CmpOp, Condition,
+    ControlStatus, Determination, Effect, EnemyTarget, EntityScope, HarmKind, IntExpr,
+    InvestigatorTarget, LocationSet, LocationTarget, ModifierAudience, ModifierScope, Quantity,
+    Restriction, SearchScope, SkillTestKind, Stat, Trigger,
+};
+use serde::{Deserialize, Serialize};
+
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::dispatch::choice::ChoiceResolution;
 use crate::engine::dispatch::emit::TimingEvent;
@@ -82,14 +91,6 @@ use crate::state::{
     DamageSource, DifficultyBasis, EffectFrame, EnemyId, GameState, InvestigatorId, Lifetime,
     LocationId, RecordedModifier, SkillTestFollowUp, Zone,
 };
-use card_dsl::card_data::CardType;
-use card_dsl::dsl::{
-    Ability, ActionClass, ActionDesignator, CardFilter, ChoiceBranch, CmpOp, Condition,
-    ControlStatus, Determination, Effect, EnemyTarget, EntityScope, HarmKind, IntExpr,
-    InvestigatorTarget, LocationSet, LocationTarget, ModifierAudience, ModifierScope, Quantity,
-    Restriction, SearchScope, SkillTestKind, Stat, Trigger,
-};
-use serde::{Deserialize, Serialize};
 
 /// Failure margin of the just-resolved skill test (bound only while running an
 /// `on_fail` effect). Innermost-only: same-kind test nesting is carried by the
@@ -2568,6 +2569,14 @@ pub fn location_id_by_code(state: &GameState, code: &str) -> Option<LocationId> 
 
 #[cfg(test)]
 mod tests {
+    use card_dsl::card_data::CardMetadata;
+    use card_dsl::dsl::{
+        boost_attack_damage, choose_one, constant, deal_damage, deal_damage_to_enemy, deal_horror,
+        discover_additional_clues, discover_clue, draw_cards, gain_resources, heal, if_, if_else,
+        modify, on_play, put_into_threat_area_with_clues, restrict, search_deck, seq, Choose,
+        TestOutcome,
+    };
+
     use super::*;
     use crate::action::InputResponse;
     use crate::engine::dispatch::coordinator;
@@ -2577,13 +2586,6 @@ mod tests {
         SkillTestId, SkillTestStep, Status,
     };
     use crate::{assert_event, assert_no_event, test_support};
-    use card_dsl::card_data::CardMetadata;
-    use card_dsl::dsl::{
-        boost_attack_damage, choose_one, constant, deal_damage, deal_damage_to_enemy, deal_horror,
-        discover_additional_clues, discover_clue, draw_cards, gain_resources, heal, if_, if_else,
-        modify, on_play, put_into_threat_area_with_clues, restrict, search_deck, seq, Choose,
-        TestOutcome,
-    };
 
     fn ctx(id: u32) -> EvalContext {
         EvalContext::for_controller(InvestigatorId(id))

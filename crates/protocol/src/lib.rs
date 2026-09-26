@@ -130,9 +130,10 @@ mod id_tests {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use game_core::state::GameStateBuilder;
     use game_core::test_support;
+
+    use super::*;
 
     #[test]
     fn hello_round_trips_through_json() {

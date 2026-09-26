@@ -124,8 +124,9 @@ pub const REGISTRY: CardRegistry = CardRegistry {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use game_core::state::CardCode;
+
+    use super::*;
 
     #[test]
     fn corpus_is_sorted_by_code() {

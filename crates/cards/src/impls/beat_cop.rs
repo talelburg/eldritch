@@ -42,8 +42,9 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Choose, Effect, EntityScope, LocationSet, ModifierAudience, Trigger};
+
+    use super::*;
 
     #[test]
     fn abilities_are_constant_combat_plus_fast_discard_damage() {

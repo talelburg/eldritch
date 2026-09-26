@@ -44,8 +44,9 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, Trigger};
+
+    use super::*;
 
     #[test]
     fn abilities_are_threat_area_two_play_bans_and_forced_discard() {

@@ -19,6 +19,9 @@
 
 use std::collections::BTreeSet;
 
+use card_dsl::card_data::{ClueValue, Prey};
+use card_dsl::dsl::SkillTestKind;
+
 use crate::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, DifficultyBasis, Enemy, EnemyId, InFlightSkillTest,
@@ -26,8 +29,6 @@ use crate::state::{
     SkillTestStep, Skills, Status,
 };
 use crate::test_support;
-use card_dsl::card_data::{ClueValue, Prey};
-use card_dsl::dsl::SkillTestKind;
 
 /// A stock investigator with reasonable defaults.
 ///

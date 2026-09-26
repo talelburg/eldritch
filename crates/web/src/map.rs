@@ -440,10 +440,11 @@ pub fn location_map(game: &GameState) -> impl IntoView {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use game_core::engine::OptionId;
     use game_core::state::CardInstanceId;
     use game_core::test_support;
+
+    use super::*;
 
     #[test]
     fn known_gathering_codes_have_authored_cells() {

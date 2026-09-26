@@ -745,13 +745,13 @@ impl TestSession {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use card_dsl::dsl::SkillTestKind;
 
+    use super::*;
     use crate::engine::ResumeToken;
     use crate::event::Event;
     use crate::state::{ChaosBag, ChaosToken, InvestigationResume, Phase, SkillTestId};
     use crate::test_support;
-    use card_dsl::dsl::SkillTestKind;
 
     #[test]
     fn take_turn_action_resolves_end_turn_via_optionid() {

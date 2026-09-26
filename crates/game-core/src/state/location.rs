@@ -1,9 +1,9 @@
 //! Locations: places investigators move between.
 
-use crate::state::{CardCode, CardInPlay};
 use card_dsl::card_data::ClueValue;
-
 use serde::{Deserialize, Serialize};
+
+use crate::state::{CardCode, CardInPlay};
 
 crate::state::define_id! {
     /// Stable identifier for a location within a scenario.
@@ -135,7 +135,6 @@ impl Location {
 #[cfg(test)]
 mod location_code_tests {
     use super::*;
-
     use crate::state::CardInstanceId;
 
     #[test]

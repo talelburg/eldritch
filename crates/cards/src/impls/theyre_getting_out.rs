@@ -315,8 +315,6 @@ fn place_round_end_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{impls, REGISTRY};
     use card_dsl::dsl::{Condition, Effect, Trigger, TriggerKind};
     use game_core::event::Event;
     use game_core::scenario::ScenarioEnding;
@@ -325,6 +323,9 @@ mod tests {
         Location,
     };
     use game_core::{card_registry, test_support};
+
+    use super::*;
+    use crate::{impls, REGISTRY};
 
     fn ghoul(id: u32, at: LocationId) -> Enemy {
         let mut e = test_support::test_enemy(id, "Ghoul");

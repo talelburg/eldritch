@@ -11,10 +11,11 @@
 //! explicit that such a flip does not replenish clues, and routing it
 //! through here would place them again.
 
+use card_dsl::card_data::ClueValue;
+
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::LocationId;
-use card_dsl::card_data::ClueValue;
 
 /// Reveal `location_id` if it is unrevealed, placing its printed clues.
 /// No-op if the location is absent or already revealed. Public so
@@ -52,12 +53,13 @@ pub fn reveal_location(cx: &mut Cx, location_id: LocationId) {
 
 #[cfg(test)]
 mod tests {
+    use card_dsl::card_data::ClueValue;
+
     use crate::engine::dispatch::reveal;
     use crate::engine::Cx;
     use crate::event::Event;
     use crate::state::{CardCode, GameStateBuilder, Location, LocationId};
     use crate::test_support;
-    use card_dsl::card_data::ClueValue;
 
     fn unrevealed(id: u32, code: &str, printed: ClueValue) -> Location {
         let mut loc = Location::new(LocationId(id), CardCode(code.into()), "L", 1, 0);

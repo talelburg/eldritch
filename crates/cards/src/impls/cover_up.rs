@@ -192,12 +192,13 @@ fn trauma(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, Trigger};
     use game_core::state::{
         AbilitySource, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId,
     };
     use game_core::test_support;
+
+    use super::*;
 
     #[test]
     fn revelation_places_with_three_clues_plus_interrupt_and_gameend() {

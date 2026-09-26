@@ -18,12 +18,13 @@
 //! [`LocationLayout`](crate::scenario::LocationLayout) and are wired at
 //! entry — the only moment both endpoints of a connection have ids.
 
+use card_dsl::card_data::CardKind;
+
 use crate::engine::dispatch::{encounter, threat_area};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
 use crate::state::{CardCode, GameState, LocationId};
 use crate::{card_registry, scenario};
-use card_dsl::card_data::CardKind;
 
 /// Bring the set-aside card `code` into play, dispatching on its printed
 /// cardtype:

@@ -1,6 +1,8 @@
 //! Headless render tests for the `Card` component. wasm32-only (browser DOM).
 #![cfg(target_arch = "wasm32")]
 
+use std::collections::BTreeSet;
+
 use cards::REGISTRY;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
@@ -9,7 +11,6 @@ use game_core::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId};
 use game_core::{card_registry, test_support};
 use leptos::prelude::*;
 use protocol::ClientMessage;
-use std::collections::BTreeSet;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::card::{Card, HandCardView};

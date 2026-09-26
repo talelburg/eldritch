@@ -195,11 +195,12 @@ pub fn use_store() -> StoreSignal {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::card_data::SkillKind;
     use game_core::event::FailureReason;
     use game_core::state::{GameStateBuilder, InvestigatorId};
     use game_core::test_support;
+
+    use super::*;
 
     /// An `Applied` frame carrying `events` and nothing else of interest.
     fn applied(events: Vec<Event>) -> ServerMessage {

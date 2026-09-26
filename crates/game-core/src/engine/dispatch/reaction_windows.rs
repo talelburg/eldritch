@@ -11,6 +11,12 @@
 
 use std::borrow::Cow;
 
+use card_dsl::card_data::{CardMetadata, CardType};
+use card_dsl::dsl::{
+    Ability, ActionDesignator, Cost, Effect, EnemyTarget, EventPattern, EventTiming, Trigger,
+    TriggerKind, UsageLimit,
+};
+
 use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::abilities::ActivatedAbility;
@@ -30,11 +36,6 @@ use crate::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, Continuation,
     DamageSource, FastActorScope, FastWindowKind, GameState, InvestigatorId, Phase,
     ResolutionCandidate, Status, TimingMode,
-};
-use card_dsl::card_data::{CardMetadata, CardType};
-use card_dsl::dsl::{
-    Ability, ActionDesignator, Cost, Effect, EnemyTarget, EventPattern, EventTiming, Trigger,
-    TriggerKind, UsageLimit,
 };
 
 /// Push a reaction window frame for `candidates` at `bucket`. The shared push

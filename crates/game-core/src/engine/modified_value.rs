@@ -92,16 +92,17 @@
 //! returns. That is what `Modifiers.md`'s own worked example demands —
 //! base 4, a −8 token and a +2 is −2 → 0, **not** 0 + 2 → 2.
 
+use card_dsl::card_data::SkillKind;
+use card_dsl::dsl::{
+    Determination, Effect, IntExpr, ModifierAudience, ModifierScope, SkillTestKind, Stat, Trigger,
+};
+
 use crate::card_registry::CardRegistry;
 use crate::engine::abilities_in_effect;
 use crate::engine::evaluator::{self, EvalContext};
 use crate::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, DifficultyBasis, EnemyId, GameState,
     InvestigatorId, LocationId, RecordedModifierKind,
-};
-use card_dsl::card_data::SkillKind;
-use card_dsl::dsl::{
-    Determination, Effect, IntExpr, ModifierAudience, ModifierScope, SkillTestKind, Stat, Trigger,
 };
 
 /// Which entity's quantity is being asked about.
@@ -918,16 +919,17 @@ pub(crate) fn stat_for_skill(skill: SkillKind) -> Stat {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::state::{
-        Continuation, GameStateBuilder, InFlightSkillTest, Lifetime, RecordedModifier, SkillTestId,
-    };
-    use crate::test_support;
     use card_dsl::card_data::CardMetadata;
     use card_dsl::dsl::{
         constant, control_status, elder_sign, grant, modify, modify_for, on_play, Ability,
         ControlStatus, GrantTarget, Quantity,
     };
+
+    use super::*;
+    use crate::state::{
+        Continuation, GameStateBuilder, InFlightSkillTest, Lifetime, RecordedModifier, SkillTestId,
+    };
+    use crate::test_support;
 
     /// Mock registry over a small hardcoded set of codes. Keeps these
     /// tests isolated from the global `OnceLock` and from the cards

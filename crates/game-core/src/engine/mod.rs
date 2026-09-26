@@ -68,12 +68,13 @@ pub(crate) use dispatch::{apply_player_action, dispatch_turn_action, drive};
 // `PlayerAction::PerformSkillTest` wire variant, #447).
 pub(crate) use dispatch::skill_test::perform_skill_test as start_plain_skill_test;
 
+use card_dsl::card_data::CardKind;
+
 use crate::action::{Action, RosterEntry};
 use crate::event::Event;
 use crate::scenario::ScenarioRegistry;
 use crate::state::{CardCode, Continuation, GameState, ScenarioEndStep};
 use crate::{card_registry, scenario_registry};
-use card_dsl::card_data::CardKind;
 
 /// The result of a single [`apply`] call.
 #[derive(Debug, Clone)]
@@ -323,6 +324,9 @@ fn finalize_scenario_end(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
 
 #[cfg(test)]
 mod tests {
+    use card_dsl::card_data::ClueValue;
+    use card_dsl::dsl::{IntExpr, Stat};
+
     use super::*;
     use crate::action::{EngineRecord, InputResponse, PlayerAction};
     use crate::event::FailureReason;
@@ -335,8 +339,6 @@ mod tests {
     };
     use crate::test_support::{self, ScriptedResolver};
     use crate::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
-    use card_dsl::card_data::ClueValue;
-    use card_dsl::dsl::{IntExpr, Stat};
 
     /// Drive one open-turn action through the `ResolveInput(PickSingle)` routing
     /// path, draining the skill-test commit window automatically (like

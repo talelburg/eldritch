@@ -29,6 +29,9 @@
 //! logged [`Event`](crate::event::Event) — call sites still emit their own
 //! (e.g. `EnemyDefeated`, `InvestigatorMoved`).
 
+use card_dsl::dsl::{SkillTestKind, TestOutcome};
+use serde::{Deserialize, Serialize};
+
 use crate::engine::dispatch::forced_triggers::ForcedTriggerPoint;
 use crate::engine::dispatch::{actions, combat};
 use crate::engine::outcome::EngineOutcome;
@@ -37,8 +40,6 @@ use crate::state::{
     Assignment, CardCode, CardInstanceId, Continuation, DamageSource, EmitStep, EnemyId,
     InvestigatorId, LocationId, Phase,
 };
-use card_dsl::dsl::{SkillTestKind, TestOutcome};
-use serde::{Deserialize, Serialize};
 
 /// A game/framework timing point at which forced and/or reaction triggers
 /// may fire, with the binding context the fired effects need.

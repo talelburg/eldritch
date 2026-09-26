@@ -223,7 +223,6 @@ fn investigator_location(state: &GameState, id: InvestigatorId) -> Option<Locati
 
 #[cfg(test)]
 mod tests {
-    use crate::impls;
     use card_dsl::card_data::SkillKind;
     use card_dsl::dsl::{
         Ability, Condition, ControlStatus, Effect, EventPattern, EventTiming, GrantTarget,
@@ -235,6 +234,8 @@ mod tests {
         GameStateBuilder, InvestigatorId, LocationId, SkillTestFollowUp, SkillTestId,
     };
     use game_core::test_support;
+
+    use crate::impls;
 
     /// The one thing 01117 prints. Destructured rather than `matches!`-ed with
     /// `..`, so an `Effect::If` wrapper — which the grant sweep skips silently —

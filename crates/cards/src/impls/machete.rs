@@ -102,11 +102,12 @@ pub(crate) fn native_condition_for(tag: &str) -> Option<NativeConditionFn> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::impls;
     use card_dsl::dsl::{ActionDesignator, Effect, Trigger};
     use game_core::state::{EnemyId, GameStateBuilder, InvestigatorId};
     use game_core::test_support;
+
+    use super::*;
+    use crate::impls;
 
     #[test]
     fn one_costless_activated_fight_ability() {

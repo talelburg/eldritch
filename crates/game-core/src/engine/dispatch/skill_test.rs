@@ -7,6 +7,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use card_dsl::card_data::CardKind;
+use card_dsl::dsl::{
+    self, Determination, Effect, HarmKind, IntExpr, InvestigatorTarget, LocationTarget,
+    SkillTestKind, Stat, TestOutcome, Trigger,
+};
+
 use crate::action::InputResponse;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{combat, emit, reaction_windows};
@@ -24,11 +30,6 @@ use crate::state::{
     SkillKind, SkillTestFollowUp, SkillTestStep, Status, TokenResolution, Zone,
 };
 use crate::{card_registry, scenario};
-use card_dsl::card_data::CardKind;
-use card_dsl::dsl::{
-    self, Determination, Effect, HarmKind, IntExpr, InvestigatorTarget, LocationTarget,
-    SkillTestKind, Stat, TestOutcome, Trigger,
-};
 
 /// The one-shot modifier an initiator grants the test it starts: a weapon's
 /// *"+N \[combat\] for this attack"* (the
@@ -1855,6 +1856,8 @@ fn push_symbol_effects(cx: &mut Cx, investigator: InvestigatorId, effects: &[Tok
 
 #[cfg(test)]
 mod tests {
+    use card_dsl::dsl::deal_horror;
+
     use super::*;
     use crate::engine::dispatch;
     use crate::event::Event;
@@ -1863,7 +1866,6 @@ mod tests {
         EffectFrame, EnemyId, GameStateBuilder, LocationId, SkillSubstitution, SkillTestId,
     };
     use crate::{test_support, InputKind};
-    use card_dsl::dsl::deal_horror;
 
     /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
     /// reading the commit-time accumulator off the in-flight record

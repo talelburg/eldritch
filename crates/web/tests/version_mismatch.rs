@@ -3,9 +3,10 @@
 //! line in the header. wasm32-only.
 #![cfg(target_arch = "wasm32")]
 
+use std::collections::BTreeSet;
+
 use game_core::test_support;
 use leptos::prelude::*;
-use std::collections::BTreeSet;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::app::Overlays;

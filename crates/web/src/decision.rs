@@ -220,7 +220,6 @@ pub fn DecisionView() -> impl IntoView {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::card_data::SkillKind;
     use cards::REGISTRY;
     use game_core::engine::{InputRequest, OptionId};
@@ -231,6 +230,7 @@ mod tests {
     };
     use game_core::{card_registry, test_support};
 
+    use super::*;
     use crate::skill_test_result;
     use crate::store::ConnStatus;
 

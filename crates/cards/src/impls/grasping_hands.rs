@@ -30,8 +30,9 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, HarmKind, IntExpr, Quantity};
+
+    use super::*;
 
     #[test]
     fn revelation_tests_agility_3_then_damage_per_point() {

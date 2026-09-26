@@ -11,9 +11,9 @@
 
 use game_core::state::Phase;
 use leptos::prelude::*;
+use Step::{Framework, Window};
 
 use crate::store::use_store;
-use Step::{Framework, Window};
 
 /// One entry in a phase's ordered outline.
 enum Step {

@@ -48,8 +48,9 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{ActionDesignator, Effect, IntExpr, Trigger};
+
+    use super::*;
 
     /// The `(combat_modifier, extra_damage)` the ability at `index` fights
     /// with, asserting on the way that it is a 1-action **Fight** designator

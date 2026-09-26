@@ -24,10 +24,11 @@ pub fn location_name(game: &GameState, id: LocationId) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use cards::REGISTRY;
     use game_core::state::GameStateBuilder;
     use game_core::test_support;
+
+    use super::*;
 
     #[test]
     fn card_name_returns_printed_name_with_registry() {

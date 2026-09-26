@@ -439,7 +439,6 @@ mod set_aside_cards_tests {
 #[cfg(test)]
 mod with_open_window_tests {
     use super::*;
-
     use crate::state::PhaseStep;
     use crate::test_support;
 
@@ -494,7 +493,6 @@ mod with_open_window_tests {
 #[cfg(test)]
 mod owner_stamp_tests {
     use super::*;
-
     use crate::state::{CardCode, CardInPlay, CardInstanceId};
     use crate::test_support;
 

@@ -7,6 +7,8 @@
 //! `TurnControl` anchor rather than by its text.
 #![cfg(target_arch = "wasm32")]
 
+use std::collections::BTreeSet;
+
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
@@ -14,7 +16,6 @@ use game_core::state::InvestigatorId;
 use game_core::test_support;
 use leptos::prelude::*;
 use protocol::ClientMessage;
-use std::collections::BTreeSet;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::interaction::MultiSelect;

@@ -1,7 +1,8 @@
 //! What an activation names: the **ability source**.
 
-use crate::state::{CardCode, CardInstanceId, EnemyId, LocationId};
 use serde::{Deserialize, Serialize};
+
+use crate::state::{CardCode, CardInstanceId, EnemyId, LocationId};
 
 /// The thing whose ability is being used — the descriptor an activation
 /// names instead of a bare card instance (#707).
@@ -163,10 +164,10 @@ impl AbilityAddress {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    use crate::state::{ActionResume, CandidateSource};
     use card_dsl::dsl::{self, Effect};
+
+    use super::*;
+    use crate::state::{ActionResume, CandidateSource};
 
     /// The descriptor rides the wire twice: inside a parked
     /// [`ActionResume::ActivateAbility`] frame in serialized game state, and in

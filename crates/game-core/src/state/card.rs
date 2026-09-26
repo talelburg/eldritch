@@ -3,9 +3,10 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::state::InvestigatorId;
 use card_dsl::dsl::{UsageLimit, UsagePeriod};
 use serde::{Deserialize, Serialize};
+
+use crate::state::InvestigatorId;
 
 /// `ArkhamDB` card code (e.g. `"01030"` for Magnifying Glass).
 ///

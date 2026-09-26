@@ -1219,9 +1219,10 @@ const GENERATED_HEADER: &str = "\
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
+
+    use super::*;
 
     // ---- classify ------------------------------------------------
 

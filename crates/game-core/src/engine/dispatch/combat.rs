@@ -1,5 +1,8 @@
 //! Combat helpers: enemy damage, investigator damage/horror, attacks.
 
+use card_dsl::card_data::CardKind;
+use card_dsl::dsl::{EntityScope, LocationSet};
+
 use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::emit::TimingEvent;
@@ -14,8 +17,6 @@ use crate::state::{
     DealDamageStep, EliminationCause, EnemyAttackSource, EnemyId, GameState, InvestigatorId,
     Status,
 };
-use card_dsl::card_data::CardKind;
-use card_dsl::dsl::{EntityScope, LocationSet};
 
 /// The scope of enemies a Fight (basic action or designated **Fight** ability)
 /// may target: any enemy *at your location*. Per RR you choose an enemy at your
@@ -1310,9 +1311,9 @@ pub(super) fn resume_attack_order_pick(cx: &mut Cx, response: &InputResponse) ->
 
 #[cfg(test)]
 mod combat_tests {
-    use super::*;
     use std::collections::BTreeMap;
 
+    use super::*;
     use crate::action::InputResponse;
     use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
     use crate::engine::outcome::{EngineOutcome, OptionId};

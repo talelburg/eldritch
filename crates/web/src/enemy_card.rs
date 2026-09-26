@@ -115,8 +115,9 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use game_core::test_support;
+
+    use super::*;
 
     #[test]
     fn stat_chips_in_order() {

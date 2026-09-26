@@ -8,6 +8,8 @@
 
 use std::collections::BTreeMap;
 
+use card_dsl::card_data::Slot;
+
 use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::{cards, hunters};
@@ -16,7 +18,6 @@ use crate::engine::Cx;
 use crate::state::{
     AssetEntry, CardCode, CardInPlay, CardInstanceId, Continuation, GameState, InvestigatorId,
 };
-use card_dsl::card_data::Slot;
 
 /// Per-type slot counts (a multiset). `BTreeMap` keeps iteration deterministic.
 pub(super) type SlotCounts = BTreeMap<Slot, u8>;

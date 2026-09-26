@@ -4,7 +4,6 @@
 
 mod common;
 
-use crate::common::TEST_SCENARIO_ID;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use game_core::test_support::TEST_INV;
@@ -12,6 +11,8 @@ use serde_json::Value;
 use server::session::GameSession;
 use server::{AppState, GameId};
 use tower::ServiceExt as _;
+
+use crate::common::TEST_SCENARIO_ID;
 
 #[tokio::test]
 async fn post_games_creates_game_and_returns_id() {

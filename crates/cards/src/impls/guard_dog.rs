@@ -81,11 +81,12 @@ fn retaliate(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, Trigger, TriggerKind};
     use game_core::event::Event;
     use game_core::state::{EnemyId, GameState, GameStateBuilder, InvestigatorId};
     use game_core::test_support;
+
+    use super::*;
 
     fn cx_apply(
         state: &mut GameState,

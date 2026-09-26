@@ -13,6 +13,8 @@
 //! own binary per the `tests/location_card.rs` first-wins-registry precedent.
 #![cfg(target_arch = "wasm32")]
 
+use std::collections::BTreeSet;
+
 use cards::REGISTRY;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::Action;
@@ -25,7 +27,6 @@ use game_core::state::{
 use game_core::{card_registry, test_support};
 use leptos::prelude::*;
 use protocol::{ClientMessage, ServerMessage};
-use std::collections::BTreeSet;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::app::Overlays;

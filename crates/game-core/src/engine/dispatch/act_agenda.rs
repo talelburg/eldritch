@@ -3,6 +3,8 @@
 
 use std::borrow::Cow;
 
+use card_dsl::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
+
 use crate::card_registry;
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
@@ -11,7 +13,6 @@ use crate::state::{
     AdvanceDeck, AdvanceStep, AdvanceTrigger, Continuation, GameState, InvestigatorId, LocationId,
     Phase, ScenarioEndStep,
 };
-use card_dsl::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
 
 /// Whether the current act advances *only* at the end of the round (its
 /// round-end objective — act 01109's `When`-`RoundEnded` group advance), in

@@ -4,11 +4,10 @@
 use std::error::Error;
 use std::net::SocketAddr;
 
-use tokio::net::TcpListener;
-use tracing_subscriber::EnvFilter;
-
 use server::db::{self, MIGRATOR};
 use server::AppState;
+use tokio::net::TcpListener;
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

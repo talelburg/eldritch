@@ -28,12 +28,13 @@
 //! already been advanced, so re-dispatch makes progress (never re-scans the same
 //! cell into a loop).
 
+use card_dsl::dsl::EventTiming;
+
 use crate::engine::dispatch::emit::ConditionResolution;
 use crate::engine::dispatch::{forced_triggers, reaction_windows};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::state::{Continuation, EmitStep, TimingSub};
-use card_dsl::dsl::EventTiming;
 
 /// Dispatch the [`Continuation::EmitEvent`] coordinator on top of the stack
 /// (called only by the `drive` loop with one on top). One step of the sequence

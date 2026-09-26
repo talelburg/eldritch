@@ -8,6 +8,9 @@
 //! human-initiated actions, [`apply_engine_record`] for engine-emitted
 //! ones.
 
+use card_dsl::card_data::CardType;
+use card_dsl::dsl::{Ability, ActionDesignator, Cost, Effect};
+
 use crate::action::{EngineRecord, InputResponse, PlayerAction, RosterEntry};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::enumerate::TurnAction;
@@ -19,8 +22,6 @@ use crate::state::{
     ActionResume, AttackLoopStage, CardCode, CardInstanceId, Continuation, DealDamageStep,
     GameState, ScenarioEndStep, Status,
 };
-use card_dsl::card_data::CardType;
-use card_dsl::dsl::{Ability, ActionDesignator, Cost, Effect};
 pub(crate) use control::take_control;
 
 mod abilities;

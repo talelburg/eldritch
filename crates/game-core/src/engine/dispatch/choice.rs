@@ -174,13 +174,14 @@ pub(crate) fn resume_effect_walk(_cx: &mut Cx) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
+    use card_dsl::dsl::{choose_one, gain_resources, Effect, InvestigatorTarget};
+
     use super::*;
     use crate::engine::dispatch;
     use crate::engine::evaluator::{push_effect, EvalContext};
     use crate::engine::outcome::PromptNature;
     use crate::state::{EnemyId, GameState, GameStateBuilder, InvestigatorId};
     use crate::test_support;
-    use card_dsl::dsl::{choose_one, gain_resources, Effect, InvestigatorTarget};
 
     /// A `ChooseOne` branch that is **live** — one `effect_can_change_state`
     /// cannot prove inert, so #664's mode filter keeps it in the offer. (An

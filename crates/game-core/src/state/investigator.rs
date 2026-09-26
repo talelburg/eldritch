@@ -2,10 +2,11 @@
 
 use std::collections::BTreeSet;
 
-use crate::card_registry;
-use crate::state::{CardCode, CardInPlay, CardInstanceId, LocationId, Skills};
 use card_dsl::card_data::CardKind;
 use serde::{Deserialize, Serialize};
+
+use crate::card_registry;
+use crate::state::{CardCode, CardInPlay, CardInstanceId, LocationId, Skills};
 
 /// Stable identifier for an investigator within a scenario.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -325,7 +326,6 @@ pub enum EliminationCause {
 #[cfg(test)]
 mod threat_area_tests {
     use super::*;
-
     use crate::test_support;
 
     #[test]
@@ -387,9 +387,10 @@ mod threat_area_tests {
 
 #[cfg(test)]
 mod ability_usage_tests {
+    use card_dsl::dsl::{UsageLimit, UsagePeriod};
+
     use crate::state::AbilityUsageRecord;
     use crate::test_support;
-    use card_dsl::dsl::{UsageLimit, UsagePeriod};
 
     #[test]
     fn new_investigator_card_has_empty_ability_usage() {

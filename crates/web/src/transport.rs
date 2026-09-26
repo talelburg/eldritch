@@ -8,10 +8,9 @@ use gloo_net::http::Request;
 use gloo_net::websocket::{futures::WebSocket, Message};
 use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
+use protocol::{ClientMessage, CreateGameRequest, CreateGameResponse, GameId, ServerMessage};
 use wasm_bindgen_futures::spawn_local;
 use web_sys::Storage;
-
-use protocol::{ClientMessage, CreateGameRequest, CreateGameResponse, GameId, ServerMessage};
 
 use crate::picker::CreateTx;
 use crate::store::{reduce, ConnStatus, StoreSignal};

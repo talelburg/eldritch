@@ -3,6 +3,8 @@
 //! (2b) — this module shares the handlers' legality predicates so the
 //! enumeration matches handler-acceptance by construction.
 
+use card_dsl::dsl::ActionClass;
+
 use crate::card_registry;
 use crate::engine::dispatch::{act_agenda, actions, movement, reaction_windows};
 use crate::engine::outcome::OptionTarget;
@@ -11,7 +13,6 @@ use crate::state::{
     AbilityAddress, AbilitySource, Continuation, EnemyId, GameState, InvestigatorId, LocationId,
     Phase, Status,
 };
-use card_dsl::dsl::ActionClass;
 
 /// The enumerated open-turn actions for the active investigator.
 ///

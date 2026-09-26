@@ -304,8 +304,9 @@ pub const MODULE: ScenarioModule = ScenarioModule {
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::*;
     use card_dsl::card_data::ClueValue;
+
+    use super::*;
 
     #[test]
     fn setup_reads_card_stats_from_corpus() {

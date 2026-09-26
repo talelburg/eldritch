@@ -2,11 +2,12 @@
 
 use std::borrow::Cow;
 
+use serde::{Deserialize, Serialize};
+
 use crate::engine::ability_source;
 use crate::state::{
     AbilitySource, CardCode, CardInstanceId, EnemyId, GameState, InvestigatorId, LocationId,
 };
-use serde::{Deserialize, Serialize};
 
 /// The terminal status of an [`apply`](crate::engine::apply) call.
 ///

@@ -133,10 +133,11 @@ fn discard_asset_instance(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::Effect;
     use game_core::state::{CardCode, CardInPlay, GameStateBuilder};
     use game_core::test_support;
+
+    use super::*;
 
     #[test]
     fn revelation_tests_willpower_4_then_native_fail() {

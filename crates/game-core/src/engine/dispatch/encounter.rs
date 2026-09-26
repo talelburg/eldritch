@@ -1,5 +1,8 @@
 //! Encounter-deck draw, spawn, and Mythos draw chain handlers.
 
+use card_dsl::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, SpawnLocation};
+use card_dsl::dsl::{Ability, Effect, Trigger};
+
 use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::hunters::PreyResolution;
@@ -12,8 +15,6 @@ use crate::state::{
     CardCode, Continuation, EncounterDisposition, Enemy, FastWindowKind, InvestigatorId,
     LocationId, PhaseStep, SpawnEngagePending, Status,
 };
-use card_dsl::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, SpawnLocation};
-use card_dsl::dsl::{Ability, Effect, Trigger};
 
 /// Hard cap on a single Mythos draw chain. Real scenarios surge ≤2
 /// in a chain; the cap exists purely to guarantee termination on
@@ -103,8 +104,9 @@ pub(crate) fn treachery_is_persistent(abilities: &[Ability]) -> bool {
 
 #[cfg(test)]
 mod persistence_tests {
-    use super::*;
     use card_dsl::dsl::{constant, modify, native, revelation, Ability, ModifierScope, Stat};
+
+    use super::*;
 
     #[test]
     fn persistence_is_derived_from_non_revelation_abilities() {
@@ -1235,11 +1237,12 @@ mod encounter_deck_helper_tests {
 
 #[cfg(test)]
 mod spawn_enemy_tests {
+    use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey, Spawn, SpawnLocation};
+
     use super::*;
     use crate::engine::outcome::OptionId;
     use crate::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Phase};
     use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
-    use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey, Spawn, SpawnLocation};
 
     fn synth_enemy_metadata(spawn: Option<Spawn>) -> CardMetadata {
         enemy_metadata(

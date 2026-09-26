@@ -111,8 +111,9 @@ fn limit1_attach(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, Trigger};
+
+    use super::*;
 
     #[test]
     fn abilities_are_attach_shroud_and_forced_discard() {

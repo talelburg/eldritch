@@ -2,6 +2,12 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use card_dsl::card_data::{CardKind, CardMetadata, SkillKind};
+use card_dsl::dsl::{
+    ActionDesignator, Determination, Effect, EventTiming, IntExpr, SkillTestKind, Stat,
+};
+use serde::{Deserialize, Serialize};
+
 use crate::engine::evaluator::EvalContext;
 use crate::engine::TimingEvent;
 use crate::event::FailureReason;
@@ -11,12 +17,6 @@ use crate::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, Counter, Enemy,
     EnemyId, Investigator, InvestigatorId, Location, LocationId, Phase, TokenModifiers,
 };
-use card_dsl::card_data::{CardKind, CardMetadata, SkillKind};
-use card_dsl::dsl::{
-    ActionDesignator, Determination, Effect, EventTiming, IntExpr, SkillTestKind, Stat,
-};
-
-use serde::{Deserialize, Serialize};
 
 /// The full state of a scenario at a single point in time.
 ///
@@ -3120,7 +3120,6 @@ impl GameState {
 #[cfg(test)]
 mod open_window_tests {
     use super::*;
-
     use crate::test_support;
 
     #[test]
@@ -3243,7 +3242,6 @@ mod location_id_counter_tests {
 #[cfg(test)]
 mod continuation_stack_tests {
     use super::*;
-
     use crate::state::GameStateBuilder;
 
     #[test]
@@ -3404,7 +3402,6 @@ mod continuation_stack_tests {
 #[cfg(test)]
 mod id_counter_tests {
     use super::*;
-
     use crate::state::GameStateBuilder;
 
     #[test]
@@ -3452,7 +3449,6 @@ mod encounter_draw_tests {
 #[cfg(test)]
 mod enemy_attack_loop_tests {
     use super::*;
-
     use crate::state::GameStateBuilder;
 
     #[test]
@@ -3516,7 +3512,6 @@ mod enemy_attack_loop_tests {
 #[cfg(test)]
 mod encounter_deck_tests {
     use super::*;
-
     use crate::state::GameStateBuilder;
 
     #[test]
@@ -3629,8 +3624,9 @@ mod partial_eq_tests {
 
 #[cfg(test)]
 mod add_location_tests {
-    use crate::state::{CardCode, GameStateBuilder};
     use card_dsl::card_data::{CardKind, CardMetadata, ClueValue, Prey};
+
+    use crate::state::{CardCode, GameStateBuilder};
 
     fn location_meta(code: &str, name: &str, shroud: u8, clues: u8) -> CardMetadata {
         CardMetadata {
@@ -3798,7 +3794,6 @@ mod connect_tests {
 #[cfg(test)]
 mod starting_location_tests {
     use super::*;
-
     use crate::state::GameStateBuilder;
 
     #[test]
@@ -3816,7 +3811,6 @@ mod starting_location_tests {
 #[cfg(test)]
 mod action_resolution_frame_tests {
     use super::*;
-
     use crate::state::GameStateBuilder;
 
     #[test]
@@ -3904,9 +3898,10 @@ mod scenario_end_cancellation_tests {
 
 #[cfg(test)]
 mod effect_frame_tests {
+    use card_dsl::dsl::Effect;
+
     use crate::engine::evaluator::EvalContext;
     use crate::state::{Continuation, EffectFrame, InvestigatorId};
-    use card_dsl::dsl::Effect;
 
     #[test]
     fn effect_frame_variant_roundtrips_serde() {

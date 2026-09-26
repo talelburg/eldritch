@@ -46,8 +46,9 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, ModifierAudience, Trigger};
+
+    use super::*;
 
     #[test]
     fn abilities_are_two_fast_resource_costed_modifies() {

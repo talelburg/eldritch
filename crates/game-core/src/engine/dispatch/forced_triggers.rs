@@ -5,6 +5,10 @@
 //! a fixed deterministic order (see [`queue_forced_triggers`]), beneath the
 //! universal [`queue_event`](super::emit::queue_event) chokepoint.
 
+use card_dsl::dsl::{
+    self, Effect, EventPattern, EventTiming, SkillTestKind, TestOutcome, Trigger, TriggerKind,
+};
+
 use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::reaction_windows;
@@ -14,9 +18,6 @@ use crate::engine::{abilities_in_effect, Cx};
 use crate::state::{
     self, AbilitySource, CandidateSource, CardCode, Continuation, EnemyId, GameState,
     InvestigatorId, LocationId, ResolutionCandidate, Status,
-};
-use card_dsl::dsl::{
-    self, Effect, EventPattern, EventTiming, SkillTestKind, TestOutcome, Trigger, TriggerKind,
 };
 
 /// A framework timing point at which Forced (`Trigger::OnEvent`)

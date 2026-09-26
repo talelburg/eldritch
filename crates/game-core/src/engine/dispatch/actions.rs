@@ -1,6 +1,8 @@
 //! Player-action handlers: Investigate, Move, Fight, Evade, plus the
 //! engaged-action validation and single-action-spend helpers.
 
+use card_dsl::dsl::{ActionClass, IntExpr, SkillTestKind, Stat};
+
 use crate::card_registry;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::skill_test::InitiatorModifier;
@@ -13,7 +15,6 @@ use crate::state::{
     GameState, Investigator, InvestigatorId, LocationId, ModifierTarget, Phase, SkillKind,
     SkillTestFollowUp, Status,
 };
-use card_dsl::dsl::{ActionClass, IntExpr, SkillTestKind, Stat};
 
 /// Handler for `TurnAction::Investigate`.
 ///

@@ -34,11 +34,12 @@
 
 use std::sync::OnceLock;
 
+use card_dsl::card_data::CardMetadata;
+use card_dsl::dsl::Ability;
+
 use crate::engine::evaluator::EvalContext;
 use crate::engine::{Cx, EngineOutcome};
 use crate::state::{CardCode, GameState};
-use card_dsl::card_data::CardMetadata;
-use card_dsl::dsl::Ability;
 
 /// A card-local Rust effect: mutates state and emits events through the
 /// effect-resolution context, returning the resolution outcome. Provided
@@ -196,12 +197,13 @@ pub fn current() -> Option<&'static CardRegistry> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::OnceLock;
 
-    use crate::test_support;
     use card_dsl::card_data::{CardKind, CardType, Class, SkillIcons};
     use card_dsl::dsl::{self, ModifierScope, Stat};
+
+    use super::*;
+    use crate::test_support;
 
     /// Build a hand-rolled `CardMetadata` for a fake test card.
     fn fake_metadata() -> CardMetadata {

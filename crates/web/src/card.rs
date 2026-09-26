@@ -538,8 +538,9 @@ pub(crate) fn render_segments(segments: Vec<TextSegment>) -> Vec<AnyView> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use game_core::state::{CardInPlay as TestCardInPlay, CardInstanceId};
+
+    use super::*;
 
     #[test]
     fn cost_label_handles_value_and_x() {

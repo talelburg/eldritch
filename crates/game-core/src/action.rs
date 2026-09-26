@@ -14,9 +14,10 @@
 //!   engine generates these itself so the action log is replayable;
 //!   clients never construct them.
 
+use serde::{Deserialize, Serialize};
+
 use crate::engine::OptionId;
 use crate::state::{CardCode, InvestigatorId};
-use serde::{Deserialize, Serialize};
 
 /// A single entry in the action log.
 ///

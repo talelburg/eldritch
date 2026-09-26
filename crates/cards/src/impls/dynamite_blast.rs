@@ -141,11 +141,12 @@ fn blast_location(cx: &mut Cx, controller: InvestigatorId, loc: LocationId) -> E
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, Trigger};
     use game_core::event::Event;
     use game_core::state::GameStateBuilder;
     use game_core::test_support;
+
+    use super::*;
 
     #[test]
     fn one_on_play_native_blast() {

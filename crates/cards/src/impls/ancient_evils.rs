@@ -39,8 +39,9 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, IntExpr, Trigger};
+
+    use super::*;
 
     #[test]
     fn revelation_places_one_doom_on_the_current_agenda() {
