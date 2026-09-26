@@ -3,7 +3,10 @@
 //! assembles them into a faithful mini-card rectangle. Display-only (no click
 //! handlers) — interactivity is a later slice.
 
-use game_core::card_data::{CardKind, Class, SkillIcons, Slot};
+use std::mem;
+
+use card_dsl::card_data::{CardKind, Class, SkillIcons, Slot};
+use game_core::card_registry;
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, CardInPlay, InvestigatorId, UseKind};
 use leptos::prelude::*;
@@ -111,7 +114,7 @@ pub fn parse_card_text(text: &str) -> Vec<TextSegment> {
 /// Push the accumulated text buffer as a `Text` segment, if non-empty.
 fn flush(buf: &mut String, out: &mut Vec<TextSegment>) {
     if !buf.is_empty() {
-        out.push(TextSegment::Text(std::mem::take(buf)));
+        out.push(TextSegment::Text(mem::take(buf)));
     }
 }
 
@@ -324,8 +327,7 @@ pub fn live_state_chips(inst: &CardInPlay, kind: &CardKind) -> Vec<String> {
 #[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
 #[component]
 pub fn Card(code: CardCode, #[prop(optional)] in_play: Option<CardInPlay>) -> impl IntoView {
-    let Some(meta) = game_core::card_registry::current().and_then(|r| (r.metadata_for)(&code))
-    else {
+    let Some(meta) = card_registry::current().and_then(|r| (r.metadata_for)(&code)) else {
         return view! {
             <div class="card card--unknown">
                 <span class="card-name">{code.to_string()}</span>
@@ -538,8 +540,9 @@ pub(crate) fn render_segments(segments: Vec<TextSegment>) -> Vec<AnyView> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use game_core::state::{CardInPlay as TestCardInPlay, CardInstanceId};
+
+    use super::*;
 
     #[test]
     fn cost_label_handles_value_and_x() {

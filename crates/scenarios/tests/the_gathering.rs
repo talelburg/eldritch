@@ -9,10 +9,10 @@ use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionId, TimingEvent};
 use game_core::state::{
-    CardCode, Continuation, GameState, InvestigatorId, LocationId, Phase, TimingMode,
+    CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    TimingMode,
 };
-use game_core::test_support::{self, GameStateBuilder};
-use game_core::{card_registry, scenario_registry};
+use game_core::{card_registry, scenario_registry, test_support};
 use scenarios::the_gathering;
 
 #[ctor::ctor(unsafe)]

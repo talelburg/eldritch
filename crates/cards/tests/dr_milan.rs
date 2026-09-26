@@ -6,14 +6,13 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId,
-    LocationId, Phase, TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::{card_registry, test_support};
 
 const DR_MILAN: &str = "01033";
 const INV: InvestigatorId = InvestigatorId(1);

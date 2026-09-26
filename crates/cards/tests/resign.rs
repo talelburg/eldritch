@@ -40,10 +40,10 @@ use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, Continuation,
-    EliminationCause, GameState, InvestigationResume, InvestigatorId, LocationId, Phase, Status,
+    EliminationCause, GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId,
+    Phase, Status,
 };
-use game_core::test_support::{self, GameStateBuilder};
-use game_core::{assert_event, card_registry};
+use game_core::{assert_event, card_registry, test_support};
 
 /// The Parlor.
 const PARLOR_CODE: &str = "01115";

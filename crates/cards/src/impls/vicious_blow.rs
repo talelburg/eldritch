@@ -48,7 +48,7 @@
 //! [`if_`]: card_dsl::dsl::if_
 //! [`InFlightSkillTest::bonus_attack_damage`]: game_core::state::InFlightSkillTest::bonus_attack_damage
 
-use card_dsl::dsl::{boost_attack_damage, if_, on_commit, Ability, Condition, SkillTestKind};
+use card_dsl::dsl::{self, Ability, Condition, SkillTestKind};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01025";
@@ -57,9 +57,9 @@ pub const CODE: &str = "01025";
 /// the Fight follow-up, which deals damage only on success).
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_commit(if_(
+    vec![dsl::on_commit(dsl::if_(
         Condition::SkillTestKind(SkillTestKind::Fight),
-        boost_attack_damage(1),
+        dsl::boost_attack_damage(1),
     ))]
 }
 

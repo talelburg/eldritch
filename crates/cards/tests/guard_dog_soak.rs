@@ -32,15 +32,15 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, Enemy, EnemyId,
-    GameState, InvestigationResume, InvestigatorId, LocationId, Phase, Status, Zone,
+    GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId, Phase, Status,
+    Zone,
 };
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::{card_registry, test_support};
 
 /// Guard Dog (01021): Guardian Ally, health 3 / sanity 1, with the
 /// damage-retaliate reaction.

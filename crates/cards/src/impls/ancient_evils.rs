@@ -23,24 +23,27 @@
 //!
 //! *"This"* being the Mythos phase's check-doom-threshold step. 01166 does
 //! otherwise specify, so it builds with
-//! [`place_doom_that_can_advance_the_agenda`] rather than the bare
+//! [`place_doom_that_can_advance_the_agenda`](dsl::place_doom_that_can_advance_the_agenda) rather than the bare
 //! [`place_doom_on_current_agenda`](card_dsl::dsl::place_doom_on_current_agenda)
 //! that 01102 uses.
 
-use card_dsl::dsl::{place_doom_that_can_advance_the_agenda, revelation, Ability};
+use card_dsl::dsl::{self, Ability};
 
 /// `ArkhamDB` code for Ancient Evils.
 pub const CODE: &str = "01166";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![revelation(place_doom_that_can_advance_the_agenda(1u8))]
+    vec![dsl::revelation(
+        dsl::place_doom_that_can_advance_the_agenda(1u8),
+    )]
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, IntExpr, Trigger};
+
+    use super::*;
 
     #[test]
     fn revelation_places_one_doom_on_the_current_agenda() {

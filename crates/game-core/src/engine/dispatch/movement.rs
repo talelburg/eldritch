@@ -41,8 +41,9 @@
 //! `TODO(#826)` on [`location_carries_restriction`] for why that is a choice
 //! rather than an oversight.
 
+use card_dsl::dsl::{Ability, Effect, Restriction, Trigger};
+
 use crate::card_registry;
-use crate::dsl::{Ability, Effect, Restriction, Trigger};
 use crate::engine::abilities_in_effect;
 use crate::state::{Enemy, GameState, LocationId};
 

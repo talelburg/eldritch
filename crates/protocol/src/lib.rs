@@ -2,9 +2,10 @@
 //! client and the server. The server is authoritative; clients submit
 //! [`PlayerAction`]s and render the state the server broadcasts.
 
-use game_core::action::RosterEntry;
+use game_core::action::{PlayerAction, RosterEntry};
+use game_core::engine::EngineOutcome;
+use game_core::event::Event;
 use game_core::state::GameState;
-use game_core::{EngineOutcome, Event, PlayerAction};
 use serde::{Deserialize, Serialize};
 
 /// A message sent from a client to the server.
@@ -130,16 +131,15 @@ mod id_tests {
 
 #[cfg(test)]
 mod tests {
+    use game_core::state::{CardCode, GameStateBuilder};
+    use game_core::test_support;
+
     use super::*;
-    use game_core::state::GameStateBuilder;
-    use game_core::test_support::fixtures::test_investigator;
 
     #[test]
     fn hello_round_trips_through_json() {
-        use game_core::Event;
-
         let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let events = vec![Event::ScenarioStarted];
         let msg = ServerMessage::Hello {
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn applied_round_trips_through_json() {
         let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let msg = ServerMessage::Applied {
             state: Box::new(state.clone()),
@@ -187,14 +187,13 @@ mod tests {
     #[test]
     fn applied_round_trips_awaiting_input_option_target() {
         let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         // The fixture's options are un-anchored; this proves the
         // ChoiceOption.target field survives the ServerMessage envelope
         // (game-core covers an anchored value directly). See the interactivity
         // S0 plan.
-        let outcome =
-            game_core::test_support::fixtures::awaiting_pick_single_input("Choose an action");
+        let outcome = test_support::awaiting_pick_single_input("Choose an action");
         let msg = ServerMessage::Applied {
             state: Box::new(state),
             events: Vec::new(),
@@ -218,8 +217,6 @@ mod tests {
 
     #[test]
     fn create_game_request_round_trips_with_a_roster() {
-        use game_core::action::RosterEntry;
-        use game_core::state::CardCode;
         let req = CreateGameRequest {
             scenario_id: "the-gathering".into(),
             roster: vec![RosterEntry {

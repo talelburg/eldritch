@@ -10,15 +10,16 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use game_core::action::{Action, PlayerAction, RosterEntry};
-use game_core::engine::EngineOutcome;
+use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
 use game_core::rng::RngState;
 use game_core::scenario::ScenarioId;
+use game_core::scenario_registry;
 use game_core::state::GameState;
+use protocol::GameId;
 use sqlx::SqlitePool;
 
-use crate::id::GameId;
-use crate::store;
+use crate::{id, store};
 
 /// Errors from [`GameSession`] persistence operations.
 #[derive(Debug, thiserror::Error)]
@@ -86,7 +87,7 @@ impl GameSession {
     /// session at the mulligan prompt.
     ///
     /// Looks the scenario module up via the installed
-    /// [`scenario_registry`](game_core::scenario_registry).
+    /// [`scenario_registry`].
     ///
     /// # Errors
     ///
@@ -102,7 +103,7 @@ impl GameSession {
         scenario_id: ScenarioId,
         roster: Vec<RosterEntry>,
     ) -> Result<Self, SessionError> {
-        let module = game_core::scenario_registry::current()
+        let module = scenario_registry::current()
             .and_then(|registry| (registry.module_for)(&scenario_id))
             .ok_or_else(|| SessionError::UnknownScenario(scenario_id.clone()))?;
 
@@ -114,12 +115,12 @@ impl GameSession {
         // the resulting post-shuffle RngState is frozen into seed_state, so replay
         // stays deterministic from the seed alone (the seed needs no separate
         // recording).
-        setup.rng = RngState::new(crate::id::random_seed());
+        setup.rng = RngState::new(id::random_seed());
         // Human play surfaces skill-test results with a Confirm-to-dismiss step
         // (#478); the engine gates that pause on this flag (default off for tests
         // and non-interactive consumers). The flag persists through seating.
         setup.interactive_acknowledge = true;
-        let result = game_core::seat_and_open(setup, &roster);
+        let result = engine::seat_and_open(setup, &roster);
         let outcome = match result.outcome {
             EngineOutcome::Rejected { reason } => {
                 return Err(SessionError::Seating(reason.to_string()))
@@ -173,7 +174,7 @@ impl GameSession {
         action: PlayerAction,
     ) -> Result<(Vec<Event>, EngineOutcome), SessionError> {
         let logged = Action::Player(action);
-        let result = game_core::apply(self.state.clone(), logged.clone());
+        let result = engine::apply(self.state.clone(), logged.clone());
 
         if !matches!(result.outcome, EngineOutcome::Rejected { .. }) {
             let action_json = serde_json::to_string(&logged)?;
@@ -215,7 +216,7 @@ impl GameSession {
         let mut seq: i64 = 0;
         for action_json in store::load_actions(&db, game_id).await? {
             let action: Action = serde_json::from_str(&action_json)?;
-            let result = game_core::apply(state, action);
+            let result = engine::apply(state, action);
             // A rejection means the log no longer reproduces the session it
             // recorded. Stop loudly rather than serving the prefix that did
             // replay (#707) — see `SessionError::Replay`.

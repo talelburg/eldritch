@@ -20,17 +20,18 @@
 //! declares one marker ability per boundary instead, and the assertion is which
 //! markers fired and in what order.
 
-use card_dsl::dsl::{self, forced_on_event, native, Ability, EventPattern, EventTiming};
+use card_dsl::card_data::{CardKind, CardMetadata};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_data::{CardKind, CardMetadata};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    self, Act, CardCode, Continuation, GameState, InvestigationResume, InvestigatorId, LocationId,
+    self, Act, CardCode, Continuation, GameState, GameStateBuilder, InvestigationResume,
+    InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// The act carrying one marker forced ability per phase boundary.
 const ACT: &str = "TEST-BOUNDARIES";
@@ -100,18 +101,18 @@ fn blank_treachery_metadata() -> CardMetadata {
 }
 
 fn started(phase: dsl::Phase, tag: &'static str) -> Ability {
-    forced_on_event(
+    dsl::forced_on_event(
         EventPattern::PhaseStarted { phase },
         EventTiming::At,
-        native(tag),
+        dsl::native(tag),
     )
 }
 
 fn ended(phase: dsl::Phase, tag: &'static str) -> Ability {
-    forced_on_event(
+    dsl::forced_on_event(
         EventPattern::PhaseEnded { phase },
         EventTiming::At,
-        native(tag),
+        dsl::native(tag),
     )
 }
 

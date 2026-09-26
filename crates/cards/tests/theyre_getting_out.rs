@@ -17,17 +17,16 @@
 use card_dsl::dsl::EventTiming;
 use cards::REGISTRY;
 use game_core::action::InputResponse;
-use game_core::card_registry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{EngineOutcome, TimingEvent};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
     Act, Agenda, CardCode, Continuation, EliminationCause, Enemy, EnemyId, EnemyResume, GameState,
-    InvestigationResume, InvestigatorId, Location, LocationId, Phase, Status, TimingMode,
-    UpkeepResume,
+    GameStateBuilder, InvestigationResume, InvestigatorId, Location, LocationId, Phase, Status,
+    TimingMode, UpkeepResume,
 };
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::{card_registry, test_support};
 
 #[ctor::ctor(unsafe)]
 fn install() {

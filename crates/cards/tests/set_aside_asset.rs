@@ -55,10 +55,10 @@ use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
 use game_core::engine::{self, Cx, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    Act, CardCode, ChaosToken, GameState, InvestigatorId, LocationId, ModifierTarget, Phase,
-    SkillKind,
+    Act, CardCode, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    ModifierTarget, Phase, SkillKind,
 };
-use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
+use game_core::test_support::{self, ScriptedResolver};
 
 /// Lita Chantler — the set-aside `Ally` asset act 01109b puts into play.
 const LITA: &str = "01117";

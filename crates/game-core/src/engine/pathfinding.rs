@@ -76,8 +76,8 @@ pub fn shortest_first_steps(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::Phase;
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{GameStateBuilder, Phase};
+    use crate::test_support;
 
     /// Build a diamond: A(1) connects to B(2) and C(3); both connect to
     /// D(4). Bidirectional edges.

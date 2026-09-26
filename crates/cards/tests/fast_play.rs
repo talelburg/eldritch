@@ -39,15 +39,14 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, InputKind, OptionTarget};
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    Continuation, EnemyId, FastActorScope, FastWindowKind, GameState, InvestigatorId, LocationId,
-    MythosResume, Phase, PhaseStep, SkillKind,
+    Continuation, EnemyId, FastActorScope, FastWindowKind, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, MythosResume, Phase, PhaseStep, SkillKind,
 };
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::{card_registry, test_support};
 
 /// Beat Cop 01018: *"You get +1 \[combat\]."* / *"\[fast\] Discard Beat Cop:
 /// Deal 1 damage to an enemy at your location."*

@@ -65,7 +65,7 @@
 //! [`LocationTarget::TestedLocation`]: card_dsl::dsl::LocationTarget::TestedLocation
 //! [`InFlightSkillTest::bonus_clues_discovered`]: game_core::state::InFlightSkillTest::bonus_clues_discovered
 
-use card_dsl::dsl::{discover_additional_clues, if_, on_commit, Ability, Condition, SkillTestKind};
+use card_dsl::dsl::{self, Ability, Condition, SkillTestKind};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01039";
@@ -75,9 +75,9 @@ pub const CODE: &str = "01039";
 /// success).
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_commit(if_(
+    vec![dsl::on_commit(dsl::if_(
         Condition::SkillTestKind(SkillTestKind::Investigate),
-        discover_additional_clues(1),
+        dsl::discover_additional_clues(1),
     ))]
 }
 

@@ -4,78 +4,28 @@
 //! round-1 mulligan-pending, so a `ResolveInput(PickMultiple{selected:[]})` is
 //! accepted and a `ResolveInput` selecting a non-existent card is rejected).
 
+mod common;
+
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::{EngineOutcome, OptionId};
-use game_core::event::Event;
-use game_core::scenario::{ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry};
-use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
-};
-use game_core::{scenario_registry, test_support};
-use server::db::MIGRATOR;
+use game_core::scenario::ScenarioId;
+use game_core::state::{CardCode, InvestigatorId};
+use protocol::GameId;
 use server::session::{GameSession, SessionError};
-use server::GameId;
-use sqlx::sqlite::SqlitePoolOptions;
-use sqlx::SqlitePool;
 
-const TEST_SCENARIO_ID: &str = "test-scenario";
-
-fn test_setup() -> GameState {
-    GameStateBuilder::new()
-        .with_scenario_id(ScenarioId::new(TEST_SCENARIO_ID))
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_rng_seed(42)
-        .build()
-}
-
-fn noop_resolution(_: ScenarioEnding, _: &mut GameState, _: &mut Vec<Event>) {}
-
-static TEST_MODULE: ScenarioModule = ScenarioModule {
-    resolve_symbol: None,
-    setup: test_setup,
-    apply_resolution: noop_resolution,
-    layout: &[],
-};
-
-fn module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
-    (id.as_str() == TEST_SCENARIO_ID).then_some(&TEST_MODULE)
-}
-
-/// Install the mock scenario registry + the synthetic card registry
-/// (idempotent: within a process, second install is a harmless no-op).
-fn install_registry() {
-    let _ = scenario_registry::install(ScenarioRegistry { module_for });
-    test_support::install_test_registry();
-}
-
-fn roster() -> Vec<RosterEntry> {
-    vec![RosterEntry {
-        investigator: CardCode::new(test_support::TEST_INV),
-        deck: vec![],
-    }]
-}
-
-async fn memory_pool() -> SqlitePool {
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .expect("open in-memory sqlite");
-    MIGRATOR.run(&pool).await.expect("migrate");
-    pool
-}
+use crate::common::TEST_SCENARIO_ID;
 
 /// Regression test for the load bug: a game with zero logged actions whose
 /// seed outcome is `AwaitingInput` must load as `AwaitingInput`, not `Done`.
 #[tokio::test]
 async fn load_restores_awaiting_input_seed_with_empty_log() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     let session = GameSession::create(
         pool.clone(),
         "seeded",
         ScenarioId::new(TEST_SCENARIO_ID),
-        roster(),
+        common::roster(),
     )
     .await
     .expect("create");
@@ -103,14 +53,14 @@ async fn load_restores_awaiting_input_seed_with_empty_log() {
 
 #[tokio::test]
 async fn create_persists_seed_and_exposes_setup_state() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
 
     let session = GameSession::create(
         pool.clone(),
         "game-1",
         ScenarioId::new(TEST_SCENARIO_ID),
-        roster(),
+        common::roster(),
     )
     .await
     .expect("create session");
@@ -131,8 +81,8 @@ async fn create_persists_seed_and_exposes_setup_state() {
 
 #[tokio::test]
 async fn create_rejects_unknown_scenario() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
 
     let result =
         GameSession::create(pool, "game-x", ScenarioId::new("no-such-scenario"), vec![]).await;
@@ -142,8 +92,8 @@ async fn create_rejects_unknown_scenario() {
 
 #[tokio::test]
 async fn create_rejects_bad_roster() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
 
     // Use an obviously-unknown investigator code; the synthetic registry
     // resolves nothing for it, so seating rejects.
@@ -176,13 +126,13 @@ async fn create_rejects_bad_roster() {
 
 #[tokio::test]
 async fn apply_persists_accepted_action_and_advances_state() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     let mut session = GameSession::create(
         pool.clone(),
         "g2",
         ScenarioId::new(TEST_SCENARIO_ID),
-        roster(),
+        common::roster(),
     )
     .await
     .unwrap();
@@ -214,13 +164,13 @@ async fn apply_persists_accepted_action_and_advances_state() {
 
 #[tokio::test]
 async fn apply_rejects_invalid_action_without_persisting() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     let mut session = GameSession::create(
         pool.clone(),
         "g3",
         ScenarioId::new(TEST_SCENARIO_ID),
-        roster(),
+        common::roster(),
     )
     .await
     .unwrap();
@@ -259,13 +209,13 @@ async fn apply_rejects_invalid_action_without_persisting() {
 
 #[tokio::test]
 async fn load_replays_log_to_reproduce_live_state() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     let mut session = GameSession::create(
         pool.clone(),
         "g4",
         ScenarioId::new(TEST_SCENARIO_ID),
-        roster(),
+        common::roster(),
     )
     .await
     .unwrap();
@@ -300,13 +250,13 @@ async fn load_replays_log_to_reproduce_live_state() {
 /// produces.
 #[tokio::test]
 async fn load_fails_loudly_on_a_log_it_cannot_replay() {
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     let _session = GameSession::create(
         pool.clone(),
         "stale",
         ScenarioId::new(TEST_SCENARIO_ID),
-        roster(),
+        common::roster(),
     )
     .await
     .unwrap();
@@ -342,19 +292,24 @@ async fn create_randomizes_the_setup_seed_per_game() {
     // order differs across games. The mock scenario's setup() pins a fixed
     // builder seed (42); create() must override it with host entropy, so two
     // games created from the same module hold distinct frozen seeds.
-    install_registry();
-    let pool = memory_pool().await;
+    common::install_registry();
+    let pool = common::memory_pool().await;
     let one = GameSession::create(
         pool.clone(),
         "g1",
         ScenarioId::new(TEST_SCENARIO_ID),
-        roster(),
+        common::roster(),
     )
     .await
     .expect("create g1");
-    let two = GameSession::create(pool, "g2", ScenarioId::new(TEST_SCENARIO_ID), roster())
-        .await
-        .expect("create g2");
+    let two = GameSession::create(
+        pool,
+        "g2",
+        ScenarioId::new(TEST_SCENARIO_ID),
+        common::roster(),
+    )
+    .await
+    .expect("create g2");
     assert_ne!(
         one.state.rng.seed, two.state.rng.seed,
         "each created game must get a distinct random setup seed"
@@ -363,11 +318,16 @@ async fn create_randomizes_the_setup_seed_per_game() {
 
 #[tokio::test]
 async fn create_enables_interactive_acknowledge() {
-    install_registry();
-    let pool = memory_pool().await;
-    let session = GameSession::create(pool, "ack", ScenarioId::new(TEST_SCENARIO_ID), roster())
-        .await
-        .expect("create");
+    common::install_registry();
+    let pool = common::memory_pool().await;
+    let session = GameSession::create(
+        pool,
+        "ack",
+        ScenarioId::new(TEST_SCENARIO_ID),
+        common::roster(),
+    )
+    .await
+    .expect("create");
     assert!(
         session.state.interactive_acknowledge,
         "human-play sessions pause to acknowledge skill-test results (#478)"

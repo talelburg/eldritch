@@ -22,8 +22,8 @@ use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
 use game_core::card_registry;
 use game_core::engine::{ApplyResult, EngineOutcome};
-use game_core::state::{CardCode, GameState, InvestigatorId, LocationId};
-use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
+use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{self, ScriptedResolver};
 
 /// Acolyte (01169) — Core enemy, "Spawn - Any empty location".
 const ACOLYTE: &str = "01169";

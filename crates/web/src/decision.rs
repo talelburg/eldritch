@@ -21,7 +21,8 @@ use game_core::engine::{ChoiceOption, EngineOutcome, OptionTarget, PromptNature}
 use game_core::state::{AdvanceDeck, GameState, Investigator};
 use leptos::prelude::*;
 
-use crate::act_agenda::{deck_face, name_and_text_src, Face};
+use crate::act_agenda::{self, Face};
+use crate::card;
 #[cfg(target_arch = "wasm32")]
 use crate::controls;
 use crate::drag::Drag;
@@ -109,11 +110,11 @@ fn decision_source(game: &GameState, target: &OptionTarget) -> Option<DecisionSo
     let (code, face) = match target {
         OptionTarget::Act => (
             game.act_deck.get(game.act_index)?.code.clone(),
-            deck_face(game, AdvanceDeck::Act),
+            act_agenda::deck_face(game, AdvanceDeck::Act),
         ),
         OptionTarget::Agenda => (
             game.agenda_deck.get(game.agenda_index)?.code.clone(),
-            deck_face(game, AdvanceDeck::Agenda),
+            act_agenda::deck_face(game, AdvanceDeck::Agenda),
         ),
         OptionTarget::CardInstance(instance_id) => (
             game.investigators
@@ -126,7 +127,7 @@ fn decision_source(game: &GameState, target: &OptionTarget) -> Option<DecisionSo
         ),
         _ => return None,
     };
-    let (name, text) = name_and_text_src(&code, face);
+    let (name, text) = act_agenda::name_and_text_src(&code, face);
     Some(DecisionSource { name, text })
 }
 
@@ -161,7 +162,7 @@ pub fn DecisionView() -> impl IntoView {
             let source = decision.source.map(|s| {
                 let text = s
                     .text
-                    .map(|t| crate::card::render_segments(crate::card::parse_card_text(&t)));
+                    .map(|t| card::render_segments(card::parse_card_text(&t)));
                 view! {
                     <div class="decision-source">{s.name}</div>
                     <div class="decision-printed card-text">{text}</div>
@@ -220,18 +221,17 @@ pub fn DecisionView() -> impl IntoView {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use card_dsl::card_data::SkillKind;
     use cards::REGISTRY;
-    use game_core::card_data::SkillKind;
-    use game_core::card_registry;
     use game_core::engine::{InputRequest, OptionId};
     use game_core::event::Event;
     use game_core::state::{
         Act, AdvanceStep, AdvanceTrigger, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken,
         Continuation, GameStateBuilder, InvestigatorId, TokenResolution, UseKind,
     };
-    use game_core::test_support::fixtures;
+    use game_core::{card_registry, test_support};
 
+    use super::*;
     use crate::skill_test_result;
     use crate::store::ConnStatus;
 
@@ -269,14 +269,14 @@ mod tests {
     fn awaiting(game: Option<GameState>, request: InputRequest) -> ClientState {
         ClientState {
             game,
-            outcome: Some(fixtures::awaiting_request(request)),
+            outcome: Some(test_support::awaiting_request(request)),
             ..Default::default()
         }
     }
 
     /// First Aid in play, so a `CardInstance` anchor resolves.
     fn board_with_first_aid() -> GameState {
-        let mut inv = fixtures::test_investigator(1);
+        let mut inv = test_support::test_investigator(1);
         let mut kit = CardInPlay::enter_play(CardCode::new(FIRST_AID), KIT);
         kit.uses.insert(UseKind::Supplies, 3);
         inv.cards_in_play.push(kit);
@@ -332,7 +332,7 @@ mod tests {
     fn an_advancing_agenda_is_named_by_its_reverse() {
         install_registry();
         let mut game = GameStateBuilder::new()
-            .with_investigator(fixtures::test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         game.agenda_deck = vec![Agenda {
             code: CardCode::new(AGENDA_1),
@@ -440,7 +440,7 @@ mod tests {
     fn an_advancing_act_is_named_and_quoted_by_its_reverse() {
         install_registry();
         let mut game = GameStateBuilder::new()
-            .with_investigator(fixtures::test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         game.act_deck = vec![Act {
             code: CardCode::new(ACT_3),
@@ -479,7 +479,7 @@ mod tests {
     fn an_act_anchor_resolves_to_the_current_act() {
         install_registry();
         let mut game = GameStateBuilder::new()
-            .with_investigator(fixtures::test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         game.act_deck = vec![Act {
             code: CardCode::new("01110"),

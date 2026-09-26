@@ -31,9 +31,7 @@
 //! [`Trigger::OnEvent`]: card_dsl::dsl::Trigger::OnEvent
 //! [`UsageLimit`]: card_dsl::dsl::UsageLimit
 
-use card_dsl::dsl::{
-    discover_clue, reaction_on_event, Ability, EventPattern, EventTiming, LocationTarget,
-};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, LocationTarget};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01022";
@@ -42,13 +40,13 @@ pub const CODE: &str = "01022";
 /// location." — Roland 01001's reaction without the usage limit.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![reaction_on_event(
+    vec![dsl::reaction_on_event(
         EventPattern::EnemyDefeated {
             by_controller: true,
             code: None,
         },
         EventTiming::After,
-        discover_clue(LocationTarget::YourLocation, 1),
+        dsl::discover_clue(LocationTarget::YourLocation, 1),
     )]
 }
 

@@ -16,7 +16,7 @@
 //! no per-card play-timing code here.
 
 use card_dsl::card_data::SkillKind;
-use card_dsl::dsl::{native, on_play, Ability};
+use card_dsl::dsl::{self, Ability};
 use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{Cx, EngineOutcome};
@@ -31,7 +31,7 @@ const SUBSTITUTE: &str = "01036:intellect-substitution";
 /// substitution.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_play(native(SUBSTITUTE))]
+    vec![dsl::on_play(dsl::native(SUBSTITUTE))]
 }
 
 /// Resolve this card's native-effect tag. Wired into the crate registry's

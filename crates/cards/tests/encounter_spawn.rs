@@ -54,9 +54,10 @@ use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
 use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::{CardCode, Continuation, GameState, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{self, GameStateBuilder};
-use game_core::{assert_event_sequence, card_registry};
+use game_core::state::{
+    CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
+};
+use game_core::{assert_event_sequence, card_registry, test_support};
 
 /// Flesh-Eater — *"**Spawn** - Attic."*
 const FLESH_EATER: &str = "01118";

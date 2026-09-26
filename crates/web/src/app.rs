@@ -17,7 +17,7 @@ use crate::prompt_banner::PromptBanner;
 #[cfg(target_arch = "wasm32")]
 use crate::skill_test_result::SkillTestResultView;
 use crate::status_bar::StatusBarView;
-use crate::store::provide_store;
+use crate::store;
 #[cfg(target_arch = "wasm32")]
 use crate::transport;
 use crate::turn_tracker::TurnTrackerView;
@@ -26,7 +26,7 @@ use crate::version_mismatch::VersionMismatchView;
 
 #[component]
 pub fn App() -> impl IntoView {
-    let store = provide_store();
+    let store = store::provide_store();
 
     // Derive the live prompt's options and expose them so board entities can
     // route each option to itself and open a context menu (#536).

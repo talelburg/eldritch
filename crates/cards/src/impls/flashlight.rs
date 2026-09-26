@@ -29,7 +29,7 @@
 //! unlike First Aid). `abilities()` declares only the action.
 
 use card_dsl::card_data::UseKind;
-use card_dsl::dsl::{activated_as, investigate, seq, Ability, Cost};
+use card_dsl::dsl::{self, Ability, Cost};
 
 /// `ArkhamDB` code for Flashlight (original-Core printing).
 pub const CODE: &str = "01087";
@@ -37,21 +37,22 @@ pub const CODE: &str = "01087";
 /// Flashlight's `[action] Spend 1 supply: Investigate with -2 shroud` ability.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![activated_as(
-        investigate(-2i8),
+    vec![dsl::activated_as(
+        dsl::investigate(-2i8),
         1,
         vec![Cost::SpendUses {
             kind: UseKind::Supplies,
             count: 1,
         }],
-        seq([]),
+        dsl::seq([]),
     )]
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{ActionDesignator, Effect, IntExpr, Trigger};
+
+    use super::*;
 
     #[test]
     fn one_action_ability_spending_a_supply_to_investigate_minus_two_shroud() {

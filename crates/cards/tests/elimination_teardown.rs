@@ -36,10 +36,10 @@ use game_core::action::{Action, EngineRecord, InputResponse};
 use game_core::engine::{ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, InvestigatorId, LocationId,
-    Status, Zone,
+    CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, Status, Zone,
 };
-use game_core::test_support::{self, ChoiceResolver, GameStateBuilder, ScriptedResolver};
+use game_core::test_support::{self, ChoiceResolver, ScriptedResolver};
 use game_core::{assert_event, assert_event_count, assert_no_event, card_registry};
 
 /// Roland Banks — health 9, sanity 5.

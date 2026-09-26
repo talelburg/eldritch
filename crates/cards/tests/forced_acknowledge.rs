@@ -9,10 +9,11 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, OptionTarget};
-use game_core::state::{CardCode, Continuation, GameState, InvestigatorId, LocationId};
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::state::{
+    CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId,
+};
+use game_core::{card_registry, test_support};
 
 const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(1);

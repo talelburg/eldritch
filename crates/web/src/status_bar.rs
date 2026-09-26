@@ -4,12 +4,14 @@
 
 use leptos::prelude::*;
 
-use crate::store::{use_store, ConnStatus};
+use crate::store::{self, ConnStatus};
+#[cfg(target_arch = "wasm32")]
+use crate::transport;
 
 /// A horizontal status strip (status · rejection · New game) for the app header.
 #[component]
 pub fn StatusBarView() -> impl IntoView {
-    let store = use_store();
+    let store = store::use_store();
 
     let status = move || match store.get().status {
         ConnStatus::Connecting => "connecting",
@@ -31,7 +33,7 @@ pub fn StatusBarView() -> impl IntoView {
                     view! {
                         <button
                             class="new-game"
-                            on:click=move |_| crate::transport::start_new_game()
+                            on:click=move |_| transport::start_new_game()
                         >
                             "New game"
                         </button>

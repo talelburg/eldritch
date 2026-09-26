@@ -1,11 +1,14 @@
 //! Top-level game state.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{iter, mem};
 
-use crate::card_data::{CardKind, CardMetadata, SkillKind};
-use crate::dsl::{
+use card_dsl::card_data::{CardKind, CardMetadata, SkillKind};
+use card_dsl::dsl::{
     ActionDesignator, Determination, Effect, EventTiming, IntExpr, SkillTestKind, Stat,
 };
+use serde::{Deserialize, Serialize};
+
 use crate::engine::evaluator::EvalContext;
 use crate::engine::TimingEvent;
 use crate::event::FailureReason;
@@ -15,8 +18,6 @@ use crate::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, Counter, Enemy,
     EnemyId, Investigator, InvestigatorId, Location, LocationId, Phase, TokenModifiers,
 };
-
-use serde::{Deserialize, Serialize};
 
 /// The full state of a scenario at a single point in time.
 ///
@@ -128,7 +129,7 @@ pub struct GameState {
     /// *"You get +2 \[willpower\] for this attack for each clue on the
     /// attacked enemy"* is why a resolved integer is not enough.
     ///
-    /// [`ModifierScope`]: crate::dsl::ModifierScope
+    /// [`ModifierScope`]: card_dsl::dsl::ModifierScope
     pub recorded_modifiers: Vec<RecordedModifier>,
     // The in-flight skill test now lives on its `Continuation::SkillTest(_)`
     // frame (#348); read it via [`Self::current_skill_test`]. The former
@@ -806,7 +807,7 @@ pub enum Continuation {
         /// A whole [`CardInPlay`] rather than a bare code (#772): the frame's
         /// job is to hold the card that is in no zone (ADR 0002), and the
         /// instance serves that strictly better than the code once
-        /// [`TakeControl`](crate::dsl::Effect::TakeControl) can be what put it
+        /// [`TakeControl`](card_dsl::dsl::Effect::TakeControl) can be what put it
         /// there. Lita Chantler 01117 arrives here mid-Parley carrying her
         /// accumulated damage and horror, her uses and her usage counters, and
         /// a code would drop all four.
@@ -1457,7 +1458,7 @@ impl Continuation {
     /// is finally placed is a question about its owner rather than about the
     /// frame that was holding it (#772). A card being played from hand is the
     /// player's own; a card riding a [`SlotDiscard`](Self::SlotDiscard) frame
-    /// may be one a [`TakeControl`](crate::dsl::Effect::TakeControl) lifted off
+    /// may be one a [`TakeControl`](card_dsl::dsl::Effect::TakeControl) lifted off
     /// the board, and that one is the scenario's — `None`.
     pub fn take_play_in_progress(
         &mut self,
@@ -1497,7 +1498,7 @@ impl Continuation {
     pub fn take_committed_cards(&mut self, investigator: InvestigatorId) -> Vec<CardCode> {
         match self {
             Continuation::SkillTest(t) if t.investigator == investigator => {
-                std::mem::take(&mut t.committed_by_active)
+                mem::take(&mut t.committed_by_active)
             }
             _ => Vec::new(),
         }
@@ -1724,7 +1725,7 @@ impl EmitStep {
     /// 0008 keeps `ConditionResolution` an exhaustive match instead of a table:
     /// *a table is a thing a new variant can be forgotten from*.
     pub fn cells() -> impl Iterator<Item = EventTiming> {
-        core::iter::successors(Some(EmitStep::When), |step| step.next()).filter_map(EmitStep::cell)
+        iter::successors(Some(EmitStep::When), |step| step.next()).filter_map(EmitStep::cell)
     }
 }
 
@@ -1752,7 +1753,7 @@ pub enum TimingSub {
 /// (Investigate), deal damage (Fight), disengage and exhaust (Evade),
 /// or nothing (a bare plain skill test).
 ///
-/// [`SkillTestStarted`]: crate::Event::SkillTestStarted
+/// [`SkillTestStarted`]: crate::event::Event::SkillTestStarted
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct InFlightSkillTest {
@@ -1771,7 +1772,7 @@ pub struct InFlightSkillTest {
     /// Skill the test is against.
     pub skill: SkillKind,
     /// Test kind (Investigate / Fight / Evade / Plain). Drives
-    /// [`ModifierScope::WhileInPlayDuring`](crate::dsl::ModifierScope::WhileInPlayDuring)
+    /// [`ModifierScope::WhileInPlayDuring`](card_dsl::dsl::ModifierScope::WhileInPlayDuring)
     /// matching during resolution.
     pub kind: SkillTestKind,
     /// What this test's difficulty is read *from* — never a number
@@ -1810,9 +1811,9 @@ pub struct InFlightSkillTest {
     /// The location the test is associated with, snapshotted at
     /// skill-test start (`engine::dispatch::start_skill_test`) from
     /// the investigator's current location. Used by
-    /// [`LocationTarget::TestedLocation`](crate::dsl::LocationTarget::TestedLocation)
+    /// [`LocationTarget::TestedLocation`](card_dsl::dsl::LocationTarget::TestedLocation)
     /// during
-    /// [`Trigger::OnSkillTestResolution`](crate::dsl::Trigger::OnSkillTestResolution)
+    /// [`Trigger::OnSkillTestResolution`](card_dsl::dsl::Trigger::OnSkillTestResolution)
     /// firing so "at that location" resolves to the location the
     /// test was originally taken against, even if the investigator
     /// has since moved (no Phase-3 path moves mid-test, but the
@@ -1913,11 +1914,11 @@ pub struct ResolvedTest {
     /// effect (Grasping Hands 01162, Rotting Remains 01163).
     pub failed_by: u8,
     /// Success margin (`total - difficulty`, ≥ 0 on success); supplied to the
-    /// logged [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) at the
+    /// logged [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) at the
     /// `DetermineOutcome` step. Negative on failure (unused there).
     pub margin: i8,
     /// Why the test failed (meaningful only when `!succeeded`); supplied to the
-    /// logged [`SkillTestFailed`](crate::Event::SkillTestFailed).
+    /// logged [`SkillTestFailed`](crate::event::Event::SkillTestFailed).
     pub fail_reason: FailureReason,
 }
 
@@ -1928,23 +1929,23 @@ pub struct ResolvedTest {
 /// walks a fixed sequence of steps:
 ///
 /// 1. Validate commits + draw chaos token + emit
-///    [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
-///    [`SkillTestFailed`](crate::Event::SkillTestFailed)
+///    [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) /
+///    [`SkillTestFailed`](crate::event::Event::SkillTestFailed)
 /// 2. Apply the action-specific
 ///    [`SkillTestFollowUp`] (Investigate / Fight / Evade / None) —
 ///    this is where `damage_enemy` may emit
-///    [`EnemyDefeated`](crate::Event::EnemyDefeated) and queue an
+///    [`EnemyDefeated`](crate::event::Event::EnemyDefeated) and queue an
 ///    an after-enemy-defeated reaction window
 /// 3. Fire
-///    [`OnSkillTestResolution`](crate::dsl::Trigger::OnSkillTestResolution)
+///    [`OnSkillTestResolution`](card_dsl::dsl::Trigger::OnSkillTestResolution)
 ///    triggers on committed cards
 /// 4. Discard committed cards + emit
-///    [`SkillTestEnded`](crate::Event::SkillTestEnded) + drain
+///    [`SkillTestEnded`](crate::event::Event::SkillTestEnded) + drain
 ///    pending modifiers
 ///
 /// After each step that *can* queue a reaction window, the driver checks
 /// whether that window is now the top frame; if so it suspends with
-/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput) and yields to the
+/// [`AwaitingInput`](crate::engine::EngineOutcome::AwaitingInput) and yields to the
 /// `drive` loop, which dispatches the window. On the window's close the loop
 /// re-dispatches this `SkillTest` frame, which reads its cursor and jumps to
 /// the matching step (Slice C-plumbing). This is the rules-correct shape per
@@ -2022,8 +2023,8 @@ pub enum SkillTestStep {
     /// RR ST.5–ST.7 boundary. Sum the modified skill value (ST.5) from the
     /// board as it stands *now* — after the ST.4 symbol effects — compare it
     /// against the difficulty (ST.6), then emit the logged
-    /// [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
-    /// [`SkillTestFailed`](crate::Event::SkillTestFailed) and fire the general
+    /// [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) /
+    /// [`SkillTestFailed`](crate::event::Event::SkillTestFailed) and fire the general
     /// skill-test-outcome timing point (`TimingEvent::SkillTestResolved`) for
     /// **every** test and both outcomes — "after you successfully investigate"
     /// (Obscuring Fog 01168 forced + Dr. Milan 01033 reaction) is the
@@ -2074,7 +2075,7 @@ pub enum SkillTestStep {
     /// (nothing pushed if no committed card carries an `OnCommit` trigger);
     /// pre-advances to [`ApplyFollowUp`](Self::ApplyFollowUp).
     ///
-    /// [`Trigger::OnCommit`]: crate::dsl::Trigger::OnCommit
+    /// [`Trigger::OnCommit`]: card_dsl::dsl::Trigger::OnCommit
     FireOnCommit,
     /// RR ST.7 part 1 — apply the action-specific
     /// [`SkillTestFollowUp`]. On success the Investigate follow-up
@@ -2113,7 +2114,7 @@ pub enum SkillTestStep {
     /// [`InFlightSkillTest::resolved`] rather than carried in the cursor — `next`
     /// is the only step-specific state this variant needs.
     ///
-    /// [`OnSkillTestResolution`]: crate::dsl::Trigger::OnSkillTestResolution
+    /// [`OnSkillTestResolution`]: card_dsl::dsl::Trigger::OnSkillTestResolution
     FireOnResolution {
         /// Index of the next matching (card, ability) trigger to fire.
         next: u32,
@@ -2126,7 +2127,7 @@ pub enum SkillTestStep {
     PostRetaliate,
     /// Step 3 (`OnSkillTestResolution`) is complete. The next driver
     /// iteration discards committed cards, emits
-    /// [`SkillTestEnded`](crate::Event::SkillTestEnded), and clears
+    /// [`SkillTestEnded`](crate::event::Event::SkillTestEnded), and clears
     /// the in-flight record.
     PostOnResolution,
 }
@@ -2149,7 +2150,7 @@ pub enum SkillTestFollowUp {
     /// `1 + `[`bonus_clues_discovered`](InFlightSkillTest::bonus_clues_discovered)
     /// clues at the test's
     /// [`tested_location`](InFlightSkillTest::tested_location) (via the
-    /// [`DiscoverClue`](crate::dsl::Effect::DiscoverClue) evaluator path).
+    /// [`DiscoverClue`](card_dsl::dsl::Effect::DiscoverClue) evaluator path).
     /// Used by `Investigate`. A commit-time "discover 1 additional clue"
     /// (Deduction 01039) raises this discovery's count rather than adding a
     /// second discovery — see the **Discovery** entry in `CONTEXT.md`.
@@ -2197,7 +2198,7 @@ pub enum FastActorScope {
     /// (e.g. only investigators at a given location). No Phase-3
     /// or Phase-4 site constructs this variant yet; the variant
     /// exists so future cards can grow it without engine churn.
-    Specific(std::collections::BTreeSet<InvestigatorId>),
+    Specific(BTreeSet<InvestigatorId>),
 }
 
 /// The framework step a [`FastWindow`](Continuation::FastWindow) gates — the
@@ -2583,7 +2584,7 @@ pub enum ModifierTarget {
 ///
 /// **A test whose difficulty target leaves play before ST.6 is abandoned**:
 /// its frame is torn down, its committed cards are discarded, its test-scoped
-/// modifier rows expire, [`SkillTestEnded`](crate::Event::SkillTestEnded)
+/// modifier rows expire, [`SkillTestEnded`](crate::event::Event::SkillTestEnded)
 /// fires, and no success or failure is ever declared. The gate is in
 /// `skill_test::advance`'s loop preamble, beside the eliminated-tester one it
 /// mirrors (#564). Reachable solo: Beat Cop 01018's *"\[fast\] Discard Beat
@@ -2661,7 +2662,7 @@ pub enum DifficultyBasis {
 /// test in flight. The evaluator's `Modify` arm performs the translation,
 /// and it is the point where a scope with nothing to stamp is refused.
 ///
-/// [`ModifierScope`]: crate::dsl::ModifierScope
+/// [`ModifierScope`]: card_dsl::dsl::ModifierScope
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Lifetime {
@@ -2673,7 +2674,7 @@ pub enum Lifetime {
     /// 01042) — arrive with the effects that record them; the evaluator
     /// still refuses those scopes, so there is no way to write one down.
     ///
-    /// [`ModifierScope::ThisTurn`]: crate::dsl::ModifierScope::ThisTurn
+    /// [`ModifierScope::ThisTurn`]: card_dsl::dsl::ModifierScope::ThisTurn
     SkillTest(SkillTestId),
 }
 
@@ -2757,7 +2758,7 @@ pub enum RecordedModifierKind {
 /// Pushed by the evaluator's `Modify` arm when an activated or triggered
 /// ability resolves a `Modify` with a non-constant
 /// [`ModifierScope`] — today only
-/// [`ThisSkillTest`](crate::dsl::ModifierScope::ThisSkillTest), which
+/// [`ThisSkillTest`](card_dsl::dsl::ModifierScope::ThisSkillTest), which
 /// stamps [`Lifetime::SkillTest`] with the id of the test in flight (and is
 /// refused outright when there is none); by the evaluator's `AutoResolve`
 /// arm, under the same "there must be a test to stamp" gate; and by the skill-test driver,
@@ -2766,15 +2767,15 @@ pub enum RecordedModifierKind {
 /// alongside the swept population, and dropped by the boundary its
 /// [`lifetime`](Self::lifetime) names.
 ///
-/// [`ModifierScope`]: crate::dsl::ModifierScope
+/// [`ModifierScope`]: card_dsl::dsl::ModifierScope
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct RecordedModifier {
     /// What the row modifies. An
     /// [`Investigator`](ModifierTarget::Investigator) for a `Modify` with
-    /// audience [`Controller`](crate::dsl::ModifierAudience::Controller);
+    /// audience [`Controller`](card_dsl::dsl::ModifierAudience::Controller);
     /// a [`Location`](ModifierTarget::Location) for the shroud reduction an
-    /// [`Investigate`](crate::dsl::ActionDesignator::Investigate) designator
+    /// [`Investigate`](card_dsl::dsl::ActionDesignator::Investigate) designator
     /// grants the investigation it performs (Flashlight 01087's *"Your location
     /// gets -2 shroud for this investigation."*).
     pub target: ModifierTarget,
@@ -2850,7 +2851,7 @@ impl RecordedModifier {
     /// [`target`](Self::target), with `investigator` as the "you" its
     /// [`Delta`](RecordedModifierKind::Delta) expression reads. The shroud
     /// reduction an
-    /// [`Investigate`](crate::dsl::ActionDesignator::Investigate) designator
+    /// [`Investigate`](card_dsl::dsl::ActionDesignator::Investigate) designator
     /// grants (Flashlight 01087) is the one row today whose target is not its
     /// controller.
     #[must_use]
@@ -2995,7 +2996,7 @@ impl GameState {
     /// deterministically.
     ///
     /// The single reading of "engaged with you", shared by the kernel's
-    /// [`Quantity::EngagedEnemies`](crate::dsl::Quantity::EngagedEnemies) count
+    /// [`Quantity::EngagedEnemies`](card_dsl::dsl::Quantity::EngagedEnemies) count
     /// and by card predicates in the `cards` crate (Machete 01020). Two
     /// hand-rolled copies of this filter drifting apart is what #592 was.
     ///
@@ -3118,850 +3119,4 @@ impl GameState {
 }
 
 #[cfg(test)]
-mod open_window_tests {
-    use super::*;
-
-    use crate::test_support;
-
-    #[test]
-    fn open_window_serde_roundtrip() {
-        // A framework window is a `FastWindow` frame on the stack (#433); the
-        // whole `Continuation` serializes for replay.
-        let window = Continuation::FastWindow {
-            candidates: Vec::new(),
-            fast_actors: FastActorScope::Any,
-            kind: FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
-        };
-        let json = serde_json::to_string(&window).expect("serialize");
-        let back: Continuation = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, window);
-    }
-
-    /// The parked source rides the wire as the whole descriptor, not its
-    /// instance projection — an act's `on_fail` would otherwise come back
-    /// un-anchored on the far side of the chaos draw (#834). Same
-    /// break-without-migration posture as #707 / #709 / #735.
-    #[test]
-    fn an_in_flight_tests_parked_board_source_round_trips_through_serde() {
-        let test = InFlightSkillTest {
-            source: Some(AbilitySource::Act),
-            ..test_support::test_skill_test(
-                SkillTestId(0),
-                InvestigatorId(1),
-                SkillKind::Willpower,
-                SkillTestKind::Plain,
-                3,
-            )
-        };
-        let json = serde_json::to_string(&test).expect("serialize");
-        let back: InFlightSkillTest = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.source, Some(AbilitySource::Act));
-        assert_eq!(back, test);
-    }
-
-    #[test]
-    fn hand_candidate_serde_round_trips() {
-        // A Fast event playable from hand (Axis C) rides ResolutionCandidate
-        // with a `Hand` source — distinct from a board card's `None`/`Board`.
-        let candidate = ResolutionCandidate {
-            code: CardCode::new("01022"),
-            controller: InvestigatorId(1),
-            address: AbilityAddress::Printed(0),
-            source: CandidateSource::Hand,
-        };
-        let json = serde_json::to_string(&candidate).expect("serialize");
-        let back: ResolutionCandidate = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, candidate);
-    }
-}
-
-#[cfg(test)]
-mod fast_actor_scope_tests {
-    use super::*;
-    use std::collections::BTreeSet;
-
-    #[test]
-    fn active_investigator_permits_only_named() {
-        let scope = FastActorScope::ActiveInvestigator(InvestigatorId(1));
-        assert!(scope.permits(InvestigatorId(1)));
-        assert!(!scope.permits(InvestigatorId(2)));
-    }
-
-    #[test]
-    fn any_permits_everyone() {
-        let scope = FastActorScope::Any;
-        assert!(scope.permits(InvestigatorId(1)));
-        assert!(scope.permits(InvestigatorId(42)));
-    }
-
-    #[test]
-    fn specific_permits_only_the_named_set() {
-        let mut set = BTreeSet::new();
-        set.insert(InvestigatorId(1));
-        set.insert(InvestigatorId(3));
-        let scope = FastActorScope::Specific(set);
-        assert!(scope.permits(InvestigatorId(1)));
-        assert!(!scope.permits(InvestigatorId(2)));
-        assert!(scope.permits(InvestigatorId(3)));
-    }
-
-    #[test]
-    fn fast_actor_scope_serde_roundtrip() {
-        let mut set = BTreeSet::new();
-        set.insert(InvestigatorId(7));
-        for scope in [
-            FastActorScope::Any,
-            FastActorScope::ActiveInvestigator(InvestigatorId(1)),
-            FastActorScope::Specific(set),
-        ] {
-            let json = serde_json::to_string(&scope).expect("serialize");
-            let back: FastActorScope = serde_json::from_str(&json).expect("deserialize");
-            assert_eq!(back, scope);
-        }
-    }
-}
-
-#[cfg(test)]
-mod location_id_counter_tests {
-    use crate::state::{Counter, GameState};
-    use crate::test_support::GameStateBuilder;
-
-    #[test]
-    fn game_state_starts_location_ids_at_zero() {
-        let state = GameStateBuilder::new().build();
-        assert_eq!(state.location_ids.peek(), 0);
-    }
-
-    #[test]
-    fn location_ids_round_trip_through_serde() {
-        let mut state = GameStateBuilder::new().build();
-        state.location_ids = Counter::at(7);
-        let json = serde_json::to_string(&state).expect("serialize");
-        let back: GameState = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.location_ids.peek(), 7);
-    }
-}
-
-#[cfg(test)]
-mod continuation_stack_tests {
-    use super::*;
-
-    use crate::test_support::GameStateBuilder;
-
-    #[test]
-    fn awaits_input_gates_suspensions_but_not_anchors_or_fast_windows() {
-        // slice 1b: the one guard rule keys off this. Phase anchors are inert
-        // (open turn / loop-driven), so typed actions run there.
-        assert!(!Continuation::InvestigationPhase {
-            resume: InvestigationResume::TurnBegins,
-        }
-        .awaits_input());
-        assert!(!Continuation::MythosPhase {
-            resume: MythosResume::Entry,
-        }
-        .awaits_input());
-        // A Fast-play window (a `FastWindow` with no pending candidates) is a
-        // play opportunity, not a mandatory prompt — Fast plays stay allowed.
-        assert!(!Continuation::FastWindow {
-            candidates: Vec::new(),
-            fast_actors: FastActorScope::Any,
-            kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-        }
-        .awaits_input());
-        // Every other suspension hits the `_ => true` arm and awaits
-        // ResolveInput. This includes a `Choice` (e.g. a `ChooseOne` OnPlay
-        // event mid-resolution) and a `SubstitutionPrompt`, which the former
-        // eight-block guard ladder did NOT explicitly gate — the unified rule
-        // now correctly rejects typed actions while one is on top.
-        assert!(Continuation::SubstitutionPrompt {
-            investigator: InvestigatorId(1),
-        }
-        .awaits_input());
-        assert!(Continuation::Mulligan { remaining: vec![] }.awaits_input());
-        assert!(Continuation::EncounterDraw { remaining: vec![] }.awaits_input());
-    }
-
-    #[test]
-    fn investigator_turn_frame_classification() {
-        let frame = Continuation::InvestigatorTurn {
-            investigator: InvestigatorId(1),
-            ending: false,
-        };
-        // The open turn is not a framework anchor...
-        assert!(!frame.is_phase_anchor());
-        // ...and it DOES await input: the open turn surfaces its legal-action
-        // enumeration as an `AwaitingInput` menu, resolved by
-        // `ResolveInput(PickSingle(OptionId))` (2b, #447).
-        assert!(frame.awaits_input());
-        // The transient `ending: true` rotation sentinel is not a prompt.
-        assert!(!Continuation::InvestigatorTurn {
-            investigator: InvestigatorId(1),
-            ending: true,
-        }
-        .awaits_input());
-        // It carries no window candidates (the menu is re-enumerated, not stored).
-        assert!(frame.pending_candidates().is_none());
-    }
-
-    #[test]
-    fn investigator_turn_frame_round_trips_both_ending_states() {
-        // The frame is replay state (the `ending` flag absorbed the former
-        // `pending_end_turn`), so both flag values must serialize round-trip.
-        for ending in [false, true] {
-            let frame = Continuation::InvestigatorTurn {
-                investigator: InvestigatorId(1),
-                ending,
-            };
-            let json = serde_json::to_string(&frame).unwrap();
-            let back: Continuation = serde_json::from_str(&json).unwrap();
-            assert_eq!(frame, back);
-        }
-    }
-
-    #[test]
-    fn phase_anchor_variants_round_trip_and_are_not_resolution_windows() {
-        let anchors = [
-            Continuation::MythosPhase {
-                resume: MythosResume::AfterDraws,
-            },
-            Continuation::InvestigationPhase {
-                resume: InvestigationResume::TurnBegins,
-            },
-            Continuation::EnemyPhase {
-                resume: EnemyResume::BeforeInvestigatorAttacked,
-                attacking: Some(InvestigatorId(3)),
-            },
-            Continuation::UpkeepPhase {
-                resume: UpkeepResume::Begins,
-            },
-        ];
-        for a in anchors {
-            // Anchors are framework frames, never reaction windows.
-            assert!(a.pending_candidates().is_none());
-            // Serializable like every other frame.
-            let json = serde_json::to_string(&a).unwrap();
-            let back: Continuation = serde_json::from_str(&json).unwrap();
-            assert_eq!(a, back);
-        }
-    }
-
-    #[test]
-    fn omitting_any_required_field_is_rejected() {
-        // The non-`Option` formerly-`#[serde(default)]` fields are now required
-        // on the wire (#453): a payload missing one fails loudly rather than
-        // silently defaulting (e.g. an absent `continuations` would drop every
-        // open window).
-        let s = GameStateBuilder::new().build();
-        let full = serde_json::to_value(&s).expect("serialize");
-        serde_json::from_value::<GameState>(full.clone()).expect("full object deserializes");
-        for field in [
-            "continuations",
-            "pending_cancellation",
-            "skill_substitutions",
-            // #676's two: a defaulted `skill_test_ids` would re-mint ids a
-            // live row already names, and a defaulted `recorded_modifiers`
-            // would silently drop every test-scoped buff in flight.
-            "skill_test_ids",
-            "recorded_modifiers",
-        ] {
-            let mut v = full.clone();
-            v.as_object_mut()
-                .expect("state serializes to a JSON object")
-                .remove(field)
-                .unwrap_or_else(|| panic!("`{field}` should be present in the serialized form"));
-            assert!(
-                serde_json::from_value::<GameState>(v).is_err(),
-                "omitting `{field}` must be rejected, not defaulted"
-            );
-        }
-    }
-
-    #[test]
-    fn open_window_lives_on_the_continuation_stack_as_a_fast_window() {
-        // A framework window is a `Continuation::FastWindow` frame on the one
-        // stack (#433 A-ii) — there is no separate `open_windows` Vec.
-        let state = GameStateBuilder::new()
-            .with_open_window(
-                FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
-                FastActorScope::Any,
-            )
-            .build();
-        assert_eq!(state.continuations.len(), 1);
-        assert!(matches!(
-            state.continuations[0],
-            Continuation::FastWindow { .. }
-        ));
-        // The read accessor surfaces it as the former `open_windows` view.
-        assert_eq!(state.open_windows().len(), 1);
-        assert!(matches!(
-            state.open_windows()[0],
-            Continuation::FastWindow {
-                kind: FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
-                ..
-            }
-        ));
-    }
-}
-
-#[cfg(test)]
-mod id_counter_tests {
-    use super::*;
-
-    use crate::test_support::GameStateBuilder;
-
-    #[test]
-    fn game_state_starts_enemy_ids_at_zero() {
-        let state = GameStateBuilder::new().build();
-        assert_eq!(state.enemy_ids.peek(), 0);
-    }
-
-    #[test]
-    fn enemy_ids_round_trip_through_serde() {
-        let mut state = GameStateBuilder::new().build();
-        state.enemy_ids = Counter::at(42);
-        let json = serde_json::to_string(&state).expect("serialize");
-        let back: GameState = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.enemy_ids.peek(), 42);
-    }
-
-    #[test]
-    fn each_id_counter_mints_independently() {
-        let mut state = GameStateBuilder::new().build();
-        assert_eq!(state.card_instance_ids.mint(), CardInstanceId(0));
-        assert_eq!(state.card_instance_ids.mint(), CardInstanceId(1));
-        // Each id type draws from its own counter — minting one doesn't
-        // disturb the others.
-        assert_eq!(state.enemy_ids.mint(), EnemyId(0));
-        assert_eq!(state.location_ids.mint(), LocationId(0));
-        assert_eq!(state.enemy_ids.mint(), EnemyId(1));
-        assert_eq!(state.card_instance_ids.peek(), 2);
-        assert_eq!(state.enemy_ids.peek(), 2);
-        assert_eq!(state.location_ids.peek(), 1);
-    }
-}
-
-#[cfg(test)]
-mod encounter_draw_tests {
-    use crate::test_support::GameStateBuilder;
-
-    #[test]
-    fn game_state_default_has_no_encounter_draw_pending() {
-        let state = GameStateBuilder::new().build();
-        assert_eq!(state.current_encounter_drawer(), None);
-    }
-}
-
-#[cfg(test)]
-mod enemy_attack_loop_tests {
-    use super::*;
-
-    use crate::test_support::GameStateBuilder;
-
-    #[test]
-    fn enemy_phase_anchor_attacking_round_trips_through_serde() {
-        let mut state = GameStateBuilder::new().build();
-        state.continuations.push(Continuation::EnemyPhase {
-            resume: EnemyResume::BeforeInvestigatorAttacked,
-            attacking: Some(InvestigatorId(7)),
-        });
-        let json = serde_json::to_string(&state).expect("serialize");
-        let back: GameState = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.continuations, state.continuations);
-    }
-
-    #[test]
-    fn deal_damage_frame_round_trips_through_serde() {
-        let mut state = GameStateBuilder::new().build();
-        state.continuations.push(Continuation::DealDamage {
-            investigator: InvestigatorId(1),
-            source: DamageSource::EnemyAttack { enemy: EnemyId(5) },
-            assignment: Assignment::default(),
-            step: DealDamageStep::Distribute {
-                remaining_damage: 2,
-                remaining_horror: 0,
-            },
-        });
-        let json = serde_json::to_string(&state).expect("serialize");
-        let back: GameState = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.continuations, state.continuations);
-    }
-
-    #[test]
-    fn attack_loop_frame_round_trips_through_serde() {
-        let mut state = GameStateBuilder::new().build();
-        state.continuations.push(Continuation::AttackLoop {
-            investigator: InvestigatorId(7),
-            remaining_attackers: vec![EnemyId(2), EnemyId(3)],
-            source: EnemyAttackSource::EnemyPhase,
-            stage: AttackLoopStage::Attacking,
-        });
-        let json = serde_json::to_string(&state).expect("serialize");
-        let back: GameState = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.continuations, state.continuations);
-    }
-
-    #[test]
-    fn attack_loop_pick_order_stage_round_trips_through_serde() {
-        let mut state = GameStateBuilder::new().build();
-        state.continuations.push(Continuation::AttackLoop {
-            investigator: InvestigatorId(1),
-            remaining_attackers: vec![EnemyId(2), EnemyId(3)],
-            source: EnemyAttackSource::EnemyPhase,
-            stage: AttackLoopStage::PickOrder,
-        });
-        let json = serde_json::to_string(&state).expect("serialize");
-        let back: GameState = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.continuations, state.continuations);
-    }
-}
-
-#[cfg(test)]
-mod encounter_deck_tests {
-    use super::*;
-
-    use crate::test_support::GameStateBuilder;
-
-    #[test]
-    fn encounter_deck_and_discard_serde_roundtrip() {
-        let mut state = GameStateBuilder::new().build();
-        state.encounter_deck.push_back(CardCode("01001".into()));
-        state.encounter_deck.push_back(CardCode("01002".into()));
-        state.encounter_discard.push(CardCode("01099".into()));
-
-        let json = serde_json::to_string(&state).expect("serialize");
-        let back: GameState = serde_json::from_str(&json).expect("deserialize");
-
-        assert_eq!(back.encounter_deck.len(), 2);
-        assert_eq!(back.encounter_deck[0], CardCode("01001".into()));
-        assert_eq!(back.encounter_deck[1], CardCode("01002".into()));
-        assert_eq!(back.encounter_discard.len(), 1);
-        assert_eq!(back.encounter_discard[0], CardCode("01099".into()));
-    }
-
-    #[test]
-    fn fresh_state_has_empty_encounter_deck_and_discard() {
-        let state = GameStateBuilder::new().build();
-        assert!(state.encounter_deck.is_empty());
-        assert!(state.encounter_discard.is_empty());
-    }
-}
-
-#[cfg(test)]
-mod hunter_pending_tests {
-    use super::*;
-
-    #[test]
-    fn hunter_choice_move_serde_roundtrip() {
-        let original = HunterChoice::Move {
-            enemy: EnemyId(3),
-            candidates: vec![LocationId(2), LocationId(3)],
-        };
-        let json = serde_json::to_string(&original).expect("serialize");
-        let back: HunterChoice = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, original);
-    }
-
-    #[test]
-    fn hunter_choice_engage_serde_roundtrip() {
-        let original = HunterChoice::Engage {
-            enemy: EnemyId(5),
-            candidates: vec![InvestigatorId(1), InvestigatorId(2)],
-        };
-        let json = serde_json::to_string(&original).expect("serialize");
-        let back: HunterChoice = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, original);
-    }
-
-    #[test]
-    fn spawn_engage_pending_serde_roundtrip() {
-        let original = SpawnEngagePending {
-            enemy: EnemyId(2),
-            candidates: vec![InvestigatorId(1), InvestigatorId(2)],
-        };
-        let json = serde_json::to_string(&original).expect("serialize");
-        let back: SpawnEngagePending = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, original);
-    }
-}
-
-#[cfg(test)]
-mod hand_size_discard_tests {
-    use super::*;
-
-    #[test]
-    fn hand_size_discard_serde_roundtrip() {
-        let original = HandSizeDiscard {
-            remaining: vec![InvestigatorId(1), InvestigatorId(2)],
-        };
-        let json = serde_json::to_string(&original).expect("serialize");
-        let back: HandSizeDiscard = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, original);
-    }
-}
-
-#[cfg(test)]
-mod act_agenda_code_tests {
-    use super::*;
-
-    #[test]
-    fn act_and_agenda_carry_card_code() {
-        let act = Act {
-            code: CardCode("01108".into()),
-            clue_threshold: 2,
-        };
-        let agenda = Agenda {
-            code: CardCode("01105".into()),
-            doom_threshold: 3,
-        };
-        assert_eq!(act.code, CardCode("01108".into()));
-        assert_eq!(agenda.code, CardCode("01105".into()));
-    }
-}
-
-#[cfg(test)]
-mod partial_eq_tests {
-    use super::*;
-
-    #[test]
-    fn game_state_is_partial_eq() {
-        fn assert_partial_eq<T: PartialEq>() {}
-        assert_partial_eq::<GameState>();
-    }
-}
-
-#[cfg(test)]
-mod add_location_tests {
-    use crate::card_data::{CardKind, CardMetadata, ClueValue, Prey};
-    use crate::state::CardCode;
-    use crate::test_support::GameStateBuilder;
-
-    fn location_meta(code: &str, name: &str, shroud: u8, clues: u8) -> CardMetadata {
-        CardMetadata {
-            code: code.to_string(),
-            name: name.to_string(),
-            traits: vec![],
-            text: None,
-            back_name: None,
-            back_text: None,
-            pack_code: "core".to_string(),
-            weakness: false,
-            kind: CardKind::Location {
-                shroud,
-                printed_clues: ClueValue::PerInvestigator(clues),
-                victory: None,
-            },
-        }
-    }
-
-    #[test]
-    fn add_location_mints_sequential_ids_and_extracts_metadata() {
-        let mut state = GameStateBuilder::new().build();
-        let a = state.add_location(&location_meta("01111", "Study", 2, 2));
-        let b = state.add_location(&location_meta("01112", "Hallway", 1, 0));
-        assert_ne!(a, b, "ids are distinct");
-        let study = &state.locations[&a];
-        assert_eq!(study.code.as_str(), "01111");
-        assert_eq!(study.name, "Study");
-        assert_eq!(study.shroud, 2);
-        assert_eq!(study.clues, 0, "enters unrevealed with no clues");
-        assert!(!study.revealed);
-        assert_eq!(study.printed_clues, ClueValue::PerInvestigator(2));
-        assert!(study.connections.is_empty());
-        assert_eq!(state.location_ids.peek(), 2, "counter advanced twice");
-    }
-
-    #[test]
-    fn add_set_aside_card_records_a_location_by_code_only() {
-        let mut state = GameStateBuilder::new().build();
-        state.add_set_aside_card(&location_meta("01113", "Attic", 1, 2));
-        assert_eq!(state.set_aside_cards, vec![CardCode::new("01113")],);
-        assert!(state.locations.is_empty(), "not in play");
-        assert_eq!(
-            state.location_ids.peek(),
-            0,
-            "no LocationId is minted until the location enters play",
-        );
-    }
-
-    fn enemy_meta(code: &str, name: &str) -> CardMetadata {
-        CardMetadata {
-            code: code.to_string(),
-            name: name.to_string(),
-            traits: vec![],
-            text: None,
-            back_name: None,
-            back_text: None,
-            pack_code: "core".to_string(),
-            weakness: false,
-            kind: CardKind::Enemy {
-                fight: 1,
-                evade: 1,
-                damage: 0,
-                horror: 0,
-                health: None,
-                victory: None,
-                spawn: None,
-                surge: false,
-                peril: false,
-                hunter: false,
-                retaliate: false,
-                prey: Prey::Default,
-                quantity: 1,
-            },
-        }
-    }
-
-    #[test]
-    fn add_set_aside_card_holds_locations_and_enemies_in_one_zone() {
-        // The point of the single zone: two cardtypes, one collection, one
-        // representation. Which one a code is gets read back from the
-        // metadata at put-into-play time.
-        let mut state = GameStateBuilder::new().build();
-        state.add_set_aside_card(&location_meta("01113", "Attic", 1, 2));
-        state.add_set_aside_card(&enemy_meta("01116", "Ghoul Priest"));
-        assert_eq!(
-            state.set_aside_cards,
-            vec![CardCode::new("01113"), CardCode::new("01116"),],
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "not a Location")]
-    fn add_location_panics_on_non_location_metadata() {
-        let mut state = GameStateBuilder::new().build();
-        let meta = CardMetadata {
-            code: "01108".to_string(),
-            name: "Trapped".to_string(),
-            traits: vec![],
-            text: None,
-            back_name: None,
-            back_text: None,
-            pack_code: "core".to_string(),
-            weakness: false,
-            kind: CardKind::Act {
-                clue_threshold: Some(2),
-                victory: None,
-            },
-        };
-        state.add_location(&meta);
-    }
-}
-
-#[cfg(test)]
-mod connect_tests {
-    use crate::state::{CardCode, Location, LocationId};
-    use crate::test_support::GameStateBuilder;
-
-    #[test]
-    fn connect_wires_both_directions() {
-        let mut state = GameStateBuilder::new()
-            .with_location(Location::new(
-                LocationId(1),
-                CardCode("a".into()),
-                "A",
-                1,
-                0,
-            ))
-            .with_location(Location::new(
-                LocationId(2),
-                CardCode("b".into()),
-                "B",
-                1,
-                0,
-            ))
-            .build();
-        state.connect(LocationId(1), LocationId(2));
-        assert_eq!(
-            state.locations[&LocationId(1)].connections,
-            vec![LocationId(2)]
-        );
-        assert_eq!(
-            state.locations[&LocationId(2)].connections,
-            vec![LocationId(1)]
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "connect: location LocationId(2) not found")]
-    fn connect_panics_on_a_location_that_is_not_in_play() {
-        // A set-aside card has no `LocationId` at all now, so `connect` has
-        // one zone to search. Layout wiring happens at entry instead.
-        let mut state = GameStateBuilder::new()
-            .with_location(Location::new(
-                LocationId(1),
-                CardCode("a".into()),
-                "A",
-                1,
-                0,
-            ))
-            .build();
-        state.connect(LocationId(2), LocationId(1));
-    }
-}
-
-#[cfg(test)]
-mod starting_location_tests {
-    use super::*;
-
-    use crate::test_support::GameStateBuilder;
-
-    #[test]
-    fn game_state_starting_location_defaults_to_none_and_roundtrips() {
-        let mut state = GameStateBuilder::new().build();
-        assert_eq!(state.starting_location, None, "default must be None");
-
-        state.starting_location = Some(LocationId(7));
-        let json = serde_json::to_string(&state).expect("serialize");
-        let back: GameState = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.starting_location, Some(LocationId(7)));
-    }
-}
-
-#[cfg(test)]
-mod action_resolution_frame_tests {
-    use super::*;
-
-    use crate::test_support::GameStateBuilder;
-
-    #[test]
-    fn action_resolution_frame_never_awaits_input_and_is_not_a_phase_anchor() {
-        let f = Continuation::ActionResolution {
-            investigator: InvestigatorId(1),
-            resume: ActionResume::Resource,
-        };
-        assert!(
-            !f.awaits_input(),
-            "a mid-action frame is internal, never a prompt"
-        );
-        assert!(
-            !f.is_phase_anchor(),
-            "a mid-action frame is not a phase anchor"
-        );
-    }
-
-    #[test]
-    fn current_hand_size_discard_reads_the_frame() {
-        // No frame → None.
-        assert_eq!(
-            GameStateBuilder::new().build().current_hand_size_discard(),
-            None
-        );
-        // Top HandSizeDiscard frame → its first remaining investigator.
-        let mut state = GameStateBuilder::new().build();
-        state
-            .continuations
-            .push(Continuation::HandSizeDiscard(HandSizeDiscard {
-                remaining: vec![InvestigatorId(2), InvestigatorId(3)],
-            }));
-        assert_eq!(state.current_hand_size_discard(), Some(InvestigatorId(2)));
-    }
-}
-
-#[cfg(test)]
-mod scenario_end_cancellation_tests {
-    use super::*;
-
-    /// The one variant whose bucket splits on a field rather than on the
-    /// variant: a reaction window is an *opportunity* the ended scenario
-    /// cancels, while the forced run at the same timing point is *mandatory
-    /// resolution* that completes (ADR 0004). They are the two halves of one
-    /// `queue_event`, so a `matches!` on the variant alone would get one wrong.
-    #[test]
-    fn a_reaction_window_is_cancelled_but_its_forced_run_twin_completes() {
-        let window = |mode| Continuation::TimingPointWindow {
-            event: TimingEvent::GameEnd,
-            bucket: EventTiming::After,
-            mode,
-            candidates: Vec::new(),
-        };
-        assert!(
-            window(TimingMode::Reaction).cancelled_by_scenario_end(),
-            "a reaction window must not open once the scenario has ended"
-        );
-        assert!(
-            !window(TimingMode::Forced).cancelled_by_scenario_end(),
-            "the forced ordering run carries mandatory abilities and completes"
-        );
-    }
-
-    #[test]
-    fn the_ending_frame_is_inert_and_survives_its_own_cancellation_pass() {
-        let f = Continuation::ScenarioEnd {
-            step: ScenarioEndStep::EmitGameEnd,
-        };
-        assert!(
-            !f.cancelled_by_scenario_end(),
-            "the ending frame must not cancel itself"
-        );
-        assert!(
-            !f.awaits_input(),
-            "the acknowledge above the ending is the prompt, not the ending"
-        );
-        assert!(!f.is_phase_anchor());
-        assert!(
-            !f.is_queued_ability(),
-            "the ending frame legitimately sits beneath a phase anchor until the \
-             anchor is cancelled, so the #569 backstop must not flag it"
-        );
-    }
-}
-
-#[cfg(test)]
-mod effect_frame_tests {
-    use crate::dsl::Effect;
-    use crate::engine::evaluator::EvalContext;
-    use crate::state::{Continuation, EffectFrame, InvestigatorId};
-
-    #[test]
-    fn effect_frame_variant_roundtrips_serde() {
-        let frame = Continuation::Effect(EffectFrame::Seq {
-            effects: vec![Effect::Seq(vec![])],
-            next: 0,
-            ctx: EvalContext::for_controller(InvestigatorId(1)),
-        });
-        let json = serde_json::to_string(&frame).expect("serialize");
-        let back: Continuation = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(frame, back);
-    }
-}
-
-#[cfg(test)]
-mod emit_step_tests {
-    use crate::engine::TimingEvent;
-    use crate::state::{Continuation, EmitStep};
-
-    #[test]
-    fn emit_step_walks_the_sequence_with_the_resolve_step_between_when_and_at() {
-        let mut step = EmitStep::When;
-        let mut walk = vec![step];
-        while let Some(next) = step.next() {
-            step = next;
-            walk.push(step);
-        }
-        assert_eq!(
-            walk,
-            vec![
-                EmitStep::When,
-                EmitStep::ResolveCondition,
-                EmitStep::At,
-                EmitStep::After
-            ],
-            "the condition resolves between the `when` and `at` cells (RR Nested Sequences)"
-        );
-        assert!(
-            EmitStep::ResolveCondition.cell().is_none(),
-            "the resolve step scans no cell — it resolves the condition"
-        );
-    }
-
-    #[test]
-    fn emit_event_frame_roundtrips_serde() {
-        let frame = Continuation::EmitEvent {
-            event: TimingEvent::RoundEnded,
-            step: EmitStep::ResolveCondition,
-        };
-        let json = serde_json::to_string(&frame).expect("serialize");
-        let back: Continuation = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(frame, back);
-    }
-}
+mod tests;

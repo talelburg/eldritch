@@ -36,7 +36,7 @@
 //! printed word to read against, nothing contests the cell. The card has no
 //! rulings (recorded in `data/arkhamdb-faq/no-rulings.txt`).
 
-use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{self, Cx, EngineOutcome};
@@ -64,10 +64,10 @@ const BOARD_BUILD: &str = "01108:board-build";
 /// 01108's Forced on-advance reverse: build the Act-1 board.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![forced_on_event(
+    vec![dsl::forced_on_event(
         EventPattern::ActAdvanced,
         EventTiming::After,
-        native(BOARD_BUILD),
+        dsl::native(BOARD_BUILD),
     )]
 }
 

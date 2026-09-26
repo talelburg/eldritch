@@ -3,9 +3,8 @@
 //! layer only moves strings in and out of `SQLite`.
 
 use game_core::scenario::ScenarioId;
+use protocol::GameId;
 use sqlx::{Error, SqlitePool};
-
-use crate::id::GameId;
 
 /// Insert a new game's seed row.
 pub(crate) async fn insert_game(

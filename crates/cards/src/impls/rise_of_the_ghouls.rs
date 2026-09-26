@@ -46,7 +46,7 @@
 //! card has no rulings (recorded in `data/arkhamdb-faq/no-rulings.txt`).
 
 use card_dsl::card_data::CardType;
-use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome};
@@ -59,10 +59,10 @@ const REVERSE: &str = "01106:reverse";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![forced_on_event(
+    vec![dsl::forced_on_event(
         EventPattern::AgendaAdvanced,
         EventTiming::After,
-        native(REVERSE),
+        dsl::native(REVERSE),
     )]
 }
 

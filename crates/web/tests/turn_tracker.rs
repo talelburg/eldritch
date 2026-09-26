@@ -3,8 +3,9 @@
 
 use game_core::engine::EngineOutcome;
 use game_core::state::{GameStateBuilder, Phase};
-use game_core::test_support::fixtures;
+use game_core::test_support;
 use leptos::prelude::{document, provide_context, RwSignal, Update};
+use leptos::{mount, task};
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -16,12 +17,12 @@ wasm_bindgen_test_configure!(run_in_browser);
 
 async fn mount_at(phase: Phase, round: u32) {
     let state = GameStateBuilder::new()
-        .with_investigator(fixtures::test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .with_phase(phase)
         .with_round(round)
         .build();
     let store = RwSignal::new(ClientState::default());
-    leptos::mount::mount_to_body(move || {
+    mount::mount_to_body(move || {
         provide_context(store);
         leptos::view! { <TurnTrackerView/> }
     });
@@ -35,7 +36,7 @@ async fn mount_at(phase: Phase, round: u32) {
             },
         );
     });
-    leptos::task::tick().await;
+    task::tick().await;
 }
 
 fn last_tracker() -> Element {

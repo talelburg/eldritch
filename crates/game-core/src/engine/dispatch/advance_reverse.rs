@@ -114,7 +114,7 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
 /// (ADR 0013), so there is no next card to become current and the cursor stays
 /// where it is. What must have happened instead is that the reverse *ended the
 /// scenario*: either by running
-/// [`Effect::ReachResolution`](crate::dsl::Effect::ReachResolution), or by
+/// [`Effect::ReachResolution`](card_dsl::dsl::Effect::ReachResolution), or by
 /// draining the last active investigator into `check_all_eliminated`. Asserting
 /// that here is the inverse of the past-the-end guard this replaced, and it fails
 /// at the card whose reverse forgot to reach an ending rather than at a cursor
@@ -178,14 +178,13 @@ pub(super) fn resume(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::dispatch;
+    use crate::engine::{dispatch, InputKind};
     use crate::scenario::{ResolutionId, ScenarioEnding};
     use crate::state::{
         Act, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, CardCode, Continuation, GameState,
-        InvestigatorId,
+        GameStateBuilder, InvestigatorId,
     };
-    use crate::test_support::{self, GameStateBuilder};
-    use crate::InputKind;
+    use crate::test_support;
 
     fn state_advancing_agenda(interactive: bool) -> GameState {
         let mut state = GameStateBuilder::new().build();

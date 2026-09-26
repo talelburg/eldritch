@@ -3,7 +3,7 @@
 //!
 //! **Native, not wasm** — every other file in this directory drives the DOM in a
 //! headless browser; this one drives the *engine*. It mirrors the server exactly:
-//! one `game_core::apply` call is one `ServerMessage::Applied` frame
+//! one `game_core::engine::apply` call is one `ServerMessage::Applied` frame
 //! (`crates/server/src/session.rs`), so applying one at a time and folding each
 //! result through the real `store::reduce` reproduces the batch boundaries the
 //! client actually sees. The bug lives in those boundaries and nowhere else — a
@@ -36,15 +36,14 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_registry;
-use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{EngineOutcome, InputKind, OptionId};
+use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::fixtures;
+use game_core::{card_registry, test_support};
 use protocol::ServerMessage;
 use web::skill_test_result;
 use web::store::{self, ClientState};
@@ -67,7 +66,7 @@ const GHOUL: EnemyId = EnemyId(100);
 /// acknowledge. Everything else — the `+0` bag that makes the attack succeed,
 /// the `[[Monster]]` Ghoul, both investigators in the Parlor — is fixed.
 fn board(lita_in_play: bool) -> GameState {
-    let mut keeper = fixtures::test_investigator(1);
+    let mut keeper = test_support::test_investigator(1);
     keeper.investigator_card.code = CardCode::new(SKIDS);
     keeper.current_location = Some(PARLOR);
     keeper.skills.combat = 3;
@@ -78,14 +77,14 @@ fn board(lita_in_play: bool) -> GameState {
         ));
     }
 
-    let mut other = fixtures::test_investigator(2);
+    let mut other = test_support::test_investigator(2);
     other.investigator_card.code = CardCode::new(SKIDS);
     other.current_location = Some(PARLOR);
     other.skills.combat = 3;
 
     // Health well clear of the attack, so the Fight resolves without a defeat
     // queueing windows of its own.
-    let mut ghoul = fixtures::test_enemy(100, "Ghoul");
+    let mut ghoul = test_support::test_enemy(100, "Ghoul");
     ghoul.traits = vec!["Humanoid".into(), "Monster".into(), "Ghoul".into()];
     ghoul.fight = 3;
     ghoul.max_health = 9;
@@ -96,7 +95,7 @@ fn board(lita_in_play: bool) -> GameState {
         .with_phase(Phase::Investigation)
         .with_investigator(keeper)
         .with_investigator(other)
-        .with_location(fixtures::test_location(1, "Parlor"))
+        .with_location(test_support::test_location(1, "Parlor"))
         .with_enemy(ghoul)
         .with_active_investigator(OTHER)
         .with_turn_order([KEEPER, OTHER])
@@ -128,11 +127,11 @@ fn fight_ghoul(lita_in_play: bool) -> Vec<Pause> {
         investigator: OTHER,
         enemy: GHOUL,
     };
-    let idx = game_core::engine::enumerate::legal_actions(&state)
+    let idx = enumerate::legal_actions(&state)
         .iter()
         .position(|a| *a == fight)
         .expect("the Fight is a legal action on this board");
-    let mut result = game_core::apply(
+    let mut result = engine::apply(
         state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(
@@ -178,7 +177,7 @@ fn fight_ghoul(lita_in_play: bool) -> Vec<Pause> {
             InputKind::PickSingle => InputResponse::PickSingle(OptionId(0)),
             other => panic!("unexpected prompt kind {other:?}"),
         };
-        result = game_core::apply(
+        result = engine::apply(
             result.state.clone(),
             Action::Player(PlayerAction::ResolveInput { response }),
         );

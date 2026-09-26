@@ -17,9 +17,10 @@ use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, OptionId};
 use game_core::state::{
-    Continuation, EnemyId, GameState, InvestigationResume, InvestigatorId, LocationId, Phase,
+    Continuation, EnemyId, GameState, GameStateBuilder, InvestigationResume, InvestigatorId,
+    LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 #[ctor::ctor(unsafe)]
 fn install() {

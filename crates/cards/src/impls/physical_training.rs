@@ -18,9 +18,9 @@
 //! [`TurnAction::ActivateAbility`] action carries the index, so tests
 //! and clients must pick the matching slot.
 //!
-//! [`TurnAction::ActivateAbility`]: game_core::TurnAction::ActivateAbility
+//! [`TurnAction::ActivateAbility`]: game_core::engine::enumerate::TurnAction::ActivateAbility
 
-use card_dsl::dsl::{activated, modify, Ability, Cost, ModifierScope, Stat};
+use card_dsl::dsl::{self, Ability, Cost, ModifierScope, Stat};
 
 /// `ArkhamDB` code for Physical Training (original-Core printing).
 pub const CODE: &str = "01017";
@@ -30,24 +30,25 @@ pub const CODE: &str = "01017";
 pub fn abilities() -> Vec<Ability> {
     vec![
         // Index 0: +1 willpower for this skill test.
-        activated(
+        dsl::activated(
             0,
             vec![Cost::Resources(1)],
-            modify(Stat::Willpower, 1, ModifierScope::ThisSkillTest),
+            dsl::modify(Stat::Willpower, 1, ModifierScope::ThisSkillTest),
         ),
         // Index 1: +1 combat for this skill test.
-        activated(
+        dsl::activated(
             0,
             vec![Cost::Resources(1)],
-            modify(Stat::Combat, 1, ModifierScope::ThisSkillTest),
+            dsl::modify(Stat::Combat, 1, ModifierScope::ThisSkillTest),
         ),
     ]
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, ModifierAudience, Trigger};
+
+    use super::*;
 
     #[test]
     fn abilities_are_two_fast_resource_costed_modifies() {

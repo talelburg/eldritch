@@ -36,18 +36,16 @@
 //! investigator on it. Prior art: `ability_source_control.rs`.
 
 use card_dsl::card_data::{CardKind, CardMetadata};
-use card_dsl::dsl::{
-    activated, gain_resources, heal_damage, Ability, InvestigatorTarget, UsageLimit, UsagePeriod,
-};
+use card_dsl::dsl::{self, Ability, InvestigatorTarget, UsageLimit, UsagePeriod};
 use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
-    InvestigatorId, LocationId, Phase,
+    GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, TEST_INV};
+use game_core::test_support::{self, MockRegistry, TEST_INV};
 
 /// Synthetic **location** card, standing in for the Parlor 01115. Both
 /// locations on the board print it, so "reachable here" and "unreachable
@@ -86,16 +84,23 @@ const LIMITED: u8 = 2;
 /// differ only in the source.
 fn probe_abilities() -> Vec<Ability> {
     vec![
-        activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)),
+        dsl::activated(
+            1,
+            vec![],
+            dsl::gain_resources(InvestigatorTarget::Active, 1),
+        ),
         // Nobody is damaged on this board, so healing damage is provably
         // inert (`effect_can_change_state`).
-        activated(1, vec![], heal_damage(InvestigatorTarget::Active, 1)),
-        activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)).with_usage_limit(
-            UsageLimit {
-                count: 1,
-                period: UsagePeriod::Round,
-            },
-        ),
+        dsl::activated(1, vec![], dsl::heal_damage(InvestigatorTarget::Active, 1)),
+        dsl::activated(
+            1,
+            vec![],
+            dsl::gain_resources(InvestigatorTarget::Active, 1),
+        )
+        .with_usage_limit(UsageLimit {
+            count: 1,
+            period: UsagePeriod::Round,
+        }),
     ]
 }
 

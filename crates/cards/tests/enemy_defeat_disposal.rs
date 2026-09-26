@@ -46,11 +46,10 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, InvestigatorId, LocationId, Phase,
-    TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder};
-use game_core::{assert_event, card_registry};
+use game_core::{assert_event, card_registry, test_support};
 
 const GHOUL_MINION: &str = "01160";
 const MOB_ENFORCER: &str = "01101";

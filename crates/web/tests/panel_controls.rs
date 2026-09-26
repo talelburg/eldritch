@@ -14,8 +14,9 @@ use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, OptionId, OptionTarget};
 use game_core::state::InvestigatorId;
-use game_core::test_support::fixtures;
+use game_core::test_support;
 use leptos::prelude::*;
+use leptos::task;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -39,7 +40,7 @@ async fn mount(
 ) -> UnboundedReceiver<ClientMessage> {
     let store = RwSignal::new(ClientState::default());
     store.update(|s| {
-        s.outcome = Some(fixtures::awaiting_pick_single_with(
+        s.outcome = Some(test_support::awaiting_pick_single_with(
             "Choose an action",
             options,
         ));
@@ -56,7 +57,7 @@ async fn mount(
         let label = label.clone();
         view! { <div class="pc-root"><AnchoredControl label=label class=class target=target/></div> }
     });
-    leptos::task::tick().await;
+    task::tick().await;
     rx
 }
 
@@ -125,7 +126,7 @@ async fn end_turn_glows_and_submits_pick_single_on_click() {
 
     // One click, no intermediate menu — the label already says what it does.
     el.click();
-    leptos::task::tick().await;
+    task::tick().await;
     assert_eq!(submitted(&mut rx), InputResponse::PickSingle(OptionId(3)));
 }
 
@@ -145,7 +146,7 @@ async fn gain_resource_submits_its_own_option() {
     let el = control("resource-control");
     assert!(!is_disabled(&el));
     el.click();
-    leptos::task::tick().await;
+    task::tick().await;
     assert_eq!(
         submitted(&mut rx),
         InputResponse::PickSingle(OptionId(1)),
@@ -166,7 +167,7 @@ async fn draw_submits_its_own_option() {
     )
     .await;
     control("draw-control").click();
-    leptos::task::tick().await;
+    task::tick().await;
     assert_eq!(submitted(&mut rx), InputResponse::PickSingle(OptionId(2)));
 }
 

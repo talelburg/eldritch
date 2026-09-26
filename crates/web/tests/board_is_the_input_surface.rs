@@ -3,7 +3,7 @@
 //! through (S6, #206).
 //!
 //! A miniature server runs the real engine in-process: every `ClientMessage` the
-//! UI submits is applied with `game_core::apply` and folded back into the store as
+//! UI submits is applied with `game_core::engine::apply` and folded back into the store as
 //! an `Applied`, exactly as the transport would. So the assertions are about what
 //! a player can see and click, and the prompts are the ones the engine actually
 //! emits — including the two option-less `Confirm`s that are byte-identical but
@@ -13,20 +13,21 @@
 //! own binary per the `tests/location_card.rs` first-wins-registry precedent.
 #![cfg(target_arch = "wasm32")]
 
+use std::collections::BTreeSet;
+
 use cards::REGISTRY;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::Action;
-use game_core::card_registry;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::EngineOutcome;
+use game_core::engine::{self, EngineOutcome};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
     GameStateBuilder, InvestigationResume, InvestigatorId, LocationId, Phase, UseKind,
 };
-use game_core::test_support::fixtures;
+use game_core::{card_registry, test_support};
 use leptos::prelude::*;
+use leptos::task;
 use protocol::{ClientMessage, ServerMessage};
-use std::collections::BTreeSet;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::app::Overlays;
@@ -48,7 +49,7 @@ const ROTTING_REMAINS: &str = "01163";
 /// End turn is the only thing left — the shortest honest route from an open turn
 /// into the Mythos encounter draw.
 fn open_turn_with_one_action() -> GameState {
-    let mut inv = fixtures::test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.actions_remaining = 1;
     // A real investigator card, so panel capacity resolves against the real
     // corpus this binary installs — and a real encounter card can be drawn.
@@ -123,7 +124,7 @@ impl Harness {
                 },
             );
         });
-        leptos::task::tick().await;
+        task::tick().await;
         Self {
             store,
             rx,
@@ -139,7 +140,7 @@ impl Harness {
             .try_recv()
             .expect("the click submitted a frame")
             .clone();
-        let result = game_core::apply(
+        let result = engine::apply(
             self.state.take().expect("a state to apply against"),
             Action::Player(action),
         );
@@ -160,7 +161,7 @@ impl Harness {
                 },
             );
         });
-        leptos::task::tick().await;
+        task::tick().await;
     }
 
     fn state(&self) -> &GameState {
@@ -201,7 +202,7 @@ async fn a_whole_turn_is_driven_from_the_board_alone() {
     // Seed by spending the one action through the engine: what comes back is the
     // engine's own open-turn menu, so nothing about the anchors is reconstructed
     // in the test.
-    let seeded = game_core::test_support::resolver::take_turn_action(
+    let seeded = test_support::take_turn_action(
         open_turn_with_one_action(),
         &TurnAction::Resource { investigator: INV },
     );
@@ -268,7 +269,7 @@ const KIT: CardInstanceId = CardInstanceId(7);
 /// Spend 1 supply: Heal 1 damage or horror from an investigator at your
 /// location` is offered on the asset.
 fn open_turn_with_first_aid() -> GameState {
-    let mut inv = fixtures::test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.actions_remaining = 2;
     inv.investigator_card =
         CardInPlay::enter_play(CardCode::new(ROLAND), CardInstanceId(u32::MAX - 1));
@@ -280,7 +281,7 @@ fn open_turn_with_first_aid() -> GameState {
     GameStateBuilder::default()
         .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LocationId(10))
-        .with_location(fixtures::test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_turn_order([INV])
         .with_active_investigator(INV)
         .with_round(1)
@@ -302,7 +303,7 @@ fn open_turn_with_first_aid() -> GameState {
 async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
     // Spend an action through the engine to reach its own open-turn menu, so
     // nothing about the anchors is reconstructed by the test.
-    let seeded = game_core::test_support::resolver::take_turn_action(
+    let seeded = test_support::take_turn_action(
         open_turn_with_first_aid(),
         &TurnAction::Resource { investigator: INV },
     );
@@ -311,7 +312,7 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
     // 1. First Aid glows on the board and opens its Activate menu — a selection,
     //    unchanged: the click is doing real work, naming which card.
     find(".card-slot.actionable .menu-hit").click();
-    leptos::task::tick().await;
+    task::tick().await;
     find(".context-menu .menu-item").click();
     h.pump().await;
 

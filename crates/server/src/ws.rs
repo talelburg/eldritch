@@ -12,12 +12,11 @@ use axum::Error;
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt as _, StreamExt as _};
 use game_core::engine::EngineOutcome;
-use protocol::{ClientMessage, ServerMessage};
+use protocol::{ClientMessage, GameId, ServerMessage};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::{broadcast, Mutex};
 
-use crate::id::GameId;
 use crate::session::GameSession;
 use crate::AppState;
 

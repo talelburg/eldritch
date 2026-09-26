@@ -12,21 +12,20 @@
 //! location-entry forced ability is implemented. Until then, mock
 //! cards are the only way to exercise the full path.
 
-use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::dsl::{
-    self, deal_horror, forced_on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
-    SkillTestKind, TestOutcome,
+use card_dsl::dsl::{
+    self, Ability, EventPattern, EventTiming, InvestigatorTarget, SkillTestKind, TestOutcome,
 };
+use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
-    EnemyId, GameState, InvestigationResume, InvestigatorId, LocationId, TokenModifiers,
-    UpkeepResume,
+    EnemyId, GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId,
+    TokenModifiers, UpkeepResume,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 /// Mock location code: one `EventPattern::EnteredLocation` forced ability
@@ -105,7 +104,11 @@ const UNKNOWN_TAG: &str = "test:unregistered";
 /// One forced ability on `pattern` in `cell`, dealing `horror` to the
 /// investigator it fires for — the single shape every mock card here prints.
 fn forced_horror(pattern: EventPattern, cell: EventTiming, horror: u8) -> Ability {
-    forced_on_event(pattern, cell, deal_horror(InvestigatorTarget::You, horror))
+    dsl::forced_on_event(
+        pattern,
+        cell,
+        dsl::deal_horror(InvestigatorTarget::You, horror),
+    )
 }
 
 /// [`HORROR_ATTIC`]'s on-enter ability, carrying an eligibility `tag` (#786).

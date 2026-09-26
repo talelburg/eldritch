@@ -16,9 +16,10 @@ use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers, UseKind,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
+    UseKind,
 };
-use game_core::test_support::{self, GameStateBuilder, TestSession};
+use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, card_registry};
 
 const FLASHLIGHT: &str = "01087";

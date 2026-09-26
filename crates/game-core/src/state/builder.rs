@@ -10,16 +10,17 @@
 //! # Example
 //!
 //! ```
-//! use game_core::{
-//!     TurnAction, InvestigatorId, Phase,
-//!     state::{GameStateBuilder, Continuation, InvestigationResume},
-//!     test_support::{take_turn_action, test_investigator, test_location},
+//! use game_core::engine::enumerate::TurnAction;
+//! use game_core::engine::EngineOutcome;
+//! use game_core::state::{
+//!     Continuation, GameStateBuilder, InvestigationResume, InvestigatorId, Phase,
 //! };
+//! use game_core::test_support;
 //!
 //! let state = GameStateBuilder::new()
 //!     .with_phase(Phase::Investigation)
-//!     .with_investigator(test_investigator(1))
-//!     .with_location(test_location(10, "Study"))
+//!     .with_investigator(test_support::test_investigator(1))
+//!     .with_location(test_support::test_location(10, "Study"))
 //!     .with_active_investigator(InvestigatorId(1))
 //!     // A state constructed mid-phase needs its phase anchor (slice 1a).
 //!     .with_phase_anchor(Continuation::InvestigationPhase {
@@ -29,8 +30,8 @@
 //!     .with_investigator_turn(InvestigatorId(1))
 //!     .build();
 //!
-//! let result = take_turn_action(state, &TurnAction::EndTurn);
-//! assert!(!matches!(result.outcome, game_core::EngineOutcome::Rejected { .. }));
+//! let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
+//! assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
 //! ```
 
 use std::collections::{BTreeMap, VecDeque};
@@ -46,7 +47,7 @@ use crate::state::{
 ///
 /// Construct with [`GameStateBuilder::new`], chain `.with_*` setters and
 /// adders, then call [`build`](GameStateBuilder::build) to get a `GameState`
-/// ready for [`apply`](crate::apply).
+/// ready for [`apply`](crate::engine::apply).
 #[derive(Debug, Clone)]
 #[must_use = "GameStateBuilder is a builder; call .build() to produce a GameState"]
 pub struct GameStateBuilder {
@@ -116,14 +117,12 @@ impl GameStateBuilder {
     /// # Example
     ///
     /// ```
-    /// use game_core::{
-    ///     InvestigatorId, LocationId,
-    ///     test_support::{test_investigator, test_location, GameStateBuilder},
-    /// };
+    /// use game_core::state::{GameStateBuilder, InvestigatorId, LocationId};
+    /// use game_core::test_support;
     ///
     /// let state = GameStateBuilder::new()
-    ///     .with_investigator_at(test_investigator(1), LocationId(10))
-    ///     .with_location(test_location(10, "Study"))
+    ///     .with_investigator_at(test_support::test_investigator(1), LocationId(10))
+    ///     .with_location(test_support::test_location(10, "Study"))
     ///     .build();
     /// assert_eq!(
     ///     state.investigators[&InvestigatorId(1)].current_location,
@@ -184,7 +183,7 @@ impl GameStateBuilder {
 
     /// Mark an investigator as the active one. The id must refer to an
     /// investigator already added via [`with_investigator`]; this is
-    /// not enforced at build time but later [`apply`](crate::apply)
+    /// not enforced at build time but later [`apply`](crate::engine::apply)
     /// calls will surface state-corruption invariant violations
     /// loudly.
     ///
@@ -441,7 +440,6 @@ mod set_aside_cards_tests {
 #[cfg(test)]
 mod with_open_window_tests {
     use super::*;
-
     use crate::state::PhaseStep;
     use crate::test_support;
 
@@ -496,7 +494,6 @@ mod with_open_window_tests {
 #[cfg(test)]
 mod owner_stamp_tests {
     use super::*;
-
     use crate::state::{CardCode, CardInPlay, CardInstanceId};
     use crate::test_support;
 

@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{env, fs};
 
 use server::db;
 
@@ -11,7 +12,7 @@ fn unique_db_path() -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("eldritch-connect-pool-{nanos}.db"))
+    env::temp_dir().join(format!("eldritch-connect-pool-{nanos}.db"))
 }
 
 #[tokio::test]
@@ -34,5 +35,5 @@ async fn connect_pool_creates_database_file_if_missing() {
     assert_eq!(one, 1);
 
     pool.close().await;
-    let _ = std::fs::remove_file(&path);
+    let _ = fs::remove_file(&path);
 }

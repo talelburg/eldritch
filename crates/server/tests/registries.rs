@@ -8,9 +8,9 @@ mod common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-
 use game_core::scenario::ScenarioId;
 use game_core::state::CardCode;
+use game_core::{card_registry, scenario_registry};
 use scenarios::the_gathering::ID as GATHERING_SCENARIO_ID;
 use server::AppState;
 use tower::ServiceExt as _;
@@ -23,14 +23,14 @@ const REAL_CARD: &str = "01033";
 fn install_registries_resolves_the_gathering_and_real_cards() {
     server::install_registries();
 
-    let scenario = game_core::scenario_registry::current().expect("scenario registry installed");
+    let scenario = scenario_registry::current().expect("scenario registry installed");
     let id = ScenarioId::new(GATHERING_SCENARIO_ID);
     assert!(
         (scenario.module_for)(&id).is_some(),
         "The Gathering scenario module must resolve"
     );
 
-    let cards = game_core::card_registry::current().expect("card registry installed");
+    let cards = card_registry::current().expect("card registry installed");
     let code = CardCode(REAL_CARD.into());
     assert!(
         (cards.metadata_for)(&code).is_some(),

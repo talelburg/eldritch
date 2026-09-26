@@ -3,23 +3,23 @@
 //! Exercised via the forced-trigger path (the real apply route) since
 //! `apply_effect` is `pub(crate)`.
 
-use card_dsl::dsl::{self, forced_on_event, native, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{Cx, EngineOutcome};
-use game_core::state::{self, Agenda, CardCode, GameState, InvestigatorId};
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::state::{self, Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
+use game_core::test_support::{self, MockRegistry};
 
 const AGENDA: &str = "TEST-AGENDA";
 const AGENDA_BAD: &str = "TEST-AGENDA-BAD";
 
 /// Forced at end of enemy phase -> the native effect tagged `tag`.
 fn forced_native(tag: &'static str) -> Vec<Ability> {
-    vec![forced_on_event(
+    vec![dsl::forced_on_event(
         EventPattern::PhaseEnded {
             phase: dsl::Phase::Enemy,
         },
         EventTiming::After,
-        native(tag),
+        dsl::native(tag),
     )]
 }
 

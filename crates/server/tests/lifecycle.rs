@@ -4,14 +4,17 @@
 
 mod common;
 
+use axum::body;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use common::TEST_SCENARIO_ID;
 use game_core::test_support::TEST_INV;
+use protocol::GameId;
 use serde_json::Value;
 use server::session::GameSession;
-use server::{AppState, GameId};
+use server::AppState;
 use tower::ServiceExt as _;
+
+use crate::common::TEST_SCENARIO_ID;
 
 #[tokio::test]
 async fn post_games_creates_game_and_returns_id() {
@@ -30,7 +33,7 @@ async fn post_games_creates_game_and_returns_id() {
     let response = app.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
 
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+    let bytes = body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&bytes).unwrap();

@@ -9,7 +9,7 @@
 //! The engine (in `game-core`) can't depend on this crate (cycle).
 //! Engine code that needs a scenario lookup goes through
 //! [`game_core::scenario_registry`]. This crate exposes [`REGISTRY`]
-//! as a ready-made [`game_core::ScenarioRegistry`] value that the
+//! as a ready-made [`game_core::scenario::ScenarioRegistry`] value that the
 //! host installs via
 //! [`game_core::scenario_registry::install`]
 //! before running actions that touch scenario data.

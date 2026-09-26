@@ -10,18 +10,18 @@
 //! `OnCommit` ability yet — Vicious Blow 01025 (the consumer, #240) is the
 //! first; until then this mock skill exercises the full commit path.
 
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
+use card_dsl::dsl;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use game_core::dsl::{boost_attack_damage, on_commit};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, InvestigatorId, LocationId, Phase,
-    TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// Mock skill: combat icon + `[OnCommit] that attack deals +1 damage`.
 const SKILL: &str = "VBLOW-MOCK";
@@ -56,7 +56,7 @@ fn skill_metadata() -> CardMetadata {
 fn install_mock_registry() {
     MockRegistry::new()
         .with_card(skill_metadata())
-        .with_abilities(SKILL, || vec![on_commit(boost_attack_damage(1))])
+        .with_abilities(SKILL, || vec![dsl::on_commit(dsl::boost_attack_damage(1))])
         .install();
 }
 

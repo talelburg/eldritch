@@ -30,7 +30,7 @@
 //! *"This"* being the Mythos phase's check-doom-threshold step. So an attack
 //! that tips the agenda to its threshold leaves the doom sitting there until
 //! Mythos step 1.3 — which is why this card builds with the bare
-//! [`place_doom_on_current_agenda`] and 01166 with
+//! [`place_doom_on_current_agenda`](dsl::place_doom_on_current_agenda) and 01166 with
 //! [`place_doom_that_can_advance_the_agenda`](card_dsl::dsl::place_doom_that_can_advance_the_agenda).
 //!
 //! **Cell: the `after` cell of the `EnemyAttacks` condition.** The printed word
@@ -51,26 +51,25 @@
 //! cancel abandons the condition's whole sequence (#714), so the `after` cell
 //! this ability sits in is never walked.
 
-use card_dsl::dsl::{
-    forced_on_event, place_doom_on_current_agenda, Ability, EventPattern, EventTiming,
-};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 
 /// `ArkhamDB` code for Silver Twilight Acolyte.
 pub const CODE: &str = "01102";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![forced_on_event(
+    vec![dsl::forced_on_event(
         EventPattern::EnemyAttacks,
         EventTiming::After,
-        place_doom_on_current_agenda(1u8),
+        dsl::place_doom_on_current_agenda(1u8),
     )]
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, IntExpr, Trigger, TriggerKind};
+
+    use super::*;
 
     #[test]
     fn forced_after_it_attacks_places_doom() {

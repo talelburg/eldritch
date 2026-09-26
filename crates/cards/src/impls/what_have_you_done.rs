@@ -76,10 +76,7 @@
 //! projection at the display boundary, so the banner reads *"Scenario ended —
 //! Resolution 1"* or *"— Resolution 2"* off `GameState.ending`.
 
-use card_dsl::dsl::{
-    advance_current_act, choose_one, forced_on_event, reach_resolution, Ability, EventPattern,
-    EventTiming,
-};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 
 /// `ArkhamDB` code for Act 3, "What Have You Done?".
 pub const CODE: &str = "01110";
@@ -94,22 +91,22 @@ const MY_HOME_LABEL: &str = "This hell-pit is my home! No way are we burning it!
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        forced_on_event(
+        dsl::forced_on_event(
             EventPattern::EnemyDefeated {
                 by_controller: false,
                 code: Some("01116".to_owned()),
             },
             EventTiming::At,
-            advance_current_act(),
+            dsl::advance_current_act(),
         ),
-        forced_on_event(
+        dsl::forced_on_event(
             EventPattern::ActAdvanced,
             EventTiming::After,
             // The bullets are printed as a list, so each label is one of them
             // copied verbatim rather than derived.
-            choose_one([
-                (BURN_IT_DOWN_LABEL, reach_resolution(1)),
-                (MY_HOME_LABEL, reach_resolution(2)),
+            dsl::choose_one([
+                (BURN_IT_DOWN_LABEL, dsl::reach_resolution(1)),
+                (MY_HOME_LABEL, dsl::reach_resolution(2)),
             ]),
         ),
     ]

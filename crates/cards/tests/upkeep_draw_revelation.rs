@@ -19,14 +19,14 @@
 //! deleted the fixture.
 
 use cards::REGISTRY;
-use game_core::card_registry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, Continuation, InvestigationResume, InvestigatorId, LocationId, Phase,
+    CardCode, Continuation, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId,
+    Phase,
 };
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::{card_registry, test_support};
 
 const COVER_UP: &str = "01007";
 const HOLY_ROSARY: &str = "01059"; // a real non-weakness asset, deck filler

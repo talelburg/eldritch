@@ -3,7 +3,7 @@
 //!
 //! It renders whenever an `AwaitingInput` is live, with one exception: the
 //! open-turn menu, which the engine anchors to
-//! [`TurnControl`](game_core::OptionTarget::TurnControl) so the banner can
+//! [`TurnControl`](game_core::engine::OptionTarget::TurnControl) so the banner can
 //! suppress its "Choose an action" noise **structurally** rather than by matching
 //! the prompt string (ADR 0011). Every other prompt gets at least its text here,
 //! so a prompt the client does not specifically home still says the engine is
@@ -22,7 +22,7 @@ use game_core::engine::{ChoiceOption, EngineOutcome, InputKind, OptionId, Option
 use leptos::prelude::*;
 
 use crate::interaction::MultiSelect;
-use crate::store::use_store;
+use crate::{controls, decision, interaction, skill_test_result, store};
 
 /// The bottom-fixed prompt banner. See the module docs for what it renders and
 /// what it deliberately does not.
@@ -31,7 +31,7 @@ use crate::store::use_store;
 #[allow(clippy::too_many_lines)]
 #[component]
 pub fn PromptBanner() -> impl IntoView {
-    let store = use_store();
+    let store = store::use_store();
     let ms = use_context::<MultiSelect>();
     view! {
         {move || {
@@ -46,7 +46,7 @@ pub fn PromptBanner() -> impl IntoView {
             // result modal's does below. The banner's other controls stay — it is
             // still the floor, and a Pass with nowhere else to go must not vanish
             // with the text.
-            let decision_is_live = crate::decision::modal_is_live(&state);
+            let decision_is_live = decision::modal_is_live(&state);
             // The open-turn menu is the one prompt whose *text* the banner
             // swallows — identified by its anchor rather than by its string (ADR
             // 0011), because "Choose an action" every turn would spend the one
@@ -59,7 +59,7 @@ pub fn PromptBanner() -> impl IntoView {
             // misplaced.
             let suppress_text = decision_is_live
                 || matches!(
-                    crate::interaction::prompt_anchor(&state),
+                    interaction::prompt_anchor(&state),
                     Some(OptionTarget::TurnControl(_))
                 );
             let prompt = (!suppress_text).then(|| request.prompt.clone());
@@ -82,7 +82,7 @@ pub fn PromptBanner() -> impl IntoView {
                     let ChoiceOption { id, label, .. } = opt;
                     let header = label.clone();
                     let pick = move |_| {
-                        crate::controls::submit(InputResponse::PickSingle(id), header.clone());
+                        controls::submit(InputResponse::PickSingle(id), header.clone());
                     };
                     view! { <button class="banner-option" on:click=pick>{label}</button> }
                 })
@@ -95,7 +95,7 @@ pub fn PromptBanner() -> impl IntoView {
                     let sel: Vec<OptionId> =
                         selected.get_untracked().into_iter().map(OptionId).collect();
                     let label = format!("Commit {} card(s)", sel.len());
-                    crate::controls::submit(InputResponse::PickMultiple { selected: sel }, label);
+                    controls::submit(InputResponse::PickMultiple { selected: sel }, label);
                     selected.set(BTreeSet::new());
                 };
                 view! { <button class="confirm" on:click=confirm>"Confirm"</button> }
@@ -108,16 +108,16 @@ pub fn PromptBanner() -> impl IntoView {
             // and option-less would otherwise be unreachable.
             let confirm_fallback = (request.kind == InputKind::Confirm
                 && request.target.is_none()
-                && !crate::skill_test_result::modal_is_live(&state))
+                && !skill_test_result::modal_is_live(&state))
             .then(|| {
                 let confirm =
-                    move |_| crate::controls::submit(InputResponse::Confirm, "Confirm");
+                    move |_| controls::submit(InputResponse::Confirm, "Confirm");
                 view! { <button class="confirm" on:click=confirm>"Confirm"</button> }
             });
 
             // Pass — whenever the request is skippable.
             let pass_btn = request.skippable.then(|| {
-                let pass = move |_| crate::controls::submit(InputResponse::Skip, "Skip");
+                let pass = move |_| controls::submit(InputResponse::Skip, "Skip");
                 view! { <button class="pass" on:click=pass>"Pass"</button> }
             });
 

@@ -10,7 +10,7 @@
 //! needs the live investigator count, and a location's [`LocationId`] is
 //! minted on entry. [`put_set_aside_card_into_play`] is the single door
 //! back in, and it dispatches on the metadata's
-//! [`CardKind`](crate::card_data::CardKind).
+//! [`CardKind`](card_dsl::card_data::CardKind).
 //!
 //! A location's connections come with it: they are printed as connection
 //! symbols on the cards, which the pinned snapshot has no field for, so
@@ -18,7 +18,8 @@
 //! [`LocationLayout`](crate::scenario::LocationLayout) and are wired at
 //! entry — the only moment both endpoints of a connection have ids.
 
-use crate::card_data::CardKind;
+use card_dsl::card_data::CardKind;
+
 use crate::engine::dispatch::{encounter, threat_area};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
@@ -175,8 +176,8 @@ mod tests {
     use crate::engine::dispatch::set_aside;
     use crate::engine::outcome::EngineOutcome;
     use crate::engine::Cx;
-    use crate::state::{CardCode, InvestigatorId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
+    use crate::test_support;
 
     #[test]
     fn rejects_a_code_that_is_not_set_aside() {

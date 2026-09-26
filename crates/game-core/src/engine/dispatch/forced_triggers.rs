@@ -5,11 +5,12 @@
 //! a fixed deterministic order (see [`queue_forced_triggers`]), beneath the
 //! universal [`queue_event`](super::emit::queue_event) chokepoint.
 
-use crate::action::InputResponse;
-use crate::card_registry;
-use crate::dsl::{
+use card_dsl::dsl::{
     self, Effect, EventPattern, EventTiming, SkillTestKind, TestOutcome, Trigger, TriggerKind,
 };
+
+use crate::action::InputResponse;
+use crate::card_registry;
 use crate::engine::dispatch::reaction_windows;
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
@@ -818,8 +819,7 @@ pub(crate) fn resume_acknowledge_forced(cx: &mut Cx, response: &InputResponse) -
 mod tests {
     use super::*;
     use crate::engine::outcome::OptionTarget;
-    use crate::state::{AbilityAddress, Agenda, CardInstanceId};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{AbilityAddress, Agenda, CardInstanceId, GameStateBuilder};
 
     #[test]
     fn acknowledge_forced_suspends_then_pops_on_pick() {

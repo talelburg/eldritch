@@ -43,9 +43,8 @@ use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
 use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::{Agenda, CardCode, GameState, InvestigatorId, Phase};
-use game_core::test_support::{self, GameStateBuilder};
-use game_core::{assert_event, card_registry};
+use game_core::state::{Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId, Phase};
+use game_core::{assert_event, card_registry, test_support};
 
 /// Ancient Evils — *"**Revelation** - Place 1 doom on the current agenda."*
 const ANCIENT_EVILS: &str = "01166";

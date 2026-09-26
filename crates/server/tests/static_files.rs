@@ -6,7 +6,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::response::Response;
-use axum::Router;
+use axum::{body, Router};
 use server::db::MIGRATOR;
 use server::AppState;
 use sqlx::sqlite::SqlitePoolOptions;
@@ -25,7 +25,7 @@ async fn app_with_fixture_dist() -> Router {
 }
 
 async fn body_string(response: Response) -> String {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+    let bytes = body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
     String::from_utf8(bytes.to_vec()).unwrap()

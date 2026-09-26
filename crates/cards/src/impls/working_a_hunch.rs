@@ -13,7 +13,7 @@
 //! offered in fast-play windows). `abilities()` only describes what the
 //! `OnPlay` trigger does.
 
-use card_dsl::dsl::{discover_clue, on_play, Ability, LocationTarget};
+use card_dsl::dsl::{self, Ability, LocationTarget};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01037";
@@ -21,7 +21,10 @@ pub const CODE: &str = "01037";
 /// On play, discover 1 clue at the controller's location.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_play(discover_clue(LocationTarget::YourLocation, 1))]
+    vec![dsl::on_play(dsl::discover_clue(
+        LocationTarget::YourLocation,
+        1,
+    ))]
 }
 
 #[cfg(test)]

@@ -7,12 +7,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::action::InputResponse;
-use crate::card_data::CardKind;
-use crate::dsl::{
+use card_dsl::card_data::CardKind;
+use card_dsl::dsl::{
     self, Determination, Effect, HarmKind, IntExpr, InvestigatorTarget, LocationTarget,
     SkillTestKind, Stat, TestOutcome, Trigger,
 };
+
+use crate::action::InputResponse;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{combat, emit, reaction_windows};
 use crate::engine::evaluator::{self, EvalContext};
@@ -32,17 +33,17 @@ use crate::{card_registry, scenario};
 
 /// The one-shot modifier an initiator grants the test it starts: a weapon's
 /// *"+N \[combat\] for this attack"* (the
-/// [`Fight`](crate::dsl::ActionDesignator::Fight) designator's combat modifier)
+/// [`Fight`](card_dsl::dsl::ActionDesignator::Fight) designator's combat modifier)
 /// or Flashlight 01087's *"Your location gets -2 shroud for this
 /// investigation"* (the
-/// [`Investigate`](crate::dsl::ActionDesignator::Investigate) designator's
+/// [`Investigate`](card_dsl::dsl::ActionDesignator::Investigate) designator's
 /// shroud modifier).
 ///
 /// Handed to [`start_skill_test`] **unstamped**: the test it belongs to has
 /// no identity until initiation mints one, and it becomes a
 /// [`RecordedModifier`](crate::state::RecordedModifier) with
 /// [`Lifetime::SkillTest`](crate::state::Lifetime::SkillTest) there. The
-/// delta stays an [`IntExpr`](crate::dsl::IntExpr) — a row is evaluated at
+/// delta stays an [`IntExpr`](card_dsl::dsl::IntExpr) — a row is evaluated at
 /// read time, not at push time (ADR 0005), which is what makes Esoteric
 /// Formula 02254's *"+2 \[willpower\] … for each clue on the attacked
 /// enemy"* expressible later.
@@ -284,7 +285,7 @@ pub(in crate::engine) fn resume_substitution_choice(
 
 /// Commit-stage entry to the skill-test resolution driver. Handles the
 /// response to the
-/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput) the engine emitted at
+/// [`AwaitingInput`](crate::engine::EngineOutcome::AwaitingInput) the engine emitted at
 /// the commit window: validate the supplied indices, persist them onto the
 /// in-flight record, pre-advance the cursor to [`SkillTestStep::PreTokenWindow`],
 /// and return [`EngineOutcome::Done`] so the `drive` loop's `SkillTest` arm runs
@@ -399,7 +400,7 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 
 /// Run the token half of a skill test (RR ST.3–ST.4): reveal the chaos token
 /// (ST.3) and apply the symbol's unconditional `immediate` side-effects (ST.4)
-/// as pushed [`Effect::Deal`](crate::dsl::Effect::Deal).
+/// as pushed [`Effect::Deal`](card_dsl::dsl::Effect::Deal).
 ///
 /// **No total, margin, or verdict is computed here.** ST.5 (*"all active card
 /// abilities that are modifying the investigator's skill value"* — active *at
@@ -532,7 +533,7 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
 ///   [`test_determination`](crate::engine::modified_value::test_determination).
 ///   Recording it here rather than special-casing the token at ST.6 is what
 ///   makes a card-latched automatic failure
-///   ([`Effect::AutoResolve`](crate::dsl::Effect::AutoResolve)) the same one
+///   ([`Effect::AutoResolve`](card_dsl::dsl::Effect::AutoResolve)) the same one
 ///   rule and not a second one.
 fn record_token_contribution(
     cx: &mut Cx,
@@ -594,7 +595,7 @@ fn resolved(cx: &Cx) -> ResolvedTest {
 /// Collect the committed cards' [`Trigger::OnCommit`] ability effects (Vicious
 /// Blow 01025's `BoostAttackDamage`, Deduction 01039's
 /// `DiscoverAdditionalClues`), combine them into one
-/// [`Effect::Seq`](crate::dsl::Effect::Seq), and `push_effect` it for the drive
+/// [`Effect::Seq`](card_dsl::dsl::Effect::Seq), and `push_effect` it for the drive
 /// loop (push nothing if no committed card carries an `OnCommit` trigger).
 /// Pre-advances the cursor to [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp)
 /// **before** the push, so a suspending effect would resume past this step.
@@ -663,8 +664,8 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) {
 /// difficulty (ST.6), stashing the verdict on
 /// [`InFlightSkillTest::resolved`](crate::state::InFlightSkillTest::resolved);
 /// then emit the logged
-/// [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
-/// [`SkillTestFailed`](crate::Event::SkillTestFailed) and fire the general
+/// [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) /
+/// [`SkillTestFailed`](crate::event::Event::SkillTestFailed) and fire the general
 /// `SkillTestResolved` timing point for **every** test and both outcomes (the
 /// `{ Investigate, Success }` narrowing is Obscuring Fog 01168 forced with
 /// Dr. Milan 01033 reaction; one `queue_event` so forced precedes reaction —
@@ -929,7 +930,7 @@ fn open_skill_test_player_window(
 ///
 /// Each loop iteration starts by checking for a queued reaction
 /// window: if one is pending, the driver opens it and returns
-/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput). The window's
+/// [`AwaitingInput`](crate::engine::EngineOutcome::AwaitingInput). The window's
 /// close path ([`close_reaction_window`]) re-enters this driver on
 /// resume.
 ///
@@ -969,7 +970,7 @@ fn open_skill_test_player_window(
 ///   (failed Fight vs ready retaliate enemy); advance to
 ///   [`PostOnResolution`](SkillTestStep::PostOnResolution).
 /// - [`PostOnResolution`](SkillTestStep::PostOnResolution) → ST.8: discard
-///   committed cards, emit [`SkillTestEnded`](crate::Event::SkillTestEnded),
+///   committed cards, emit [`SkillTestEnded`](crate::event::Event::SkillTestEnded),
 ///   drain pending modifiers, tear down the frame, return `Done`.
 ///
 /// [`close_reaction_window`]: super::reaction_windows::close_reaction_window
@@ -1743,11 +1744,11 @@ fn collect_on_skill_test_resolution(committed: &[CardCode], succeeded: bool) -> 
 /// [`Trigger::OnCommit`] ability.
 ///
 /// The [`FireOnCommit`](SkillTestStep::FireOnCommit) driver step combines these
-/// into one [`Effect::Seq`](crate::dsl::Effect::Seq) and `push_effect`s it for
+/// into one [`Effect::Seq`](card_dsl::dsl::Effect::Seq) and `push_effect`s it for
 /// the drive loop. They run at the head of ST.7 (after the token resolves) but
 /// before [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp) reads the
 /// `bonus_attack_damage` accumulator the in-scope consumer
-/// ([`Effect::BoostAttackDamage`](crate::dsl::Effect::BoostAttackDamage),
+/// ([`Effect::BoostAttackDamage`](card_dsl::dsl::Effect::BoostAttackDamage),
 /// Vicious Blow 01025) populates — and that consumer is conditional on success
 /// ("If this skill test is successful during an attack…"). The committed cards
 /// are in limbo on the in-flight record at this point (discard happens at
@@ -1814,9 +1815,9 @@ pub(super) fn peril_check(
     //   resolution completes.
 }
 
-/// Build a single [`Effect`](crate::dsl::Effect) from a chaos symbol token's
-/// side-effect list (a [`Seq`](crate::dsl::Effect::Seq) of
-/// [`Deal`](crate::dsl::Effect::Deal) targeting the tester), or `None` if empty.
+/// Build a single [`Effect`](card_dsl::dsl::Effect) from a chaos symbol token's
+/// side-effect list (a [`Seq`](card_dsl::dsl::Effect::Seq) of
+/// [`Deal`](card_dsl::dsl::Effect::Deal) targeting the tester), or `None` if empty.
 /// `Effect::Deal` routes through the interactive `begin_deal_damage` path, so
 /// these suspend when the tester controls a soak asset — RR-correct (the player
 /// assigns damage/horror to soak assets), unlike the old auto-assigning
@@ -1854,933 +1855,4 @@ fn push_symbol_effects(cx: &mut Cx, investigator: InvestigatorId, effects: &[Tok
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::dsl::deal_horror;
-    use crate::engine::dispatch;
-    use crate::event::Event;
-    use crate::scenario::TokenEffect;
-    use crate::state::{EffectFrame, EnemyId, LocationId, SkillSubstitution, SkillTestId};
-    use crate::test_support::{self, GameStateBuilder};
-    use crate::InputKind;
-
-    /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
-    /// reading the commit-time accumulator off the in-flight record
-    /// (Vicious Blow 01025). With `extra_damage: 1` (a weapon bonus) and
-    /// `bonus_attack_damage: 2`, the attack deals `1 + 1 + 2 = 4`.
-    #[test]
-    fn fight_follow_up_adds_bonus_attack_damage() {
-        let inv = InvestigatorId(1);
-        let mut enemy = test_support::test_enemy(7, "Goon");
-        enemy.max_health = 10; // avoid clamping so the dealt damage is observable
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_enemy(enemy)
-            .build();
-        state
-            .continuations
-            .push(Continuation::SkillTest(InFlightSkillTest {
-                follow_up: SkillTestFollowUp::Fight {
-                    enemy: EnemyId(7),
-                    extra_damage: 1,
-                },
-                bonus_attack_damage: 2,
-                ..test_support::test_skill_test(
-                    SkillTestId(0),
-                    inv,
-                    SkillKind::Combat,
-                    SkillTestKind::Fight,
-                    2,
-                )
-            }));
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-
-        apply_skill_test_follow_up(
-            &mut cx,
-            inv,
-            SkillTestFollowUp::Fight {
-                enemy: EnemyId(7),
-                extra_damage: 1,
-            },
-        );
-
-        assert_eq!(
-            state.enemies[&EnemyId(7)].damage,
-            4,
-            "1 base + 1 extra_damage + 2 bonus_attack_damage"
-        );
-    }
-
-    /// The `Investigate` follow-up pushes **one** `DiscoverClue` of
-    /// `1 + bonus_clues_discovered` at the test's `tested_location`, reading the
-    /// commit-time accumulator off the in-flight record (Deduction 01039). With
-    /// `bonus_clues_discovered: 1` that is a single discovery of 2 — not two of
-    /// 1, which is what Cover Up 01007 would replace twice (#471).
-    #[test]
-    fn investigate_follow_up_pushes_one_discovery_carrying_the_clue_bonus() {
-        let inv = InvestigatorId(1);
-        let loc = LocationId(10);
-        let mut state = GameStateBuilder::new()
-            .with_investigator_at(test_support::test_investigator(1), loc)
-            .with_location(test_support::test_location(10, "Study"))
-            .build();
-        state
-            .continuations
-            .push(Continuation::SkillTest(InFlightSkillTest {
-                tested_location: Some(loc),
-                follow_up: SkillTestFollowUp::Investigate,
-                bonus_clues_discovered: 1,
-                ..test_support::test_skill_test(
-                    SkillTestId(0),
-                    inv,
-                    SkillKind::Intellect,
-                    SkillTestKind::Investigate,
-                    2,
-                )
-            }));
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-
-        apply_skill_test_follow_up(&mut cx, inv, SkillTestFollowUp::Investigate);
-
-        let Some(Continuation::Effect(EffectFrame::Leaf { effect, .. })) =
-            state.continuations.last()
-        else {
-            panic!(
-                "expected one pushed DiscoverClue leaf, got {:?}",
-                state.continuations.last()
-            );
-        };
-        assert_eq!(
-            **effect,
-            Effect::DiscoverClue {
-                from: LocationTarget::TestedLocation,
-                count: 2,
-            },
-            "one discovery of 1 base + 1 bonus, at the tested location",
-        );
-    }
-
-    #[test]
-    fn symbol_effects_to_effect_builds_deal_seq() {
-        // Empty → nothing to push.
-        assert_eq!(symbol_effects_to_effect(&[]), None);
-
-        // Single effect → a bare Deal targeting the tester (interactive soak).
-        assert_eq!(
-            symbol_effects_to_effect(&[TokenEffect::Horror(1)]),
-            Some(Effect::Deal {
-                kind: HarmKind::Horror,
-                target: InvestigatorTarget::You,
-                amount: IntExpr::Lit(1),
-            }),
-        );
-
-        // Multiple → one Seq, in order.
-        assert!(matches!(
-            symbol_effects_to_effect(&[TokenEffect::Damage(1), TokenEffect::Horror(2)]),
-            Some(Effect::Seq(v)) if v.len() == 2
-        ));
-    }
-
-    // The former `revelation_skill_test_failure_deals_margin_damage_and_discards`
-    // unit test is gone (#380): it simulated the removed
-    // `pending_revelation_discard` slot and drove `finish_skill_test` directly,
-    // bypassing the new `resolve_input`-chokepoint disposal. The real
-    // suspended-Revelation-into-skill-test discard is integration-tested by
-    // `crates/cards/tests/revelation_treacheries.rs::grasping_hands_*`
-    // (01162), and the margin-damage math by the same test.
-
-    /// A plain (non-revelation) skill test disposes of no encounter card — the
-    /// skill-test driver no longer touches encounter disposal at all (#380).
-    #[test]
-    fn plain_skill_test_disposes_of_no_encounter_card() {
-        let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_active_investigator(inv)
-            .build();
-        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-        let out = perform_skill_test(&mut cx, inv, SkillKind::Intellect, 1);
-        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
-        let out = finish_skill_test(&mut cx, &[]);
-        let out = dispatch::drive(&mut cx, out);
-        assert_eq!(out, EngineOutcome::Done);
-        assert!(state.encounter_discard.is_empty());
-    }
-
-    /// A skill test with an `on_success` effect runs it on a successful
-    /// draw (the success-side mirror of the `on_fail` path).
-    #[test]
-    fn skill_test_runs_on_success_effect_on_a_passing_draw() {
-        let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_active_investigator(inv)
-            .build();
-        // Willpower 3 + Numeric(0) = 3 vs difficulty 2 → success.
-        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-        let out = start_skill_test(
-            &mut cx,
-            inv,
-            SkillKind::Willpower,
-            SkillTestKind::Plain,
-            DifficultyBasis::Fixed(2),
-            SkillTestFollowUp::None,
-            Some(deal_horror(InvestigatorTarget::You, 1u8)),
-            None,
-            None,
-            None,
-        );
-        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
-        let out = finish_skill_test(&mut cx, &[]);
-        let out = dispatch::drive(&mut cx, out);
-        assert_eq!(out, EngineOutcome::Done);
-        assert_eq!(
-            state.investigators[&inv].horror(),
-            1,
-            "on_success effect ran on the passing draw",
-        );
-    }
-
-    /// Both ST.1/ST.2 player windows open and auto-skip (no registry / nothing
-    /// Fast-eligible), bracketing the commit, and the test still resolves. (#374.)
-    #[test]
-    fn skill_test_opens_and_auto_skips_both_player_windows() {
-        let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_active_investigator(inv)
-            .build();
-        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-
-        // start -> PreCommitWindow auto-skips window 1 -> parks at AwaitingCommit.
-        let out = start_skill_test(
-            &mut cx,
-            inv,
-            SkillKind::Willpower,
-            SkillTestKind::Plain,
-            DifficultyBasis::Fixed(2),
-            SkillTestFollowUp::None,
-            None,
-            None,
-            None,
-            None,
-        );
-        assert!(
-            matches!(out, EngineOutcome::AwaitingInput { .. }),
-            "commit prompt (window 1 before commit opened and auto-skipped to it)"
-        );
-
-        // commit nothing -> PreTokenWindow auto-skips window 2 -> resolves to end.
-        let out = finish_skill_test(&mut cx, &[]);
-        let out = dispatch::drive(&mut cx, out);
-        assert_eq!(
-            out,
-            EngineOutcome::Done,
-            "window 2 (before token) opened and auto-skipped, then resolved",
-        );
-        assert!(
-            events
-                .iter()
-                .any(|e| matches!(e, Event::SkillTestEnded { .. })),
-            "the test resolved to the end: {events:?}",
-        );
-    }
-
-    /// Closing a skill-test player window re-enters `advance` at the
-    /// pre-advanced cursor (the `run_fast_continuation` arm), not just via the
-    /// auto-skip path. Here window 1 is "about to close" — the cursor is already
-    /// `AwaitingCommit` — so `run_fast_continuation` must re-enter `advance` and
-    /// emit the commit prompt. (#374.)
-    #[test]
-    fn closing_a_skill_test_player_window_re_enters_advance() {
-        let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_active_investigator(inv)
-            .build();
-        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-        // A SkillTest pre-advanced to AwaitingCommit, as if window 1 just opened.
-        state
-            .continuations
-            .push(Continuation::SkillTest(test_support::test_skill_test(
-                SkillTestId(0),
-                inv,
-                SkillKind::Willpower,
-                SkillTestKind::Plain,
-                2,
-            )));
-        let mut events = Vec::new();
-        let out = reaction_windows::run_fast_continuation(
-            &mut Cx {
-                state: &mut state,
-                events: &mut events,
-            },
-            FastWindowKind::SkillTest {
-                before_token: false,
-            },
-        );
-        let EngineOutcome::AwaitingInput { request, .. } = &out else {
-            panic!("expected the commit prompt after the window closed, got {out:?}");
-        };
-        assert!(
-            request.prompt.contains("Commit cards"),
-            "re-entered advance at AwaitingCommit: {request:?}",
-        );
-    }
-
-    /// The reified driver: `start_skill_test` parks at `AwaitingCommit` via
-    /// `advance` (emitting the commit prompt), and committing drives the test to
-    /// teardown — `SkillTestStarted` then `SkillTestEnded`, no frame left behind.
-    #[test]
-    fn commit_emits_then_resolves_through_advance() {
-        let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_active_investigator(inv)
-            .build();
-        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-
-        let out = start_skill_test(
-            &mut cx,
-            inv,
-            SkillKind::Willpower,
-            SkillTestKind::Plain,
-            DifficultyBasis::Fixed(2),
-            SkillTestFollowUp::None,
-            None,
-            None,
-            None,
-            None,
-        );
-        // advance parked at AwaitingCommit and emitted the commit prompt.
-        let EngineOutcome::AwaitingInput { request, .. } = &out else {
-            panic!("expected the commit prompt, got {out:?}");
-        };
-        assert!(
-            request.prompt.contains("Commit cards"),
-            "the AwaitingCommit arm emits the commit prompt: {request:?}",
-        );
-        assert!(matches!(
-            cx.state.continuations.last(),
-            Some(Continuation::SkillTest(_))
-        ));
-
-        // Commit nothing → the hop parks; the loop drives to teardown.
-        let out = finish_skill_test(&mut cx, &[]);
-        let out = dispatch::drive(&mut cx, out);
-        assert_eq!(out, EngineOutcome::Done);
-        assert!(
-            events
-                .iter()
-                .any(|e| matches!(e, Event::SkillTestStarted { .. }))
-                && events
-                    .iter()
-                    .any(|e| matches!(e, Event::SkillTestEnded { .. })),
-            "the test ran start-to-end: {events:?}",
-        );
-        assert!(
-            !state
-                .continuations
-                .iter()
-                .any(|c| matches!(c, Continuation::SkillTest(_))),
-            "the SkillTest frame was torn down",
-        );
-    }
-
-    /// Flag on: a skill test pauses at the acknowledge step with a `Confirm`
-    /// prompt — after the result events are emitted, before teardown — and a
-    /// Confirm drives it to completion (#478).
-    #[test]
-    fn interactive_acknowledge_pauses_for_confirm_then_resolves() {
-        let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_active_investigator(inv)
-            .build();
-        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-        state.interactive_acknowledge = true;
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-
-        let out = start_skill_test(
-            &mut cx,
-            inv,
-            SkillKind::Willpower,
-            SkillTestKind::Plain,
-            DifficultyBasis::Fixed(2),
-            SkillTestFollowUp::None,
-            None,
-            None,
-            None,
-            None,
-        );
-        assert!(
-            matches!(out, EngineOutcome::AwaitingInput { .. }),
-            "commit prompt"
-        );
-
-        // Commit nothing -> resolution runs, then suspends at the acknowledge step.
-        let out = finish_skill_test(&mut cx, &[]);
-        let out = dispatch::drive(&mut cx, out);
-        let EngineOutcome::AwaitingInput { request, .. } = &out else {
-            panic!("expected the acknowledge Confirm prompt, got {out:?}");
-        };
-        assert_eq!(
-            request.kind,
-            InputKind::Confirm,
-            "acknowledge is a Confirm prompt"
-        );
-        // The acknowledge pause is deliberately **un-anchored**: it renders on the
-        // skill-test result modal, not on a board surface. This is the half of the
-        // ADR-0011 pair that tells it apart from the encounter draw, which is
-        // `.at(EncounterDeck)`; the two are otherwise byte-identical on the wire.
-        assert_eq!(
-            request.target, None,
-            "the acknowledge pause carries no board anchor (ADR 0011)"
-        );
-        // The result is already logged when the player is asked to acknowledge.
-        // Read through `cx.events` here: `cx` is still borrowed mutably for the
-        // Confirm resume below, so the outer `events` binding is unavailable.
-        assert!(
-            cx.events
-                .iter()
-                .any(|e| matches!(e, Event::ChaosTokenRevealed { .. })),
-            "token revealed before the ack"
-        );
-        assert!(
-            cx.events
-                .iter()
-                .any(|e| matches!(e, Event::SkillTestSucceeded { .. })),
-            "outcome logged before the ack"
-        );
-        assert!(
-            !cx.events
-                .iter()
-                .any(|e| matches!(e, Event::SkillTestEnded { .. })),
-            "teardown waits on the acknowledgment"
-        );
-
-        // Confirm -> drive into teardown.
-        let out = acknowledge_outcome(&mut cx);
-        let out = dispatch::drive(&mut cx, out);
-        assert_eq!(out, EngineOutcome::Done);
-        assert!(
-            events
-                .iter()
-                .any(|e| matches!(e, Event::SkillTestEnded { .. })),
-            "after Confirm the test resolved to the end: {events:?}"
-        );
-    }
-
-    /// Flag off (default): no acknowledge pause — the test resolves straight
-    /// through, exactly as before #478 (guards against test churn).
-    #[test]
-    fn no_acknowledge_pause_when_flag_off() {
-        let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_active_investigator(inv)
-            .build();
-        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-
-        let out = start_skill_test(
-            &mut cx,
-            inv,
-            SkillKind::Willpower,
-            SkillTestKind::Plain,
-            DifficultyBasis::Fixed(2),
-            SkillTestFollowUp::None,
-            None,
-            None,
-            None,
-            None,
-        );
-        assert!(
-            matches!(out, EngineOutcome::AwaitingInput { .. }),
-            "commit prompt"
-        );
-        let out = finish_skill_test(&mut cx, &[]);
-        let out = dispatch::drive(&mut cx, out);
-        assert_eq!(
-            out,
-            EngineOutcome::Done,
-            "no acknowledge pause when the flag is off"
-        );
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, Event::SkillTestEnded { .. })));
-    }
-
-    /// `acknowledge_outcome` rejects (state untouched) when there is no in-flight
-    /// test to acknowledge.
-    #[test]
-    fn acknowledge_outcome_rejects_without_in_flight_test() {
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .build();
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-        let out = acknowledge_outcome(&mut cx);
-        assert!(matches!(out, EngineOutcome::Rejected { .. }), "got {out:?}");
-        assert!(events.is_empty(), "rejection emits no events");
-    }
-
-    /// The commit hop parks the resolution for the loop rather than driving it
-    /// itself: `finish_skill_test` returns `Done` with the `SkillTest` frame on
-    /// top at `PreTokenWindow` and emits no `SkillTestEnded`; the `drive` loop's
-    /// `SkillTest` arm then resolves it to teardown. (Slice C, #431 — commit-hop
-    /// re-entry retired.)
-    #[test]
-    fn finish_skill_test_parks_the_resolution_for_the_loop() {
-        let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_active_investigator(inv)
-            .build();
-        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-
-        // Park at AwaitingCommit (the commit prompt).
-        let out = start_skill_test(
-            &mut cx,
-            inv,
-            SkillKind::Willpower,
-            SkillTestKind::Plain,
-            DifficultyBasis::Fixed(2),
-            SkillTestFollowUp::None,
-            None,
-            None,
-            None,
-            None,
-        );
-        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
-
-        // Commit nothing: the hop PARKS — it must not itself resolve the test.
-        let out = finish_skill_test(&mut cx, &[]);
-        assert_eq!(out, EngineOutcome::Done);
-        assert!(
-            matches!(
-                cx.state.continuations.last(),
-                Some(Continuation::SkillTest(t)) if matches!(t.continuation, SkillTestStep::PreTokenWindow)
-            ),
-            "the commit hop parks the SkillTest at PreTokenWindow for the loop to drive",
-        );
-        assert!(
-            !cx.events
-                .iter()
-                .any(|e| matches!(e, Event::SkillTestEnded { .. })),
-            "the hop itself does not resolve the test to teardown",
-        );
-
-        // The loop's SkillTest arm drives the parked frame the rest of the way.
-        let out = dispatch::drive(&mut cx, out);
-        assert_eq!(out, EngineOutcome::Done);
-        assert!(
-            cx.events
-                .iter()
-                .any(|e| matches!(e, Event::SkillTestEnded { .. })),
-            "the loop resolved the test to teardown",
-        );
-        assert!(
-            !cx.state
-                .continuations
-                .iter()
-                .any(|c| matches!(c, Continuation::SkillTest(_))),
-            "the SkillTest frame was torn down by the loop",
-        );
-    }
-
-    fn substitution_state(inv: InvestigatorId) -> GameState {
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_active_investigator(inv)
-            .build();
-        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-        state.skill_substitutions.push(SkillSubstitution {
-            investigator: inv,
-            use_skill: SkillKind::Intellect,
-            for_skills: vec![SkillKind::Combat, SkillKind::Agility],
-        });
-        state
-    }
-
-    #[test]
-    fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
-        let inv = InvestigatorId(1);
-        let mut state = substitution_state(inv);
-        let mut events = Vec::new();
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            // A weapon's "+2 [combat] for this attack".
-            start_skill_test(
-                &mut cx,
-                inv,
-                SkillKind::Combat,
-                SkillTestKind::Fight,
-                DifficultyBasis::Fixed(3),
-                SkillTestFollowUp::None,
-                None,
-                None,
-                None,
-                Some(InitiatorModifier {
-                    target: ModifierTarget::Investigator(inv),
-                    stat: Stat::Combat,
-                    delta: IntExpr::Lit(2),
-                }),
-            )
-        };
-        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }), "prompt");
-        assert!(
-            matches!(state.continuations.last(), Some(Continuation::SubstitutionPrompt { investigator }) if *investigator == inv)
-        );
-
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(0)))
-        };
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            dispatch::drive(&mut cx, out)
-        };
-        assert!(
-            matches!(out, EngineOutcome::AwaitingInput { .. }),
-            "commit window"
-        );
-        let t = state.current_skill_test().unwrap();
-        assert_eq!(t.skill, SkillKind::Intellect, "now an intellect test");
-        assert_eq!(t.kind, SkillTestKind::Fight, "still a Fight (damage)");
-        // The weapon's bonus falls away with no second mechanism: it is a row
-        // over `Stat::Combat`, and the test now reads Intellect (FAQ: "ignore
-        // any bonuses to Combat or Agility").
-        let read = |skill| {
-            modified_value::modified_value(
-                &state,
-                card_registry::current(),
-                ModifierTarget::Investigator(inv),
-                ModifiedQuantity::Skill(skill),
-                ReadContext::DuringTest(SkillTestKind::Fight),
-            )
-            .total()
-        };
-        assert_eq!(
-            read(SkillKind::Intellect),
-            3,
-            "weapon combat bonus does not reach the intellect the test now uses",
-        );
-        assert_eq!(
-            read(SkillKind::Combat),
-            5,
-            "the row itself is still recorded — the stat mismatch is what drops it",
-        );
-        assert!(!matches!(
-            state.continuations.last(),
-            Some(Continuation::SubstitutionPrompt { .. })
-        ));
-    }
-
-    #[test]
-    fn substitution_prompt_keeps_the_test_on_its_frame() {
-        // The substitution prompt suspends *before* the commit window — the one
-        // place test data exists pre-commit. Pin that it lives on a SkillTest
-        // frame (not a removed Option field) during that window (#348).
-        let inv = InvestigatorId(1);
-        let mut state = substitution_state(inv);
-        let mut events = Vec::new();
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            start_skill_test(
-                &mut cx,
-                inv,
-                SkillKind::Combat,
-                SkillTestKind::Fight,
-                DifficultyBasis::Fixed(3),
-                SkillTestFollowUp::None,
-                None,
-                None,
-                None,
-                None,
-            )
-        };
-        assert!(
-            matches!(out, EngineOutcome::AwaitingInput { .. }),
-            "substitution prompt should suspend",
-        );
-        assert!(
-            matches!(state.continuations.last(), Some(Continuation::SubstitutionPrompt { investigator }) if *investigator == inv)
-        );
-        assert!(
-            state.current_skill_test().is_some(),
-            "the in-flight test must live on a SkillTest frame during the \
-             substitution prompt, not in a removed Option field",
-        );
-        assert!(
-            state
-                .continuations
-                .iter()
-                .any(|c| matches!(c, Continuation::SkillTest(_))),
-            "a SkillTest frame is on the stack before the commit window",
-        );
-    }
-
-    #[test]
-    fn substitution_choice_no_keeps_the_printed_skill() {
-        let inv = InvestigatorId(1);
-        let mut state = substitution_state(inv);
-        let mut events = Vec::new();
-        {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            let _ = start_skill_test(
-                &mut cx,
-                inv,
-                SkillKind::Agility,
-                SkillTestKind::Evade,
-                DifficultyBasis::Fixed(3),
-                SkillTestFollowUp::None,
-                None,
-                None,
-                None,
-                None,
-            );
-        }
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(1)))
-        };
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            dispatch::drive(&mut cx, out)
-        };
-        assert!(
-            matches!(out, EngineOutcome::AwaitingInput { .. }),
-            "commit window"
-        );
-        assert_eq!(
-            state.current_skill_test().unwrap().skill,
-            SkillKind::Agility,
-            "declined — keeps the printed skill",
-        );
-    }
-
-    /// The substitution resume parks the test for the loop rather than driving to
-    /// the commit window itself: choosing the substitution pops the
-    /// `SubstitutionPrompt`, rewrites the skill, and returns `Done` with the
-    /// `SkillTest` on top; the `drive` loop then opens the commit window. (Slice C,
-    /// #431 — substitution-resume re-entry retired.)
-    #[test]
-    fn resume_substitution_choice_parks_for_the_loop() {
-        let inv = InvestigatorId(1);
-        let mut state = substitution_state(inv);
-        let mut events = Vec::new();
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            start_skill_test(
-                &mut cx,
-                inv,
-                SkillKind::Combat,
-                SkillTestKind::Fight,
-                DifficultyBasis::Fixed(3),
-                SkillTestFollowUp::None,
-                None,
-                None,
-                None,
-                None,
-            )
-        };
-        assert!(
-            matches!(out, EngineOutcome::AwaitingInput { .. }),
-            "substitution prompt"
-        );
-
-        // Choose the substitution: the resume PARKS — it does not itself open the
-        // commit window.
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            resume_substitution_choice(&mut cx, &InputResponse::PickSingle(OptionId(0)))
-        };
-        assert_eq!(
-            out,
-            EngineOutcome::Done,
-            "the substitution resume parks for the loop"
-        );
-        assert!(
-            !matches!(
-                state.continuations.last(),
-                Some(Continuation::SubstitutionPrompt { .. })
-            ),
-            "the SubstitutionPrompt was consumed",
-        );
-        assert!(
-            matches!(state.continuations.last(), Some(Continuation::SkillTest(_))),
-            "the SkillTest frame is parked on top for the loop to drive",
-        );
-        assert_eq!(
-            state.current_skill_test().unwrap().skill,
-            SkillKind::Intellect,
-            "the substitution rewrote the skill before parking",
-        );
-
-        // The loop drives the parked test to its commit window.
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            dispatch::drive(&mut cx, out)
-        };
-        assert!(
-            matches!(out, EngineOutcome::AwaitingInput { .. }),
-            "commit window"
-        );
-    }
-
-    #[test]
-    fn no_active_substitution_opens_commit_window_directly() {
-        let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .with_active_investigator(inv)
-            .build();
-        state.chaos_bag.tokens = vec![ChaosToken::Numeric(0)];
-        let mut events = Vec::new();
-        let out = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            start_skill_test(
-                &mut cx,
-                inv,
-                SkillKind::Combat,
-                SkillTestKind::Fight,
-                DifficultyBasis::Fixed(3),
-                SkillTestFollowUp::None,
-                None,
-                None,
-                None,
-                None,
-            )
-        };
-        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
-        assert!(
-            !matches!(
-                state.continuations.last(),
-                Some(Continuation::SubstitutionPrompt { .. })
-            ),
-            "no prompt"
-        );
-        assert_eq!(state.current_skill_test().unwrap().skill, SkillKind::Combat,);
-    }
-
-    /// With no elder-sign ability on the controller's card (empty sentinel
-    /// `card_code`), the `ElderSign` token resolves exactly as before: total =
-    /// clamped skill value, bonus 0. Locks the behaviour-preserving default.
-    #[test]
-    fn elder_sign_token_adds_zero_without_an_elder_sign_ability() {
-        let inv = InvestigatorId(1);
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1)) // card_code = "" sentinel
-            .with_active_investigator(inv)
-            .build();
-        // Willpower 3, difficulty 2, ElderSign token. Bonus 0 → total 3 → succeed by 1.
-        state.chaos_bag.tokens = vec![ChaosToken::ElderSign];
-        let mut events = Vec::new();
-        let mut cx = Cx {
-            state: &mut state,
-            events: &mut events,
-        };
-        let out = start_skill_test(
-            &mut cx,
-            inv,
-            SkillKind::Willpower,
-            SkillTestKind::Plain,
-            DifficultyBasis::Fixed(2),
-            SkillTestFollowUp::None,
-            None,
-            None,
-            None,
-            None,
-        );
-        assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
-        let out = finish_skill_test(&mut cx, &[]);
-        let out = dispatch::drive(&mut cx, out);
-        assert_eq!(out, EngineOutcome::Done);
-        assert!(
-            events.iter().any(|e| matches!(
-                e,
-                Event::SkillTestSucceeded { margin, .. } if *margin == 1
-            )),
-            "ElderSign with no elder-sign ability → bonus 0 → succeed by 1: {events:?}",
-        );
-    }
-}
+mod tests;

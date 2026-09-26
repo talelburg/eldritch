@@ -2,9 +2,11 @@
 //! advancement, clue spending, and act advancement.
 
 use std::borrow::Cow;
+use std::iter;
+
+use card_dsl::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
 
 use crate::card_registry;
-use crate::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
 use crate::scenario::ScenarioEnding;
@@ -64,7 +66,7 @@ pub(crate) fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
 /// [`Event::AgendaAdvanced`], pause on the advance-flip acknowledge, fire the
 /// leaving agenda's reverse, then reset doom and move the cursor. A terminal
 /// agenda's reverse is what ends the scenario — it runs
-/// [`Effect::ReachResolution`](crate::dsl::Effect::ReachResolution), or drains
+/// [`Effect::ReachResolution`](card_dsl::dsl::Effect::ReachResolution), or drains
 /// the last active investigator — and `advance_reverse::finalize` holds the
 /// cursor there and asserts the ending landed. This used to latch the agenda's
 /// `resolution` field *instead of* advancing, which meant the last agenda in the
@@ -113,7 +115,7 @@ pub(super) fn advance_agenda(cx: &mut Cx) {
 /// check and [`spend_clues`] so the validation domain and the spend domain
 /// can never diverge.
 fn clue_contributors(state: &GameState, acting: InvestigatorId) -> Vec<InvestigatorId> {
-    std::iter::once(acting)
+    iter::once(acting)
         .chain(state.turn_order.iter().copied().filter(|id| *id != acting))
         .collect()
 }
@@ -390,8 +392,7 @@ mod doom_agenda_tests {
     use crate::engine::dispatch;
     use crate::event::Event;
     use crate::scenario::ResolutionId;
-    use crate::state::{Agenda, CardCode};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{Agenda, CardCode, GameStateBuilder};
     use crate::{assert_event, test_support};
 
     #[test]
@@ -573,12 +574,13 @@ mod doom_agenda_tests {
 #[cfg(test)]
 mod advance_act_tests {
     use super::*;
-    use crate::engine::enumerate::{legal_actions, TurnAction};
+    use crate::engine::enumerate::{self, TurnAction};
     use crate::engine::outcome::EngineOutcome;
     use crate::event::Event;
     use crate::scenario::ResolutionId;
-    use crate::state::{Act, CardCode, Continuation, InvestigationResume, InvestigatorId, Phase};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{
+        Act, CardCode, Continuation, GameStateBuilder, InvestigationResume, InvestigatorId, Phase,
+    };
     use crate::{assert_event, test_support};
 
     #[test]
@@ -641,7 +643,7 @@ mod advance_act_tests {
 
         // Insufficient clues (1 < 2): AdvanceAct is not legal.
         assert!(
-            !legal_actions(&state)
+            !enumerate::legal_actions(&state)
                 .iter()
                 .any(|a| matches!(a, TurnAction::AdvanceAct { .. })),
             "AdvanceAct must not be legal when clues < threshold"
@@ -675,7 +677,7 @@ mod advance_act_tests {
         }];
 
         assert!(
-            !legal_actions(&state)
+            !enumerate::legal_actions(&state)
                 .iter()
                 .any(|a| matches!(a, TurnAction::AdvanceAct { .. })),
             "AdvanceAct must not be offered for a zero-threshold objective act"

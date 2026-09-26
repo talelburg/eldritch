@@ -30,7 +30,7 @@
 //! [`Trigger::OnEvent`]: card_dsl::dsl::Trigger::OnEvent
 //! [`Effect::Cancel`]: card_dsl::dsl::Effect::Cancel
 
-use card_dsl::dsl::{reaction_on_event, Ability, Effect, EventPattern, EventTiming};
+use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01023";
@@ -39,7 +39,7 @@ pub const CODE: &str = "01023";
 /// Cancel that attack." — a Before-timing reaction that cancels the attack.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![reaction_on_event(
+    vec![dsl::reaction_on_event(
         EventPattern::EnemyAttacks,
         EventTiming::When,
         Effect::Cancel,

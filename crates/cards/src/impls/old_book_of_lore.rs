@@ -14,7 +14,7 @@
 //! a move to hand (the search primitive's destination); the search shuffles on
 //! completion. In solo with one investigator the target auto-binds.
 
-use card_dsl::dsl::{activated, search_deck, Ability, Cost, InvestigatorTarget, SearchScope};
+use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget, SearchScope};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01031";
@@ -23,10 +23,10 @@ pub const CODE: &str = "01031";
 /// their deck for a card, takes it, and shuffles.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![activated(
+    vec![dsl::activated(
         1,
         vec![Cost::Exhaust],
-        search_deck(
+        dsl::search_deck(
             InvestigatorTarget::chosen_at_your_location(),
             SearchScope::Top(3),
             None,

@@ -14,9 +14,10 @@
 //!   engine generates these itself so the action log is replayable;
 //!   clients never construct them.
 
+use serde::{Deserialize, Serialize};
+
 use crate::engine::OptionId;
 use crate::state::{CardCode, InvestigatorId};
-use serde::{Deserialize, Serialize};
 
 /// A single entry in the action log.
 ///
@@ -42,7 +43,7 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum PlayerAction {
-    /// Respond to an [`AwaitingInput`](crate::EngineOutcome::AwaitingInput)
+    /// Respond to an [`AwaitingInput`](crate::engine::EngineOutcome::AwaitingInput)
     /// prompt the engine emitted. The shape of `response` is dictated by the
     /// active prompt — the open-turn action menu and every framework suspension
     /// (mulligan, encounter draw, skill-test commit, reaction/Fast windows,

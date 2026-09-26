@@ -39,18 +39,15 @@
 //! is `crates/cards/tests/activate_ability_aoo.rs`. The predicate's own
 //! exhaustive table over the six designators is `provokes_aoo`'s unit test.
 
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use game_core::dsl::{
-    activated, activated_as, fight, gain_resources, seq, Ability, ActionDesignator, Effect,
-    InvestigatorTarget,
-};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
+use card_dsl::dsl::{self, Ability, ActionDesignator, Effect, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, GameState, InvestigatorId, LocationId, Phase,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// Synthetic **asset** printing the same residual effect twice — once under a
 /// **Fight** designator, once under none. The pair is the control: only the
@@ -82,35 +79,35 @@ const ONLY: u8 = 0;
 /// potential to change the game state, so the initiation gate never
 /// short-circuits either ability.
 fn residual() -> Effect {
-    seq(vec![gain_resources(InvestigatorTarget::Active, 1)])
+    dsl::seq(vec![dsl::gain_resources(InvestigatorTarget::Active, 1)])
 }
 
 fn satchel_abilities() -> Vec<Ability> {
     vec![
-        activated_as(fight(0u8, 0u8), 1, vec![], residual()),
-        activated(1, vec![], residual()),
+        dsl::activated_as(dsl::fight(0u8, 0u8), 1, vec![], residual()),
+        dsl::activated(1, vec![], residual()),
     ]
 }
 
 /// The Parlor's Resign, in its real shape: the designator performs the
 /// elimination and nothing is printed beside it (#644, #805).
 fn parlor_abilities() -> Vec<Ability> {
-    vec![activated_as(
+    vec![dsl::activated_as(
         ActionDesignator::Resign,
         1,
         vec![],
-        seq(vec![]),
+        dsl::seq(vec![]),
     )]
 }
 
 /// Mob Enforcer's Parley, with the same stand-in effect (its printed effect
 /// discards the enemy, which is beside the point here).
 fn enforcer_abilities() -> Vec<Ability> {
-    vec![activated_as(
+    vec![dsl::activated_as(
         ActionDesignator::Parley,
         1,
         vec![],
-        gain_resources(InvestigatorTarget::Active, 1),
+        dsl::gain_resources(InvestigatorTarget::Active, 1),
     )]
 }
 

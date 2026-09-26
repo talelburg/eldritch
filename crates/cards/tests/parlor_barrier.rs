@@ -52,14 +52,13 @@
 //! Own process → installs `cards::REGISTRY`.
 
 use cards::REGISTRY;
-use game_core::card_registry;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, GameState, InvestigatorId, Location, LocationId,
-    Phase,
+    CardCode, CardInPlay, CardInstanceId, Enemy, GameState, GameStateBuilder, InvestigatorId,
+    Location, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::{card_registry, test_support};
 
 /// The Parlor.
 const PARLOR_CODE: &str = "01115";

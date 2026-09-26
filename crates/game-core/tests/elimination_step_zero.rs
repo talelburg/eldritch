@@ -17,17 +17,17 @@
 //! Lives at `crates/game-core/tests/` alongside `forced_triggers.rs` /
 //! `native_effect.rs`, whose idiom it follows.
 
-use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
+use card_dsl::card_data::{CardKind, CardMetadata};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_data::{CardKind, CardMetadata};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Continuation, GameState, InvestigatorId, LocationId,
-    Status,
+    CardCode, CardInPlay, CardInstanceId, Continuation, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Status,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 use game_core::{assert_event, assert_no_event};
 
 /// A player-owned **weakness** in the threat area carrying a `GameEnd` forced
@@ -73,10 +73,10 @@ fn metadata(code: &'static str, weakness: bool) -> CardMetadata {
 
 /// The `GameEnd` forced every mock card here prints, in `cell`.
 fn game_end_trauma(cell: EventTiming) -> Vec<Ability> {
-    vec![forced_on_event(
+    vec![dsl::forced_on_event(
         EventPattern::GameEnd,
         cell,
-        native(TRAUMA_TAG),
+        dsl::native(TRAUMA_TAG),
     )]
 }
 

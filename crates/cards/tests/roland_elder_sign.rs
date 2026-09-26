@@ -13,10 +13,10 @@ use game_core::card_registry;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, InvestigatorId, LocationId, Phase,
-    SkillKind, TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId,
+    LocationId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
+use game_core::test_support::{self, ScriptedResolver};
 
 const ROLAND: &str = "01001";
 const COVER_UP: &str = "01007";

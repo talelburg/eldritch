@@ -6,12 +6,13 @@
 //! fake `0/N`. Both cards glow + open a context menu when the live prompt anchors
 //! an option to them (`OptionTarget::Act`/`Agenda`); inert otherwise.
 
+use game_core::card_registry;
 use game_core::engine::OptionTarget;
 use game_core::state::{Act, AdvanceDeck, AdvanceStep, Agenda, CardCode, Continuation, GameState};
 use leptos::prelude::*;
 
-use crate::card::{parse_card_text, render_segments};
 use crate::interaction::{self, PendingOptions};
+use crate::{card, controls};
 
 /// Which face of an act/agenda to show. During an advance the card flips from its
 /// front to its reverse (the "1b" side that carries the on-advance effect) once
@@ -51,7 +52,7 @@ pub(crate) fn deck_face(game: &GameState, deck: AdvanceDeck) -> Face {
 /// same face the board is showing (ADR 0015) — the front/reverse choice is
 /// computed once, here, rather than re-derived per surface.
 pub(crate) fn name_and_text_src(code: &CardCode, face: Face) -> (String, Option<String>) {
-    let meta = game_core::card_registry::current().and_then(|r| (r.metadata_for)(code));
+    let meta = card_registry::current().and_then(|r| (r.metadata_for)(code));
     let (name_src, text_src) = match face {
         Face::Front => (
             meta.map(|m| m.name.clone()),
@@ -69,7 +70,10 @@ pub(crate) fn name_and_text_src(code: &CardCode, face: Face) -> (String, Option<
 /// [`name_and_text_src`] with the text rendered to views, for the card itself.
 fn name_and_text(code: &CardCode, face: Face) -> (String, Option<Vec<AnyView>>) {
     let (name, text) = name_and_text_src(code, face);
-    (name, text.map(|t| render_segments(parse_card_text(&t))))
+    (
+        name,
+        text.map(|t| card::render_segments(card::parse_card_text(&t))),
+    )
 }
 
 /// The current act as a card. Glows and opens an "Advance act" context menu when
@@ -196,6 +200,6 @@ pub fn act_agenda_view(game: &GameState) -> impl IntoView {
     // The encounter deck sits beside the act and agenda: it is scenario-level,
     // not per-investigator, and the Mythos draw is an act on the board rather
     // than a "Confirm" with no referent (#541).
-    let encounter = crate::controls::encounter_deck_view(game);
+    let encounter = controls::encounter_deck_view(game);
     view! { <section class="act-agenda">{act}{agenda}{encounter}</section> }
 }

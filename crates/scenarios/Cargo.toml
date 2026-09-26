@@ -11,6 +11,7 @@ description = "Eldritch scenario modules and campaign orchestrators."
 workspace = true
 
 [dependencies]
+card-dsl = { path = "../card-dsl" }
 game-core = { path = "../game-core" }
 cards = { path = "../cards" }
 
