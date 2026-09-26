@@ -1,21 +1,11 @@
 use super::*;
 
-mod act_agenda_code;
-mod action_resolution_frame;
-mod add_location;
-mod connect;
 mod continuation_stack;
-mod effect_frame;
-mod emit_step;
 mod encounter_deck;
-mod encounter_draw;
 mod enemy_attack_loop;
 mod fast_actor_scope;
-mod hand_size_discard;
 mod hunter_pending;
 mod id_counter;
-mod location_id_counter;
+mod locations;
 mod open_window;
-mod partial_eq;
-mod scenario_end_cancellation;
-mod starting_location;
+mod other;

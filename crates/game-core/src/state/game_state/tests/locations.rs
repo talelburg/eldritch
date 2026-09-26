@@ -1,6 +1,7 @@
 use card_dsl::card_data::{CardKind, CardMetadata, ClueValue, Prey};
 
-use crate::state::{CardCode, GameStateBuilder};
+use super::*;
+use crate::state::{CardCode, GameStateBuilder, Location, LocationId};
 
 fn location_meta(code: &str, name: &str, shroud: u8, clues: u8) -> CardMetadata {
     CardMetadata {
@@ -111,4 +112,61 @@ fn add_location_panics_on_non_location_metadata() {
         },
     };
     state.add_location(&meta);
+}
+
+#[test]
+fn connect_wires_both_directions() {
+    let mut state = GameStateBuilder::new()
+        .with_location(Location::new(
+            LocationId(1),
+            CardCode("a".into()),
+            "A",
+            1,
+            0,
+        ))
+        .with_location(Location::new(
+            LocationId(2),
+            CardCode("b".into()),
+            "B",
+            1,
+            0,
+        ))
+        .build();
+    state.connect(LocationId(1), LocationId(2));
+    assert_eq!(
+        state.locations[&LocationId(1)].connections,
+        vec![LocationId(2)]
+    );
+    assert_eq!(
+        state.locations[&LocationId(2)].connections,
+        vec![LocationId(1)]
+    );
+}
+
+#[test]
+#[should_panic(expected = "connect: location LocationId(2) not found")]
+fn connect_panics_on_a_location_that_is_not_in_play() {
+    // A set-aside card has no `LocationId` at all now, so `connect` has
+    // one zone to search. Layout wiring happens at entry instead.
+    let mut state = GameStateBuilder::new()
+        .with_location(Location::new(
+            LocationId(1),
+            CardCode("a".into()),
+            "A",
+            1,
+            0,
+        ))
+        .build();
+    state.connect(LocationId(2), LocationId(1));
+}
+
+#[test]
+fn game_state_starting_location_defaults_to_none_and_roundtrips() {
+    let mut state = GameStateBuilder::new().build();
+    assert_eq!(state.starting_location, None, "default must be None");
+
+    state.starting_location = Some(LocationId(7));
+    let json = serde_json::to_string(&state).expect("serialize");
+    let back: GameState = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(back.starting_location, Some(LocationId(7)));
 }

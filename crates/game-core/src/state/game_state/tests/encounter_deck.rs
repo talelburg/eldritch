@@ -24,3 +24,9 @@ fn fresh_state_has_empty_encounter_deck_and_discard() {
     assert!(state.encounter_deck.is_empty());
     assert!(state.encounter_discard.is_empty());
 }
+
+#[test]
+fn game_state_default_has_no_encounter_draw_pending() {
+    let state = GameStateBuilder::new().build();
+    assert_eq!(state.current_encounter_drawer(), None);
+}

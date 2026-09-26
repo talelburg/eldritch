@@ -1,5 +1,9 @@
+use card_dsl::dsl::Effect;
+
 use super::*;
-use crate::state::GameStateBuilder;
+use crate::engine::evaluator::EvalContext;
+use crate::engine::TimingEvent;
+use crate::state::{Continuation, EffectFrame, EmitStep, GameStateBuilder, InvestigatorId};
 
 #[test]
 fn awaits_input_gates_suspensions_but_not_anchors_or_fast_windows() {
@@ -153,4 +157,138 @@ fn open_window_lives_on_the_continuation_stack_as_a_fast_window() {
             ..
         }
     ));
+}
+
+#[test]
+fn action_resolution_frame_never_awaits_input_and_is_not_a_phase_anchor() {
+    let f = Continuation::ActionResolution {
+        investigator: InvestigatorId(1),
+        resume: ActionResume::Resource,
+    };
+    assert!(
+        !f.awaits_input(),
+        "a mid-action frame is internal, never a prompt"
+    );
+    assert!(
+        !f.is_phase_anchor(),
+        "a mid-action frame is not a phase anchor"
+    );
+}
+
+#[test]
+fn current_hand_size_discard_reads_the_frame() {
+    // No frame → None.
+    assert_eq!(
+        GameStateBuilder::new().build().current_hand_size_discard(),
+        None
+    );
+    // Top HandSizeDiscard frame → its first remaining investigator.
+    let mut state = GameStateBuilder::new().build();
+    state
+        .continuations
+        .push(Continuation::HandSizeDiscard(HandSizeDiscard {
+            remaining: vec![InvestigatorId(2), InvestigatorId(3)],
+        }));
+    assert_eq!(state.current_hand_size_discard(), Some(InvestigatorId(2)));
+}
+
+#[test]
+fn effect_frame_variant_roundtrips_serde() {
+    let frame = Continuation::Effect(EffectFrame::Seq {
+        effects: vec![Effect::Seq(vec![])],
+        next: 0,
+        ctx: EvalContext::for_controller(InvestigatorId(1)),
+    });
+    let json = serde_json::to_string(&frame).expect("serialize");
+    let back: Continuation = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(frame, back);
+}
+
+#[test]
+fn emit_step_walks_the_sequence_with_the_resolve_step_between_when_and_at() {
+    let mut step = EmitStep::When;
+    let mut walk = vec![step];
+    while let Some(next) = step.next() {
+        step = next;
+        walk.push(step);
+    }
+    assert_eq!(
+        walk,
+        vec![
+            EmitStep::When,
+            EmitStep::ResolveCondition,
+            EmitStep::At,
+            EmitStep::After
+        ],
+        "the condition resolves between the `when` and `at` cells (RR Nested Sequences)"
+    );
+    assert!(
+        EmitStep::ResolveCondition.cell().is_none(),
+        "the resolve step scans no cell — it resolves the condition"
+    );
+}
+
+#[test]
+fn emit_event_frame_roundtrips_serde() {
+    let frame = Continuation::EmitEvent {
+        event: TimingEvent::RoundEnded,
+        step: EmitStep::ResolveCondition,
+    };
+    let json = serde_json::to_string(&frame).expect("serialize");
+    let back: Continuation = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(frame, back);
+}
+
+#[test]
+fn hand_size_discard_serde_roundtrip() {
+    let original = HandSizeDiscard {
+        remaining: vec![InvestigatorId(1), InvestigatorId(2)],
+    };
+    let json = serde_json::to_string(&original).expect("serialize");
+    let back: HandSizeDiscard = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(back, original);
+}
+
+/// The one variant whose bucket splits on a field rather than on the
+/// variant: a reaction window is an *opportunity* the ended scenario
+/// cancels, while the forced run at the same timing point is *mandatory
+/// resolution* that completes (ADR 0004). They are the two halves of one
+/// `queue_event`, so a `matches!` on the variant alone would get one wrong.
+#[test]
+fn a_reaction_window_is_cancelled_but_its_forced_run_twin_completes() {
+    let window = |mode| Continuation::TimingPointWindow {
+        event: TimingEvent::GameEnd,
+        bucket: EventTiming::After,
+        mode,
+        candidates: Vec::new(),
+    };
+    assert!(
+        window(TimingMode::Reaction).cancelled_by_scenario_end(),
+        "a reaction window must not open once the scenario has ended"
+    );
+    assert!(
+        !window(TimingMode::Forced).cancelled_by_scenario_end(),
+        "the forced ordering run carries mandatory abilities and completes"
+    );
+}
+
+#[test]
+fn the_ending_frame_is_inert_and_survives_its_own_cancellation_pass() {
+    let f = Continuation::ScenarioEnd {
+        step: ScenarioEndStep::EmitGameEnd,
+    };
+    assert!(
+        !f.cancelled_by_scenario_end(),
+        "the ending frame must not cancel itself"
+    );
+    assert!(
+        !f.awaits_input(),
+        "the acknowledge above the ending is the prompt, not the ending"
+    );
+    assert!(!f.is_phase_anchor());
+    assert!(
+        !f.is_queued_ability(),
+        "the ending frame legitimately sits beneath a phase anchor until the \
+         anchor is cancelled, so the #569 backstop must not flag it"
+    );
 }

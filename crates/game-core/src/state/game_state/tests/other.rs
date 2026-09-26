@@ -13,3 +13,9 @@ fn act_and_agenda_carry_card_code() {
     assert_eq!(act.code, CardCode("01108".into()));
     assert_eq!(agenda.code, CardCode("01105".into()));
 }
+
+#[test]
+fn game_state_is_partial_eq() {
+    fn assert_partial_eq<T: PartialEq>() {}
+    assert_partial_eq::<GameState>();
+}
