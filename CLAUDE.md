@@ -41,7 +41,8 @@ Don't skip the script and run `cargo test` by hand: it passes even when `doc`/`c
 The underlying invocations, if you need to run one directly:
 
 ```sh
-# Match CI's strict flags
+# Match CI's strict flags. The script also sets CARGO_PROFILE_DEV_DEBUG=0 (as CI does)
+# and CARGO_TARGET_DIR=target/ci-local, so its RUSTFLAGS don't invalidate the dev build cache.
 RUSTFLAGS="-D warnings"     cargo test --all --all-features
                             cargo clippy --all-targets --all-features -- -D warnings
                             cargo fmt --all -- --check

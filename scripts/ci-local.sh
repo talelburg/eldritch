@@ -22,8 +22,8 @@
 # both reported at the end of a run rather than left implicit:
 #
 #   * `trunk` and `wasm-pack` are pinned in CI (trunk@0.21.14, wasm-pack@0.15.0)
-#     but taken from $PATH here, so a local pass is only as good as your
-#     installed versions.
+#     but taken from $PATH here, so under --all a local pass is only as good
+#     as your installed versions.
 #   * `classify` is not a CI job. It is a subset of `test`, offered on its own
 #     for snapshot-only changes where the rest of `test` cannot be affected.
 #
@@ -37,7 +37,9 @@
 #
 # so a `game-core` change can redden a wasm job even though it touched no file
 # under `crates/web/`. Gating the wasm jobs on "did the diff touch crates/web?"
-# would skip them on exactly the changes most likely to break them.
+# would skip them on exactly the changes most likely to break them. The mapping
+# still selects all three; the CI-only two are then set aside for CI rather than
+# run, and the plan names them so the skip is visible.
 #
 # Scoping is at job granularity only. Narrowing `cargo test --all` to
 # `-p <crate>` is deliberately not done: a `game-core` change breaking `cards`'
@@ -71,7 +73,8 @@ export CARGO_TARGET_DIR="$ROOT/target/ci-local"
 
 # The seven CI jobs, in the order the workflow lists them. Single source of
 # truth: the --all plan and the end-of-run "not run locally" summary both read
-# this, so adding an eighth job means touching this list and `run_job` only.
+# this, so adding an eighth job means touching this list and `run_job` only
+# (and CI_ONLY_JOBS, if it should not run by default).
 ALL_JOBS=(fmt clippy test doc wasm-build wasm-test wasm-clippy)
 
 # Run only under --all; otherwise left to CI (see the header).
@@ -129,6 +132,7 @@ diff_touches() { grep -qE "$1" <<<"$CHANGED"; }
 # ----------------------------------------------------------------- job selection
 
 declare -a PLAN=()
+declare -a DEFERRED=()
 declare -A WHY=()
 select_job() { PLAN+=("$1"); WHY["$1"]="$2"; }
 planned() { [[ " ${PLAN[*]} " == *" $1 "* ]]; }
@@ -159,9 +163,10 @@ else
     select_job doc "rust sources or manifests changed"
   fi
 
-  # web + protocol are what the wasm bundle is built from directly. wasm-build
-  # and wasm-test would be implicated here too; they are CI_ONLY_JOBS.
+  # web + protocol are what the wasm bundle is built from directly.
   if diff_touches '^crates/(web|protocol)/'; then
+    select_job wasm-build  "crates/web or crates/protocol changed"
+    select_job wasm-test   "crates/web or crates/protocol changed"
     select_job wasm-clippy "crates/web or crates/protocol changed"
   elif diff_touches '^crates/(game-core|cards|card-dsl)/'; then
     # Upstream of web, so a wasm build can still break — but the cheap job is
@@ -178,15 +183,26 @@ else
   if diff_touches '^data/' && ! planned test; then
     select_job classify "data/ changed"
   fi
+
+  # Whatever the mapping implicated among CI_ONLY_JOBS is set aside for CI.
+  declare -a KEPT=()
+  for j in "${PLAN[@]}"; do
+    if [[ " ${CI_ONLY_JOBS[*]} " == *" $j "* ]]; then
+      DEFERRED+=("$j")
+    else
+      KEPT+=("$j")
+    fi
+  done
+  PLAN=("${KEPT[@]}")
 fi
 
 echo "base:    $BASE ($(git rev-parse --short "$MERGE_BASE"))"
 echo "changed: $(wc -l <<<"$CHANGED") file(s)"
 echo "plan:"
 for j in "${PLAN[@]}"; do printf '  %-12s %s\n' "$j" "${WHY[$j]}"; done
-if [ "$FORCE_ALL" -eq 0 ]; then
-  echo "ci-only: ${CI_ONLY_JOBS[*]} (push to the PR to run them, or pass --all)"
-fi
+for j in "${DEFERRED[@]}"; do
+  printf '  %-12s %s\n' "$j" "CI only: ${WHY[$j]} (push to the PR, or pass --all)"
+done
 echo
 
 if [ "$LIST_ONLY" -eq 1 ]; then
