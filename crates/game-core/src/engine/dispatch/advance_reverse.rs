@@ -178,8 +178,7 @@ pub(super) fn resume(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::dispatch;
-    use crate::engine::InputKind;
+    use crate::engine::{dispatch, InputKind};
     use crate::scenario::{ResolutionId, ScenarioEnding};
     use crate::state::{
         Act, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, CardCode, Continuation, GameState,

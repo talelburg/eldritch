@@ -64,6 +64,8 @@ pub fn current() -> Option<&'static ScenarioRegistry> {
 
 #[cfg(test)]
 mod tests {
+    use std::ptr;
+
     use super::*;
     use crate::event::Event;
     use crate::scenario::{ScenarioEnding, ScenarioId, ScenarioModule};
@@ -101,7 +103,7 @@ mod tests {
         let reg = fake_registry();
         let id = ScenarioId::new("fake");
         let module = (reg.module_for)(&id).expect("known id should resolve");
-        assert!(std::ptr::eq(module, std::ptr::addr_of!(FAKE_MODULE)));
+        assert!(ptr::eq(module, ptr::addr_of!(FAKE_MODULE)));
     }
 
     #[test]

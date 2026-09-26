@@ -28,6 +28,8 @@
 //! already been advanced, so re-dispatch makes progress (never re-scans the same
 //! cell into a loop).
 
+use std::mem;
+
 use card_dsl::dsl::EventTiming;
 
 use crate::engine::dispatch::emit::ConditionResolution;
@@ -270,7 +272,7 @@ fn advance_or_finish_emit(cx: &mut Cx) {
 /// caller-owned condition is untouched: its `when` cell is never walked, so it
 /// has no interrupt of its own to have set the signal.
 fn prevented_in_the_when_cell(cx: &mut Cx) -> bool {
-    std::mem::take(&mut cx.state.pending_cancellation)
+    mem::take(&mut cx.state.pending_cancellation)
 }
 
 /// Pop the [`Continuation::EmitEvent`] coordinator on top **without** walking

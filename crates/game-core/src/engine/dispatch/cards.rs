@@ -1,6 +1,8 @@
 //! Card-related dispatch handlers: deck management, drawing, mulligan,
 //! resource grants, and card play.
 
+use std::cmp;
+
 use card_dsl::card_data::{CardMetadata, CardType};
 use card_dsl::dsl::{Ability, Effect, Trigger};
 
@@ -315,7 +317,7 @@ fn move_deck_top_to_hand(cx: &mut Cx, investigator: InvestigatorId, count: u8) -
              this is a state-corruption invariant violation"
             )
         });
-    let drawn = std::cmp::min(count as usize, inv.deck.len());
+    let drawn = cmp::min(count as usize, inv.deck.len());
     // Cards are drawn from the deck front (top). Splice out the first
     // `drawn` cards in order and append to hand.
     let drawn_cards: Vec<_> = inv.deck.drain(..drawn).collect();

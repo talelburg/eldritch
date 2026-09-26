@@ -23,6 +23,8 @@
 //! synthetic ability gains a distinct number of resources, and `DamageTaken` /
 //! `HorrorTaken` mark the condition's own resolution.
 
+use std::mem;
+
 use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
@@ -165,7 +167,7 @@ struct Run {
 /// assertion about how many cells opened.
 fn end_turn_answering(state: GameState, picks: &[InputResponse]) -> Run {
     let mut result = test_support::take_turn_action(state, &TurnAction::EndTurn);
-    let mut events = std::mem::take(&mut result.events);
+    let mut events = mem::take(&mut result.events);
     for pick in picks {
         assert!(
             matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
@@ -178,7 +180,7 @@ fn end_turn_answering(state: GameState, picks: &[InputResponse]) -> Run {
                 response: pick.clone(),
             }),
         );
-        events.extend(std::mem::take(&mut result.events));
+        events.extend(mem::take(&mut result.events));
     }
     Run {
         state: result.state,

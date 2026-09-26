@@ -1859,8 +1859,7 @@ mod tests {
     use card_dsl::dsl;
 
     use super::*;
-    use crate::engine::dispatch;
-    use crate::engine::InputKind;
+    use crate::engine::{dispatch, InputKind};
     use crate::event::Event;
     use crate::scenario::TokenEffect;
     use crate::state::{

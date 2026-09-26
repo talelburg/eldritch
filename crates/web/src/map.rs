@@ -5,12 +5,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use card_dsl::card_data::CardKind;
+use game_core::card_registry;
 use game_core::engine::{ChoiceOption, OptionTarget};
 use game_core::state::{CardCode, CardInPlay, GameState, Location, LocationId};
 use leptos::prelude::*;
 
 use crate::interaction::{self, PendingOptions};
-use crate::names;
+use crate::{card, names};
 
 /// Authored grid cell `(col, row)` for a known location code — the layout the
 /// client ships for scenarios it knows. The Gathering: the Study sits isolated
@@ -362,7 +363,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
             let meta = loc
                 .revealed
                 .then(|| {
-                    game_core::card_registry::current().and_then(|r| (r.metadata_for)(&loc.code))
+                    card_registry::current().and_then(|r| (r.metadata_for)(&loc.code))
                 })
                 .flatten();
             let traits = meta
@@ -376,7 +377,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
                 .unwrap_or_default();
             let text_view = meta
                 .and_then(|m| m.text.as_deref())
-                .map(|t| crate::card::render_segments(crate::card::parse_card_text(t)));
+                .map(|t| card::render_segments(card::parse_card_text(t)));
             let victory_pip = meta
                 .and_then(|m| match &m.kind {
                     CardKind::Location { victory, .. } => *victory,

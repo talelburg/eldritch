@@ -1,6 +1,8 @@
 //! Investigator elimination helpers: defeat application, elimination
 //! steps, horror application, and no-remaining-players detection.
 
+use std::mem;
+
 use crate::card_registry;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::forced_triggers::ForcedTriggerPoint;
@@ -330,7 +332,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // field of `inv` at a time (mutating `inv.removed_from_game` directly
     // while borrowing `inv.hand` etc. would double-borrow `inv` — rejected
     // by the borrow checker).
-    let mut removed = std::mem::take(&mut inv.removed_from_game);
+    let mut removed = mem::take(&mut inv.removed_from_game);
     removed.extend(in_limbo);
     // *"The cards he or she **controls** in play … are removed from the game"* —
     // so every card in the play area leaves it, whoever owns it. **Which pile it
@@ -349,7 +351,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // the rest stay for step 4. No registry installed (engine-only tests with
     // synthetic threat-area cards) ⇒ not a weakness ⇒ step 4.
     let (owned, scenario_owned): (Vec<CardInPlay>, Vec<CardInPlay>) =
-        std::mem::take(&mut inv.threat_area)
+        mem::take(&mut inv.threat_area)
             .into_iter()
             .partition(weakness_in_threat_area);
     inv.threat_area = scenario_owned;

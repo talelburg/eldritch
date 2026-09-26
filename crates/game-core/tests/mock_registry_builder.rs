@@ -11,6 +11,8 @@
 //! The probe cards below are local to this file, per ADR 0016 — the builder
 //! ships no named ones.
 
+use std::ptr;
+
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Ability, ModifierScope, Stat};
 use game_core::card_registry::{self, NativeEffectFn};
@@ -157,7 +159,7 @@ fn front_and_back_abilities_are_separate_slots() {
 fn native_tags_dispatch_per_slot() {
     let served = (registry().native_effect_for)(EFFECT_TAG).expect("the tag is registered");
     assert!(
-        std::ptr::fn_addr_eq(served, probe_effect as NativeEffectFn),
+        ptr::fn_addr_eq(served, probe_effect as NativeEffectFn),
         "the registered effect itself comes back, not merely some effect"
     );
     assert!((registry().native_eligibility_for)(EFFECT_TAG).is_none());

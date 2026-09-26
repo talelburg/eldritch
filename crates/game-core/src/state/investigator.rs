@@ -1,6 +1,7 @@
 //! Investigators: the players' avatars in the game.
 
 use std::collections::BTreeSet;
+use std::iter;
 
 use card_dsl::card_data::CardKind;
 use serde::{Deserialize, Serialize};
@@ -156,7 +157,7 @@ impl Investigator {
     /// drain, discard-all, soak `build_soakers`) keep iterating
     /// `cards_in_play` directly and never touch it.
     pub fn controlled_card_instances(&self) -> impl Iterator<Item = &CardInPlay> {
-        std::iter::once(&self.investigator_card)
+        iter::once(&self.investigator_card)
             .chain(self.cards_in_play.iter())
             .chain(self.threat_area.iter())
     }
@@ -172,7 +173,7 @@ impl Investigator {
         &mut self,
         instance_id: CardInstanceId,
     ) -> Option<&mut CardInPlay> {
-        std::iter::once(&mut self.investigator_card)
+        iter::once(&mut self.investigator_card)
             .chain(self.cards_in_play.iter_mut())
             .chain(self.threat_area.iter_mut())
             .find(|card| card.instance_id == instance_id)

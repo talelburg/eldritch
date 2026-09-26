@@ -6,6 +6,8 @@
 //! were first proved by the C5a synthetic fixture; that fixture's test binary is
 //! gone (#871, ADR 0016) and this file is its successor.
 
+use std::mem;
+
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
@@ -567,7 +569,7 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
     }];
 
     let mut result = advance_terminal_act_interactively(state);
-    let mut events = std::mem::take(&mut result.events);
+    let mut events = mem::take(&mut result.events);
     let mut state = result.state;
 
     // Two hits, so the emit routes to the lead-ordered forced run rather than

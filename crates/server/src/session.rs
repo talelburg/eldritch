@@ -14,11 +14,12 @@ use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
 use game_core::rng::RngState;
 use game_core::scenario::ScenarioId;
+use game_core::scenario_registry;
 use game_core::state::GameState;
 use sqlx::SqlitePool;
 
 use crate::id::GameId;
-use crate::store;
+use crate::{id, store};
 
 /// Errors from [`GameSession`] persistence operations.
 #[derive(Debug, thiserror::Error)]
@@ -102,7 +103,7 @@ impl GameSession {
         scenario_id: ScenarioId,
         roster: Vec<RosterEntry>,
     ) -> Result<Self, SessionError> {
-        let module = game_core::scenario_registry::current()
+        let module = scenario_registry::current()
             .and_then(|registry| (registry.module_for)(&scenario_id))
             .ok_or_else(|| SessionError::UnknownScenario(scenario_id.clone()))?;
 
@@ -114,7 +115,7 @@ impl GameSession {
         // the resulting post-shuffle RngState is frozen into seed_state, so replay
         // stays deterministic from the seed alone (the seed needs no separate
         // recording).
-        setup.rng = RngState::new(crate::id::random_seed());
+        setup.rng = RngState::new(id::random_seed());
         // Human play surfaces skill-test results with a Confirm-to-dismiss step
         // (#478); the engine gates that pause on this flag (default off for tests
         // and non-interactive consumers). The flag persists through seating.

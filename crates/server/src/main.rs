@@ -1,6 +1,7 @@
 //! Eldritch server binary: opens the `SQLite` action-log database, applies
 //! migrations, and serves the HTTP/WS router.
 
+use std::env;
 use std::error::Error;
 use std::net::SocketAddr;
 
@@ -18,7 +19,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     server::install_registries();
 
     let database_url =
-        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:eldritch.db".to_string());
+        env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:eldritch.db".to_string());
     let pool = db::connect_pool(&database_url).await?;
     MIGRATOR.run(&pool).await?;
     tracing::info!("database ready at {database_url}");

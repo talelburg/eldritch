@@ -10,6 +10,7 @@
 //! [`any_fast_play_eligible`], [`open_fast_window`]).
 
 use std::borrow::Cow;
+use std::iter;
 
 use card_dsl::card_data::{CardMetadata, CardType};
 use card_dsl::dsl::{
@@ -1375,7 +1376,7 @@ fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
             // Search the investigator card first, then cards in play, then the
             // threat area — the same zones `controlled_card_instances()` scans,
             // so an investigator-card reaction (Roland Banks) resolves here.
-            let card = std::iter::once(&mut inv.investigator_card)
+            let card = iter::once(&mut inv.investigator_card)
                 .chain(inv.cards_in_play.iter_mut())
                 .chain(inv.threat_area.iter_mut())
                 .find(|c| c.instance_id == instance_id)

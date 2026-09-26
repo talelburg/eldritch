@@ -1,6 +1,7 @@
 //! Top-level game state.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::mem;
 
 use card_dsl::card_data::{CardKind, CardMetadata, SkillKind};
 use card_dsl::dsl::{
@@ -1497,7 +1498,7 @@ impl Continuation {
     pub fn take_committed_cards(&mut self, investigator: InvestigatorId) -> Vec<CardCode> {
         match self {
             Continuation::SkillTest(t) if t.investigator == investigator => {
-                std::mem::take(&mut t.committed_by_active)
+                mem::take(&mut t.committed_by_active)
             }
             _ => Vec::new(),
         }

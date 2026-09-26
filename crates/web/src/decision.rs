@@ -22,6 +22,7 @@ use game_core::state::{AdvanceDeck, GameState, Investigator};
 use leptos::prelude::*;
 
 use crate::act_agenda::{deck_face, name_and_text_src, Face};
+use crate::card;
 #[cfg(target_arch = "wasm32")]
 use crate::controls;
 use crate::drag::Drag;
@@ -161,7 +162,7 @@ pub fn DecisionView() -> impl IntoView {
             let source = decision.source.map(|s| {
                 let text = s
                     .text
-                    .map(|t| crate::card::render_segments(crate::card::parse_card_text(&t)));
+                    .map(|t| card::render_segments(card::parse_card_text(&t)));
                 view! {
                     <div class="decision-source">{s.name}</div>
                     <div class="decision-printed card-text">{text}</div>

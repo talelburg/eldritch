@@ -2,6 +2,7 @@
 //! advancement, clue spending, and act advancement.
 
 use std::borrow::Cow;
+use std::iter;
 
 use card_dsl::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
 
@@ -114,7 +115,7 @@ pub(super) fn advance_agenda(cx: &mut Cx) {
 /// check and [`spend_clues`] so the validation domain and the spend domain
 /// can never diverge.
 fn clue_contributors(state: &GameState, acting: InvestigatorId) -> Vec<InvestigatorId> {
-    std::iter::once(acting)
+    iter::once(acting)
         .chain(state.turn_order.iter().copied().filter(|id| *id != acting))
         .collect()
 }

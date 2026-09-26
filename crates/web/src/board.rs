@@ -11,6 +11,7 @@ use crate::card::{HandCardView, InPlayCardView};
 use crate::controls::{AnchoredControl, PlayerDeckView};
 use crate::enemy_card::EnemyCard;
 use crate::store::use_store;
+use crate::{act_agenda, map};
 
 /// Read-only board. Always renders a status line (connection status +
 /// last rejection); renders the panels when a game is present, else a
@@ -24,9 +25,9 @@ pub fn BoardView() -> impl IntoView {
         Some(game) => view! {
             <div class="game">
                 {resolution_banner(&game)}
-                {crate::act_agenda::act_agenda_view(&game)}
+                {act_agenda::act_agenda_view(&game)}
                 <div class="board-main">
-                    {crate::map::location_map(&game)}
+                    {map::location_map(&game)}
                     {investigators_panel(&game)}
                 </div>
             </div>

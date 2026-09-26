@@ -1,5 +1,7 @@
 //! Encounter-deck draw, spawn, and Mythos draw chain handlers.
 
+use std::mem;
+
 use card_dsl::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, SpawnLocation};
 use card_dsl::dsl::{Ability, Effect, Trigger};
 
@@ -801,7 +803,7 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
     else {
         unreachable!("advance_encounter_draw: EncounterDraw must be the top frame")
     };
-    let mut queue = std::mem::take(remaining);
+    let mut queue = mem::take(remaining);
     queue.remove(0); // drop the finished drawer
     while let Some(&next) = queue.first() {
         if cx
