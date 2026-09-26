@@ -10,8 +10,8 @@
 //!
 //! [`drive`] runs an action through the engine and drains any
 //! `AwaitingInput` outcomes through the resolver until the engine
-//! returns [`Done`](crate::EngineOutcome::Done) or
-//! [`Rejected`](crate::EngineOutcome::Rejected). [`TestSession`] is the
+//! returns [`Done`](crate::engine::EngineOutcome::Done) or
+//! [`Rejected`](crate::engine::EngineOutcome::Rejected). [`TestSession`] is the
 //! fluent wrapper that pairs a [`GameState`] with a resolver script.
 //!
 //! # Engine consumers
@@ -30,7 +30,7 @@
 //! ```
 //! use game_core::action::{Action, InputResponse, PlayerAction};
 //! use game_core::engine::EngineOutcome;
-//! use game_core::test_support::GameStateBuilder;
+//! use game_core::state::GameStateBuilder;
 //!
 //! // A `ResolveInput` against a bare state with no outstanding prompt
 //! // rejects — a tiny smoke test for the fluent API without needing a
@@ -271,7 +271,7 @@ fn resolve_commit_codes(codes: &[CardCode], state: &GameState, prompt: &str) -> 
 /// enumerated in (investigator, hand-index / ability-index) order — so
 /// Hyperawareness 01034's intellect ability is 0 and its agility ability 1.
 ///
-/// It exists because a [`ThisSkillTest`](crate::dsl::ModifierScope::ThisSkillTest)
+/// It exists because a [`ThisSkillTest`](card_dsl::dsl::ModifierScope::ThisSkillTest)
 /// modifier can only be bought from *inside* a test (#676), and a test's ST.1
 /// player window is where a `[fast]` ability is offered.
 #[derive(Debug, Clone, Copy)]
@@ -650,7 +650,7 @@ pub fn perform_skill_test(
 /// a scripted resolver, then [`run`](Self::run) the engine through to a
 /// terminal outcome.
 ///
-/// Construct via [`GameStateBuilder::session`](super::GameStateBuilder::session) or
+/// Construct via [`GameStateBuilder::session`](crate::state::GameStateBuilder::session) or
 /// [`TestSession::new`].
 #[derive(Debug)]
 #[must_use = "TestSession does nothing until you call .run()"]
@@ -716,7 +716,7 @@ impl TestSession {
     /// sequence:
     ///
     /// ```
-    /// # use game_core::test_support::GameStateBuilder;
+    /// # use game_core::state::GameStateBuilder;
     /// # use game_core::action::{Action, PlayerAction};
     /// let _session = GameStateBuilder::new()
     ///     .session()
@@ -745,9 +745,9 @@ impl TestSession {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use card_dsl::dsl::SkillTestKind;
 
-    use crate::dsl::SkillTestKind;
+    use super::*;
     use crate::engine::ResumeToken;
     use crate::event::Event;
     use crate::state::{ChaosBag, ChaosToken, InvestigationResume, Phase, SkillTestId};

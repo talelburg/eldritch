@@ -1,7 +1,9 @@
-//! Test-only support: fixtures, event-assertion macros, the
+//! Test-only support: fixtures, event-assertion macros, and the
 //! [`MockRegistry`] builder a test binary installs its mock card
-//! registry through, and a convenience re-export of the production
-//! [`GameStateBuilder`].
+//! registry through. The submodules are private and every public item is
+//! re-exported here, so `test_support::<item>` is the one spelling. The
+//! production [`GameStateBuilder`](crate::state::GameStateBuilder) is
+//! reached through `state`.
 //!
 //! The macros are exported at the crate root via `#[macro_export]`,
 //! so callers see [`assert_event!`](crate::assert_event) regardless
@@ -13,10 +15,11 @@
 
 use std::sync::OnceLock;
 
+use card_dsl::card_data::{CardKind, CardMetadata, Class, Skills};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, SkillTestKind, TestOutcome};
+
 use crate::action::{InputResponse, PlayerAction};
-use crate::card_data::{CardKind, CardMetadata, Class, Skills};
 use crate::card_registry::{self, CardRegistry};
-use crate::dsl::{self, Ability, EventPattern, EventTiming, SkillTestKind, TestOutcome};
 use crate::engine::{self, Cx, EngineOutcome, ForcedTriggerPoint, TimingEvent};
 use crate::event::Event;
 use crate::state::{
@@ -24,9 +27,9 @@ use crate::state::{
 };
 
 pub mod assertions;
-pub mod fixtures;
-pub mod mock_registry;
-pub mod resolver;
+mod fixtures;
+mod mock_registry;
+mod resolver;
 
 /// Synthetic investigator-card code for unit tests. Registered by
 /// [`install_test_registry`] with 8 health / 8 sanity (mirroring the legacy
@@ -200,10 +203,11 @@ pub fn install_test_registry() {
     });
 }
 
-pub use crate::state::GameStateBuilder;
 pub use fixtures::{
-    awaiting_commit_input, awaiting_pick_single_input, test_enemy, test_investigator,
-    test_location, test_skill_test,
+    awaiting_commit_input, awaiting_confirm_input, awaiting_pick_single_input,
+    awaiting_pick_single_with, awaiting_request, awaiting_skippable_commit_input,
+    awaiting_skippable_pick_single_input, awaiting_skippable_pick_single_with, test_enemy,
+    test_investigator, test_location, test_skill_test,
 };
 pub use mock_registry::MockRegistry;
 pub use resolver::{
@@ -418,7 +422,7 @@ pub fn fire_forced_on_enemy_attack(
 /// Fear 01164's *"**Forced** - At the end of your turn: …"* is
 /// [`EventTiming::At`], so a corpus test of the
 /// threat-area path wants that cell — the mock-registry callers here declare
-/// [`After`](crate::dsl::EventTiming::After) and pass it.
+/// [`After`](card_dsl::dsl::EventTiming::After) and pass it.
 pub fn fire_forced_at_end_of_turn(
     state: &mut GameState,
     events: &mut Vec<Event>,

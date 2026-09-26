@@ -48,11 +48,10 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
-use game_core::card_registry;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::state::{CardCode, GameState, InvestigatorId, Phase};
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, Phase};
+use game_core::{card_registry, test_support};
 
 /// Cover Up — the real Core Set weakness this file sets aside.
 const COVER_UP: &str = "01007";

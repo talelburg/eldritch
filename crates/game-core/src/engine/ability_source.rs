@@ -455,8 +455,8 @@ fn unreachable_reason(investigator: InvestigatorId, source: AbilitySource) -> Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{EnemyId, LocationId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{EnemyId, GameStateBuilder, LocationId};
+    use crate::test_support;
 
     const STUDY: LocationId = LocationId(1);
     const HALLWAY: LocationId = LocationId(2);

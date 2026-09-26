@@ -12,10 +12,10 @@ use game_core::action::{Action, EngineRecord};
 use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, InvestigatorId,
-    LocationId, Zone,
+    Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Zone,
 };
-use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
+use game_core::test_support::{self, ScriptedResolver};
 use game_core::{assert_event, assert_event_count, card_registry};
 
 #[ctor::ctor(unsafe)]

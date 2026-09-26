@@ -16,11 +16,10 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId,
-    LocationId, Phase,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder};
-use game_core::{assert_event, card_registry};
+use game_core::{assert_event, card_registry, test_support};
 
 const OLD_BOOK: &str = "01031";
 const INV: InvestigatorId = InvestigatorId(1);

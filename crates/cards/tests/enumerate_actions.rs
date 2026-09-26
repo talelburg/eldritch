@@ -6,15 +6,14 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::state::{
     AbilityAddress, AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
-    ChaosToken, Continuation, EnemyId, GameState, InvestigationResume, InvestigatorId, LocationId,
-    Phase, UseKind,
+    ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigationResume,
+    InvestigatorId, LocationId, Phase, UseKind,
 };
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::{card_registry, test_support};
 
 const HOLY_ROSARY: &str = "01059"; // Mystic asset, cost 2, constant +1 willpower.
 const FLASHLIGHT: &str = "01087"; // Asset with an activated ability (uses: Supplies).

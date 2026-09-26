@@ -12,8 +12,9 @@ use game_core::event::{Event, FailureReason};
 use game_core::state::{
     ChaosToken, GameState, GameStateBuilder, InvestigatorId, SkillKind, TokenResolution,
 };
-use game_core::test_support::fixtures;
+use game_core::test_support;
 use leptos::prelude::*;
+use leptos::task;
 use protocol::{ClientMessage, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -26,7 +27,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 
 fn base_game() -> GameState {
     GameStateBuilder::new()
-        .with_investigator(fixtures::test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .with_active_investigator(InvestigatorId(1))
         .build()
 }
@@ -35,7 +36,7 @@ fn base_game() -> GameState {
 /// (ADR 0011). The modal only renders while this is live, which is what
 /// guarantees its Confirm always has real engine input to submit.
 fn acknowledge_pause() -> EngineOutcome {
-    fixtures::awaiting_confirm_input("Acknowledge the skill-test result.")
+    test_support::awaiting_confirm_input("Acknowledge the skill-test result.")
 }
 
 fn last_section() -> Option<Element> {
@@ -73,7 +74,7 @@ async fn renders_token_total_and_outcome_after_resolution() {
             },
         );
     });
-    leptos::task::tick().await;
+    task::tick().await;
 
     // Batch 2: resolution — +1 token, succeeded by 2 (total 5).
     store.update(|s| {
@@ -96,7 +97,7 @@ async fn renders_token_total_and_outcome_after_resolution() {
             },
         );
     });
-    leptos::task::tick().await;
+    task::tick().await;
 
     let section = last_section().expect("the result modal renders after resolution");
     let text = section.text_content().unwrap_or_default();
@@ -138,7 +139,7 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
                     token: ChaosToken::Tablet,
                     resolution: TokenResolution::Modifier(-2),
                 }],
-                outcome: fixtures::awaiting_confirm_input("Assign the damage."),
+                outcome: test_support::awaiting_confirm_input("Assign the damage."),
             },
         );
         // Batch 3: the resumed test resolves. No reveal in this batch.
@@ -156,7 +157,7 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
             },
         );
     });
-    leptos::task::tick().await;
+    task::tick().await;
 
     let section = last_section().expect("the result modal renders after resolution");
     let token_line = section
@@ -189,7 +190,7 @@ async fn renders_nothing_before_any_resolution() {
     };
     let before = count();
     let (_store, _rx) = mount_modal();
-    leptos::task::tick().await;
+    task::tick().await;
     assert_eq!(
         count(),
         before,
@@ -245,7 +246,7 @@ async fn resolve_a_test(store: RwSignal<ClientState>, outcome: EngineOutcome) {
             },
         );
     });
-    leptos::task::tick().await;
+    task::tick().await;
 }
 
 #[wasm_bindgen_test]
@@ -259,7 +260,7 @@ async fn its_confirm_submits_the_acknowledge() {
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("the modal carries its own Confirm")
         .click();
-    leptos::task::tick().await;
+    task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
@@ -282,7 +283,7 @@ async fn the_backdrop_does_not_dismiss_it() {
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a scrim renders behind the modal")
         .click();
-    leptos::task::tick().await;
+    task::tick().await;
     assert!(rx.try_recv().is_err(), "a backdrop click submits nothing");
     assert!(
         last_section().is_some(),
@@ -327,7 +328,7 @@ async fn its_confirm_still_submits_after_the_modal_has_been_dragged() {
     let section = last_section().expect("the modal renders");
 
     drag(&section, (200, 200), (320, 140));
-    leptos::task::tick().await;
+    task::tick().await;
     assert!(
         style_of(&section).contains("calc(-50% + 120px)"),
         "the modal stays where it was put: {}",
@@ -340,7 +341,7 @@ async fn its_confirm_still_submits_after_the_modal_has_been_dragged() {
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("the modal carries its own Confirm")
         .click();
-    leptos::task::tick().await;
+    task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
@@ -372,7 +373,7 @@ async fn the_scrim_fades_once_the_modal_has_been_moved() {
     );
 
     drag(&section, (200, 200), (280, 200));
-    leptos::task::tick().await;
+    task::tick().await;
     let faded = style_of(&scrim);
     assert!(
         !faded.contains("0.45") && faded.contains("rgba(0, 0, 0, 0."),
@@ -393,7 +394,7 @@ async fn a_press_on_confirm_does_not_drag_the_modal() {
         .expect("the modal carries its own Confirm");
 
     drag(&confirm, (200, 200), (320, 140));
-    leptos::task::tick().await;
+    task::tick().await;
     let style = style_of(&section);
     assert!(
         style.contains("calc(-50% + 0px)"),
@@ -413,7 +414,7 @@ async fn a_newly_opened_modal_is_centred_again() {
     resolve_a_test(store, acknowledge_pause()).await;
     let section = last_section().expect("the modal renders");
     drag(&section, (200, 200), (320, 140));
-    leptos::task::tick().await;
+    task::tick().await;
     assert!(style_of(&section).contains("120px"), "moved first");
 
     resolve_a_test(store, acknowledge_pause()).await;

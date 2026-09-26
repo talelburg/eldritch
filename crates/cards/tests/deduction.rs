@@ -16,10 +16,10 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase, SkillKind,
-    TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, ScriptedResolver, TestSession};
+use game_core::test_support::{self, ScriptedResolver, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event, card_registry};
 
 const DEDUCTION: &str = "01039";

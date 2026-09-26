@@ -1,10 +1,13 @@
 //! Card-related dispatch handlers: deck management, drawing, mulligan,
 //! resource grants, and card play.
 
+use std::cmp;
+
+use card_dsl::card_data::{CardMetadata, CardType};
+use card_dsl::dsl::{Ability, Effect, Trigger};
+
 use crate::action::InputResponse;
-use crate::card_data::{CardMetadata, CardType};
 use crate::card_registry;
-use crate::dsl::{Ability, Effect, Trigger};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
     actions, combat, elimination, emit, encounter, phases, reaction_windows, slots, threat_area,
@@ -282,7 +285,7 @@ pub(in crate::engine) fn shuffle_player_deck(cx: &mut Cx, investigator: Investig
 /// — this helper is just the structural move; reshuffle / horror
 /// penalty logic for an empty deck lives in [`draw_with_deckout`],
 /// which every in-play draw (the Draw action, Upkeep step 4.4, and
-/// [`Effect::DrawCards`](crate::dsl::Effect::DrawCards)) goes through.
+/// [`Effect::DrawCards`](card_dsl::dsl::Effect::DrawCards)) goes through.
 /// Direct callers are the setup / mulligan paths, where the deck
 /// cannot empty and the deck-out rule does not apply.
 ///
@@ -314,7 +317,7 @@ fn move_deck_top_to_hand(cx: &mut Cx, investigator: InvestigatorId, count: u8) -
              this is a state-corruption invariant violation"
             )
         });
-    let drawn = std::cmp::min(count as usize, inv.deck.len());
+    let drawn = cmp::min(count as usize, inv.deck.len());
     // Cards are drawn from the deck front (top). Splice out the first
     // `drawn` cards in order and append to hand.
     let drawn_cards: Vec<_> = inv.deck.drain(..drawn).collect();
@@ -370,7 +373,7 @@ pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Op
 
 /// Take `instance_id` out of `investigator`'s `cards_in_play` and file it where
 /// its **owner** says. Shared by
-/// [`Cost::DiscardSelf`](crate::dsl::Cost::DiscardSelf) payment, uses-depletion
+/// [`Cost::DiscardSelf`](card_dsl::dsl::Cost::DiscardSelf) payment, uses-depletion
 /// auto-discard, soak-defeat asset removal, and slot make-room (#498/#119). A
 /// missing instance is a state-corruption invariant violation (callers locate it
 /// first).
@@ -381,7 +384,7 @@ pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Op
 /// in its owner's discard with [`Event::CardDiscarded`] `{ from: Zone::InPlay }`.
 /// A **scenario-owned** card (`owner: None`) has no discard pile to land in and
 /// is removed from the game instead, with
-/// [`Event::CardRemovedFromGame`](crate::Event::CardRemovedFromGame). Lita
+/// [`Event::CardRemovedFromGame`](crate::event::Event::CardRemovedFromGame). Lita
 /// Chantler 01117's ruling states the derivation
 /// (<https://arkhamdb.com/card/01117>): *"If Lita leaves play while a player
 /// controls her temporarily during 'The Gathering' scenario **(i.e. while she is
@@ -558,7 +561,7 @@ pub(super) fn draw_one_with_deckout(cx: &mut Cx, investigator: InvestigatorId) {
 /// no shuffle, but still the horror.
 ///
 /// Every in-play draw routes here: the `Draw` action, Upkeep step 4.4,
-/// and [`Effect::DrawCards`](crate::dsl::Effect::DrawCards) (Guts 01089
+/// and [`Effect::DrawCards`](card_dsl::dsl::Effect::DrawCards) (Guts 01089
 /// and the other three Core skills, #636). The setup / mulligan paths
 /// deliberately do not — they use [`draw_cards`].
 ///
@@ -944,13 +947,13 @@ pub(super) fn resolve_play_target(
 /// Validates the standard player-action prefix, looks up the card's
 /// metadata and abilities via the installed [`card_registry`], routes
 /// the card to its destination zone based on its
-/// [`CardType`](crate::card_data::CardType), and runs every
+/// [`CardType`](card_dsl::card_data::CardType), and runs every
 /// [`Trigger::OnPlay`] ability through the DSL evaluator.
 ///
 /// # Timing gate
 ///
-/// The gate branches on `is_fast` (from [`CardMetadata`](crate::card_data::CardMetadata))
-/// and [`CardType`](crate::card_data::CardType), per Rules Reference p. 11:
+/// The gate branches on `is_fast` (from [`CardMetadata`](card_dsl::card_data::CardMetadata))
+/// and [`CardType`](card_dsl::card_data::CardType), per Rules Reference p. 11:
 ///
 /// - **Non-Fast cards** (asset or event without the ⚡ icon): require
 ///   Investigation phase + the active investigator. The standard
@@ -1109,7 +1112,7 @@ pub(in crate::engine) fn enter_asset_into_play(
 ///
 /// The frame holds no card when something else already placed it: elimination's
 /// sweep removed it from the game (RR p.10 step 1), or
-/// [`Effect::AttachSelfToLocation`](crate::dsl::Effect::AttachSelfToLocation)
+/// [`Effect::AttachSelfToLocation`](card_dsl::dsl::Effect::AttachSelfToLocation)
 /// re-homed it (Barricade 01038). Either way there is nothing left to place and
 /// the pop is the whole disposal.
 pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
@@ -1275,8 +1278,8 @@ fn discard_played_card(cx: &mut Cx, investigator: InvestigatorId, card: CardCode
 #[cfg(test)]
 mod grant_resources_tests {
     use super::*;
-    use crate::state::InvestigatorId;
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{GameStateBuilder, InvestigatorId};
+    use crate::test_support;
 
     #[test]
     fn grant_resources_adds_to_wallet_and_emits() {
@@ -1329,8 +1332,8 @@ mod grant_resources_tests {
 #[cfg(test)]
 mod draw_with_deckout_tests {
     use super::*;
-    use crate::state::{CardCode, InvestigatorId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
+    use crate::test_support;
 
     #[test]
     fn draw_one_with_deckout_empty_deck_reshuffles_and_takes_horror() {

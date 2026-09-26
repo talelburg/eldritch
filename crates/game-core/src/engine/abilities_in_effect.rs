@@ -88,8 +88,9 @@
 //!
 //! [`Location::revealed`]: crate::state::Location::revealed
 
+use card_dsl::dsl::{Ability, Condition, Effect, GrantTarget, Trigger};
+
 use crate::card_registry::{self, CardRegistry};
-use crate::dsl::{Ability, Condition, Effect, GrantTarget, Trigger};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, GameState, InvestigatorId, LocationId,

@@ -24,7 +24,7 @@
 //! rules. `WhileInPlayDuring(SkillTestKind::Investigate)` (#45) gates
 //! the contribution to the Investigate action's intellect test.
 
-use card_dsl::dsl::{constant, modify, Ability, ModifierScope, SkillTestKind, Stat};
+use card_dsl::dsl::{self, Ability, ModifierScope, SkillTestKind, Stat};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01030";
@@ -32,7 +32,7 @@ pub const CODE: &str = "01030";
 /// Magnifying Glass's +1 intellect while investigating constant ability.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![constant(modify(
+    vec![dsl::constant(dsl::modify(
         Stat::Intellect,
         1,
         ModifierScope::WhileInPlayDuring(SkillTestKind::Investigate),

@@ -12,10 +12,9 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::{self, EngineOutcome, OptionId, OptionTarget, PromptNature};
-use game_core::state::{Agenda, CardCode, GameState, InvestigatorId};
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::state::{Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
+use game_core::{card_registry, test_support};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {

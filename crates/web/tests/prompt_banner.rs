@@ -7,14 +7,16 @@
 //! `TurnControl` anchor rather than by its text.
 #![cfg(target_arch = "wasm32")]
 
+use std::collections::BTreeSet;
+
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::InvestigatorId;
-use game_core::test_support::fixtures;
+use game_core::test_support;
 use leptos::prelude::*;
+use leptos::task;
 use protocol::ClientMessage;
-use std::collections::BTreeSet;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::interaction::MultiSelect;
@@ -40,7 +42,7 @@ async fn mount(outcome: EngineOutcome, preselected: &[u32]) -> UnboundedReceiver
         provide_context(MultiSelect { active, selected });
         view! { <div class="pb-root"><PromptBanner/></div> }
     });
-    leptos::task::tick().await;
+    task::tick().await;
     rx
 }
 
@@ -73,9 +75,9 @@ fn click(sel: &str) {
 
 #[wasm_bindgen_test]
 async fn confirm_submits_the_selected_indices() {
-    let mut rx = mount(fixtures::awaiting_commit_input("Commit"), &[0, 2]).await;
+    let mut rx = mount(test_support::awaiting_commit_input("Commit"), &[0, 2]).await;
     click(".confirm");
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
@@ -92,9 +94,9 @@ async fn confirm_submits_the_selected_indices() {
 
 #[wasm_bindgen_test]
 async fn confirm_with_no_selection_submits_empty() {
-    let mut rx = mount(fixtures::awaiting_commit_input("Commit"), &[]).await;
+    let mut rx = mount(test_support::awaiting_commit_input("Commit"), &[]).await;
     click(".confirm");
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
@@ -106,9 +108,9 @@ async fn confirm_with_no_selection_submits_empty() {
 
 #[wasm_bindgen_test]
 async fn skippable_prompt_shows_pass_that_submits_skip() {
-    let mut rx = mount(fixtures::awaiting_skippable_commit_input("Commit"), &[]).await;
+    let mut rx = mount(test_support::awaiting_skippable_commit_input("Commit"), &[]).await;
     click(".pass");
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
@@ -121,7 +123,7 @@ async fn skippable_prompt_shows_pass_that_submits_skip() {
 #[wasm_bindgen_test]
 async fn renders_the_prompt_text() {
     let _rx = mount(
-        fixtures::awaiting_commit_input("Redraw your opening hand"),
+        test_support::awaiting_commit_input("Redraw your opening hand"),
         &[],
     )
     .await;
@@ -140,13 +142,17 @@ async fn an_unanchored_confirm_gets_text_and_a_confirm_button() {
     // client does not specifically home still tells the player the engine is
     // waiting — and an un-anchored `Confirm` the result modal is not carrying gets
     // a Confirm here rather than being unreachable.
-    let mut rx = mount(fixtures::awaiting_confirm_input("Something happened"), &[]).await;
+    let mut rx = mount(
+        test_support::awaiting_confirm_input("Something happened"),
+        &[],
+    )
+    .await;
     assert!(last_banner()
         .text_content()
         .unwrap_or_default()
         .contains("Something happened"));
     click(".confirm");
-    leptos::task::tick().await;
+    task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
@@ -160,7 +166,7 @@ async fn an_anchored_confirm_gets_text_but_no_banner_confirm() {
     // The Mythos draw's button lives on the encounter deck. The banner still
     // names the prompt — the floor — but must not render a second Confirm, which
     // is the duplication the bar retirement exists to end.
-    let mut outcome = fixtures::awaiting_confirm_input("Draw");
+    let mut outcome = test_support::awaiting_confirm_input("Draw");
     if let EngineOutcome::AwaitingInput { request, .. } = &mut outcome {
         request.target = Some(OptionTarget::EncounterDeck);
     }
@@ -176,7 +182,7 @@ async fn an_anchored_confirm_gets_text_but_no_banner_confirm() {
 #[wasm_bindgen_test]
 async fn skippable_window_shows_prompt_and_pass_submits_skip() {
     // A skippable PickSingle (reaction/Fast window) → banner with prompt + Pass.
-    let outcome = fixtures::awaiting_skippable_pick_single_input("You may trigger");
+    let outcome = test_support::awaiting_skippable_pick_single_input("You may trigger");
     let mut rx = mount(outcome, &[]).await;
     assert!(
         last_banner()
@@ -186,7 +192,7 @@ async fn skippable_window_shows_prompt_and_pass_submits_skip() {
         "window prompt shows in the banner"
     );
     click(".pass");
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
@@ -202,7 +208,7 @@ async fn the_open_turn_menu_is_suppressed_by_its_anchor() {
     // `TurnControl` anchor the engine attaches, never by matching "Choose an
     // action" — the string coupling ADR 0011 exists to prevent. Reserving the one
     // persistent surface means not spending it on every ordinary turn.
-    let mut outcome = fixtures::awaiting_pick_single_with(
+    let mut outcome = test_support::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "End turn")
             .at(OptionTarget::TurnControl(InvestigatorId(1)))],
@@ -226,7 +232,7 @@ async fn the_open_turn_menu_suppresses_its_text_but_not_its_controls() {
     // with no current location, EndTurn off-frame, both pinned by engine tests —
     // has no board home, so suppressing the whole banner would make it
     // unreachable rather than merely misplaced (ADR 0011's floor).
-    let mut outcome = fixtures::awaiting_pick_single_with(
+    let mut outcome = test_support::awaiting_pick_single_with(
         "Choose an action",
         vec![
             ChoiceOption::new(OptionId(0), "End turn")
@@ -250,7 +256,7 @@ async fn the_open_turn_menu_suppresses_its_text_but_not_its_controls() {
         "the un-anchored option keeps its only home; the anchored one is on its surface"
     );
     click(".banner-option");
-    leptos::task::tick().await;
+    task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
@@ -264,7 +270,7 @@ async fn an_unanchored_pick_single_still_reaches_the_banner() {
     // Not skippable, not multi, no board home: with the flat bar gone the banner
     // is the only thing between this option and being unreachable (#541). The
     // fixture's two options are un-anchored.
-    let outcome = fixtures::awaiting_pick_single_input("Choose one");
+    let outcome = test_support::awaiting_pick_single_input("Choose one");
     let mut rx = mount(outcome, &[]).await;
     let banner = last_banner();
     assert!(banner
@@ -279,7 +285,7 @@ async fn an_unanchored_pick_single_still_reaches_the_banner() {
         2
     );
     click(".banner-option");
-    leptos::task::tick().await;
+    task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
@@ -293,7 +299,7 @@ async fn skippable_window_renders_options_that_submit_pick_single() {
     // The round-end-advance fix (#549): a skippable window's options render as
     // banner buttons (not only Pass), so a Board/Global option is reachable.
     let mut rx = mount(
-        fixtures::awaiting_skippable_pick_single_input("You may advance"),
+        test_support::awaiting_skippable_pick_single_input("You may advance"),
         &[],
     )
     .await;
@@ -304,7 +310,7 @@ async fn skippable_window_renders_options_that_submit_pick_single() {
         .expect("an option button");
     assert_eq!(btn.text_content().unwrap_or_default(), "Resolve");
     btn.click();
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
@@ -318,7 +324,7 @@ async fn skippable_window_renders_options_that_submit_pick_single() {
 async fn banner_renders_only_unanchored_options() {
     // S5 (#540): once the round-end advance is anchored to the act card, the banner
     // stops duplicating anchored options — it renders only un-anchored ones.
-    let outcome = fixtures::awaiting_skippable_pick_single_with(
+    let outcome = test_support::awaiting_skippable_pick_single_with(
         "You may advance",
         vec![
             ChoiceOption::new(OptionId(0), "Advance act").at(OptionTarget::Act),
@@ -339,7 +345,7 @@ async fn banner_renders_only_unanchored_options() {
         .expect("the one banner button");
     assert_eq!(btn.text_content().unwrap_or_default(), "Some global");
     btn.click();
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {

@@ -27,16 +27,15 @@
 //! not got, a granter that leaves play mid-window).
 
 use card_dsl::dsl::{
-    activated, constant, control_status, gain_resources, grant, Ability, CmpOp, Condition,
-    ControlStatus, GrantTarget, InvestigatorTarget, Quantity,
+    self, Ability, CmpOp, Condition, ControlStatus, GrantTarget, InvestigatorTarget, Quantity,
 };
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::EngineOutcome;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId,
-    LocationId, Phase,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// The **granter**: a location whose printed text grants an ability to
 /// [`RECIPIENT`] while nobody controls it — the Parlor 01115's shape.
@@ -62,20 +61,24 @@ const SECOND_INST: CardInstanceId = CardInstanceId(51);
 /// activation that always changes state, so nothing but the grant itself can
 /// decide whether it is offered.
 fn granted_activation() -> Ability {
-    activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1))
+    dsl::activated(
+        1,
+        vec![],
+        dsl::gain_resources(InvestigatorTarget::Active, 1),
+    )
 }
 
 /// "While RECIPIENT is not controlled by a player, it gains: <activation>."
 fn granter_abilities() -> Vec<Ability> {
     vec![
-        constant(grant(
+        dsl::constant(dsl::grant(
             GrantTarget::Card(RECIPIENT.to_owned()),
-            Some(control_status(RECIPIENT, ControlStatus::ByNoPlayer)),
+            Some(dsl::control_status(RECIPIENT, ControlStatus::ByNoPlayer)),
             vec![
                 granted_activation(),
                 // A **granted grant**. The sweep reads printed abilities only,
                 // so this one never reaches SECOND_HAND.
-                constant(grant(
+                dsl::constant(dsl::grant(
                     GrantTarget::Card(SECOND_HAND.to_owned()),
                     None,
                     vec![granted_activation()],
@@ -84,10 +87,10 @@ fn granter_abilities() -> Vec<Ability> {
         )),
         // Ability 1: a `Grant` sitting under an *activated* trigger, so the
         // "inspected, never executed" contract can be driven from the menu.
-        activated(
+        dsl::activated(
             1,
             vec![],
-            grant(GrantTarget::SelfCard, None, vec![granted_activation()]),
+            dsl::grant(GrantTarget::SelfCard, None, vec![granted_activation()]),
         ),
     ]
 }
@@ -95,7 +98,7 @@ fn granter_abilities() -> Vec<Ability> {
 /// "While you have a clue at your location, RECIPIENT gains: …" — a condition
 /// that needs a "you", which an uncontrolled recipient has not got.
 fn needs_you_abilities() -> Vec<Ability> {
-    vec![constant(grant(
+    vec![dsl::constant(dsl::grant(
         GrantTarget::Card(RECIPIENT.to_owned()),
         Some(Condition::Compare {
             quantity: Quantity::CluesAtControllerLocation,

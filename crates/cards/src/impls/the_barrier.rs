@@ -40,7 +40,7 @@
 //! Like 01108's board build, the reverse is board-dependent, single-use
 //! scenario logic, so it lives card-locally as a [`card_dsl::dsl::Effect::Native`]
 //! handler (#276) rather than as shared `Effect` variants. The spawn reuses
-//! the engine's [`game_core::put_set_aside_card_into_play`], which reads
+//! the engine's [`game_core::engine::put_set_aside_card_into_play`], which reads
 //! the Priest's cardtype back from the corpus metadata and mints his
 //! combat stats / keywords / per-investigator health from it.
 //!
@@ -79,9 +79,7 @@
 //! against, nothing contests the cell. This act has no rulings (recorded in
 //! `data/arkhamdb-faq/no-rulings.txt`).
 
-use card_dsl::dsl::{
-    forced_on_event, native, reaction_on_event, Ability, EventPattern, EventTiming,
-};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::card_registry::{EligibilityFn, NativeEffectFn};
 use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{self, Cx, EngineOutcome};
@@ -125,15 +123,15 @@ const PARLOR: &str = "01115";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        forced_on_event(
+        dsl::forced_on_event(
             EventPattern::ActAdvanced,
             EventTiming::After,
-            native(REVERSE),
+            dsl::native(REVERSE),
         ),
-        reaction_on_event(
+        dsl::reaction_on_event(
             EventPattern::RoundEnded,
             EventTiming::When,
-            native(ROUND_END_ADVANCE),
+            dsl::native(ROUND_END_ADVANCE),
         )
         .with_eligibility(CAN_ADVANCE),
     ]

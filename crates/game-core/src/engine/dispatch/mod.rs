@@ -8,9 +8,10 @@
 //! human-initiated actions, [`apply_engine_record`] for engine-emitted
 //! ones.
 
+use card_dsl::card_data::CardType;
+use card_dsl::dsl::{Ability, ActionDesignator, Cost, Effect};
+
 use crate::action::{EngineRecord, InputResponse, PlayerAction, RosterEntry};
-use crate::card_data::CardType;
-use crate::dsl::{Ability, ActionDesignator, Cost, Effect};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::{
@@ -606,7 +607,7 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
 
 /// Seat a roster and drive to the first `AwaitingInput` (the setup mulligan),
 /// without going through a logged `PlayerAction`. The engine entry point
-/// [`crate::seat_and_open`] wraps this in the shared `apply_via` scaffolding.
+/// [`crate::engine::seat_and_open`] wraps this in the shared `apply_via` scaffolding.
 /// Used at game creation (server `GameSession::create`); the action log that
 /// follows is `ResolveInput`-only.
 pub(crate) fn seat_and_open(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutcome {
@@ -973,13 +974,13 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 
 #[cfg(test)]
 mod turn_menu_tests {
-    use crate::engine::dispatch;
-    use crate::engine::enumerate::legal_actions;
     use crate::engine::outcome::OptionTarget;
+    use crate::engine::{dispatch, enumerate};
     use crate::state::{
-        ChaosBag, ChaosToken, Continuation, InvestigationResume, InvestigatorId, Phase,
+        ChaosBag, ChaosToken, Continuation, GameStateBuilder, InvestigationResume, InvestigatorId,
+        Phase,
     };
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::test_support;
 
     #[test]
     fn turn_menu_carries_action_targets() {
@@ -1011,7 +1012,7 @@ mod turn_menu_tests {
         e.current_location = Some(loc_id);
         state.enemies.insert(e.id, e);
 
-        let actions = legal_actions(&state);
+        let actions = enumerate::legal_actions(&state);
         let menu = dispatch::turn_menu(&state);
         assert_eq!(menu.options.len(), actions.len());
         for (i, action) in actions.iter().enumerate() {

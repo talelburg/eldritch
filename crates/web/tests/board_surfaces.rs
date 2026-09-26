@@ -9,8 +9,9 @@
 
 use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, GameState, GameStateBuilder};
-use game_core::test_support::fixtures;
+use game_core::test_support;
 use leptos::prelude::*;
+use leptos::task;
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -25,7 +26,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 /// last-mounted wrapper so absence assertions are scoped to this test.
 async fn mount(state: GameState) -> Element {
     // Panels read investigator-card capacity from the registry (#448).
-    game_core::test_support::install_test_registry();
+    test_support::install_test_registry();
     let store = RwSignal::new(ClientState::default());
     mount_to_body(move || {
         provide_context(store);
@@ -43,7 +44,7 @@ async fn mount(state: GameState) -> Element {
             },
         );
     });
-    leptos::task::tick().await;
+    task::tick().await;
     let roots = document().query_selector_all(".bs-root").expect("query");
     roots
         .item(roots.length() - 1)
@@ -71,9 +72,9 @@ fn deck_counts(root: &Element) -> Vec<String> {
 #[wasm_bindgen_test]
 async fn each_panel_shows_its_own_deck_count() {
     // Multiplayer: whose deck a count refers to must never be a guess.
-    let mut one = fixtures::test_investigator(1);
+    let mut one = test_support::test_investigator(1);
     one.deck = vec![CardCode::new("a"), CardCode::new("b"), CardCode::new("c")];
-    let mut two = fixtures::test_investigator(2);
+    let mut two = test_support::test_investigator(2);
     two.deck = vec![CardCode::new("d")];
     let state = GameStateBuilder::new()
         .with_investigator(one)
@@ -88,7 +89,7 @@ async fn each_panel_shows_its_own_deck_count() {
 async fn an_empty_deck_still_renders_its_element() {
     // The worst possible moment for the board to silently lose a surface.
     let state = GameStateBuilder::new()
-        .with_investigator(fixtures::test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .build();
     let root = mount(state).await;
     assert_eq!(deck_counts(&root), vec!["0".to_string()]);
@@ -103,7 +104,7 @@ async fn the_named_controls_are_present_and_dead_with_no_prompt() {
     // No prompt is live, so nothing anchors anywhere: every control renders,
     // disabled, so the panel's shape does not depend on the phase.
     let state = GameStateBuilder::new()
-        .with_investigator(fixtures::test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .build();
     let root = mount(state).await;
     for class in [".turn-control", ".resource-control", ".draw-control"] {
@@ -120,7 +121,7 @@ async fn the_named_controls_are_present_and_dead_with_no_prompt() {
 async fn the_board_carries_no_action_bar() {
     // #206's closer: the sticky bar is deleted, and a merge must not bring it back.
     let state = GameStateBuilder::new()
-        .with_investigator(fixtures::test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .build();
     let root = mount(state).await;
     assert!(

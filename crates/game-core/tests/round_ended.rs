@@ -1,18 +1,16 @@
 //! `ForcedTriggerPoint::RoundEnded`: an agenda's `OnEvent(RoundEnded)`
 //! Forced ability fires at the end of the round (step 4.6).
 
-use card_dsl::dsl::{
-    deal_horror, forced_on_event, native, EventPattern, EventTiming, InvestigatorTarget,
-};
+use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, CardInstanceId, Continuation, InvestigationResume,
-    InvestigatorId, LocationId, Phase,
+    Agenda, CardCode, CardInPlay, CardInstanceId, Continuation, GameStateBuilder,
+    InvestigationResume, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 const AGENDA: &str = "TEST-AGENDA";
 
@@ -33,17 +31,17 @@ fn install() {
     // reads work under this registry.
     MockRegistry::new()
         .with_abilities(AGENDA, || {
-            vec![forced_on_event(
+            vec![dsl::forced_on_event(
                 EventPattern::RoundEnded,
                 EventTiming::At,
-                native("test:set-doom"),
+                dsl::native("test:set-doom"),
             )]
         })
         .with_abilities(DISSONANT, || {
-            vec![forced_on_event(
+            vec![dsl::forced_on_event(
                 EventPattern::RoundEnded,
                 EventTiming::At,
-                deal_horror(InvestigatorTarget::You, 1u8),
+                dsl::deal_horror(InvestigatorTarget::You, 1u8),
             )]
         })
         .with_native_effect("test:set-doom", set_doom)

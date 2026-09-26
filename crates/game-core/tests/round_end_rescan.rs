@@ -14,15 +14,15 @@
 //! the `at` forced does **not** fire (no clue gained). Skipping leaves `TESTX` in
 //! play, so the `at` forced fires (one clue). The difference is the re-scan.
 
-use card_dsl::dsl::{forced_on_event, native, reaction_on_event, EventPattern, EventTiming};
+use card_dsl::dsl::{self, EventPattern, EventTiming};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::state::{
-    Act, CardCode, CardInPlay, CardInstanceId, Continuation, GameState, InvestigatorId, Phase,
-    UpkeepResume,
+    Act, CardCode, CardInPlay, CardInstanceId, Continuation, GameState, GameStateBuilder,
+    InvestigatorId, Phase, UpkeepResume,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 const TEST_ACT: &str = "TESTACT";
 const TEST_X: &str = "TESTX";
@@ -49,17 +49,17 @@ fn at_gain_clue(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 fn install() {
     MockRegistry::new()
         .with_abilities(TEST_ACT, || {
-            vec![reaction_on_event(
+            vec![dsl::reaction_on_event(
                 EventPattern::RoundEnded,
                 EventTiming::When,
-                native("when:remove_x"),
+                dsl::native("when:remove_x"),
             )]
         })
         .with_abilities(TEST_X, || {
-            vec![forced_on_event(
+            vec![dsl::forced_on_event(
                 EventPattern::RoundEnded,
                 EventTiming::At,
-                native("at:gain_clue"),
+                dsl::native("at:gain_clue"),
             )]
         })
         .with_native_effect("when:remove_x", when_remove_x)

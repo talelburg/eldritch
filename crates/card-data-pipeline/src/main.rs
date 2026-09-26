@@ -36,9 +36,10 @@
 //! lists, and fails on any that has not.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::{env, fs};
 
 use serde::Deserialize;
 
@@ -283,8 +284,8 @@ enum Discrepancy {
     MissingPack { code: String, cycle: String },
 }
 
-impl std::fmt::Display for Discrepancy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Discrepancy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unclassified(path) => write!(
                 f,
@@ -403,7 +404,7 @@ fn vendored_pack_files(snapshot: &Path) -> Result<Vec<PathBuf>, String> {
 /// Walk `dir`, appending every `*.json` it contains to `out` as `rel`
 /// joined with the file's path relative to `dir`.
 fn collect_json(dir: &Path, rel: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
-    let entries = std::fs::read_dir(dir).map_err(|e| format!("reading {}: {e}", dir.display()))?;
+    let entries = fs::read_dir(dir).map_err(|e| format!("reading {}: {e}", dir.display()))?;
     for entry in entries {
         let entry = entry.map_err(|e| format!("reading {}: {e}", dir.display()))?;
         let name = entry.file_name();
@@ -420,8 +421,7 @@ fn collect_json(dir: &Path, rel: &Path, out: &mut Vec<PathBuf>) -> Result<(), St
 /// The `packs.json` entries the completeness check runs against.
 fn read_packs(snapshot: &Path) -> Result<Vec<RawPack>, String> {
     let path = snapshot.join("packs.json");
-    let raw =
-        std::fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+    let raw = fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
     serde_json::from_str(&raw).map_err(|e| format!("parsing {}: {e}", path.display()))
 }
 
@@ -454,8 +454,8 @@ fn run() -> Result<(), String> {
 
     for rel in PACK_FILES {
         let path = snapshot.join(rel);
-        let raw = std::fs::read_to_string(&path)
-            .map_err(|e| format!("reading {}: {e}", path.display()))?;
+        let raw =
+            fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
         let cards: Vec<RawCard> =
             serde_json::from_str(&raw).map_err(|e| format!("parsing {}: {e}", path.display()))?;
         for raw in cards {
@@ -507,8 +507,7 @@ fn run() -> Result<(), String> {
 
     let output = render(&all);
     let out_path = repo_root.join(OUTPUT_PATH);
-    std::fs::write(&out_path, output)
-        .map_err(|e| format!("writing {}: {e}", out_path.display()))?;
+    fs::write(&out_path, output).map_err(|e| format!("writing {}: {e}", out_path.display()))?;
 
     eprintln!(
         "card-data-pipeline: wrote {} cards to {}",
@@ -551,7 +550,7 @@ fn repo_root() -> Result<PathBuf, String> {
     // card-data-pipeline` from the workspace root. We trust
     // `CARGO_MANIFEST_DIR` to point at the binary's own crate
     // directory; the repo root is two levels up from there.
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR")
         .map_err(|_| "CARGO_MANIFEST_DIR is not set; run via `cargo run -p card-data-pipeline`")?;
     Path::new(&manifest_dir)
         .ancestors()
@@ -1219,9 +1218,10 @@ const GENERATED_HEADER: &str = "\
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
+
+    use super::*;
 
     // ---- classify ------------------------------------------------
 

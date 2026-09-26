@@ -14,13 +14,13 @@
 #![cfg(target_arch = "wasm32")]
 
 use cards::REGISTRY;
-use game_core::card_registry;
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, LocationId,
 };
-use game_core::test_support::fixtures;
+use game_core::{card_registry, test_support};
 use leptos::prelude::*;
+use leptos::task;
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -59,7 +59,7 @@ fn inject_style() {
 /// investigators standing in it. Real card codes throughout — the real registry
 /// is installed, so the investigator's capacity lookup needs a real code.
 fn parlor_state(investigators: usize) -> GameState {
-    let mut parlor = fixtures::test_location(5, "Parlor");
+    let mut parlor = test_support::test_location(5, "Parlor");
     parlor.code = CardCode::new("01115");
     parlor.revealed = true;
     parlor
@@ -71,7 +71,7 @@ fn parlor_state(investigators: usize) -> GameState {
         .take(investigators)
         .enumerate()
     {
-        let mut inv = fixtures::test_investigator(u32::try_from(i).expect("small index") + 1);
+        let mut inv = test_support::test_investigator(u32::try_from(i).expect("small index") + 1);
         inv.name = name.to_string();
         inv.investigator_card.code = CardCode::new(code);
         builder = builder.with_investigator_at(inv, PARLOR);
@@ -106,7 +106,7 @@ async fn mount_with(state: GameState, outcome: EngineOutcome) -> Element {
             },
         );
     });
-    leptos::task::tick().await;
+    task::tick().await;
     let roots = document()
         .query_selector_all(".layout-probe")
         .expect("query");
@@ -186,7 +186,7 @@ async fn parlor_tokens_are_visible_with_an_empty_parlor() {
 #[wasm_bindgen_test]
 async fn a_tall_node_does_not_overlap_the_row_above_it() {
     let mut state = parlor_state(2);
-    let mut hallway = fixtures::test_location(6, "Hallway");
+    let mut hallway = test_support::test_location(6, "Hallway");
     hallway.code = CardCode::new("01112");
     hallway.revealed = true;
     state.locations.insert(LocationId(6), hallway);
@@ -223,7 +223,7 @@ async fn a_tall_node_does_not_overlap_the_row_above_it() {
 /// space. Asserted by measurement: every endpoint lands inside some card's box.
 #[wasm_bindgen_test]
 async fn every_connection_line_ends_inside_a_card() {
-    let mut hallway = fixtures::test_location(6, "Hallway");
+    let mut hallway = test_support::test_location(6, "Hallway");
     hallway.code = CardCode::new("01112");
     hallway.revealed = false; // the short card
     let mut state = parlor_state(1);
@@ -285,7 +285,7 @@ async fn every_connection_line_ends_inside_a_card() {
 /// promises a click the rail can't take. Glow and cursor belong on the card.
 #[wasm_bindgen_test]
 async fn only_the_card_advertises_the_location_menu() {
-    let outcome = fixtures::awaiting_pick_single_with(
+    let outcome = test_support::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Investigate").at(OptionTarget::Location(PARLOR))],
     );

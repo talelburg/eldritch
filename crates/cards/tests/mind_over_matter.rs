@@ -13,11 +13,10 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, FastActorScope, FastWindowKind, GameState, InvestigatorId, LocationId, Phase,
-    PhaseStep,
+    EnemyId, FastActorScope, FastWindowKind, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, Phase, PhaseStep,
 };
-use game_core::test_support::{self, GameStateBuilder};
-use game_core::{assert_event, card_registry};
+use game_core::{assert_event, card_registry, test_support};
 
 const MOM: &str = "01036";
 const OVERPOWER: &str = "01091"; // combat skill icons

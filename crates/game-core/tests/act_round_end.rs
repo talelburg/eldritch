@@ -3,15 +3,15 @@
 //! opens act 01109's `When`-`RoundEnded` reaction as a board candidate;
 //! `ResolveInput(PickSingle)` fires the advance / `Skip` declines.
 
-use card_dsl::dsl::{native, reaction_on_event, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId, TimingEvent};
 use game_core::state::{
-    Act, CardCode, Continuation, GameState, InvestigatorId, Location, LocationId, Phase,
-    TimingMode, UpkeepResume,
+    Act, CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
+    Phase, TimingMode, UpkeepResume,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// The advance logic lives in the registry (01109's `When`-`RoundEnded` reaction
 /// native), so the coordinator fires it through the effect evaluator when its
@@ -21,10 +21,10 @@ fn advance_native(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
 }
 
 fn advance_reaction() -> Vec<Ability> {
-    vec![reaction_on_event(
+    vec![dsl::reaction_on_event(
         EventPattern::RoundEnded,
         EventTiming::When,
-        native("test:advance"),
+        dsl::native("test:advance"),
     )]
 }
 

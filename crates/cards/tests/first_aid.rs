@@ -14,11 +14,10 @@ use game_core::engine::{
 };
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId,
-    LocationId, Phase, UseKind,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, UseKind,
 };
-use game_core::test_support::{self, GameStateBuilder};
-use game_core::{assert_event, card_registry};
+use game_core::{assert_event, card_registry, test_support};
 
 const FIRST_AID: &str = "01019";
 const INV: InvestigatorId = InvestigatorId(1);

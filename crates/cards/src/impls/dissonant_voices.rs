@@ -24,10 +24,7 @@
 //! no rulings (recorded in `data/arkhamdb-faq/no-rulings.txt`).
 
 use card_dsl::card_data::CardType;
-use card_dsl::dsl::{
-    constant, discard_self, forced_on_event, put_into_threat_area, restrict, revelation, Ability,
-    EventPattern, EventTiming, Restriction,
-};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, Restriction};
 
 /// `ArkhamDB` code for Dissonant Voices.
 pub const CODE: &str = "01165";
@@ -35,17 +32,22 @@ pub const CODE: &str = "01165";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        revelation(put_into_threat_area(CODE)),
-        constant(restrict(Restriction::CannotPlay(CardType::Asset))),
-        constant(restrict(Restriction::CannotPlay(CardType::Event))),
-        forced_on_event(EventPattern::RoundEnded, EventTiming::At, discard_self()),
+        dsl::revelation(dsl::put_into_threat_area(CODE)),
+        dsl::constant(dsl::restrict(Restriction::CannotPlay(CardType::Asset))),
+        dsl::constant(dsl::restrict(Restriction::CannotPlay(CardType::Event))),
+        dsl::forced_on_event(
+            EventPattern::RoundEnded,
+            EventTiming::At,
+            dsl::discard_self(),
+        ),
     ]
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, Trigger};
+
+    use super::*;
 
     #[test]
     fn abilities_are_threat_area_two_play_bans_and_forced_discard() {

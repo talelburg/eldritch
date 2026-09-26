@@ -28,7 +28,7 @@
 //! against the card's abilities in effect, rejecting any non-`Activated`
 //! trigger.
 
-use card_dsl::dsl::{activated_as, fight, seq, Ability, Cost};
+use card_dsl::dsl::{self, Ability, Cost};
 
 /// `ArkhamDB` code for Knife (original-Core printing).
 pub const CODE: &str = "01086";
@@ -39,17 +39,23 @@ pub const CODE: &str = "01086";
 pub fn abilities() -> Vec<Ability> {
     vec![
         // [action]: Fight. You get +1 [combat] for this attack.
-        activated_as(fight(1u8, 0u8), 1, vec![], seq([])),
+        dsl::activated_as(dsl::fight(1u8, 0u8), 1, vec![], dsl::seq([])),
         // [action] Discard Knife: Fight. You get +2 [combat] for this attack.
         // This attack deals +1 damage.
-        activated_as(fight(2u8, 1u8), 1, vec![Cost::DiscardSelf], seq([])),
+        dsl::activated_as(
+            dsl::fight(2u8, 1u8),
+            1,
+            vec![Cost::DiscardSelf],
+            dsl::seq([]),
+        ),
     ]
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{ActionDesignator, Effect, IntExpr, Trigger};
+
+    use super::*;
 
     /// The `(combat_modifier, extra_damage)` the ability at `index` fights
     /// with, asserting on the way that it is a 1-action **Fight** designator

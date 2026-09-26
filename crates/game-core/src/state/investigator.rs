@@ -1,9 +1,13 @@
 //! Investigators: the players' avatars in the game.
 
-use crate::card_data::CardKind;
+use std::collections::BTreeSet;
+use std::iter;
+
+use card_dsl::card_data::CardKind;
+use serde::{Deserialize, Serialize};
+
 use crate::card_registry;
 use crate::state::{CardCode, CardInPlay, CardInstanceId, LocationId, Skills};
-use serde::{Deserialize, Serialize};
 
 /// Stable identifier for an investigator within a scenario.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -104,12 +108,12 @@ pub struct Investigator {
     /// pile and removed from the game. Stays empty for Active
     /// investigators. Required on the wire (#453).
     pub removed_from_game: Vec<CardCode>,
-    /// Source instances whose [`ExtraActionCost`](crate::dsl::Restriction::ExtraActionCost)
+    /// Source instances whose [`ExtraActionCost`](card_dsl::dsl::Restriction::ExtraActionCost)
     /// with `first_each_round` has already surcharged an action this round
     /// (Frozen in Fear 01164). Cleared at the round boundary. Keyed by
     /// instance so multiple surcharge sources track independently. Required
     /// on the wire (#453).
-    pub action_surcharge_spent_this_round: std::collections::BTreeSet<CardInstanceId>,
+    pub action_surcharge_spent_this_round: BTreeSet<CardInstanceId>,
     /// The investigator's own card as a real in-play permanent: it holds the
     /// investigator's health/sanity capacity (from `CardKind::Investigator`
     /// metadata) and is the default damage/horror soaker via its
@@ -153,7 +157,7 @@ impl Investigator {
     /// drain, discard-all, soak `build_soakers`) keep iterating
     /// `cards_in_play` directly and never touch it.
     pub fn controlled_card_instances(&self) -> impl Iterator<Item = &CardInPlay> {
-        std::iter::once(&self.investigator_card)
+        iter::once(&self.investigator_card)
             .chain(self.cards_in_play.iter())
             .chain(self.threat_area.iter())
     }
@@ -169,7 +173,7 @@ impl Investigator {
         &mut self,
         instance_id: CardInstanceId,
     ) -> Option<&mut CardInPlay> {
-        std::iter::once(&mut self.investigator_card)
+        iter::once(&mut self.investigator_card)
             .chain(self.cards_in_play.iter_mut())
             .chain(self.threat_area.iter_mut())
             .find(|card| card.instance_id == instance_id)
@@ -323,7 +327,6 @@ pub enum EliminationCause {
 #[cfg(test)]
 mod threat_area_tests {
     use super::*;
-
     use crate::test_support;
 
     #[test]
@@ -385,7 +388,8 @@ mod threat_area_tests {
 
 #[cfg(test)]
 mod ability_usage_tests {
-    use crate::dsl::{UsageLimit, UsagePeriod};
+    use card_dsl::dsl::{UsageLimit, UsagePeriod};
+
     use crate::state::AbilityUsageRecord;
     use crate::test_support;
 

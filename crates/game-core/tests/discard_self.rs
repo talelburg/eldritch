@@ -2,20 +2,18 @@
 //! ability. Mock registry in its own integration binary (own process +
 //! `OnceLock<CardRegistry>`), mirroring `weapon_fight.rs`.
 
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
+use card_dsl::dsl::{self, Ability, Cost, EnemyTarget, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
-use game_core::dsl::{
-    activated, deal_damage_to_enemy, gain_resources, Ability, Cost, EnemyTarget, InvestigatorTarget,
-};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
-    InvestigatorId, LocationId, Phase, Zone,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, Zone,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 const TRINKET: &str = "TRNK1";
 const COP: &str = "MCOP1";
@@ -66,13 +64,13 @@ fn asset_metadata(code: &str, name: &str, text: &str) -> CardMetadata {
 /// `[fast] Spend 1 supply: gain 1 resource` — both kits share the ability; they
 /// differ only in the metadata `discard_when_empty` flag.
 fn spend_a_supply() -> Vec<Ability> {
-    vec![activated(
+    vec![dsl::activated(
         0,
         vec![Cost::SpendUses {
             kind: UseKind::Supplies,
             count: 1,
         }],
-        gain_resources(InvestigatorTarget::You, 1),
+        dsl::gain_resources(InvestigatorTarget::You, 1),
     )]
 }
 
@@ -98,26 +96,26 @@ fn install_mock_registry() {
         .with_card(kit_metadata(KIT_NODISC, "Mock Kit (stays)", false))
         // [fast] Discard Mock Trinket: gain 1 resource.
         .with_abilities(TRINKET, || {
-            vec![activated(
+            vec![dsl::activated(
                 0,
                 vec![Cost::DiscardSelf],
-                gain_resources(InvestigatorTarget::You, 1),
+                dsl::gain_resources(InvestigatorTarget::You, 1),
             )]
         })
         // [fast] Discard Mock Cop: deal 1 damage to an enemy at your location.
         .with_abilities(COP, || {
-            vec![activated(
+            vec![dsl::activated(
                 0,
                 vec![Cost::DiscardSelf],
-                deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
+                dsl::deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
             )]
         })
         // Illegal: DiscardSelf cannot combine with another source cost (Exhaust).
         .with_abilities(COMBO, || {
-            vec![activated(
+            vec![dsl::activated(
                 0,
                 vec![Cost::DiscardSelf, Cost::Exhaust],
-                gain_resources(InvestigatorTarget::You, 1),
+                dsl::gain_resources(InvestigatorTarget::You, 1),
             )]
         })
         .with_abilities(KIT, spend_a_supply)

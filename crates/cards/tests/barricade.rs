@@ -19,10 +19,12 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, GameState,
-    InvestigationResume, Investigator, InvestigatorId, Location, LocationId, Phase,
+    GameStateBuilder, InvestigationResume, Investigator, InvestigatorId, Location, LocationId,
+    Phase,
 };
-use game_core::test_support::{self, GameStateBuilder};
-use game_core::{assert_event, assert_event_sequence, assert_no_event, card_registry};
+use game_core::{
+    assert_event, assert_event_sequence, assert_no_event, card_registry, test_support,
+};
 
 const BARRICADE: &str = "01038";
 const GHOUL_PRIEST: &str = "01116"; // Humanoid. Monster. Ghoul. Elite. + Hunter

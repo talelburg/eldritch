@@ -45,16 +45,15 @@
 //! `game-core/tests/timing_resolve_step.rs`).
 
 use card_dsl::dsl::{
-    forced_on_event, gain_resources, reaction_on_event, Ability, Effect, EventPattern, EventTiming,
-    InvestigatorTarget, TestOutcome,
+    self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget, TestOutcome,
 };
 use game_core::engine::OptionId;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId, Phase,
-    SkillKind, TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
+    InvestigatorId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, ScriptedResolver};
+use game_core::test_support::{self, MockRegistry, ScriptedResolver};
 
 /// `at`-tagged forced: +1 resource.
 const AT: &str = "_tc_at";
@@ -82,10 +81,10 @@ fn succeeded() -> EventPattern {
 /// A forced ability in `timing`'s cell that gains `amount` resources — the
 /// marker these tests read cell order off.
 fn on_success(timing: EventTiming, amount: u8) -> Ability {
-    forced_on_event(
+    dsl::forced_on_event(
         succeeded(),
         timing,
-        gain_resources(InvestigatorTarget::You, amount),
+        dsl::gain_resources(InvestigatorTarget::You, amount),
     )
 }
 
@@ -96,19 +95,19 @@ fn install() {
         .with_abilities(AFTER, || vec![on_success(EventTiming::After, 2)])
         .with_abilities(WHEN, || vec![on_success(EventTiming::When, 4)])
         .with_abilities(REACT, || {
-            vec![reaction_on_event(
+            vec![dsl::reaction_on_event(
                 succeeded(),
                 EventTiming::At,
-                gain_resources(InvestigatorTarget::You, 7),
+                dsl::gain_resources(InvestigatorTarget::You, 7),
             )]
         })
         .with_abilities(RESCAN, || {
             vec![
-                forced_on_event(
+                dsl::forced_on_event(
                     succeeded(),
                     EventTiming::At,
                     Effect::Seq(vec![
-                        gain_resources(InvestigatorTarget::You, 1),
+                        dsl::gain_resources(InvestigatorTarget::You, 1),
                         Effect::DiscardSelf,
                     ]),
                 ),

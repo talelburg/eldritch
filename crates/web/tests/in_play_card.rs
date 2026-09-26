@@ -6,11 +6,11 @@
 use cards::REGISTRY;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{CardCode, CardInPlay, CardInstanceId};
-use game_core::test_support::fixtures;
+use game_core::{card_registry, test_support};
 use leptos::prelude::*;
+use leptos::task;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -46,13 +46,13 @@ async fn mount(outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
         provide_context(PendingOptions(pending));
         view! { <InPlayCardView instance=inst.clone()/> }
     });
-    leptos::task::tick().await;
+    task::tick().await;
     rx
 }
 
 #[wasm_bindgen_test]
 async fn activatable_in_play_card_opens_a_menu_and_submits() {
-    let outcome = fixtures::awaiting_pick_single_with(
+    let outcome = test_support::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Activate")
             .at(OptionTarget::CardInstance(CardInstanceId(3)))],
@@ -65,7 +65,7 @@ async fn activatable_in_play_card_opens_a_menu_and_submits() {
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a .menu-hit")
         .click();
-    leptos::task::tick().await;
+    task::tick().await;
     let item = slot
         .query_selector(".context-menu .menu-item")
         .expect("query")
@@ -73,7 +73,7 @@ async fn activatable_in_play_card_opens_a_menu_and_submits() {
         .expect("a menu item");
     assert_eq!(item.text_content().unwrap_or_default(), "Activate");
     item.click();
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
@@ -86,7 +86,7 @@ async fn activatable_in_play_card_opens_a_menu_and_submits() {
 #[wasm_bindgen_test]
 async fn inert_in_play_card_has_no_glow() {
     // Option anchors to a different instance → this card stays inert.
-    let outcome = fixtures::awaiting_pick_single_with(
+    let outcome = test_support::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Activate")
             .at(OptionTarget::CardInstance(CardInstanceId(99)))],

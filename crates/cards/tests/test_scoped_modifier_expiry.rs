@@ -28,10 +28,10 @@ use game_core::action::{Action, EngineRecord};
 use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, InvestigatorId, Lifetime,
-    LocationId, RecordedModifier, SkillTestId, Status,
+    CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
+    Lifetime, LocationId, RecordedModifier, SkillTestId, Status,
 };
-use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
+use game_core::test_support::{self, ScriptedResolver};
 use game_core::{assert_event_count, card_registry};
 
 const GRASPING_HANDS: &str = "01162";

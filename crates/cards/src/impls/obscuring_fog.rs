@@ -30,8 +30,8 @@
 //! just drew."* (<https://arkhamdb.com/card/01168>).
 
 use card_dsl::dsl::{
-    constant, discard_self, forced_on_event, modify_for, native, revelation, Ability, EventPattern,
-    EventTiming, ModifierAudience, ModifierScope, SkillTestKind, Stat, TestOutcome,
+    self, Ability, EventPattern, EventTiming, ModifierAudience, ModifierScope, SkillTestKind, Stat,
+    TestOutcome,
 };
 use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
@@ -47,21 +47,21 @@ const LIMIT1_ATTACH: &str = "01168:limit1-attach";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        revelation(native(LIMIT1_ATTACH)),
-        constant(modify_for(
+        dsl::revelation(dsl::native(LIMIT1_ATTACH)),
+        dsl::constant(dsl::modify_for(
             ModifierAudience::AttachedCard,
             Stat::Shroud,
             2,
             ModifierScope::WhileInPlay,
         )),
-        forced_on_event(
+        dsl::forced_on_event(
             EventPattern::SkillTestResolved {
                 outcome: TestOutcome::Success,
                 kind: Some(SkillTestKind::Investigate),
                 by_controller: true,
             },
             EventTiming::After,
-            discard_self(),
+            dsl::discard_self(),
         ),
     ]
 }
@@ -111,8 +111,9 @@ fn limit1_attach(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, Trigger};
+
+    use super::*;
 
     #[test]
     fn abilities_are_attach_shroud_and_forced_discard() {

@@ -8,8 +8,9 @@
 
 use std::collections::BTreeMap;
 
+use card_dsl::card_data::Slot;
+
 use crate::action::InputResponse;
-use crate::card_data::Slot;
 use crate::card_registry;
 use crate::engine::dispatch::{cards, hunters};
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, ResumeToken};
@@ -156,7 +157,7 @@ pub(super) fn make_room_candidates(
 ///
 /// **Two entry paths, one prompt** (#772). A play from hand mints the instance
 /// and hands it over at RR Appendix I step 3; a
-/// [`TakeControl`](crate::dsl::Effect::TakeControl) lifts the instance already
+/// [`TakeControl`](card_dsl::dsl::Effect::TakeControl) lifts the instance already
 /// on the board. Slot pressure applies to both, and `glossary/Slots.md` says so
 /// in one breath: *"If playing **or gaining control** of an asset would put an
 /// investigator above his or her slot limit for that type of asset, the

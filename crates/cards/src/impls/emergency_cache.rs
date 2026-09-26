@@ -6,7 +6,7 @@
 //!
 //! A plain `OnPlay` resource gain — the simplest player event.
 
-use card_dsl::dsl::{gain_resources, on_play, Ability, InvestigatorTarget};
+use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01088";
@@ -14,7 +14,10 @@ pub const CODE: &str = "01088";
 /// On play, gain 3 resources.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_play(gain_resources(InvestigatorTarget::You, 3))]
+    vec![dsl::on_play(dsl::gain_resources(
+        InvestigatorTarget::You,
+        3,
+    ))]
 }
 
 #[cfg(test)]

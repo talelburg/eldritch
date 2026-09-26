@@ -7,10 +7,10 @@ use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use game_core::state::{
-    Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId,
-    LocationId, Phase, SkillKind, TokenResolution,
+    Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Phase, SkillKind, TokenResolution,
 };
-use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
+use game_core::test_support::{self, ScriptedResolver};
 use game_core::{assert_event, assert_event_count, scenario_registry};
 use scenarios::the_gathering;
 

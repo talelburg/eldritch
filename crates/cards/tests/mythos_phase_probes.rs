@@ -35,15 +35,15 @@
 //! [MockRegistry]: game_core::test_support::MockRegistry
 
 use card_dsl::card_data::{CardKind, CardMetadata, CardType};
-use card_dsl::dsl::{choose_one, gain_resources, revelation, Ability, InvestigatorTarget};
+use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase,
+    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, TEST_INV};
+use game_core::test_support::{self, MockRegistry, TEST_INV};
 use game_core::{assert_event, assert_event_sequence};
 
 /// Probe: a treachery whose Revelation is a bare *"You gain 1 resource"* — the
@@ -83,18 +83,21 @@ fn treachery_metadata(code: &str, name: &str, text: &str, surge: bool) -> CardMe
 }
 
 fn gain_one_revelation() -> Vec<Ability> {
-    vec![revelation(gain_resources(InvestigatorTarget::You, 1))]
+    vec![dsl::revelation(dsl::gain_resources(
+        InvestigatorTarget::You,
+        1,
+    ))]
 }
 
 fn choice_revelation() -> Vec<Ability> {
-    vec![revelation(choose_one([
+    vec![dsl::revelation(dsl::choose_one([
         (
             "Gain 2 resources",
-            gain_resources(InvestigatorTarget::You, 2),
+            dsl::gain_resources(InvestigatorTarget::You, 2),
         ),
         (
             "Gain 5 resources",
-            gain_resources(InvestigatorTarget::You, 5),
+            dsl::gain_resources(InvestigatorTarget::You, 5),
         ),
     ]))]
 }

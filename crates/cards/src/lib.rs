@@ -23,7 +23,7 @@
 //! that would cycle. Engine code that needs card lookups (`PlayCard`,
 //! constant-modifier queries during skill tests, …) goes through
 //! [`game_core::card_registry`]. This crate exposes [`REGISTRY`] as a
-//! ready-made [`game_core::CardRegistry`] value that the host
+//! ready-made [`game_core::card_registry::CardRegistry`] value that the host
 //! installs via [`game_core::card_registry::install`] before running
 //! actions that touch card data.
 //!
@@ -38,8 +38,6 @@ use game_core::state::CardCode;
 
 pub mod generated;
 pub mod impls;
-
-pub use card_dsl::card_data::{CardType, Class, SkillIcons, Slot};
 
 /// All card metadata in the Eldritch corpus, lazily initialized on
 /// first access. Sorted by [`CardMetadata::code`].
@@ -124,8 +122,9 @@ pub const REGISTRY: CardRegistry = CardRegistry {
 
 #[cfg(test)]
 mod tests {
+    use card_dsl::card_data::{CardType, Class};
+
     use super::*;
-    use game_core::state::CardCode;
 
     #[test]
     fn corpus_is_sorted_by_code() {

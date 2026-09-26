@@ -9,10 +9,9 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::{self, EngineOutcome, OptionId};
-use game_core::state::{CardCode, EnemyId, InvestigatorId, LocationId};
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::state::{CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::{card_registry, test_support};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {

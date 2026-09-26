@@ -1,11 +1,14 @@
 //! Top-level game state.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{iter, mem};
 
-use crate::card_data::{CardKind, CardMetadata, SkillKind};
-use crate::dsl::{
+use card_dsl::card_data::{CardKind, CardMetadata, SkillKind};
+use card_dsl::dsl::{
     ActionDesignator, Determination, Effect, EventTiming, IntExpr, SkillTestKind, Stat,
 };
+use serde::{Deserialize, Serialize};
+
 use crate::engine::evaluator::EvalContext;
 use crate::engine::TimingEvent;
 use crate::event::FailureReason;
@@ -15,8 +18,6 @@ use crate::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, Counter, Enemy,
     EnemyId, Investigator, InvestigatorId, Location, LocationId, Phase, TokenModifiers,
 };
-
-use serde::{Deserialize, Serialize};
 
 /// The full state of a scenario at a single point in time.
 ///
@@ -128,7 +129,7 @@ pub struct GameState {
     /// *"You get +2 \[willpower\] for this attack for each clue on the
     /// attacked enemy"* is why a resolved integer is not enough.
     ///
-    /// [`ModifierScope`]: crate::dsl::ModifierScope
+    /// [`ModifierScope`]: card_dsl::dsl::ModifierScope
     pub recorded_modifiers: Vec<RecordedModifier>,
     // The in-flight skill test now lives on its `Continuation::SkillTest(_)`
     // frame (#348); read it via [`Self::current_skill_test`]. The former
@@ -806,7 +807,7 @@ pub enum Continuation {
         /// A whole [`CardInPlay`] rather than a bare code (#772): the frame's
         /// job is to hold the card that is in no zone (ADR 0002), and the
         /// instance serves that strictly better than the code once
-        /// [`TakeControl`](crate::dsl::Effect::TakeControl) can be what put it
+        /// [`TakeControl`](card_dsl::dsl::Effect::TakeControl) can be what put it
         /// there. Lita Chantler 01117 arrives here mid-Parley carrying her
         /// accumulated damage and horror, her uses and her usage counters, and
         /// a code would drop all four.
@@ -1457,7 +1458,7 @@ impl Continuation {
     /// is finally placed is a question about its owner rather than about the
     /// frame that was holding it (#772). A card being played from hand is the
     /// player's own; a card riding a [`SlotDiscard`](Self::SlotDiscard) frame
-    /// may be one a [`TakeControl`](crate::dsl::Effect::TakeControl) lifted off
+    /// may be one a [`TakeControl`](card_dsl::dsl::Effect::TakeControl) lifted off
     /// the board, and that one is the scenario's — `None`.
     pub fn take_play_in_progress(
         &mut self,
@@ -1497,7 +1498,7 @@ impl Continuation {
     pub fn take_committed_cards(&mut self, investigator: InvestigatorId) -> Vec<CardCode> {
         match self {
             Continuation::SkillTest(t) if t.investigator == investigator => {
-                std::mem::take(&mut t.committed_by_active)
+                mem::take(&mut t.committed_by_active)
             }
             _ => Vec::new(),
         }
@@ -1724,7 +1725,7 @@ impl EmitStep {
     /// 0008 keeps `ConditionResolution` an exhaustive match instead of a table:
     /// *a table is a thing a new variant can be forgotten from*.
     pub fn cells() -> impl Iterator<Item = EventTiming> {
-        core::iter::successors(Some(EmitStep::When), |step| step.next()).filter_map(EmitStep::cell)
+        iter::successors(Some(EmitStep::When), |step| step.next()).filter_map(EmitStep::cell)
     }
 }
 
@@ -1752,7 +1753,7 @@ pub enum TimingSub {
 /// (Investigate), deal damage (Fight), disengage and exhaust (Evade),
 /// or nothing (a bare plain skill test).
 ///
-/// [`SkillTestStarted`]: crate::Event::SkillTestStarted
+/// [`SkillTestStarted`]: crate::event::Event::SkillTestStarted
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct InFlightSkillTest {
@@ -1771,7 +1772,7 @@ pub struct InFlightSkillTest {
     /// Skill the test is against.
     pub skill: SkillKind,
     /// Test kind (Investigate / Fight / Evade / Plain). Drives
-    /// [`ModifierScope::WhileInPlayDuring`](crate::dsl::ModifierScope::WhileInPlayDuring)
+    /// [`ModifierScope::WhileInPlayDuring`](card_dsl::dsl::ModifierScope::WhileInPlayDuring)
     /// matching during resolution.
     pub kind: SkillTestKind,
     /// What this test's difficulty is read *from* — never a number
@@ -1810,9 +1811,9 @@ pub struct InFlightSkillTest {
     /// The location the test is associated with, snapshotted at
     /// skill-test start (`engine::dispatch::start_skill_test`) from
     /// the investigator's current location. Used by
-    /// [`LocationTarget::TestedLocation`](crate::dsl::LocationTarget::TestedLocation)
+    /// [`LocationTarget::TestedLocation`](card_dsl::dsl::LocationTarget::TestedLocation)
     /// during
-    /// [`Trigger::OnSkillTestResolution`](crate::dsl::Trigger::OnSkillTestResolution)
+    /// [`Trigger::OnSkillTestResolution`](card_dsl::dsl::Trigger::OnSkillTestResolution)
     /// firing so "at that location" resolves to the location the
     /// test was originally taken against, even if the investigator
     /// has since moved (no Phase-3 path moves mid-test, but the
@@ -1913,11 +1914,11 @@ pub struct ResolvedTest {
     /// effect (Grasping Hands 01162, Rotting Remains 01163).
     pub failed_by: u8,
     /// Success margin (`total - difficulty`, ≥ 0 on success); supplied to the
-    /// logged [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) at the
+    /// logged [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) at the
     /// `DetermineOutcome` step. Negative on failure (unused there).
     pub margin: i8,
     /// Why the test failed (meaningful only when `!succeeded`); supplied to the
-    /// logged [`SkillTestFailed`](crate::Event::SkillTestFailed).
+    /// logged [`SkillTestFailed`](crate::event::Event::SkillTestFailed).
     pub fail_reason: FailureReason,
 }
 
@@ -1928,23 +1929,23 @@ pub struct ResolvedTest {
 /// walks a fixed sequence of steps:
 ///
 /// 1. Validate commits + draw chaos token + emit
-///    [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
-///    [`SkillTestFailed`](crate::Event::SkillTestFailed)
+///    [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) /
+///    [`SkillTestFailed`](crate::event::Event::SkillTestFailed)
 /// 2. Apply the action-specific
 ///    [`SkillTestFollowUp`] (Investigate / Fight / Evade / None) —
 ///    this is where `damage_enemy` may emit
-///    [`EnemyDefeated`](crate::Event::EnemyDefeated) and queue an
+///    [`EnemyDefeated`](crate::event::Event::EnemyDefeated) and queue an
 ///    an after-enemy-defeated reaction window
 /// 3. Fire
-///    [`OnSkillTestResolution`](crate::dsl::Trigger::OnSkillTestResolution)
+///    [`OnSkillTestResolution`](card_dsl::dsl::Trigger::OnSkillTestResolution)
 ///    triggers on committed cards
 /// 4. Discard committed cards + emit
-///    [`SkillTestEnded`](crate::Event::SkillTestEnded) + drain
+///    [`SkillTestEnded`](crate::event::Event::SkillTestEnded) + drain
 ///    pending modifiers
 ///
 /// After each step that *can* queue a reaction window, the driver checks
 /// whether that window is now the top frame; if so it suspends with
-/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput) and yields to the
+/// [`AwaitingInput`](crate::engine::EngineOutcome::AwaitingInput) and yields to the
 /// `drive` loop, which dispatches the window. On the window's close the loop
 /// re-dispatches this `SkillTest` frame, which reads its cursor and jumps to
 /// the matching step (Slice C-plumbing). This is the rules-correct shape per
@@ -2022,8 +2023,8 @@ pub enum SkillTestStep {
     /// RR ST.5–ST.7 boundary. Sum the modified skill value (ST.5) from the
     /// board as it stands *now* — after the ST.4 symbol effects — compare it
     /// against the difficulty (ST.6), then emit the logged
-    /// [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
-    /// [`SkillTestFailed`](crate::Event::SkillTestFailed) and fire the general
+    /// [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) /
+    /// [`SkillTestFailed`](crate::event::Event::SkillTestFailed) and fire the general
     /// skill-test-outcome timing point (`TimingEvent::SkillTestResolved`) for
     /// **every** test and both outcomes — "after you successfully investigate"
     /// (Obscuring Fog 01168 forced + Dr. Milan 01033 reaction) is the
@@ -2074,7 +2075,7 @@ pub enum SkillTestStep {
     /// (nothing pushed if no committed card carries an `OnCommit` trigger);
     /// pre-advances to [`ApplyFollowUp`](Self::ApplyFollowUp).
     ///
-    /// [`Trigger::OnCommit`]: crate::dsl::Trigger::OnCommit
+    /// [`Trigger::OnCommit`]: card_dsl::dsl::Trigger::OnCommit
     FireOnCommit,
     /// RR ST.7 part 1 — apply the action-specific
     /// [`SkillTestFollowUp`]. On success the Investigate follow-up
@@ -2113,7 +2114,7 @@ pub enum SkillTestStep {
     /// [`InFlightSkillTest::resolved`] rather than carried in the cursor — `next`
     /// is the only step-specific state this variant needs.
     ///
-    /// [`OnSkillTestResolution`]: crate::dsl::Trigger::OnSkillTestResolution
+    /// [`OnSkillTestResolution`]: card_dsl::dsl::Trigger::OnSkillTestResolution
     FireOnResolution {
         /// Index of the next matching (card, ability) trigger to fire.
         next: u32,
@@ -2126,7 +2127,7 @@ pub enum SkillTestStep {
     PostRetaliate,
     /// Step 3 (`OnSkillTestResolution`) is complete. The next driver
     /// iteration discards committed cards, emits
-    /// [`SkillTestEnded`](crate::Event::SkillTestEnded), and clears
+    /// [`SkillTestEnded`](crate::event::Event::SkillTestEnded), and clears
     /// the in-flight record.
     PostOnResolution,
 }
@@ -2149,7 +2150,7 @@ pub enum SkillTestFollowUp {
     /// `1 + `[`bonus_clues_discovered`](InFlightSkillTest::bonus_clues_discovered)
     /// clues at the test's
     /// [`tested_location`](InFlightSkillTest::tested_location) (via the
-    /// [`DiscoverClue`](crate::dsl::Effect::DiscoverClue) evaluator path).
+    /// [`DiscoverClue`](card_dsl::dsl::Effect::DiscoverClue) evaluator path).
     /// Used by `Investigate`. A commit-time "discover 1 additional clue"
     /// (Deduction 01039) raises this discovery's count rather than adding a
     /// second discovery — see the **Discovery** entry in `CONTEXT.md`.
@@ -2197,7 +2198,7 @@ pub enum FastActorScope {
     /// (e.g. only investigators at a given location). No Phase-3
     /// or Phase-4 site constructs this variant yet; the variant
     /// exists so future cards can grow it without engine churn.
-    Specific(std::collections::BTreeSet<InvestigatorId>),
+    Specific(BTreeSet<InvestigatorId>),
 }
 
 /// The framework step a [`FastWindow`](Continuation::FastWindow) gates — the
@@ -2583,7 +2584,7 @@ pub enum ModifierTarget {
 ///
 /// **A test whose difficulty target leaves play before ST.6 is abandoned**:
 /// its frame is torn down, its committed cards are discarded, its test-scoped
-/// modifier rows expire, [`SkillTestEnded`](crate::Event::SkillTestEnded)
+/// modifier rows expire, [`SkillTestEnded`](crate::event::Event::SkillTestEnded)
 /// fires, and no success or failure is ever declared. The gate is in
 /// `skill_test::advance`'s loop preamble, beside the eliminated-tester one it
 /// mirrors (#564). Reachable solo: Beat Cop 01018's *"\[fast\] Discard Beat
@@ -2661,7 +2662,7 @@ pub enum DifficultyBasis {
 /// test in flight. The evaluator's `Modify` arm performs the translation,
 /// and it is the point where a scope with nothing to stamp is refused.
 ///
-/// [`ModifierScope`]: crate::dsl::ModifierScope
+/// [`ModifierScope`]: card_dsl::dsl::ModifierScope
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Lifetime {
@@ -2673,7 +2674,7 @@ pub enum Lifetime {
     /// 01042) — arrive with the effects that record them; the evaluator
     /// still refuses those scopes, so there is no way to write one down.
     ///
-    /// [`ModifierScope::ThisTurn`]: crate::dsl::ModifierScope::ThisTurn
+    /// [`ModifierScope::ThisTurn`]: card_dsl::dsl::ModifierScope::ThisTurn
     SkillTest(SkillTestId),
 }
 
@@ -2757,7 +2758,7 @@ pub enum RecordedModifierKind {
 /// Pushed by the evaluator's `Modify` arm when an activated or triggered
 /// ability resolves a `Modify` with a non-constant
 /// [`ModifierScope`] — today only
-/// [`ThisSkillTest`](crate::dsl::ModifierScope::ThisSkillTest), which
+/// [`ThisSkillTest`](card_dsl::dsl::ModifierScope::ThisSkillTest), which
 /// stamps [`Lifetime::SkillTest`] with the id of the test in flight (and is
 /// refused outright when there is none); by the evaluator's `AutoResolve`
 /// arm, under the same "there must be a test to stamp" gate; and by the skill-test driver,
@@ -2766,15 +2767,15 @@ pub enum RecordedModifierKind {
 /// alongside the swept population, and dropped by the boundary its
 /// [`lifetime`](Self::lifetime) names.
 ///
-/// [`ModifierScope`]: crate::dsl::ModifierScope
+/// [`ModifierScope`]: card_dsl::dsl::ModifierScope
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct RecordedModifier {
     /// What the row modifies. An
     /// [`Investigator`](ModifierTarget::Investigator) for a `Modify` with
-    /// audience [`Controller`](crate::dsl::ModifierAudience::Controller);
+    /// audience [`Controller`](card_dsl::dsl::ModifierAudience::Controller);
     /// a [`Location`](ModifierTarget::Location) for the shroud reduction an
-    /// [`Investigate`](crate::dsl::ActionDesignator::Investigate) designator
+    /// [`Investigate`](card_dsl::dsl::ActionDesignator::Investigate) designator
     /// grants the investigation it performs (Flashlight 01087's *"Your location
     /// gets -2 shroud for this investigation."*).
     pub target: ModifierTarget,
@@ -2850,7 +2851,7 @@ impl RecordedModifier {
     /// [`target`](Self::target), with `investigator` as the "you" its
     /// [`Delta`](RecordedModifierKind::Delta) expression reads. The shroud
     /// reduction an
-    /// [`Investigate`](crate::dsl::ActionDesignator::Investigate) designator
+    /// [`Investigate`](card_dsl::dsl::ActionDesignator::Investigate) designator
     /// grants (Flashlight 01087) is the one row today whose target is not its
     /// controller.
     #[must_use]
@@ -2995,7 +2996,7 @@ impl GameState {
     /// deterministically.
     ///
     /// The single reading of "engaged with you", shared by the kernel's
-    /// [`Quantity::EngagedEnemies`](crate::dsl::Quantity::EngagedEnemies) count
+    /// [`Quantity::EngagedEnemies`](card_dsl::dsl::Quantity::EngagedEnemies) count
     /// and by card predicates in the `cards` crate (Machete 01020). Two
     /// hand-rolled copies of this filter drifting apart is what #592 was.
     ///
@@ -3120,7 +3121,6 @@ impl GameState {
 #[cfg(test)]
 mod open_window_tests {
     use super::*;
-
     use crate::test_support;
 
     #[test]
@@ -3178,7 +3178,6 @@ mod open_window_tests {
 #[cfg(test)]
 mod fast_actor_scope_tests {
     use super::*;
-    use std::collections::BTreeSet;
 
     #[test]
     fn active_investigator_permits_only_named() {
@@ -3223,8 +3222,7 @@ mod fast_actor_scope_tests {
 
 #[cfg(test)]
 mod location_id_counter_tests {
-    use crate::state::{Counter, GameState};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{Counter, GameState, GameStateBuilder};
 
     #[test]
     fn game_state_starts_location_ids_at_zero() {
@@ -3245,8 +3243,7 @@ mod location_id_counter_tests {
 #[cfg(test)]
 mod continuation_stack_tests {
     use super::*;
-
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn awaits_input_gates_suspensions_but_not_anchors_or_fast_windows() {
@@ -3406,8 +3403,7 @@ mod continuation_stack_tests {
 #[cfg(test)]
 mod id_counter_tests {
     use super::*;
-
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn game_state_starts_enemy_ids_at_zero() {
@@ -3442,7 +3438,7 @@ mod id_counter_tests {
 
 #[cfg(test)]
 mod encounter_draw_tests {
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn game_state_default_has_no_encounter_draw_pending() {
@@ -3454,8 +3450,7 @@ mod encounter_draw_tests {
 #[cfg(test)]
 mod enemy_attack_loop_tests {
     use super::*;
-
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn enemy_phase_anchor_attacking_round_trips_through_serde() {
@@ -3518,8 +3513,7 @@ mod enemy_attack_loop_tests {
 #[cfg(test)]
 mod encounter_deck_tests {
     use super::*;
-
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn encounter_deck_and_discard_serde_roundtrip() {
@@ -3631,9 +3625,9 @@ mod partial_eq_tests {
 
 #[cfg(test)]
 mod add_location_tests {
-    use crate::card_data::{CardKind, CardMetadata, ClueValue, Prey};
-    use crate::state::CardCode;
-    use crate::test_support::GameStateBuilder;
+    use card_dsl::card_data::{CardKind, CardMetadata, ClueValue, Prey};
+
+    use crate::state::{CardCode, GameStateBuilder};
 
     fn location_meta(code: &str, name: &str, shroud: u8, clues: u8) -> CardMetadata {
         CardMetadata {
@@ -3749,8 +3743,7 @@ mod add_location_tests {
 
 #[cfg(test)]
 mod connect_tests {
-    use crate::state::{CardCode, Location, LocationId};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{CardCode, GameStateBuilder, Location, LocationId};
 
     #[test]
     fn connect_wires_both_directions() {
@@ -3802,8 +3795,7 @@ mod connect_tests {
 #[cfg(test)]
 mod starting_location_tests {
     use super::*;
-
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn game_state_starting_location_defaults_to_none_and_roundtrips() {
@@ -3820,8 +3812,7 @@ mod starting_location_tests {
 #[cfg(test)]
 mod action_resolution_frame_tests {
     use super::*;
-
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn action_resolution_frame_never_awaits_input_and_is_not_a_phase_anchor() {
@@ -3908,7 +3899,8 @@ mod scenario_end_cancellation_tests {
 
 #[cfg(test)]
 mod effect_frame_tests {
-    use crate::dsl::Effect;
+    use card_dsl::dsl::Effect;
+
     use crate::engine::evaluator::EvalContext;
     use crate::state::{Continuation, EffectFrame, InvestigatorId};
 

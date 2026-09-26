@@ -32,7 +32,8 @@
 
 use std::borrow::Cow;
 
-use crate::dsl::ActionDesignator;
+use card_dsl::dsl::ActionDesignator;
+
 use crate::engine::dispatch::combat;
 use crate::state::{EnemyId, GameState, InvestigatorId, LocationId};
 
@@ -138,9 +139,11 @@ pub(crate) fn investigate_location(
 
 #[cfg(test)]
 mod tests {
+    use card_dsl::dsl::IntExpr;
+
     use super::*;
-    use crate::dsl::IntExpr;
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::GameStateBuilder;
+    use crate::test_support;
 
     const ME: InvestigatorId = InvestigatorId(1);
     const HERE: LocationId = LocationId(1);

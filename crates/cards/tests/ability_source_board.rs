@@ -35,18 +35,16 @@
 //! until #644. Purpose-built abilities prove reachability directly. Prior art:
 //! `ability_source_colocation.rs`.
 
-use card_dsl::dsl::{
-    activated, gain_resources, heal_damage, Ability, InvestigatorTarget, UsageLimit, UsagePeriod,
-};
+use card_dsl::dsl::{self, Ability, InvestigatorTarget, UsageLimit, UsagePeriod};
 use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, Act, Agenda, CardCode, GameState, InvestigatorId, LocationId,
-    Phase,
+    AbilityAddress, AbilitySource, Act, Agenda, CardCode, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// Synthetic **act**, standing in for Uncovering the Conspiracy 01123.
 const ACT_ONE: &str = "SRCACT01";
@@ -75,16 +73,23 @@ const LIMITED: u8 = 2;
 /// this source" and "not offered from that one" differ only in the source.
 fn probe_abilities() -> Vec<Ability> {
     vec![
-        activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)),
+        dsl::activated(
+            1,
+            vec![],
+            dsl::gain_resources(InvestigatorTarget::Active, 1),
+        ),
         // Nobody is damaged on this board, so healing damage is provably
         // inert (`effect_can_change_state`).
-        activated(1, vec![], heal_damage(InvestigatorTarget::Active, 1)),
-        activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)).with_usage_limit(
-            UsageLimit {
-                count: 1,
-                period: UsagePeriod::Round,
-            },
-        ),
+        dsl::activated(1, vec![], dsl::heal_damage(InvestigatorTarget::Active, 1)),
+        dsl::activated(
+            1,
+            vec![],
+            dsl::gain_resources(InvestigatorTarget::Active, 1),
+        )
+        .with_usage_limit(UsageLimit {
+            count: 1,
+            period: UsagePeriod::Round,
+        }),
     ]
 }
 

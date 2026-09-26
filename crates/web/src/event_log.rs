@@ -4,14 +4,14 @@
 use leptos::html::Div;
 use leptos::prelude::*;
 
-use crate::store::use_store;
+use crate::store;
 
 /// Read-only event log, left of the board. Renders every accumulated `LogBatch`
 /// oldest-first (newest at the bottom); a header line per batch then one Debug
 /// line per event. On wasm, auto-scrolls to the bottom as the log grows.
 #[component]
 pub fn EventLogView() -> impl IntoView {
-    let store = use_store();
+    let store = store::use_store();
     let collapsed = RwSignal::new(false);
     let scroll_ref = NodeRef::<Div>::new();
 

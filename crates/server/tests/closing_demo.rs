@@ -12,7 +12,6 @@
 
 mod common;
 
-use common::TEST_SCENARIO_ID;
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -20,6 +19,8 @@ use game_core::scenario::ScenarioId;
 use game_core::state::GameState;
 use protocol::{ClientMessage, ServerMessage};
 use server::session::GameSession;
+
+use crate::common::TEST_SCENARIO_ID;
 
 fn submit(action: PlayerAction) -> ClientMessage {
     ClientMessage::Submit { action }

@@ -3,9 +3,10 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use crate::card_data::CardKind;
+use card_dsl::card_data::CardKind;
+use card_dsl::dsl::{ActionDesignator, Cost, Effect, Trigger, UsageLimit};
+
 use crate::card_registry;
-use crate::dsl::{ActionDesignator, Cost, Effect, Trigger, UsageLimit};
 use crate::engine::dispatch::{cards, combat, reaction_windows, threat_area, ActivateCheckResult};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::EngineOutcome;
@@ -69,12 +70,12 @@ use crate::state::{
 ///
 /// # Cost coverage
 ///
-/// - [`Cost::Resources`](crate::dsl::Cost::Resources): validates
+/// - [`Cost::Resources`](card_dsl::dsl::Cost::Resources): validates
 ///   wallet, deducts on payment, emits [`Event::ResourcesPaid`].
-/// - [`Cost::Exhaust`](crate::dsl::Cost::Exhaust): validates source
+/// - [`Cost::Exhaust`](card_dsl::dsl::Cost::Exhaust): validates source
 ///   not already exhausted, flips `exhausted` on the source instance,
 ///   emits [`Event::CardExhausted`].
-/// - [`Cost::DiscardCardFromHand`](crate::dsl::Cost::DiscardCardFromHand):
+/// - [`Cost::DiscardCardFromHand`](card_dsl::dsl::Cost::DiscardCardFromHand):
 ///   rejects with a TODO — target-card selection needs an engine
 ///   `AwaitingInput` producer + `ResolveInput` dispatch. No card on
 ///   the roadmap uses this cost yet, so the consumer hasn't landed.
@@ -168,7 +169,7 @@ pub(super) fn activate_ability(
 ///
 /// A residual cannot contradict the bold word the way the retired
 /// designator-plus-`Effect::Fight` split could: with the fight and the
-/// investigation gone from [`Effect`](crate::dsl::Effect) entirely, no effect
+/// investigation gone from [`Effect`](card_dsl::dsl::Effect) entirely, no effect
 /// tree can re-root a designated action into a different one.
 fn push_activation_resolution(
     cx: &mut Cx,
@@ -455,7 +456,7 @@ fn cost_label(cost: &Cost) -> &'static str {
     }
 }
 
-/// The parts of an [`Ability`](crate::dsl::Ability) the activation path needs,
+/// The parts of an [`Ability`](card_dsl::dsl::Ability) the activation path needs,
 /// lifted out of the registry entry.
 ///
 /// `usage_limit` rides along because the validator has to answer *"can this
@@ -586,10 +587,11 @@ pub(super) fn check_cost_payable(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::dsl::{fight, investigate};
-    use crate::test_support;
+    use card_dsl::dsl;
     use ActionDesignator::{Evade, Move, Parley, Resign};
+
+    use super::*;
+    use crate::test_support;
 
     /// The attack-of-opportunity exemption is exactly the four designators
     /// `glossary/Attack_of_Opportunity.md` names — **fight**, **evade**,
@@ -598,13 +600,13 @@ mod tests {
     /// flavours.
     #[test]
     fn provokes_aoo_exempts_exactly_the_four_named_designators() {
-        for exempt in [fight(0u8, 0u8), Evade, Parley, Resign] {
+        for exempt in [dsl::fight(0u8, 0u8), Evade, Parley, Resign] {
             assert!(
                 !provokes_aoo(1, Some(&exempt)),
                 "{exempt:?} is on the exempt list"
             );
         }
-        for provoking in [Move, investigate(0u8)] {
+        for provoking in [Move, dsl::investigate(0u8)] {
             assert!(
                 provokes_aoo(1, Some(&provoking)),
                 "{provoking:?} is not on the exempt list"
@@ -621,8 +623,8 @@ mod tests {
         // with a bold action designator (same entry, added in FAQ).
         for designator in [
             None,
-            Some(fight(0u8, 0u8)),
-            Some(investigate(0u8)),
+            Some(dsl::fight(0u8, 0u8)),
+            Some(dsl::investigate(0u8)),
             Some(Resign),
         ] {
             assert!(

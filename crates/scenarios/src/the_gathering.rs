@@ -27,7 +27,7 @@
 //! remaining gap, recorded on the cards: the trauma, the campaign log, and
 //! Lita Chantler at R1 are campaign machinery and stay with #766.
 
-use game_core::card_data::CardKind;
+use card_dsl::card_data::CardKind;
 use game_core::event::Event;
 use game_core::scenario::{
     LocationLayout, ScenarioEnding, ScenarioId, ScenarioModule, SymbolCtx, SymbolOutcome,
@@ -304,8 +304,9 @@ pub const MODULE: ScenarioModule = ScenarioModule {
 mod tests {
     use std::collections::BTreeMap;
 
+    use card_dsl::card_data::ClueValue;
+
     use super::*;
-    use game_core::card_data::ClueValue;
 
     #[test]
     fn setup_reads_card_stats_from_corpus() {

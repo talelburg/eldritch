@@ -1,9 +1,10 @@
 //! Combat helpers: enemy damage, investigator damage/horror, attacks.
 
+use card_dsl::card_data::CardKind;
+use card_dsl::dsl::{EntityScope, LocationSet};
+
 use crate::action::InputResponse;
-use crate::card_data::CardKind;
 use crate::card_registry;
-use crate::dsl::{EntityScope, LocationSet};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{cards, choice, elimination, emit, hunters, reaction_windows};
 use crate::engine::outcome::{
@@ -28,7 +29,7 @@ pub(crate) fn fight_target_scope() -> EntityScope {
     EntityScope::At(LocationSet::Here)
 }
 
-/// Enemies matching an [`EntityScope`](crate::dsl::EntityScope), in `BTreeMap`
+/// Enemies matching an [`EntityScope`](card_dsl::dsl::EntityScope), in `BTreeMap`
 /// (id) order so the `OptionId` index replays deterministically. Shared by the
 /// evaluator's choice-grounding and the activation pre-cost target check.
 pub(crate) fn enemies_in_scope(
@@ -1310,9 +1311,9 @@ pub(super) fn resume_attack_order_pick(cx: &mut Cx, response: &InputResponse) ->
 
 #[cfg(test)]
 mod combat_tests {
-    use super::*;
     use std::collections::BTreeMap;
 
+    use super::*;
     use crate::action::InputResponse;
     use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
     use crate::engine::outcome::{EngineOutcome, OptionId};
@@ -1320,9 +1321,8 @@ mod combat_tests {
     use crate::event::Event;
     use crate::state::{
         Assignment, AttackLoopStage, CardCode, CardInstanceId, Continuation, EnemyAttackSource,
-        EnemyId, EnemyResume, InvestigatorId,
+        EnemyId, EnemyResume, GameStateBuilder, InvestigatorId,
     };
-    use crate::test_support::GameStateBuilder;
     use crate::{assert_event, assert_no_event, test_support};
 
     #[test]

@@ -12,11 +12,13 @@ use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::state::{CardCode, GameStateBuilder};
-use game_core::test_support::fixtures;
+use game_core::test_support;
 use leptos::prelude::*;
+use leptos::task;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
+use web::controls;
 use web::interaction::ConfirmAnchor;
 use web::store::ClientState;
 use web::transport::OutboundTx;
@@ -26,7 +28,8 @@ wasm_bindgen_test_configure!(run_in_browser);
 
 /// A `Confirm` prompt anchored to the encounter deck — the Mythos draw.
 fn encounter_draw_prompt() -> EngineOutcome {
-    let mut outcome = fixtures::awaiting_confirm_input("Mythos step 1.4: draws an encounter card.");
+    let mut outcome =
+        test_support::awaiting_confirm_input("Mythos step 1.4: draws an encounter card.");
     if let EngineOutcome::AwaitingInput { request, .. } = &mut outcome {
         request.target = Some(OptionTarget::EncounterDeck);
     }
@@ -37,7 +40,7 @@ fn encounter_draw_prompt() -> EngineOutcome {
 /// `deck_size` cards, with `outcome` live.
 async fn mount(deck_size: usize, outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
     let mut state = GameStateBuilder::new()
-        .with_investigator(fixtures::test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .build();
     state.encounter_deck = (0..deck_size)
         .map(|i| CardCode::new(format!("_enc{i}")))
@@ -51,9 +54,9 @@ async fn mount(deck_size: usize, outcome: EngineOutcome) -> UnboundedReceiver<Cl
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let anchor = Signal::derive(move || store.with(web::interaction::confirm_anchor));
         provide_context(ConfirmAnchor(anchor));
-        view! { <div class="ed-root">{web::controls::encounter_deck_view(&state)}</div> }
+        view! { <div class="ed-root">{controls::encounter_deck_view(&state)}</div> }
     });
-    leptos::task::tick().await;
+    task::tick().await;
     rx
 }
 
@@ -114,7 +117,7 @@ async fn draw_is_dark_for_the_unanchored_acknowledge_confirm() {
     // them, and this is the assertion that says so.
     let _ = mount(
         5,
-        fixtures::awaiting_confirm_input("Acknowledge the skill-test result."),
+        test_support::awaiting_confirm_input("Acknowledge the skill-test result."),
     )
     .await;
     assert!(
@@ -131,7 +134,7 @@ async fn draw_glows_and_submits_confirm_for_the_mythos_draw() {
     assert!(el.class_name().contains("actionable"));
 
     el.click();
-    leptos::task::tick().await;
+    task::tick().await;
     match rx.try_recv().expect("a frame was sent after tick") {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },

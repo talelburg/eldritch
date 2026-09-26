@@ -1,12 +1,11 @@
-//! `GameId` re-export + server-side id minting.
+//! Server-side `GameId` minting.
 //!
 //! The `GameId` type lives in `protocol` (it is part of the client/server
 //! contract). Generation uses `uuid`, a persistence concern, so it stays
 //! here rather than in the wasm-safe `protocol` crate.
 
+use protocol::GameId;
 use uuid::Uuid;
-
-pub use protocol::GameId;
 
 /// Generate a fresh random game id (UUID v4).
 #[must_use]

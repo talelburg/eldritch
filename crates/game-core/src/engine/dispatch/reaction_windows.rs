@@ -10,14 +10,16 @@
 //! [`any_fast_play_eligible`], [`open_fast_window`]).
 
 use std::borrow::Cow;
+use std::iter;
 
-use crate::action::InputResponse;
-use crate::card_data::{CardMetadata, CardType};
-use crate::card_registry;
-use crate::dsl::{
+use card_dsl::card_data::{CardMetadata, CardType};
+use card_dsl::dsl::{
     Ability, ActionDesignator, Cost, Effect, EnemyTarget, EventPattern, EventTiming, Trigger,
     TriggerKind, UsageLimit,
 };
+
+use crate::action::InputResponse;
+use crate::card_registry;
 use crate::engine::dispatch::abilities::ActivatedAbility;
 use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
 use crate::engine::dispatch::{
@@ -1181,7 +1183,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
 /// Play the hand Fast-event `candidate` from the open resolution run (Axis C,
 /// #335) — the [`CandidateSource::Hand`] resolution of [`fire_pending_trigger`].
 /// Commences the play via the shared [`super::cards::commence_play`] (emit
-/// [`crate::Event::CardPlayed`], leave hand — RR Appendix I step 3), then pushes a
+/// [`crate::event::Event::CardPlayed`], leave hand — RR Appendix I step 3), then pushes a
 /// [`Continuation::PlayFromHand`] frame **holding that card** (above the live
 /// reaction window) and the `OnEvent` effect for the drive loop. On the effect's
 /// completion, [`super::cards::dispose_play_from_hand`] places the event in
@@ -1374,7 +1376,7 @@ fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
             // Search the investigator card first, then cards in play, then the
             // threat area — the same zones `controlled_card_instances()` scans,
             // so an investigator-card reaction (Roland Banks) resolves here.
-            let card = std::iter::once(&mut inv.investigator_card)
+            let card = iter::once(&mut inv.investigator_card)
                 .chain(inv.cards_in_play.iter_mut())
                 .chain(inv.threat_area.iter_mut())
                 .find(|c| c.instance_id == instance_id)
@@ -1875,7 +1877,7 @@ fn check_play_action_available(
 /// affordable.
 ///
 /// The two costs that are not a number reject for **different reasons**, and
-/// [`CardMetadata::play_cost`](crate::card_data::CardMetadata::play_cost) —
+/// [`CardMetadata::play_cost`](card_dsl::card_data::CardMetadata::play_cost) —
 /// which owns the description of how each one is encoded — is what tells them
 /// apart.
 ///
@@ -2079,7 +2081,7 @@ fn check_activation_changes_state(
     .into())
 }
 
-/// Reject an ability mixing [`Cost::DiscardSelf`](crate::dsl::Cost::DiscardSelf)
+/// Reject an ability mixing [`Cost::DiscardSelf`](card_dsl::dsl::Cost::DiscardSelf)
 /// with another source-referencing cost: `DiscardSelf` removes the source, so it
 /// must be the sole such cost (Beat Cop / Knife list only it). Deliberately
 /// unlifted until a card needs the combo — no tracking issue on purpose (YAGNI);
@@ -2428,7 +2430,8 @@ pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
 #[cfg(test)]
 mod check_play_card_tests {
     use super::*;
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::GameStateBuilder;
+    use crate::test_support;
 
     #[test]
     fn check_play_card_returns_err_for_unknown_hand_index() {
@@ -2631,8 +2634,8 @@ mod trigger_matches_tests {
 #[cfg(test)]
 mod check_activate_ability_tests {
     use super::*;
-    use crate::state::CardInstanceId;
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardInstanceId, GameStateBuilder};
+    use crate::test_support;
 
     #[test]
     fn check_activate_ability_returns_err_for_unreachable_source() {
@@ -2673,7 +2676,8 @@ mod check_activate_ability_tests {
 #[cfg(test)]
 mod any_fast_play_eligible_tests {
     use super::*;
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::GameStateBuilder;
+    use crate::test_support;
 
     #[test]
     fn returns_false_when_no_investigators() {
@@ -2796,8 +2800,8 @@ mod resolution_option_anchor_tests {
 #[cfg(test)]
 mod open_fast_window_tests {
     use super::*;
-    use crate::state::{FastWindowKind, MythosResume, PhaseStep};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{FastWindowKind, GameStateBuilder, MythosResume, PhaseStep};
+    use crate::test_support;
 
     #[test]
     fn open_fast_window_with_no_eligibility_auto_skips_inline() {
@@ -2845,8 +2849,10 @@ mod open_fast_window_tests {
 #[cfg(test)]
 mod candidate_source_present_tests {
     use super::*;
-    use crate::state::{Act, Agenda, CardInPlay, CardInstanceId, EnemyId, LocationId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{
+        Act, Agenda, CardInPlay, CardInstanceId, EnemyId, GameStateBuilder, LocationId,
+    };
+    use crate::test_support;
 
     const INV: InvestigatorId = InvestigatorId(1);
     /// Deliberately resolved by no registry — these tests install none.
@@ -3038,8 +3044,8 @@ mod candidate_source_present_tests {
 #[cfg(test)]
 mod withdraw_suppressed_candidates_tests {
     use super::*;
-    use crate::state::{CardInstanceId, LocationId, TimingSub};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardInstanceId, GameStateBuilder, LocationId, TimingSub};
+    use crate::test_support;
 
     const INV: InvestigatorId = InvestigatorId(1);
     /// Deliberately resolved by no registry — these tests install none. The

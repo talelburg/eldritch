@@ -22,10 +22,10 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{ApplyResult, EngineOutcome, InputRequest, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase, TokenModifiers,
-    Zone,
+    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    TokenModifiers, Zone,
 };
-use game_core::test_support::{self, ChoiceResolver, GameStateBuilder};
+use game_core::test_support::{self, ChoiceResolver};
 use game_core::{assert_event, assert_event_count, card_registry};
 
 /// Working a Hunch — `01037`. "Fast. Play only during your turn. / Discover 1

@@ -3,8 +3,9 @@
 //! (2b) — this module shares the handlers' legality predicates so the
 //! enumeration matches handler-acceptance by construction.
 
+use card_dsl::dsl::ActionClass;
+
 use crate::card_registry;
-use crate::dsl::ActionClass;
 use crate::engine::dispatch::{act_agenda, actions, movement, reaction_windows};
 use crate::engine::outcome::OptionTarget;
 use crate::engine::{abilities_in_effect, ability_source};
@@ -400,12 +401,12 @@ fn push_basic_actions(state: &GameState, investigator: InvestigatorId, out: &mut
 mod tests {
     use super::*;
     use crate::action::{Action, InputResponse, PlayerAction};
-    use crate::engine;
     use crate::engine::outcome::{EngineOutcome, OptionId};
     use crate::state::{
-        Act, CardCode, CardInstanceId, ChaosBag, ChaosToken, Enemy, InvestigationResume,
+        Act, CardCode, CardInstanceId, ChaosBag, ChaosToken, Enemy, GameStateBuilder,
+        InvestigationResume,
     };
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::{engine, test_support};
 
     /// Build a single-investigator open-turn state (`InvestigatorTurn` frame on
     /// top of the `InvestigationPhase` anchor), the shape `legal_actions` enumerates.

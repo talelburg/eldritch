@@ -29,7 +29,9 @@
 //! logged [`Event`](crate::event::Event) — call sites still emit their own
 //! (e.g. `EnemyDefeated`, `InvestigatorMoved`).
 
-use crate::dsl::{SkillTestKind, TestOutcome};
+use card_dsl::dsl::{SkillTestKind, TestOutcome};
+use serde::{Deserialize, Serialize};
+
 use crate::engine::dispatch::forced_triggers::ForcedTriggerPoint;
 use crate::engine::dispatch::{actions, combat};
 use crate::engine::outcome::EngineOutcome;
@@ -38,7 +40,6 @@ use crate::state::{
     Assignment, CardCode, CardInstanceId, Continuation, DamageSource, EmitStep, EnemyId,
     InvestigatorId, LocationId, Phase,
 };
-use serde::{Deserialize, Serialize};
 
 /// A game/framework timing point at which forced and/or reaction triggers
 /// may fire, with the binding context the fired effects need.
@@ -143,7 +144,7 @@ pub enum TimingEvent {
     /// the cards (Mark Harrigan 03001's *"After damage is placed on a card you
     /// control"*).
     ///
-    /// No card-facing [`EventPattern`](crate::dsl::EventPattern) yet: none of
+    /// No card-facing [`EventPattern`](card_dsl::dsl::EventPattern) yet: none of
     /// those cards is in the Core or Dunwich corpus, and a pattern with no
     /// declaration to match is decoration. See
     /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
@@ -181,7 +182,7 @@ pub enum TimingEvent {
     /// condition: a card declares [`EventPattern::EnemyAttacks`] plus the trigger
     /// word it prints.
     ///
-    /// [`EventPattern::EnemyAttacks`]: crate::dsl::EventPattern::EnemyAttacks
+    /// [`EventPattern::EnemyAttacks`]: card_dsl::dsl::EventPattern::EnemyAttacks
     EnemyAttacks {
         /// The attacking enemy.
         enemy: EnemyId,

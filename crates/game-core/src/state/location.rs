@@ -1,9 +1,9 @@
 //! Locations: places investigators move between.
 
-use crate::card_data::ClueValue;
-use crate::state::{CardCode, CardInPlay};
-
+use card_dsl::card_data::ClueValue;
 use serde::{Deserialize, Serialize};
+
+use crate::state::{CardCode, CardInPlay};
 
 crate::state::define_id! {
     /// Stable identifier for a location within a scenario.
@@ -47,7 +47,7 @@ pub struct Location {
     /// Encounter cards attached to this location (e.g. Obscuring Fog
     /// 01168 grants `+2` shroud while attached). Empty for the common
     /// case; discarded back to the encounter discard via
-    /// [`Effect::DiscardSelf`](crate::dsl::Effect::DiscardSelf).
+    /// [`Effect::DiscardSelf`](card_dsl::dsl::Effect::DiscardSelf).
     pub attachments: Vec<CardInPlay>,
     /// Cards **put into play at** this location, controlled by no
     /// investigator — Lita Chantler 01117, whom act 01109's reverse puts
@@ -58,7 +58,7 @@ pub struct Location {
     /// host — *"an attachment remains attached until either the attachment or
     /// the game element to which it is attached leaves play (in which case the
     /// attachment is discarded)"* — and an audience
-    /// ([`ModifierAudience::AttachedCard`](crate::dsl::ModifierAudience::AttachedCard))
+    /// ([`ModifierAudience::AttachedCard`](card_dsl::dsl::ModifierAudience::AttachedCard))
     /// that reads the host's stats. A card put into play *in* a location has
     /// neither. The rules name this zone directly:
     /// `glossary/In_Play_and_Out_of_Play.md` — *"each encounter card in a
@@ -135,7 +135,6 @@ impl Location {
 #[cfg(test)]
 mod location_code_tests {
     use super::*;
-
     use crate::state::CardInstanceId;
 
     #[test]

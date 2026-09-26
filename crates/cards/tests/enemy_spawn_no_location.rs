@@ -15,8 +15,8 @@ use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
 use game_core::card_registry;
 use game_core::engine::{ApplyResult, EngineOutcome};
-use game_core::state::{CardCode, GameState, InvestigatorId, LocationId};
-use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
+use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{self, ScriptedResolver};
 
 /// Flesh-Eater (01118) — Core enemy, "Spawn - Attic" (location 01113).
 const FLESH_EATER: &str = "01118";

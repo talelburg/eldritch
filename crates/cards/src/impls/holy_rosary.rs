@@ -17,7 +17,7 @@
 //! while in play" modifier; the soak half rides on metadata. See
 //! `crates/cards/tests/non_attack_soak.rs` / `soak_distribution.rs`.
 
-use card_dsl::dsl::{constant, modify, Ability, ModifierScope, Stat};
+use card_dsl::dsl::{self, Ability, ModifierScope, Stat};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01059";
@@ -26,7 +26,7 @@ pub const CODE: &str = "01059";
 /// capacity printed on the card is not yet modeled (see module doc).
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![constant(modify(
+    vec![dsl::constant(dsl::modify(
         Stat::Willpower,
         1,
         ModifierScope::WhileInPlay,

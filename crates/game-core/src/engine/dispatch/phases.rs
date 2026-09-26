@@ -1,13 +1,14 @@
 //! Phase-driver functions: start/end scenario, per-phase entrypoints,
 //! and the round-cycle stepping logic.
 
+use std::collections::BTreeSet;
+
+use card_dsl::card_data::CardKind;
+
 use crate::action::{InputResponse, RosterEntry};
-use crate::card_data::CardKind;
 use crate::card_registry;
 #[cfg(test)] // only `drive_phase` / `push_anchor_and_drive`, the cfg(test) helpers below
 use crate::engine::dispatch;
-use std::collections::BTreeSet;
-
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
     act_agenda, cards, combat, cursor, emit, encounter, hunters, reaction_windows, reveal,
@@ -1535,10 +1536,9 @@ mod investigation_phase_tests {
     use super::*;
     use crate::action::PlayerAction;
     use crate::engine::dispatch;
-    use crate::engine::dispatch::apply_player_action;
     use crate::engine::outcome::EngineOutcome;
-    use crate::state::{InvestigatorId, Phase, Status};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{GameStateBuilder, InvestigatorId, Phase, Status};
+    use crate::test_support;
 
     #[test]
     fn investigator_turn_defaults_to_not_ending() {
@@ -1617,7 +1617,7 @@ mod investigation_phase_tests {
             .build();
 
         let mut events = Vec::new();
-        let outcome = apply_player_action(
+        let outcome = dispatch::apply_player_action(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -1981,8 +1981,8 @@ mod mythos_phase_tests {
     use super::*;
     use crate::engine::dispatch;
     use crate::engine::outcome::InputKind;
-    use crate::state::{InvestigatorId, Phase, Status};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{GameStateBuilder, InvestigatorId, Phase, Status};
+    use crate::test_support;
 
     #[test]
     fn mythos_phase_emits_phase_started_and_prompts_first_drawer() {
@@ -2441,9 +2441,9 @@ mod upkeep_phase_tests {
     use crate::engine::outcome::EngineOutcome;
     use crate::event::Event;
     use crate::state::{
-        CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase, Status,
+        CardCode, CardInPlay, CardInstanceId, EnemyId, GameStateBuilder, InvestigatorId,
+        LocationId, Phase, Status,
     };
-    use crate::test_support::GameStateBuilder;
     use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
     #[test]
@@ -2924,11 +2924,11 @@ mod upkeep_phase_tests {
 mod enemy_phase_tests {
     use super::*;
     use crate::action::{Action, InputResponse, PlayerAction};
-    use crate::engine::dispatch::resolve_input;
     use crate::engine::outcome::{EngineOutcome, OptionId};
-    use crate::engine::{apply, dispatch};
-    use crate::state::{EnemyId, FastActorScope, InvestigatorId, LocationId, Phase, Status};
-    use crate::test_support::GameStateBuilder;
+    use crate::engine::{self, dispatch};
+    use crate::state::{
+        EnemyId, FastActorScope, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
+    };
     use crate::{assert_event, test_support};
 
     #[test]
@@ -3056,7 +3056,7 @@ mod enemy_phase_tests {
                 state: &mut state,
                 events: &mut ev2,
             };
-            let o = resolve_input(&mut cx, &InputResponse::PickSingle(pick));
+            let o = dispatch::resolve_input(&mut cx, &InputResponse::PickSingle(pick));
             dispatch::drive(&mut cx, o) // slice 1b: complete the cascade
         };
         // With no registry the attack window auto-skips and the cascade runs
@@ -3253,7 +3253,7 @@ mod enemy_phase_tests {
             state: &mut state,
             events: &mut events,
         };
-        let resumed = resolve_input(&mut cx, &InputResponse::PickSingle(pick));
+        let resumed = dispatch::resolve_input(&mut cx, &InputResponse::PickSingle(pick));
         // Driving past the drained loop cascades into the next phase, so the
         // outcome here is that phase's prompt rather than the loop's; what this
         // test pins is the order the two attacks landed in.
@@ -3341,7 +3341,7 @@ mod enemy_phase_tests {
             state: &mut state,
             events: &mut events,
         };
-        let resumed = resolve_input(&mut cx, &InputResponse::PickSingle(pick));
+        let resumed = dispatch::resolve_input(&mut cx, &InputResponse::PickSingle(pick));
         let _ = dispatch::drive(&mut cx, resumed);
 
         // e1's attack killed the sole investigator, so the scenario's resolution
@@ -3698,7 +3698,7 @@ mod enemy_phase_tests {
             )
             .build();
 
-        let result = apply(
+        let result = engine::apply(
             state,
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::Skip,
@@ -3758,8 +3758,7 @@ mod hand_size_tests {
     use super::*;
     use crate::engine::dispatch;
     use crate::engine::outcome::OptionId;
-    use crate::state::{CardCode, InvestigatorId};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
     use crate::{assert_no_event, test_support};
 
     #[test]
@@ -4139,17 +4138,18 @@ mod hand_size_tests {
 
 #[cfg(test)]
 mod start_scenario_tests {
+    use card_dsl::card_data::SkillKind;
+
     use super::*;
     use crate::action::RosterEntry;
-    use crate::card_data::SkillKind;
     use crate::state::{CardCode, GameStateBuilder, SkillSubstitution};
     use crate::test_support::TEST_INV;
-    use crate::{seat_and_open, test_support};
+    use crate::{engine, test_support};
 
     #[test]
     fn start_scenario_rejects_when_roster_would_seat_zero_investigators() {
         let state = GameStateBuilder::new().build();
-        let result = seat_and_open(state, &[]);
+        let result = engine::seat_and_open(state, &[]);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.round, 0, "state unchanged on reject");
         assert!(result.events.is_empty(), "no events on reject");
@@ -4191,7 +4191,7 @@ mod start_scenario_tests {
     fn seat_and_open_rejects_an_empty_roster() {
         test_support::install_test_registry();
         let state = GameStateBuilder::new().build();
-        let result = seat_and_open(state, &[]);
+        let result = engine::seat_and_open(state, &[]);
         assert!(
             matches!(result.outcome, EngineOutcome::Rejected { .. }),
             "an empty roster must reject, got {:?}",
@@ -4222,7 +4222,7 @@ mod start_scenario_tests {
             deck: vec![],
         }];
 
-        let result = seat_and_open(state, &roster);
+        let result = engine::seat_and_open(state, &roster);
 
         assert!(matches!(
             result.outcome,
@@ -4246,7 +4246,7 @@ mod start_scenario_tests {
             investigator: CardCode::new("01001"),
             deck: vec![],
         }];
-        let result = seat_and_open(state, &roster);
+        let result = engine::seat_and_open(state, &roster);
         assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
         assert_eq!(result.state.round, 0, "state unchanged on reject");
         assert!(result.events.is_empty());

@@ -7,12 +7,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::action::InputResponse;
-use crate::card_data::CardKind;
-use crate::dsl::{
+use card_dsl::card_data::CardKind;
+use card_dsl::dsl::{
     self, Determination, Effect, HarmKind, IntExpr, InvestigatorTarget, LocationTarget,
     SkillTestKind, Stat, TestOutcome, Trigger,
 };
+
+use crate::action::InputResponse;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{combat, emit, reaction_windows};
 use crate::engine::evaluator::{self, EvalContext};
@@ -32,17 +33,17 @@ use crate::{card_registry, scenario};
 
 /// The one-shot modifier an initiator grants the test it starts: a weapon's
 /// *"+N \[combat\] for this attack"* (the
-/// [`Fight`](crate::dsl::ActionDesignator::Fight) designator's combat modifier)
+/// [`Fight`](card_dsl::dsl::ActionDesignator::Fight) designator's combat modifier)
 /// or Flashlight 01087's *"Your location gets -2 shroud for this
 /// investigation"* (the
-/// [`Investigate`](crate::dsl::ActionDesignator::Investigate) designator's
+/// [`Investigate`](card_dsl::dsl::ActionDesignator::Investigate) designator's
 /// shroud modifier).
 ///
 /// Handed to [`start_skill_test`] **unstamped**: the test it belongs to has
 /// no identity until initiation mints one, and it becomes a
 /// [`RecordedModifier`](crate::state::RecordedModifier) with
 /// [`Lifetime::SkillTest`](crate::state::Lifetime::SkillTest) there. The
-/// delta stays an [`IntExpr`](crate::dsl::IntExpr) — a row is evaluated at
+/// delta stays an [`IntExpr`](card_dsl::dsl::IntExpr) — a row is evaluated at
 /// read time, not at push time (ADR 0005), which is what makes Esoteric
 /// Formula 02254's *"+2 \[willpower\] … for each clue on the attacked
 /// enemy"* expressible later.
@@ -284,7 +285,7 @@ pub(in crate::engine) fn resume_substitution_choice(
 
 /// Commit-stage entry to the skill-test resolution driver. Handles the
 /// response to the
-/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput) the engine emitted at
+/// [`AwaitingInput`](crate::engine::EngineOutcome::AwaitingInput) the engine emitted at
 /// the commit window: validate the supplied indices, persist them onto the
 /// in-flight record, pre-advance the cursor to [`SkillTestStep::PreTokenWindow`],
 /// and return [`EngineOutcome::Done`] so the `drive` loop's `SkillTest` arm runs
@@ -399,7 +400,7 @@ pub(super) fn acknowledge_outcome(cx: &mut Cx) -> EngineOutcome {
 
 /// Run the token half of a skill test (RR ST.3–ST.4): reveal the chaos token
 /// (ST.3) and apply the symbol's unconditional `immediate` side-effects (ST.4)
-/// as pushed [`Effect::Deal`](crate::dsl::Effect::Deal).
+/// as pushed [`Effect::Deal`](card_dsl::dsl::Effect::Deal).
 ///
 /// **No total, margin, or verdict is computed here.** ST.5 (*"all active card
 /// abilities that are modifying the investigator's skill value"* — active *at
@@ -532,7 +533,7 @@ fn run_resolution(cx: &mut Cx, investigator: InvestigatorId) {
 ///   [`test_determination`](crate::engine::modified_value::test_determination).
 ///   Recording it here rather than special-casing the token at ST.6 is what
 ///   makes a card-latched automatic failure
-///   ([`Effect::AutoResolve`](crate::dsl::Effect::AutoResolve)) the same one
+///   ([`Effect::AutoResolve`](card_dsl::dsl::Effect::AutoResolve)) the same one
 ///   rule and not a second one.
 fn record_token_contribution(
     cx: &mut Cx,
@@ -594,7 +595,7 @@ fn resolved(cx: &Cx) -> ResolvedTest {
 /// Collect the committed cards' [`Trigger::OnCommit`] ability effects (Vicious
 /// Blow 01025's `BoostAttackDamage`, Deduction 01039's
 /// `DiscoverAdditionalClues`), combine them into one
-/// [`Effect::Seq`](crate::dsl::Effect::Seq), and `push_effect` it for the drive
+/// [`Effect::Seq`](card_dsl::dsl::Effect::Seq), and `push_effect` it for the drive
 /// loop (push nothing if no committed card carries an `OnCommit` trigger).
 /// Pre-advances the cursor to [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp)
 /// **before** the push, so a suspending effect would resume past this step.
@@ -663,8 +664,8 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) {
 /// difficulty (ST.6), stashing the verdict on
 /// [`InFlightSkillTest::resolved`](crate::state::InFlightSkillTest::resolved);
 /// then emit the logged
-/// [`SkillTestSucceeded`](crate::Event::SkillTestSucceeded) /
-/// [`SkillTestFailed`](crate::Event::SkillTestFailed) and fire the general
+/// [`SkillTestSucceeded`](crate::event::Event::SkillTestSucceeded) /
+/// [`SkillTestFailed`](crate::event::Event::SkillTestFailed) and fire the general
 /// `SkillTestResolved` timing point for **every** test and both outcomes (the
 /// `{ Investigate, Success }` narrowing is Obscuring Fog 01168 forced with
 /// Dr. Milan 01033 reaction; one `queue_event` so forced precedes reaction —
@@ -929,7 +930,7 @@ fn open_skill_test_player_window(
 ///
 /// Each loop iteration starts by checking for a queued reaction
 /// window: if one is pending, the driver opens it and returns
-/// [`AwaitingInput`](crate::EngineOutcome::AwaitingInput). The window's
+/// [`AwaitingInput`](crate::engine::EngineOutcome::AwaitingInput). The window's
 /// close path ([`close_reaction_window`]) re-enters this driver on
 /// resume.
 ///
@@ -969,7 +970,7 @@ fn open_skill_test_player_window(
 ///   (failed Fight vs ready retaliate enemy); advance to
 ///   [`PostOnResolution`](SkillTestStep::PostOnResolution).
 /// - [`PostOnResolution`](SkillTestStep::PostOnResolution) → ST.8: discard
-///   committed cards, emit [`SkillTestEnded`](crate::Event::SkillTestEnded),
+///   committed cards, emit [`SkillTestEnded`](crate::event::Event::SkillTestEnded),
 ///   drain pending modifiers, tear down the frame, return `Done`.
 ///
 /// [`close_reaction_window`]: super::reaction_windows::close_reaction_window
@@ -1743,11 +1744,11 @@ fn collect_on_skill_test_resolution(committed: &[CardCode], succeeded: bool) -> 
 /// [`Trigger::OnCommit`] ability.
 ///
 /// The [`FireOnCommit`](SkillTestStep::FireOnCommit) driver step combines these
-/// into one [`Effect::Seq`](crate::dsl::Effect::Seq) and `push_effect`s it for
+/// into one [`Effect::Seq`](card_dsl::dsl::Effect::Seq) and `push_effect`s it for
 /// the drive loop. They run at the head of ST.7 (after the token resolves) but
 /// before [`ApplyFollowUp`](SkillTestStep::ApplyFollowUp) reads the
 /// `bonus_attack_damage` accumulator the in-scope consumer
-/// ([`Effect::BoostAttackDamage`](crate::dsl::Effect::BoostAttackDamage),
+/// ([`Effect::BoostAttackDamage`](card_dsl::dsl::Effect::BoostAttackDamage),
 /// Vicious Blow 01025) populates — and that consumer is conditional on success
 /// ("If this skill test is successful during an attack…"). The committed cards
 /// are in limbo on the in-flight record at this point (discard happens at
@@ -1814,9 +1815,9 @@ pub(super) fn peril_check(
     //   resolution completes.
 }
 
-/// Build a single [`Effect`](crate::dsl::Effect) from a chaos symbol token's
-/// side-effect list (a [`Seq`](crate::dsl::Effect::Seq) of
-/// [`Deal`](crate::dsl::Effect::Deal) targeting the tester), or `None` if empty.
+/// Build a single [`Effect`](card_dsl::dsl::Effect) from a chaos symbol token's
+/// side-effect list (a [`Seq`](card_dsl::dsl::Effect::Seq) of
+/// [`Deal`](card_dsl::dsl::Effect::Deal) targeting the tester), or `None` if empty.
 /// `Effect::Deal` routes through the interactive `begin_deal_damage` path, so
 /// these suspend when the tester controls a soak asset — RR-correct (the player
 /// assigns damage/horror to soak assets), unlike the old auto-assigning
@@ -1855,14 +1856,16 @@ fn push_symbol_effects(cx: &mut Cx, investigator: InvestigatorId, effects: &[Tok
 
 #[cfg(test)]
 mod tests {
+    use card_dsl::dsl;
+
     use super::*;
-    use crate::dsl::deal_horror;
-    use crate::engine::dispatch;
+    use crate::engine::{dispatch, InputKind};
     use crate::event::Event;
     use crate::scenario::TokenEffect;
-    use crate::state::{EffectFrame, EnemyId, LocationId, SkillSubstitution, SkillTestId};
-    use crate::test_support::{self, GameStateBuilder};
-    use crate::InputKind;
+    use crate::state::{
+        EffectFrame, EnemyId, GameStateBuilder, LocationId, SkillSubstitution, SkillTestId,
+    };
+    use crate::test_support;
 
     /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
     /// reading the commit-time accumulator off the in-flight record
@@ -2044,7 +2047,7 @@ mod tests {
             SkillTestKind::Plain,
             DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
-            Some(deal_horror(InvestigatorTarget::You, 1u8)),
+            Some(dsl::deal_horror(InvestigatorTarget::You, 1u8)),
             None,
             None,
             None,

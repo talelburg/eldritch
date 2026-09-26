@@ -11,14 +11,15 @@
 //! explicit that such a flip does not replenish clues, and routing it
 //! through here would place them again.
 
-use crate::card_data::ClueValue;
+use card_dsl::card_data::ClueValue;
+
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::LocationId;
 
 /// Reveal `location_id` if it is unrevealed, placing its printed clues.
 /// No-op if the location is absent or already revealed. Public so
-/// card-local [`Effect::Native`](crate::dsl::Effect::Native) handlers can
+/// card-local [`Effect::Native`](card_dsl::dsl::Effect::Native) handlers can
 /// reveal a location they move investigators into.
 pub fn reveal_location(cx: &mut Cx, location_id: LocationId) {
     // "Number of investigators who started the scenario" — `len()` is
@@ -52,12 +53,13 @@ pub fn reveal_location(cx: &mut Cx, location_id: LocationId) {
 
 #[cfg(test)]
 mod tests {
-    use crate::card_data::ClueValue;
+    use card_dsl::card_data::ClueValue;
+
     use crate::engine::dispatch::reveal;
     use crate::engine::Cx;
     use crate::event::Event;
-    use crate::state::{CardCode, Location, LocationId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardCode, GameStateBuilder, Location, LocationId};
+    use crate::test_support;
 
     fn unrevealed(id: u32, code: &str, printed: ClueValue) -> Location {
         let mut loc = Location::new(LocationId(id), CardCode(code.into()), "L", 1, 0);

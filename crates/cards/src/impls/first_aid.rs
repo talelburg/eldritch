@@ -29,9 +29,7 @@
 //! discards the asset automatically when the last supply is spent.
 
 use card_dsl::card_data::UseKind;
-use card_dsl::dsl::{
-    activated, choose_one, heal_damage, heal_horror, Ability, Cost, InvestigatorTarget,
-};
+use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};
 
 /// `ArkhamDB` code for First Aid (original-Core printing).
 pub const CODE: &str = "01019";
@@ -44,7 +42,7 @@ const HEAL_HORROR_LABEL: &str = "Heal 1 horror from an investigator at your loca
 /// First Aid's `[action] Spend 1 supply: heal 1 damage or horror` ability.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![activated(
+    vec![dsl::activated(
         1,
         vec![Cost::SpendUses {
             kind: UseKind::Supplies,
@@ -53,14 +51,14 @@ pub fn abilities() -> Vec<Ability> {
         // Labels split the one printed sentence quoted in the module doc: the
         // card names both modes in a single "damage or horror" clause, so each
         // branch's label is that clause narrowed to its own mode.
-        choose_one([
+        dsl::choose_one([
             (
                 HEAL_DAMAGE_LABEL,
-                heal_damage(InvestigatorTarget::chosen_at_your_location(), 1),
+                dsl::heal_damage(InvestigatorTarget::chosen_at_your_location(), 1),
             ),
             (
                 HEAL_HORROR_LABEL,
-                heal_horror(InvestigatorTarget::chosen_at_your_location(), 1),
+                dsl::heal_horror(InvestigatorTarget::chosen_at_your_location(), 1),
             ),
         ]),
     )]
@@ -68,8 +66,9 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, Trigger};
+
+    use super::*;
 
     #[test]
     fn one_action_ability_spending_a_supply_to_choose_a_heal() {
@@ -96,12 +95,12 @@ mod tests {
         let expected_target = InvestigatorTarget::chosen_at_your_location();
         assert_eq!(
             branches[0].effect,
-            heal_damage(expected_target, 1),
+            dsl::heal_damage(expected_target, 1),
             "branch 0 heals 1 damage from an investigator at your location",
         );
         assert_eq!(
             branches[1].effect,
-            heal_horror(expected_target, 1),
+            dsl::heal_horror(expected_target, 1),
             "branch 1 heals 1 horror from an investigator at your location",
         );
         // The literal, not the const: asserting a const against itself would

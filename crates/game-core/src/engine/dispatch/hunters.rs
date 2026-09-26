@@ -2,8 +2,9 @@
 
 use std::fmt::Debug;
 
+use card_dsl::card_data::{Prey, PreyDirection, PreyMeasure};
+
 use crate::action::InputResponse;
-use crate::card_data::{Prey, PreyDirection, PreyMeasure};
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::dispatch::{cursor, movement, phases};
 use crate::engine::modified_value::{self, ModifiedQuantity, ModifierTarget, ReadContext};
@@ -584,9 +585,11 @@ pub(super) fn resume_spawn_engage(cx: &mut Cx, response: &InputResponse) -> Engi
 
 #[cfg(test)]
 mod resolve_prey_tests {
+    use card_dsl::card_data::SkillKind;
+
     use super::*;
-    use crate::card_data::SkillKind;
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::GameStateBuilder;
+    use crate::test_support;
 
     #[test]
     fn resolve_prey_default_single_candidate_is_one() {
@@ -712,12 +715,13 @@ mod resolve_prey_tests {
 
 #[cfg(test)]
 mod measure_value_tests {
+    use card_dsl::card_data::{CardMetadata, SkillKind};
+    use card_dsl::dsl::{self, Ability, ModifierScope, Stat};
+
     use super::*;
-    use crate::card_data::{CardMetadata, SkillKind};
     use crate::card_registry::CardRegistry;
-    use crate::dsl::{constant, modify, Ability, ModifierScope, Stat};
-    use crate::state::{CardCode, CardInPlay, CardInstanceId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardCode, CardInPlay, CardInstanceId, GameStateBuilder};
+    use crate::test_support;
 
     fn no_metadata(_: &CardCode) -> Option<&'static CardMetadata> {
         None
@@ -725,17 +729,17 @@ mod measure_value_tests {
 
     fn fake_abilities(code: &CardCode) -> Option<Vec<Ability>> {
         match code.as_str() {
-            "combat+1" => Some(vec![constant(modify(
+            "combat+1" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Combat,
                 1,
                 ModifierScope::WhileInPlay,
             ))]),
-            "combat-5" => Some(vec![constant(modify(
+            "combat-5" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Combat,
                 -5,
                 ModifierScope::WhileInPlay,
             ))]),
-            "maxhealth+2" => Some(vec![constant(modify(
+            "maxhealth+2" => Some(vec![dsl::constant(dsl::modify(
                 Stat::MaxHealth,
                 2,
                 ModifierScope::WhileInPlay,
@@ -834,8 +838,7 @@ mod measure_value_tests {
 mod hunter_movement_tests {
     use super::*;
     use crate::engine::Cx;
-    use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase};
     use crate::{assert_event, assert_no_event, test_support};
 
     #[test]
@@ -1073,8 +1076,9 @@ mod hunter_resume_tests {
             });
         InputResponse::PickSingle(opt.id)
     }
-    use crate::card_data::SkillKind;
-    use crate::test_support::GameStateBuilder;
+    use card_dsl::card_data::SkillKind;
+
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn hunter_move_tie_suspends_then_resumes_on_pick_location() {
@@ -1515,7 +1519,7 @@ mod hunter_resume_tests {
 mod reengage_tests {
     use super::*;
     use crate::engine::Cx;
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
     use crate::{assert_event, assert_no_event, test_support};
 
     #[test]
@@ -1689,7 +1693,7 @@ mod reengage_tests {
 mod relocate_tests {
     use super::*;
     use crate::engine::Cx;
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
     use crate::{assert_event, assert_no_event, test_support};
 
     /// Two adjacent locations: the investigator in the Hallway (2), a

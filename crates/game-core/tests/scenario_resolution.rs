@@ -14,9 +14,9 @@
 //! this file's rather than the `scenarios` crate's. Building it locally also
 //! makes it structural that nothing under `src/` can start a toy scenario.
 
+use card_dsl::card_data::{CardKind, CardMetadata};
+use card_dsl::dsl::{self, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
-use game_core::card_data::{CardKind, CardMetadata};
-use game_core::dsl::{gain_resources, revelation, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
@@ -24,9 +24,10 @@ use game_core::scenario::{
     ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry,
 };
 use game_core::state::{
-    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase,
+    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, TEST_INV};
+use game_core::test_support::{self, MockRegistry, TEST_INV};
 use game_core::{assert_event, scenario_registry};
 
 /// Per-binary code prefix (ADR 0016: probe cards are test-local).
@@ -68,7 +69,10 @@ fn install() {
     MockRegistry::new()
         .with_card(treachery_metadata())
         .with_abilities(TREACHERY, || {
-            vec![revelation(gain_resources(InvestigatorTarget::You, 1))]
+            vec![dsl::revelation(dsl::gain_resources(
+                InvestigatorTarget::You,
+                1,
+            ))]
         })
         .install();
 }

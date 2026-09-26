@@ -32,7 +32,7 @@
 //! opportunity this play provokes lets a Fast event be played on top, the two
 //! plays get their own frames rather than sharing one slot (#604).
 
-use card_dsl::dsl::{native, on_play, Ability};
+use card_dsl::dsl::{self, Ability};
 use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, ChoiceResolution, Cx, EngineOutcome};
@@ -49,7 +49,7 @@ const DAMAGE: u8 = 3;
 /// Dynamite Blast's `OnPlay` area-of-effect.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_play(native(BLAST))]
+    vec![dsl::on_play(dsl::native(BLAST))]
 }
 
 /// Resolve this event's native-effect tag. Wired into the crate registry's
@@ -141,10 +141,12 @@ fn blast_location(cx: &mut Cx, controller: InvestigatorId, loc: LocationId) -> E
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, Trigger};
     use game_core::event::Event;
-    use game_core::test_support::{self, GameStateBuilder};
+    use game_core::state::GameStateBuilder;
+    use game_core::test_support;
+
+    use super::*;
 
     #[test]
     fn one_on_play_native_blast() {

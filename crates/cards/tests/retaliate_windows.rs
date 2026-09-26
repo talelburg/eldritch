@@ -38,15 +38,14 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, Enemy, EnemyId,
-    GameState, InvestigatorId, LocationId, Phase, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::{card_registry, test_support};
 
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.
 const DODGE: &str = "01023";

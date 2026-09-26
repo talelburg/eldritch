@@ -20,9 +20,7 @@
 //! *"The **Forced** ability triggers each time an investigator enters this
 //! location."* (<https://arkhamdb.com/card/01113>).
 
-use card_dsl::dsl::{
-    deal_horror, forced_on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
-};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
 
 /// `ArkhamDB` code for the Attic.
 pub const CODE: &str = "01113";
@@ -30,10 +28,10 @@ pub const CODE: &str = "01113";
 /// The Attic's Forced "after you enter: take 1 horror".
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![forced_on_event(
+    vec![dsl::forced_on_event(
         EventPattern::EnteredLocation,
         EventTiming::After,
-        deal_horror(InvestigatorTarget::You, 1u8),
+        dsl::deal_horror(InvestigatorTarget::You, 1u8),
     )]
 }
 

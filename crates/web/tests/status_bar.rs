@@ -3,6 +3,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use leptos::prelude::{document, provide_context, RwSignal, Update};
+use leptos::{mount, task};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::status_bar::StatusBarView;
@@ -15,7 +16,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 /// drive `status`/`last_rejection`.
 fn mount() -> RwSignal<ClientState> {
     let store = RwSignal::new(ClientState::default());
-    leptos::mount::mount_to_body(move || {
+    mount::mount_to_body(move || {
         provide_context(store);
         leptos::view! { <StatusBarView/> }
     });
@@ -26,7 +27,7 @@ fn mount() -> RwSignal<ClientState> {
 async fn version_mismatch_status_renders_actionable_message() {
     let store = mount();
     store.update(|s| s.status = ConnStatus::VersionMismatch);
-    leptos::task::tick().await;
+    task::tick().await;
 
     // Scope to the last mounted .status line (DOM accumulates across tests).
     let lines = document()
@@ -52,7 +53,7 @@ async fn version_mismatch_status_renders_actionable_message() {
 #[wasm_bindgen_test]
 async fn status_bar_renders_a_new_game_button() {
     let _store = mount();
-    leptos::task::tick().await;
+    task::tick().await;
 
     // Scope to the last mounted .status-bar (DOM accumulates across tests).
     let bars = document()

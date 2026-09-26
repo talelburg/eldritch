@@ -25,19 +25,16 @@
 //! still caps it before emitting, and `cover_up.rs`'s Deduction 01039 pair
 //! proves the cap end to end through two real cards.
 
-use card_dsl::dsl::{
-    gain_resources, reaction_on_event, Ability, Effect, EventPattern, EventTiming,
-    InvestigatorTarget,
-};
+use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{ApplyResult, OptionId};
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
-    InvestigatorId, LocationId, Phase,
+    GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, TestSession};
+use game_core::test_support::{self, MockRegistry, TestSession};
 
 /// `when`-tagged reaction: +4 resources. Declaring interrupt timing on this
 /// condition is accepted now that it is coordinator-owned — before #703 the
@@ -54,10 +51,10 @@ const CANCEL: &str = "_cd_cancel";
 /// A reaction in `timing`'s cell of the one condition under test, gaining
 /// `amount` resources — the marker these tests read cell order off.
 fn on_discovery(timing: EventTiming, amount: u8) -> Ability {
-    reaction_on_event(
+    dsl::reaction_on_event(
         EventPattern::DiscoverClues,
         timing,
-        gain_resources(InvestigatorTarget::You, amount),
+        dsl::gain_resources(InvestigatorTarget::You, amount),
     )
 }
 
@@ -68,7 +65,7 @@ fn install() {
         .with_abilities(AT, || vec![on_discovery(EventTiming::At, 1)])
         .with_abilities(AFTER, || vec![on_discovery(EventTiming::After, 2)])
         .with_abilities(CANCEL, || {
-            vec![reaction_on_event(
+            vec![dsl::reaction_on_event(
                 EventPattern::DiscoverClues,
                 EventTiming::When,
                 Effect::Cancel,

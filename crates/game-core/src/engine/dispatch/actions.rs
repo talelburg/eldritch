@@ -1,8 +1,9 @@
 //! Player-action handlers: Investigate, Move, Fight, Evade, plus the
 //! engaged-action validation and single-action-spend helpers.
 
+use card_dsl::dsl::{ActionClass, IntExpr, SkillTestKind, Stat};
+
 use crate::card_registry;
-use crate::dsl::{ActionClass, IntExpr, SkillTestKind, Stat};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::skill_test::InitiatorModifier;
 use crate::engine::dispatch::{combat, emit, hunters, movement, reveal, skill_test};
@@ -51,7 +52,7 @@ use crate::state::{
 /// cancel/soak window opens the loop suspends; `drive` resumes the
 /// frame once the window closes, calling [`investigate_primary_effect`].
 ///
-/// [`Effect::DiscoverClue`]: crate::dsl::Effect::DiscoverClue
+/// [`Effect::DiscoverClue`]: card_dsl::dsl::Effect::DiscoverClue
 /// [`ActionResolution`]: crate::state::Continuation::ActionResolution
 pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     // Validate-first (the shared basic-action prefix, then the
@@ -589,7 +590,7 @@ pub(super) fn resolve_departure(
     // each engaged enemy alongside the investigator's own move.
     //
     // Deliberately *not* through the relocation funnel
-    // [`relocate_enemy`](crate::relocate_enemy) (#633): an enemy that follows
+    // [`relocate_enemy`](crate::engine::relocate_enemy) (#633): an enemy that follows
     // is already engaged, and `glossary/Enemy_Engagement.md` says such an
     // enemy "remains engaged and moves to the new location simultaneously with
     // the investigator" — there is no engage-on-arrival check to run, and no
@@ -904,7 +905,7 @@ const BASIC_ACTION_COST: u8 = 1;
 /// **Both ways of taking an action of a class read this**: the basic-action
 /// handlers via [`action_cost`] / [`charge_action`], and an activated ability
 /// whose bold designator names the class via
-/// [`ActionDesignator::action_class`](crate::dsl::ActionDesignator::action_class)
+/// [`ActionDesignator::action_class`](card_dsl::dsl::ActionDesignator::action_class)
 /// (#754). Sharing it is the point — a surcharge only one of the two applies is
 /// the bug that made shooting a weapon cheaper than punching.
 pub(crate) fn action_surcharge(
@@ -1105,10 +1106,9 @@ mod actions_tests {
     use crate::engine::{enumerate, ApplyResult};
     use crate::event::Event;
     use crate::state::{
-        ChaosBag, ChaosToken, Continuation, EnemyId, GameState, InvestigationResume,
-        InvestigatorId, LocationId, Phase, Status,
+        ChaosBag, ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder,
+        InvestigationResume, InvestigatorId, LocationId, Phase, Status,
     };
-    use crate::test_support::GameStateBuilder;
     use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
     /// Drive a turn action that may suspend at a skill-test commit window.

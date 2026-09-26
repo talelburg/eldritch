@@ -1,10 +1,12 @@
 //! Card identifiers and per-instance in-play state.
 
 use std::collections::BTreeMap;
+use std::fmt;
 
-use crate::dsl::{UsageLimit, UsagePeriod};
-use crate::state::InvestigatorId;
+use card_dsl::dsl::{UsageLimit, UsagePeriod};
 use serde::{Deserialize, Serialize};
+
+use crate::state::InvestigatorId;
 
 /// `ArkhamDB` card code (e.g. `"01030"` for Magnifying Glass).
 ///
@@ -45,14 +47,14 @@ impl From<String> for CardCode {
     }
 }
 
-impl std::fmt::Display for CardCode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self.0, f)
+impl fmt::Display for CardCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
     }
 }
 
 /// A card-bearing zone, used as the `from` field on movement events
-/// (e.g. [`Event::CardDiscarded`](crate::Event::CardDiscarded)).
+/// (e.g. [`Event::CardDiscarded`](crate::event::Event::CardDiscarded)).
 ///
 /// Phase-3 minimal set. Discard is a destination but never a `from`
 /// in the current event set; encounter / weakness / out-of-game zones
@@ -81,7 +83,7 @@ pub enum Zone {
     /// game is placed away from the game area and has no further interaction
     /// with the game in any manner for the duration of its removal."* Used as
     /// the `to` zone of
-    /// [`Event::CardRemovedFromGame`](crate::Event::CardRemovedFromGame) — the
+    /// [`Event::CardRemovedFromGame`](crate::event::Event::CardRemovedFromGame) — the
     /// zone the field docs above already anticipated (*"out-of-game zones land
     /// when they're needed"*).
     RemovedFromGame,
@@ -163,7 +165,7 @@ pub struct CardInPlay {
     /// Empty for cards with no [`UsageLimit`] on any ability. Required on the
     /// wire (#453).
     ///
-    /// [`UsageLimit`]: crate::dsl::UsageLimit
+    /// [`UsageLimit`]: card_dsl::dsl::UsageLimit
     pub ability_usage: BTreeMap<u8, AbilityUsageRecord>,
     /// **Who owns this card**, as distinct from who controls it. `None` means
     /// scenario-owned (#772).
@@ -201,7 +203,7 @@ pub struct CardInPlay {
 /// `round` is the value of
 /// [`GameState::round`](crate::state::GameState::round) at last fire.
 /// `count` is the number of fires during that round (compared against
-/// the ability's [`UsageLimit::count`](crate::dsl::UsageLimit::count)
+/// the ability's [`UsageLimit::count`](card_dsl::dsl::UsageLimit::count)
 /// to gate further fires).
 ///
 /// `#[non_exhaustive]` so future periods (`Phase`, `Game`) can add

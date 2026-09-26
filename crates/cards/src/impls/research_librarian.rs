@@ -27,8 +27,7 @@
 
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{
-    reaction_on_event, search_deck, Ability, CardFilter, EventPattern, EventTiming,
-    InvestigatorTarget, SearchScope,
+    self, Ability, CardFilter, EventPattern, EventTiming, InvestigatorTarget, SearchScope,
 };
 
 /// `ArkhamDB` code for the original-Core printing.
@@ -38,10 +37,10 @@ pub const CODE: &str = "01032";
 /// Tome asset, add it to your hand, shuffle."
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![reaction_on_event(
+    vec![dsl::reaction_on_event(
         EventPattern::EnteredPlay,
         EventTiming::After,
-        search_deck(
+        dsl::search_deck(
             InvestigatorTarget::You,
             SearchScope::EntireDeck,
             Some(CardFilter {

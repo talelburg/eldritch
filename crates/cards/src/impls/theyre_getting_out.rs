@@ -67,7 +67,7 @@
 //! Rules Reference p.10 Elimination, and step 6 — *"If there are no remaining
 //! players, the scenario ends. Refer to "no resolution was reached" entry for
 //! that scenario in the campaign guide."* — is what produces
-//! [`ScenarioEnding::NoResolution`](game_core::ScenarioEnding::NoResolution).
+//! [`ScenarioEnding::NoResolution`](game_core::scenario::ScenarioEnding::NoResolution).
 //! The card names no ending on this branch, because the card prints none.
 //!
 //! *"That has not resigned"* needs no filter to be *correct*:
@@ -82,8 +82,8 @@
 //! — *"Taking trauma may cause an investigator to be killed or driven insane"* —
 //! and these investigators take one physical trauma, the first step on that
 //! track rather than its end. So the defeat carries
-//! [`game_core::EliminationCause::CardAbility`] and leaves
-//! [`game_core::Status::Defeated`], both distinct from the damage
+//! [`game_core::state::EliminationCause::CardAbility`] and leaves
+//! [`game_core::state::Status::Defeated`], both distinct from the damage
 //! and horror values.
 //!
 //! **The physical trauma is announced, not recorded.** `Event::TraumaSuffered`
@@ -114,10 +114,7 @@
 //! (#633) — the card text is positional only, but the framework rule applies
 //! regardless.
 
-use card_dsl::dsl::{
-    forced_on_event, if_else, native, native_condition, reach_resolution, Ability, EventPattern,
-    EventTiming, Phase,
-};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, Phase};
 use game_core::card_registry::{NativeConditionFn, NativeEffectFn};
 use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{self, Cx, EngineOutcome};
@@ -144,25 +141,25 @@ const HALLWAY: &str = "01112";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        forced_on_event(
+        dsl::forced_on_event(
             EventPattern::PhaseEnded {
                 phase: Phase::Enemy,
             },
             EventTiming::At,
-            native(MOVE_GHOULS),
+            dsl::native(MOVE_GHOULS),
         ),
-        forced_on_event(
+        dsl::forced_on_event(
             EventPattern::RoundEnded,
             EventTiming::At,
-            native(ROUND_END_DOOM),
+            dsl::native(ROUND_END_DOOM),
         ),
-        forced_on_event(
+        dsl::forced_on_event(
             EventPattern::AgendaAdvanced,
             EventTiming::After,
-            if_else(
-                native_condition(AT_ACT_THREE),
-                native(GHOULS_RUN_RAMPANT),
-                reach_resolution(3),
+            dsl::if_else(
+                dsl::native_condition(AT_ACT_THREE),
+                dsl::native(GHOULS_RUN_RAMPANT),
+                dsl::reach_resolution(3),
             ),
         ),
     ]
@@ -315,16 +312,17 @@ fn place_round_end_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{impls, REGISTRY};
     use card_dsl::dsl::{Condition, Effect, Trigger, TriggerKind};
-    use game_core::card_registry;
     use game_core::event::Event;
     use game_core::scenario::ScenarioEnding;
     use game_core::state::{
-        Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, InvestigatorId, Location,
+        Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, GameStateBuilder, InvestigatorId,
+        Location,
     };
-    use game_core::test_support::{self, GameStateBuilder};
+    use game_core::{card_registry, test_support};
+
+    use super::*;
+    use crate::{impls, REGISTRY};
 
     fn ghoul(id: u32, at: LocationId) -> Enemy {
         let mut e = test_support::test_enemy(id, "Ghoul");

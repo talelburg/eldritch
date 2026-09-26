@@ -15,10 +15,10 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState, InvestigatorId,
-    LocationId, Phase, TokenModifiers, Zone,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers, Zone,
 };
-use game_core::test_support::{self, GameStateBuilder, TestSession};
+use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event, card_registry};
 
 /// `ArkhamDB` code for original-Core Evidence!.

@@ -15,14 +15,14 @@
 //! `reject_rollback.rs`.
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Uses};
-use card_dsl::dsl::{activated, gain_resources, Ability, Cost, InvestigatorTarget};
+use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId,
-    LocationId, Phase, UseKind,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, UseKind,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// Synthetic asset: `Uses (1 supply)`, discards itself when they deplete, and
 /// its ability spends that last supply *and then* exhausts. Not in the corpus.
@@ -37,7 +37,7 @@ const DEPLETER_INST: CardInstanceId = CardInstanceId(0);
 const BYSTANDER_INST: CardInstanceId = CardInstanceId(1);
 
 fn probe_abilities() -> Vec<Ability> {
-    vec![activated(
+    vec![dsl::activated(
         0,
         vec![
             Cost::SpendUses {
@@ -46,7 +46,7 @@ fn probe_abilities() -> Vec<Ability> {
             },
             Cost::Exhaust,
         ],
-        gain_resources(InvestigatorTarget::Active, 1),
+        dsl::gain_resources(InvestigatorTarget::Active, 1),
     )]
 }
 

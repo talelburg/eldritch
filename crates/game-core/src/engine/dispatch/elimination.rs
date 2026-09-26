@@ -1,6 +1,8 @@
 //! Investigator elimination helpers: defeat application, elimination
 //! steps, horror application, and no-remaining-players detection.
 
+use std::mem;
+
 use crate::card_registry;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::forced_triggers::ForcedTriggerPoint;
@@ -330,7 +332,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // field of `inv` at a time (mutating `inv.removed_from_game` directly
     // while borrowing `inv.hand` etc. would double-borrow `inv` — rejected
     // by the borrow checker).
-    let mut removed = std::mem::take(&mut inv.removed_from_game);
+    let mut removed = mem::take(&mut inv.removed_from_game);
     removed.extend(in_limbo);
     // *"The cards he or she **controls** in play … are removed from the game"* —
     // so every card in the play area leaves it, whoever owns it. **Which pile it
@@ -349,7 +351,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // the rest stay for step 4. No registry installed (engine-only tests with
     // synthetic threat-area cards) ⇒ not a weakness ⇒ step 4.
     let (owned, scenario_owned): (Vec<CardInPlay>, Vec<CardInPlay>) =
-        std::mem::take(&mut inv.threat_area)
+        mem::take(&mut inv.threat_area)
             .into_iter()
             .partition(weakness_in_threat_area);
     inv.threat_area = scenario_owned;
@@ -496,7 +498,7 @@ pub(crate) fn take_horror(cx: &mut Cx, investigator: InvestigatorId, amount: u8)
 /// The single-source-damage twin of `take_horror` — called by
 /// `Effect::Deal`'s evaluator (the `HarmKind::Damage` arm).
 ///
-/// Re-exported at `game_core::take_damage` so card-local native effects
+/// Re-exported at `game_core::engine::take_damage` so card-local native effects
 /// (#276) can deal damage without re-implementing the defeat check — the
 /// first such consumer is Crypt Chill's (01167) no-asset failure branch.
 pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
@@ -522,7 +524,7 @@ pub fn take_damage(cx: &mut Cx, investigator: InvestigatorId, amount: u8) {
 /// remaining players, the scenario ends"*, which is how a card that defeats the
 /// last active investigator reaches
 /// [`ScenarioEnding::NoResolution`](crate::scenario::ScenarioEnding::NoResolution)
-/// without latching it itself. Re-exported at `game_core::defeat_investigator`.
+/// without latching it itself. Re-exported at `game_core::engine::defeat_investigator`.
 ///
 /// **No-ops on an investigator who is not `Active`** — one who has already been
 /// killed, driven insane, or resigned is not defeated again. That is what lets a
@@ -537,7 +539,7 @@ pub fn defeat_investigator(cx: &mut Cx, investigator: InvestigatorId) {
 }
 
 /// Resign `investigator` from the scenario — what the
-/// [`Resign`](crate::dsl::ActionDesignator::Resign) action designator performs
+/// [`Resign`](card_dsl::dsl::ActionDesignator::Resign) action designator performs
 /// (#805), and the only producer of [`EliminationCause::Resigned`].
 ///
 /// `glossary/Resign.md`: *"When an investigator resigns, the investigator is
@@ -624,8 +626,7 @@ pub(super) fn check_all_eliminated(cx: &mut Cx) {
 #[cfg(test)]
 mod elimination_tests {
     use super::*;
-    use crate::state::InvestigationResume;
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{GameStateBuilder, InvestigationResume};
     use crate::{assert_event, assert_no_event, test_support};
 
     #[test]

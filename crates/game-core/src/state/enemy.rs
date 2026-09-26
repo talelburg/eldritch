@@ -1,9 +1,10 @@
 //! Enemies: hostile creatures that engage investigators, attack, and
 //! are defeated through combat.
 
-use crate::card_data::Prey;
-use crate::state::{CardCode, CardInPlay, InvestigatorId, LocationId};
+use card_dsl::card_data::Prey;
 use serde::{Deserialize, Serialize};
+
+use crate::state::{CardCode, CardInPlay, InvestigatorId, LocationId};
 
 crate::state::define_id! {
     /// Stable identifier for an enemy within a scenario.
@@ -92,7 +93,7 @@ pub struct Enemy {
     /// health."*), which is why the modified-value sweep reads it.
     ///
     /// No effect populates it yet — the DSL has
-    /// [`AttachSelfToLocation`](crate::dsl::Effect::AttachSelfToLocation)
+    /// [`AttachSelfToLocation`](card_dsl::dsl::Effect::AttachSelfToLocation)
     /// and no enemy counterpart — so it is empty on every board the
     /// engine builds today. Required on the wire (#453).
     pub attachments: Vec<CardInPlay>,
@@ -101,7 +102,6 @@ pub struct Enemy {
 #[cfg(test)]
 mod hunter_prey_field_tests {
     use super::*;
-
     use crate::test_support;
 
     #[test]

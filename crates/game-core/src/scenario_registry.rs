@@ -64,12 +64,12 @@ pub fn current() -> Option<&'static ScenarioRegistry> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::ptr;
 
+    use super::*;
     use crate::event::Event;
     use crate::scenario::{ScenarioEnding, ScenarioId, ScenarioModule};
-    use crate::state::GameState;
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{GameState, GameStateBuilder};
 
     fn empty_state() -> GameState {
         GameStateBuilder::new().build()
@@ -103,7 +103,7 @@ mod tests {
         let reg = fake_registry();
         let id = ScenarioId::new("fake");
         let module = (reg.module_for)(&id).expect("known id should resolve");
-        assert!(std::ptr::eq(module, std::ptr::addr_of!(FAKE_MODULE)));
+        assert!(ptr::eq(module, ptr::addr_of!(FAKE_MODULE)));
     }
 
     #[test]

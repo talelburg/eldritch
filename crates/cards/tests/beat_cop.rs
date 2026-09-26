@@ -9,10 +9,9 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
-    InvestigatorId, LocationId, Phase, Zone,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, Zone,
 };
-use game_core::test_support::{self, GameStateBuilder};
-use game_core::{assert_event, assert_no_event, card_registry};
+use game_core::{assert_event, assert_no_event, card_registry, test_support};
 
 const BEAT_COP: &str = "01018";
 const INV: InvestigatorId = InvestigatorId(1);

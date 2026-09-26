@@ -40,7 +40,7 @@
 //! and the picked enemy may be engaged with you, with another investigator, or
 //! with nobody.
 
-use card_dsl::dsl::{activated_as, fight, native_condition, seq, Ability, IntExpr};
+use card_dsl::dsl::{self, Ability, IntExpr};
 use game_core::card_registry::NativeConditionFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::state::GameState;
@@ -53,11 +53,14 @@ const SOLE_ENGAGED_TAG: &str = "01020:sole_engaged_target";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![activated_as(
-        fight(1u8, IntExpr::cond(native_condition(SOLE_ENGAGED_TAG), 1, 0)),
+    vec![dsl::activated_as(
+        dsl::fight(
+            1u8,
+            IntExpr::cond(dsl::native_condition(SOLE_ENGAGED_TAG), 1, 0),
+        ),
         1,
         vec![],
-        seq([]),
+        dsl::seq([]),
     )]
 }
 
@@ -102,11 +105,12 @@ pub(crate) fn native_condition_for(tag: &str) -> Option<NativeConditionFn> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::impls;
     use card_dsl::dsl::{ActionDesignator, Effect, Trigger};
     use game_core::state::{EnemyId, GameStateBuilder, InvestigatorId};
     use game_core::test_support;
+
+    use super::*;
+    use crate::impls;
 
     #[test]
     fn one_costless_activated_fight_ability() {
@@ -134,7 +138,7 @@ mod tests {
         // +1 only when the *attacked* enemy is the sole engaged enemy (#592).
         assert_eq!(
             *extra_damage,
-            IntExpr::cond(native_condition(SOLE_ENGAGED_TAG), 1, 0)
+            IntExpr::cond(dsl::native_condition(SOLE_ENGAGED_TAG), 1, 0)
         );
         // The designator performs the attack; nothing is printed beside it
         // (#805).

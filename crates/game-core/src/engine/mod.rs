@@ -68,13 +68,13 @@ pub(crate) use dispatch::{apply_player_action, dispatch_turn_action, drive};
 // `PlayerAction::PerformSkillTest` wire variant, #447).
 pub(crate) use dispatch::skill_test::perform_skill_test as start_plain_skill_test;
 
+use card_dsl::card_data::CardKind;
+
 use crate::action::{Action, RosterEntry};
-use crate::card_data::CardKind;
-use crate::card_registry;
 use crate::event::Event;
 use crate::scenario::ScenarioRegistry;
-use crate::scenario_registry;
 use crate::state::{CardCode, Continuation, GameState, ScenarioEndStep};
+use crate::{card_registry, scenario_registry};
 
 /// The result of a single [`apply`] call.
 #[derive(Debug, Clone)]
@@ -324,19 +324,20 @@ fn finalize_scenario_end(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
 
 #[cfg(test)]
 mod tests {
+    use card_dsl::card_data::ClueValue;
+    use card_dsl::dsl::{IntExpr, Stat};
+
     use super::*;
     use crate::action::{EngineRecord, InputResponse, PlayerAction};
-    use crate::card_data::ClueValue;
-    use crate::dsl::{IntExpr, Stat};
     use crate::event::FailureReason;
     use crate::scenario::{ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule};
     use crate::state::{
         AbilityAddress, AbilitySource, Act, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-        EliminationCause, EnemyId, InvestigationResume, InvestigatorId, Lifetime, LocationId,
-        Phase, RecordedModifier, SkillKind, SkillTestId, Status, TokenModifiers, TokenResolution,
-        Zone,
+        EliminationCause, EnemyId, GameStateBuilder, InvestigationResume, InvestigatorId, Lifetime,
+        LocationId, Phase, RecordedModifier, SkillKind, SkillTestId, Status, TokenModifiers,
+        TokenResolution, Zone,
     };
-    use crate::test_support::{self, GameStateBuilder, ScriptedResolver};
+    use crate::test_support::{self, ScriptedResolver};
     use crate::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
     /// Drive one open-turn action through the `ResolveInput(PickSingle)` routing

@@ -9,17 +9,17 @@
 //! Events are derived from action application and are useful as a
 //! denormalized "what happened" stream.
 //!
-//! [`Action`]: crate::Action
+//! [`Action`]: crate::action::Action
 
-use crate::card_data::CardType;
-use crate::dsl::{Determination, HarmKind};
+use card_dsl::card_data::CardType;
+use card_dsl::dsl::{Determination, HarmKind};
+use serde::{Deserialize, Serialize};
+
 use crate::scenario::ScenarioEnding;
 use crate::state::{
     AbilityAddress, AbilitySource, CardCode, CardInstanceId, ChaosToken, EliminationCause, EnemyId,
     InvestigatorId, LocationId, Phase, SkillKind, TokenResolution, UseKind, Zone,
 };
-
-use serde::{Deserialize, Serialize};
 
 /// One state-change record emitted by the engine.
 ///
@@ -347,7 +347,7 @@ pub enum Event {
         investigator: InvestigatorId,
     },
     /// A card was found by a deck search and moved to an investigator's hand
-    /// ([`Effect::SearchDeck`](crate::dsl::Effect::SearchDeck): Old Book of
+    /// ([`Effect::SearchDeck`](card_dsl::dsl::Effect::SearchDeck): Old Book of
     /// Lore 01031, Research Librarian 01032). Distinct from
     /// [`CardsDrawn`](Self::CardsDrawn) — a search is not a "draw" (no on-draw
     /// triggers key off it), and it names the specific card.
@@ -530,7 +530,7 @@ pub enum Event {
     },
     /// An in-play card was exhausted (turned 90°). Fires as part of
     /// activation cost payment when a card's
-    /// [`Cost::Exhaust`](crate::dsl::Cost::Exhaust) resolves, and
+    /// [`Cost::Exhaust`](card_dsl::dsl::Cost::Exhaust) resolves, and
     /// from future ready/exhaust effects.
     CardExhausted {
         /// The card's controller.
@@ -697,7 +697,7 @@ pub enum FailureReason {
     ///
     /// Deliberately says nothing about *what* determined it: an
     /// `[auto_fail]` chaos token is one source, but a card latching an
-    /// [`Effect::AutoResolve`](crate::dsl::Effect::AutoResolve) produces the
+    /// [`Effect::AutoResolve`](card_dsl::dsl::Effect::AutoResolve) produces the
     /// same reason with no token drawn at all.
     AutoFail,
 }

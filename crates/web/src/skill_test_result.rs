@@ -20,7 +20,7 @@ use leptos::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use crate::controls;
 use crate::drag::Drag;
-use crate::store::{use_store, ClientState};
+use crate::store::{self, ClientState};
 
 /// The data the result panel renders: a display string for the drawn token, the
 /// final total vs difficulty, and a player-facing outcome line.
@@ -132,7 +132,7 @@ pub fn modal_is_live(state: &ClientState) -> bool {
 /// modal is not dismissing it, and a press that lands on Confirm starts no drag.
 #[component]
 pub fn SkillTestResultView() -> impl IntoView {
-    let store = use_store();
+    let store = store::use_store();
     // The prompt's fingerprint: which applied batch a live modal is up for. The
     // batch count is what tells one prompt from the next when neither liveness
     // nor the rendered content does — two identical tests running back to back
@@ -192,9 +192,10 @@ pub fn SkillTestResultView() -> impl IntoView {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use game_core::card_data::SkillKind;
+    use card_dsl::card_data::SkillKind;
     use game_core::state::InvestigatorId;
+
+    use super::*;
 
     /// A store holding what the panel renders from: the difficulty announced at
     /// ST.1, the token drawn (or none), and the resolution. The three arrive in

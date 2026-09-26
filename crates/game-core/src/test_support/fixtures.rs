@@ -17,8 +17,11 @@
 //! field's intent. Phase-2+ reviewers: flag missing fixture updates
 //! when a field addition lands.
 
-use crate::card_data::{ClueValue, Prey};
-use crate::dsl::SkillTestKind;
+use std::collections::BTreeSet;
+
+use card_dsl::card_data::{ClueValue, Prey};
+use card_dsl::dsl::SkillTestKind;
+
 use crate::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, DifficultyBasis, Enemy, EnemyId, InFlightSkillTest,
@@ -62,7 +65,7 @@ pub fn test_investigator(id: u32) -> Investigator {
         cards_in_play: Vec::new(),
         threat_area: Vec::new(),
         removed_from_game: Vec::new(),
-        action_surcharge_spent_this_round: std::collections::BTreeSet::new(),
+        action_surcharge_spent_this_round: BTreeSet::new(),
         investigator_card,
     }
 }
@@ -188,7 +191,7 @@ pub fn awaiting_commit_input(prompt: impl Into<String>) -> EngineOutcome {
     }
 }
 
-/// A skippable [`PickMultiple`](crate::InputKind::PickMultiple)
+/// A skippable [`PickMultiple`](crate::engine::InputKind::PickMultiple)
 /// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome — for UI tests of the
 /// Pass/Skip control on a multi-select prompt.
 #[must_use]
@@ -211,7 +214,7 @@ pub fn awaiting_request(request: InputRequest) -> EngineOutcome {
     }
 }
 
-/// A sample structured [`PickSingle`](crate::InputResponse::PickSingle)
+/// A sample structured [`PickSingle`](crate::action::InputResponse::PickSingle)
 /// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome, for client/UI
 /// fixtures (#447). Carries two options:
 ///
@@ -235,7 +238,7 @@ pub fn awaiting_pick_single_input(prompt: impl Into<String>) -> EngineOutcome {
 
 /// An [`AwaitingInput`](EngineOutcome::AwaitingInput) `PickSingle` outcome over
 /// caller-supplied `options` — for host/UI tests that need a specific
-/// [`OptionTarget`](crate::OptionTarget) anchor (the no-arg
+/// [`OptionTarget`](crate::engine::OptionTarget) anchor (the no-arg
 /// [`awaiting_pick_single_input`] fixture is un-anchored only). `ResumeToken(0)`
 /// matches the other fixtures (the UI never inspects it).
 #[must_use]
@@ -249,7 +252,7 @@ pub fn awaiting_pick_single_with(
     }
 }
 
-/// A sample [`Confirm`](crate::InputKind::Confirm)
+/// A sample [`Confirm`](crate::engine::InputKind::Confirm)
 /// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome, for client/UI
 /// fixtures. Models the Mythos encounter-draw prompt.
 #[must_use]
@@ -260,7 +263,7 @@ pub fn awaiting_confirm_input(prompt: impl Into<String>) -> EngineOutcome {
     }
 }
 
-/// A sample skippable [`PickSingle`](crate::InputKind::PickSingle)
+/// A sample skippable [`PickSingle`](crate::engine::InputKind::PickSingle)
 /// [`AwaitingInput`](EngineOutcome::AwaitingInput) outcome, for client/UI
 /// fixtures. Models a non-forced reaction window: one option plus a Skip
 /// affordance.
@@ -273,7 +276,7 @@ pub fn awaiting_skippable_pick_single_input(prompt: impl Into<String>) -> Engine
     }
 }
 
-/// A skippable [`PickSingle`](crate::InputKind::PickSingle)
+/// A skippable [`PickSingle`](crate::engine::InputKind::PickSingle)
 /// [`AwaitingInput`](EngineOutcome::AwaitingInput) over caller-supplied `options`
 /// (so a test can mix anchored and un-anchored options). Like
 /// [`awaiting_pick_single_with`] but with the Skip affordance a window carries.

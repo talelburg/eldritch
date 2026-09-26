@@ -35,7 +35,7 @@
 //! deferral.
 
 use card_dsl::card_data::SkillKind;
-use card_dsl::dsl::{activated, deal_damage, heal_damage, skill_test, Ability, InvestigatorTarget};
+use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 
 /// `ArkhamDB` code for Medical Texts (original-Core printing).
 pub const CODE: &str = "01035";
@@ -44,17 +44,17 @@ pub const CODE: &str = "01035";
 /// deal 1 damage on failure, to a chosen investigator at your location.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![activated(
+    vec![dsl::activated(
         1,
         vec![],
-        skill_test(
+        dsl::skill_test(
             SkillKind::Intellect,
             2,
-            Some(heal_damage(
+            Some(dsl::heal_damage(
                 InvestigatorTarget::chosen_at_your_location(),
                 1,
             )),
-            Some(deal_damage(
+            Some(dsl::deal_damage(
                 InvestigatorTarget::chosen_at_your_location(),
                 1u8,
             )),
@@ -64,8 +64,9 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use card_dsl::dsl::{Effect, Trigger};
+
+    use super::*;
 
     #[test]
     fn one_action_intellect_test_branching_heal_or_damage() {
@@ -98,12 +99,12 @@ mod tests {
         let target = InvestigatorTarget::chosen_at_your_location();
         assert_eq!(
             on_success.as_deref(),
-            Some(&heal_damage(target, 1)),
+            Some(&dsl::heal_damage(target, 1)),
             "success heals 1 damage from the chosen investigator",
         );
         assert_eq!(
             on_fail.as_deref(),
-            Some(&deal_damage(target, 1u8)),
+            Some(&dsl::deal_damage(target, 1u8)),
             "failure deals 1 damage to the chosen investigator",
         );
     }

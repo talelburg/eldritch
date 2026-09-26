@@ -7,12 +7,11 @@
 use card_dsl::dsl::EventTiming;
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, InputRequest, OptionId, OptionTarget};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
-use game_core::state::{Act, CardCode, GameState, InvestigatorId, Phase};
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::state::{Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Phase};
+use game_core::{card_registry, test_support};
 
 #[ctor::ctor(unsafe)]
 fn install() {

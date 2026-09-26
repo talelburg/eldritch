@@ -9,7 +9,7 @@ use game_core::engine::OptionTarget;
 use game_core::state::Enemy;
 use leptos::prelude::*;
 
-use crate::card::{parse_card_text, render_segments};
+use crate::card;
 use crate::interaction::{self, PendingOptions};
 
 /// Combat stat chips for an enemy: fight, evade, health (damage/max), attack
@@ -63,7 +63,7 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
     let text_view = card_registry::current()
         .and_then(|r| (r.metadata_for)(&enemy.code))
         .and_then(|m| m.text.as_deref())
-        .map(|t| render_segments(parse_card_text(t)));
+        .map(|t| card::render_segments(card::parse_card_text(t)));
     let exhausted = enemy.exhausted;
     let exhausted_badge =
         exhausted.then(|| view! { <span class="card-exhausted">"Exhausted"</span> });
@@ -115,12 +115,13 @@ pub fn EnemyCard(enemy: Enemy) -> impl IntoView {
 
 #[cfg(test)]
 mod tests {
+    use game_core::test_support;
+
     use super::*;
-    use game_core::test_support::fixtures;
 
     #[test]
     fn stat_chips_in_order() {
-        let mut e = fixtures::test_enemy(1, "Ghoul");
+        let mut e = test_support::test_enemy(1, "Ghoul");
         e.fight = 3;
         e.evade = 2;
         e.max_health = 3;
@@ -140,7 +141,7 @@ mod tests {
 
     #[test]
     fn keyword_chips_only_when_present() {
-        let mut e = fixtures::test_enemy(1, "Ghoul Priest");
+        let mut e = test_support::test_enemy(1, "Ghoul Priest");
         e.hunter = true;
         e.retaliate = true;
         e.victory = Some(2);
@@ -156,7 +157,7 @@ mod tests {
 
     #[test]
     fn keyword_chips_empty_for_plain_enemy() {
-        let e = fixtures::test_enemy(2, "Swarm of Rats");
+        let e = test_support::test_enemy(2, "Swarm of Rats");
         assert!(enemy_keyword_chips(&e).is_empty());
     }
 }

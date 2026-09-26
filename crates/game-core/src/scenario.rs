@@ -27,10 +27,13 @@
 //! engine looks the module up by id — the action log replays
 //! deterministically.
 
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
+
 use crate::event::Event;
 use crate::scenario_registry;
 use crate::state::{ChaosToken, GameState, InvestigatorId, LocationId};
-use serde::{Deserialize, Serialize};
 
 /// Stable, serializable identifier for a scenario module.
 ///
@@ -86,9 +89,9 @@ impl ResolutionId {
     }
 }
 
-impl std::fmt::Display for ResolutionId {
+impl fmt::Display for ResolutionId {
     /// Renders as the campaign guide titles the ending: `Resolution 3`.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Resolution {}", self.0)
     }
 }
@@ -304,8 +307,7 @@ pub fn resolve_symbol_token(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn symbol_outcome_default_is_inert() {

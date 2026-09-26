@@ -4,14 +4,13 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, GameState, InvestigationResume,
-    InvestigatorId, LocationId, Phase,
+    CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, GameState, GameStateBuilder,
+    InvestigationResume, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::{card_registry, test_support};
 
 const GUARD_DOG: &str = "01021"; // Ally, 3 health / 1 sanity, retaliate reaction
 

@@ -12,15 +12,11 @@ pub mod session;
 mod store;
 mod ws;
 
-pub use id::GameId;
-pub use session::{GameSession, SessionError};
-
 use std::path::PathBuf;
 
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::routing;
-use axum::Router;
+use axum::{routing, Router};
 use game_core::{card_registry, scenario_registry};
 use sqlx::SqlitePool;
 use tower_http::services::{ServeDir, ServeFile};

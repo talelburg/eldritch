@@ -52,7 +52,7 @@
 //! row can modify a location as readily as an investigator. A recorded row
 //! stores its delta as an **expression**, evaluated at read time exactly as
 //! a swept modifier's condition is. A row can carry the test's
-//! [determination](crate::dsl::Determination) in place of a delta — the
+//! [determination](card_dsl::dsl::Determination) in place of a delta — the
 //! `[auto_fail]` chaos token writes one — which is read through
 //! [`test_determination`] rather than folded additively.
 //!
@@ -92,11 +92,12 @@
 //! returns. That is what `Modifiers.md`'s own worked example demands —
 //! base 4, a −8 token and a +2 is −2 → 0, **not** 0 + 2 → 2.
 
-use crate::card_data::SkillKind;
-use crate::card_registry::CardRegistry;
-use crate::dsl::{
+use card_dsl::card_data::SkillKind;
+use card_dsl::dsl::{
     Determination, Effect, IntExpr, ModifierAudience, ModifierScope, SkillTestKind, Stat, Trigger,
 };
+
+use crate::card_registry::CardRegistry;
 use crate::engine::abilities_in_effect;
 use crate::engine::evaluator::{self, EvalContext};
 use crate::state::{
@@ -705,7 +706,7 @@ fn sweep(
 ///
 /// The delta is an expression evaluated **here**, at read time, against
 /// the row's investigator as "you". A `Modify` writes an
-/// [`IntExpr::Lit`](crate::dsl::IntExpr::Lit), as does the revealed chaos
+/// [`IntExpr::Lit`](card_dsl::dsl::IntExpr::Lit), as does the revealed chaos
 /// token's ±N; the elder-sign row carries the investigator card's own
 /// expression, so Roland Banks 01001's *"+1 for each clue on your
 /// location"* counts the clues that are there at ST.5 rather than the ones
@@ -859,7 +860,7 @@ fn source_location(state: &GameState, placement: Placement) -> Option<LocationId
 }
 
 /// The controller's **elder-sign** skill-test modifier as an
-/// [`IntExpr`](crate::dsl::IntExpr): the expression on their investigator
+/// [`IntExpr`](card_dsl::dsl::IntExpr): the expression on their investigator
 /// card's [`Trigger::ElderSign`] ability, **copied unevaluated**.
 ///
 /// Lives here rather than in the evaluator because it answers the same
@@ -918,14 +919,14 @@ pub(crate) fn stat_for_skill(skill: SkillKind) -> Stat {
 
 #[cfg(test)]
 mod tests {
+    use card_dsl::card_data::CardMetadata;
+    use card_dsl::dsl::{self, Ability, ControlStatus, GrantTarget, Quantity};
+
     use super::*;
-    use crate::card_data::CardMetadata;
-    use crate::dsl::{
-        constant, control_status, elder_sign, grant, modify, modify_for, on_play, Ability,
-        ControlStatus, GrantTarget, Quantity,
+    use crate::state::{
+        Continuation, GameStateBuilder, InFlightSkillTest, Lifetime, RecordedModifier, SkillTestId,
     };
-    use crate::state::{Continuation, InFlightSkillTest, Lifetime, RecordedModifier, SkillTestId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::test_support;
 
     /// Mock registry over a small hardcoded set of codes. Keeps these
     /// tests isolated from the global `OnceLock` and from the cards
@@ -938,55 +939,55 @@ mod tests {
 
     fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         match code.as_str() {
-            "willpower-plus-1" => Some(vec![constant(modify(
+            "willpower-plus-1" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Willpower,
                 1,
                 ModifierScope::WhileInPlay,
             ))]),
-            "willpower-minus-1" => Some(vec![constant(modify(
+            "willpower-minus-1" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Willpower,
                 -1,
                 ModifierScope::WhileInPlay,
             ))]),
-            "intellect-plus-2" => Some(vec![constant(modify(
+            "intellect-plus-2" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Intellect,
                 2,
                 ModifierScope::WhileInPlay,
             ))]),
-            "inv-willpower-plus-2" => Some(vec![constant(modify(
+            "inv-willpower-plus-2" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Willpower,
                 2,
                 ModifierScope::WhileInPlay,
             ))]),
-            "intellect-plus-1-while-investigating" => Some(vec![constant(modify(
+            "intellect-plus-1-while-investigating" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Intellect,
                 1,
                 ModifierScope::WhileInPlayDuring(SkillTestKind::Investigate),
             ))]),
-            "willpower-plus-1-this-test-only" => Some(vec![constant(modify(
+            "willpower-plus-1-this-test-only" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Willpower,
                 1,
                 ModifierScope::ThisSkillTest,
             ))]),
-            "non-constant-willpower" => Some(vec![on_play(modify(
+            "non-constant-willpower" => Some(vec![dsl::on_play(dsl::modify(
                 Stat::Willpower,
                 5,
                 ModifierScope::WhileInPlay,
             ))]),
-            "max-health-plus-1" => Some(vec![constant(modify(
+            "max-health-plus-1" => Some(vec![dsl::constant(dsl::modify(
                 Stat::MaxHealth,
                 1,
                 ModifierScope::WhileInPlay,
             ))]),
             // Obscuring Fog 01168's shape: "Attached location gets +2
             // shroud."
-            "shroud-plus-2" => Some(vec![constant(modify_for(
+            "shroud-plus-2" => Some(vec![dsl::constant(dsl::modify_for(
                 ModifierAudience::AttachedCard,
                 Stat::Shroud,
                 2,
                 ModifierScope::WhileInPlay,
             ))]),
-            "elder-sign-clues-here" => Some(vec![elder_sign(IntExpr::Count(
+            "elder-sign-clues-here" => Some(vec![dsl::elder_sign(IntExpr::Count(
                 Quantity::CluesAtControllerLocation,
             ))]),
             // Lita Chantler 01117's exact shape (#773): the card prints no
@@ -994,13 +995,13 @@ mod tests {
             // controlled by a player. The audience is location-scoped so the
             // same card can be asked from both placements — controlled, and
             // sitting at a location under nobody's control.
-            "self-granting-combat" => Some(vec![constant(grant(
+            "self-granting-combat" => Some(vec![dsl::constant(dsl::grant(
                 GrantTarget::SelfCard,
-                Some(control_status(
+                Some(dsl::control_status(
                     "self-granting-combat",
                     ControlStatus::ByAPlayer,
                 )),
-                vec![constant(modify_for(
+                vec![dsl::constant(dsl::modify_for(
                     ModifierAudience::EachInvestigatorAtSourceLocation,
                     Stat::Combat,
                     1,

@@ -18,10 +18,12 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInstanceId, GameState, InvestigatorId, LocationId, Phase, Status, Zone,
+    CardCode, CardInstanceId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    Status, Zone,
 };
-use game_core::test_support::{self, GameStateBuilder};
-use game_core::{assert_event_count, assert_event_sequence, assert_no_event, card_registry};
+use game_core::{
+    assert_event_count, assert_event_sequence, assert_no_event, card_registry, test_support,
+};
 
 /// Holy Rosary (01059) — Mystic asset, +1 willpower constant.
 const HOLY_ROSARY: &str = "01059";

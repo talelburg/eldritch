@@ -12,9 +12,10 @@ use game_core::action::{Action, EngineRecord};
 use game_core::card_registry;
 use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, InvestigatorId, LocationId,
+    CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
+    LocationId,
 };
-use game_core::test_support::{self, GameStateBuilder, ScriptedResolver};
+use game_core::test_support::{self, ScriptedResolver};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {

@@ -18,13 +18,14 @@
 
 use leptos::prelude::*;
 
-use crate::store::{use_store, ConnStatus};
+use crate::store::{self, ConnStatus};
+use crate::transport;
 
 /// The terminal wire-format-skew overlay. Renders only at
 /// [`ConnStatus::VersionMismatch`].
 #[component]
 pub fn VersionMismatchView() -> impl IntoView {
-    let store = use_store();
+    let store = store::use_store();
 
     view! {
         {move || {
@@ -42,7 +43,7 @@ pub fn VersionMismatchView() -> impl IntoView {
                     </p>
                     <button
                         class="vm-reload"
-                        on:click=move |_| crate::transport::reload()
+                        on:click=move |_| transport::reload()
                     >
                         "Reload"
                     </button>

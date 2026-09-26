@@ -8,14 +8,13 @@ use gloo_net::http::Request;
 use gloo_net::websocket::{futures::WebSocket, Message};
 use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
+use protocol::{ClientMessage, CreateGameRequest, CreateGameResponse, GameId, ServerMessage};
 use wasm_bindgen_futures::spawn_local;
 use web_sys::Storage;
 
-use protocol::{ClientMessage, CreateGameRequest, CreateGameResponse, GameId, ServerMessage};
-
 use crate::picker::CreateTx;
-use crate::store::{reduce, ConnStatus, StoreSignal};
-use crate::url::current_ws_url;
+use crate::store::{self, ConnStatus, StoreSignal};
+use crate::url;
 
 /// localStorage key holding the active game id across reloads.
 const GAME_ID_KEY: &str = "eldritch_game_id";
@@ -143,7 +142,7 @@ async fn connect_once(
     rx: &mut UnboundedReceiver<ClientMessage>,
 ) -> ConnectOutcome {
     store.update(|s| s.status = ConnStatus::Connecting);
-    let Ok(ws) = WebSocket::open(&current_ws_url(game_id.as_str())) else {
+    let Ok(ws) = WebSocket::open(&url::current_ws_url(game_id.as_str())) else {
         return ConnectOutcome::Unreachable;
     };
     store.update(|s| s.status = ConnStatus::Connected);
@@ -159,7 +158,7 @@ async fn connect_once(
                 Some(Ok(Message::Text(txt))) => {
                     if let Ok(msg) = serde_json::from_str::<ServerMessage>(&txt) {
                         saw_hello |= matches!(msg, ServerMessage::Hello { .. });
-                        store.update(|s| reduce(s, msg));
+                        store.update(|s| store::reduce(s, msg));
                     } else {
                         // A frame we can't parse from a server that IS talking
                         // to us is a wire-format skew, not a transient glitch.

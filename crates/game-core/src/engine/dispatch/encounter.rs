@@ -1,9 +1,12 @@
 //! Encounter-deck draw, spawn, and Mythos draw chain handlers.
 
+use std::mem;
+
+use card_dsl::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, SpawnLocation};
+use card_dsl::dsl::{Ability, Effect, Trigger};
+
 use crate::action::InputResponse;
-use crate::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, SpawnLocation};
 use crate::card_registry;
-use crate::dsl::{Ability, Effect, Trigger};
 use crate::engine::dispatch::hunters::PreyResolution;
 use crate::engine::dispatch::{cursor, hunters, reaction_windows, skill_test};
 use crate::engine::evaluator::{self, EvalContext};
@@ -103,17 +106,18 @@ pub(crate) fn treachery_is_persistent(abilities: &[Ability]) -> bool {
 
 #[cfg(test)]
 mod persistence_tests {
+    use card_dsl::dsl::{self, Ability, ModifierScope, Stat};
+
     use super::*;
-    use card_dsl::dsl::{constant, modify, native, revelation, Ability, ModifierScope, Stat};
 
     #[test]
     fn persistence_is_derived_from_non_revelation_abilities() {
-        let one_shot: Vec<Ability> = vec![revelation(native("x:rev"))];
+        let one_shot: Vec<Ability> = vec![dsl::revelation(dsl::native("x:rev"))];
         assert!(!treachery_is_persistent(&one_shot));
 
         let persistent: Vec<Ability> = vec![
-            revelation(native("y:rev")),
-            constant(modify(Stat::Willpower, 1, ModifierScope::WhileInPlay)),
+            dsl::revelation(dsl::native("y:rev")),
+            dsl::constant(dsl::modify(Stat::Willpower, 1, ModifierScope::WhileInPlay)),
         ];
         assert!(treachery_is_persistent(&persistent));
     }
@@ -220,7 +224,7 @@ pub fn resolve_encounter_card(
 /// Spawn one encounter-deck enemy into play.
 ///
 /// Called by [`encounter_card_revealed`] after `Event::CardRevealed`
-/// has fired and any [`Trigger::Revelation`](crate::dsl::Trigger::Revelation)
+/// has fired and any [`Trigger::Revelation`](card_dsl::dsl::Trigger::Revelation)
 /// abilities on the enemy have resolved.
 ///
 /// # Spawn-location resolution
@@ -799,7 +803,7 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
     else {
         unreachable!("advance_encounter_draw: EncounterDraw must be the top frame")
     };
-    let mut queue = std::mem::take(remaining);
+    let mut queue = mem::take(remaining);
     queue.remove(0); // drop the finished drawer
     while let Some(&next) = queue.first() {
         if cx
@@ -913,8 +917,8 @@ mod encounter_card_revealed_tests {
     use crate::action::EngineRecord;
     use crate::engine::outcome::EngineOutcome;
     use crate::engine::{dispatch, Cx};
-    use crate::state::{CardCode, InvestigatorId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
+    use crate::test_support;
 
     /// Exercises the early-reject guard: when the handler cannot
     /// proceed past the registry / metadata checks, it must reject
@@ -995,11 +999,10 @@ mod encounter_card_revealed_tests {
 mod encounter_deck_helper_tests {
     use super::*;
     use crate::action::{Action, EngineRecord};
-    use crate::engine::apply;
+    use crate::engine;
     use crate::event::Event;
     use crate::rng::RngState;
-    use crate::state::CardCode;
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{CardCode, GameStateBuilder};
 
     #[test]
     fn shuffle_encounter_deck_emits_event_when_two_or_more_cards() {
@@ -1188,7 +1191,7 @@ mod encounter_deck_helper_tests {
         }
         let original: Vec<_> = state.encounter_deck.iter().cloned().collect();
 
-        let result = apply(state, Action::Engine(EngineRecord::EncounterDeckShuffled));
+        let result = engine::apply(state, Action::Engine(EngineRecord::EncounterDeckShuffled));
 
         assert!(
             matches!(result.outcome, EngineOutcome::Done),
@@ -1236,12 +1239,12 @@ mod encounter_deck_helper_tests {
 
 #[cfg(test)]
 mod spawn_enemy_tests {
+    use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey, Spawn, SpawnLocation};
+
     use super::*;
     use crate::engine::outcome::OptionId;
-    use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Phase};
     use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
-    use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey, Spawn, SpawnLocation};
 
     fn synth_enemy_metadata(spawn: Option<Spawn>) -> CardMetadata {
         enemy_metadata(
@@ -1882,8 +1885,8 @@ mod spawn_enemy_tests {
 mod resume_encounter_draw_chain_tests {
     use super::*;
     use crate::engine::dispatch;
-    use crate::state::{CardCode, InvestigatorId, Phase};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardCode, GameStateBuilder, InvestigatorId, Phase};
+    use crate::test_support;
 
     /// Exercises the early-reject guard for the registry / unknown-card
     /// checks. Depending on which tests have run in this process:
@@ -1951,8 +1954,8 @@ mod resume_encounter_draw_chain_tests {
 mod resume_encounter_draw_tests {
     use super::*;
     use crate::engine::outcome::InputKind;
-    use crate::state::{Continuation, InvestigatorId, Phase};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{Continuation, GameStateBuilder, InvestigatorId, Phase};
+    use crate::test_support;
 
     // The former `rejects_outside_mythos_phase` / `rejects_when_no_draw_pending`
     // / `rejects_when_out_of_order` tests are gone (#348 part 2c-iii-b): the

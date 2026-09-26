@@ -47,8 +47,8 @@
 //! [`UsageLimit`]: card_dsl::dsl::UsageLimit
 
 use card_dsl::dsl::{
-    discover_clue, elder_sign, reaction_on_event, Ability, EventPattern, EventTiming, IntExpr,
-    LocationTarget, Quantity, UsageLimit, UsagePeriod,
+    self, Ability, EventPattern, EventTiming, IntExpr, LocationTarget, Quantity, UsageLimit,
+    UsagePeriod,
 };
 
 /// `ArkhamDB` code for the original-Core printing.
@@ -62,20 +62,20 @@ pub const CODE: &str = "01001";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        reaction_on_event(
+        dsl::reaction_on_event(
             EventPattern::EnemyDefeated {
                 by_controller: true,
                 code: None,
             },
             EventTiming::After,
-            discover_clue(LocationTarget::YourLocation, 1),
+            dsl::discover_clue(LocationTarget::YourLocation, 1),
         )
         .with_usage_limit(UsageLimit {
             count: 1,
             period: UsagePeriod::Round,
         }),
         // [elder_sign] effect: +1 for each clue on your location. (01001.)
-        elder_sign(IntExpr::Count(Quantity::CluesAtControllerLocation)),
+        dsl::elder_sign(IntExpr::Count(Quantity::CluesAtControllerLocation)),
     ]
 }
 
