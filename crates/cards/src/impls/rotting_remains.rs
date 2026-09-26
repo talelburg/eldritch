@@ -8,20 +8,18 @@
 //! deals `Count(SkillTestFailedBy)` horror in a single `Deal` (#426).
 
 use card_dsl::card_data::SkillKind;
-use card_dsl::dsl::{
-    deal_horror, revelation, skill_test, Ability, IntExpr, InvestigatorTarget, Quantity,
-};
+use card_dsl::dsl::{self, Ability, IntExpr, InvestigatorTarget, Quantity};
 
 /// `ArkhamDB` code for Rotting Remains.
 pub const CODE: &str = "01163";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![revelation(skill_test(
+    vec![dsl::revelation(dsl::skill_test(
         SkillKind::Willpower,
         3,
         None,
-        Some(deal_horror(
+        Some(dsl::deal_horror(
             InvestigatorTarget::You,
             IntExpr::Count(Quantity::SkillTestFailedBy),
         )),

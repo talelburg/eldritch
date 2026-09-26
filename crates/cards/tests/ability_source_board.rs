@@ -35,9 +35,7 @@
 //! until #644. Purpose-built abilities prove reachability directly. Prior art:
 //! `ability_source_colocation.rs`.
 
-use card_dsl::dsl::{
-    activated, gain_resources, heal_damage, Ability, InvestigatorTarget, UsageLimit, UsagePeriod,
-};
+use card_dsl::dsl::{self, Ability, InvestigatorTarget, UsageLimit, UsagePeriod};
 use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::EngineOutcome;
@@ -75,16 +73,23 @@ const LIMITED: u8 = 2;
 /// this source" and "not offered from that one" differ only in the source.
 fn probe_abilities() -> Vec<Ability> {
     vec![
-        activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)),
+        dsl::activated(
+            1,
+            vec![],
+            dsl::gain_resources(InvestigatorTarget::Active, 1),
+        ),
         // Nobody is damaged on this board, so healing damage is provably
         // inert (`effect_can_change_state`).
-        activated(1, vec![], heal_damage(InvestigatorTarget::Active, 1)),
-        activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)).with_usage_limit(
-            UsageLimit {
-                count: 1,
-                period: UsagePeriod::Round,
-            },
-        ),
+        dsl::activated(1, vec![], dsl::heal_damage(InvestigatorTarget::Active, 1)),
+        dsl::activated(
+            1,
+            vec![],
+            dsl::gain_resources(InvestigatorTarget::Active, 1),
+        )
+        .with_usage_limit(UsageLimit {
+            count: 1,
+            period: UsagePeriod::Round,
+        }),
     ]
 }
 

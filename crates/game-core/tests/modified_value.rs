@@ -13,7 +13,7 @@
 //! mock cards shaped after them are the only way to exercise the sweep.
 //! Each mock below names the printed card it is shaped after.
 
-use card_dsl::dsl::{constant, modify_for, ModifierAudience, ModifierScope, Stat};
+use card_dsl::dsl::{self, ModifierAudience, ModifierScope, Stat};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::modified_value::{
@@ -59,7 +59,7 @@ const RITUAL_BEGINS: &str = "MOCK-RITUAL";
 fn install_mock_registry() {
     MockRegistry::new()
         .with_abilities(LITA, || {
-            vec![constant(modify_for(
+            vec![dsl::constant(dsl::modify_for(
                 ModifierAudience::EachInvestigatorAtSourceLocation,
                 Stat::Combat,
                 1,
@@ -67,7 +67,7 @@ fn install_mock_registry() {
             ))]
         })
         .with_abilities(WHATELEY, || {
-            vec![constant(modify_for(
+            vec![dsl::constant(dsl::modify_for(
                 ModifierAudience::EachInvestigatorAtSourceLocation,
                 Stat::Willpower,
                 -1,
@@ -75,7 +75,7 @@ fn install_mock_registry() {
             ))]
         })
         .with_abilities(FOG, || {
-            vec![constant(modify_for(
+            vec![dsl::constant(dsl::modify_for(
                 ModifierAudience::AttachedCard,
                 Stat::Shroud,
                 2,
@@ -83,7 +83,7 @@ fn install_mock_registry() {
             ))]
         })
         .with_abilities(WHIPPOORWILL, || {
-            vec![constant(modify_for(
+            vec![dsl::constant(dsl::modify_for(
                 ModifierAudience::EachInvestigatorAtSourceLocation,
                 Stat::Intellect,
                 -1,
@@ -91,7 +91,7 @@ fn install_mock_registry() {
             ))]
         })
         .with_abilities(TOWERING_BEASTS, || {
-            vec![constant(modify_for(
+            vec![dsl::constant(dsl::modify_for(
                 ModifierAudience::AttachedCard,
                 Stat::Fight,
                 1,
@@ -100,13 +100,13 @@ fn install_mock_registry() {
         })
         .with_abilities(RITUAL_BEGINS, || {
             vec![
-                constant(modify_for(
+                dsl::constant(dsl::modify_for(
                     ModifierAudience::EachEnemy,
                     Stat::Fight,
                     1,
                     ModifierScope::WhileInPlay,
                 )),
-                constant(modify_for(
+                dsl::constant(dsl::modify_for(
                     ModifierAudience::EachEnemy,
                     Stat::Evade,
                     1,

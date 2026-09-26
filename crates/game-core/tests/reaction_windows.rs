@@ -13,8 +13,8 @@
 //! card, `by_controller: false`) that no real Phase-3 card hits.
 
 use card_dsl::dsl::{
-    choose_one, discover_clue, gain_resources, reaction_on_event, Ability, EventPattern,
-    EventTiming, InvestigatorTarget, LocationTarget, SkillTestKind, TestOutcome,
+    self, Ability, EventPattern, EventTiming, InvestigatorTarget, LocationTarget, SkillTestKind,
+    TestOutcome,
 };
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
@@ -77,10 +77,10 @@ fn investigated(by_controller: bool) -> EventPattern {
 /// both investigate reactions and the bystander defeat reaction print, differing
 /// only in the condition they key off.
 fn react_gaining_a_resource(pattern: EventPattern) -> Vec<Ability> {
-    vec![reaction_on_event(
+    vec![dsl::reaction_on_event(
         pattern,
         EventTiming::After,
-        gain_resources(InvestigatorTarget::You, 1),
+        dsl::gain_resources(InvestigatorTarget::You, 1),
     )]
 }
 
@@ -88,26 +88,26 @@ fn react_gaining_a_resource(pattern: EventPattern) -> Vec<Ability> {
 fn install_mock_registry() {
     MockRegistry::new()
         .with_abilities(MODAL_REACTION, || {
-            vec![reaction_on_event(
+            vec![dsl::reaction_on_event(
                 enemy_defeated(true),
                 EventTiming::After,
-                choose_one([
+                dsl::choose_one([
                     (
                         "Gain 1 resource",
-                        gain_resources(InvestigatorTarget::You, 1),
+                        dsl::gain_resources(InvestigatorTarget::You, 1),
                     ),
                     (
                         "Gain 3 resources",
-                        gain_resources(InvestigatorTarget::You, 3),
+                        dsl::gain_resources(InvestigatorTarget::You, 3),
                     ),
                 ]),
             )]
         })
         .with_abilities(ROLAND_REACTION, || {
-            vec![reaction_on_event(
+            vec![dsl::reaction_on_event(
                 enemy_defeated(true),
                 EventTiming::After,
-                discover_clue(LocationTarget::YourLocation, 1),
+                dsl::discover_clue(LocationTarget::YourLocation, 1),
             )]
         })
         .with_abilities(BYSTANDER_REACTION, || {
@@ -115,15 +115,15 @@ fn install_mock_registry() {
         })
         .with_abilities(TWO_REACTIONS, || {
             vec![
-                reaction_on_event(
+                dsl::reaction_on_event(
                     enemy_defeated(true),
                     EventTiming::After,
-                    discover_clue(LocationTarget::YourLocation, 1),
+                    dsl::discover_clue(LocationTarget::YourLocation, 1),
                 ),
-                reaction_on_event(
+                dsl::reaction_on_event(
                     enemy_defeated(true),
                     EventTiming::After,
-                    gain_resources(InvestigatorTarget::You, 1),
+                    dsl::gain_resources(InvestigatorTarget::You, 1),
                 ),
             ]
         })

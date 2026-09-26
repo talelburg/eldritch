@@ -15,9 +15,7 @@
 //! No corpus card carries a modal `on_success` yet, so a mock is the only way to
 //! reach the shape.
 
-use card_dsl::dsl::{
-    activated, choose_one, heal_damage, heal_horror, skill_test, Ability, InvestigatorTarget,
-};
+use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionTarget};
@@ -39,15 +37,21 @@ const LOC: LocationId = LocationId(10);
 const INST: CardInstanceId = CardInstanceId(0);
 
 fn modal_heal_abilities() -> Vec<Ability> {
-    vec![activated(
+    vec![dsl::activated(
         1,
         vec![],
-        skill_test(
+        dsl::skill_test(
             SkillKind::Intellect,
             2,
-            Some(choose_one([
-                ("Heal 1 damage", heal_damage(InvestigatorTarget::You, 1)),
-                ("Heal 1 horror", heal_horror(InvestigatorTarget::You, 1)),
+            Some(dsl::choose_one([
+                (
+                    "Heal 1 damage",
+                    dsl::heal_damage(InvestigatorTarget::You, 1),
+                ),
+                (
+                    "Heal 1 horror",
+                    dsl::heal_horror(InvestigatorTarget::You, 1),
+                ),
             ])),
             None,
         ),

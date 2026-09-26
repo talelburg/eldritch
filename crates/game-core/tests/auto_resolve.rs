@@ -42,10 +42,7 @@
 //! process-isolation reason.
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use card_dsl::dsl::{
-    activated, auto_resolve, gain_resources, on_play, on_skill_test_resolution, seq, Cost,
-    Determination, InvestigatorTarget, TestOutcome,
-};
+use card_dsl::dsl::{self, Cost, Determination, InvestigatorTarget, TestOutcome};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId};
@@ -168,53 +165,55 @@ fn install_mock_registry() {
     MockRegistry::new()
         .with_card(play_auto_succeed_metadata())
         .with_abilities(AUTO_FAIL, || {
-            vec![activated(
+            vec![dsl::activated(
                 0,
                 vec![Cost::Resources(1)],
-                auto_resolve(Determination::AutomaticFailure),
+                dsl::auto_resolve(Determination::AutomaticFailure),
             )]
         })
         .with_abilities(AUTO_SUCCEED, || {
-            vec![activated(
+            vec![dsl::activated(
                 0,
                 vec![Cost::Resources(1)],
-                auto_resolve(Determination::AutomaticSuccess),
+                dsl::auto_resolve(Determination::AutomaticSuccess),
             )]
         })
         .with_abilities(FAIL_THEN_SUCCEED, || {
-            vec![activated(
+            vec![dsl::activated(
                 0,
                 vec![Cost::Resources(1)],
-                seq([
-                    auto_resolve(Determination::AutomaticFailure),
-                    auto_resolve(Determination::AutomaticSuccess),
+                dsl::seq([
+                    dsl::auto_resolve(Determination::AutomaticFailure),
+                    dsl::auto_resolve(Determination::AutomaticSuccess),
                 ]),
             )]
         })
         .with_abilities(SUCCEED_THEN_FAIL, || {
-            vec![activated(
+            vec![dsl::activated(
                 0,
                 vec![Cost::Resources(1)],
-                seq([
-                    auto_resolve(Determination::AutomaticSuccess),
-                    auto_resolve(Determination::AutomaticFailure),
+                dsl::seq([
+                    dsl::auto_resolve(Determination::AutomaticSuccess),
+                    dsl::auto_resolve(Determination::AutomaticFailure),
                 ]),
             )]
         })
         .with_abilities(PLAY_AUTO_SUCCEED, || {
-            vec![on_play(auto_resolve(Determination::AutomaticSuccess))]
+            vec![dsl::on_play(dsl::auto_resolve(
+                Determination::AutomaticSuccess,
+            ))]
         })
         .with_abilities(PLAIN_GAIN, || {
-            vec![activated(
+            vec![dsl::activated(
                 0,
                 vec![Cost::Resources(1)],
-                gain_resources(InvestigatorTarget::You, 1),
+                dsl::gain_resources(InvestigatorTarget::You, 1),
             )]
         })
         .with_abilities(ON_RESOLUTION_GAIN, || {
-            vec![on_skill_test_resolution(
+            vec![dsl::on_skill_test_resolution(
                 TestOutcome::Success,
-                gain_resources(InvestigatorTarget::You, 1),
+                dsl::gain_resources(InvestigatorTarget::You, 1),
             )]
         })
         .install();

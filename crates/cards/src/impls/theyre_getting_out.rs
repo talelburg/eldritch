@@ -114,10 +114,7 @@
 //! (#633) — the card text is positional only, but the framework rule applies
 //! regardless.
 
-use card_dsl::dsl::{
-    forced_on_event, if_else, native, native_condition, reach_resolution, Ability, EventPattern,
-    EventTiming, Phase,
-};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, Phase};
 use game_core::card_registry::{NativeConditionFn, NativeEffectFn};
 use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{self, Cx, EngineOutcome};
@@ -144,25 +141,25 @@ const HALLWAY: &str = "01112";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        forced_on_event(
+        dsl::forced_on_event(
             EventPattern::PhaseEnded {
                 phase: Phase::Enemy,
             },
             EventTiming::At,
-            native(MOVE_GHOULS),
+            dsl::native(MOVE_GHOULS),
         ),
-        forced_on_event(
+        dsl::forced_on_event(
             EventPattern::RoundEnded,
             EventTiming::At,
-            native(ROUND_END_DOOM),
+            dsl::native(ROUND_END_DOOM),
         ),
-        forced_on_event(
+        dsl::forced_on_event(
             EventPattern::AgendaAdvanced,
             EventTiming::After,
-            if_else(
-                native_condition(AT_ACT_THREE),
-                native(GHOULS_RUN_RAMPANT),
-                reach_resolution(3),
+            dsl::if_else(
+                dsl::native_condition(AT_ACT_THREE),
+                dsl::native(GHOULS_RUN_RAMPANT),
+                dsl::reach_resolution(3),
             ),
         ),
     ]

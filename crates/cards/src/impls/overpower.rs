@@ -11,9 +11,7 @@
 //! `OnSkillTestResolution { Success }` draw, firing on any successful
 //! committed-to test.
 
-use card_dsl::dsl::{
-    draw_cards, on_skill_test_resolution, Ability, InvestigatorTarget, TestOutcome,
-};
+use card_dsl::dsl::{self, Ability, InvestigatorTarget, TestOutcome};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01091";
@@ -21,9 +19,9 @@ pub const CODE: &str = "01091";
 /// On any successful test this is committed to, draw 1 card.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![on_skill_test_resolution(
+    vec![dsl::on_skill_test_resolution(
         TestOutcome::Success,
-        draw_cards(InvestigatorTarget::You, 1),
+        dsl::draw_cards(InvestigatorTarget::You, 1),
     )]
 }
 

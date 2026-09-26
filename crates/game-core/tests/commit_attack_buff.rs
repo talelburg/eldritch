@@ -11,7 +11,7 @@
 //! first; until then this mock skill exercises the full commit path.
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use card_dsl::dsl::{boost_attack_damage, on_commit};
+use card_dsl::dsl;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
@@ -56,7 +56,7 @@ fn skill_metadata() -> CardMetadata {
 fn install_mock_registry() {
     MockRegistry::new()
         .with_card(skill_metadata())
-        .with_abilities(SKILL, || vec![on_commit(boost_attack_damage(1))])
+        .with_abilities(SKILL, || vec![dsl::on_commit(dsl::boost_attack_damage(1))])
         .install();
 }
 

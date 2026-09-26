@@ -15,7 +15,7 @@
 //! makes it structural that nothing under `src/` can start a toy scenario.
 
 use card_dsl::card_data::{CardKind, CardMetadata};
-use card_dsl::dsl::{gain_resources, revelation, InvestigatorTarget};
+use card_dsl::dsl::{self, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome};
@@ -69,7 +69,10 @@ fn install() {
     MockRegistry::new()
         .with_card(treachery_metadata())
         .with_abilities(TREACHERY, || {
-            vec![revelation(gain_resources(InvestigatorTarget::You, 1))]
+            vec![dsl::revelation(dsl::gain_resources(
+                InvestigatorTarget::You,
+                1,
+            ))]
         })
         .install();
 }

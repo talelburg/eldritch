@@ -48,10 +48,7 @@
 //! choose the first option even if one of the investigators has no cards in
 //! hand (but at least one does)."* (<https://arkhamdb.com/card/01105>).
 
-use card_dsl::dsl::{
-    choose_one, deal_horror, forced_on_event, native, Ability, EventPattern, EventTiming,
-    InvestigatorTarget,
-};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome};
@@ -70,20 +67,20 @@ const LEAD_TAKES_HORROR_LABEL: &str = "The lead investigator takes 2 horror";
 /// investigator discarding 1 random card or the lead taking 2 horror.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![forced_on_event(
+    vec![dsl::forced_on_event(
         EventPattern::AgendaAdvanced,
         EventTiming::After,
         // The labels split the one printed sentence quoted in the module doc:
         // its "Either …, or …" is the division, so each branch's label is one
         // of the two halves.
-        choose_one(vec![
+        dsl::choose_one(vec![
             // Branch A: each investigator discards 1 card at random.
-            (DISCARD_EACH_LABEL, native(RANDOM_DISCARD_EACH)),
+            (DISCARD_EACH_LABEL, dsl::native(RANDOM_DISCARD_EACH)),
             // Branch B: the lead (`You`, bound to the lead by `AgendaAdvanced`)
             // takes 2 horror.
             (
                 LEAD_TAKES_HORROR_LABEL,
-                deal_horror(InvestigatorTarget::You, 2u8),
+                dsl::deal_horror(InvestigatorTarget::You, 2u8),
             ),
         ]),
     )]

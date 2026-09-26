@@ -127,9 +127,8 @@
 //! play — belong to the take-control transition and shipped with #772.
 
 use card_dsl::dsl::{
-    boost_attack_damage, constant, control_status, grant, modify_for, reaction_on_event, Ability,
-    ControlStatus, EventPattern, EventTiming, GrantTarget, ModifierAudience, ModifierScope,
-    SkillTestKind, Stat, TestOutcome,
+    self, Ability, ControlStatus, EventPattern, EventTiming, GrantTarget, ModifierAudience,
+    ModifierScope, SkillTestKind, Stat, TestOutcome,
 };
 use game_core::card_registry::EligibilityFn;
 use game_core::engine::evaluator::EvalContext;
@@ -151,12 +150,12 @@ const MONSTER_ATTACKED_HERE_TAG: &str = "01117:monster_attacked_here";
 /// to herself, holding the two abilities she gains while a player controls her.
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![constant(grant(
+    vec![dsl::constant(dsl::grant(
         GrantTarget::SelfCard,
-        Some(control_status(CODE, ControlStatus::ByAPlayer)),
+        Some(dsl::control_status(CODE, ControlStatus::ByAPlayer)),
         vec![
             // "Each investigator at your location gets +1 [combat]."
-            constant(modify_for(
+            dsl::constant(dsl::modify_for(
                 ModifierAudience::EachInvestigatorAtSourceLocation,
                 Stat::Combat,
                 1,
@@ -164,14 +163,14 @@ pub fn abilities() -> Vec<Ability> {
             )),
             // "[reaction] When an investigator at your location successfully
             // attacks a [[Monster]] enemy: That investigator deals +1 damage."
-            reaction_on_event(
+            dsl::reaction_on_event(
                 EventPattern::SkillTestResolved {
                     outcome: TestOutcome::Success,
                     kind: Some(SkillTestKind::Fight),
                     by_controller: false,
                 },
                 EventTiming::When,
-                boost_attack_damage(1),
+                dsl::boost_attack_damage(1),
             )
             .with_eligibility(MONSTER_ATTACKED_HERE_TAG),
         ],

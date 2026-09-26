@@ -10,10 +10,7 @@
 //! Hyperawareness will be the first. Until then, mock cards are the
 //! only way to exercise the full activation flow.
 
-use card_dsl::dsl::{
-    activated, constant, gain_resources, modify, Cost, IntExpr, InvestigatorTarget, ModifierScope,
-    Stat,
-};
+use card_dsl::dsl::{self, Cost, IntExpr, InvestigatorTarget, ModifierScope, Stat};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome};
@@ -54,38 +51,38 @@ const SKILL_BOOST: &str = "MOCK5";
 fn install_mock_registry() {
     MockRegistry::new()
         .with_abilities(FAST_RESOURCE_LOOP, || {
-            vec![activated(
+            vec![dsl::activated(
                 0,
                 vec![Cost::Resources(1)],
-                gain_resources(InvestigatorTarget::You, 1),
+                dsl::gain_resources(InvestigatorTarget::You, 1),
             )]
         })
         .with_abilities(ACTION_EXHAUST_GAIN, || {
-            vec![activated(
+            vec![dsl::activated(
                 1,
                 vec![Cost::Exhaust],
-                gain_resources(InvestigatorTarget::You, 1),
+                dsl::gain_resources(InvestigatorTarget::You, 1),
             )]
         })
         .with_abilities(CONSTANT_ONLY, || {
-            vec![constant(modify(
+            vec![dsl::constant(dsl::modify(
                 Stat::Willpower,
                 1,
                 ModifierScope::WhileInPlay,
             ))]
         })
         .with_abilities(DISCARD_COST_ABILITY, || {
-            vec![activated(
+            vec![dsl::activated(
                 0,
                 vec![Cost::DiscardCardFromHand],
-                gain_resources(InvestigatorTarget::You, 1),
+                dsl::gain_resources(InvestigatorTarget::You, 1),
             )]
         })
         .with_abilities(SKILL_BOOST, || {
-            vec![activated(
+            vec![dsl::activated(
                 0,
                 vec![Cost::Resources(1)],
-                modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
+                dsl::modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
             )]
         })
         .install();

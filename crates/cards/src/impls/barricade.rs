@@ -28,10 +28,7 @@
 //! read `After` under the licensed mismatch this card was the second-to-last
 //! holder of. No card holds it now (`docs/agents/standards.md`).
 
-use card_dsl::dsl::{
-    attach_self_to_location, constant, discard_self, forced_on_event, on_play, restrict, Ability,
-    EventPattern, EventTiming, Restriction,
-};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, Restriction};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01038";
@@ -41,12 +38,12 @@ pub const CODE: &str = "01038";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        on_play(attach_self_to_location()),
-        constant(restrict(Restriction::EnemyMovementBlocked)),
-        forced_on_event(
+        dsl::on_play(dsl::attach_self_to_location()),
+        dsl::constant(dsl::restrict(Restriction::EnemyMovementBlocked)),
+        dsl::forced_on_event(
             EventPattern::LeftLocation,
             EventTiming::When,
-            discard_self(),
+            dsl::discard_self(),
         ),
     ]
 }

@@ -23,10 +23,7 @@
 //! synthetic ability gains a distinct number of resources, and `DamageTaken` /
 //! `HorrorTaken` mark the condition's own resolution.
 
-use card_dsl::dsl::{
-    forced_on_event, gain_resources, reaction_on_event, Ability, Effect, EventPattern, EventTiming,
-    InvestigatorTarget,
-};
+use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
@@ -62,10 +59,10 @@ const ENEMY_FORCED_WHEN: &str = "_ea_enemy_forced_when";
 /// A reaction in `timing`'s cell of the one condition under test, gaining
 /// `amount` resources — the marker these tests read cell order off.
 fn on_attack(timing: EventTiming, amount: u8) -> Ability {
-    reaction_on_event(
+    dsl::reaction_on_event(
         EventPattern::EnemyAttacks,
         timing,
-        gain_resources(InvestigatorTarget::You, amount),
+        dsl::gain_resources(InvestigatorTarget::You, amount),
     )
 }
 
@@ -77,10 +74,10 @@ const PLAIN_ENEMY: &str = "_ea_plain";
 /// A forced ability in `timing`'s cell of the one condition under test, on the
 /// **enemy's** own card, gaining `amount` resources.
 fn enemy_forced(timing: EventTiming, amount: u8) -> Ability {
-    forced_on_event(
+    dsl::forced_on_event(
         EventPattern::EnemyAttacks,
         timing,
-        gain_resources(InvestigatorTarget::You, amount),
+        dsl::gain_resources(InvestigatorTarget::You, amount),
     )
 }
 
@@ -92,7 +89,7 @@ fn install() {
         .with_abilities(AT, || vec![on_attack(EventTiming::At, 1)])
         .with_abilities(AFTER, || vec![on_attack(EventTiming::After, 2)])
         .with_abilities(CANCEL, || {
-            vec![reaction_on_event(
+            vec![dsl::reaction_on_event(
                 EventPattern::EnemyAttacks,
                 EventTiming::When,
                 Effect::Cancel,

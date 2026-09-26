@@ -98,10 +98,7 @@
 //! the engine's, not the card's.
 
 use card_dsl::card_data::SkillKind;
-use card_dsl::dsl::{
-    activated_as, constant, control_status, grant, restrict, seq, skill_test, take_control,
-    Ability, ActionDesignator, ControlStatus, GrantTarget, Restriction,
-};
+use card_dsl::dsl::{self, Ability, ActionDesignator, ControlStatus, GrantTarget, Restriction};
 
 /// `ArkhamDB` code for the Parlor.
 pub const CODE: &str = "01115";
@@ -115,10 +112,13 @@ const LITA_CHANTLER: &str = "01117";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        activated_as(ActionDesignator::Resign, 1, vec![], seq([])),
-        constant(grant(
+        dsl::activated_as(ActionDesignator::Resign, 1, vec![], dsl::seq([])),
+        dsl::constant(dsl::grant(
             GrantTarget::Card(LITA_CHANTLER.to_owned()),
-            Some(control_status(LITA_CHANTLER, ControlStatus::ByNoPlayer)),
+            Some(dsl::control_status(
+                LITA_CHANTLER,
+                ControlStatus::ByNoPlayer,
+            )),
             vec![lita_parley()],
         )),
     ]
@@ -133,14 +133,14 @@ pub fn abilities() -> Vec<Ability> {
 /// success clause is the test's `on_success`, so a failed Parley leaves Lita
 /// where she is and costs only the action.
 fn lita_parley() -> Ability {
-    activated_as(
+    dsl::activated_as(
         ActionDesignator::Parley,
         1,
         vec![],
-        skill_test(
+        dsl::skill_test(
             SkillKind::Intellect,
             4,
-            Some(take_control(LITA_CHANTLER)),
+            Some(dsl::take_control(LITA_CHANTLER)),
             None,
         ),
     )
@@ -150,7 +150,9 @@ fn lita_parley() -> Ability {
 /// unrevealed, which is exactly until act 01109b reveals it.
 #[must_use]
 pub fn back_abilities() -> Vec<Ability> {
-    vec![constant(restrict(Restriction::InvestigatorMovementBlocked))]
+    vec![dsl::constant(dsl::restrict(
+        Restriction::InvestigatorMovementBlocked,
+    ))]
 }
 
 #[cfg(test)]

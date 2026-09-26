@@ -20,15 +20,15 @@
 //! deals `1 + 1` damage on success.
 
 use card_dsl::card_data::UseKind;
-use card_dsl::dsl::{activated_as, fight, seq, Ability, CmpOp, Condition, Cost, IntExpr, Quantity};
+use card_dsl::dsl::{self, Ability, CmpOp, Condition, Cost, IntExpr, Quantity};
 
 /// `ArkhamDB` code for Roland's .38 Special.
 pub const CODE: &str = "01006";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![activated_as(
-        fight(
+    vec![dsl::activated_as(
+        dsl::fight(
             IntExpr::cond(
                 Condition::Compare {
                     quantity: Quantity::CluesAtControllerLocation,
@@ -45,7 +45,7 @@ pub fn abilities() -> Vec<Ability> {
             kind: UseKind::Ammo,
             count: 1,
         }],
-        seq([]),
+        dsl::seq([]),
     )]
 }
 

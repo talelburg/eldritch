@@ -21,7 +21,7 @@
 //! markers fired and in what order.
 
 use card_dsl::card_data::{CardKind, CardMetadata};
-use card_dsl::dsl::{self, forced_on_event, native, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::evaluator::EvalContext;
@@ -101,18 +101,18 @@ fn blank_treachery_metadata() -> CardMetadata {
 }
 
 fn started(phase: dsl::Phase, tag: &'static str) -> Ability {
-    forced_on_event(
+    dsl::forced_on_event(
         EventPattern::PhaseStarted { phase },
         EventTiming::At,
-        native(tag),
+        dsl::native(tag),
     )
 }
 
 fn ended(phase: dsl::Phase, tag: &'static str) -> Ability {
-    forced_on_event(
+    dsl::forced_on_event(
         EventPattern::PhaseEnded { phase },
         EventTiming::At,
-        native(tag),
+        dsl::native(tag),
     )
 }
 

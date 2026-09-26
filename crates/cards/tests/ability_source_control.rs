@@ -19,7 +19,7 @@
 //! `activation_cost_source.rs`.
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use card_dsl::dsl::{activated, gain_resources, heal_damage, Ability, Cost, InvestigatorTarget};
+use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::EngineOutcome;
 use game_core::state::{
@@ -61,19 +61,23 @@ const SELF_DISCARDING: u8 = 3;
 /// not widen what is legal, so they stay unoffered from every source.
 fn probe_abilities() -> Vec<Ability> {
     vec![
-        activated(1, vec![], gain_resources(InvestigatorTarget::Active, 1)),
-        activated(
+        dsl::activated(
+            1,
+            vec![],
+            dsl::gain_resources(InvestigatorTarget::Active, 1),
+        ),
+        dsl::activated(
             1,
             vec![Cost::Resources(99)],
-            gain_resources(InvestigatorTarget::Active, 1),
+            dsl::gain_resources(InvestigatorTarget::Active, 1),
         ),
         // Nobody is damaged on this board, so healing damage is provably
         // inert (`effect_can_change_state`).
-        activated(1, vec![], heal_damage(InvestigatorTarget::Active, 1)),
-        activated(
+        dsl::activated(1, vec![], dsl::heal_damage(InvestigatorTarget::Active, 1)),
+        dsl::activated(
             1,
             vec![Cost::DiscardSelf],
-            gain_resources(InvestigatorTarget::Active, 1),
+            dsl::gain_resources(InvestigatorTarget::Active, 1),
         ),
     ]
 }

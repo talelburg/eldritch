@@ -30,8 +30,8 @@
 //! (<https://arkhamdb.com/card/01033>).
 
 use card_dsl::dsl::{
-    constant, gain_resources, modify, reaction_on_event, Ability, EventPattern, EventTiming,
-    InvestigatorTarget, ModifierScope, SkillTestKind, Stat, TestOutcome,
+    self, Ability, EventPattern, EventTiming, InvestigatorTarget, ModifierScope, SkillTestKind,
+    Stat, TestOutcome,
 };
 
 /// `ArkhamDB` code for the original-Core printing.
@@ -42,15 +42,15 @@ pub const CODE: &str = "01033";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        constant(modify(Stat::Intellect, 1, ModifierScope::WhileInPlay)),
-        reaction_on_event(
+        dsl::constant(dsl::modify(Stat::Intellect, 1, ModifierScope::WhileInPlay)),
+        dsl::reaction_on_event(
             EventPattern::SkillTestResolved {
                 outcome: TestOutcome::Success,
                 kind: Some(SkillTestKind::Investigate),
                 by_controller: true,
             },
             EventTiming::After,
-            gain_resources(InvestigatorTarget::You, 1),
+            dsl::gain_resources(InvestigatorTarget::You, 1),
         ),
     ]
 }

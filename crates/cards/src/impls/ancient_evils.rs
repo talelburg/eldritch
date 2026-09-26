@@ -27,14 +27,16 @@
 //! [`place_doom_on_current_agenda`](card_dsl::dsl::place_doom_on_current_agenda)
 //! that 01102 uses.
 
-use card_dsl::dsl::{place_doom_that_can_advance_the_agenda, revelation, Ability};
+use card_dsl::dsl::{self, Ability};
 
 /// `ArkhamDB` code for Ancient Evils.
 pub const CODE: &str = "01166";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![revelation(place_doom_that_can_advance_the_agenda(1u8))]
+    vec![dsl::revelation(
+        dsl::place_doom_that_can_advance_the_agenda(1u8),
+    )]
 }
 
 #[cfg(test)]

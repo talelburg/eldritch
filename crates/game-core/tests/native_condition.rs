@@ -6,10 +6,7 @@
 //! Exercised via the forced-trigger path (the real apply route) since
 //! `apply_effect` is `pub(crate)` — same shape as `native_effect.rs`.
 
-use card_dsl::dsl::{
-    self, forced_on_event, gain_resources, if_else, native_condition, Ability, EventPattern,
-    EventTiming, InvestigatorTarget,
-};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::EngineOutcome;
 use game_core::state::{self, Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
@@ -22,15 +19,15 @@ const INV: InvestigatorId = InvestigatorId(1);
 /// Forced at end of the enemy phase: gain 2 resources when the native
 /// predicate holds, 5 when it does not — two distinct observable branches.
 fn gated(tag: &'static str) -> Vec<Ability> {
-    vec![forced_on_event(
+    vec![dsl::forced_on_event(
         EventPattern::PhaseEnded {
             phase: dsl::Phase::Enemy,
         },
         EventTiming::After,
-        if_else(
-            native_condition(tag),
-            gain_resources(InvestigatorTarget::You, 2),
-            gain_resources(InvestigatorTarget::You, 5),
+        dsl::if_else(
+            dsl::native_condition(tag),
+            dsl::gain_resources(InvestigatorTarget::You, 2),
+            dsl::gain_resources(InvestigatorTarget::You, 5),
         ),
     )]
 }

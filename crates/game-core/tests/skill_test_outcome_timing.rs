@@ -7,9 +7,7 @@
 //! install a mock registry without colliding with other `tests/*.rs`. Mirrors
 //! `on_skill_test_resolution.rs`.
 
-use card_dsl::dsl::{
-    deal_horror, forced_on_event, EventPattern, EventTiming, InvestigatorTarget, TestOutcome,
-};
+use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget, TestOutcome};
 use game_core::assert_event;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -31,14 +29,14 @@ fn install_mock_registry() {
     // reads work under this registry.
     MockRegistry::new()
         .with_abilities(ANY_SUCCESS_FORCED, || {
-            vec![forced_on_event(
+            vec![dsl::forced_on_event(
                 EventPattern::SkillTestResolved {
                     outcome: TestOutcome::Success,
                     kind: None,
                     by_controller: true,
                 },
                 EventTiming::After,
-                deal_horror(InvestigatorTarget::You, 1u8),
+                dsl::deal_horror(InvestigatorTarget::You, 1u8),
             )]
         })
         .install();

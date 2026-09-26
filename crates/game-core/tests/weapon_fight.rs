@@ -13,7 +13,7 @@
 //! then a mock card exercises the full path.
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
-use card_dsl::dsl::{activated_as, fight, seq, Cost, IntExpr};
+use card_dsl::dsl::{self, Cost, IntExpr};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
@@ -96,19 +96,24 @@ fn install_mock_registry() {
         .with_card(bare_metadata())
         // [action] Spend 1 ammo: Fight. +1 [combat], +1 damage.
         .with_abilities(WEAPON, || {
-            vec![activated_as(
-                fight(IntExpr::Lit(1), 1u8),
+            vec![dsl::activated_as(
+                dsl::fight(IntExpr::Lit(1), 1u8),
                 1,
                 vec![Cost::SpendUses {
                     kind: UseKind::Ammo,
                     count: 1,
                 }],
-                seq([]),
+                dsl::seq([]),
             )]
         })
         // [action]: Fight. No modification at all.
         .with_abilities(BARE, || {
-            vec![activated_as(fight(0u8, 0u8), 1, vec![], seq([]))]
+            vec![dsl::activated_as(
+                dsl::fight(0u8, 0u8),
+                1,
+                vec![],
+                dsl::seq([]),
+            )]
         })
         .install();
 }

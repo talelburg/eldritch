@@ -3,9 +3,7 @@
 //! does not strand, mirroring the agenda path. No such card exists in the corpus,
 //! so we install a mock registry that gives act code `_iact` a `ChooseOne` reverse.
 
-use card_dsl::dsl::{
-    choose_one, deal_horror, forced_on_event, EventPattern, EventTiming, InvestigatorTarget,
-};
+use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{EngineOutcome, InputKind};
 use game_core::state::{Act, CardCode, GameStateBuilder, InvestigatorId, Phase};
@@ -17,13 +15,19 @@ const IACT: &str = "_iact";
 fn install() {
     MockRegistry::new()
         .with_abilities(IACT, || {
-            vec![forced_on_event(
+            vec![dsl::forced_on_event(
                 EventPattern::ActAdvanced,
                 EventTiming::After,
                 // Two always-legal branches ⇒ the choice suspends.
-                choose_one(vec![
-                    ("Take 1 horror", deal_horror(InvestigatorTarget::You, 1u8)),
-                    ("Take 2 horror", deal_horror(InvestigatorTarget::You, 2u8)),
+                dsl::choose_one(vec![
+                    (
+                        "Take 1 horror",
+                        dsl::deal_horror(InvestigatorTarget::You, 1u8),
+                    ),
+                    (
+                        "Take 2 horror",
+                        dsl::deal_horror(InvestigatorTarget::You, 2u8),
+                    ),
                 ]),
             )]
         })

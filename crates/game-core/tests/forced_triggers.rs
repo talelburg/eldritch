@@ -13,8 +13,7 @@
 //! cards are the only way to exercise the full path.
 
 use card_dsl::dsl::{
-    self, deal_horror, forced_on_event, Ability, EventPattern, EventTiming, InvestigatorTarget,
-    SkillTestKind, TestOutcome,
+    self, Ability, EventPattern, EventTiming, InvestigatorTarget, SkillTestKind, TestOutcome,
 };
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
@@ -105,7 +104,11 @@ const UNKNOWN_TAG: &str = "test:unregistered";
 /// One forced ability on `pattern` in `cell`, dealing `horror` to the
 /// investigator it fires for — the single shape every mock card here prints.
 fn forced_horror(pattern: EventPattern, cell: EventTiming, horror: u8) -> Ability {
-    forced_on_event(pattern, cell, deal_horror(InvestigatorTarget::You, horror))
+    dsl::forced_on_event(
+        pattern,
+        cell,
+        dsl::deal_horror(InvestigatorTarget::You, horror),
+    )
 }
 
 /// [`HORROR_ATTIC`]'s on-enter ability, carrying an eligibility `tag` (#786).

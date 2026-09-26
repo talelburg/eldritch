@@ -33,7 +33,7 @@
 //! damage to, and reads the attacker from `EvalContext.attacking_enemy`, which
 //! the window binds. (C5b #237.)
 
-use card_dsl::dsl::{native, reaction_on_event, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome};
@@ -45,10 +45,10 @@ const RETALIATE: &str = "01021:retaliate";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![reaction_on_event(
+    vec![dsl::reaction_on_event(
         EventPattern::EnemyAttackDamagedSelf,
         EventTiming::When,
-        native(RETALIATE),
+        dsl::native(RETALIATE),
     )]
 }
 

@@ -11,10 +11,7 @@
 //! follow-up issue (#39 Deduction) is the first consumer. Until then,
 //! mock cards are the only way to exercise the full path.
 
-use card_dsl::dsl::{
-    constant, discover_clue, modify, on_skill_test_resolution, LocationTarget, ModifierScope, Stat,
-    TestOutcome,
-};
+use card_dsl::dsl::{self, LocationTarget, ModifierScope, Stat, TestOutcome};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
@@ -45,23 +42,23 @@ const MIXED_TRIGGERS: &str = "MOCK-OSR-MIXED";
 fn install_mock_registry() {
     MockRegistry::new()
         .with_abilities(BONUS_CLUE_SUCCESS, || {
-            vec![on_skill_test_resolution(
+            vec![dsl::on_skill_test_resolution(
                 TestOutcome::Success,
-                discover_clue(LocationTarget::TestedLocation, 1),
+                dsl::discover_clue(LocationTarget::TestedLocation, 1),
             )]
         })
         .with_abilities(BONUS_CLUE_FAILURE, || {
-            vec![on_skill_test_resolution(
+            vec![dsl::on_skill_test_resolution(
                 TestOutcome::Failure,
-                discover_clue(LocationTarget::TestedLocation, 1),
+                dsl::discover_clue(LocationTarget::TestedLocation, 1),
             )]
         })
         .with_abilities(MIXED_TRIGGERS, || {
             vec![
-                constant(modify(Stat::Intellect, 1, ModifierScope::WhileInPlay)),
-                on_skill_test_resolution(
+                dsl::constant(dsl::modify(Stat::Intellect, 1, ModifierScope::WhileInPlay)),
+                dsl::on_skill_test_resolution(
                     TestOutcome::Success,
-                    discover_clue(LocationTarget::TestedLocation, 1),
+                    dsl::discover_clue(LocationTarget::TestedLocation, 1),
                 ),
             ]
         })

@@ -920,10 +920,7 @@ pub(crate) fn stat_for_skill(skill: SkillKind) -> Stat {
 #[cfg(test)]
 mod tests {
     use card_dsl::card_data::CardMetadata;
-    use card_dsl::dsl::{
-        constant, control_status, elder_sign, grant, modify, modify_for, on_play, Ability,
-        ControlStatus, GrantTarget, Quantity,
-    };
+    use card_dsl::dsl::{self, Ability, ControlStatus, GrantTarget, Quantity};
 
     use super::*;
     use crate::state::{
@@ -942,55 +939,55 @@ mod tests {
 
     fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         match code.as_str() {
-            "willpower-plus-1" => Some(vec![constant(modify(
+            "willpower-plus-1" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Willpower,
                 1,
                 ModifierScope::WhileInPlay,
             ))]),
-            "willpower-minus-1" => Some(vec![constant(modify(
+            "willpower-minus-1" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Willpower,
                 -1,
                 ModifierScope::WhileInPlay,
             ))]),
-            "intellect-plus-2" => Some(vec![constant(modify(
+            "intellect-plus-2" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Intellect,
                 2,
                 ModifierScope::WhileInPlay,
             ))]),
-            "inv-willpower-plus-2" => Some(vec![constant(modify(
+            "inv-willpower-plus-2" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Willpower,
                 2,
                 ModifierScope::WhileInPlay,
             ))]),
-            "intellect-plus-1-while-investigating" => Some(vec![constant(modify(
+            "intellect-plus-1-while-investigating" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Intellect,
                 1,
                 ModifierScope::WhileInPlayDuring(SkillTestKind::Investigate),
             ))]),
-            "willpower-plus-1-this-test-only" => Some(vec![constant(modify(
+            "willpower-plus-1-this-test-only" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Willpower,
                 1,
                 ModifierScope::ThisSkillTest,
             ))]),
-            "non-constant-willpower" => Some(vec![on_play(modify(
+            "non-constant-willpower" => Some(vec![dsl::on_play(dsl::modify(
                 Stat::Willpower,
                 5,
                 ModifierScope::WhileInPlay,
             ))]),
-            "max-health-plus-1" => Some(vec![constant(modify(
+            "max-health-plus-1" => Some(vec![dsl::constant(dsl::modify(
                 Stat::MaxHealth,
                 1,
                 ModifierScope::WhileInPlay,
             ))]),
             // Obscuring Fog 01168's shape: "Attached location gets +2
             // shroud."
-            "shroud-plus-2" => Some(vec![constant(modify_for(
+            "shroud-plus-2" => Some(vec![dsl::constant(dsl::modify_for(
                 ModifierAudience::AttachedCard,
                 Stat::Shroud,
                 2,
                 ModifierScope::WhileInPlay,
             ))]),
-            "elder-sign-clues-here" => Some(vec![elder_sign(IntExpr::Count(
+            "elder-sign-clues-here" => Some(vec![dsl::elder_sign(IntExpr::Count(
                 Quantity::CluesAtControllerLocation,
             ))]),
             // Lita Chantler 01117's exact shape (#773): the card prints no
@@ -998,13 +995,13 @@ mod tests {
             // controlled by a player. The audience is location-scoped so the
             // same card can be asked from both placements — controlled, and
             // sitting at a location under nobody's control.
-            "self-granting-combat" => Some(vec![constant(grant(
+            "self-granting-combat" => Some(vec![dsl::constant(dsl::grant(
                 GrantTarget::SelfCard,
-                Some(control_status(
+                Some(dsl::control_status(
                     "self-granting-combat",
                     ControlStatus::ByAPlayer,
                 )),
-                vec![constant(modify_for(
+                vec![dsl::constant(dsl::modify_for(
                     ModifierAudience::EachInvestigatorAtSourceLocation,
                     Stat::Combat,
                     1,

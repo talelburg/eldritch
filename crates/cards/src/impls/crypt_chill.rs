@@ -17,7 +17,7 @@
 //! re-enumerating in the same order and indexing by it.
 
 use card_dsl::card_data::{CardKind, SkillKind};
-use card_dsl::dsl::{native, revelation, skill_test, Ability};
+use card_dsl::dsl::{self, Ability};
 use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, ChoiceResolution, Cx, EngineOutcome};
@@ -31,11 +31,11 @@ const CRYPT_CHILL_FAIL: &str = "01167:crypt-chill-fail";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![revelation(skill_test(
+    vec![dsl::revelation(dsl::skill_test(
         SkillKind::Willpower,
         4,
         None,
-        Some(native(CRYPT_CHILL_FAIL)),
+        Some(dsl::native(CRYPT_CHILL_FAIL)),
     ))]
 }
 

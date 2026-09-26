@@ -8,9 +8,7 @@
 //! `play_card.rs` binary.
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use card_dsl::dsl::{
-    gain_resources, modify, on_play, seq, InvestigatorTarget, ModifierScope, Stat,
-};
+use card_dsl::dsl::{self, InvestigatorTarget, ModifierScope, Stat};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Phase};
@@ -57,9 +55,9 @@ fn install_probe_registry() {
         // Modify, which is an evaluator TODO stub that returns `Rejected` —
         // producing a mid-resolution reject after a committed mutation.
         .with_abilities(PROBE, || {
-            vec![on_play(seq([
-                gain_resources(InvestigatorTarget::Active, 2),
-                modify(Stat::Willpower, 1, ModifierScope::ThisTurn),
+            vec![dsl::on_play(dsl::seq([
+                dsl::gain_resources(InvestigatorTarget::Active, 2),
+                dsl::modify(Stat::Willpower, 1, ModifierScope::ThisTurn),
             ]))]
         })
         .install();

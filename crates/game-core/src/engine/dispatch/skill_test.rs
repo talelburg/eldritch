@@ -1856,7 +1856,7 @@ fn push_symbol_effects(cx: &mut Cx, investigator: InvestigatorId, effects: &[Tok
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::deal_horror;
+    use card_dsl::dsl;
 
     use super::*;
     use crate::engine::dispatch;
@@ -2047,7 +2047,7 @@ mod tests {
             SkillTestKind::Plain,
             DifficultyBasis::Fixed(2),
             SkillTestFollowUp::None,
-            Some(deal_horror(InvestigatorTarget::You, 1u8)),
+            Some(dsl::deal_horror(InvestigatorTarget::You, 1u8)),
             None,
             None,
             None,

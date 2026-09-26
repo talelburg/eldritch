@@ -21,7 +21,7 @@
 //! `GameEnd` is `cards::tests::cover_up`, which drives the real 01007 through a
 //! real scenario ending.
 
-use card_dsl::dsl::{self, forced_on_event, native, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{Cx, EngineOutcome, TimingEvent};
 use game_core::event::Event;
@@ -67,8 +67,8 @@ fn mark_at(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 /// are observable in order.
 fn both_cells(pattern: EventPattern) -> Vec<Ability> {
     vec![
-        forced_on_event(pattern.clone(), EventTiming::When, native("mark:when")),
-        forced_on_event(pattern, EventTiming::At, native("mark:at")),
+        dsl::forced_on_event(pattern.clone(), EventTiming::When, dsl::native("mark:when")),
+        dsl::forced_on_event(pattern, EventTiming::At, dsl::native("mark:at")),
     ]
 }
 
@@ -82,17 +82,17 @@ fn upkeep_ended() -> EventPattern {
 fn install() {
     MockRegistry::new()
         .with_abilities(WHEN_ACT, || {
-            vec![forced_on_event(
+            vec![dsl::forced_on_event(
                 upkeep_ended(),
                 EventTiming::When,
-                native("mark:when"),
+                dsl::native("mark:when"),
             )]
         })
         .with_abilities(AT_ACT, || {
-            vec![forced_on_event(
+            vec![dsl::forced_on_event(
                 upkeep_ended(),
                 EventTiming::At,
-                native("mark:at"),
+                dsl::native("mark:at"),
             )]
         })
         .with_abilities(ROUND_ACT, || both_cells(EventPattern::RoundEnded))

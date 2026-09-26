@@ -79,9 +79,7 @@
 //! against, nothing contests the cell. This act has no rulings (recorded in
 //! `data/arkhamdb-faq/no-rulings.txt`).
 
-use card_dsl::dsl::{
-    forced_on_event, native, reaction_on_event, Ability, EventPattern, EventTiming,
-};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::card_registry::{EligibilityFn, NativeEffectFn};
 use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{self, Cx, EngineOutcome};
@@ -125,15 +123,15 @@ const PARLOR: &str = "01115";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        forced_on_event(
+        dsl::forced_on_event(
             EventPattern::ActAdvanced,
             EventTiming::After,
-            native(REVERSE),
+            dsl::native(REVERSE),
         ),
-        reaction_on_event(
+        dsl::reaction_on_event(
             EventPattern::RoundEnded,
             EventTiming::When,
-            native(ROUND_END_ADVANCE),
+            dsl::native(ROUND_END_ADVANCE),
         )
         .with_eligibility(CAN_ADVANCE),
     ]

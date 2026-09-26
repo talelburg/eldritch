@@ -7,12 +7,16 @@
 //! [`CardRegistry::EMPTY`]. [`MockRegistry`] collapses that plumbing.
 //!
 //! ```
-//! use card_dsl::dsl::{constant, modify, ModifierScope, Stat};
+//! use card_dsl::dsl::{self, ModifierScope, Stat};
 //! use game_core::test_support::MockRegistry;
 //!
 //! MockRegistry::new()
 //!     .with_abilities("_doc_probe", || {
-//!         vec![constant(modify(Stat::Willpower, 1, ModifierScope::WhileInPlay))]
+//!         vec![dsl::constant(dsl::modify(
+//!             Stat::Willpower,
+//!             1,
+//!             ModifierScope::WhileInPlay,
+//!         ))]
 //!     })
 //!     .install();
 //! ```

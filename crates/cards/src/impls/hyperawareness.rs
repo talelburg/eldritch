@@ -29,7 +29,7 @@
 //!
 //! [`TurnAction::ActivateAbility`]: game_core::TurnAction::ActivateAbility
 
-use card_dsl::dsl::{activated, modify, Ability, Cost, ModifierScope, Stat};
+use card_dsl::dsl::{self, Ability, Cost, ModifierScope, Stat};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01034";
@@ -39,16 +39,16 @@ pub const CODE: &str = "01034";
 pub fn abilities() -> Vec<Ability> {
     vec![
         // Index 0: +1 intellect for this skill test.
-        activated(
+        dsl::activated(
             0,
             vec![Cost::Resources(1)],
-            modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
+            dsl::modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
         ),
         // Index 1: +1 agility for this skill test.
-        activated(
+        dsl::activated(
             0,
             vec![Cost::Resources(1)],
-            modify(Stat::Agility, 1, ModifierScope::ThisSkillTest),
+            dsl::modify(Stat::Agility, 1, ModifierScope::ThisSkillTest),
         ),
     ]
 }

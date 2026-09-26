@@ -43,10 +43,7 @@
 //! native effect is uninspectable, the forced scan collected it anyway, and
 //! interactive play prompted the player to resolve an ability that did nothing.
 
-use card_dsl::dsl::{
-    forced_on_event, native, put_into_threat_area_with_clues, reaction_on_event, revelation,
-    Ability, Effect, EventPattern, EventTiming,
-};
+use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming};
 use game_core::card_registry::{EligibilityFn, NativeEffectFn};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{Cx, EngineOutcome};
@@ -70,8 +67,8 @@ const HAS_CLUES_TAG: &str = "01007:has_clues";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        revelation(put_into_threat_area_with_clues(CODE, 3)),
-        reaction_on_event(
+        dsl::revelation(dsl::put_into_threat_area_with_clues(CODE, 3)),
+        dsl::reaction_on_event(
             EventPattern::DiscoverClues,
             EventTiming::When,
             // "Discard that many clues from Cover Up instead": run the discard,
@@ -83,7 +80,7 @@ pub fn abilities() -> Vec<Ability> {
             // "would" replacement changes the nature of the triggering
             // condition, so *"No further abilities referencing the original
             // triggering condition may be used."*
-            Effect::Seq(vec![native(DISCARD_TAG), Effect::Cancel]),
+            Effect::Seq(vec![dsl::native(DISCARD_TAG), Effect::Cancel]),
         )
         .with_eligibility(HAS_CLUES_TAG),
         // "if there are any clues on Cover Up" is an initiation condition, not
@@ -92,8 +89,12 @@ pub fn abilities() -> Vec<Ability> {
         // ability does not initiate."* With no clues the trauma cannot happen,
         // so the same tag the reaction gates on keeps the forced scan from
         // collecting it — and from prompting to resolve it (#786).
-        forced_on_event(EventPattern::GameEnd, EventTiming::When, native(TRAUMA_TAG))
-            .with_eligibility(HAS_CLUES_TAG),
+        dsl::forced_on_event(
+            EventPattern::GameEnd,
+            EventTiming::When,
+            dsl::native(TRAUMA_TAG),
+        )
+        .with_eligibility(HAS_CLUES_TAG),
     ]
 }
 

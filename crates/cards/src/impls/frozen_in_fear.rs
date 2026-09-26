@@ -53,10 +53,7 @@
 //! spending actions outside their own turn. Tracked as #759.
 
 use card_dsl::card_data::SkillKind;
-use card_dsl::dsl::{
-    constant, discard_self, forced_on_event, put_into_threat_area, restrict, revelation,
-    skill_test, Ability, ActionClass, EventPattern, EventTiming, Restriction,
-};
+use card_dsl::dsl::{self, Ability, ActionClass, EventPattern, EventTiming, Restriction};
 
 /// `ArkhamDB` code for Frozen in Fear.
 pub const CODE: &str = "01164";
@@ -64,16 +61,16 @@ pub const CODE: &str = "01164";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![
-        revelation(put_into_threat_area(CODE)),
-        constant(restrict(Restriction::ExtraActionCost {
+        dsl::revelation(dsl::put_into_threat_area(CODE)),
+        dsl::constant(dsl::restrict(Restriction::ExtraActionCost {
             actions: vec![ActionClass::Move, ActionClass::Fight, ActionClass::Evade],
             first_each_round: true,
         })),
-        forced_on_event(
+        dsl::forced_on_event(
             EventPattern::EndOfTurn,
             EventTiming::At,
             // Test willpower(3): on success discard Frozen in Fear.
-            skill_test(SkillKind::Willpower, 3, Some(discard_self()), None),
+            dsl::skill_test(SkillKind::Willpower, 3, Some(dsl::discard_self()), None),
         ),
     ]
 }

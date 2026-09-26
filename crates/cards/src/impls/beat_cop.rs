@@ -17,10 +17,7 @@
 //! metadata; soak is engine-modeled from it (#44/K5 — nothing to declare in
 //! `abilities()`; see `crates/cards/tests/non_attack_soak.rs`).
 
-use card_dsl::dsl::{
-    activated, constant, deal_damage_to_enemy, modify, Ability, Cost, EnemyTarget, ModifierScope,
-    Stat,
-};
+use card_dsl::dsl::{self, Ability, Cost, EnemyTarget, ModifierScope, Stat};
 
 /// `ArkhamDB` code for Beat Cop (original-Core printing).
 pub const CODE: &str = "01018";
@@ -30,12 +27,12 @@ pub const CODE: &str = "01018";
 pub fn abilities() -> Vec<Ability> {
     vec![
         // You get +1 [combat] (while in play).
-        constant(modify(Stat::Combat, 1, ModifierScope::WhileInPlay)),
+        dsl::constant(dsl::modify(Stat::Combat, 1, ModifierScope::WhileInPlay)),
         // [fast] Discard Beat Cop: Deal 1 damage to an enemy at your location.
-        activated(
+        dsl::activated(
             0,
             vec![Cost::DiscardSelf],
-            deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
+            dsl::deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
         ),
     ]
 }

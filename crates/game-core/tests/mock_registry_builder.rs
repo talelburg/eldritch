@@ -12,7 +12,7 @@
 //! ships no named ones.
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use card_dsl::dsl::{constant, modify, Ability, ModifierScope, Stat};
+use card_dsl::dsl::{self, Ability, ModifierScope, Stat};
 use game_core::card_registry::{self, NativeEffectFn};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{Cx, EngineOutcome};
@@ -57,7 +57,7 @@ fn probe_metadata(code: &str) -> CardMetadata {
 }
 
 fn front_ability() -> Vec<Ability> {
-    vec![constant(modify(
+    vec![dsl::constant(dsl::modify(
         Stat::Willpower,
         1,
         ModifierScope::WhileInPlay,
@@ -65,7 +65,7 @@ fn front_ability() -> Vec<Ability> {
 }
 
 fn back_ability() -> Vec<Ability> {
-    vec![constant(modify(
+    vec![dsl::constant(dsl::modify(
         Stat::Intellect,
         2,
         ModifierScope::WhileInPlay,

@@ -587,7 +587,7 @@ pub(super) fn check_cost_payable(
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{fight, investigate};
+    use card_dsl::dsl;
     use ActionDesignator::{Evade, Move, Parley, Resign};
 
     use super::*;
@@ -600,13 +600,13 @@ mod tests {
     /// flavours.
     #[test]
     fn provokes_aoo_exempts_exactly_the_four_named_designators() {
-        for exempt in [fight(0u8, 0u8), Evade, Parley, Resign] {
+        for exempt in [dsl::fight(0u8, 0u8), Evade, Parley, Resign] {
             assert!(
                 !provokes_aoo(1, Some(&exempt)),
                 "{exempt:?} is on the exempt list"
             );
         }
-        for provoking in [Move, investigate(0u8)] {
+        for provoking in [Move, dsl::investigate(0u8)] {
             assert!(
                 provokes_aoo(1, Some(&provoking)),
                 "{provoking:?} is not on the exempt list"
@@ -623,8 +623,8 @@ mod tests {
         // with a bold action designator (same entry, added in FAQ).
         for designator in [
             None,
-            Some(fight(0u8, 0u8)),
-            Some(investigate(0u8)),
+            Some(dsl::fight(0u8, 0u8)),
+            Some(dsl::investigate(0u8)),
             Some(Resign),
         ] {
             assert!(

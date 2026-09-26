@@ -18,7 +18,7 @@
 //! `native_effect.rs`, whose idiom it follows.
 
 use card_dsl::card_data::{CardKind, CardMetadata};
-use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};
@@ -73,10 +73,10 @@ fn metadata(code: &'static str, weakness: bool) -> CardMetadata {
 
 /// The `GameEnd` forced every mock card here prints, in `cell`.
 fn game_end_trauma(cell: EventTiming) -> Vec<Ability> {
-    vec![forced_on_event(
+    vec![dsl::forced_on_event(
         EventPattern::GameEnd,
         cell,
-        native(TRAUMA_TAG),
+        dsl::native(TRAUMA_TAG),
     )]
 }
 

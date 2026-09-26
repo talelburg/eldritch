@@ -174,7 +174,7 @@ pub(crate) fn resume_effect_walk(_cx: &mut Cx) -> EngineOutcome {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{choose_one, gain_resources, Effect, InvestigatorTarget};
+    use card_dsl::dsl::{self, Effect, InvestigatorTarget};
 
     use super::*;
     use crate::engine::dispatch;
@@ -188,7 +188,7 @@ mod tests {
     /// empty `Seq`, the old placeholder here, is provably inert and would be
     /// filtered out.)
     fn live_branch() -> Effect {
-        gain_resources(InvestigatorTarget::You, 1)
+        dsl::gain_resources(InvestigatorTarget::You, 1)
     }
 
     /// A state holding the investigator [`live_branch`] pays out to.
@@ -247,7 +247,7 @@ mod tests {
 
         // Two live branches — a filtered-empty ChooseOne skips instead of
         // suspending (#664), which is not the behaviour under test here.
-        let effect = choose_one([("A", live_branch()), ("B", live_branch())]);
+        let effect = dsl::choose_one([("A", live_branch()), ("B", live_branch())]);
         let mut state = state_with_investigator();
         let mut events = Vec::new();
         // Push the effect root + drive it through the real global loop (the
@@ -282,7 +282,7 @@ mod tests {
     fn single_branch_choose_one_surfaces_under_interactive_flag() {
         // One ChooseOne branch: today it auto-binds. With interactive_acknowledge
         // on it must surface as a one-option pick (#466).
-        let effect = choose_one([("Only", live_branch())]);
+        let effect = dsl::choose_one([("Only", live_branch())]);
         let ctx = EvalContext::for_controller(InvestigatorId(1));
 
         let mut state = state_with_investigator();
@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn single_branch_choose_one_auto_binds_when_flag_off() {
-        let effect = choose_one([("Only", live_branch())]);
+        let effect = dsl::choose_one([("Only", live_branch())]);
         let ctx = EvalContext::for_controller(InvestigatorId(1));
         let mut state = state_with_investigator(); // flag defaults false
         let mut events = Vec::new();

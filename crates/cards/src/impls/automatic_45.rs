@@ -17,21 +17,21 @@
 //! success.
 
 use card_dsl::card_data::UseKind;
-use card_dsl::dsl::{activated_as, fight, seq, Ability, Cost};
+use card_dsl::dsl::{self, Ability, Cost};
 
 /// `ArkhamDB` code for the .45 Automatic (original-Core printing).
 pub const CODE: &str = "01016";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
-    vec![activated_as(
-        fight(1u8, 1u8),
+    vec![dsl::activated_as(
+        dsl::fight(1u8, 1u8),
         1,
         vec![Cost::SpendUses {
             kind: UseKind::Ammo,
             count: 1,
         }],
-        seq([]),
+        dsl::seq([]),
     )]
 }
 

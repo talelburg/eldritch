@@ -35,7 +35,7 @@
 //! [MockRegistry]: game_core::test_support::MockRegistry
 
 use card_dsl::card_data::{CardKind, CardMetadata, CardType};
-use card_dsl::dsl::{choose_one, gain_resources, revelation, Ability, InvestigatorTarget};
+use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
@@ -83,18 +83,21 @@ fn treachery_metadata(code: &str, name: &str, text: &str, surge: bool) -> CardMe
 }
 
 fn gain_one_revelation() -> Vec<Ability> {
-    vec![revelation(gain_resources(InvestigatorTarget::You, 1))]
+    vec![dsl::revelation(dsl::gain_resources(
+        InvestigatorTarget::You,
+        1,
+    ))]
 }
 
 fn choice_revelation() -> Vec<Ability> {
-    vec![revelation(choose_one([
+    vec![dsl::revelation(dsl::choose_one([
         (
             "Gain 2 resources",
-            gain_resources(InvestigatorTarget::You, 2),
+            dsl::gain_resources(InvestigatorTarget::You, 2),
         ),
         (
             "Gain 5 resources",
-            gain_resources(InvestigatorTarget::You, 5),
+            dsl::gain_resources(InvestigatorTarget::You, 5),
         ),
     ]))]
 }

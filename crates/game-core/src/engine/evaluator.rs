@@ -2570,12 +2570,7 @@ pub fn location_id_by_code(state: &GameState, code: &str) -> Option<LocationId> 
 #[cfg(test)]
 mod tests {
     use card_dsl::card_data::CardMetadata;
-    use card_dsl::dsl::{
-        boost_attack_damage, choose_one, constant, deal_damage, deal_damage_to_enemy, deal_horror,
-        discover_additional_clues, discover_clue, draw_cards, gain_resources, heal, if_, if_else,
-        modify, on_play, put_into_threat_area_with_clues, restrict, search_deck, seq, Choose,
-        TestOutcome,
-    };
+    use card_dsl::dsl::{self, Choose, TestOutcome};
 
     use super::*;
     use crate::action::InputResponse;
@@ -2607,7 +2602,7 @@ mod tests {
     fn discover_clue_can_change_state_only_with_clues_present() {
         // #495 / RR p.2: discovering a clue at your location changes state iff
         // there is a clue to discover.
-        let discover = discover_clue(LocationTarget::YourLocation, 1);
+        let discover = dsl::discover_clue(LocationTarget::YourLocation, 1);
 
         let with_clues = state_with_clues_at_location(2);
         assert!(effect_can_change_state(&with_clues, ctx(1), &discover));
@@ -2618,7 +2613,7 @@ mod tests {
 
     #[test]
     fn discover_zero_count_cannot_change_state() {
-        let discover = discover_clue(LocationTarget::YourLocation, 0);
+        let discover = dsl::discover_clue(LocationTarget::YourLocation, 0);
         let with_clues = state_with_clues_at_location(2);
         assert!(!effect_can_change_state(&with_clues, ctx(1), &discover));
     }
@@ -2627,15 +2622,15 @@ mod tests {
     fn seq_can_change_state_iff_any_step_can() {
         let no_clues = state_with_clues_at_location(0);
         // Both steps inert (discover at 0-clue location) → Seq inert.
-        let inert = seq(vec![
-            discover_clue(LocationTarget::YourLocation, 1),
-            discover_clue(LocationTarget::YourLocation, 1),
+        let inert = dsl::seq(vec![
+            dsl::discover_clue(LocationTarget::YourLocation, 1),
+            dsl::discover_clue(LocationTarget::YourLocation, 1),
         ]);
         assert!(!effect_can_change_state(&no_clues, ctx(1), &inert));
         // One step meaningful (gain resources, conservatively state-changing).
-        let mixed = seq(vec![
-            discover_clue(LocationTarget::YourLocation, 1),
-            gain_resources(InvestigatorTarget::You, 1),
+        let mixed = dsl::seq(vec![
+            dsl::discover_clue(LocationTarget::YourLocation, 1),
+            dsl::gain_resources(InvestigatorTarget::You, 1),
         ]);
         assert!(effect_can_change_state(&no_clues, ctx(1), &mixed));
     }
@@ -2643,14 +2638,14 @@ mod tests {
     #[test]
     fn choose_one_can_change_state_iff_any_branch_can() {
         let no_clues = state_with_clues_at_location(0);
-        let choice = choose_one([
+        let choice = dsl::choose_one([
             (
                 "Discover 1 clue",
-                discover_clue(LocationTarget::YourLocation, 1),
+                dsl::discover_clue(LocationTarget::YourLocation, 1),
             ),
             (
                 "Gain 1 resource",
-                gain_resources(InvestigatorTarget::You, 1),
+                dsl::gain_resources(InvestigatorTarget::You, 1),
             ),
         ]);
         assert!(effect_can_change_state(&no_clues, ctx(1), &choice));
@@ -2664,7 +2659,7 @@ mod tests {
         assert!(effect_can_change_state(
             &no_clues,
             ctx(1),
-            &gain_resources(InvestigatorTarget::You, 1)
+            &dsl::gain_resources(InvestigatorTarget::You, 1)
         ));
     }
 
@@ -2690,7 +2685,7 @@ mod tests {
     fn heal_can_change_state_only_when_the_target_carries_that_harm() {
         // #639 / RR "Ability": First Aid's heal on an unharmed investigator has
         // no potential to change the game state.
-        let heal_damage = heal(HarmKind::Damage, InvestigatorTarget::You, 1);
+        let heal_damage = dsl::heal(HarmKind::Damage, InvestigatorTarget::You, 1);
         assert!(effect_can_change_state(
             &state_with_harm(&[(1, 2, 0, 0)]),
             ctx(1),
@@ -2715,7 +2710,7 @@ mod tests {
         assert!(!effect_can_change_state(
             &state_with_harm(&[(1, 2, 2, 0)]),
             ctx(1),
-            &heal(HarmKind::Damage, InvestigatorTarget::You, 0),
+            &dsl::heal(HarmKind::Damage, InvestigatorTarget::You, 0),
         ));
     }
 
@@ -2723,7 +2718,7 @@ mod tests {
     fn a_chosen_heal_target_scans_every_candidate_in_scope() {
         // Ungrounded `Chosen` at initiation time: the gate asks whether *any*
         // co-located investigator is an eligible target (RR "Target").
-        let heal_damage = heal(
+        let heal_damage = dsl::heal(
             HarmKind::Damage,
             InvestigatorTarget::chosen_at_your_location(),
             1,
@@ -2751,7 +2746,7 @@ mod tests {
         // #639 / Old Book of Lore 01031: an empty deck has nothing to find and
         // nothing to shuffle. A non-empty one is never proven inert (the
         // mandatory shuffle reorders it even on a fruitless search).
-        let search = search_deck(
+        let search = dsl::search_deck(
             InvestigatorTarget::chosen_at_your_location(),
             SearchScope::Top(3),
             None,
@@ -3025,7 +3020,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &gain_resources(InvestigatorTarget::You, 3),
+            &dsl::gain_resources(InvestigatorTarget::You, 3),
             ctx(1),
         );
 
@@ -3053,7 +3048,11 @@ mod tests {
             events: &mut events,
         };
 
-        push_effect(&mut cx, &gain_resources(InvestigatorTarget::You, 3), ctx(1));
+        push_effect(
+            &mut cx,
+            &dsl::gain_resources(InvestigatorTarget::You, 3),
+            ctx(1),
+        );
         assert!(
             matches!(cx.state.continuations.last(), Some(Continuation::Effect(_))),
             "the effect root frame is pushed for the loop",
@@ -3083,7 +3082,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &gain_resources(InvestigatorTarget::Active, 0),
+            &dsl::gain_resources(InvestigatorTarget::Active, 0),
             ctx(1),
         );
 
@@ -3106,7 +3105,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &gain_resources(InvestigatorTarget::Active, 1),
+            &dsl::gain_resources(InvestigatorTarget::Active, 1),
             ctx(1),
         );
 
@@ -3158,7 +3157,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_clue(LocationTarget::YourLocation, 1),
+            &dsl::discover_clue(LocationTarget::YourLocation, 1),
             ctx(1),
         );
 
@@ -3198,7 +3197,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_clue(LocationTarget::YourLocation, 1),
+            &dsl::discover_clue(LocationTarget::YourLocation, 1),
             ctx(1),
         );
 
@@ -3232,7 +3231,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_clue(LocationTarget::YourLocation, 3),
+            &dsl::discover_clue(LocationTarget::YourLocation, 3),
             ctx(1),
         );
 
@@ -3268,7 +3267,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_clue(LocationTarget::YourLocation, 1),
+            &dsl::discover_clue(LocationTarget::YourLocation, 1),
             ctx(1),
         );
 
@@ -3292,7 +3291,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_clue(LocationTarget::YourLocation, 1),
+            &dsl::discover_clue(LocationTarget::YourLocation, 1),
             ctx(1),
         );
 
@@ -3347,7 +3346,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_clue(LocationTarget::TestedLocation, 1),
+            &dsl::discover_clue(LocationTarget::TestedLocation, 1),
             ctx(1),
         );
 
@@ -3373,7 +3372,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &boost_attack_damage(1),
+            &dsl::boost_attack_damage(1),
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -3405,7 +3404,7 @@ mod tests {
                     state: &mut state,
                     events: &mut events,
                 },
-                &boost_attack_damage(1),
+                &dsl::boost_attack_damage(1),
                 ctx(1),
             );
         }
@@ -3433,7 +3432,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_additional_clues(1),
+            &dsl::discover_additional_clues(1),
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -3465,7 +3464,7 @@ mod tests {
                     state: &mut state,
                     events: &mut events,
                 },
-                &discover_additional_clues(1),
+                &dsl::discover_additional_clues(1),
                 ctx(1),
             );
         }
@@ -3495,7 +3494,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &draw_cards(InvestigatorTarget::You, 2),
+            &dsl::draw_cards(InvestigatorTarget::You, 2),
             ctx(1),
         );
 
@@ -3512,7 +3511,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events0,
             },
-            &draw_cards(InvestigatorTarget::You, 0),
+            &dsl::draw_cards(InvestigatorTarget::You, 0),
             ctx(1),
         );
         assert_eq!(state.investigators[&InvestigatorId(1)].hand.len(), 2);
@@ -3539,7 +3538,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_clue(LocationTarget::TestedLocation, 1),
+            &dsl::discover_clue(LocationTarget::TestedLocation, 1),
             ctx(1),
         );
 
@@ -3589,9 +3588,9 @@ mod tests {
     fn if_skill_test_kind_runs_then_branch_when_kind_matches() {
         let mut state = state_with_in_flight_kind(SkillTestKind::Investigate);
         let mut events = Vec::new();
-        let effect = if_(
+        let effect = dsl::if_(
             Condition::SkillTestKind(SkillTestKind::Investigate),
-            discover_clue(LocationTarget::TestedLocation, 1),
+            dsl::discover_clue(LocationTarget::TestedLocation, 1),
         );
 
         let outcome = run(
@@ -3612,9 +3611,9 @@ mod tests {
     fn if_skill_test_kind_skips_then_branch_when_kind_differs() {
         let mut state = state_with_in_flight_kind(SkillTestKind::Plain);
         let mut events = Vec::new();
-        let effect = if_(
+        let effect = dsl::if_(
             Condition::SkillTestKind(SkillTestKind::Investigate),
-            discover_clue(LocationTarget::TestedLocation, 1),
+            dsl::discover_clue(LocationTarget::TestedLocation, 1),
         );
 
         let outcome = run(
@@ -3637,10 +3636,10 @@ mod tests {
     fn if_skill_test_kind_runs_else_branch_when_present_and_kind_differs() {
         let mut state = state_with_in_flight_kind(SkillTestKind::Fight);
         let mut events = Vec::new();
-        let effect = if_else(
+        let effect = dsl::if_else(
             Condition::SkillTestKind(SkillTestKind::Investigate),
-            discover_clue(LocationTarget::TestedLocation, 1),
-            gain_resources(InvestigatorTarget::You, 2),
+            dsl::discover_clue(LocationTarget::TestedLocation, 1),
+            dsl::gain_resources(InvestigatorTarget::You, 2),
         );
         let resources_before = state.investigators[&InvestigatorId(1)].resources;
 
@@ -3668,9 +3667,9 @@ mod tests {
             .with_investigator(test_support::test_investigator(1))
             .build();
         let mut events = Vec::new();
-        let effect = if_(
+        let effect = dsl::if_(
             Condition::SkillTestKind(SkillTestKind::Investigate),
-            discover_clue(LocationTarget::TestedLocation, 1),
+            dsl::discover_clue(LocationTarget::TestedLocation, 1),
         );
 
         let outcome = run(
@@ -3694,11 +3693,11 @@ mod tests {
         // for a future past-test reaction model.
         let mut state = state_with_in_flight_kind(SkillTestKind::Investigate);
         let mut events = Vec::new();
-        let effect = if_(
+        let effect = dsl::if_(
             Condition::SkillTest {
                 outcome: TestOutcome::Success,
             },
-            discover_clue(LocationTarget::TestedLocation, 1),
+            dsl::discover_clue(LocationTarget::TestedLocation, 1),
         );
 
         let outcome = run(
@@ -3755,7 +3754,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_clue(LocationTarget::TestedLocation, 1),
+            &dsl::discover_clue(LocationTarget::TestedLocation, 1),
             ctx(1),
         );
 
@@ -3783,9 +3782,9 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &seq([
-                gain_resources(InvestigatorTarget::You, 2),
-                discover_clue(LocationTarget::YourLocation, 1),
+            &dsl::seq([
+                dsl::gain_resources(InvestigatorTarget::You, 2),
+                dsl::discover_clue(LocationTarget::YourLocation, 1),
             ]),
             ctx(1),
         );
@@ -3818,9 +3817,9 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &seq([
-                gain_resources(InvestigatorTarget::Active, 1), // rejects
-                discover_clue(LocationTarget::YourLocation, 1), // shouldn't run
+            &dsl::seq([
+                dsl::gain_resources(InvestigatorTarget::Active, 1), // rejects
+                dsl::discover_clue(LocationTarget::YourLocation, 1), // shouldn't run
             ]),
             ctx(1),
         );
@@ -3843,7 +3842,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &modify(Stat::Willpower, 1, ModifierScope::WhileInPlay),
+            &dsl::modify(Stat::Willpower, 1, ModifierScope::WhileInPlay),
             ctx(1),
         );
         assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
@@ -3879,7 +3878,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
+            &dsl::modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -3913,7 +3912,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
+            &dsl::modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
             ctx(1),
         );
         assert!(
@@ -3937,7 +3936,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &modify(Stat::Combat, 2, ModifierScope::ThisSkillTest),
+            &dsl::modify(Stat::Combat, 2, ModifierScope::ThisSkillTest),
             ctx_with_src,
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -3953,7 +3952,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &modify(Stat::Willpower, 1, ModifierScope::ThisTurn),
+            &dsl::modify(Stat::Willpower, 1, ModifierScope::ThisTurn),
             ctx(1),
         );
         match outcome {
@@ -3981,9 +3980,9 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &choose_one([(
+            &dsl::choose_one([(
                 "Gain 2 resources",
-                gain_resources(InvestigatorTarget::You, 2),
+                dsl::gain_resources(InvestigatorTarget::You, 2),
             )]),
             ctx(1),
         );
@@ -4005,14 +4004,14 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &choose_one([
+            &dsl::choose_one([
                 (
                     "Discover 1 clue",
-                    discover_clue(LocationTarget::YourLocation, 1),
+                    dsl::discover_clue(LocationTarget::YourLocation, 1),
                 ),
                 (
                     "Gain 2 resources",
-                    gain_resources(InvestigatorTarget::You, 2),
+                    dsl::gain_resources(InvestigatorTarget::You, 2),
                 ),
             ]),
             ctx(1),
@@ -4040,14 +4039,14 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &choose_one([
+            &dsl::choose_one([
                 (
                     "Discover 1 clue",
-                    discover_clue(LocationTarget::YourLocation, 1),
+                    dsl::discover_clue(LocationTarget::YourLocation, 1),
                 ),
                 (
                     "Discover 1 clue again",
-                    discover_clue(LocationTarget::YourLocation, 1),
+                    dsl::discover_clue(LocationTarget::YourLocation, 1),
                 ),
             ]),
             ctx(1),
@@ -4090,14 +4089,14 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &choose_one([
+            &dsl::choose_one([
                 (
                     "Gain 1 resource",
-                    gain_resources(InvestigatorTarget::You, 1),
+                    dsl::gain_resources(InvestigatorTarget::You, 1),
                 ),
                 (
                     "Gain 3 resources",
-                    gain_resources(InvestigatorTarget::You, 3),
+                    dsl::gain_resources(InvestigatorTarget::You, 3),
                 ),
             ]),
             ctx(1),
@@ -4123,14 +4122,14 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &choose_one([
+            &dsl::choose_one([
                 (
                     "Gain 1 resource",
-                    gain_resources(InvestigatorTarget::You, 1),
+                    dsl::gain_resources(InvestigatorTarget::You, 1),
                 ),
                 (
                     "Gain 3 resources",
-                    gain_resources(InvestigatorTarget::You, 3),
+                    dsl::gain_resources(InvestigatorTarget::You, 3),
                 ),
             ]),
             ctx(1),
@@ -4153,15 +4152,15 @@ mod tests {
             .build();
         let before = state.investigators[&id].resources;
         let effect = Effect::Seq(vec![
-            gain_resources(InvestigatorTarget::You, 1),
-            choose_one([
+            dsl::gain_resources(InvestigatorTarget::You, 1),
+            dsl::choose_one([
                 (
                     "Gain 1 resource",
-                    gain_resources(InvestigatorTarget::You, 1),
+                    dsl::gain_resources(InvestigatorTarget::You, 1),
                 ),
                 (
                     "Gain 3 resources",
-                    gain_resources(InvestigatorTarget::You, 3),
+                    dsl::gain_resources(InvestigatorTarget::You, 3),
                 ),
             ]),
         ]);
@@ -4206,7 +4205,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &gain_resources(InvestigatorTarget::chosen_anywhere(), 2),
+            &dsl::gain_resources(InvestigatorTarget::chosen_anywhere(), 2),
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4229,7 +4228,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &gain_resources(InvestigatorTarget::chosen_anywhere(), 5),
+            &dsl::gain_resources(InvestigatorTarget::chosen_anywhere(), 5),
             ctx(1),
         );
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
@@ -4262,14 +4261,14 @@ mod tests {
             .build();
         let before1 = state.investigators[&InvestigatorId(1)].resources;
         let before2 = state.investigators[&InvestigatorId(2)].resources;
-        let effect = choose_one([
+        let effect = dsl::choose_one([
             (
                 "Gain 1 resource",
-                gain_resources(InvestigatorTarget::chosen_anywhere(), 1),
+                dsl::gain_resources(InvestigatorTarget::chosen_anywhere(), 1),
             ),
             (
                 "Gain 9 resources",
-                gain_resources(InvestigatorTarget::chosen_anywhere(), 9),
+                dsl::gain_resources(InvestigatorTarget::chosen_anywhere(), 9),
             ),
         ]);
         let mut events = Vec::new();
@@ -4331,7 +4330,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &search_deck(InvestigatorTarget::You, SearchScope::Top(3), None),
+            &dsl::search_deck(InvestigatorTarget::You, SearchScope::Top(3), None),
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4355,7 +4354,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &search_deck(InvestigatorTarget::You, SearchScope::Top(3), None),
+            &dsl::search_deck(InvestigatorTarget::You, SearchScope::Top(3), None),
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4374,7 +4373,7 @@ mod tests {
             CardCode::new("90003"),
         ];
         let mut events = Vec::new();
-        let effect = search_deck(InvestigatorTarget::You, SearchScope::Top(3), None);
+        let effect = dsl::search_deck(InvestigatorTarget::You, SearchScope::Top(3), None);
         let outcome = run(
             &mut Cx {
                 state: &mut state,
@@ -4406,14 +4405,14 @@ mod tests {
             .with_investigator(test_support::test_investigator(2))
             .build();
         let before2 = state.investigators[&InvestigatorId(2)].resources;
-        let effect = choose_one([
+        let effect = dsl::choose_one([
             (
                 "Gain 1 resource",
-                gain_resources(InvestigatorTarget::chosen_anywhere(), 1),
+                dsl::gain_resources(InvestigatorTarget::chosen_anywhere(), 1),
             ),
             (
                 "Gain 9 resources",
-                gain_resources(InvestigatorTarget::chosen_anywhere(), 9),
+                dsl::gain_resources(InvestigatorTarget::chosen_anywhere(), 9),
             ),
         ]);
         let mut events = Vec::new();
@@ -4461,7 +4460,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_clue(LocationTarget::chosen_anywhere(), 1),
+            &dsl::discover_clue(LocationTarget::chosen_anywhere(), 1),
             ctx(1),
         );
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
@@ -4490,7 +4489,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &discover_clue(
+            &dsl::discover_clue(
                 LocationTarget::Chosen(Choose {
                     scope: LocationSet::Here,
                 }),
@@ -4537,7 +4536,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &gain_resources(InvestigatorTarget::chosen_at_your_location(), 2),
+            &dsl::gain_resources(InvestigatorTarget::chosen_at_your_location(), 2),
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4574,7 +4573,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &gain_resources(InvestigatorTarget::chosen_at_your_location(), 1),
+            &dsl::gain_resources(InvestigatorTarget::chosen_at_your_location(), 1),
             ctx(1),
         );
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
@@ -4598,7 +4597,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &gain_resources(InvestigatorTarget::chosen_at_your_location(), 1),
+            &dsl::gain_resources(InvestigatorTarget::chosen_at_your_location(), 1),
             ctx(1),
         );
         assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
@@ -4635,7 +4634,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
+            &dsl::deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4682,7 +4681,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
+            &dsl::deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
             ctx(1),
         );
         assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
@@ -4707,7 +4706,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
+            &dsl::deal_damage_to_enemy(EnemyTarget::chosen_at_your_location(), 1),
             ctx(1),
         );
         assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
@@ -4733,7 +4732,7 @@ mod tests {
                 events: &mut events,
             },
             // heal 2 from a 1-horror investigator → saturates to 0, amount 1.
-            &heal(HarmKind::Horror, InvestigatorTarget::You, 2),
+            &dsl::heal(HarmKind::Horror, InvestigatorTarget::You, 2),
             ctx(1),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -4779,7 +4778,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &heal(
+            &dsl::heal(
                 HarmKind::Damage,
                 InvestigatorTarget::chosen_at_your_location(),
                 1,
@@ -4829,7 +4828,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &heal(
+            &dsl::heal(
                 HarmKind::Damage,
                 InvestigatorTarget::chosen_at_your_location(),
                 1,
@@ -4856,12 +4855,12 @@ mod tests {
 
     fn fake_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         match code.as_str() {
-            "willpower-plus-1" => Some(vec![constant(modify(
+            "willpower-plus-1" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Willpower,
                 1,
                 ModifierScope::WhileInPlay,
             ))]),
-            "intellect-plus-2" => Some(vec![constant(modify(
+            "intellect-plus-2" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Intellect,
                 2,
                 ModifierScope::WhileInPlay,
@@ -4869,48 +4868,50 @@ mod tests {
             // A standalone fake investigator card carrying a constant +2
             // willpower — used to prove the unified `controlled_card_instances()`
             // scan now sums the investigator card (not just `cards_in_play`).
-            "inv-willpower-plus-2" => Some(vec![constant(modify(
+            "inv-willpower-plus-2" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Willpower,
                 2,
                 ModifierScope::WhileInPlay,
             ))]),
-            "intellect-plus-1-while-investigating" => Some(vec![constant(modify(
+            "intellect-plus-1-while-investigating" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Intellect,
                 1,
                 ModifierScope::WhileInPlayDuring(SkillTestKind::Investigate),
             ))]),
-            "willpower-plus-1-this-test-only" => Some(vec![constant(modify(
+            "willpower-plus-1-this-test-only" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Willpower,
                 1,
                 ModifierScope::ThisSkillTest,
             ))]),
-            "willpower-minus-1" => Some(vec![constant(modify(
+            "willpower-minus-1" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Willpower,
                 -1,
                 ModifierScope::WhileInPlay,
             ))]),
-            "non-constant-willpower" => Some(vec![on_play(modify(
+            "non-constant-willpower" => Some(vec![dsl::on_play(dsl::modify(
                 Stat::Willpower,
                 5,
                 ModifierScope::WhileInPlay,
             ))]),
-            "max-health-plus-1" => Some(vec![constant(modify(
+            "max-health-plus-1" => Some(vec![dsl::constant(dsl::modify(
                 Stat::MaxHealth,
                 1,
                 ModifierScope::WhileInPlay,
             ))]),
-            "shroud-plus-2" => Some(vec![constant(modify(
+            "shroud-plus-2" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Shroud,
                 2,
                 ModifierScope::WhileInPlay,
             ))]),
-            "cannot-play-assets" => Some(vec![constant(restrict(Restriction::CannotPlay(
-                CardType::Asset,
-            )))]),
-            "frozen-surcharge" => Some(vec![constant(restrict(Restriction::ExtraActionCost {
-                actions: vec![ActionClass::Move, ActionClass::Fight, ActionClass::Evade],
-                first_each_round: true,
-            }))]),
+            "cannot-play-assets" => Some(vec![dsl::constant(dsl::restrict(
+                Restriction::CannotPlay(CardType::Asset),
+            ))]),
+            "frozen-surcharge" => Some(vec![dsl::constant(dsl::restrict(
+                Restriction::ExtraActionCost {
+                    actions: vec![ActionClass::Move, ActionClass::Fight, ActionClass::Evade],
+                    first_each_round: true,
+                },
+            ))]),
             _ => None,
         }
     }
@@ -5039,7 +5040,7 @@ mod tests {
         };
         let outcome = run(
             &mut cx,
-            &put_into_threat_area_with_clues("01007", 3),
+            &dsl::put_into_threat_area_with_clues("01007", 3),
             EvalContext::for_controller(id),
         );
         assert!(matches!(outcome, EngineOutcome::Done));
@@ -5125,7 +5126,7 @@ mod tests {
         };
         let outcome = run(
             &mut cx,
-            &deal_damage(InvestigatorTarget::You, 2u8),
+            &dsl::deal_damage(InvestigatorTarget::You, 2u8),
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -5149,7 +5150,7 @@ mod tests {
         };
         let outcome = run(
             &mut cx,
-            &deal_horror(InvestigatorTarget::You, 1u8),
+            &dsl::deal_horror(InvestigatorTarget::You, 1u8),
             EvalContext::for_controller(InvestigatorId(1)),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -5177,7 +5178,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             },
-            &deal_damage(InvestigatorTarget::You, 3u8),
+            &dsl::deal_damage(InvestigatorTarget::You, 3u8),
             EvalContext::for_controller(id),
         );
         assert_eq!(outcome, EngineOutcome::Done);
@@ -5191,7 +5192,7 @@ mod tests {
     #[test]
     fn deal_amount_can_be_a_count_of_failure_margin() {
         // Build a Deal whose amount is the failure margin; fail-by 2 → 2 damage.
-        let effect = deal_damage(
+        let effect = dsl::deal_damage(
             InvestigatorTarget::You,
             IntExpr::Count(Quantity::SkillTestFailedBy),
         );
@@ -5520,7 +5521,7 @@ mod tests {
             may_advance: true,
         };
         assert_eq!(
-            run(&mut cx, &choose_one([("Place 1 doom", place(1))]), ctx),
+            run(&mut cx, &dsl::choose_one([("Place 1 doom", place(1))]), ctx),
             EngineOutcome::Done
         );
         assert_eq!(

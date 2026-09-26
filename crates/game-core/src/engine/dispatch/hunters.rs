@@ -716,7 +716,7 @@ mod resolve_prey_tests {
 #[cfg(test)]
 mod measure_value_tests {
     use card_dsl::card_data::{CardMetadata, SkillKind};
-    use card_dsl::dsl::{constant, modify, Ability, ModifierScope, Stat};
+    use card_dsl::dsl::{self, Ability, ModifierScope, Stat};
 
     use super::*;
     use crate::card_registry::CardRegistry;
@@ -729,17 +729,17 @@ mod measure_value_tests {
 
     fn fake_abilities(code: &CardCode) -> Option<Vec<Ability>> {
         match code.as_str() {
-            "combat+1" => Some(vec![constant(modify(
+            "combat+1" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Combat,
                 1,
                 ModifierScope::WhileInPlay,
             ))]),
-            "combat-5" => Some(vec![constant(modify(
+            "combat-5" => Some(vec![dsl::constant(dsl::modify(
                 Stat::Combat,
                 -5,
                 ModifierScope::WhileInPlay,
             ))]),
-            "maxhealth+2" => Some(vec![constant(modify(
+            "maxhealth+2" => Some(vec![dsl::constant(dsl::modify(
                 Stat::MaxHealth,
                 2,
                 ModifierScope::WhileInPlay,
