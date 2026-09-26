@@ -3,16 +3,27 @@
 # ci-local.sh — run the CI jobs a diff can plausibly break, and skip the rest.
 #
 # CI (.github/workflows/ci.yml) runs seven jobs in parallel on every push; that
-# is the guardrail. This script's job is narrower: catch, fast, the failures
-# that are *predictable from the diff*.
+# is the source of truth. This script's job is narrower: catch, fast, the
+# failures that are *predictable from the diff*.
+#
+# Two jobs are CI-only by default: `wasm-build` (`trunk build --release`, thin
+# LTO at one codegen unit) and `wasm-test` (a headless-Firefox session per test
+# file). CI runs them in parallel with everything else in ~3 minutes; run here,
+# they add their full cost to a sequential plan and rarely fail in a way the
+# diff didn't predict. Push to the draft PR to run them; `--all` runs them here.
+#
+# The script builds into its own target directory (target/ci-local). Its
+# RUSTFLAGS differ from the dev loop's (`cargo test`, `trunk serve`), and cargo
+# rebuilds the whole dependency tree when RUSTFLAGS change — sharing `target/`
+# would make each side invalidate the other's cache on every switch.
 #
 # Each job below is invoked exactly as the workflow invokes it, with the same
 # strict flags, so a job that runs here means what it means there. Two caveats,
 # both reported at the end of a run rather than left implicit:
 #
 #   * `trunk` and `wasm-pack` are pinned in CI (trunk@0.21.14, wasm-pack@0.15.0)
-#     but taken from $PATH here, so a local pass is only as good as your
-#     installed versions.
+#     but taken from $PATH here, so under --all a local pass is only as good
+#     as your installed versions.
 #   * `classify` is not a CI job. It is a subset of `test`, offered on its own
 #     for snapshot-only changes where the rest of `test` cannot be affected.
 #
@@ -26,7 +37,9 @@
 #
 # so a `game-core` change can redden a wasm job even though it touched no file
 # under `crates/web/`. Gating the wasm jobs on "did the diff touch crates/web?"
-# would skip them on exactly the changes most likely to break them.
+# would skip them on exactly the changes most likely to break them. The mapping
+# still selects all three; the CI-only two are then set aside for CI rather than
+# run, and the plan names them so the skip is visible.
 #
 # Scoping is at job granularity only. Narrowing `cargo test --all` to
 # `-p <crate>` is deliberately not done: a `game-core` change breaking `cards`'
@@ -36,7 +49,7 @@
 # Usage:
 #   scripts/ci-local.sh              # run the jobs this diff implicates
 #   scripts/ci-local.sh --list       # print the plan, run nothing
-#   scripts/ci-local.sh --all        # full seven-job gauntlet (escape hatch)
+#   scripts/ci-local.sh --all        # full seven-job gauntlet, CI-only jobs included
 #   scripts/ci-local.sh --base <ref> # diff against <ref> instead of origin/main
 #
 set -uo pipefail
@@ -52,11 +65,20 @@ cd "$ROOT" || exit 2
 # CI sets these workflow-wide, so every job below sees them.
 export CARGO_TERM_COLOR=always
 export RUSTFLAGS="-D warnings"
+# Set in every CI job by actions-rust-lang/setup-rust-toolchain. Without it a
+# debug test .wasm is ~20x larger and wasm-bindgen spends ~11s on each one.
+export CARGO_PROFILE_DEV_DEBUG=0
+# Absolute, because wasm-build runs trunk from crates/web.
+export CARGO_TARGET_DIR="$ROOT/target/ci-local"
 
 # The seven CI jobs, in the order the workflow lists them. Single source of
 # truth: the --all plan and the end-of-run "not run locally" summary both read
-# this, so adding an eighth job means touching this list and `run_job` only.
+# this, so adding an eighth job means touching this list and `run_job` only
+# (and CI_ONLY_JOBS, if it should not run by default).
 ALL_JOBS=(fmt clippy test doc wasm-build wasm-test wasm-clippy)
+
+# Run only under --all; otherwise left to CI (see the header).
+CI_ONLY_JOBS=(wasm-build wasm-test)
 
 BASE=""
 LIST_ONLY=0
@@ -110,6 +132,7 @@ diff_touches() { grep -qE "$1" <<<"$CHANGED"; }
 # ----------------------------------------------------------------- job selection
 
 declare -a PLAN=()
+declare -a DEFERRED=()
 declare -A WHY=()
 select_job() { PLAN+=("$1"); WHY["$1"]="$2"; }
 planned() { [[ " ${PLAN[*]} " == *" $1 "* ]]; }
@@ -160,12 +183,26 @@ else
   if diff_touches '^data/' && ! planned test; then
     select_job classify "data/ changed"
   fi
+
+  # Whatever the mapping implicated among CI_ONLY_JOBS is set aside for CI.
+  declare -a KEPT=()
+  for j in "${PLAN[@]}"; do
+    if [[ " ${CI_ONLY_JOBS[*]} " == *" $j "* ]]; then
+      DEFERRED+=("$j")
+    else
+      KEPT+=("$j")
+    fi
+  done
+  PLAN=("${KEPT[@]}")
 fi
 
 echo "base:    $BASE ($(git rev-parse --short "$MERGE_BASE"))"
 echo "changed: $(wc -l <<<"$CHANGED") file(s)"
 echo "plan:"
 for j in "${PLAN[@]}"; do printf '  %-12s %s\n' "$j" "${WHY[$j]}"; done
+for j in "${DEFERRED[@]}"; do
+  printf '  %-12s %s\n' "$j" "CI only: ${WHY[$j]} (push to the PR, or pass --all)"
+done
 echo
 
 if [ "$LIST_ONLY" -eq 1 ]; then
