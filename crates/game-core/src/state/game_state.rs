@@ -1,7 +1,7 @@
 //! Top-level game state.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::mem;
+use std::{iter, mem};
 
 use card_dsl::card_data::{CardKind, CardMetadata, SkillKind};
 use card_dsl::dsl::{
@@ -1725,7 +1725,7 @@ impl EmitStep {
     /// 0008 keeps `ConditionResolution` an exhaustive match instead of a table:
     /// *a table is a thing a new variant can be forgotten from*.
     pub fn cells() -> impl Iterator<Item = EventTiming> {
-        core::iter::successors(Some(EmitStep::When), |step| step.next()).filter_map(EmitStep::cell)
+        iter::successors(Some(EmitStep::When), |step| step.next()).filter_map(EmitStep::cell)
     }
 }
 

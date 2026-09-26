@@ -12,9 +12,6 @@ pub mod session;
 mod store;
 mod ws;
 
-pub use id::GameId;
-pub use session::{GameSession, SessionError};
-
 use std::path::PathBuf;
 
 use axum::extract::State;

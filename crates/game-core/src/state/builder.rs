@@ -10,16 +10,17 @@
 //! # Example
 //!
 //! ```
-//! use game_core::{
-//!     TurnAction, InvestigatorId, Phase,
-//!     state::{GameStateBuilder, Continuation, InvestigationResume},
-//!     test_support::{take_turn_action, test_investigator, test_location},
+//! use game_core::engine::enumerate::TurnAction;
+//! use game_core::engine::EngineOutcome;
+//! use game_core::state::{
+//!     Continuation, GameStateBuilder, InvestigationResume, InvestigatorId, Phase,
 //! };
+//! use game_core::test_support;
 //!
 //! let state = GameStateBuilder::new()
 //!     .with_phase(Phase::Investigation)
-//!     .with_investigator(test_investigator(1))
-//!     .with_location(test_location(10, "Study"))
+//!     .with_investigator(test_support::test_investigator(1))
+//!     .with_location(test_support::test_location(10, "Study"))
 //!     .with_active_investigator(InvestigatorId(1))
 //!     // A state constructed mid-phase needs its phase anchor (slice 1a).
 //!     .with_phase_anchor(Continuation::InvestigationPhase {
@@ -29,8 +30,8 @@
 //!     .with_investigator_turn(InvestigatorId(1))
 //!     .build();
 //!
-//! let result = take_turn_action(state, &TurnAction::EndTurn);
-//! assert!(!matches!(result.outcome, game_core::engine::EngineOutcome::Rejected { .. }));
+//! let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
+//! assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
 //! ```
 
 use std::collections::{BTreeMap, VecDeque};

@@ -11,7 +11,7 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, InputKind, OptionTarget};
 use game_core::state::{CardCode, InvestigatorId};
 #[cfg(target_arch = "wasm32")]
-use leptos::prelude::IntoView;
+use leptos::prelude::*;
 use leptos::prelude::{RwSignal, Signal};
 #[cfg(target_arch = "wasm32")]
 use protocol::ClientMessage;
@@ -21,7 +21,7 @@ use web_sys::MouseEvent;
 #[cfg(target_arch = "wasm32")]
 use crate::decision;
 #[cfg(target_arch = "wasm32")]
-use crate::store::use_store;
+use crate::store;
 use crate::store::ClientState;
 #[cfg(target_arch = "wasm32")]
 use crate::transport::OutboundTx;
@@ -156,9 +156,7 @@ pub fn ContextMenu(
     options: Vec<ChoiceOption>,
     open: RwSignal<Option<(i32, i32)>>,
 ) -> impl IntoView {
-    use leptos::prelude::*;
-
-    let store = use_store();
+    let store = store::use_store();
     let tx = use_context::<OutboundTx>();
 
     view! {
@@ -225,7 +223,6 @@ pub fn ContextMenu(
 /// provenance signal saying where the choice came from.
 #[cfg(target_arch = "wasm32")]
 pub fn menu_layer(options: Vec<ChoiceOption>, open: RwSignal<Option<(i32, i32)>>) -> impl IntoView {
-    use leptos::prelude::*;
     if decision::menus_are_suppressed() {
         return ().into_any();
     }

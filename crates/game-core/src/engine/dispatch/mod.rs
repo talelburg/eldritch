@@ -974,9 +974,8 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 
 #[cfg(test)]
 mod turn_menu_tests {
-    use crate::engine::dispatch;
-    use crate::engine::enumerate::legal_actions;
     use crate::engine::outcome::OptionTarget;
+    use crate::engine::{dispatch, enumerate};
     use crate::state::{
         ChaosBag, ChaosToken, Continuation, GameStateBuilder, InvestigationResume, InvestigatorId,
         Phase,
@@ -1013,7 +1012,7 @@ mod turn_menu_tests {
         e.current_location = Some(loc_id);
         state.enemies.insert(e.id, e);
 
-        let actions = legal_actions(&state);
+        let actions = enumerate::legal_actions(&state);
         let menu = dispatch::turn_menu(&state);
         assert_eq!(menu.options.len(), actions.len());
         for (i, action) in actions.iter().enumerate() {

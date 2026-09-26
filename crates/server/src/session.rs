@@ -16,9 +16,9 @@ use game_core::rng::RngState;
 use game_core::scenario::ScenarioId;
 use game_core::scenario_registry;
 use game_core::state::GameState;
+use protocol::GameId;
 use sqlx::SqlitePool;
 
-use crate::id::GameId;
 use crate::{id, store};
 
 /// Errors from [`GameSession`] persistence operations.
@@ -87,7 +87,7 @@ impl GameSession {
     /// session at the mulligan prompt.
     ///
     /// Looks the scenario module up via the installed
-    /// [`scenario_registry`](game_core::scenario_registry).
+    /// [`scenario_registry`].
     ///
     /// # Errors
     ///

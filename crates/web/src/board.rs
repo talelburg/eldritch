@@ -10,15 +10,14 @@ use leptos::prelude::*;
 use crate::card::{HandCardView, InPlayCardView};
 use crate::controls::{AnchoredControl, PlayerDeckView};
 use crate::enemy_card::EnemyCard;
-use crate::store::use_store;
-use crate::{act_agenda, map};
+use crate::{act_agenda, map, store};
 
 /// Read-only board. Always renders a status line (connection status +
 /// last rejection); renders the panels when a game is present, else a
 /// placeholder.
 #[component]
 pub fn BoardView() -> impl IntoView {
-    let store = use_store();
+    let store = store::use_store();
 
     let board = move || match store.get().game {
         None => view! { <p class="no-game">"<no game>"</p> }.into_any(),

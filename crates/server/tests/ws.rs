@@ -12,6 +12,7 @@ use game_core::scenario::ScenarioId;
 use protocol::{ClientMessage, ServerMessage};
 use server::session::GameSession;
 use sqlx::SqlitePool;
+use tokio::time;
 
 use crate::common::TEST_SCENARIO_ID;
 
@@ -122,7 +123,7 @@ async fn rejected_action_returns_rejected_to_sender_only() {
     }
 
     // B sees nothing: rejections are not broadcast.
-    let quiet = tokio::time::timeout(Duration::from_millis(200), common::recv(&mut b)).await;
+    let quiet = time::timeout(Duration::from_millis(200), common::recv(&mut b)).await;
     assert!(
         quiet.is_err(),
         "B must receive nothing for a rejected action"

@@ -8,6 +8,7 @@ use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::{card_registry, test_support};
 use leptos::prelude::{provide_context, RwSignal, Update};
+use leptos::{mount, prelude, task};
 use protocol::ServerMessage;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
@@ -36,7 +37,7 @@ async fn board_renders_card_and_location_names() {
         .build();
 
     let store = RwSignal::new(ClientState::default());
-    leptos::mount::mount_to_body(move || {
+    mount::mount_to_body(move || {
         provide_context(store);
         leptos::view! { <BoardView/> }
     });
@@ -50,9 +51,9 @@ async fn board_renders_card_and_location_names() {
             },
         );
     });
-    leptos::task::tick().await;
+    task::tick().await;
 
-    let text = leptos::prelude::document()
+    let text = prelude::document()
         .query_selector(".board")
         .expect("query")
         .expect(".board present")

@@ -6,6 +6,7 @@ use game_core::engine::EngineOutcome;
 use game_core::state::GameStateBuilder;
 use game_core::test_support;
 use leptos::prelude::{RwSignal, Update};
+use leptos::{mount, prelude, task};
 use protocol::ServerMessage;
 use wasm_bindgen_test::*;
 use web::board::BoardView;
@@ -14,10 +15,7 @@ use web::store::{self, ClientState};
 wasm_bindgen_test_configure!(run_in_browser);
 
 fn body_html() -> String {
-    leptos::prelude::document()
-        .body()
-        .expect("body")
-        .inner_html()
+    prelude::document().body().expect("body").inner_html()
 }
 
 #[wasm_bindgen_test]
@@ -29,8 +27,8 @@ async fn hello_renders_state_present() {
     let store = RwSignal::new(ClientState::default());
     // Provide the same signal the component reads, then mount the board;
     // it stays mounted (attached to the DOM) for the assertions.
-    leptos::mount::mount_to_body(move || {
-        leptos::prelude::provide_context(store);
+    mount::mount_to_body(move || {
+        prelude::provide_context(store);
         leptos::view! { <BoardView/> }
     });
 
@@ -56,7 +54,7 @@ async fn hello_renders_state_present() {
 
     // CSR render effects flush on the next executor tick, not synchronously
     // with `update`. Yield so the DOM reflects the new signal value.
-    leptos::task::tick().await;
+    task::tick().await;
 
     // `phase_bar` was retired (phase/round moved to the turn tracker); assert the
     // game now renders its board — the investigators-panel heading.

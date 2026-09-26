@@ -20,6 +20,7 @@ use game_core::state::{
 };
 use game_core::{card_registry, test_support};
 use leptos::prelude::*;
+use leptos::task;
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -105,7 +106,7 @@ async fn mount_with(state: GameState, outcome: EngineOutcome) -> Element {
             },
         );
     });
-    leptos::task::tick().await;
+    task::tick().await;
     let roots = document()
         .query_selector_all(".layout-probe")
         .expect("query");

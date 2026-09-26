@@ -21,7 +21,7 @@ use game_core::engine::{ChoiceOption, EngineOutcome, OptionTarget, PromptNature}
 use game_core::state::{AdvanceDeck, GameState, Investigator};
 use leptos::prelude::*;
 
-use crate::act_agenda::{deck_face, name_and_text_src, Face};
+use crate::act_agenda::{self, Face};
 use crate::card;
 #[cfg(target_arch = "wasm32")]
 use crate::controls;
@@ -110,11 +110,11 @@ fn decision_source(game: &GameState, target: &OptionTarget) -> Option<DecisionSo
     let (code, face) = match target {
         OptionTarget::Act => (
             game.act_deck.get(game.act_index)?.code.clone(),
-            deck_face(game, AdvanceDeck::Act),
+            act_agenda::deck_face(game, AdvanceDeck::Act),
         ),
         OptionTarget::Agenda => (
             game.agenda_deck.get(game.agenda_index)?.code.clone(),
-            deck_face(game, AdvanceDeck::Agenda),
+            act_agenda::deck_face(game, AdvanceDeck::Agenda),
         ),
         OptionTarget::CardInstance(instance_id) => (
             game.investigators
@@ -127,7 +127,7 @@ fn decision_source(game: &GameState, target: &OptionTarget) -> Option<DecisionSo
         ),
         _ => return None,
     };
-    let (name, text) = name_and_text_src(&code, face);
+    let (name, text) = act_agenda::name_and_text_src(&code, face);
     Some(DecisionSource { name, text })
 }
 

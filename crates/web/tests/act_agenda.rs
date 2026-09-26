@@ -12,9 +12,11 @@ use game_core::state::{
 };
 use game_core::{card_registry, test_support};
 use leptos::prelude::*;
+use leptos::task;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
+use web::act_agenda;
 use web::interaction::PendingOptions;
 use web::store::ClientState;
 use web::transport::OutboundTx;
@@ -49,8 +51,8 @@ async fn act_and_agenda_render_name_text_and_thresholds() {
     }];
     state.agenda_doom = 1;
 
-    mount_to_body(move || web::act_agenda::act_agenda_view(&state));
-    leptos::task::tick().await;
+    mount_to_body(move || act_agenda::act_agenda_view(&state));
+    task::tick().await;
 
     let text = section_text();
     assert!(text.contains("The Barrier"), "act name missing: {text}");
@@ -102,9 +104,9 @@ async fn mount_with_prompt(outcome: EngineOutcome) -> UnboundedReceiver<ClientMe
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));
         provide_context(PendingOptions(pending));
-        web::act_agenda::act_agenda_view(&state)
+        act_agenda::act_agenda_view(&state)
     });
-    leptos::task::tick().await;
+    task::tick().await;
     rx
 }
 
@@ -122,7 +124,7 @@ async fn act_card_glows_and_advances_via_menu() {
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a .menu-hit")
         .click();
-    leptos::task::tick().await;
+    task::tick().await;
     let item = card
         .query_selector(".context-menu .menu-item")
         .expect("query")
@@ -130,7 +132,7 @@ async fn act_card_glows_and_advances_via_menu() {
         .expect("a menu item");
     assert_eq!(item.text_content().unwrap_or_default(), "Advance act");
     item.click();
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
@@ -181,7 +183,7 @@ async fn agenda_card_glows_and_resolves_via_menu() {
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a .menu-hit")
         .click();
-    leptos::task::tick().await;
+    task::tick().await;
     let item = card
         .query_selector(".context-menu .menu-item")
         .expect("query")
@@ -189,7 +191,7 @@ async fn agenda_card_glows_and_resolves_via_menu() {
         .expect("a menu item");
     assert_eq!(item.text_content().unwrap_or_default(), "Resolve");
     item.click();
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
@@ -238,8 +240,8 @@ async fn mount_advancing(deck: AdvanceDeck, code: &str, step: AdvanceStep) {
         step,
         trigger: AdvanceTrigger::Forced,
     });
-    mount_to_body(move || web::act_agenda::act_agenda_view(&state));
-    leptos::task::tick().await;
+    mount_to_body(move || act_agenda::act_agenda_view(&state));
+    task::tick().await;
 }
 
 #[wasm_bindgen_test]

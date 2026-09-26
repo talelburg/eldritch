@@ -999,7 +999,7 @@ mod encounter_card_revealed_tests {
 mod encounter_deck_helper_tests {
     use super::*;
     use crate::action::{Action, EngineRecord};
-    use crate::engine::apply;
+    use crate::engine;
     use crate::event::Event;
     use crate::rng::RngState;
     use crate::state::{CardCode, GameStateBuilder};
@@ -1191,7 +1191,7 @@ mod encounter_deck_helper_tests {
         }
         let original: Vec<_> = state.encounter_deck.iter().cloned().collect();
 
-        let result = apply(state, Action::Engine(EngineRecord::EncounterDeckShuffled));
+        let result = engine::apply(state, Action::Engine(EngineRecord::EncounterDeckShuffled));
 
         assert!(
             matches!(result.outcome, EngineOutcome::Done),

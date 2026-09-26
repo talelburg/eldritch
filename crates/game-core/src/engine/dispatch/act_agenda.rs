@@ -574,7 +574,7 @@ mod doom_agenda_tests {
 #[cfg(test)]
 mod advance_act_tests {
     use super::*;
-    use crate::engine::enumerate::{legal_actions, TurnAction};
+    use crate::engine::enumerate::{self, TurnAction};
     use crate::engine::outcome::EngineOutcome;
     use crate::event::Event;
     use crate::scenario::ResolutionId;
@@ -643,7 +643,7 @@ mod advance_act_tests {
 
         // Insufficient clues (1 < 2): AdvanceAct is not legal.
         assert!(
-            !legal_actions(&state)
+            !enumerate::legal_actions(&state)
                 .iter()
                 .any(|a| matches!(a, TurnAction::AdvanceAct { .. })),
             "AdvanceAct must not be legal when clues < threshold"
@@ -677,7 +677,7 @@ mod advance_act_tests {
         }];
 
         assert!(
-            !legal_actions(&state)
+            !enumerate::legal_actions(&state)
                 .iter()
                 .any(|a| matches!(a, TurnAction::AdvanceAct { .. })),
             "AdvanceAct must not be offered for a zero-threshold objective act"

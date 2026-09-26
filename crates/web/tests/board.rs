@@ -32,6 +32,7 @@ use game_core::state::{
 };
 use game_core::{card_registry, test_support};
 use leptos::prelude::{document, provide_context, RwSignal, Update};
+use leptos::{mount, task};
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -121,7 +122,7 @@ async fn render_state(state: GameState) -> String {
     // first-wins); `web` has no `ctor` dev-dep, so install in-test.
     let _ = card_registry::install(REGISTRY);
     let store = RwSignal::new(ClientState::default());
-    leptos::mount::mount_to_body(move || {
+    mount::mount_to_body(move || {
         provide_context(store);
         leptos::view! { <BoardView/> }
     });
@@ -135,7 +136,7 @@ async fn render_state(state: GameState) -> String {
             },
         );
     });
-    leptos::task::tick().await;
+    task::tick().await;
     let html = body_html();
     // #868: the guard that keeps this file honest. `Card` renders
     // `card--unknown` for a code the registry cannot resolve
@@ -314,11 +315,11 @@ async fn investigators_panel_renders_stats_and_hand() {
 #[wasm_bindgen_test]
 async fn empty_board_renders_placeholder_without_panels() {
     let store = RwSignal::new(ClientState::default());
-    leptos::mount::mount_to_body(move || {
+    mount::mount_to_body(move || {
         provide_context(store);
         leptos::view! { <BoardView/> }
     });
-    leptos::task::tick().await;
+    task::tick().await;
 
     // Scope to only the last mounted <section class="board"> so that
     // accumulated DOM from earlier tests does not pollute this assertion.

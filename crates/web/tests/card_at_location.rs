@@ -23,6 +23,7 @@ use game_core::state::{
 };
 use game_core::{card_registry, test_support};
 use leptos::prelude::*;
+use leptos::task;
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -90,7 +91,7 @@ async fn mount(state: GameState, outcome: EngineOutcome) -> Element {
             },
         );
     });
-    leptos::task::tick().await;
+    task::tick().await;
     let roots = document().query_selector_all(".cal-root").expect("query");
     roots
         .item(roots.length() - 1)
@@ -126,7 +127,7 @@ async fn the_parley_anchored_to_lita_is_actionable_on_her_token() {
         .dyn_into()
         .expect("HtmlElement");
     hit.click();
-    leptos::task::tick().await;
+    task::tick().await;
     let item = query(&root, ".context-menu .menu-item").expect("the opened menu's item");
     assert_eq!(
         item.text_content().unwrap_or_default(),

@@ -1536,7 +1536,6 @@ mod investigation_phase_tests {
     use super::*;
     use crate::action::PlayerAction;
     use crate::engine::dispatch;
-    use crate::engine::dispatch::apply_player_action;
     use crate::engine::outcome::EngineOutcome;
     use crate::state::{GameStateBuilder, InvestigatorId, Phase, Status};
     use crate::test_support;
@@ -1618,7 +1617,7 @@ mod investigation_phase_tests {
             .build();
 
         let mut events = Vec::new();
-        let outcome = apply_player_action(
+        let outcome = dispatch::apply_player_action(
             &mut Cx {
                 state: &mut state,
                 events: &mut events,
@@ -2925,9 +2924,8 @@ mod upkeep_phase_tests {
 mod enemy_phase_tests {
     use super::*;
     use crate::action::{Action, InputResponse, PlayerAction};
-    use crate::engine::dispatch::resolve_input;
     use crate::engine::outcome::{EngineOutcome, OptionId};
-    use crate::engine::{apply, dispatch};
+    use crate::engine::{self, dispatch};
     use crate::state::{
         EnemyId, FastActorScope, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
     };
@@ -3058,7 +3056,7 @@ mod enemy_phase_tests {
                 state: &mut state,
                 events: &mut ev2,
             };
-            let o = resolve_input(&mut cx, &InputResponse::PickSingle(pick));
+            let o = dispatch::resolve_input(&mut cx, &InputResponse::PickSingle(pick));
             dispatch::drive(&mut cx, o) // slice 1b: complete the cascade
         };
         // With no registry the attack window auto-skips and the cascade runs
@@ -3255,7 +3253,7 @@ mod enemy_phase_tests {
             state: &mut state,
             events: &mut events,
         };
-        let resumed = resolve_input(&mut cx, &InputResponse::PickSingle(pick));
+        let resumed = dispatch::resolve_input(&mut cx, &InputResponse::PickSingle(pick));
         // Driving past the drained loop cascades into the next phase, so the
         // outcome here is that phase's prompt rather than the loop's; what this
         // test pins is the order the two attacks landed in.
@@ -3343,7 +3341,7 @@ mod enemy_phase_tests {
             state: &mut state,
             events: &mut events,
         };
-        let resumed = resolve_input(&mut cx, &InputResponse::PickSingle(pick));
+        let resumed = dispatch::resolve_input(&mut cx, &InputResponse::PickSingle(pick));
         let _ = dispatch::drive(&mut cx, resumed);
 
         // e1's attack killed the sole investigator, so the scenario's resolution
@@ -3700,7 +3698,7 @@ mod enemy_phase_tests {
             )
             .build();
 
-        let result = apply(
+        let result = engine::apply(
             state,
             Action::Player(PlayerAction::ResolveInput {
                 response: InputResponse::Skip,

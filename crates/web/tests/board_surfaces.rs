@@ -11,6 +11,7 @@ use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, GameState, GameStateBuilder};
 use game_core::test_support;
 use leptos::prelude::*;
+use leptos::task;
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -43,7 +44,7 @@ async fn mount(state: GameState) -> Element {
             },
         );
     });
-    leptos::task::tick().await;
+    task::tick().await;
     let roots = document().query_selector_all(".bs-root").expect("query");
     roots
         .item(roots.length() - 1)

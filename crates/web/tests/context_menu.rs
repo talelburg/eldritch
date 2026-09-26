@@ -8,6 +8,7 @@ use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, OptionId, OptionTarget};
 use game_core::state::LocationId;
 use leptos::prelude::*;
+use leptos::task;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -39,7 +40,7 @@ async fn mount(
         provide_context::<OutboundTx>(tx_for_mount.clone());
         leptos::view! { <div class="tc-root"><ContextMenu options=options.clone() open=open/></div> }
     });
-    leptos::task::tick().await;
+    task::tick().await;
     (open, rx)
 }
 
@@ -87,7 +88,7 @@ async fn clicking_an_item_submits_pick_single_and_closes() {
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("HtmlElement")
         .click();
-    leptos::task::tick().await;
+    task::tick().await;
 
     let msg = rx.try_recv().expect("a frame was sent after tick");
     match msg {

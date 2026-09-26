@@ -22,8 +22,7 @@ use game_core::engine::{ChoiceOption, EngineOutcome, InputKind, OptionId, Option
 use leptos::prelude::*;
 
 use crate::interaction::MultiSelect;
-use crate::store::use_store;
-use crate::{controls, decision, interaction, skill_test_result};
+use crate::{controls, decision, interaction, skill_test_result, store};
 
 /// The bottom-fixed prompt banner. See the module docs for what it renders and
 /// what it deliberately does not.
@@ -32,7 +31,7 @@ use crate::{controls, decision, interaction, skill_test_result};
 #[allow(clippy::too_many_lines)]
 #[component]
 pub fn PromptBanner() -> impl IntoView {
-    let store = use_store();
+    let store = store::use_store();
     let ms = use_context::<MultiSelect>();
     view! {
         {move || {

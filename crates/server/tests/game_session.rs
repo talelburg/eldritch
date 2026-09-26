@@ -10,8 +10,8 @@ use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;
 use game_core::state::{CardCode, InvestigatorId};
+use protocol::GameId;
 use server::session::{GameSession, SessionError};
-use server::GameId;
 
 use crate::common::TEST_SCENARIO_ID;
 

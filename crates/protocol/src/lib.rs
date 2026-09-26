@@ -131,7 +131,7 @@ mod id_tests {
 
 #[cfg(test)]
 mod tests {
-    use game_core::state::GameStateBuilder;
+    use game_core::state::{CardCode, GameStateBuilder};
     use game_core::test_support;
 
     use super::*;
@@ -217,8 +217,6 @@ mod tests {
 
     #[test]
     fn create_game_request_round_trips_with_a_roster() {
-        use game_core::action::RosterEntry;
-        use game_core::state::CardCode;
         let req = CreateGameRequest {
             scenario_id: "the-gathering".into(),
             roster: vec![RosterEntry {

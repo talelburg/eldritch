@@ -5,6 +5,7 @@
 
 use game_core::event::Event;
 use leptos::prelude::*;
+use leptos::task;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::event_log::EventLogView;
@@ -26,7 +27,7 @@ async fn renders_batches_with_headers_and_event_debug() {
             events: vec![Event::ScenarioStarted],
         });
     });
-    leptos::task::tick().await;
+    task::tick().await;
 
     let logs = document().query_selector_all(".event-log").expect("query");
     assert!(logs.length() >= 1, "no .event-log element rendered");
@@ -51,7 +52,7 @@ async fn log_collapses_and_expands() {
         provide_context(store);
         leptos::view! { <EventLogView/> }
     });
-    leptos::task::tick().await;
+    task::tick().await;
 
     let logs = document()
         .query_selector_all(".event-log")
@@ -79,7 +80,7 @@ async fn log_collapses_and_expands() {
         .dyn_into::<HtmlElement>()
         .expect("HtmlElement");
     toggle.click();
-    leptos::task::tick().await;
+    task::tick().await;
     assert!(
         scroll.class_name().contains("hidden"),
         "log body should be hidden after collapse: {}",

@@ -9,8 +9,10 @@ use cards::REGISTRY;
 use game_core::state::{CardCode, GameStateBuilder};
 use game_core::{card_registry, test_support};
 use leptos::prelude::document;
+use leptos::{mount, task};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
+use web::map;
 use web_sys::Element;
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -36,8 +38,8 @@ async fn revealed_location_shows_metadata_text_and_victory() {
     attic.code = CardCode::new("01113");
     attic.revealed = true;
     let game = GameStateBuilder::new().with_location(attic).build();
-    leptos::mount::mount_to_body(move || web::map::location_map(&game));
-    leptos::task::tick().await;
+    mount::mount_to_body(move || map::location_map(&game));
+    task::tick().await;
 
     let text = node_text("Attic");
     assert!(text.contains("\u{2605}1"), "victory pip missing: {text}");
@@ -52,8 +54,8 @@ async fn revealed_location_shows_metadata_traits() {
     misk.code = CardCode::new("01129");
     misk.revealed = true;
     let game = GameStateBuilder::new().with_location(misk).build();
-    leptos::mount::mount_to_body(move || web::map::location_map(&game));
-    leptos::task::tick().await;
+    mount::mount_to_body(move || map::location_map(&game));
+    task::tick().await;
 
     let text = node_text("Miskatonic University");
     assert!(text.contains("Arkham"), "traits missing: {text}");
@@ -70,8 +72,8 @@ async fn unrevealed_location_withholds_metadata() {
     attic.shroud = 7;
     attic.clues = 9;
     let game = GameStateBuilder::new().with_location(attic).build();
-    leptos::mount::mount_to_body(move || web::map::location_map(&game));
-    leptos::task::tick().await;
+    mount::mount_to_body(move || map::location_map(&game));
+    task::tick().await;
 
     let text = node_text("Hidden Attic");
     assert!(

@@ -39,8 +39,6 @@ use game_core::state::CardCode;
 pub mod generated;
 pub mod impls;
 
-pub use card_dsl::card_data::{CardType, Class, SkillIcons, Slot};
-
 /// All card metadata in the Eldritch corpus, lazily initialized on
 /// first access. Sorted by [`CardMetadata::code`].
 pub fn all() -> &'static [CardMetadata] {
@@ -124,7 +122,7 @@ pub const REGISTRY: CardRegistry = CardRegistry {
 
 #[cfg(test)]
 mod tests {
-    use game_core::state::CardCode;
+    use card_dsl::card_data::{CardType, Class};
 
     use super::*;
 

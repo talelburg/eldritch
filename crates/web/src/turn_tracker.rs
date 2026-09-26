@@ -13,7 +13,7 @@ use game_core::state::Phase;
 use leptos::prelude::*;
 use Step::{Framework, Window};
 
-use crate::store::use_store;
+use crate::store;
 
 /// One entry in a phase's ordered outline.
 enum Step {
@@ -84,7 +84,7 @@ const ROUND: &[PhaseOutline] = &[
 
 #[component]
 pub fn TurnTrackerView() -> impl IntoView {
-    let store = use_store();
+    let store = store::use_store();
     move || {
         let game = store.get().game;
         let current = game.as_ref().map(|g| g.phase);

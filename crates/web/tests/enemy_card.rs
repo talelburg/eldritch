@@ -7,6 +7,7 @@ use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{Enemy, EnemyId};
 use game_core::test_support;
 use leptos::prelude::*;
+use leptos::task;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -40,7 +41,7 @@ async fn engaged_enemy_renders_stats_keywords_exhausted() {
     e.retaliate = true;
     e.exhausted = true;
     mount_to_body(move || view! { <EnemyCard enemy=e.clone()/> });
-    leptos::task::tick().await;
+    task::tick().await;
 
     let card = last_card();
     let classes = card.class_name();
@@ -73,7 +74,7 @@ async fn engaged_enemy_renders_stats_keywords_exhausted() {
 async fn ready_enemy_is_not_dimmed() {
     let e = test_support::test_enemy(2, "Swarm of Rats");
     mount_to_body(move || view! { <EnemyCard enemy=e.clone()/> });
-    leptos::task::tick().await;
+    task::tick().await;
     assert!(
         !last_card().class_name().contains("card--exhausted"),
         "ready enemy must not be dimmed"
@@ -99,7 +100,7 @@ async fn mount_enemy(enemy: Enemy, outcome: EngineOutcome) -> UnboundedReceiver<
         provide_context(PendingOptions(pending));
         view! { <EnemyCard enemy=enemy.clone()/> }
     });
-    leptos::task::tick().await;
+    task::tick().await;
     rx
 }
 
@@ -120,7 +121,7 @@ async fn actionable_enemy_glows_opens_menu_and_submits() {
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a .menu-hit layer")
         .click();
-    leptos::task::tick().await;
+    task::tick().await;
 
     let item = card
         .query_selector(".context-menu .menu-item")
@@ -129,7 +130,7 @@ async fn actionable_enemy_glows_opens_menu_and_submits() {
         .expect("a menu item");
     assert_eq!(item.text_content().unwrap_or_default(), "Fight");
     item.click();
-    leptos::task::tick().await;
+    task::tick().await;
 
     let msg = rx.try_recv().expect("a frame was sent after tick");
     match msg {

@@ -14,9 +14,11 @@ use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::state::{CardCode, GameStateBuilder};
 use game_core::test_support;
 use leptos::prelude::*;
+use leptos::task;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
+use web::controls;
 use web::interaction::ConfirmAnchor;
 use web::store::ClientState;
 use web::transport::OutboundTx;
@@ -52,9 +54,9 @@ async fn mount(deck_size: usize, outcome: EngineOutcome) -> UnboundedReceiver<Cl
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let anchor = Signal::derive(move || store.with(web::interaction::confirm_anchor));
         provide_context(ConfirmAnchor(anchor));
-        view! { <div class="ed-root">{web::controls::encounter_deck_view(&state)}</div> }
+        view! { <div class="ed-root">{controls::encounter_deck_view(&state)}</div> }
     });
-    leptos::task::tick().await;
+    task::tick().await;
     rx
 }
 
@@ -132,7 +134,7 @@ async fn draw_glows_and_submits_confirm_for_the_mythos_draw() {
     assert!(el.class_name().contains("actionable"));
 
     el.click();
-    leptos::task::tick().await;
+    task::tick().await;
     match rx.try_recv().expect("a frame was sent after tick") {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },

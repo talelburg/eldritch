@@ -15,6 +15,7 @@ use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::InvestigatorId;
 use game_core::test_support;
 use leptos::prelude::*;
+use leptos::task;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -41,7 +42,7 @@ async fn mount(outcome: EngineOutcome, preselected: &[u32]) -> UnboundedReceiver
         provide_context(MultiSelect { active, selected });
         view! { <div class="pb-root"><PromptBanner/></div> }
     });
-    leptos::task::tick().await;
+    task::tick().await;
     rx
 }
 
@@ -76,7 +77,7 @@ fn click(sel: &str) {
 async fn confirm_submits_the_selected_indices() {
     let mut rx = mount(test_support::awaiting_commit_input("Commit"), &[0, 2]).await;
     click(".confirm");
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
@@ -95,7 +96,7 @@ async fn confirm_submits_the_selected_indices() {
 async fn confirm_with_no_selection_submits_empty() {
     let mut rx = mount(test_support::awaiting_commit_input("Commit"), &[]).await;
     click(".confirm");
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
@@ -109,7 +110,7 @@ async fn confirm_with_no_selection_submits_empty() {
 async fn skippable_prompt_shows_pass_that_submits_skip() {
     let mut rx = mount(test_support::awaiting_skippable_commit_input("Commit"), &[]).await;
     click(".pass");
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
@@ -151,7 +152,7 @@ async fn an_unanchored_confirm_gets_text_and_a_confirm_button() {
         .unwrap_or_default()
         .contains("Something happened"));
     click(".confirm");
-    leptos::task::tick().await;
+    task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
@@ -191,7 +192,7 @@ async fn skippable_window_shows_prompt_and_pass_submits_skip() {
         "window prompt shows in the banner"
     );
     click(".pass");
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
@@ -255,7 +256,7 @@ async fn the_open_turn_menu_suppresses_its_text_but_not_its_controls() {
         "the un-anchored option keeps its only home; the anchored one is on its surface"
     );
     click(".banner-option");
-    leptos::task::tick().await;
+    task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
@@ -284,7 +285,7 @@ async fn an_unanchored_pick_single_still_reaches_the_banner() {
         2
     );
     click(".banner-option");
-    leptos::task::tick().await;
+    task::tick().await;
     match rx.try_recv().expect("a frame after tick") {
         ClientMessage::Submit {
             action: PlayerAction::ResolveInput { response },
@@ -309,7 +310,7 @@ async fn skippable_window_renders_options_that_submit_pick_single() {
         .expect("an option button");
     assert_eq!(btn.text_content().unwrap_or_default(), "Resolve");
     btn.click();
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
@@ -344,7 +345,7 @@ async fn banner_renders_only_unanchored_options() {
         .expect("the one banner button");
     assert_eq!(btn.text_content().unwrap_or_default(), "Some global");
     btn.click();
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {

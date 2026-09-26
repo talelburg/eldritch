@@ -178,7 +178,7 @@ mod tests {
 
     use super::*;
     use crate::engine::dispatch;
-    use crate::engine::evaluator::{push_effect, EvalContext};
+    use crate::engine::evaluator::{self, EvalContext};
     use crate::engine::outcome::PromptNature;
     use crate::state::{EnemyId, GameState, GameStateBuilder, InvestigatorId};
     use crate::test_support;
@@ -258,7 +258,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            push_effect(&mut cx, &effect, ctx);
+            evaluator::push_effect(&mut cx, &effect, ctx);
             dispatch::drive(&mut cx, EngineOutcome::Done)
         };
         assert!(
@@ -293,7 +293,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            push_effect(&mut cx, &effect, ctx);
+            evaluator::push_effect(&mut cx, &effect, ctx);
             dispatch::drive(&mut cx, EngineOutcome::Done)
         };
         match out {
@@ -319,7 +319,7 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            push_effect(&mut cx, &effect, ctx);
+            evaluator::push_effect(&mut cx, &effect, ctx);
             dispatch::drive(&mut cx, EngineOutcome::Done)
         };
         assert!(

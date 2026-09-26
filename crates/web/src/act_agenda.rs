@@ -11,9 +11,8 @@ use game_core::engine::OptionTarget;
 use game_core::state::{Act, AdvanceDeck, AdvanceStep, Agenda, CardCode, Continuation, GameState};
 use leptos::prelude::*;
 
-use crate::card::{parse_card_text, render_segments};
-use crate::controls;
 use crate::interaction::{self, PendingOptions};
+use crate::{card, controls};
 
 /// Which face of an act/agenda to show. During an advance the card flips from its
 /// front to its reverse (the "1b" side that carries the on-advance effect) once
@@ -71,7 +70,10 @@ pub(crate) fn name_and_text_src(code: &CardCode, face: Face) -> (String, Option<
 /// [`name_and_text_src`] with the text rendered to views, for the card itself.
 fn name_and_text(code: &CardCode, face: Face) -> (String, Option<Vec<AnyView>>) {
     let (name, text) = name_and_text_src(code, face);
-    (name, text.map(|t| render_segments(parse_card_text(&t))))
+    (
+        name,
+        text.map(|t| card::render_segments(card::parse_card_text(&t))),
+    )
 }
 
 /// The current act as a card. Glows and opens an "Advance act" context menu when

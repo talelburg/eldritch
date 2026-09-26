@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 
 use game_core::test_support;
 use leptos::prelude::*;
+use leptos::task;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
 use web::app::Overlays;
@@ -58,7 +59,7 @@ async fn overlay_is_absent_in_every_status_but_the_mismatch() {
     ] {
         let (store, container) = mount();
         store.update(|s| s.status = status.clone());
-        leptos::task::tick().await;
+        task::tick().await;
 
         assert!(
             container
@@ -81,7 +82,7 @@ async fn overlay_is_absent_in_every_status_but_the_mismatch() {
 async fn version_mismatch_renders_a_scrimmed_card_naming_both_halves_of_the_fix() {
     let (store, container) = mount();
     store.update(|s| s.status = ConnStatus::VersionMismatch);
-    leptos::task::tick().await;
+    task::tick().await;
 
     let card = container
         .query_selector(".version-mismatch")
@@ -152,7 +153,7 @@ async fn the_real_overlay_set_declares_the_mismatch_card_last() {
         s.status = ConnStatus::VersionMismatch;
         s.outcome = Some(test_support::awaiting_confirm_input("Continue"));
     });
-    leptos::task::tick().await;
+    task::tick().await;
 
     let banner = container
         .query_selector(".prompt-banner")

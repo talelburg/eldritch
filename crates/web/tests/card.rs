@@ -10,6 +10,7 @@ use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId};
 use game_core::{card_registry, test_support};
 use leptos::prelude::*;
+use leptos::task;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -39,7 +40,7 @@ async fn mount_card(code: &str) -> String {
     let _ = card_registry::install(REGISTRY);
     let code = CardCode::new(code);
     mount_to_body(move || view! { <Card code=code.clone()/> });
-    leptos::task::tick().await;
+    task::tick().await;
     last_card_html()
 }
 
@@ -123,7 +124,7 @@ async fn in_play_exhausted_asset_dims_badges_and_shows_soak() {
     inst.exhausted = true;
     inst.accumulated_damage = 1;
     mount_to_body(move || view! { <Card code=CardCode::new("01018") in_play=inst.clone()/> });
-    leptos::task::tick().await;
+    task::tick().await;
 
     assert!(
         last_card_classes().contains("card--exhausted"),
@@ -149,7 +150,7 @@ async fn treachery_renders_generic_face_with_clues() {
     let mut inst = CardInPlay::enter_play(CardCode::new("01007"), CardInstanceId(0));
     inst.clues = 3;
     mount_to_body(move || view! { <Card code=CardCode::new("01007") in_play=inst.clone()/> });
-    leptos::task::tick().await;
+    task::tick().await;
 
     assert!(
         last_card_classes().contains("card--generic"),
@@ -169,7 +170,7 @@ async fn in_play_ready_asset_is_not_dimmed() {
     let _ = card_registry::install(REGISTRY);
     let inst = CardInPlay::enter_play(CardCode::new("01018"), CardInstanceId(0));
     mount_to_body(move || view! { <Card code=CardCode::new("01018") in_play=inst.clone()/> });
-    leptos::task::tick().await;
+    task::tick().await;
     assert!(
         !last_card_classes().contains("card--exhausted"),
         "ready card must not be dimmed"
@@ -212,7 +213,7 @@ async fn mount_hand(
             <HandCardView code=CardCode::new("01020") investigator=InvestigatorId(1) index=0/>
         }
     });
-    leptos::task::tick().await;
+    task::tick().await;
     (selected, rx)
 }
 
@@ -236,7 +237,7 @@ async fn playable_hand_card_opens_a_play_menu_and_submits() {
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a .menu-hit")
         .click();
-    leptos::task::tick().await;
+    task::tick().await;
     let item = slot
         .query_selector(".context-menu .menu-item")
         .expect("query")
@@ -244,7 +245,7 @@ async fn playable_hand_card_opens_a_play_menu_and_submits() {
         .expect("a menu item");
     assert_eq!(item.text_content().unwrap_or_default(), "Play Machete");
     item.click();
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {
@@ -266,7 +267,7 @@ async fn multi_select_active_makes_hand_card_toggle_selected() {
         .dyn_into::<HtmlElement>()
         .expect("HtmlElement")
         .click();
-    leptos::task::tick().await;
+    task::tick().await;
     assert!(selected.get_untracked().contains(&0), "index 0 selected");
     assert!(
         last_slot().class_name().contains("selected"),
@@ -298,13 +299,13 @@ async fn hand_card_glows_for_a_reaction_anchored_by_code() {
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a .menu-hit")
         .click();
-    leptos::task::tick().await;
+    task::tick().await;
     slot.query_selector(".context-menu .menu-item")
         .expect("query")
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a menu item")
         .click();
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame after tick");
     match msg {
         ClientMessage::Submit {

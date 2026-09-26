@@ -26,6 +26,7 @@ use game_core::state::{
 };
 use game_core::{card_registry, test_support};
 use leptos::prelude::*;
+use leptos::task;
 use protocol::{ClientMessage, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -123,7 +124,7 @@ impl Harness {
                 },
             );
         });
-        leptos::task::tick().await;
+        task::tick().await;
         Self {
             store,
             rx,
@@ -160,7 +161,7 @@ impl Harness {
                 },
             );
         });
-        leptos::task::tick().await;
+        task::tick().await;
     }
 
     fn state(&self) -> &GameState {
@@ -311,7 +312,7 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
     // 1. First Aid glows on the board and opens its Activate menu — a selection,
     //    unchanged: the click is doing real work, naming which card.
     find(".card-slot.actionable .menu-hit").click();
-    leptos::task::tick().await;
+    task::tick().await;
     find(".context-menu .menu-item").click();
     h.pump().await;
 

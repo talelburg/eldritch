@@ -8,6 +8,7 @@ use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support;
 use leptos::prelude::{document, provide_context, RwSignal, Signal, Update, With};
+use leptos::{mount, task};
 use protocol::{ClientMessage, ServerMessage};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -24,7 +25,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 async fn mount_state(state: GameState) {
     test_support::install_test_registry();
     let store = RwSignal::new(ClientState::default());
-    leptos::mount::mount_to_body(move || {
+    mount::mount_to_body(move || {
         provide_context(store);
         leptos::view! { <BoardView/> }
     });
@@ -38,7 +39,7 @@ async fn mount_state(state: GameState) {
             },
         );
     });
-    leptos::task::tick().await;
+    task::tick().await;
 }
 
 /// The LAST mounted `<section class="map">`. Every mount in this binary appends
@@ -309,7 +310,7 @@ async fn mount_interactive(
     let store = RwSignal::new(ClientState::default());
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
-    leptos::mount::mount_to_body(move || {
+    mount::mount_to_body(move || {
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());
         let pending = Signal::derive(move || store.with(web::interaction::pending_options));
@@ -326,7 +327,7 @@ async fn mount_interactive(
             },
         );
     });
-    leptos::task::tick().await;
+    task::tick().await;
     rx
 }
 
@@ -377,7 +378,7 @@ async fn actionable_location_glows_opens_menu_and_submits() {
         .and_then(|n| n.dyn_into::<HtmlElement>().ok())
         .expect("a .menu-hit layer")
         .click();
-    leptos::task::tick().await;
+    task::tick().await;
 
     let item = last
         .query_selector(".context-menu .menu-item")
@@ -388,7 +389,7 @@ async fn actionable_location_glows_opens_menu_and_submits() {
 
     // Clicking the item submits the anchored option.
     item.click();
-    leptos::task::tick().await;
+    task::tick().await;
     let msg = rx.try_recv().expect("a frame was sent after tick");
     match msg {
         ClientMessage::Submit {

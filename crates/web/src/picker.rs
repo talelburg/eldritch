@@ -8,7 +8,7 @@ use game_core::state::CardCode;
 use leptos::prelude::*;
 use protocol::CreateGameRequest;
 
-use crate::store::{use_store, ConnStatus};
+use crate::store::{self, ConnStatus};
 
 /// Channel the picker uses to hand a chosen `CreateGameRequest` to the
 /// transport's creation loop. Provided into context by `transport::start`.
@@ -54,7 +54,7 @@ pub fn roland_roster() -> Vec<RosterEntry> {
 /// `CreateGameRequest` (The Gathering + Roland) on click.
 #[component]
 pub fn PickerView() -> impl IntoView {
-    let store = use_store();
+    let store = store::use_store();
     let create_tx = use_context::<CreateTx>();
 
     view! {

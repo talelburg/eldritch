@@ -60,10 +60,10 @@
 //! to build effect trees readably:
 //!
 //! ```
-//! use card_dsl::{constant, modify, ModifierScope, Stat};
+//! use card_dsl::dsl::{self, ModifierScope, Stat};
 //!
 //! // Holy Rosary: while in play, +1 willpower.
-//! let ability = constant(modify(Stat::Willpower, 1, ModifierScope::WhileInPlay));
+//! let ability = dsl::constant(dsl::modify(Stat::Willpower, 1, ModifierScope::WhileInPlay));
 //! ```
 
 use serde::{Deserialize, Serialize};
