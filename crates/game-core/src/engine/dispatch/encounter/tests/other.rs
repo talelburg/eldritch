@@ -1,3 +1,6 @@
+use card_dsl::dsl::{self, Ability, ModifierScope, Stat};
+
+use super::*;
 use crate::action::EngineRecord;
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{dispatch, Cx};
@@ -76,4 +79,16 @@ fn rejects_when_no_card_registry_installed() {
         events.is_empty(),
         "no events should fire before Event::CardRevealed; got {events:?}",
     );
+}
+
+#[test]
+fn persistence_is_derived_from_non_revelation_abilities() {
+    let one_shot: Vec<Ability> = vec![dsl::revelation(dsl::native("x:rev"))];
+    assert!(!treachery_is_persistent(&one_shot));
+
+    let persistent: Vec<Ability> = vec![
+        dsl::revelation(dsl::native("y:rev")),
+        dsl::constant(dsl::modify(Stat::Willpower, 1, ModifierScope::WhileInPlay)),
+    ];
+    assert!(treachery_is_persistent(&persistent));
 }
