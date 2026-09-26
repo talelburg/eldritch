@@ -14,9 +14,9 @@ use game_core::event::{Event, TraumaKind};
 use game_core::scenario::ScenarioId;
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
-    InvestigatorId, LocationId, Phase, TimingMode,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, TimingMode,
 };
-use game_core::test_support::{self, GameStateBuilder, ScriptedResolver, TestSession};
+use game_core::test_support::{self, ScriptedResolver, TestSession};
 use game_core::{assert_event_sequence, assert_no_event};
 
 const COVER_UP: &str = "01007";

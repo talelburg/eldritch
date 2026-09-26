@@ -13,8 +13,8 @@ use card_dsl::dsl::{
 };
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
-use game_core::state::{CardCode, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Phase};
+use game_core::test_support::{self, MockRegistry};
 
 /// Code for the synthetic probe card. Not in the real corpus; only the mock
 /// registry below resolves it.

@@ -56,9 +56,9 @@ use game_core::engine::{ApplyResult, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, InvestigatorId, LocationId, Phase, SkillKind, Zone,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, Zone,
 };
-use game_core::test_support::{self, GameStateBuilder, ScriptedResolver, TestSession};
+use game_core::test_support::{self, ScriptedResolver, TestSession};
 use game_core::{assert_event, card_registry};
 
 /// Lita Chantler — the `Ally` the Parlor grants to.

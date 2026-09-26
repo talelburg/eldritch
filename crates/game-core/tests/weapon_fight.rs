@@ -21,9 +21,9 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, GameState, InvestigatorId, LocationId, Phase, TokenModifiers,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// Mock firearm: `Uses (4 ammo)`, `[action] Spend 1 ammo: Fight. +1
 /// [combat], +1 damage.`

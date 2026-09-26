@@ -34,9 +34,9 @@ use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, GameState,
-    InvestigationResume, InvestigatorId, LocationId, Phase,
+    GameStateBuilder, InvestigationResume, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// `when`-tagged reaction on a card the attacked investigator controls: +4
 /// resources. Declaring interrupt timing on this condition is *accepted* now

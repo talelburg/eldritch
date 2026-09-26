@@ -182,10 +182,9 @@ mod tests {
     use crate::scenario::{ResolutionId, ScenarioEnding};
     use crate::state::{
         Act, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, CardCode, Continuation, GameState,
-        InvestigatorId,
+        GameStateBuilder, InvestigatorId,
     };
-    use crate::test_support::{self, GameStateBuilder};
-    use crate::InputKind;
+    use crate::{test_support, InputKind};
 
     fn state_advancing_agenda(interactive: bool) -> GameState {
         let mut state = GameStateBuilder::new().build();

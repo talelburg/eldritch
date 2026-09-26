@@ -23,10 +23,10 @@ use card_dsl::dsl::{activated, gain_resources, heal_damage, Ability, Cost, Inves
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::EngineOutcome;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId,
-    LocationId, Phase,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, TEST_INV};
+use game_core::test_support::{self, MockRegistry, TEST_INV};
 
 /// Synthetic **treachery** sitting in an investigator's threat area — the card
 /// type the zone actually holds (Rules Reference p.20: *"a play area in which

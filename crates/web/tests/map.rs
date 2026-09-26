@@ -6,7 +6,7 @@ use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::fixtures;
+use game_core::test_support;
 use leptos::prelude::{document, provide_context, RwSignal, Signal, Update, With};
 use protocol::{ClientMessage, ServerMessage};
 use wasm_bindgen::JsCast as _;
@@ -22,7 +22,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 /// Mount `BoardView`, feed one `Hello` carrying `state`, tick, return nothing —
 /// assertions query the live DOM via `document()`.
 async fn mount_state(state: GameState) {
-    game_core::test_support::install_test_registry();
+    test_support::install_test_registry();
     let store = RwSignal::new(ClientState::default());
     leptos::mount::mount_to_body(move || {
         provide_context(store);
@@ -72,9 +72,9 @@ fn line_count() -> u32 {
 #[wasm_bindgen_test]
 async fn connected_locations_draw_a_line() {
     let mut state = GameStateBuilder::new()
-        .with_location(fixtures::test_location(10, "Hallway"))
-        .with_location(fixtures::test_location(11, "Attic"))
-        .with_investigator(fixtures::test_investigator(1))
+        .with_location(test_support::test_location(10, "Hallway"))
+        .with_location(test_support::test_location(11, "Attic"))
+        .with_investigator(test_support::test_investigator(1))
         .build();
     state.connect(LocationId(10), LocationId(11));
     mount_state(state).await;
@@ -88,8 +88,8 @@ async fn connected_locations_draw_a_line() {
 #[wasm_bindgen_test]
 async fn isolated_location_draws_no_line() {
     let state = GameStateBuilder::new()
-        .with_location(fixtures::test_location(10, "Study")) // no connections
-        .with_investigator(fixtures::test_investigator(1))
+        .with_location(test_support::test_location(10, "Study")) // no connections
+        .with_investigator(test_support::test_investigator(1))
         .build();
     mount_state(state).await;
     assert_eq!(line_count(), 0, "an isolated location draws no lines");
@@ -97,10 +97,10 @@ async fn isolated_location_draws_no_line() {
 
 #[wasm_bindgen_test]
 async fn investigator_renders_inside_its_location_node() {
-    let mut inv = fixtures::test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(10));
     let state = GameStateBuilder::new()
-        .with_location(fixtures::test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_investigator(inv)
         .build();
     mount_state(state).await;
@@ -113,13 +113,13 @@ async fn investigator_renders_inside_its_location_node() {
 
 #[wasm_bindgen_test]
 async fn engaged_enemy_renders_in_detail_panel_not_in_node() {
-    let mut inv = fixtures::test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(10));
-    let mut enemy = fixtures::test_enemy(100, "Mock Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.current_location = Some(LocationId(10));
     enemy.engaged_with = Some(InvestigatorId(1));
     let state = GameStateBuilder::new()
-        .with_location(fixtures::test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .with_investigator(inv)
         .with_enemy(enemy)
         .build();
@@ -175,13 +175,13 @@ fn header_badges(loc_name: &str) -> (String, String) {
 
 #[wasm_bindgen_test]
 async fn revealed_location_shows_shroud_and_clues_as_badges() {
-    let mut loc = fixtures::test_location(31, "Attic Revealed");
+    let mut loc = test_support::test_location(31, "Attic Revealed");
     loc.revealed = true;
     loc.shroud = 2;
     loc.clues = 5;
     let state = GameStateBuilder::new()
         .with_location(loc)
-        .with_investigator(fixtures::test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .build();
     mount_state(state).await;
     assert_eq!(
@@ -210,12 +210,12 @@ async fn revealed_location_shows_shroud_and_clues_as_badges() {
 /// and "no clues here" never looks like "no clue slot".
 #[wasm_bindgen_test]
 async fn a_revealed_location_with_no_clues_keeps_a_faded_clue_badge() {
-    let mut loc = fixtures::test_location(32, "Empty Hallway");
+    let mut loc = test_support::test_location(32, "Empty Hallway");
     loc.revealed = true;
     loc.clues = 0;
     let state = GameStateBuilder::new()
         .with_location(loc)
-        .with_investigator(fixtures::test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .build();
     mount_state(state).await;
     assert_eq!(header_badges("Empty Hallway").1, "0");
@@ -232,13 +232,13 @@ async fn a_revealed_location_with_no_clues_keeps_a_faded_clue_badge() {
 /// revealed side's numbers.
 #[wasm_bindgen_test]
 async fn unrevealed_location_shows_placeholders_not_its_values() {
-    let mut loc = fixtures::test_location(30, "Cellar Unrevealed");
+    let mut loc = test_support::test_location(30, "Cellar Unrevealed");
     loc.revealed = false;
     loc.shroud = 4;
     loc.clues = 3;
     let state = GameStateBuilder::new()
         .with_location(loc)
-        .with_investigator(fixtures::test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .build();
     mount_state(state).await;
     assert_eq!(
@@ -261,11 +261,11 @@ async fn unrevealed_location_shows_placeholders_not_its_values() {
 /// The node is styled face-down by class, not by a printed "unrevealed" word.
 #[wasm_bindgen_test]
 async fn unrevealed_location_is_marked_by_class() {
-    let mut loc = fixtures::test_location(21, "Parlor Unrevealed");
+    let mut loc = test_support::test_location(21, "Parlor Unrevealed");
     loc.revealed = false;
     let state = GameStateBuilder::new()
         .with_location(loc)
-        .with_investigator(fixtures::test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .build();
     mount_state(state).await;
     assert!(
@@ -282,12 +282,12 @@ async fn unrevealed_location_is_marked_by_class() {
 
 #[wasm_bindgen_test]
 async fn unengaged_enemy_renders_inside_its_location_node() {
-    let mut enemy = fixtures::test_enemy(100, "Mock Ghoul");
+    let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.current_location = Some(LocationId(10));
     enemy.engaged_with = None;
     let state = GameStateBuilder::new()
-        .with_location(fixtures::test_location(10, "Study"))
-        .with_investigator(fixtures::test_investigator(1))
+        .with_location(test_support::test_location(10, "Study"))
+        .with_investigator(test_support::test_investigator(1))
         .with_enemy(enemy)
         .build();
     mount_state(state).await;
@@ -305,7 +305,7 @@ async fn mount_interactive(
     state: GameState,
     outcome: EngineOutcome,
 ) -> UnboundedReceiver<ClientMessage> {
-    game_core::test_support::install_test_registry();
+    test_support::install_test_registry();
     let store = RwSignal::new(ClientState::default());
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
@@ -332,10 +332,10 @@ async fn mount_interactive(
 
 /// A one-location ("Study", id 10) game with investigator 1 standing on it.
 fn study_game() -> GameState {
-    let mut loc = fixtures::test_location(10, "Study");
+    let mut loc = test_support::test_location(10, "Study");
     loc.revealed = true;
     loc.code = CardCode::new("01111");
-    let mut inv = fixtures::test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(10));
     let mut game = GameStateBuilder::new()
         .with_investigator(inv)
@@ -357,7 +357,7 @@ fn node_class(loc_name: &str) -> String {
 
 #[wasm_bindgen_test]
 async fn actionable_location_glows_opens_menu_and_submits() {
-    let outcome = fixtures::awaiting_pick_single_with(
+    let outcome = test_support::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Investigate")
             .at(OptionTarget::Location(LocationId(10)))],
@@ -401,7 +401,7 @@ async fn actionable_location_glows_opens_menu_and_submits() {
 #[wasm_bindgen_test]
 async fn location_without_a_matching_option_is_not_actionable() {
     // The only option anchors to a DIFFERENT location — the Study node stays inert.
-    let outcome = fixtures::awaiting_pick_single_with(
+    let outcome = test_support::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Investigate")
             .at(OptionTarget::Location(LocationId(11)))],
@@ -415,7 +415,7 @@ async fn investigator_card_glows_for_a_reaction_anchored_to_it() {
     // A reaction on the investigator card (Roland-style) anchors to that card's
     // instance; the panel now renders it as an InPlayCardView, so it glows (#539).
     let game = GameStateBuilder::new()
-        .with_investigator(fixtures::test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .build();
     let iid = game
         .investigators
@@ -423,7 +423,7 @@ async fn investigator_card_glows_for_a_reaction_anchored_to_it() {
         .expect("investigator")
         .investigator_card
         .instance_id;
-    let outcome = fixtures::awaiting_pick_single_with(
+    let outcome = test_support::awaiting_pick_single_with(
         "You may trigger",
         vec![ChoiceOption::new(OptionId(0), "Trigger").at(OptionTarget::CardInstance(iid))],
     );

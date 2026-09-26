@@ -6,8 +6,8 @@
 use card_dsl::dsl::{self, forced_on_event, native, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{Cx, EngineOutcome};
-use game_core::state::{self, Agenda, CardCode, GameState, InvestigatorId};
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::state::{self, Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
+use game_core::test_support::{self, MockRegistry};
 
 const AGENDA: &str = "TEST-AGENDA";
 const AGENDA_BAD: &str = "TEST-AGENDA-BAD";

@@ -913,8 +913,8 @@ mod encounter_card_revealed_tests {
     use crate::action::EngineRecord;
     use crate::engine::outcome::EngineOutcome;
     use crate::engine::{dispatch, Cx};
-    use crate::state::{CardCode, InvestigatorId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
+    use crate::test_support;
 
     /// Exercises the early-reject guard: when the handler cannot
     /// proceed past the registry / metadata checks, it must reject
@@ -998,8 +998,7 @@ mod encounter_deck_helper_tests {
     use crate::engine::apply;
     use crate::event::Event;
     use crate::rng::RngState;
-    use crate::state::CardCode;
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{CardCode, GameStateBuilder};
 
     #[test]
     fn shuffle_encounter_deck_emits_event_when_two_or_more_cards() {
@@ -1238,8 +1237,7 @@ mod encounter_deck_helper_tests {
 mod spawn_enemy_tests {
     use super::*;
     use crate::engine::outcome::OptionId;
-    use crate::state::{CardCode, InvestigatorId, LocationId, Phase};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Phase};
     use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
     use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey, Spawn, SpawnLocation};
 
@@ -1882,8 +1880,8 @@ mod spawn_enemy_tests {
 mod resume_encounter_draw_chain_tests {
     use super::*;
     use crate::engine::dispatch;
-    use crate::state::{CardCode, InvestigatorId, Phase};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardCode, GameStateBuilder, InvestigatorId, Phase};
+    use crate::test_support;
 
     /// Exercises the early-reject guard for the registry / unknown-card
     /// checks. Depending on which tests have run in this process:
@@ -1951,8 +1949,8 @@ mod resume_encounter_draw_chain_tests {
 mod resume_encounter_draw_tests {
     use super::*;
     use crate::engine::outcome::InputKind;
-    use crate::state::{Continuation, InvestigatorId, Phase};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{Continuation, GameStateBuilder, InvestigatorId, Phase};
+    use crate::test_support;
 
     // The former `rejects_outside_mythos_phase` / `rejects_when_no_draw_pending`
     // / `rejects_when_out_of_order` tests are gone (#348 part 2c-iii-b): the

@@ -7,12 +7,12 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, Phase, SkillKind, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, Phase, SkillKind,
+    TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::{card_registry, test_support};
 
 const GUTS: &str = "01089";
 const INV: InvestigatorId = InvestigatorId(1);

@@ -199,7 +199,7 @@ mod tests {
     use card_dsl::card_data::SkillKind;
     use game_core::event::FailureReason;
     use game_core::state::{GameStateBuilder, InvestigatorId};
-    use game_core::test_support::fixtures;
+    use game_core::test_support;
 
     /// An `Applied` frame carrying `events` and nothing else of interest.
     fn applied(events: Vec<Event>) -> ServerMessage {
@@ -228,7 +228,7 @@ mod tests {
 
     fn sample_state() -> GameState {
         GameStateBuilder::new()
-            .with_investigator(fixtures::test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build()
     }
 

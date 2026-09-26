@@ -28,9 +28,10 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    self, Act, CardCode, Continuation, GameState, InvestigationResume, InvestigatorId, LocationId,
+    self, Act, CardCode, Continuation, GameState, GameStateBuilder, InvestigationResume,
+    InvestigatorId, LocationId,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// The act carrying one marker forced ability per phase boundary.
 const ACT: &str = "TEST-BOUNDARIES";

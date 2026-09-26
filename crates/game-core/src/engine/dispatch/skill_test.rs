@@ -1859,9 +1859,10 @@ mod tests {
     use crate::engine::dispatch;
     use crate::event::Event;
     use crate::scenario::TokenEffect;
-    use crate::state::{EffectFrame, EnemyId, LocationId, SkillSubstitution, SkillTestId};
-    use crate::test_support::{self, GameStateBuilder};
-    use crate::InputKind;
+    use crate::state::{
+        EffectFrame, EnemyId, GameStateBuilder, LocationId, SkillSubstitution, SkillTestId,
+    };
+    use crate::{test_support, InputKind};
     use card_dsl::dsl::deal_horror;
 
     /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,

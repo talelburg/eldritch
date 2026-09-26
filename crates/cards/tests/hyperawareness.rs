@@ -28,9 +28,9 @@ use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, InvestigatorId, Phase, SkillKind, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, TakeOneFastPlay};
+use game_core::test_support::{self, TakeOneFastPlay};
 use game_core::{assert_event, assert_no_event, card_registry};
 
 const HYPERAWARENESS: &str = "01034";

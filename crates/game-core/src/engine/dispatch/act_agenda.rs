@@ -390,8 +390,7 @@ mod doom_agenda_tests {
     use crate::engine::dispatch;
     use crate::event::Event;
     use crate::scenario::ResolutionId;
-    use crate::state::{Agenda, CardCode};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{Agenda, CardCode, GameStateBuilder};
     use crate::{assert_event, test_support};
 
     #[test]
@@ -577,8 +576,9 @@ mod advance_act_tests {
     use crate::engine::outcome::EngineOutcome;
     use crate::event::Event;
     use crate::scenario::ResolutionId;
-    use crate::state::{Act, CardCode, Continuation, InvestigationResume, InvestigatorId, Phase};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{
+        Act, CardCode, Continuation, GameStateBuilder, InvestigationResume, InvestigatorId, Phase,
+    };
     use crate::{assert_event, test_support};
 
     #[test]

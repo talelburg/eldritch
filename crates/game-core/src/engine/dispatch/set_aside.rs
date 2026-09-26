@@ -175,8 +175,8 @@ mod tests {
     use crate::engine::dispatch::set_aside;
     use crate::engine::outcome::EngineOutcome;
     use crate::engine::Cx;
-    use crate::state::{CardCode, InvestigatorId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
+    use crate::test_support;
 
     #[test]
     fn rejects_a_code_that_is_not_set_aside() {

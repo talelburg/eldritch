@@ -178,8 +178,8 @@ mod tests {
     use crate::engine::dispatch;
     use crate::engine::evaluator::{push_effect, EvalContext};
     use crate::engine::outcome::PromptNature;
-    use crate::state::{EnemyId, GameState, InvestigatorId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{EnemyId, GameState, GameStateBuilder, InvestigatorId};
+    use crate::test_support;
     use card_dsl::dsl::{choose_one, gain_resources, Effect, InvestigatorTarget};
 
     /// A `ChooseOne` branch that is **live** — one `effect_can_change_state`

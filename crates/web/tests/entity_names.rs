@@ -4,10 +4,9 @@
 #![cfg(target_arch = "wasm32")]
 
 use cards::REGISTRY;
-use game_core::card_registry;
 use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support::fixtures;
+use game_core::{card_registry, test_support};
 use leptos::prelude::{provide_context, RwSignal, Update};
 use protocol::ServerMessage;
 use wasm_bindgen_test::*;
@@ -23,7 +22,7 @@ async fn board_renders_card_and_location_names() {
     let _ = card_registry::install(REGISTRY);
 
     let inv_id = InvestigatorId(1);
-    let mut inv = fixtures::test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     // Use a real investigator code so the board's max-health/sanity reads resolve
     // against cards::REGISTRY (the synthetic TEST_INV code is absent from it).
     inv.investigator_card.code = CardCode::new("01001"); // Roland Banks
@@ -33,7 +32,7 @@ async fn board_renders_card_and_location_names() {
     let state = GameStateBuilder::new()
         .with_active_investigator(inv_id)
         .with_investigator(inv)
-        .with_location(fixtures::test_location(10, "Study"))
+        .with_location(test_support::test_location(10, "Study"))
         .build();
 
     let store = RwSignal::new(ClientState::default());

@@ -116,14 +116,12 @@ impl GameStateBuilder {
     /// # Example
     ///
     /// ```
-    /// use game_core::{
-    ///     InvestigatorId, LocationId,
-    ///     test_support::{test_investigator, test_location, GameStateBuilder},
-    /// };
+    /// use game_core::state::{GameStateBuilder, InvestigatorId, LocationId};
+    /// use game_core::test_support;
     ///
     /// let state = GameStateBuilder::new()
-    ///     .with_investigator_at(test_investigator(1), LocationId(10))
-    ///     .with_location(test_location(10, "Study"))
+    ///     .with_investigator_at(test_support::test_investigator(1), LocationId(10))
+    ///     .with_location(test_support::test_location(10, "Study"))
     ///     .build();
     /// assert_eq!(
     ///     state.investigators[&InvestigatorId(1)].current_location,

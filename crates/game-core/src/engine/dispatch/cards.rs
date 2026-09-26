@@ -1275,8 +1275,8 @@ fn discard_played_card(cx: &mut Cx, investigator: InvestigatorId, card: CardCode
 #[cfg(test)]
 mod grant_resources_tests {
     use super::*;
-    use crate::state::InvestigatorId;
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{GameStateBuilder, InvestigatorId};
+    use crate::test_support;
 
     #[test]
     fn grant_resources_adds_to_wallet_and_emits() {
@@ -1329,8 +1329,8 @@ mod grant_resources_tests {
 #[cfg(test)]
 mod draw_with_deckout_tests {
     use super::*;
-    use crate::state::{CardCode, InvestigatorId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
+    use crate::test_support;
 
     #[test]
     fn draw_one_with_deckout_empty_deck_reshuffles_and_takes_horror() {

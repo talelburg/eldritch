@@ -8,10 +8,10 @@ use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId, TimingEvent};
 use game_core::state::{
-    Act, CardCode, Continuation, GameState, InvestigatorId, Location, LocationId, Phase,
-    TimingMode, UpkeepResume,
+    Act, CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
+    Phase, TimingMode, UpkeepResume,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// The advance logic lives in the registry (01109's `When`-`RoundEnded` reaction
 /// native), so the coordinator fires it through the effect evaluator when its

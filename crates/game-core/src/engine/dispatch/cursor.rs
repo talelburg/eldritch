@@ -132,8 +132,8 @@ pub(super) fn turn_frame_ending_mut(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::Status;
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{GameStateBuilder, Status};
+    use crate::test_support;
 
     #[test]
     fn active_investigators_in_turn_order_excludes_eliminated() {

@@ -4,10 +4,9 @@
 use cards::REGISTRY;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId};
-use game_core::test_support::fixtures;
+use game_core::{card_registry, test_support};
 use leptos::prelude::*;
 use protocol::ClientMessage;
 use std::collections::BTreeSet;
@@ -218,7 +217,7 @@ async fn mount_hand(
 
 #[wasm_bindgen_test]
 async fn playable_hand_card_opens_a_play_menu_and_submits() {
-    let outcome = fixtures::awaiting_pick_single_with(
+    let outcome = test_support::awaiting_pick_single_with(
         "Choose an action",
         vec![
             ChoiceOption::new(OptionId(0), "Play Machete").at(OptionTarget::HandCard {
@@ -256,7 +255,7 @@ async fn playable_hand_card_opens_a_play_menu_and_submits() {
 
 #[wasm_bindgen_test]
 async fn multi_select_active_makes_hand_card_toggle_selected() {
-    let (selected, _rx) = mount_hand(fixtures::awaiting_commit_input("Commit cards")).await;
+    let (selected, _rx) = mount_hand(test_support::awaiting_commit_input("Commit cards")).await;
     let slot = last_slot();
     assert!(
         !slot.class_name().contains("actionable"),
@@ -278,7 +277,7 @@ async fn multi_select_active_makes_hand_card_toggle_selected() {
 async fn hand_card_glows_for_a_reaction_anchored_by_code() {
     // A HandCardByCode-anchored option (a Fast reaction event) glows the hand
     // card of that code (Machete 01020 as a stand-in) and opens its menu.
-    let outcome = fixtures::awaiting_pick_single_with(
+    let outcome = test_support::awaiting_pick_single_with(
         "You may play a card",
         vec![ChoiceOption::new(OptionId(0), "Play Machete from hand").at(
             OptionTarget::HandCardByCode {

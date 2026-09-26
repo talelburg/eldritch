@@ -43,10 +43,10 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, Act, Agenda, CardCode, GameState, InvestigatorId, LocationId,
-    Phase,
+    AbilityAddress, AbilitySource, Act, Agenda, CardCode, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// Synthetic **act**, standing in for Uncovering the Conspiracy 01123.
 const ACT_ONE: &str = "SRCACT01";

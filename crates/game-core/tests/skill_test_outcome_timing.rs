@@ -14,10 +14,10 @@ use game_core::assert_event;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId,
-    LocationId, Phase, SkillKind, TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// Mock threat-area card: a **forced** ability keyed to *any* successful skill
 /// test (`kind: None`), dealing 1 horror to the controller. Forced (not a

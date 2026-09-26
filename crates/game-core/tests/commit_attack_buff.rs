@@ -18,10 +18,10 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, InvestigatorId, LocationId, Phase,
-    TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// Mock skill: combat icon + `[OnCommit] that attack deals +1 damage`.
 const SKILL: &str = "VBLOW-MOCK";

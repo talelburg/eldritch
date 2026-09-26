@@ -22,9 +22,9 @@ use game_core::engine::modified_value::{
 use game_core::event::Event;
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, TestSession};
+use game_core::test_support::{self, MockRegistry, TestSession};
 use game_core::{assert_event, card_registry};
 
 /// Shaped after Lita Chantler 01117: *"Each investigator at your

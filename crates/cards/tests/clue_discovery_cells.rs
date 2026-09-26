@@ -35,9 +35,9 @@ use game_core::engine::{ApplyResult, OptionId};
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
-    InvestigatorId, LocationId, Phase,
+    GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, TestSession};
+use game_core::test_support::{self, MockRegistry, TestSession};
 
 /// `when`-tagged reaction: +4 resources. Declaring interrupt timing on this
 /// condition is accepted now that it is coordinator-owned — before #703 the

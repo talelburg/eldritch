@@ -24,9 +24,10 @@ use game_core::scenario::{
     ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule, ScenarioRegistry,
 };
 use game_core::state::{
-    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase,
+    Act, Agenda, CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, TEST_INV};
+use game_core::test_support::{self, MockRegistry, TEST_INV};
 use game_core::{assert_event, scenario_registry};
 
 /// Per-binary code prefix (ADR 0016: probe cards are test-local).

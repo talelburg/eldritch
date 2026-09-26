@@ -3223,8 +3223,7 @@ mod fast_actor_scope_tests {
 
 #[cfg(test)]
 mod location_id_counter_tests {
-    use crate::state::{Counter, GameState};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{Counter, GameState, GameStateBuilder};
 
     #[test]
     fn game_state_starts_location_ids_at_zero() {
@@ -3246,7 +3245,7 @@ mod location_id_counter_tests {
 mod continuation_stack_tests {
     use super::*;
 
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn awaits_input_gates_suspensions_but_not_anchors_or_fast_windows() {
@@ -3407,7 +3406,7 @@ mod continuation_stack_tests {
 mod id_counter_tests {
     use super::*;
 
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn game_state_starts_enemy_ids_at_zero() {
@@ -3442,7 +3441,7 @@ mod id_counter_tests {
 
 #[cfg(test)]
 mod encounter_draw_tests {
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn game_state_default_has_no_encounter_draw_pending() {
@@ -3455,7 +3454,7 @@ mod encounter_draw_tests {
 mod enemy_attack_loop_tests {
     use super::*;
 
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn enemy_phase_anchor_attacking_round_trips_through_serde() {
@@ -3519,7 +3518,7 @@ mod enemy_attack_loop_tests {
 mod encounter_deck_tests {
     use super::*;
 
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn encounter_deck_and_discard_serde_roundtrip() {
@@ -3631,8 +3630,7 @@ mod partial_eq_tests {
 
 #[cfg(test)]
 mod add_location_tests {
-    use crate::state::CardCode;
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{CardCode, GameStateBuilder};
     use card_dsl::card_data::{CardKind, CardMetadata, ClueValue, Prey};
 
     fn location_meta(code: &str, name: &str, shroud: u8, clues: u8) -> CardMetadata {
@@ -3749,8 +3747,7 @@ mod add_location_tests {
 
 #[cfg(test)]
 mod connect_tests {
-    use crate::state::{CardCode, Location, LocationId};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{CardCode, GameStateBuilder, Location, LocationId};
 
     #[test]
     fn connect_wires_both_directions() {
@@ -3803,7 +3800,7 @@ mod connect_tests {
 mod starting_location_tests {
     use super::*;
 
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn game_state_starting_location_defaults_to_none_and_roundtrips() {
@@ -3821,7 +3818,7 @@ mod starting_location_tests {
 mod action_resolution_frame_tests {
     use super::*;
 
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn action_resolution_frame_never_awaits_input_and_is_not_a_phase_anchor() {

@@ -144,7 +144,8 @@ mod tests {
     use super::*;
     use card_dsl::dsl::{Effect, Trigger};
     use game_core::event::Event;
-    use game_core::test_support::{self, GameStateBuilder};
+    use game_core::state::GameStateBuilder;
+    use game_core::test_support;
 
     #[test]
     fn one_on_play_native_blast() {

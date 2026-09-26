@@ -624,8 +624,7 @@ pub(super) fn check_all_eliminated(cx: &mut Cx) {
 #[cfg(test)]
 mod elimination_tests {
     use super::*;
-    use crate::state::InvestigationResume;
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{GameStateBuilder, InvestigationResume};
     use crate::{assert_event, assert_no_event, test_support};
 
     #[test]

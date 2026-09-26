@@ -85,10 +85,10 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionTarge
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
-    ChaosToken, Continuation, EnemyId, GameState, InvestigatorId, LocationId, MythosResume, Phase,
-    SkillKind,
+    ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    MythosResume, Phase, SkillKind,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 use game_core::{assert_event, assert_no_event};
 
 /// Synthetic **location** card, standing in for Ten-Acre Meadow 02246. Two

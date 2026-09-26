@@ -7,8 +7,7 @@ use cards::REGISTRY;
 use game_core::action::RosterEntry;
 use game_core::card_registry;
 use game_core::engine::{self, EngineOutcome};
-use game_core::state::{CardCode, InvestigatorId, Skills};
-use game_core::test_support::GameStateBuilder;
+use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, Skills};
 
 /// Install the real card registry exactly once for this integration-test
 /// binary. Idempotent at the `OnceLock` level; the `Once` wrapper avoids

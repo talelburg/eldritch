@@ -17,12 +17,11 @@
 #![cfg(target_arch = "wasm32")]
 
 use cards::REGISTRY;
-use game_core::card_registry;
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, LocationId,
 };
-use game_core::test_support::fixtures;
+use game_core::{card_registry, test_support};
 use leptos::prelude::*;
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
@@ -41,7 +40,7 @@ const FOG: CardInstanceId = CardInstanceId(61);
 /// The Parlor with Lita Chantler at it, Roland standing in it, and — when
 /// `attached` — Obscuring Fog 01168 attached to the location.
 fn parlor_state(attached: bool) -> GameState {
-    let mut parlor = fixtures::test_location(5, "Parlor");
+    let mut parlor = test_support::test_location(5, "Parlor");
     parlor.code = CardCode::new("01115");
     parlor.revealed = true;
     parlor
@@ -54,7 +53,7 @@ fn parlor_state(attached: bool) -> GameState {
     }
     // The real registry is installed, so the investigator card must be a real
     // code — the panel's capacity lookup reads it.
-    let mut inv = fixtures::test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.name = "Roland Banks".into();
     inv.investigator_card.code = CardCode::new("01001");
     GameStateBuilder::new()
@@ -65,7 +64,7 @@ fn parlor_state(attached: bool) -> GameState {
 
 /// A live open-turn prompt whose single option is anchored to `instance`.
 fn option_anchored_to(instance: CardInstanceId) -> EngineOutcome {
-    fixtures::awaiting_pick_single_with(
+    test_support::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Parley: Lita Chantler")
             .at(OptionTarget::CardInstance(instance))],

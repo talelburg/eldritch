@@ -1105,10 +1105,9 @@ mod actions_tests {
     use crate::engine::{enumerate, ApplyResult};
     use crate::event::Event;
     use crate::state::{
-        ChaosBag, ChaosToken, Continuation, EnemyId, GameState, InvestigationResume,
-        InvestigatorId, LocationId, Phase, Status,
+        ChaosBag, ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder,
+        InvestigationResume, InvestigatorId, LocationId, Phase, Status,
     };
-    use crate::test_support::GameStateBuilder;
     use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
     /// Drive a turn action that may suspend at a skill-test commit window.

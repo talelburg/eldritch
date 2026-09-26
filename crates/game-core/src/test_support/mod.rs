@@ -24,9 +24,9 @@ use card_dsl::card_data::{CardKind, CardMetadata, Class, Skills};
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, SkillTestKind, TestOutcome};
 
 pub mod assertions;
-pub mod fixtures;
-pub mod mock_registry;
-pub mod resolver;
+mod fixtures;
+mod mock_registry;
+mod resolver;
 
 /// Synthetic investigator-card code for unit tests. Registered by
 /// [`install_test_registry`] with 8 health / 8 sanity (mirroring the legacy
@@ -200,10 +200,11 @@ pub fn install_test_registry() {
     });
 }
 
-pub use crate::state::GameStateBuilder;
 pub use fixtures::{
-    awaiting_commit_input, awaiting_pick_single_input, test_enemy, test_investigator,
-    test_location, test_skill_test,
+    awaiting_commit_input, awaiting_confirm_input, awaiting_pick_single_input,
+    awaiting_pick_single_with, awaiting_request, awaiting_skippable_commit_input,
+    awaiting_skippable_pick_single_input, awaiting_skippable_pick_single_with, test_enemy,
+    test_investigator, test_location, test_skill_test,
 };
 pub use mock_registry::MockRegistry;
 pub use resolver::{

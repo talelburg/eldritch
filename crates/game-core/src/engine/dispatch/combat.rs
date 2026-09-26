@@ -1320,9 +1320,8 @@ mod combat_tests {
     use crate::event::Event;
     use crate::state::{
         Assignment, AttackLoopStage, CardCode, CardInstanceId, Continuation, EnemyAttackSource,
-        EnemyId, EnemyResume, InvestigatorId,
+        EnemyId, EnemyResume, GameStateBuilder, InvestigatorId,
     };
-    use crate::test_support::GameStateBuilder;
     use crate::{assert_event, assert_no_event, test_support};
 
     #[test]

@@ -1537,8 +1537,8 @@ mod investigation_phase_tests {
     use crate::engine::dispatch;
     use crate::engine::dispatch::apply_player_action;
     use crate::engine::outcome::EngineOutcome;
-    use crate::state::{InvestigatorId, Phase, Status};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{GameStateBuilder, InvestigatorId, Phase, Status};
+    use crate::test_support;
 
     #[test]
     fn investigator_turn_defaults_to_not_ending() {
@@ -1981,8 +1981,8 @@ mod mythos_phase_tests {
     use super::*;
     use crate::engine::dispatch;
     use crate::engine::outcome::InputKind;
-    use crate::state::{InvestigatorId, Phase, Status};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{GameStateBuilder, InvestigatorId, Phase, Status};
+    use crate::test_support;
 
     #[test]
     fn mythos_phase_emits_phase_started_and_prompts_first_drawer() {
@@ -2441,9 +2441,9 @@ mod upkeep_phase_tests {
     use crate::engine::outcome::EngineOutcome;
     use crate::event::Event;
     use crate::state::{
-        CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId, LocationId, Phase, Status,
+        CardCode, CardInPlay, CardInstanceId, EnemyId, GameStateBuilder, InvestigatorId,
+        LocationId, Phase, Status,
     };
-    use crate::test_support::GameStateBuilder;
     use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
     #[test]
@@ -2927,8 +2927,9 @@ mod enemy_phase_tests {
     use crate::engine::dispatch::resolve_input;
     use crate::engine::outcome::{EngineOutcome, OptionId};
     use crate::engine::{apply, dispatch};
-    use crate::state::{EnemyId, FastActorScope, InvestigatorId, LocationId, Phase, Status};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{
+        EnemyId, FastActorScope, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
+    };
     use crate::{assert_event, test_support};
 
     #[test]
@@ -3758,8 +3759,7 @@ mod hand_size_tests {
     use super::*;
     use crate::engine::dispatch;
     use crate::engine::outcome::OptionId;
-    use crate::state::{CardCode, InvestigatorId};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
     use crate::{assert_no_event, test_support};
 
     #[test]

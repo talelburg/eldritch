@@ -3,7 +3,7 @@
 
 use game_core::engine::EngineOutcome;
 use game_core::state::{GameStateBuilder, Phase};
-use game_core::test_support::fixtures;
+use game_core::test_support;
 use leptos::prelude::{document, provide_context, RwSignal, Update};
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
@@ -16,7 +16,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 
 async fn mount_at(phase: Phase, round: u32) {
     let state = GameStateBuilder::new()
-        .with_investigator(fixtures::test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .with_phase(phase)
         .with_round(round)
         .build();

@@ -69,10 +69,9 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind};
 use game_core::event::Event;
 use game_core::state::{
     Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, Continuation, FastWindowKind, GameState,
-    InvestigatorId, LocationId, Phase, PhaseStep,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, PhaseStep,
 };
-use game_core::test_support::{self, GameStateBuilder};
-use game_core::{assert_event, card_registry};
+use game_core::{assert_event, card_registry, test_support};
 
 /// Ancient Evils — *"**Revelation** - Place 1 doom on the current agenda. This
 /// effect can cause the current agenda to advance."*

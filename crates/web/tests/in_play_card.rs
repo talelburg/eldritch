@@ -6,10 +6,9 @@
 use cards::REGISTRY;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{CardCode, CardInPlay, CardInstanceId};
-use game_core::test_support::fixtures;
+use game_core::{card_registry, test_support};
 use leptos::prelude::*;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
@@ -52,7 +51,7 @@ async fn mount(outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
 
 #[wasm_bindgen_test]
 async fn activatable_in_play_card_opens_a_menu_and_submits() {
-    let outcome = fixtures::awaiting_pick_single_with(
+    let outcome = test_support::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Activate")
             .at(OptionTarget::CardInstance(CardInstanceId(3)))],
@@ -86,7 +85,7 @@ async fn activatable_in_play_card_opens_a_menu_and_submits() {
 #[wasm_bindgen_test]
 async fn inert_in_play_card_has_no_glow() {
     // Option anchors to a different instance → this card stays inert.
-    let outcome = fixtures::awaiting_pick_single_with(
+    let outcome = test_support::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Activate")
             .at(OptionTarget::CardInstance(CardInstanceId(99)))],

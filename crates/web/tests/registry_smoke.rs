@@ -7,9 +7,8 @@
 #![cfg(target_arch = "wasm32")]
 
 use cards::REGISTRY;
-use game_core::card_registry;
 use game_core::state::CardCode;
-use game_core::test_support::fixtures;
+use game_core::{card_registry, test_support};
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -22,7 +21,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 fn roland_banks_capacity_resolves_with_real_registry() {
     let _ = card_registry::install(REGISTRY);
 
-    let mut inv = fixtures::test_investigator(1);
+    let mut inv = test_support::test_investigator(1);
     inv.investigator_card.code = CardCode::new("01001");
 
     assert_eq!(inv.max_health(), 9, "Roland Banks health should be 9");

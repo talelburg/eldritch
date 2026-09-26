@@ -49,10 +49,10 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState, InvestigatorId,
-    LocationId, Phase, TokenModifiers, Zone,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers, Zone,
 };
-use game_core::test_support::{self, ChoiceResolver, GameStateBuilder};
+use game_core::test_support::{self, ChoiceResolver};
 use game_core::{assert_event, assert_no_event, card_registry};
 
 const BEAT_COP: &str = "01018";

@@ -585,7 +585,8 @@ pub(super) fn resume_spawn_engage(cx: &mut Cx, response: &InputResponse) -> Engi
 #[cfg(test)]
 mod resolve_prey_tests {
     use super::*;
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::GameStateBuilder;
+    use crate::test_support;
     use card_dsl::card_data::SkillKind;
 
     #[test]
@@ -714,8 +715,8 @@ mod resolve_prey_tests {
 mod measure_value_tests {
     use super::*;
     use crate::card_registry::CardRegistry;
-    use crate::state::{CardCode, CardInPlay, CardInstanceId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardCode, CardInPlay, CardInstanceId, GameStateBuilder};
+    use crate::test_support;
     use card_dsl::card_data::{CardMetadata, SkillKind};
     use card_dsl::dsl::{constant, modify, Ability, ModifierScope, Stat};
 
@@ -834,8 +835,7 @@ mod measure_value_tests {
 mod hunter_movement_tests {
     use super::*;
     use crate::engine::Cx;
-    use crate::state::{EnemyId, InvestigatorId, LocationId, Phase};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId, Phase};
     use crate::{assert_event, assert_no_event, test_support};
 
     #[test]
@@ -1073,7 +1073,7 @@ mod hunter_resume_tests {
             });
         InputResponse::PickSingle(opt.id)
     }
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
     use card_dsl::card_data::SkillKind;
 
     #[test]
@@ -1515,7 +1515,7 @@ mod hunter_resume_tests {
 mod reengage_tests {
     use super::*;
     use crate::engine::Cx;
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
     use crate::{assert_event, assert_no_event, test_support};
 
     #[test]
@@ -1689,7 +1689,7 @@ mod reengage_tests {
 mod relocate_tests {
     use super::*;
     use crate::engine::Cx;
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
     use crate::{assert_event, assert_no_event, test_support};
 
     /// Two adjacent locations: the investigator in the Hallway (2), a

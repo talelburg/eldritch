@@ -305,7 +305,7 @@ pub fn resolve_symbol_token(
 mod tests {
     use super::*;
 
-    use crate::test_support::GameStateBuilder;
+    use crate::state::GameStateBuilder;
 
     #[test]
     fn symbol_outcome_default_is_inert() {

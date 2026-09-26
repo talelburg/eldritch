@@ -22,10 +22,10 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, OptionTarget
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag,
-    ChaosToken, Continuation, EnemyId, GameState, InvestigatorId, LocationId, Phase,
-    TokenModifiers,
+    ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    Phase, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 use game_core::{assert_event, assert_no_event};
 
 /// Mock: optional reaction "after you defeat an enemy, discover 1 clue

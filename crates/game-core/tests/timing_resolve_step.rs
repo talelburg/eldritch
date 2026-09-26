@@ -26,9 +26,10 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{Cx, EngineOutcome, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
-    self, Act, CardCode, CardInPlay, CardInstanceId, EmitStep, GameState, InvestigatorId,
+    self, Act, CardCode, CardInPlay, CardInstanceId, EmitStep, GameState, GameStateBuilder,
+    InvestigatorId,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// Declares a `when`-timed forced on `PhaseEnded { Upkeep }` — a caller-owned
 /// condition, so the coordinator must reject rather than resolve it.

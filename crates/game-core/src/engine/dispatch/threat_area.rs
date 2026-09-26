@@ -209,7 +209,8 @@ pub(super) fn discard_from_threat_area(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::GameStateBuilder;
+    use crate::test_support;
 
     #[test]
     fn attach_mints_id_pushes_to_location_and_emits_event() {

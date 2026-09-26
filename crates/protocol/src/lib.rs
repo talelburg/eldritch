@@ -132,14 +132,14 @@ mod id_tests {
 mod tests {
     use super::*;
     use game_core::state::GameStateBuilder;
-    use game_core::test_support::fixtures::test_investigator;
+    use game_core::test_support;
 
     #[test]
     fn hello_round_trips_through_json() {
         use game_core::Event;
 
         let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let events = vec![Event::ScenarioStarted];
         let msg = ServerMessage::Hello {
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn applied_round_trips_through_json() {
         let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         let msg = ServerMessage::Applied {
             state: Box::new(state.clone()),
@@ -187,14 +187,13 @@ mod tests {
     #[test]
     fn applied_round_trips_awaiting_input_option_target() {
         let state = GameStateBuilder::new()
-            .with_investigator(test_investigator(1))
+            .with_investigator(test_support::test_investigator(1))
             .build();
         // The fixture's options are un-anchored; this proves the
         // ChoiceOption.target field survives the ServerMessage envelope
         // (game-core covers an anchored value directly). See the interactivity
         // S0 plan.
-        let outcome =
-            game_core::test_support::fixtures::awaiting_pick_single_input("Choose an action");
+        let outcome = test_support::awaiting_pick_single_input("Choose an action");
         let msg = ServerMessage::Applied {
             state: Box::new(state),
             events: Vec::new(),

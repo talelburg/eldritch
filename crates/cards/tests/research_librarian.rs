@@ -15,9 +15,10 @@ use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
-use game_core::state::{CardCode, Continuation, GameState, InvestigatorId, LocationId, Phase};
-use game_core::test_support::{self, GameStateBuilder};
-use game_core::{assert_event, card_registry};
+use game_core::state::{
+    CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
+};
+use game_core::{assert_event, card_registry, test_support};
 
 const LIBRARIAN: &str = "01032";
 const OLD_BOOK: &str = "01031"; // Item. Tome. asset

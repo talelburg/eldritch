@@ -13,9 +13,9 @@ use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
-    InvestigatorId, LocationId, Phase, Zone,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, Zone,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 const TRINKET: &str = "TRNK1";
 const COP: &str = "MCOP1";

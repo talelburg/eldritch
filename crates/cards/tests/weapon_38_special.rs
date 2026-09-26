@@ -10,9 +10,10 @@ use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, GameState, InvestigatorId, LocationId, Phase, TokenModifiers, UseKind,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers,
+    UseKind,
 };
-use game_core::test_support::{self, GameStateBuilder, TestSession};
+use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event, card_registry};
 
 const SPECIAL: &str = "01006";

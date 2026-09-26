@@ -34,10 +34,10 @@ use game_core::engine::{self, EngineOutcome, OptionId, TimingEvent};
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     AbilityAddress, CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    Continuation, EnemyId, GameState, Investigator, InvestigatorId, LocationId, Phase,
-    ResolutionCandidate, TimingMode, TokenModifiers,
+    Continuation, EnemyId, GameState, GameStateBuilder, Investigator, InvestigatorId, LocationId,
+    Phase, ResolutionCandidate, TimingMode, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, TestSession};
+use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event, card_registry};
 
 /// `ArkhamDB` code for original-Core Evidence!.

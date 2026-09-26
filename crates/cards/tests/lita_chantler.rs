@@ -65,10 +65,10 @@ use game_core::engine::{ApplyResult, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, GameState, InvestigatorId, LocationId, ModifierTarget, Phase, SkillKind,
-    TokenModifiers,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, ModifierTarget, Phase,
+    SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, ScriptedResolver, TestSession};
+use game_core::test_support::{self, ScriptedResolver, TestSession};
 use game_core::{assert_event, card_registry};
 
 /// Lita Chantler.

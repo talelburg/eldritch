@@ -20,10 +20,10 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, LocationId, Phase, SkillKind,
-    TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, ScriptedResolver};
+use game_core::test_support::{self, MockRegistry, ScriptedResolver};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// Mock: success-gated `OnSkillTestResolution` → discover 1 clue at

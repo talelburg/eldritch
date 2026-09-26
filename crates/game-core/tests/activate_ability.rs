@@ -20,10 +20,10 @@ use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, InvestigatorId, Lifetime, Phase, RecordedModifierKind, SkillKind, Status,
-    TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, Lifetime, Phase, RecordedModifierKind, SkillKind,
+    Status, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, TakeOneFastPlay};
+use game_core::test_support::{self, MockRegistry, TakeOneFastPlay};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// Mock card code: `[fast] Spend 1 resource: gain 1 resource.` —

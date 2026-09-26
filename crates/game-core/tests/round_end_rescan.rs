@@ -19,10 +19,10 @@ use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::state::{
-    Act, CardCode, CardInPlay, CardInstanceId, Continuation, GameState, InvestigatorId, Phase,
-    UpkeepResume,
+    Act, CardCode, CardInPlay, CardInstanceId, Continuation, GameState, GameStateBuilder,
+    InvestigatorId, Phase, UpkeepResume,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 const TEST_ACT: &str = "TESTACT";
 const TEST_X: &str = "TESTX";

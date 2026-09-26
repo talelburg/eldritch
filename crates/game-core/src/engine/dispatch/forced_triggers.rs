@@ -818,8 +818,7 @@ pub(crate) fn resume_acknowledge_forced(cx: &mut Cx, response: &InputResponse) -
 mod tests {
     use super::*;
     use crate::engine::outcome::OptionTarget;
-    use crate::state::{AbilityAddress, Agenda, CardInstanceId};
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{AbilityAddress, Agenda, CardInstanceId, GameStateBuilder};
 
     #[test]
     fn acknowledge_forced_suspends_then_pops_on_pick() {

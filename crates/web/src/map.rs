@@ -443,7 +443,7 @@ mod tests {
     use super::*;
     use game_core::engine::OptionId;
     use game_core::state::CardInstanceId;
-    use game_core::test_support::fixtures;
+    use game_core::test_support;
 
     #[test]
     fn known_gathering_codes_have_authored_cells() {
@@ -511,7 +511,7 @@ mod tests {
     #[test]
     fn a_rail_card_anchored_option_is_seen_by_the_node() {
         let lita = CardInstanceId(60);
-        let mut parlor = fixtures::test_location(5, "Parlor");
+        let mut parlor = test_support::test_location(5, "Parlor");
         parlor
             .cards_at_location
             .push(CardInPlay::enter_play(CardCode::new("01117"), lita));
@@ -532,7 +532,7 @@ mod tests {
     #[test]
     fn an_attachment_anchored_option_is_seen_too() {
         let fog = CardInstanceId(61);
-        let mut parlor = fixtures::test_location(5, "Parlor");
+        let mut parlor = test_support::test_location(5, "Parlor");
         parlor
             .attachments
             .push(CardInPlay::enter_play(CardCode::new("01168"), fog));

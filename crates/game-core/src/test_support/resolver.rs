@@ -30,7 +30,7 @@
 //! ```
 //! use game_core::action::{Action, InputResponse, PlayerAction};
 //! use game_core::engine::EngineOutcome;
-//! use game_core::test_support::GameStateBuilder;
+//! use game_core::state::GameStateBuilder;
 //!
 //! // A `ResolveInput` against a bare state with no outstanding prompt
 //! // rejects — a tiny smoke test for the fluent API without needing a
@@ -716,7 +716,7 @@ impl TestSession {
     /// sequence:
     ///
     /// ```
-    /// # use game_core::test_support::GameStateBuilder;
+    /// # use game_core::state::GameStateBuilder;
     /// # use game_core::action::{Action, PlayerAction};
     /// let _session = GameStateBuilder::new()
     ///     .session()

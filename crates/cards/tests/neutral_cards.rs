@@ -16,10 +16,10 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, InvestigatorId, Phase, SkillKind, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, Phase, SkillKind,
+    TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder};
-use game_core::{assert_event, assert_no_event, card_registry};
+use game_core::{assert_event, assert_no_event, card_registry, test_support};
 
 const EMERGENCY_CACHE: &str = "01088";
 const GUTS: &str = "01089";

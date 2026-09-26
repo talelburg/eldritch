@@ -51,10 +51,10 @@ use card_dsl::dsl::{
 use game_core::engine::OptionId;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, InvestigatorId, Phase,
-    SkillKind, TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
+    InvestigatorId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, ScriptedResolver};
+use game_core::test_support::{self, MockRegistry, ScriptedResolver};
 
 /// `at`-tagged forced: +1 resource.
 const AT: &str = "_tc_at";

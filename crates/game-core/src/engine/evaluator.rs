@@ -2572,12 +2572,11 @@ mod tests {
     use crate::action::InputResponse;
     use crate::engine::dispatch::coordinator;
     use crate::state::{
-        Act, Agenda, CardInPlay, DifficultyBasis, FastActorScope, FastWindowKind,
+        Act, Agenda, CardInPlay, DifficultyBasis, FastActorScope, FastWindowKind, GameStateBuilder,
         InFlightSkillTest, PhaseStep, RecordedModifierKind, SkillKind, SkillTestFollowUp,
         SkillTestId, SkillTestStep, Status,
     };
-    use crate::test_support::{self, GameStateBuilder};
-    use crate::{assert_event, assert_no_event};
+    use crate::{assert_event, assert_no_event, test_support};
     use card_dsl::card_data::CardMetadata;
     use card_dsl::dsl::{
         boost_attack_damage, choose_one, constant, deal_damage, deal_damage_to_enemy, deal_horror,

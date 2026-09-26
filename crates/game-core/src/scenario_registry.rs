@@ -68,8 +68,7 @@ mod tests {
 
     use crate::event::Event;
     use crate::scenario::{ScenarioEnding, ScenarioId, ScenarioModule};
-    use crate::state::GameState;
-    use crate::test_support::GameStateBuilder;
+    use crate::state::{GameState, GameStateBuilder};
 
     fn empty_state() -> GameState {
         GameStateBuilder::new().build()

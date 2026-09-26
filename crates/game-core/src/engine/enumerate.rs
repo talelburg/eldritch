@@ -400,12 +400,12 @@ fn push_basic_actions(state: &GameState, investigator: InvestigatorId, out: &mut
 mod tests {
     use super::*;
     use crate::action::{Action, InputResponse, PlayerAction};
-    use crate::engine;
     use crate::engine::outcome::{EngineOutcome, OptionId};
     use crate::state::{
-        Act, CardCode, CardInstanceId, ChaosBag, ChaosToken, Enemy, InvestigationResume,
+        Act, CardCode, CardInstanceId, ChaosBag, ChaosToken, Enemy, GameStateBuilder,
+        InvestigationResume,
     };
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::{engine, test_support};
 
     /// Build a single-investigator open-turn state (`InvestigatorTurn` frame on
     /// top of the `InvestigationPhase` anchor), the shape `legal_actions` enumerates.

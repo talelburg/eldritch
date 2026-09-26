@@ -64,11 +64,10 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, InvestigatorId, LocationId,
-    Phase,
+    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder};
-use game_core::{assert_event_sequence, card_registry};
+use game_core::{assert_event_sequence, card_registry, test_support};
 
 /// Roland Banks (01001) — the example's investigator, and the source of the
 /// nested sequence that hangs off the Goat Spawn's defeat.

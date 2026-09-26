@@ -19,10 +19,10 @@ use card_dsl::dsl::{activated, gain_resources, Ability, Cost, InvestigatorTarget
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId,
-    LocationId, Phase, UseKind,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, UseKind,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 /// Synthetic asset: `Uses (1 supply)`, discards itself when they deplete, and
 /// its ability spends that last supply *and then* exhausts. Not in the corpus.

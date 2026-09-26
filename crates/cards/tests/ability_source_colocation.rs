@@ -45,9 +45,9 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
-    InvestigatorId, LocationId, Phase,
+    GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, TEST_INV};
+use game_core::test_support::{self, MockRegistry, TEST_INV};
 
 /// Synthetic **location** card, standing in for the Parlor 01115. Both
 /// locations on the board print it, so "reachable here" and "unreachable

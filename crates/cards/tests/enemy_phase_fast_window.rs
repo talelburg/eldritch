@@ -44,15 +44,15 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, FastActorScope,
-    FastWindowKind, GameState, InvestigationResume, InvestigatorId, LocationId, Phase, PhaseStep,
+    FastWindowKind, GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId,
+    Phase, PhaseStep,
 };
-use game_core::test_support::{self, GameStateBuilder};
+use game_core::{card_registry, test_support};
 
 /// Beat Cop (01018): Guardian Ally, `[fast]` *"Discard Beat Cop: Deal 1 damage
 /// to an enemy at your location."*

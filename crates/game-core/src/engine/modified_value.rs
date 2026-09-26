@@ -919,8 +919,10 @@ pub(crate) fn stat_for_skill(skill: SkillKind) -> Stat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{Continuation, InFlightSkillTest, Lifetime, RecordedModifier, SkillTestId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{
+        Continuation, GameStateBuilder, InFlightSkillTest, Lifetime, RecordedModifier, SkillTestId,
+    };
+    use crate::test_support;
     use card_dsl::card_data::CardMetadata;
     use card_dsl::dsl::{
         constant, control_status, elder_sign, grant, modify, modify_for, on_play, Ability,

@@ -6,9 +6,8 @@
 #![cfg(target_arch = "wasm32")]
 
 use cards::REGISTRY;
-use game_core::card_registry;
 use game_core::state::{CardCode, GameStateBuilder};
-use game_core::test_support::fixtures;
+use game_core::{card_registry, test_support};
 use leptos::prelude::document;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen_test::*;
@@ -33,7 +32,7 @@ fn node_text(name: &str) -> String {
 async fn revealed_location_shows_metadata_text_and_victory() {
     let _ = card_registry::install(REGISTRY);
     // Attic 01113: victory 1, Forced text "After you enter the Attic: Take 1 horror."
-    let mut attic = fixtures::test_location(1, "Attic");
+    let mut attic = test_support::test_location(1, "Attic");
     attic.code = CardCode::new("01113");
     attic.revealed = true;
     let game = GameStateBuilder::new().with_location(attic).build();
@@ -49,7 +48,7 @@ async fn revealed_location_shows_metadata_text_and_victory() {
 async fn revealed_location_shows_metadata_traits() {
     let _ = card_registry::install(REGISTRY);
     // Miskatonic University 01129: traits "Arkham."
-    let mut misk = fixtures::test_location(2, "Miskatonic University");
+    let mut misk = test_support::test_location(2, "Miskatonic University");
     misk.code = CardCode::new("01129");
     misk.revealed = true;
     let game = GameStateBuilder::new().with_location(misk).build();
@@ -65,7 +64,7 @@ async fn unrevealed_location_withholds_metadata() {
     let _ = card_registry::install(REGISTRY);
     // Attic 01113 has victory 1 + Forced text ("...Take 1 horror."); unrevealed
     // must withhold all of it (hidden info).
-    let mut attic = fixtures::test_location(3, "Hidden Attic");
+    let mut attic = test_support::test_location(3, "Hidden Attic");
     attic.code = CardCode::new("01113");
     attic.revealed = false;
     attic.shroud = 7;

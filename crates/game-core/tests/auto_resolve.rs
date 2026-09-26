@@ -56,11 +56,10 @@ use game_core::scenario::{
 };
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers, TokenResolution, Zone,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
+    TokenResolution, Zone,
 };
-use game_core::test_support::{
-    self, ChoiceResolver, GameStateBuilder, MockRegistry, TakeOneFastPlay,
-};
+use game_core::test_support::{self, ChoiceResolver, MockRegistry, TakeOneFastPlay};
 use game_core::{assert_event, assert_event_count, assert_no_event, scenario_registry};
 
 /// Mock asset: `[fast] Spend 1 resource: this skill test automatically

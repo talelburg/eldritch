@@ -2428,7 +2428,8 @@ pub(super) fn enumerate_fast_plays(state: &GameState) -> Vec<TurnAction> {
 #[cfg(test)]
 mod check_play_card_tests {
     use super::*;
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::GameStateBuilder;
+    use crate::test_support;
 
     #[test]
     fn check_play_card_returns_err_for_unknown_hand_index() {
@@ -2631,8 +2632,8 @@ mod trigger_matches_tests {
 #[cfg(test)]
 mod check_activate_ability_tests {
     use super::*;
-    use crate::state::CardInstanceId;
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardInstanceId, GameStateBuilder};
+    use crate::test_support;
 
     #[test]
     fn check_activate_ability_returns_err_for_unreachable_source() {
@@ -2673,7 +2674,8 @@ mod check_activate_ability_tests {
 #[cfg(test)]
 mod any_fast_play_eligible_tests {
     use super::*;
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::GameStateBuilder;
+    use crate::test_support;
 
     #[test]
     fn returns_false_when_no_investigators() {
@@ -2796,8 +2798,8 @@ mod resolution_option_anchor_tests {
 #[cfg(test)]
 mod open_fast_window_tests {
     use super::*;
-    use crate::state::{FastWindowKind, MythosResume, PhaseStep};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{FastWindowKind, GameStateBuilder, MythosResume, PhaseStep};
+    use crate::test_support;
 
     #[test]
     fn open_fast_window_with_no_eligibility_auto_skips_inline() {
@@ -2845,8 +2847,10 @@ mod open_fast_window_tests {
 #[cfg(test)]
 mod candidate_source_present_tests {
     use super::*;
-    use crate::state::{Act, Agenda, CardInPlay, CardInstanceId, EnemyId, LocationId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{
+        Act, Agenda, CardInPlay, CardInstanceId, EnemyId, GameStateBuilder, LocationId,
+    };
+    use crate::test_support;
 
     const INV: InvestigatorId = InvestigatorId(1);
     /// Deliberately resolved by no registry — these tests install none.
@@ -3038,8 +3042,8 @@ mod candidate_source_present_tests {
 #[cfg(test)]
 mod withdraw_suppressed_candidates_tests {
     use super::*;
-    use crate::state::{CardInstanceId, LocationId, TimingSub};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardInstanceId, GameStateBuilder, LocationId, TimingSub};
+    use crate::test_support;
 
     const INV: InvestigatorId = InvestigatorId(1);
     /// Deliberately resolved by no registry — these tests install none. The

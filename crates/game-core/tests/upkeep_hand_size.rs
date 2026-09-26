@@ -16,10 +16,10 @@ use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::state::{
-    Act, Agenda, CardCode, ChaosBag, ChaosToken, Continuation, GameState, InvestigatorId,
-    LocationId, Phase,
+    Act, Agenda, CardCode, ChaosBag, ChaosToken, Continuation, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, TEST_INV};
+use game_core::test_support::{self, MockRegistry, TEST_INV};
 
 /// Per-binary code prefix. Nothing here is looked up in the registry — the
 /// hand-size discard path only moves cards between hand and discard — so the

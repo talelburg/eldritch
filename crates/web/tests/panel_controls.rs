@@ -14,7 +14,7 @@ use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, OptionId, OptionTarget};
 use game_core::state::InvestigatorId;
-use game_core::test_support::fixtures;
+use game_core::test_support;
 use leptos::prelude::*;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
@@ -39,7 +39,7 @@ async fn mount(
 ) -> UnboundedReceiver<ClientMessage> {
     let store = RwSignal::new(ClientState::default());
     store.update(|s| {
-        s.outcome = Some(fixtures::awaiting_pick_single_with(
+        s.outcome = Some(test_support::awaiting_pick_single_with(
             "Choose an action",
             options,
         ));

@@ -8,8 +8,8 @@ use card_dsl::dsl::{
 };
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{EngineOutcome, InputKind};
-use game_core::state::{Act, CardCode, InvestigatorId, Phase};
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::state::{Act, CardCode, GameStateBuilder, InvestigatorId, Phase};
+use game_core::test_support::{self, MockRegistry};
 
 const IACT: &str = "_iact";
 

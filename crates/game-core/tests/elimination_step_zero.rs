@@ -24,10 +24,10 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Continuation, GameState, InvestigatorId, LocationId,
-    Status,
+    CardCode, CardInPlay, CardInstanceId, Continuation, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Status,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 use game_core::{assert_event, assert_no_event};
 
 /// A player-owned **weakness** in the threat area carrying a `GameEnd` forced

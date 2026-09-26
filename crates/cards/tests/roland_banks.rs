@@ -21,9 +21,9 @@ use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId,
-    GameState, InvestigatorId, LocationId, Phase, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, TestSession};
+use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event, card_registry};
 
 /// `ArkhamDB` code for original-Core Roland Banks.

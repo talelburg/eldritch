@@ -55,8 +55,8 @@ mod tests {
     use crate::engine::dispatch::reveal;
     use crate::engine::Cx;
     use crate::event::Event;
-    use crate::state::{CardCode, Location, LocationId};
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::{CardCode, GameStateBuilder, Location, LocationId};
+    use crate::test_support;
     use card_dsl::card_data::ClueValue;
 
     fn unrevealed(id: u32, code: &str, printed: ClueValue) -> Location {

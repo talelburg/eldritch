@@ -3,7 +3,7 @@
 //! wasm32-only (browser DOM); native jobs skip this file.
 //!
 //! **This binary runs against the real `cards::REGISTRY` (#868).** It used to
-//! install `game_core::test_support::install_test_registry()`, which knows only
+//! install `test_support::install_test_registry()`, which knows only
 //! `TEST_INV` and the synthetic terminal act/agenda cards — so every card code
 //! the file seeded failed to resolve and the assertions passed on the
 //! renderer's unresolved-code fallback (`card--unknown`) rather than on card
@@ -18,20 +18,19 @@
 //! attachments. `crates/web/tests/card_at_location.rs` and the unit tests in
 //! `crates/web/src/names.rs` own that one.
 //!
-//! Locations and enemies stay on `game_core::test_support::fixtures` — per
+//! Locations and enemies stay on `game_core::test_support`'s fixtures — per
 //! ADR 0016 those are primitive builders, not card impersonations, and both
 //! carry their name and stats in `GameState` rather than reading the registry.
 #![cfg(target_arch = "wasm32")]
 
 use cards::REGISTRY;
-use game_core::card_registry;
 use game_core::engine::EngineOutcome;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, Investigator,
     InvestigatorId, Skills,
 };
-use game_core::test_support::fixtures;
+use game_core::{card_registry, test_support};
 use leptos::prelude::{document, provide_context, RwSignal, Update};
 use protocol::ServerMessage;
 use wasm_bindgen::JsCast as _;
@@ -69,7 +68,7 @@ fn body_html() -> String {
     document().body().expect("body").inner_html()
 }
 
-/// `fixtures::test_investigator(id)` carrying Roland Banks as its investigator card.
+/// `test_support::test_investigator(id)` carrying Roland Banks as its investigator card.
 ///
 /// Every investigator this file renders needs a code the real registry knows:
 /// the panel reads `max_health()` / `max_sanity()`, and `investigator_capacity`
@@ -78,7 +77,7 @@ fn body_html() -> String {
 /// `TEST_INV` is absent from the corpus, so it is replaced here rather than at
 /// each of the six call sites.
 fn roland(id: u32) -> Investigator {
-    let mut inv = fixtures::test_investigator(id);
+    let mut inv = test_support::test_investigator(id);
     inv.investigator_card.code = CardCode::new(ROLAND);
     inv
 }
@@ -188,7 +187,7 @@ async fn act_agenda_cards_render_name_and_thresholds() {
 
 #[wasm_bindgen_test]
 async fn map_renders_location_name_shroud_clues() {
-    let mut loc = fixtures::test_location(7, "Rivertown");
+    let mut loc = test_support::test_location(7, "Rivertown");
     loc.shroud = 3;
     loc.clues = 2;
     let state = GameStateBuilder::new()
@@ -386,7 +385,7 @@ async fn resolution_banner_renders_no_resolution_reached() {
 async fn map_and_investigators_are_inside_board_main() {
     let state = GameStateBuilder::new()
         .with_investigator(roland(1))
-        .with_location(fixtures::test_location(1, "Study"))
+        .with_location(test_support::test_location(1, "Study"))
         .build();
     let _ = render_state(state).await;
 
@@ -416,7 +415,7 @@ async fn engaged_enemy_renders_as_card_in_threat_area() {
     // its own name, traits and stats, and `EnemyCard` reads them from state —
     // the registry is consulted only for optional ability text
     // (`crates/web/src/enemy_card.rs:54-63`), and never renders `card--unknown`.
-    let mut enemy = fixtures::test_enemy(1, "Ghoul Priest");
+    let mut enemy = test_support::test_enemy(1, "Ghoul Priest");
     enemy.engaged_with = Some(InvestigatorId(1));
     let state = GameStateBuilder::new()
         .with_investigator(roland(1))

@@ -977,9 +977,10 @@ mod turn_menu_tests {
     use crate::engine::enumerate::legal_actions;
     use crate::engine::outcome::OptionTarget;
     use crate::state::{
-        ChaosBag, ChaosToken, Continuation, InvestigationResume, InvestigatorId, Phase,
+        ChaosBag, ChaosToken, Continuation, GameStateBuilder, InvestigationResume, InvestigatorId,
+        Phase,
     };
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::test_support;
 
     #[test]
     fn turn_menu_carries_action_targets() {

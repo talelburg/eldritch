@@ -247,7 +247,7 @@ mod tests {
     use super::*;
     use game_core::engine::OptionId;
     use game_core::state::{EnemyId, LocationId};
-    use game_core::test_support::fixtures;
+    use game_core::test_support;
 
     fn opt(id: u32, target: OptionTarget) -> ChoiceOption {
         ChoiceOption::new(OptionId(id), format!("opt{id}")).at(target)
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn pending_options_returns_the_awaiting_requests_options() {
         let state = ClientState {
-            outcome: Some(fixtures::awaiting_pick_single_with(
+            outcome: Some(test_support::awaiting_pick_single_with(
                 "x",
                 vec![opt(0, OptionTarget::Location(LocationId(10)))],
             )),
@@ -315,7 +315,7 @@ mod tests {
         assert_eq!(prompt_anchor(&ClientState::default()), None);
 
         let mut state = ClientState {
-            outcome: Some(fixtures::awaiting_pick_single_with("x", vec![loose(0)])),
+            outcome: Some(test_support::awaiting_pick_single_with("x", vec![loose(0)])),
             ..Default::default()
         };
         assert_eq!(prompt_anchor(&state), None, "un-anchored request");
@@ -334,7 +334,7 @@ mod tests {
         // The Mythos draw and the skill-test acknowledge are both option-less
         // `Confirm`s; only the request anchor separates them (ADR 0011).
         let mut ack = ClientState {
-            outcome: Some(fixtures::awaiting_confirm_input(
+            outcome: Some(test_support::awaiting_confirm_input(
                 "Acknowledge the skill-test result.",
             )),
             ..Default::default()
@@ -353,7 +353,7 @@ mod tests {
         // A PickSingle anchored there is not option-less, so its anchor is not
         // read at the request level — the Draw button stays dark.
         let pick = ClientState {
-            outcome: Some(fixtures::awaiting_pick_single_with(
+            outcome: Some(test_support::awaiting_pick_single_with(
                 "x",
                 vec![opt(0, OptionTarget::EncounterDeck)],
             )),
@@ -370,10 +370,10 @@ mod tests {
         state.outcome = Some(EngineOutcome::Done);
         assert!(!is_multi_select(&state));
 
-        state.outcome = Some(fixtures::awaiting_commit_input("Commit"));
+        state.outcome = Some(test_support::awaiting_commit_input("Commit"));
         assert!(is_multi_select(&state));
 
-        state.outcome = Some(fixtures::awaiting_pick_single_with("x", vec![loose(0)]));
+        state.outcome = Some(test_support::awaiting_pick_single_with("x", vec![loose(0)]));
         assert!(!is_multi_select(&state));
     }
 

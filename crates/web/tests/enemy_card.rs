@@ -5,7 +5,7 @@ use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{Enemy, EnemyId};
-use game_core::test_support::fixtures;
+use game_core::test_support;
 use leptos::prelude::*;
 use protocol::ClientMessage;
 use wasm_bindgen::JsCast as _;
@@ -31,7 +31,7 @@ fn last_card() -> Element {
 
 #[wasm_bindgen_test]
 async fn engaged_enemy_renders_stats_keywords_exhausted() {
-    let mut e = fixtures::test_enemy(1, "Ghoul Priest");
+    let mut e = test_support::test_enemy(1, "Ghoul Priest");
     e.fight = 4;
     e.evade = 4;
     e.max_health = 2;
@@ -71,7 +71,7 @@ async fn engaged_enemy_renders_stats_keywords_exhausted() {
 
 #[wasm_bindgen_test]
 async fn ready_enemy_is_not_dimmed() {
-    let e = fixtures::test_enemy(2, "Swarm of Rats");
+    let e = test_support::test_enemy(2, "Swarm of Rats");
     mount_to_body(move || view! { <EnemyCard enemy=e.clone()/> });
     leptos::task::tick().await;
     assert!(
@@ -105,8 +105,8 @@ async fn mount_enemy(enemy: Enemy, outcome: EngineOutcome) -> UnboundedReceiver<
 
 #[wasm_bindgen_test]
 async fn actionable_enemy_glows_opens_menu_and_submits() {
-    let e = fixtures::test_enemy(7, "Ghoul");
-    let outcome = fixtures::awaiting_pick_single_with(
+    let e = test_support::test_enemy(7, "Ghoul");
+    let outcome = test_support::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Fight").at(OptionTarget::Enemy(EnemyId(7)))],
     );
@@ -142,9 +142,9 @@ async fn actionable_enemy_glows_opens_menu_and_submits() {
 
 #[wasm_bindgen_test]
 async fn enemy_without_a_matching_option_is_inert() {
-    let e = fixtures::test_enemy(7, "Ghoul");
+    let e = test_support::test_enemy(7, "Ghoul");
     // Option anchors to a different enemy → this card stays inert.
-    let outcome = fixtures::awaiting_pick_single_with(
+    let outcome = test_support::awaiting_pick_single_with(
         "Choose an action",
         vec![ChoiceOption::new(OptionId(0), "Fight").at(OptionTarget::Enemy(EnemyId(8)))],
     );

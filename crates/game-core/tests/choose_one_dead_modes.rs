@@ -24,9 +24,9 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, TestSession};
+use game_core::test_support::{self, MockRegistry, TestSession};
 use game_core::{assert_event, assert_no_event};
 
 /// Mock: `[action] Test intellect(2). If you succeed, heal 1 damage or horror

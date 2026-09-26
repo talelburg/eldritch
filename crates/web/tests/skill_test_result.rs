@@ -12,7 +12,7 @@ use game_core::event::{Event, FailureReason};
 use game_core::state::{
     ChaosToken, GameState, GameStateBuilder, InvestigatorId, SkillKind, TokenResolution,
 };
-use game_core::test_support::fixtures;
+use game_core::test_support;
 use leptos::prelude::*;
 use protocol::{ClientMessage, ServerMessage};
 use wasm_bindgen::JsCast as _;
@@ -26,7 +26,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 
 fn base_game() -> GameState {
     GameStateBuilder::new()
-        .with_investigator(fixtures::test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .with_active_investigator(InvestigatorId(1))
         .build()
 }
@@ -35,7 +35,7 @@ fn base_game() -> GameState {
 /// (ADR 0011). The modal only renders while this is live, which is what
 /// guarantees its Confirm always has real engine input to submit.
 fn acknowledge_pause() -> EngineOutcome {
-    fixtures::awaiting_confirm_input("Acknowledge the skill-test result.")
+    test_support::awaiting_confirm_input("Acknowledge the skill-test result.")
 }
 
 fn last_section() -> Option<Element> {
@@ -138,7 +138,7 @@ async fn names_a_token_revealed_in_an_earlier_batch() {
                     token: ChaosToken::Tablet,
                     resolution: TokenResolution::Modifier(-2),
                 }],
-                outcome: fixtures::awaiting_confirm_input("Assign the damage."),
+                outcome: test_support::awaiting_confirm_input("Assign the damage."),
             },
         );
         // Batch 3: the resumed test resolves. No reveal in this batch.

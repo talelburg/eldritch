@@ -4,7 +4,7 @@
 
 use game_core::engine::EngineOutcome;
 use game_core::state::GameStateBuilder;
-use game_core::test_support::fixtures;
+use game_core::test_support;
 use leptos::prelude::{RwSignal, Update};
 use protocol::ServerMessage;
 use wasm_bindgen_test::*;
@@ -25,7 +25,7 @@ async fn hello_renders_state_present() {
     // Rendering the investigator panel reads `max_health()`/`max_sanity()`,
     // which resolve the investigator card's capacity from the registry (#448).
     // The fixture investigator uses the synthetic `TEST_INV` code (8/8).
-    game_core::test_support::install_test_registry();
+    test_support::install_test_registry();
     let store = RwSignal::new(ClientState::default());
     // Provide the same signal the component reads, then mount the board;
     // it stays mounted (attached to the DOM) for the assertions.
@@ -41,7 +41,7 @@ async fn hello_renders_state_present() {
     );
 
     let game = GameStateBuilder::new()
-        .with_investigator(fixtures::test_investigator(1))
+        .with_investigator(test_support::test_investigator(1))
         .build();
     store.update(|s| {
         store::reduce(

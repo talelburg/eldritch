@@ -135,8 +135,8 @@ fn discard_asset_instance(
 mod tests {
     use super::*;
     use card_dsl::dsl::Effect;
-    use game_core::state::{CardCode, CardInPlay};
-    use game_core::test_support::{self, GameStateBuilder};
+    use game_core::state::{CardCode, CardInPlay, GameStateBuilder};
+    use game_core::test_support;
 
     #[test]
     fn revelation_tests_willpower_4_then_native_fail() {

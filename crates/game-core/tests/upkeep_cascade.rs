@@ -15,9 +15,9 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome};
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState,
-    InvestigatorId, LocationId, Phase,
+    GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry, TEST_INV};
+use game_core::test_support::{self, MockRegistry, TEST_INV};
 
 /// Per-binary code prefix. None of these codes is looked up — the deck, the
 /// hand and the readied asset are opaque tokens to every step the cascade runs —

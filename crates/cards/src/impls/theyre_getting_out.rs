@@ -318,13 +318,13 @@ mod tests {
     use super::*;
     use crate::{impls, REGISTRY};
     use card_dsl::dsl::{Condition, Effect, Trigger, TriggerKind};
-    use game_core::card_registry;
     use game_core::event::Event;
     use game_core::scenario::ScenarioEnding;
     use game_core::state::{
-        Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, InvestigatorId, Location,
+        Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, GameStateBuilder, InvestigatorId,
+        Location,
     };
-    use game_core::test_support::{self, GameStateBuilder};
+    use game_core::{card_registry, test_support};
 
     fn ghoul(id: u32, at: LocationId) -> Enemy {
         let mut e = test_support::test_enemy(id, "Ghoul");

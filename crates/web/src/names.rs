@@ -27,7 +27,7 @@ mod tests {
     use super::*;
     use cards::REGISTRY;
     use game_core::state::GameStateBuilder;
-    use game_core::test_support::fixtures;
+    use game_core::test_support;
 
     #[test]
     fn card_name_returns_printed_name_with_registry() {
@@ -47,7 +47,7 @@ mod tests {
     #[test]
     fn location_name_returns_state_name_then_falls_back() {
         let state = GameStateBuilder::new()
-            .with_location(fixtures::test_location(10, "Study"))
+            .with_location(test_support::test_location(10, "Study"))
             .build();
         assert_eq!(location_name(&state, LocationId(10)), "Study");
         assert_eq!(location_name(&state, LocationId(99)), "loc 99");

@@ -9,10 +9,10 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, CardInstanceId, Continuation, InvestigationResume,
-    InvestigatorId, LocationId, Phase,
+    Agenda, CardCode, CardInPlay, CardInstanceId, Continuation, GameStateBuilder,
+    InvestigationResume, InvestigatorId, LocationId, Phase,
 };
-use game_core::test_support::{self, GameStateBuilder, MockRegistry};
+use game_core::test_support::{self, MockRegistry};
 
 const AGENDA: &str = "TEST-AGENDA";
 

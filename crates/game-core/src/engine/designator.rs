@@ -139,7 +139,8 @@ pub(crate) fn investigate_location(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{self, GameStateBuilder};
+    use crate::state::GameStateBuilder;
+    use crate::test_support;
     use card_dsl::dsl::IntExpr;
 
     const ME: InvestigatorId = InvestigatorId(1);
