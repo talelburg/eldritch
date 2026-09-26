@@ -23,18 +23,18 @@ Not every judgement call is a gate. Where a rule is already **pre-decided** — 
 
 ## Commands
 
-CI runs seven jobs (`fmt`, `clippy`, `test`, `doc`, `wasm-build`, `wasm-test`, `wasm-clippy`), all warnings-as-errors. **Before pushing, run `scripts/ci-local.sh`** — it diffs against `origin/main` and runs the subset of those seven the change can plausibly break, using CI's exact invocations and strict flags.
+CI runs seven jobs (`fmt`, `clippy`, `test`, `doc`, `wasm-build`, `wasm-test`, `wasm-clippy`), all warnings-as-errors. **Before `gh pr ready`, run `scripts/ci-local.sh`** — it diffs against `origin/main` and runs the subset of those seven the change can plausibly break, using CI's exact invocations and strict flags. `wasm-build` and `wasm-test` are **CI-only by default**: they are the slowest jobs to run one after another locally and the least likely to fail unpredictably, so push to the PR to run them.
 
 ```sh
 scripts/ci-local.sh              # the jobs this diff implicates
 scripts/ci-local.sh --list       # print the plan, run nothing
-scripts/ci-local.sh --all        # force the full seven-job gauntlet
+scripts/ci-local.sh --all        # force the full seven-job gauntlet, CI-only jobs included
 scripts/ci-local.sh --base <ref> # diff against <ref> instead of origin/main
 ```
 
-The posture: **local catches what the diff predicts; pushed CI is the guardrail.** Reach for `--all` when the diff is unusual enough that the mapping's assumptions may not hold — a merge with a long-lived branch, or anything whose blast radius you can't picture. A change to `.github/workflows/`, `.cargo/`, or `rust-toolchain.toml` forces the full gauntlet on its own, since those invalidate the mapping wholesale.
+The posture: **local catches what the diff predicts; pushed CI is the source of truth.** Reach for `--all` when the diff is unusual enough that the mapping's assumptions may not hold — a merge with a long-lived branch, or anything whose blast radius you can't picture. A change to `.github/workflows/`, `.cargo/`, or `rust-toolchain.toml` forces the full gauntlet on its own, since those invalidate the mapping wholesale.
 
-Two ways a local pass is weaker than a CI pass, both reported at the end of a run rather than left implicit: CI pins `trunk@0.21.14` and `wasm-pack@0.15.0` while the script takes them from `$PATH`, and if `trunk` is missing entirely the `wasm-build` job falls back to a debug `cargo build` and is flagged as degraded.
+Under `--all`, two ways a local pass is weaker than a CI pass, both reported at the end of a run rather than left implicit: CI pins `trunk@0.21.14` and `wasm-pack@0.15.0` while the script takes them from `$PATH`, and if `trunk` is missing entirely the `wasm-build` job falls back to a debug `cargo build` and is flagged as degraded.
 
 Don't skip the script and run `cargo test` by hand: it passes even when `doc`/`clippy` fail in CI, and the host `clippy` job never sees `#[cfg(target_arch = "wasm32")]` code (only `wasm-clippy` does). The scoping rule is written against the reverse-dependency closure rather than the touched paths, because `web` sits downstream of `game-core`, `protocol`, and `cards` — see the header comment in `scripts/ci-local.sh`, which is where that mapping is maintained.
 
@@ -91,7 +91,7 @@ Work is tracked against GitHub milestones (`phase-0-foundations` → `phase-10-d
 
 Follow this order for every non-trivial PR — skipping steps has cost real iterations. The **gates** under Workflow interrupt this order wherever they fire: resolve the gate, then resume.
 
-1. **Run `scripts/ci-local.sh` before pushing** (see Commands, which says why `cargo test` alone isn't enough — the `doc` job in particular has caught broken intra-doc links local runs miss).
+1. **Run `scripts/ci-local.sh` before `gh pr ready`, and push to the draft PR for the CI-only jobs** (see Commands, which says why `cargo test` alone isn't enough — the `doc` job in particular has caught broken intra-doc links local runs miss).
 2. **Commit and push** to a feature branch `<scope>/<short-slug>` (`<scope>` matches the commit scope; slug is a 2–4-word hyphenated descriptor, e.g. `engine/play-card`). One branch per issue. Commit body explains the *why* and ends with `Closes #NN.`
 3. **Open the PR** with `gh pr create` using the repo template; include a brief design-decisions paragraph for any non-obvious choice.
 4. **Watch CI** via `gh pr checks <PR#> --watch` (background). Code review for routine PRs happens **before push** — `/implement` closes out by running `code-review` — so skip the post-push `review-agent` then. Reserve a post-push review for: PRs prepared without a pre-push review, an explicit request for a second look, or escalation skills (`/security-review` for sensitive areas, `/ultrareview` at milestone exits) — all user-triggered.

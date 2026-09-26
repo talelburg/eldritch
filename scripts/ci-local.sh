@@ -3,8 +3,19 @@
 # ci-local.sh — run the CI jobs a diff can plausibly break, and skip the rest.
 #
 # CI (.github/workflows/ci.yml) runs seven jobs in parallel on every push; that
-# is the guardrail. This script's job is narrower: catch, fast, the failures
-# that are *predictable from the diff*.
+# is the source of truth. This script's job is narrower: catch, fast, the
+# failures that are *predictable from the diff*.
+#
+# Two jobs are CI-only by default: `wasm-build` (`trunk build --release`, thin
+# LTO at one codegen unit) and `wasm-test` (a headless-Firefox session per test
+# file). CI runs them in parallel with everything else in ~3 minutes; run here,
+# they add their full cost to a sequential plan and rarely fail in a way the
+# diff didn't predict. Push to the draft PR to run them; `--all` runs them here.
+#
+# The script builds into its own target directory (target/ci-local). Its
+# RUSTFLAGS differ from the dev loop's (`cargo test`, `trunk serve`), and cargo
+# rebuilds the whole dependency tree when RUSTFLAGS change — sharing `target/`
+# would make each side invalidate the other's cache on every switch.
 #
 # Each job below is invoked exactly as the workflow invokes it, with the same
 # strict flags, so a job that runs here means what it means there. Two caveats,
@@ -36,7 +47,7 @@
 # Usage:
 #   scripts/ci-local.sh              # run the jobs this diff implicates
 #   scripts/ci-local.sh --list       # print the plan, run nothing
-#   scripts/ci-local.sh --all        # full seven-job gauntlet (escape hatch)
+#   scripts/ci-local.sh --all        # full seven-job gauntlet, CI-only jobs included
 #   scripts/ci-local.sh --base <ref> # diff against <ref> instead of origin/main
 #
 set -uo pipefail
@@ -52,11 +63,19 @@ cd "$ROOT" || exit 2
 # CI sets these workflow-wide, so every job below sees them.
 export CARGO_TERM_COLOR=always
 export RUSTFLAGS="-D warnings"
+# Set in every CI job by actions-rust-lang/setup-rust-toolchain. Without it a
+# debug test .wasm is ~20x larger and wasm-bindgen spends ~11s on each one.
+export CARGO_PROFILE_DEV_DEBUG=0
+# Absolute, because wasm-build runs trunk from crates/web.
+export CARGO_TARGET_DIR="$ROOT/target/ci-local"
 
 # The seven CI jobs, in the order the workflow lists them. Single source of
 # truth: the --all plan and the end-of-run "not run locally" summary both read
 # this, so adding an eighth job means touching this list and `run_job` only.
 ALL_JOBS=(fmt clippy test doc wasm-build wasm-test wasm-clippy)
+
+# Run only under --all; otherwise left to CI (see the header).
+CI_ONLY_JOBS=(wasm-build wasm-test)
 
 BASE=""
 LIST_ONLY=0
@@ -140,10 +159,9 @@ else
     select_job doc "rust sources or manifests changed"
   fi
 
-  # web + protocol are what the wasm bundle is built from directly.
+  # web + protocol are what the wasm bundle is built from directly. wasm-build
+  # and wasm-test would be implicated here too; they are CI_ONLY_JOBS.
   if diff_touches '^crates/(web|protocol)/'; then
-    select_job wasm-build  "crates/web or crates/protocol changed"
-    select_job wasm-test   "crates/web or crates/protocol changed"
     select_job wasm-clippy "crates/web or crates/protocol changed"
   elif diff_touches '^crates/(game-core|cards|card-dsl)/'; then
     # Upstream of web, so a wasm build can still break — but the cheap job is
@@ -166,6 +184,9 @@ echo "base:    $BASE ($(git rev-parse --short "$MERGE_BASE"))"
 echo "changed: $(wc -l <<<"$CHANGED") file(s)"
 echo "plan:"
 for j in "${PLAN[@]}"; do printf '  %-12s %s\n' "$j" "${WHY[$j]}"; done
+if [ "$FORCE_ALL" -eq 0 ]; then
+  echo "ci-only: ${CI_ONLY_JOBS[*]} (push to the PR to run them, or pass --all)"
+fi
 echo
 
 if [ "$LIST_ONLY" -eq 1 ]; then
