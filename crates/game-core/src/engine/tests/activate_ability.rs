@@ -1,8 +1,8 @@
 use super::*;
 
-// As with PlayCard (`play_card.rs`), the non-enumeration form is vacuous here (no
-// `InvestigatorTurn` frame; `TEST_INV`-only registry yields no abilities
-// for "01059"). Reach the handler directly via
+// As with PlayCard (`play_card.rs`), the non-enumeration form is vacuous
+// here (no `InvestigatorTurn` frame; `TEST_INV`-only registry yields no
+// abilities for "01059"). Reach the handler directly via
 // `dispatch_turn_action_unchecked` and assert it rejects — the handler's
 // defensive validation, exactly as the pre-#447 typed-action tests did.
 // The registry-backed activation flow lives in

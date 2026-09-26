@@ -1,3 +1,8 @@
+//! #764: a defeated active investigator's turn ends (RR Appendix II
+//! 2.2.1 → 2.2.2). These cover the arming; `crates/cards/tests/
+//! elimination_ends_turn.rs` drives the rotation the flag triggers
+//! through the real `apply` loop.
+
 use super::*;
 
 fn turn_frame(state: &GameState) -> Option<(InvestigatorId, bool)> {

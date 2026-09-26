@@ -184,19 +184,6 @@ fn state_with_test(basis: DifficultyBasis) -> GameState {
     state
 }
 
-/// Investigator 1's modified `skill`, read under the investigation
-/// [`state_with_test`] puts in flight.
-fn skill_of(state: &GameState, skill: SkillKind) -> i32 {
-    modified_value(
-        state,
-        Some(&mock_registry()),
-        ModifierTarget::Investigator(InvestigatorId(1)),
-        ModifiedQuantity::Skill(skill),
-        ReadContext::DuringTest(SkillTestKind::Investigate),
-    )
-    .total()
-}
-
 fn difficulty_of(state: &GameState) -> i32 {
     modified_value(
         state,

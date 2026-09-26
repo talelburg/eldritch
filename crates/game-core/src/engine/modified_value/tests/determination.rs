@@ -1,5 +1,18 @@
 use super::*;
 
+/// Investigator 1's modified `skill`, read under the investigation
+/// [`state_with_test`] puts in flight.
+fn skill_of(state: &GameState, skill: SkillKind) -> i32 {
+    modified_value(
+        state,
+        Some(&mock_registry()),
+        ModifierTarget::Investigator(InvestigatorId(1)),
+        ModifiedQuantity::Skill(skill),
+        ReadContext::DuringTest(SkillTestKind::Investigate),
+    )
+    .total()
+}
+
 /// A determination row scoped to [`IN_FLIGHT`].
 fn determination_row(d: Determination) -> RecordedModifier {
     RecordedModifier::determination(InvestigatorId(1), d, Lifetime::SkillTest(IN_FLIGHT), None)
