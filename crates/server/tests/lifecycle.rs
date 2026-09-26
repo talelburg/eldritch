@@ -4,9 +4,9 @@
 
 mod common;
 
+use crate::common::TEST_SCENARIO_ID;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use common::TEST_SCENARIO_ID;
 use game_core::test_support::TEST_INV;
 use serde_json::Value;
 use server::session::GameSession;

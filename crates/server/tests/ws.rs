@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::TEST_SCENARIO_ID;
+use crate::common::TEST_SCENARIO_ID;
 use std::time::Duration;
 
 use game_core::action::{InputResponse, PlayerAction};

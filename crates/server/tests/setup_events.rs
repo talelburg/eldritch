@@ -8,7 +8,7 @@
 
 mod common;
 
-use common::TEST_SCENARIO_ID;
+use crate::common::TEST_SCENARIO_ID;
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use protocol::ServerMessage;

@@ -11,7 +11,7 @@
 
 mod common;
 
-use common::TEST_SCENARIO_ID;
+use crate::common::TEST_SCENARIO_ID;
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::scenario::ScenarioId;

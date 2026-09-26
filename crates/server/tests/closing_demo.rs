@@ -12,7 +12,7 @@
 
 mod common;
 
-use common::TEST_SCENARIO_ID;
+use crate::common::TEST_SCENARIO_ID;
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
