@@ -82,14 +82,16 @@ Each phase doc follows this shape:
 
 ## Maintaining these docs
 
-This section is the authoritative spec for the phase-doc update step of the PR procedure (CLAUDE.md step 6).
+This section is the authoritative spec for the phase-doc edit in the PR procedure (CLAUDE.md, step 2).
 
-- **When a PR closing a phase issue is ready to merge — and ONLY then** (as the branch's final commit, after CI is green, so the entry reflects the actually-shipping state with the PR # known and review fixes folded in):
+- **A PR closing a phase issue edits the phase doc alongside its code**, in the same commit or any later one on the branch. The draft PR is opened before the work, so the PR # is already known. If a CI or review fix changes what ships, that fix's commit updates the doc too. These are the only edits it makes:
   - Move the closing issue's row to the phase doc's **Closed** table and bump any open/closed counts.
   - Flip the corresponding **Ordering / Arc** row to `✅ PR #N`.
   - Remove any **Open question** the PR settled.
-  - **Do not add a "Decisions made" entry.** Design decisions live in `docs/adr/` now. If the PR made a choice that is (a) hard to reverse, (b) surprising without context, and (c) the result of a real trade-off, write it up as an ADR in the same commit. All three must hold — if a future PR-author would discover the same fact by grepping the code or reading a doc-comment / `TODO(#NNN)`, there's no ADR to write. Most PRs need none.
+  - Add an **Open question** the PR raised, or a row for a follow-up issue it filed.
+- **Anything else is a PR retro, and a PR retro is not written.** How the PR went, why it was designed that way, what review changed, what was tried and dropped: that is history, and git and the PR already keep it. The reasoning goes in the PR description; a decision that passes the three-part test below goes in an ADR; a fact a future author needs at the code goes in a doc-comment. A phase doc is read before picking up an issue, and every PR retro is something that reader has to wade past — phase 7's "The arcs behind it" grew to roughly 650 lines of them. A PR retro is not the **phase retrospective**, the summary a phase doc becomes when its milestone closes (below).
+- **Do not add a "Decisions made" entry.** Design decisions live in `docs/adr/` now. If the PR made a choice that is (a) hard to reverse, (b) surprising without context, and (c) the result of a real trade-off, write it up as an ADR in the same commit. All three must hold — if a future PR-author would discover the same fact by grepping the code or reading a doc-comment / `TODO(#NNN)`, there's no ADR to write. Most PRs need none.
   - Existing **Decisions made** sections in closed phase docs stay where they are; they are not retro-migrated ([ADR 0001](../adr/0001-workflow-runs-on-mattpocock-skills.md) drew that scope line).
-- **Never put phase-doc edits in earlier commits** of the same branch (churn + drift), and don't batch them into unrelated PRs.
-- **When a phase milestone closes:** flip the phase's Status to ✅ (here and in the doc), trim Open Questions to closed-out items only, and the doc becomes a retrospective. Sweep the agent-facing docs in the same pass, against the checklist in [`docs/agents/writing.md`](../agents/writing.md) — a rule whose transitional state ended during the phase is deleted here or it outlives the thing it described.
+- **Don't batch phase-doc edits into unrelated PRs.**
+- **When a phase milestone closes:** flip the phase's Status to ✅ (here and in the doc), trim Open Questions to closed-out items only, and the doc becomes a **phase retrospective**. Trim any PR retros written before they were banned — phase 7's "The arcs behind it" is the known case (its heading says "retrospective", but its content is PR retros), and this clause goes once it is trimmed. Sweep the agent-facing docs in the same pass, against the checklist in [`docs/agents/writing.md`](../agents/writing.md) — a rule whose transitional state ended during the phase is deleted here or it outlives the thing it described.
 - **When the next phase starts:** flip its Status from ⏳/📐 to 🟡, add the ordered plan if not already there.
