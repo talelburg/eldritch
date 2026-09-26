@@ -30,7 +30,7 @@
 //! *"This"* being the Mythos phase's check-doom-threshold step. So an attack
 //! that tips the agenda to its threshold leaves the doom sitting there until
 //! Mythos step 1.3 — which is why this card builds with the bare
-//! [`place_doom_on_current_agenda`] and 01166 with
+//! [`place_doom_on_current_agenda`](dsl::place_doom_on_current_agenda) and 01166 with
 //! [`place_doom_that_can_advance_the_agenda`](card_dsl::dsl::place_doom_that_can_advance_the_agenda).
 //!
 //! **Cell: the `after` cell of the `EnemyAttacks` condition.** The printed word

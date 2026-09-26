@@ -1,7 +1,9 @@
-//! Test-only support: fixtures, event-assertion macros, the
+//! Test-only support: fixtures, event-assertion macros, and the
 //! [`MockRegistry`] builder a test binary installs its mock card
-//! registry through, and a convenience re-export of the production
-//! [`GameStateBuilder`].
+//! registry through. The submodules are private and every public item is
+//! re-exported here, so `test_support::<item>` is the one spelling. The
+//! production [`GameStateBuilder`](crate::state::GameStateBuilder) is
+//! reached through `state`.
 //!
 //! The macros are exported at the crate root via `#[macro_export]`,
 //! so callers see [`assert_event!`](crate::assert_event) regardless

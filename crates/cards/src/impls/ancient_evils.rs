@@ -23,7 +23,7 @@
 //!
 //! *"This"* being the Mythos phase's check-doom-threshold step. 01166 does
 //! otherwise specify, so it builds with
-//! [`place_doom_that_can_advance_the_agenda`] rather than the bare
+//! [`place_doom_that_can_advance_the_agenda`](dsl::place_doom_that_can_advance_the_agenda) rather than the bare
 //! [`place_doom_on_current_agenda`](card_dsl::dsl::place_doom_on_current_agenda)
 //! that 01102 uses.
 

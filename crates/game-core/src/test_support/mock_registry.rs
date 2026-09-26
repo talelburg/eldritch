@@ -1,40 +1,4 @@
-//! A builder for the mock [`CardRegistry`] a test binary installs.
-//!
-//! Integration binaries across `game-core` and `cards` hand-roll the same
-//! plumbing: a `OnceLock<CardMetadata>` per probe card so the lookup can hand
-//! back a `&'static`, an `abilities_for` match over a handful of invented codes,
-//! and a constructor-time install of a `CardRegistry` literal spread over
-//! [`CardRegistry::EMPTY`]. [`MockRegistry`] collapses that plumbing.
-//!
-//! ```
-//! use card_dsl::dsl::{self, ModifierScope, Stat};
-//! use game_core::test_support::MockRegistry;
-//!
-//! MockRegistry::new()
-//!     .with_abilities("_doc_probe", || {
-//!         vec![dsl::constant(dsl::modify(
-//!             Stat::Willpower,
-//!             1,
-//!             ModifierScope::WhileInPlay,
-//!         ))]
-//!     })
-//!     .install();
-//! ```
-//!
-//! A card's metadata rides [`with_card`](MockRegistry::with_card), which takes a
-//! `CardMetadata` the caller builds — there is no shared constructor for one,
-//! deliberately.
-//!
-//! **It collapses plumbing only.** Per [ADR 0016] a synthetic fixture models an
-//! engine primitive and never impersonates a printed card, and probe cards stay
-//! test-local — one per reader, defined in the file that reads them. So this
-//! module exposes no named probe cards and no library of them: every code and
-//! every `CardMetadata` here comes from the caller. A shared probe library would
-//! recreate, in a new location, the shared-fixture problem that the test-substrate
-//! migration ([#864]) exists to undo.
-//!
-//! [ADR 0016]: https://github.com/talelburg/eldritch/blob/main/docs/adr/0016-a-synthetic-fixture-models-a-primitive-never-a-printed-card.md
-//! [#864]: https://github.com/talelburg/eldritch/issues/864
+//! The mock card registry a test binary installs; see [`MockRegistry`].
 
 use std::sync::OnceLock;
 
@@ -62,8 +26,43 @@ type AbilitiesFn = Box<dyn Fn() -> Vec<Ability> + Send + Sync>;
 /// `TABLES` is set, the installed registry is this module's.
 static TABLES: OnceLock<MockRegistry> = OnceLock::new();
 
-/// Builder for a test binary's mock [`CardRegistry`]. See the [module
-/// docs](self) for the shape and for what it deliberately does not provide.
+/// A builder for the mock [`CardRegistry`] a test binary installs.
+///
+/// Integration binaries across `game-core` and `cards` hand-roll the same
+/// plumbing: a `OnceLock<CardMetadata>` per probe card so the lookup can hand
+/// back a `&'static`, an `abilities_for` match over a handful of invented codes,
+/// and a constructor-time install of a `CardRegistry` literal spread over
+/// [`CardRegistry::EMPTY`]. [`MockRegistry`] collapses that plumbing.
+///
+/// ```
+/// use card_dsl::dsl::{self, ModifierScope, Stat};
+/// use game_core::test_support::MockRegistry;
+///
+/// MockRegistry::new()
+///     .with_abilities("_doc_probe", || {
+///         vec![dsl::constant(dsl::modify(
+///             Stat::Willpower,
+///             1,
+///             ModifierScope::WhileInPlay,
+///         ))]
+///     })
+///     .install();
+/// ```
+///
+/// A card's metadata rides [`with_card`](MockRegistry::with_card), which takes a
+/// `CardMetadata` the caller builds — there is no shared constructor for one,
+/// deliberately.
+///
+/// **It collapses plumbing only.** Per [ADR 0016] a synthetic fixture models an
+/// engine primitive and never impersonates a printed card, and probe cards stay
+/// test-local — one per reader, defined in the file that reads them. So this
+/// module exposes no named probe cards and no library of them: every code and
+/// every `CardMetadata` here comes from the caller. A shared probe library would
+/// recreate, in a new location, the shared-fixture problem that the test-substrate
+/// migration ([#864]) exists to undo.
+///
+/// [ADR 0016]: https://github.com/talelburg/eldritch/blob/main/docs/adr/0016-a-synthetic-fixture-models-a-primitive-never-a-printed-card.md
+/// [#864]: https://github.com/talelburg/eldritch/issues/864
 ///
 /// [`install`](Self::install) composes the two lookups every game-core mock
 /// needs anyway — [`metadata_for_test_inv`](super::metadata_for_test_inv) and

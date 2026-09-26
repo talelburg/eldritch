@@ -650,7 +650,7 @@ pub fn perform_skill_test(
 /// a scripted resolver, then [`run`](Self::run) the engine through to a
 /// terminal outcome.
 ///
-/// Construct via [`GameStateBuilder::session`](super::GameStateBuilder::session) or
+/// Construct via [`GameStateBuilder::session`](crate::state::GameStateBuilder::session) or
 /// [`TestSession::new`].
 #[derive(Debug)]
 #[must_use = "TestSession does nothing until you call .run()"]
