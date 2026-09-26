@@ -17,6 +17,8 @@
 //! field's intent. Phase-2+ reviewers: flag missing fixture updates
 //! when a field addition lands.
 
+use std::collections::BTreeSet;
+
 use crate::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, DifficultyBasis, Enemy, EnemyId, InFlightSkillTest,
@@ -62,7 +64,7 @@ pub fn test_investigator(id: u32) -> Investigator {
         cards_in_play: Vec::new(),
         threat_area: Vec::new(),
         removed_from_game: Vec::new(),
-        action_surcharge_spent_this_round: std::collections::BTreeSet::new(),
+        action_surcharge_spent_this_round: BTreeSet::new(),
         investigator_card,
     }
 }

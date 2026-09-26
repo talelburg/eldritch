@@ -1,5 +1,7 @@
 //! Investigators: the players' avatars in the game.
 
+use std::collections::BTreeSet;
+
 use crate::card_registry;
 use crate::state::{CardCode, CardInPlay, CardInstanceId, LocationId, Skills};
 use card_dsl::card_data::CardKind;
@@ -109,7 +111,7 @@ pub struct Investigator {
     /// (Frozen in Fear 01164). Cleared at the round boundary. Keyed by
     /// instance so multiple surcharge sources track independently. Required
     /// on the wire (#453).
-    pub action_surcharge_spent_this_round: std::collections::BTreeSet<CardInstanceId>,
+    pub action_surcharge_spent_this_round: BTreeSet<CardInstanceId>,
     /// The investigator's own card as a real in-play permanent: it holds the
     /// investigator's health/sanity capacity (from `CardKind::Investigator`
     /// metadata) and is the default damage/horror soaker via its

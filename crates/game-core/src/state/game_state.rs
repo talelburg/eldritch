@@ -1,6 +1,6 @@
 //! Top-level game state.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::engine::evaluator::EvalContext;
 use crate::engine::TimingEvent;
@@ -2197,7 +2197,7 @@ pub enum FastActorScope {
     /// (e.g. only investigators at a given location). No Phase-3
     /// or Phase-4 site constructs this variant yet; the variant
     /// exists so future cards can grow it without engine churn.
-    Specific(std::collections::BTreeSet<InvestigatorId>),
+    Specific(BTreeSet<InvestigatorId>),
 }
 
 /// The framework step a [`FastWindow`](Continuation::FastWindow) gates — the
@@ -3178,7 +3178,6 @@ mod open_window_tests {
 #[cfg(test)]
 mod fast_actor_scope_tests {
     use super::*;
-    use std::collections::BTreeSet;
 
     #[test]
     fn active_investigator_permits_only_named() {

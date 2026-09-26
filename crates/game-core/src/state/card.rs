@@ -1,6 +1,7 @@
 //! Card identifiers and per-instance in-play state.
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 use crate::state::InvestigatorId;
 use card_dsl::dsl::{UsageLimit, UsagePeriod};
@@ -45,9 +46,9 @@ impl From<String> for CardCode {
     }
 }
 
-impl std::fmt::Display for CardCode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self.0, f)
+impl fmt::Display for CardCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
     }
 }
 

@@ -36,7 +36,7 @@
 //! lists, and fails on any that has not.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -283,8 +283,8 @@ enum Discrepancy {
     MissingPack { code: String, cycle: String },
 }
 
-impl std::fmt::Display for Discrepancy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Discrepancy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unclassified(path) => write!(
                 f,
