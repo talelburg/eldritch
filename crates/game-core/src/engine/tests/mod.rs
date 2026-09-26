@@ -31,7 +31,6 @@ mod play_card;
 mod reject_rollback;
 mod resolution;
 mod resource_action;
-mod seat_and_open;
 mod start_scenario;
 
 /// Drive one open-turn action through the `ResolveInput(PickSingle)` routing
