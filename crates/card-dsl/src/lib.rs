@@ -3,12 +3,13 @@
 //! This crate holds the two pure-data type families consumed by both
 //! sides of the cards-engine boundary:
 //!
-//! - [`dsl`] — the card-effect DSL ([`Ability`], [`Effect`],
-//!   [`Trigger`], builder functions). The alphabet card declarations
-//!   speak.
-//! - [`card_data`] — static card metadata ([`CardMetadata`],
-//!   [`Class`], [`CardType`], [`SkillIcons`], [`Slot`]). What's
-//!   printed on a card.
+//! - [`dsl`] — the card-effect DSL ([`Ability`](dsl::Ability),
+//!   [`Effect`](dsl::Effect), [`Trigger`](dsl::Trigger), builder
+//!   functions). The alphabet card declarations speak.
+//! - [`card_data`] — static card metadata
+//!   ([`CardMetadata`](card_data::CardMetadata), [`Class`](card_data::Class),
+//!   [`CardType`](card_data::CardType), [`SkillIcons`](card_data::SkillIcons),
+//!   [`Slot`](card_data::Slot)). What's printed on a card.
 //!
 //! These types have no I/O, no state, and no engine machinery. They
 //! sit between the `cards` corpus (which constructs them) and the
