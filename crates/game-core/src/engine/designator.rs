@@ -32,9 +32,9 @@
 
 use std::borrow::Cow;
 
-use crate::dsl::ActionDesignator;
 use crate::engine::dispatch::combat;
 use crate::state::{EnemyId, GameState, InvestigatorId, LocationId};
+use card_dsl::dsl::ActionDesignator;
 
 /// Whether `investigator` can perform the action `designator` names, ignoring
 /// which of several legal targets will end up chosen.
@@ -139,8 +139,8 @@ pub(crate) fn investigate_location(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dsl::IntExpr;
     use crate::test_support::{self, GameStateBuilder};
+    use card_dsl::dsl::IntExpr;
 
     const ME: InvestigatorId = InvestigatorId(1);
     const HERE: LocationId = LocationId(1);

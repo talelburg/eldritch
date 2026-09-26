@@ -3,7 +3,7 @@
 //! assembles them into a faithful mini-card rectangle. Display-only (no click
 //! handlers) — interactivity is a later slice.
 
-use game_core::card_data::{CardKind, Class, SkillIcons, Slot};
+use card_dsl::card_data::{CardKind, Class, SkillIcons, Slot};
 use game_core::engine::OptionTarget;
 use game_core::state::{CardCode, CardInPlay, InvestigatorId, UseKind};
 use leptos::prelude::*;

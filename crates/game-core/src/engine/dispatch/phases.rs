@@ -2,10 +2,10 @@
 //! and the round-cycle stepping logic.
 
 use crate::action::{InputResponse, RosterEntry};
-use crate::card_data::CardKind;
 use crate::card_registry;
 #[cfg(test)] // only `drive_phase` / `push_anchor_and_drive`, the cfg(test) helpers below
 use crate::engine::dispatch;
+use card_dsl::card_data::CardKind;
 use std::collections::BTreeSet;
 
 use crate::engine::dispatch::emit::TimingEvent;
@@ -4141,10 +4141,10 @@ mod hand_size_tests {
 mod start_scenario_tests {
     use super::*;
     use crate::action::RosterEntry;
-    use crate::card_data::SkillKind;
     use crate::state::{CardCode, GameStateBuilder, SkillSubstitution};
     use crate::test_support::TEST_INV;
     use crate::{seat_and_open, test_support};
+    use card_dsl::card_data::SkillKind;
 
     #[test]
     fn start_scenario_rejects_when_roster_would_seat_zero_investigators() {

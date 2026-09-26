@@ -1,7 +1,7 @@
 //! Shared leaf helpers for investigator-cursor navigation and stat mapping.
 //!
 //! These are pure lookup functions with no side effects; they call only into
-//! `crate::state` / `crate::dsl` and are called by multiple dispatch handlers.
+//! `crate::state` / `card_dsl::dsl` and are called by multiple dispatch handlers.
 
 use crate::state::{Continuation, GameState, InvestigatorId, LocationId, Status};
 

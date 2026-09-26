@@ -10,11 +10,11 @@
 //! Hyperawareness will be the first. Until then, mock cards are the
 //! only way to exercise the full activation flow.
 
-use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::dsl::{
+use card_dsl::dsl::{
     activated, constant, gain_resources, modify, Cost, IntExpr, InvestigatorTarget, ModifierScope,
     Stat,
 };
+use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;

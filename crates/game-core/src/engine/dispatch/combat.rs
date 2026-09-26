@@ -1,9 +1,7 @@
 //! Combat helpers: enemy damage, investigator damage/horror, attacks.
 
 use crate::action::InputResponse;
-use crate::card_data::CardKind;
 use crate::card_registry;
-use crate::dsl::{EntityScope, LocationSet};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{cards, choice, elimination, emit, hunters, reaction_windows};
 use crate::engine::outcome::{
@@ -16,6 +14,8 @@ use crate::state::{
     DealDamageStep, EliminationCause, EnemyAttackSource, EnemyId, GameState, InvestigatorId,
     Status,
 };
+use card_dsl::card_data::CardKind;
+use card_dsl::dsl::{EntityScope, LocationSet};
 
 /// The scope of enemies a Fight (basic action or designated **Fight** ability)
 /// may target: any enemy *at your location*. Per RR you choose an enemy at your
@@ -28,7 +28,7 @@ pub(crate) fn fight_target_scope() -> EntityScope {
     EntityScope::At(LocationSet::Here)
 }
 
-/// Enemies matching an [`EntityScope`](crate::dsl::EntityScope), in `BTreeMap`
+/// Enemies matching an [`EntityScope`](card_dsl::dsl::EntityScope), in `BTreeMap`
 /// (id) order so the `OptionId` index replays deterministically. Shared by the
 /// evaluator's choice-grounding and the activation pre-cost target check.
 pub(crate) fn enemies_in_scope(

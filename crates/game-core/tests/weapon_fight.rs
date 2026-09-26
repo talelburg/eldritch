@@ -12,10 +12,10 @@
 //! weapon ability yet — Roland's .38 Special (C5c) is the first; until
 //! then a mock card exercises the full path.
 
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
+use card_dsl::dsl::{activated_as, fight, seq, Cost, IntExpr};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
-use game_core::dsl::{activated_as, fight, seq, Cost, IntExpr};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;

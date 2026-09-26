@@ -221,8 +221,8 @@ pub fn DecisionView() -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use card_dsl::card_data::SkillKind;
     use cards::REGISTRY;
-    use game_core::card_data::SkillKind;
     use game_core::card_registry;
     use game_core::engine::{InputRequest, OptionId};
     use game_core::event::Event;

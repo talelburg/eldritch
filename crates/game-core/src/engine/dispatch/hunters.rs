@@ -3,7 +3,6 @@
 use std::fmt::Debug;
 
 use crate::action::InputResponse;
-use crate::card_data::{Prey, PreyDirection, PreyMeasure};
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::dispatch::{cursor, movement, phases};
 use crate::engine::modified_value::{self, ModifiedQuantity, ModifierTarget, ReadContext};
@@ -14,6 +13,7 @@ use crate::state::{
     Continuation, Enemy, EnemyId, GameState, HunterChoice, Investigator, InvestigatorId,
     LocationId, Status,
 };
+use card_dsl::card_data::{Prey, PreyDirection, PreyMeasure};
 
 /// Result of narrowing a candidate investigator set by a prey
 /// instruction (Rules Reference p.12 / p.17).
@@ -585,8 +585,8 @@ pub(super) fn resume_spawn_engage(cx: &mut Cx, response: &InputResponse) -> Engi
 #[cfg(test)]
 mod resolve_prey_tests {
     use super::*;
-    use crate::card_data::SkillKind;
     use crate::test_support::{self, GameStateBuilder};
+    use card_dsl::card_data::SkillKind;
 
     #[test]
     fn resolve_prey_default_single_candidate_is_one() {
@@ -713,11 +713,11 @@ mod resolve_prey_tests {
 #[cfg(test)]
 mod measure_value_tests {
     use super::*;
-    use crate::card_data::{CardMetadata, SkillKind};
     use crate::card_registry::CardRegistry;
-    use crate::dsl::{constant, modify, Ability, ModifierScope, Stat};
     use crate::state::{CardCode, CardInPlay, CardInstanceId};
     use crate::test_support::{self, GameStateBuilder};
+    use card_dsl::card_data::{CardMetadata, SkillKind};
+    use card_dsl::dsl::{constant, modify, Ability, ModifierScope, Stat};
 
     fn no_metadata(_: &CardCode) -> Option<&'static CardMetadata> {
         None
@@ -1073,8 +1073,8 @@ mod hunter_resume_tests {
             });
         InputResponse::PickSingle(opt.id)
     }
-    use crate::card_data::SkillKind;
     use crate::test_support::GameStateBuilder;
+    use card_dsl::card_data::SkillKind;
 
     #[test]
     fn hunter_move_tie_suspends_then_resumes_on_pick_location() {

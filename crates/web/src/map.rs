@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use game_core::card_data::CardKind;
+use card_dsl::card_data::CardKind;
 use game_core::engine::{ChoiceOption, OptionTarget};
 use game_core::state::{CardCode, CardInPlay, GameState, Location, LocationId};
 use leptos::prelude::*;

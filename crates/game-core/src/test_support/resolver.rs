@@ -271,7 +271,7 @@ fn resolve_commit_codes(codes: &[CardCode], state: &GameState, prompt: &str) -> 
 /// enumerated in (investigator, hand-index / ability-index) order — so
 /// Hyperawareness 01034's intellect ability is 0 and its agility ability 1.
 ///
-/// It exists because a [`ThisSkillTest`](crate::dsl::ModifierScope::ThisSkillTest)
+/// It exists because a [`ThisSkillTest`](card_dsl::dsl::ModifierScope::ThisSkillTest)
 /// modifier can only be bought from *inside* a test (#676), and a test's ST.1
 /// player window is where a `[fast]` ability is offered.
 #[derive(Debug, Clone, Copy)]
@@ -747,11 +747,11 @@ impl TestSession {
 mod tests {
     use super::*;
 
-    use crate::dsl::SkillTestKind;
     use crate::engine::ResumeToken;
     use crate::event::Event;
     use crate::state::{ChaosBag, ChaosToken, InvestigationResume, Phase, SkillTestId};
     use crate::test_support;
+    use card_dsl::dsl::SkillTestKind;
 
     #[test]
     fn take_turn_action_resolves_end_turn_via_optionid() {

@@ -7,9 +7,6 @@
 
 use crate::action::InputResponse;
 use crate::card_registry;
-use crate::dsl::{
-    self, Effect, EventPattern, EventTiming, SkillTestKind, TestOutcome, Trigger, TriggerKind,
-};
 use crate::engine::dispatch::reaction_windows;
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
@@ -17,6 +14,9 @@ use crate::engine::{abilities_in_effect, Cx};
 use crate::state::{
     self, AbilitySource, CandidateSource, CardCode, Continuation, EnemyId, GameState,
     InvestigatorId, LocationId, ResolutionCandidate, Status,
+};
+use card_dsl::dsl::{
+    self, Effect, EventPattern, EventTiming, SkillTestKind, TestOutcome, Trigger, TriggerKind,
 };
 
 /// A framework timing point at which Forced (`Trigger::OnEvent`)

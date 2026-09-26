@@ -193,7 +193,7 @@ pub fn SkillTestResultView() -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use game_core::card_data::SkillKind;
+    use card_dsl::card_data::SkillKind;
     use game_core::state::InvestigatorId;
 
     /// A store holding what the panel renders from: the difficulty announced at

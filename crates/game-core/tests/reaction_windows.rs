@@ -12,11 +12,11 @@
 //! exercise edge cases (multi-controller defeats, two abilities on one
 //! card, `by_controller: false`) that no real Phase-3 card hits.
 
-use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::dsl::{
+use card_dsl::dsl::{
     choose_one, discover_clue, gain_resources, reaction_on_event, Ability, EventPattern,
     EventTiming, InvestigatorTarget, LocationTarget, SkillTestKind, TestOutcome,
 };
+use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, OptionTarget, TimingEvent};
 use game_core::event::Event;

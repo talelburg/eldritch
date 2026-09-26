@@ -30,20 +30,20 @@
 //!   identity to stamp, so it rejects rather than banking a determination
 //!   for whatever test comes next.
 //!
-//! [`WhileInPlay`]: crate::dsl::ModifierScope::WhileInPlay
-//! [`WhileInPlayDuring`]: crate::dsl::ModifierScope::WhileInPlayDuring
-//! [`ThisSkillTest`]: crate::dsl::ModifierScope::ThisSkillTest
-//! [`ThisTurn`]: crate::dsl::ModifierScope::ThisTurn
+//! [`WhileInPlay`]: card_dsl::dsl::ModifierScope::WhileInPlay
+//! [`WhileInPlayDuring`]: card_dsl::dsl::ModifierScope::WhileInPlayDuring
+//! [`ThisSkillTest`]: card_dsl::dsl::ModifierScope::ThisSkillTest
+//! [`ThisTurn`]: card_dsl::dsl::ModifierScope::ThisTurn
 //! [`GameState::recorded_modifiers`]: crate::state::GameState::recorded_modifiers
 //! - [`Effect::If`] evaluates [`Condition::SkillTestKind`] against
-//!   the in-flight test's `kind`. [`SkillTest`](crate::dsl::Condition::SkillTest)
+//!   the in-flight test's `kind`. [`SkillTest`](card_dsl::dsl::Condition::SkillTest)
 //!   isn't yet wired — inside an [`Trigger::OnSkillTestResolution`] effect
 //!   the trigger itself gates outcome, so the condition is redundant there,
 //!   and no other trigger has yet needed it (the outcome *is* on
 //!   [`InFlightSkillTest::resolved`](crate::state::InFlightSkillTest::resolved)
 //!   from ST.6 on, so this is unwired, not unknowable).
 //! - [`Effect::ForEach`] dispatches but the
-//!   [`InvestigatorTargetSet`](crate::dsl::InvestigatorTargetSet)
+//!   [`InvestigatorTargetSet`](card_dsl::dsl::InvestigatorTargetSet)
 //!   resolver ("at controller location", "all investigators")
 //!   relies on per-target context that's not yet wired through.
 //! - [`Effect::ChooseOne`] and the `*::Chosen` targets resolve
@@ -67,14 +67,7 @@
 //! state, events, and RNG position on `Rejected` — so validate-first
 //! here is about cheap, precise rejections, not state safety.
 
-use crate::card_data::CardType;
 use crate::card_registry::{self, CardRegistry};
-use crate::dsl::{
-    Ability, ActionClass, ActionDesignator, CardFilter, ChoiceBranch, CmpOp, Condition,
-    ControlStatus, Determination, Effect, EnemyTarget, EntityScope, HarmKind, IntExpr,
-    InvestigatorTarget, LocationSet, LocationTarget, ModifierAudience, ModifierScope, Quantity,
-    Restriction, SearchScope, SkillTestKind, Stat, Trigger,
-};
 use crate::engine::dispatch::choice::ChoiceResolution;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
@@ -88,6 +81,13 @@ use crate::state::{
     AbilitySource, AdvanceTrigger, CandidateSource, CardCode, CardInstanceId, Continuation,
     DamageSource, DifficultyBasis, EffectFrame, EnemyId, GameState, InvestigatorId, Lifetime,
     LocationId, RecordedModifier, SkillTestFollowUp, Zone,
+};
+use card_dsl::card_data::CardType;
+use card_dsl::dsl::{
+    Ability, ActionClass, ActionDesignator, CardFilter, ChoiceBranch, CmpOp, Condition,
+    ControlStatus, Determination, Effect, EnemyTarget, EntityScope, HarmKind, IntExpr,
+    InvestigatorTarget, LocationSet, LocationTarget, ModifierAudience, ModifierScope, Quantity,
+    Restriction, SearchScope, SkillTestKind, Stat, Trigger,
 };
 use serde::{Deserialize, Serialize};
 
@@ -138,7 +138,7 @@ pub struct ChoiceBinding {
 /// reference in-flight game state (current skill test, etc.).
 ///
 /// Phase-3 minimal. Grows fields as effects demand them — current
-/// skill test (for [`SkillTest`](crate::dsl::Condition::SkillTest)
+/// skill test (for [`SkillTest`](card_dsl::dsl::Condition::SkillTest)
 /// condition), current target (for [`Effect::ForEach`] body),
 /// reaction-window context (for `OnEvent` triggers), etc. Keep the
 /// surface narrow and add fields only when an effect's evaluator
@@ -445,7 +445,7 @@ fn step_designated(
     perform_designated(cx, designator, &eval_ctx)
 }
 
-/// Perform the action a bold [`ActionDesignator`](crate::dsl::ActionDesignator)
+/// Perform the action a bold [`ActionDesignator`](card_dsl::dsl::ActionDesignator)
 /// names, modified in the manner the ability carries (#805).
 /// `glossary/Ability.md`, verbatim:
 ///
@@ -744,7 +744,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
 ///
 /// **Each option is offered under its branch's own label, anchored to the card
 /// the effect is printed on** (#775 / #555). The label comes from
-/// [`ChoiceBranch::label`](crate::dsl::ChoiceBranch::label) — authored from the
+/// [`ChoiceBranch::label`](card_dsl::dsl::ChoiceBranch::label) — authored from the
 /// printed text — and the anchor from [`EvalContext::ability_source`], mapped
 /// through the one `AbilitySource → OptionTarget` map. A dispatch site that
 /// does not know its
@@ -1918,7 +1918,7 @@ fn apply_place_doom_on_current_agenda(
 /// unchanged) for effects with no `Chosen` target, or when the
 /// choice is already bound (re-entry within the same evaluation).
 ///
-/// **Candidate scope:** the [`Choose`](crate::dsl::Choose) scope is forwarded
+/// **Candidate scope:** the [`Choose`](card_dsl::dsl::Choose) scope is forwarded
 /// to a per-variety enumerator. `Anywhere` offers all investigators / locations;
 /// `EntityScope::At(Here)` filters to investigators co-located with the
 /// controller and `LocationSet::Here` to the controller's own location (empty —
@@ -2158,7 +2158,7 @@ fn ground_fight_target_choice(
     )
 }
 
-/// Investigators matching an [`EntityScope`](crate::dsl::EntityScope), in
+/// Investigators matching an [`EntityScope`](card_dsl::dsl::EntityScope), in
 /// `BTreeMap` (id) order so the `OptionId` index replays deterministically.
 fn investigator_candidates(
     state: &GameState,
@@ -2185,7 +2185,7 @@ fn investigator_candidates(
     }
 }
 
-/// Locations matching a [`LocationSet`](crate::dsl::LocationSet), in `BTreeMap`
+/// Locations matching a [`LocationSet`](card_dsl::dsl::LocationSet), in `BTreeMap`
 /// (id) order.
 fn location_candidates(
     state: &GameState,
@@ -2570,13 +2570,6 @@ pub fn location_id_by_code(state: &GameState, code: &str) -> Option<LocationId> 
 mod tests {
     use super::*;
     use crate::action::InputResponse;
-    use crate::card_data::CardMetadata;
-    use crate::dsl::{
-        boost_attack_damage, choose_one, constant, deal_damage, deal_damage_to_enemy, deal_horror,
-        discover_additional_clues, discover_clue, draw_cards, gain_resources, heal, if_, if_else,
-        modify, on_play, put_into_threat_area_with_clues, restrict, search_deck, seq, Choose,
-        TestOutcome,
-    };
     use crate::engine::dispatch::coordinator;
     use crate::state::{
         Act, Agenda, CardInPlay, DifficultyBasis, FastActorScope, FastWindowKind,
@@ -2585,6 +2578,13 @@ mod tests {
     };
     use crate::test_support::{self, GameStateBuilder};
     use crate::{assert_event, assert_no_event};
+    use card_dsl::card_data::CardMetadata;
+    use card_dsl::dsl::{
+        boost_attack_damage, choose_one, constant, deal_damage, deal_damage_to_enemy, deal_horror,
+        discover_additional_clues, discover_clue, draw_cards, gain_resources, heal, if_, if_else,
+        modify, on_play, put_into_threat_area_with_clues, restrict, search_deck, seq, Choose,
+        TestOutcome,
+    };
 
     fn ctx(id: u32) -> EvalContext {
         EvalContext::for_controller(InvestigatorId(id))

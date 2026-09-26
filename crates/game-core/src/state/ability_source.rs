@@ -165,8 +165,8 @@ impl AbilityAddress {
 mod tests {
     use super::*;
 
-    use crate::dsl::{self, Effect};
     use crate::state::{ActionResume, CandidateSource};
+    use card_dsl::dsl::{self, Effect};
 
     /// The descriptor rides the wire twice: inside a parked
     /// [`ActionResume::ActivateAbility`] frame in serialized game state, and in

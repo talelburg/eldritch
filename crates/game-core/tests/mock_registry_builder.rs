@@ -11,9 +11,9 @@
 //! The probe cards below are local to this file, per ADR 0016 — the builder
 //! ships no named ones.
 
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
+use card_dsl::dsl::{constant, modify, Ability, ModifierScope, Stat};
 use game_core::card_registry::{self, NativeEffectFn};
-use game_core::dsl::{constant, modify, Ability, ModifierScope, Stat};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{Cx, EngineOutcome};
 use game_core::state::{CardCode, GameState};

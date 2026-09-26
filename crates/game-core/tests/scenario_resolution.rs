@@ -14,9 +14,9 @@
 //! this file's rather than the `scenarios` crate's. Building it locally also
 //! makes it structural that nothing under `src/` can start a toy scenario.
 
+use card_dsl::card_data::{CardKind, CardMetadata};
+use card_dsl::dsl::{gain_resources, revelation, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
-use game_core::card_data::{CardKind, CardMetadata};
-use game_core::dsl::{gain_resources, revelation, InvestigatorTarget};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;

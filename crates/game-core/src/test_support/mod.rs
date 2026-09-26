@@ -14,14 +14,14 @@
 use std::sync::OnceLock;
 
 use crate::action::{InputResponse, PlayerAction};
-use crate::card_data::{CardKind, CardMetadata, Class, Skills};
 use crate::card_registry::{self, CardRegistry};
-use crate::dsl::{self, Ability, EventPattern, EventTiming, SkillTestKind, TestOutcome};
 use crate::engine::{self, Cx, EngineOutcome, ForcedTriggerPoint, TimingEvent};
 use crate::event::Event;
 use crate::state::{
     CardCode, Continuation, EmitStep, EnemyId, GameState, InvestigatorId, LocationId, Phase,
 };
+use card_dsl::card_data::{CardKind, CardMetadata, Class, Skills};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, SkillTestKind, TestOutcome};
 
 pub mod assertions;
 pub mod fixtures;
@@ -418,7 +418,7 @@ pub fn fire_forced_on_enemy_attack(
 /// Fear 01164's *"**Forced** - At the end of your turn: …"* is
 /// [`EventTiming::At`], so a corpus test of the
 /// threat-area path wants that cell — the mock-registry callers here declare
-/// [`After`](crate::dsl::EventTiming::After) and pass it.
+/// [`After`](card_dsl::dsl::EventTiming::After) and pass it.
 pub fn fire_forced_at_end_of_turn(
     state: &mut GameState,
     events: &mut Vec<Event>,

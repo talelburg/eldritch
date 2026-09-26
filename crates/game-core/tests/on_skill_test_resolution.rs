@@ -11,11 +11,11 @@
 //! follow-up issue (#39 Deduction) is the first consumer. Until then,
 //! mock cards are the only way to exercise the full path.
 
-use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::dsl::{
+use card_dsl::dsl::{
     constant, discover_clue, modify, on_skill_test_resolution, LocationTarget, ModifierScope, Stat,
     TestOutcome,
 };
+use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;

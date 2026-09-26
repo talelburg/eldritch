@@ -52,7 +52,7 @@
 //! row can modify a location as readily as an investigator. A recorded row
 //! stores its delta as an **expression**, evaluated at read time exactly as
 //! a swept modifier's condition is. A row can carry the test's
-//! [determination](crate::dsl::Determination) in place of a delta — the
+//! [determination](card_dsl::dsl::Determination) in place of a delta — the
 //! `[auto_fail]` chaos token writes one — which is read through
 //! [`test_determination`] rather than folded additively.
 //!
@@ -92,16 +92,16 @@
 //! returns. That is what `Modifiers.md`'s own worked example demands —
 //! base 4, a −8 token and a +2 is −2 → 0, **not** 0 + 2 → 2.
 
-use crate::card_data::SkillKind;
 use crate::card_registry::CardRegistry;
-use crate::dsl::{
-    Determination, Effect, IntExpr, ModifierAudience, ModifierScope, SkillTestKind, Stat, Trigger,
-};
 use crate::engine::abilities_in_effect;
 use crate::engine::evaluator::{self, EvalContext};
 use crate::state::{
     AbilitySource, CardCode, CardInPlay, CardInstanceId, DifficultyBasis, EnemyId, GameState,
     InvestigatorId, LocationId, RecordedModifierKind,
+};
+use card_dsl::card_data::SkillKind;
+use card_dsl::dsl::{
+    Determination, Effect, IntExpr, ModifierAudience, ModifierScope, SkillTestKind, Stat, Trigger,
 };
 
 /// Which entity's quantity is being asked about.
@@ -705,7 +705,7 @@ fn sweep(
 ///
 /// The delta is an expression evaluated **here**, at read time, against
 /// the row's investigator as "you". A `Modify` writes an
-/// [`IntExpr::Lit`](crate::dsl::IntExpr::Lit), as does the revealed chaos
+/// [`IntExpr::Lit`](card_dsl::dsl::IntExpr::Lit), as does the revealed chaos
 /// token's ±N; the elder-sign row carries the investigator card's own
 /// expression, so Roland Banks 01001's *"+1 for each clue on your
 /// location"* counts the clues that are there at ST.5 rather than the ones
@@ -859,7 +859,7 @@ fn source_location(state: &GameState, placement: Placement) -> Option<LocationId
 }
 
 /// The controller's **elder-sign** skill-test modifier as an
-/// [`IntExpr`](crate::dsl::IntExpr): the expression on their investigator
+/// [`IntExpr`](card_dsl::dsl::IntExpr): the expression on their investigator
 /// card's [`Trigger::ElderSign`] ability, **copied unevaluated**.
 ///
 /// Lives here rather than in the evaluator because it answers the same
@@ -919,13 +919,13 @@ pub(crate) fn stat_for_skill(skill: SkillKind) -> Stat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::card_data::CardMetadata;
-    use crate::dsl::{
+    use crate::state::{Continuation, InFlightSkillTest, Lifetime, RecordedModifier, SkillTestId};
+    use crate::test_support::{self, GameStateBuilder};
+    use card_dsl::card_data::CardMetadata;
+    use card_dsl::dsl::{
         constant, control_status, elder_sign, grant, modify, modify_for, on_play, Ability,
         ControlStatus, GrantTarget, Quantity,
     };
-    use crate::state::{Continuation, InFlightSkillTest, Lifetime, RecordedModifier, SkillTestId};
-    use crate::test_support::{self, GameStateBuilder};
 
     /// Mock registry over a small hardcoded set of codes. Keeps these
     /// tests isolated from the global `OnceLock` and from the cards

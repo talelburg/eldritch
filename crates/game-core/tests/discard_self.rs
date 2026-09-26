@@ -2,12 +2,12 @@
 //! ability. Mock registry in its own integration binary (own process +
 //! `OnceLock<CardRegistry>`), mirroring `weapon_fight.rs`.
 
-use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::assert_event;
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
-use game_core::dsl::{
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Slot, UseKind, Uses};
+use card_dsl::dsl::{
     activated, deal_damage_to_enemy, gain_resources, Ability, Cost, EnemyTarget, InvestigatorTarget,
 };
+use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;

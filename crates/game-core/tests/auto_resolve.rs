@@ -41,12 +41,12 @@
 //! installed alongside the mock card registry, for the same
 //! process-isolation reason.
 
-use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use game_core::dsl::{
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
+use card_dsl::dsl::{
     activated, auto_resolve, gain_resources, on_play, on_skill_test_resolution, seq, Cost,
     Determination, InvestigatorTarget, TestOutcome,
 };
+use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId};
 use game_core::event::{Event, FailureReason};

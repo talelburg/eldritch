@@ -28,12 +28,12 @@
 //! already been advanced, so re-dispatch makes progress (never re-scans the same
 //! cell into a loop).
 
-use crate::dsl::EventTiming;
 use crate::engine::dispatch::emit::ConditionResolution;
 use crate::engine::dispatch::{forced_triggers, reaction_windows};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::state::{Continuation, EmitStep, TimingSub};
+use card_dsl::dsl::EventTiming;
 
 /// Dispatch the [`Continuation::EmitEvent`] coordinator on top of the stack
 /// (called only by the `drive` loop with one on top). One step of the sequence
@@ -231,7 +231,7 @@ fn advance_or_finish_emit(cx: &mut Cx) {
 }
 
 /// Read **and clear** the prevention signal an
-/// [`Effect::Cancel`](crate::dsl::Effect::Cancel) in the `when` cell set (Cover
+/// [`Effect::Cancel`](card_dsl::dsl::Effect::Cancel) in the `when` cell set (Cover
 /// Up 01007's *"…instead"*, #336).
 ///
 /// Read at the resolve step rather than at the window's close: the check belongs

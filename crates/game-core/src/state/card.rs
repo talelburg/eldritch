@@ -2,8 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use crate::dsl::{UsageLimit, UsagePeriod};
 use crate::state::InvestigatorId;
+use card_dsl::dsl::{UsageLimit, UsagePeriod};
 use serde::{Deserialize, Serialize};
 
 /// `ArkhamDB` card code (e.g. `"01030"` for Magnifying Glass).
@@ -163,7 +163,7 @@ pub struct CardInPlay {
     /// Empty for cards with no [`UsageLimit`] on any ability. Required on the
     /// wire (#453).
     ///
-    /// [`UsageLimit`]: crate::dsl::UsageLimit
+    /// [`UsageLimit`]: card_dsl::dsl::UsageLimit
     pub ability_usage: BTreeMap<u8, AbilityUsageRecord>,
     /// **Who owns this card**, as distinct from who controls it. `None` means
     /// scenario-owned (#772).
@@ -201,7 +201,7 @@ pub struct CardInPlay {
 /// `round` is the value of
 /// [`GameState::round`](crate::state::GameState::round) at last fire.
 /// `count` is the number of fires during that round (compared against
-/// the ability's [`UsageLimit::count`](crate::dsl::UsageLimit::count)
+/// the ability's [`UsageLimit::count`](card_dsl::dsl::UsageLimit::count)
 /// to gate further fires).
 ///
 /// `#[non_exhaustive]` so future periods (`Phase`, `Game`) can add

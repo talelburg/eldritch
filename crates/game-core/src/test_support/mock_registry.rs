@@ -7,7 +7,7 @@
 //! [`CardRegistry::EMPTY`]. [`MockRegistry`] collapses that plumbing.
 //!
 //! ```
-//! use game_core::dsl::{constant, modify, ModifierScope, Stat};
+//! use card_dsl::dsl::{constant, modify, ModifierScope, Stat};
 //! use game_core::test_support::MockRegistry;
 //!
 //! MockRegistry::new()
@@ -34,11 +34,11 @@
 
 use std::sync::OnceLock;
 
-use crate::card_data::CardMetadata;
 use crate::card_registry::{self, CardRegistry, EligibilityFn, NativeConditionFn, NativeEffectFn};
-use crate::dsl::Ability;
 use crate::state::CardCode;
 use crate::test_support;
+use card_dsl::card_data::CardMetadata;
+use card_dsl::dsl::Ability;
 
 /// A per-code abilities producer. Boxed rather than a `fn` pointer so a caller
 /// can close over locals — a `Vec<Ability>` is built fresh per lookup, which is
@@ -125,7 +125,7 @@ impl MockRegistry {
     }
 
     /// Register the card-local Rust effect served for the
-    /// [`Effect::Native`](crate::dsl::Effect::Native) `tag`.
+    /// [`Effect::Native`](card_dsl::dsl::Effect::Native) `tag`.
     #[must_use]
     pub fn with_native_effect(mut self, tag: impl Into<String>, effect: NativeEffectFn) -> Self {
         self.native_effects.push((tag.into(), effect));
@@ -133,7 +133,7 @@ impl MockRegistry {
     }
 
     /// Register the reaction-eligibility predicate served for `tag`
-    /// ([`Ability::eligibility`](crate::dsl::Ability::eligibility)).
+    /// ([`Ability::eligibility`](card_dsl::dsl::Ability::eligibility)).
     #[must_use]
     pub fn with_native_eligibility(
         mut self,
@@ -145,7 +145,7 @@ impl MockRegistry {
     }
 
     /// Register the condition predicate served for the
-    /// [`Condition::Native`](crate::dsl::Condition::Native) `tag`.
+    /// [`Condition::Native`](card_dsl::dsl::Condition::Native) `tag`.
     ///
     /// This method exists to carry the binaries that already mock the slot; it
     /// is **not** an invitation to reach for it. `TODO(#609)`:

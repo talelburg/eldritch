@@ -20,9 +20,9 @@
 //! declares one marker ability per boundary instead, and the assertion is which
 //! markers fired and in what order.
 
+use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{self, forced_on_event, native, Ability, EventPattern, EventTiming};
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_data::{CardKind, CardMetadata};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};

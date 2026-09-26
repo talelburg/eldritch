@@ -42,9 +42,9 @@
 //! rather than an oversight.
 
 use crate::card_registry;
-use crate::dsl::{Ability, Effect, Restriction, Trigger};
 use crate::engine::abilities_in_effect;
 use crate::state::{Enemy, GameState, LocationId};
+use card_dsl::dsl::{Ability, Effect, Restriction, Trigger};
 
 /// Whether `loc` carries a constant [`Restriction`] `r` — on the location's
 /// own in-effect side, or on any card attached to it.

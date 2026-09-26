@@ -11,7 +11,7 @@
 //! Its own binary because the assertion needs to own the process-global slot and
 //! hand it to the *other* installer first.
 
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use game_core::card_registry;
 use game_core::state::CardCode;
 use game_core::test_support::{self, MockRegistry, TEST_INV};

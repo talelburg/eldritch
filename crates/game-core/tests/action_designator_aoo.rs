@@ -39,8 +39,8 @@
 //! is `crates/cards/tests/activate_ability_aoo.rs`. The predicate's own
 //! exhaustive table over the six designators is `provokes_aoo`'s unit test.
 
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use game_core::dsl::{
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
+use card_dsl::dsl::{
     activated, activated_as, fight, gain_resources, seq, Ability, ActionDesignator, Effect,
     InvestigatorTarget,
 };

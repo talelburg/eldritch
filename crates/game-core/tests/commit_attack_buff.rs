@@ -10,10 +10,10 @@
 //! `OnCommit` ability yet — Vicious Blow 01025 (the consumer, #240) is the
 //! first; until then this mock skill exercises the full commit path.
 
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
+use card_dsl::dsl::{boost_attack_damage, on_commit};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
-use game_core::card_data::{CardKind, CardMetadata, Class, SkillIcons};
-use game_core::dsl::{boost_attack_damage, on_commit};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;

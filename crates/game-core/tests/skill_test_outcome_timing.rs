@@ -7,10 +7,10 @@
 //! install a mock registry without colliding with other `tests/*.rs`. Mirrors
 //! `on_skill_test_resolution.rs`.
 
-use game_core::assert_event;
-use game_core::dsl::{
+use card_dsl::dsl::{
     deal_horror, forced_on_event, EventPattern, EventTiming, InvestigatorTarget, TestOutcome,
 };
+use game_core::assert_event;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{

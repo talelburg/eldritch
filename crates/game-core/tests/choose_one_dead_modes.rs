@@ -15,10 +15,10 @@
 //! No corpus card carries a modal `on_success` yet, so a mock is the only way to
 //! reach the shape.
 
-use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::dsl::{
+use card_dsl::dsl::{
     activated, choose_one, heal_damage, heal_horror, skill_test, Ability, InvestigatorTarget,
 };
+use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionTarget};
 use game_core::event::Event;

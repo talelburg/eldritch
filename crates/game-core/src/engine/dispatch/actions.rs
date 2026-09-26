@@ -2,7 +2,6 @@
 //! engaged-action validation and single-action-spend helpers.
 
 use crate::card_registry;
-use crate::dsl::{ActionClass, IntExpr, SkillTestKind, Stat};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::skill_test::InitiatorModifier;
 use crate::engine::dispatch::{combat, emit, hunters, movement, reveal, skill_test};
@@ -14,6 +13,7 @@ use crate::state::{
     GameState, Investigator, InvestigatorId, LocationId, ModifierTarget, Phase, SkillKind,
     SkillTestFollowUp, Status,
 };
+use card_dsl::dsl::{ActionClass, IntExpr, SkillTestKind, Stat};
 
 /// Handler for `TurnAction::Investigate`.
 ///
@@ -51,7 +51,7 @@ use crate::state::{
 /// cancel/soak window opens the loop suspends; `drive` resumes the
 /// frame once the window closes, calling [`investigate_primary_effect`].
 ///
-/// [`Effect::DiscoverClue`]: crate::dsl::Effect::DiscoverClue
+/// [`Effect::DiscoverClue`]: card_dsl::dsl::Effect::DiscoverClue
 /// [`ActionResolution`]: crate::state::Continuation::ActionResolution
 pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     // Validate-first (the shared basic-action prefix, then the
@@ -904,7 +904,7 @@ const BASIC_ACTION_COST: u8 = 1;
 /// **Both ways of taking an action of a class read this**: the basic-action
 /// handlers via [`action_cost`] / [`charge_action`], and an activated ability
 /// whose bold designator names the class via
-/// [`ActionDesignator::action_class`](crate::dsl::ActionDesignator::action_class)
+/// [`ActionDesignator::action_class`](card_dsl::dsl::ActionDesignator::action_class)
 /// (#754). Sharing it is the point — a surcharge only one of the two applies is
 /// the bug that made shooting a weapon cheaper than punching.
 pub(crate) fn action_surcharge(

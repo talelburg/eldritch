@@ -1,8 +1,8 @@
 //! Investigators: the players' avatars in the game.
 
-use crate::card_data::CardKind;
 use crate::card_registry;
 use crate::state::{CardCode, CardInPlay, CardInstanceId, LocationId, Skills};
+use card_dsl::card_data::CardKind;
 use serde::{Deserialize, Serialize};
 
 /// Stable identifier for an investigator within a scenario.
@@ -104,7 +104,7 @@ pub struct Investigator {
     /// pile and removed from the game. Stays empty for Active
     /// investigators. Required on the wire (#453).
     pub removed_from_game: Vec<CardCode>,
-    /// Source instances whose [`ExtraActionCost`](crate::dsl::Restriction::ExtraActionCost)
+    /// Source instances whose [`ExtraActionCost`](card_dsl::dsl::Restriction::ExtraActionCost)
     /// with `first_each_round` has already surcharged an action this round
     /// (Frozen in Fear 01164). Cleared at the round boundary. Keyed by
     /// instance so multiple surcharge sources track independently. Required
@@ -385,9 +385,9 @@ mod threat_area_tests {
 
 #[cfg(test)]
 mod ability_usage_tests {
-    use crate::dsl::{UsageLimit, UsagePeriod};
     use crate::state::AbilityUsageRecord;
     use crate::test_support;
+    use card_dsl::dsl::{UsageLimit, UsagePeriod};
 
     #[test]
     fn new_investigator_card_has_empty_ability_usage() {

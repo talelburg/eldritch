@@ -12,8 +12,8 @@
 //! synthetic enemy `CardMetadata` with `spawn: None` (spawns at the drawer's
 //! location) and no abilities (no Revelation).
 
+use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey};
 use game_core::action::{Action, EngineRecord};
-use game_core::card_data::{CardKind, CardMetadata, HealthValue, Prey};
 use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, Continuation, InvestigatorId, LocationId};
 use game_core::test_support::{self, GameStateBuilder, MockRegistry, ScriptedResolver};

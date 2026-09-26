@@ -12,12 +12,7 @@
 use std::borrow::Cow;
 
 use crate::action::InputResponse;
-use crate::card_data::{CardMetadata, CardType};
 use crate::card_registry;
-use crate::dsl::{
-    Ability, ActionDesignator, Cost, Effect, EnemyTarget, EventPattern, EventTiming, Trigger,
-    TriggerKind, UsageLimit,
-};
 use crate::engine::dispatch::abilities::ActivatedAbility;
 use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
 use crate::engine::dispatch::{
@@ -35,6 +30,11 @@ use crate::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, Continuation,
     DamageSource, FastActorScope, FastWindowKind, GameState, InvestigatorId, Phase,
     ResolutionCandidate, Status, TimingMode,
+};
+use card_dsl::card_data::{CardMetadata, CardType};
+use card_dsl::dsl::{
+    Ability, ActionDesignator, Cost, Effect, EnemyTarget, EventPattern, EventTiming, Trigger,
+    TriggerKind, UsageLimit,
 };
 
 /// Push a reaction window frame for `candidates` at `bucket`. The shared push
@@ -1875,7 +1875,7 @@ fn check_play_action_available(
 /// affordable.
 ///
 /// The two costs that are not a number reject for **different reasons**, and
-/// [`CardMetadata::play_cost`](crate::card_data::CardMetadata::play_cost) —
+/// [`CardMetadata::play_cost`](card_dsl::card_data::CardMetadata::play_cost) —
 /// which owns the description of how each one is encoded — is what tells them
 /// apart.
 ///
@@ -2079,7 +2079,7 @@ fn check_activation_changes_state(
     .into())
 }
 
-/// Reject an ability mixing [`Cost::DiscardSelf`](crate::dsl::Cost::DiscardSelf)
+/// Reject an ability mixing [`Cost::DiscardSelf`](card_dsl::dsl::Cost::DiscardSelf)
 /// with another source-referencing cost: `DiscardSelf` removes the source, so it
 /// must be the sole such cost (Beat Cop / Knife list only it). Deliberately
 /// unlifted until a card needs the combo — no tracking issue on purpose (YAGNI);

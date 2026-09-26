@@ -537,7 +537,7 @@ pub fn defeat_investigator(cx: &mut Cx, investigator: InvestigatorId) {
 }
 
 /// Resign `investigator` from the scenario — what the
-/// [`Resign`](crate::dsl::ActionDesignator::Resign) action designator performs
+/// [`Resign`](card_dsl::dsl::ActionDesignator::Resign) action designator performs
 /// (#805), and the only producer of [`EliminationCause::Resigned`].
 ///
 /// `glossary/Resign.md`: *"When an investigator resigns, the investigator is

@@ -34,22 +34,22 @@
 
 use std::sync::OnceLock;
 
-use crate::card_data::CardMetadata;
-use crate::dsl::Ability;
 use crate::engine::evaluator::EvalContext;
 use crate::engine::{Cx, EngineOutcome};
 use crate::state::{CardCode, GameState};
+use card_dsl::card_data::CardMetadata;
+use card_dsl::dsl::Ability;
 
 /// A card-local Rust effect: mutates state and emits events through the
 /// effect-resolution context, returning the resolution outcome. Provided
 /// by the `cards` crate and dispatched from [`Effect::Native`] via
 /// [`CardRegistry::native_effect_for`].
 ///
-/// [`Effect::Native`]: crate::dsl::Effect::Native
+/// [`Effect::Native`]: card_dsl::dsl::Effect::Native
 pub type NativeEffectFn = fn(&mut Cx, &EvalContext) -> EngineOutcome;
 
 /// A card-local read-only eligibility predicate: returns whether a reaction
-/// ability whose [`Ability::eligibility`](crate::dsl::Ability::eligibility) names
+/// ability whose [`Ability::eligibility`](card_dsl::dsl::Ability::eligibility) names
 /// this tag may be offered (RR p.2: an ability can't initiate if its effect
 /// won't change game state). Receives the same [`EvalContext`] native effects do
 /// (controller + source). Dispatched from the reaction scan via
@@ -64,7 +64,7 @@ pub type EligibilityFn = fn(&GameState, &EvalContext) -> bool;
 /// namespaces. Dispatched from `eval_condition` via
 /// [`CardRegistry::native_condition_for`].
 ///
-/// [`Condition::Native`]: crate::dsl::Condition::Native
+/// [`Condition::Native`]: card_dsl::dsl::Condition::Native
 pub type NativeConditionFn = fn(&GameState, &EvalContext) -> bool;
 
 /// Bundle of card-lookup function pointers.
@@ -101,10 +101,10 @@ pub struct CardRegistry {
     /// Look up a card-local Rust effect by its [`Effect::Native`] tag.
     /// Returns `None` for unregistered tags.
     ///
-    /// [`Effect::Native`]: crate::dsl::Effect::Native
+    /// [`Effect::Native`]: card_dsl::dsl::Effect::Native
     pub native_effect_for: fn(&str) -> Option<NativeEffectFn>,
     /// Look up a card-local eligibility predicate by its
-    /// [`Ability::eligibility`](crate::dsl::Ability::eligibility) tag. Returns
+    /// [`Ability::eligibility`](card_dsl::dsl::Ability::eligibility) tag. Returns
     /// `None` for unregistered tags.
     pub native_eligibility_for: fn(&str) -> Option<EligibilityFn>,
     /// Look up a card-local condition predicate by its [`Condition::Native`]
@@ -115,7 +115,7 @@ pub struct CardRegistry {
     /// target-referencing conditions it stands in for exist declaratively —
     /// don't grow it by registering a second card's tag.
     ///
-    /// [`Condition::Native`]: crate::dsl::Condition::Native
+    /// [`Condition::Native`]: card_dsl::dsl::Condition::Native
     pub native_condition_for: fn(&str) -> Option<NativeConditionFn>,
 }
 
@@ -128,7 +128,7 @@ impl CardRegistry {
     /// ```
     /// # use game_core::card_registry::CardRegistry;
     /// # use game_core::state::CardCode;
-    /// # use game_core::dsl::Ability;
+    /// # use card_dsl::dsl::Ability;
     /// # fn mock_abilities_for(_: &CardCode) -> Option<Vec<Ability>> { None }
     /// let reg = CardRegistry {
     ///     abilities_for: mock_abilities_for,
@@ -199,9 +199,9 @@ mod tests {
     use super::*;
     use std::sync::OnceLock;
 
-    use crate::card_data::{CardKind, CardType, Class, SkillIcons};
-    use crate::dsl::{self, ModifierScope, Stat};
     use crate::test_support;
+    use card_dsl::card_data::{CardKind, CardType, Class, SkillIcons};
+    use card_dsl::dsl::{self, ModifierScope, Stat};
 
     /// Build a hand-rolled `CardMetadata` for a fake test card.
     fn fake_metadata() -> CardMetadata {

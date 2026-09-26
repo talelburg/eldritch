@@ -1996,6 +1996,7 @@ dependencies = [
 name = "scenarios"
 version = "0.1.0"
 dependencies = [
+ "card-dsl",
  "cards",
  "ctor",
  "game-core",
@@ -3195,6 +3196,7 @@ dependencies = [
 name = "web"
 version = "0.1.0"
 dependencies = [
+ "card-dsl",
  "cards",
  "console_error_panic_hook",
  "futures",

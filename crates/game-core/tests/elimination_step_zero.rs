@@ -17,9 +17,9 @@
 //! Lives at `crates/game-core/tests/` alongside `forced_triggers.rs` /
 //! `native_effect.rs`, whose idiom it follows.
 
+use card_dsl::card_data::{CardKind, CardMetadata};
 use card_dsl::dsl::{forced_on_event, native, Ability, EventPattern, EventTiming};
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::card_data::{CardKind, CardMetadata};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::event::{Event, TraumaKind};

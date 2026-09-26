@@ -4,7 +4,6 @@
 use std::borrow::Cow;
 
 use crate::card_registry;
-use crate::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
 use crate::scenario::ScenarioEnding;
@@ -12,6 +11,7 @@ use crate::state::{
     AdvanceDeck, AdvanceStep, AdvanceTrigger, Continuation, GameState, InvestigatorId, LocationId,
     Phase, ScenarioEndStep,
 };
+use card_dsl::dsl::{EventPattern, EventTiming, Trigger, TriggerKind};
 
 /// Whether the current act advances *only* at the end of the round (its
 /// round-end objective — act 01109's `When`-`RoundEnded` group advance), in
@@ -64,7 +64,7 @@ pub(crate) fn place_doom_on_agenda(cx: &mut Cx, count: u8) {
 /// [`Event::AgendaAdvanced`], pause on the advance-flip acknowledge, fire the
 /// leaving agenda's reverse, then reset doom and move the cursor. A terminal
 /// agenda's reverse is what ends the scenario — it runs
-/// [`Effect::ReachResolution`](crate::dsl::Effect::ReachResolution), or drains
+/// [`Effect::ReachResolution`](card_dsl::dsl::Effect::ReachResolution), or drains
 /// the last active investigator — and `advance_reverse::finalize` holds the
 /// cursor there and asserts the ending landed. This used to latch the agenda's
 /// `resolution` field *instead of* advancing, which meant the last agenda in the

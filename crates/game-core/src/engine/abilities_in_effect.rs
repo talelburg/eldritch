@@ -89,11 +89,11 @@
 //! [`Location::revealed`]: crate::state::Location::revealed
 
 use crate::card_registry::{self, CardRegistry};
-use crate::dsl::{Ability, Condition, Effect, GrantTarget, Trigger};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, GameState, InvestigatorId, LocationId,
 };
+use card_dsl::dsl::{Ability, Condition, Effect, GrantTarget, Trigger};
 
 /// The abilities in effect on the location `id`: its back's while it is
 /// unrevealed, its front's while it is revealed.

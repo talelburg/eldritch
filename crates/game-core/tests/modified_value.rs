@@ -13,8 +13,8 @@
 //! mock cards shaped after them are the only way to exercise the sweep.
 //! Each mock below names the printed card it is shaped after.
 
+use card_dsl::dsl::{constant, modify_for, ModifierAudience, ModifierScope, Stat};
 use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::dsl::{constant, modify_for, ModifierAudience, ModifierScope, Stat};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::modified_value::{
     self, ContributionSource, ModifiedQuantity, ModifierTarget, ReadContext,

@@ -30,7 +30,7 @@ use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{AssetEntry, CardInPlay, InvestigatorId};
 
-/// Resolve [`Effect::TakeControl`](crate::dsl::Effect::TakeControl): move the
+/// Resolve [`Effect::TakeControl`](card_dsl::dsl::Effect::TakeControl): move the
 /// in-play card printed with `code` into `investigator`'s play area.
 ///
 /// Validate-first. Rejects, mutating nothing, when the investigator is not in

@@ -1,9 +1,7 @@
 //! Encounter-deck draw, spawn, and Mythos draw chain handlers.
 
 use crate::action::InputResponse;
-use crate::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, SpawnLocation};
 use crate::card_registry;
-use crate::dsl::{Ability, Effect, Trigger};
 use crate::engine::dispatch::hunters::PreyResolution;
 use crate::engine::dispatch::{cursor, hunters, reaction_windows, skill_test};
 use crate::engine::evaluator::{self, EvalContext};
@@ -14,6 +12,8 @@ use crate::state::{
     CardCode, Continuation, EncounterDisposition, Enemy, FastWindowKind, InvestigatorId,
     LocationId, PhaseStep, SpawnEngagePending, Status,
 };
+use card_dsl::card_data::{CardKind, CardMetadata, CardType, HealthValue, Spawn, SpawnLocation};
+use card_dsl::dsl::{Ability, Effect, Trigger};
 
 /// Hard cap on a single Mythos draw chain. Real scenarios surge ≤2
 /// in a chain; the cap exists purely to guarantee termination on
@@ -220,7 +220,7 @@ pub fn resolve_encounter_card(
 /// Spawn one encounter-deck enemy into play.
 ///
 /// Called by [`encounter_card_revealed`] after `Event::CardRevealed`
-/// has fired and any [`Trigger::Revelation`](crate::dsl::Trigger::Revelation)
+/// has fired and any [`Trigger::Revelation`](card_dsl::dsl::Trigger::Revelation)
 /// abilities on the enemy have resolved.
 ///
 /// # Spawn-location resolution

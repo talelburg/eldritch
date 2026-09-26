@@ -4,11 +4,11 @@
 //! persist here (and the Revelation routing that places them) is C4c
 //! (#235).
 
-use crate::card_data::CardKind;
 use crate::card_registry;
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Zone};
+use card_dsl::card_data::CardKind;
 
 /// Mint a fresh in-play instance of `code`: allocate its id, build the
 /// `CardInPlay`, and seed the named-uses pool ("ammo") from the asset's
