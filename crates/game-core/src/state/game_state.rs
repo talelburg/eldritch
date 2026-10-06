@@ -1877,7 +1877,7 @@ pub struct InFlightSkillTest {
     ///
     /// Raising one discovery's count is not interchangeable with adding a
     /// second discovery: Cover Up 01007 replaces one discovery of 2, not two
-    /// of 1 (#471). See the **Discovery** entry in `CONTEXT.md`.
+    /// of 1 (#471). See the **Discovery** entry in `GLOSSARY.md`.
     pub bonus_clues_discovered: u8,
     /// The test's determination, set once at the
     /// [`DetermineOutcome`](SkillTestStep::DetermineOutcome) step (RR ST.5–ST.6)
@@ -2153,7 +2153,7 @@ pub enum SkillTestFollowUp {
     /// [`DiscoverClue`](card_dsl::dsl::Effect::DiscoverClue) evaluator path).
     /// Used by `Investigate`. A commit-time "discover 1 additional clue"
     /// (Deduction 01039) raises this discovery's count rather than adding a
-    /// second discovery — see the **Discovery** entry in `CONTEXT.md`.
+    /// second discovery — see the **Discovery** entry in `GLOSSARY.md`.
     Investigate,
     /// On success, deal 1 damage to the named enemy (and defeat it if
     /// damage reaches `max_health`). Used by

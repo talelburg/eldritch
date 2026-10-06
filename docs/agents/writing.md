@@ -2,7 +2,7 @@
 
 The house style for the docs an agent reads to work here: `CLAUDE.md`, `docs/agents/*`, `docs/adr/*`, and `docs/phases/README.md`. `code-review`'s **Standards** axis reads this file when a diff touches one of them, and so should you before adding a rule to `CLAUDE.md` or writing an ADR.
 
-Two files are deliberately out of scope. `CONTEXT.md` already has its own stated admission bar and a consistent entry shape. `docs/audits/*` are dated point-in-time records, not living docs — they are not rewritten into a style they were never written in.
+Two files are deliberately out of scope. `GLOSSARY.md` already has its own stated admission bar and a consistent entry shape. `docs/audits/*` are dated point-in-time records, not living docs — they are not rewritten into a style they were never written in.
 
 What this file is defending against is **accretion**, not length. The citation-heavy prose is the edge: a rule carrying its verbatim Rules Reference quote and the PR where ignoring it broke The Gathering is a rule an agent obeys, where a bare imperative is one it rationalises past. What has to go is content whose only remaining value is history — which git already keeps.
 

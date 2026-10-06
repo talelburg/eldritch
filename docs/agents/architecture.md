@@ -44,7 +44,7 @@ Backstopped structurally since #161: `apply_via` (`crates/game-core/src/engine/m
 
 `crates/card-dsl/src/dsl.rs` defines `Ability { trigger: Trigger, effect: Effect }`. Triggers: `Constant`, `OnPlay`, `OnCommit` (+ `OnEvent` / `Activated` / reaction triggers later). Effects: `GainResources`, `DiscoverClue`, `Modify`, `Seq`, `If`, `ForEach`, `ChooseOne`. The evaluator (`crates/game-core/src/engine/evaluator.rs`) walks effect trees under the same validate-first contract.
 
-An `OnEvent` ability declares the **timing cell** its printed trigger word names (**Timing cell** in [`CONTEXT.md`](../../CONTEXT.md)). The conventions an author follows when writing one — checking the declared `EventTiming` against the quoted trigger word, and naming the cell in the module's prose — are in [`standards.md`](standards.md); the *why*, and the caller-owned conditions that remain, are in [ADR 0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md).
+An `OnEvent` ability declares the **timing cell** its printed trigger word names (**Timing cell** in [`GLOSSARY.md`](../../GLOSSARY.md)). The conventions an author follows when writing one — checking the declared `EventTiming` against the quoted trigger word, and naming the cell in the module's prose — are in [`standards.md`](standards.md); the *why*, and the caller-owned conditions that remain, are in [ADR 0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md).
 
 Cards are **Rust source** (typed, compiler-checked), not JSON: each is a module `crates/cards/src/impls/<name>.rs` exposing `CODE: &str` and `abilities() -> Vec<Ability>`. Cards needing primitives the DSL lacks get a Rust impl — and a primitive is added only once a second card wants the same pattern ([`standards.md`](standards.md)).
 
@@ -52,7 +52,7 @@ A card is **playable** iff it has an `abilities()` impl (`cards::is_playable(cod
 
 ## Card-data pipeline
 
-`data/arkhamdb-snapshot/` is a manually-pinned subset of upstream `Kamalisk/arkhamdb-json-data`. **Never auto-sync** — a malformed upstream entry can't surprise the build. What it holds versus what the build compiles is the **Snapshot** / **Corpus** distinction in [`CONTEXT.md`](../../CONTEXT.md).
+`data/arkhamdb-snapshot/` is a manually-pinned subset of upstream `Kamalisk/arkhamdb-json-data`. **Never auto-sync** — a malformed upstream entry can't surprise the build. What it holds versus what the build compiles is the **Snapshot** / **Corpus** distinction in [`GLOSSARY.md`](../../GLOSSARY.md).
 
 Every vendored pack file is sorted into `PACK_FILES` / `REFERENCE_FILES` / `OUT_OF_SCOPE_FILES`, and `classify` (`crates/card-data-pipeline/src/main.rs`) fails on any file in none of them *and* on any in-scope pack from `packs.json` with no vendored file. It runs both in the pipeline and as a test, so CI catches a mis-vendored bump. See `data/arkhamdb-snapshot/SOURCE.md`.
 

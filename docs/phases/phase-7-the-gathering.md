@@ -275,7 +275,7 @@ the PR deletes Deduction's own `TestedLocation` anchoring. `discover_clue` caps 
 01007's "discard that many" reads the real quantity; `perform_discovery` keeps its
 own `min` as the shrinkage backstop, fixing the count at the moment of the would-be
 discovery. The shape distinction is now glossary vocabulary (**Discovery** in
-`CONTEXT.md`) — it is invisible in clue totals and cost a shipped bug. *(The
+`GLOSSARY.md`) — it is invisible in clue totals and cost a shipped bug. *(The
 predicate is no longer evaluated at reaction-scan time
 **only** — PR #608 re-runs the whole reaction scan at both prompt sites and once
 more at initiation, so a sibling option that resolves first can withdraw a
@@ -328,7 +328,7 @@ was minted early) are both `TODO`-adjacent comments at the sites that hold them.
 
 **#707 ✅ shipped (PR #733)** is the first of the four bullets and the vocabulary
 change the other three attach to. The activation action stops naming a bare
-`CardInstanceId` and names an **ability source** (`CONTEXT.md`), and
+`CardInstanceId` and names an **ability source** (`GLOSSARY.md`), and
 `engine::ability_source` answers reachability once for the validator, the turn-menu
 enumerator and the fast-window enumerator alike — `resolve` is a lookup in
 `reachable_sources` rather than a second reading of the rules, so the menu and
@@ -421,7 +421,7 @@ the widening #707/#708/#709 shipped reaches player windows by construction:
 `enumerate_fast_plays` already consults `engine::ability_source`, the same predicate
 `check_activate_ability` and the turn-menu enumerator consult. A zero-action ability
 — the `[free]` icon, *"a free triggered ability that does not cost an action and may
-be used during any player window"*, never *"fast ability"* (`CONTEXT.md`) — on a
+be used during any player window"*, never *"fast ability"* (`GLOSSARY.md`) — on a
 location, an enemy at your location, a co-located threat area, the act or the agenda
 is therefore offered in a player window on exactly the terms an action-costed one is
 offered in the turn menu.
@@ -458,7 +458,7 @@ Its own doc comment conceded the premise (*"There is no `Effect::Evade` and no
 activated parley/resign card in scope"*), which the Parlor 01115's `[action]
 **Resign.**` falsifies in the shipping scenario the moment #708 makes a location's
 abilities reachable. `Trigger::Activated` now carries an `ActionDesignator`
-(`CONTEXT.md`), and the corpus declares what it prints: the four weapons are
+(`GLOSSARY.md`), and the corpus declares what it prints: the four weapons are
 **Fight**, Flashlight 01087 is **Investigate** — a designator the exempt list does
 *not* name, so it provokes exactly as the basic investigate action does. Declared
 rather than derived because the rules quote the designator and Frozen in Fear
@@ -909,7 +909,7 @@ at all. Forced-before-reaction has exactly one mechanism, the `TimingPoint` curs
 **#705 ✅ shipped (PR #718)** made the migration discoverable to the card author
 rather than only to the ADR's reader: `EventTiming`'s own doc comment (which still
 called the `at` cell dormant) now describes the three cells as they work and names
-the reject, `CONTEXT.md` defines **timing cell** including the `"if … would …"`
+the reject, `GLOSSARY.md` defines **timing cell** including the `"if … would …"`
 when-tier distinction, and `CLAUDE.md` and `docs/agents/standards.md` carry a
 sentence and an index row apiece.
 **#719 ✅ shipped (PR #723)** started spending that vocabulary on the corpus: #694's

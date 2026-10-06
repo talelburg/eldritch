@@ -53,7 +53,7 @@
 //!
 //! "The lead" below always means `turn_order.first()`, the proxy the engine
 //! actually binds — not the chosen lead investigator of
-//! `glossary/Lead_Investigator.md`, which we do not model (`CONTEXT.md`, *Lead
+//! `glossary/Lead_Investigator.md`, which we do not model (`GLOSSARY.md`, *Lead
 //! investigator*). The two coincide in the solo tests and are not guaranteed to
 //! in the two-investigator ones; nothing here turns on the difference.
 //!

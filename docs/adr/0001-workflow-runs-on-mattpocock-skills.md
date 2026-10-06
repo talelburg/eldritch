@@ -1,6 +1,6 @@
 # Workflow doctrine runs on the mattpocock-skills suite
 
-The repo previously mandated the `superpowers` skills (brainstorm → TDD plan → task-by-task execution) in `CLAUDE.md`, and the plugin injected a session-start instruction reinforcing it. We replaced that with the `mattpocock-skills` suite, disabled the `superpowers` plugin, and moved the domain terminology that had accumulated in `CLAUDE.md` into a real glossary at `CONTEXT.md`. The reason is that most of what `CLAUDE.md` carried was never workflow — it was domain vocabulary and verification discipline sharing a file with process instructions, and the suite gives each of those a proper home (`CONTEXT.md`, `docs/adr/`, `docs/agents/`).
+The repo previously mandated the `superpowers` skills (brainstorm → TDD plan → task-by-task execution) in `CLAUDE.md`, and the plugin injected a session-start instruction reinforcing it. We replaced that with the `mattpocock-skills` suite, disabled the `superpowers` plugin, and moved the domain terminology that had accumulated in `CLAUDE.md` into a real glossary at `GLOSSARY.md`. The reason is that most of what `CLAUDE.md` carried was never workflow — it was domain vocabulary and verification discipline sharing a file with process instructions, and the suite gives each of those a proper home (`GLOSSARY.md`, `docs/adr/`, `docs/agents/`).
 
 ## Considered options
 

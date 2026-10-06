@@ -105,7 +105,7 @@ mod tests {
     /// The declared cell against the printed word, the review step
     /// `docs/agents/standards.md` names: the module's verbatim text block above
     /// reads *"[reaction] **When** an enemy attack deals damage to Guard Dog"*,
-    /// and `CONTEXT.md`'s **Timing cell** entry puts *"when"* in the interrupt
+    /// and `GLOSSARY.md`'s **Timing cell** entry puts *"when"* in the interrupt
     /// cell — so `EventTiming::When`, on the `DamageAssigned` condition (#722).
     #[test]
     fn ability_is_one_when_reaction_native() {

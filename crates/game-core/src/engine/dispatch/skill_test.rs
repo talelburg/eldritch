@@ -1570,7 +1570,7 @@ fn apply_skill_test_follow_up(
             // (Deduction 01039's `bonus_clues_discovered`, the clue-side twin
             // of the Fight arm's `bonus_attack_damage` below). "Discover 1
             // additional clue" raises this discovery's count; it does not make
-            // a second one — see the **Discovery** entry in `CONTEXT.md` and
+            // a second one — see the **Discovery** entry in `GLOSSARY.md` and
             // #471. The in-flight test is still present here (torn down only at
             // the end of resolution), so the accumulator is readable.
             //

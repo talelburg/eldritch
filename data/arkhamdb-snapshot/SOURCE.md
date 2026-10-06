@@ -31,7 +31,7 @@ couple of them do not match their cycle codes: `pack/side/` is the
 ## Snapshot vs. corpus
 
 These are different sets, and the distinction is load-bearing (see
-`CONTEXT.md`):
+`GLOSSARY.md`):
 
 - The **snapshot** is everything in this directory — all of Chapter 1.
   Most of it is **planning input**: pinned so decisions about the DSL and

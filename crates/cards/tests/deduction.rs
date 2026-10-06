@@ -3,7 +3,7 @@
 //! 2. Raises the Investigate follow-up's **single** discovery to 2 clues
 //!    at the tested location on a successful Investigate — one discovery
 //!    of 2, not two of 1 (#471; see the **Discovery** entry in
-//!    `CONTEXT.md`).
+//!    `GLOSSARY.md`).
 //! 3. Discovers no clues on a failed Investigate.
 //! 4. Does not raise the count on a non-Investigate skill test.
 //!
