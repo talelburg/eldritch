@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Architecture review (merged): eldritch</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose", flowchart: { useMaxWidth: true } });
+</script>
+<style>
+  .deep { background: linear-gradient(135deg, #0f172a, #1e293b); color: #f8fafc; }
+  .chip { font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
+  .schem { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+  .leakbox { border: 2px solid #dc2626; }
+  .seam { border-style: dashed; }
+  pre.mermaid { background: transparent; }
+</style>
+</head>
+<body class="bg-stone-50 text-slate-900 font-sans">
+<main class="max-w-6xl mx-auto px-6 py-12 space-y-14">
+
+<header class="space-y-4">
+  <p class="text-xs uppercase tracking-widest text-slate-500">Architecture review, merged · runs of 2026-09-26 · main @ 6a339e90</p>
+  <h1 class="font-serif text-4xl">eldritch: deepening opportunities, one report</h1>
+  <div class="text-slate-600 max-w-3xl space-y-2">
+    <p>This merges two independent runs against the same commit:</p>
+    <ul class="list-disc ml-5 text-sm">
+      <li><strong>Hot-spot pass</strong> (7 candidates). It covered the files changed most in the last ~150 commits: engine dispatch, reaction windows, game state and the evaluator.</li>
+      <li><strong>Workspace pass</strong> (17 candidates). Six parallel reads covered state, timing machinery, handlers and the evaluator, DSL/cards/pipeline, scenarios/server/web, and tests.</li>
+    </ul>
+    <p class="text-sm">This report has 19 candidates. Five were found by <em>both</em> passes and are tagged as such. Two runs that reached the same finding independently make it more likely to be real. Where the passes disagreed on a count, a rating or the top pick, the disagreement is shown, not hidden. Each pass reached its own top pick; this report weighs the two and picks one.</p>
+  </div>
+  <div class="flex flex-wrap gap-4 text-xs text-slate-600">
+    <span class="flex items-center gap-2"><span class="inline-block w-5 h-4 border border-slate-400 bg-white"></span>module</span>
+    <span class="flex items-center gap-2"><span class="inline-block w-5 h-4 border-2 border-dashed border-slate-500"></span>seam</span>
+    <span class="flex items-center gap-2"><span class="inline-block w-5 h-4 leakbox"></span>leak / drift</span>
+    <span class="flex items-center gap-2"><span class="inline-block w-5 h-4 deep"></span>deep module</span>
+    <span class="flex items-center gap-2"><span class="px-2 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 rounded bg-slate-200 text-slate-700">Speculative</span></span>
+    <span class="flex items-center gap-2"><span class="px-2 rounded bg-violet-100 text-violet-800">both passes</span><span class="px-2 rounded bg-sky-100 text-sky-800">hot-spot pass</span><span class="px-2 rounded bg-stone-200 text-stone-700">workspace pass</span></span>
+  </div>
+  <nav class="grid md:grid-cols-4 gap-3 text-sm pt-2">
+    <div><p class="schem text-slate-400 mb-1">Engine kernel</p>
+      <a class="block hover:underline" href="#c1">01 Initiation gate</a>
+      <a class="block hover:underline" href="#c2">02 Trigger scan + fire</a>
+      <a class="block hover:underline" href="#c3">03 Continuation stack</a>
+      <a class="block hover:underline" href="#c4">04 Taking an action</a>
+      <a class="block hover:underline" href="#c5">05 Board &amp; zones</a>
+      <a class="block hover:underline" href="#c6">06 Phase skeleton</a>
+      <a class="block hover:underline" href="#c7">07 Evaluator families</a>
+      <a class="block hover:underline" href="#c8">08 Enemy engagement</a>
+      <a class="block hover:underline" href="#c9">09 Registries on Cx</a>
+      <a class="block hover:underline" href="#c10">10 Modified base values</a></div>
+    <div><p class="schem text-slate-400 mb-1">Content</p>
+      <a class="block hover:underline" href="#c11">11 Grounded choice</a>
+      <a class="block hover:underline" href="#c12">12 One record per card</a>
+      <a class="block hover:underline" href="#c13">13 Typed pipeline</a>
+      <a class="block hover:underline" href="#c14">14 DSL primitives due</a></div>
+    <div><p class="schem text-slate-400 mb-1">Client &amp; server</p>
+      <a class="block hover:underline" href="#c15">15 Prompt layout</a>
+      <a class="block hover:underline" href="#c16">16 Skill-test result</a>
+      <a class="block hover:underline" href="#c17">17 Session core</a></div>
+    <div><p class="schem text-slate-400 mb-1">Test harness</p>
+      <a class="block hover:underline" href="#c18">18 Step-wise driving</a>
+      <a class="block hover:underline" href="#c19">19 TEST_INV everywhere</a>
+      <p class="schem text-slate-400 mt-3 mb-1">Also</p>
+      <a class="block hover:underline" href="#sequencing">Sequencing map</a>
+      <a class="block hover:underline" href="#gates">Gates surfaced</a>
+      <a class="block hover:underline" href="#disagreements">Where the passes disagreed</a>
+      <a class="block hover:underline" href="#top">Top recommendation</a></div>
+  </nav>
+</header>
+
+<section id="candidates" class="space-y-12">
+
+<h2 class="font-serif text-2xl border-b border-slate-300 pb-2">Engine kernel: <span class="font-mono text-lg">game-core</span></h2>
+
+<!-- 01 -->
+<article id="c1" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">01</span><h3 class="font-serif text-2xl">One initiation gate for every ability path</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-red-100 text-red-800">live bug</span><span class="px-2 py-0.5 rounded bg-sky-100 text-sky-800">hot-spot pass</span></div>
+  <p class="font-mono text-sm text-slate-600">reaction_windows.rs: scan_pending_triggers :173 · scan_act_agenda_reactions :331 · scan_hand_fast_events :408 · check_play_card :1672 · check_activate_ability :2198 · forced_triggers.rs: collect_forced_hits retain :589 · evaluator.rs: ability_can_initiate · effect_can_change_state · play_is_prohibited</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: six call sites, each assembles its own gates</p>
+      <table class="w-full text-xs">
+        <thead><tr class="text-slate-500"><th class="text-left">gate</th><th>react</th><th>act/ag</th><th>hand</th><th>forced</th><th>activate</th><th>play</th></tr></thead>
+        <tbody class="text-center">
+          <tr><td class="text-left">eligibility tag</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td class="text-red-600 font-bold">✗</td><td>–</td></tr>
+          <tr><td class="text-left">usage limit</td><td>✓</td><td>–</td><td>–</td><td>–</td><td class="text-red-600 font-bold">✗</td><td>–</td></tr>
+          <tr><td class="text-left">play-ban</td><td>–</td><td>–</td><td class="text-red-600 font-bold">✗</td><td>–</td><td>–</td><td>✓</td></tr>
+          <tr><td class="text-left">cost payable</td><td>✓</td><td>✓</td><td>✓</td><td>–</td><td>✓</td><td>✓</td></tr>
+        </tbody>
+      </table>
+      <p class="text-xs text-red-700 mt-3">Verified twice, once in each run: <code>play_is_prohibited</code> has one caller in <code>reaction_windows.rs</code> (:1662, in the play path), and <code>scan_hand_fast_events</code> never calls it. Dissonant Voices 01165 says <em>"You cannot play assets or events."</em>, but it doesn't stop a Fast event being offered from hand in a reaction window.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After: one deep module, six thin callers</p>
+      <div class="flex flex-wrap gap-2 text-xs">
+        <div class="border rounded px-2 py-1">react scan</div><div class="border rounded px-2 py-1">act/agenda</div><div class="border rounded px-2 py-1">hand Fast</div><div class="border rounded px-2 py-1">forced</div><div class="border rounded px-2 py-1">activate</div><div class="border rounded px-2 py-1">play</div>
+      </div>
+      <div class="border-t-2 border-dashed border-slate-400"></div>
+      <div class="deep rounded-lg p-4 space-y-2">
+        <p class="schem text-slate-300">Initiation module</p>
+        <code class="text-xs text-emerald-300">check_initiation(state, who, source, address, via) → Result&lt;Initiable, Refusal&gt;</code>
+        <div class="grid grid-cols-3 gap-1 text-[10px] text-slate-400">
+          <span>side in effect</span><span>trigger kind</span><span>usage limit</span><span>eligibility tag</span><span>cost payable</span><span>play-ban</span>
+        </div>
+      </div>
+      <p class="text-xs text-slate-500"><code>lapse_reason</code> reads the <code>Refusal</code> instead of working the reason out again.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>Six places each decide "may this ability initiate now?", and their answers differ. One bug is live. Two are latent: usage limits on activated abilities are never enforced, and activation ignores <code>eligibility</code> (the #791 class of bug).</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>A single initiation module owns every gate. Each path supplies only its <code>InitiationKind</code>.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>locality: the next gate is added in one place</li><li>tests: a gate × kind table</li><li>the lapse reason is read, not guessed</li><li>closes the #707 / #791 / #852 bug class</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-sky-50 border border-sky-200 px-3 py-2 text-sm">The workspace pass did not list this as its own candidate. It came closest in 04, which moves play and activate legality out of <code>reaction_windows.rs</code>. That move and this gate fit together: 04 decides <em>where</em> the legality code lives, and this card decides <em>what one answer it gives</em>.</div>
+</article>
+
+<!-- 02 -->
+<article id="c2" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">02</span><h3 class="font-serif text-2xl">One trigger scan and one firing path for forced, reaction, hand and activated abilities</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">both passes</span></div>
+  <p class="font-mono text-sm text-slate-600">dispatch/emit.rs:243-306 · forced_triggers.rs:23-767 (resolve_one :733) · reaction_windows.rs:159-609, 1024-1181 (fire_pending_trigger :1024, play_fast_event :1206) · abilities.rs: push_activation_resolution :174 · coordinator.rs:96-192 (<code>if candidates.len() &gt;= 2</code> :185) · test_support/mod.rs:221-460</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">Before: two collectors, four resolve paths</p>
+<pre class="mermaid">
+flowchart TB
+  E["TimingEvent"] --> FP["forced_point()<br/>ForcedTriggerPoint x13"]
+  FP --> CF["collect_forced_hits<br/>12 hand-scoped arms"]
+  E --> SP["scan_pending_triggers<br/>per-event if-lets"]
+  SP --> TM["trigger_matches<br/>_ => false"]
+  E --> AA["scan_act_agenda_reactions<br/>(copy of push_scenario_structure)"]
+  CF -- "1 hit" --> R1["resolve_one<br/>no usage bump, no bindings"]
+  CF -- "2+ hits" --> R2
+  TM --> R2["fire_pending_trigger<br/>usage + event bindings"]
+  AA --> R2
+  H["hand Fast"] --> R3["play_fast_event<br/>bypasses abilities_in_effect"]
+  A["activation"] --> R4["push_activation_resolution"]
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class FP,TM,R1,R3 leak
+</pre></div>
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">After: one deep pipeline</p>
+<pre class="mermaid">
+flowchart TB
+  E["TimingEvent"] --> S["Trigger scan<br/>(event, cell, kind) -> candidates<br/>exhaustive scope per condition"]
+  Reg["&CardRegistry (09)"] -.-> S
+  B["Board sources (05)"] -.-> S
+  S --> G["Initiation gate (01)"]
+  HA["hand Fast · activation"] --> G
+  G --> F["Fire / initiate(cx, candidate, at)<br/>abilities_in_effect::resolve,<br/>bind from event, bump usage, push effect"]
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class S,G,F deep
+</pre></div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>Two parallel code paths each answer "which abilities fire here?". Of 41 commits to <code>forced_triggers.rs</code>, 34 also touched <code>reaction_windows.rs</code>. How a forced ability resolves depends on whether a sibling ability triggered at the same point. A lone forced hit takes <code>resolve_one</code>: it gets no event bindings and its usage limit isn't counted. Hand Fast events skip <code>abilities_in_effect</code> altogether.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>Delete <code>ForcedTriggerPoint</code>. One scan module declares each condition's scope once, in an exhaustive match. One <code>initiate</code> function serves every path: lone forced, ordered forced, reaction, hand Fast and activation. The hand case adds only its play frame.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4">
+      <li>locality: a new condition is one match arm</li>
+      <li>silent drops become compile errors</li>
+      <li>scan unit-testable in-crate</li>
+      <li>delete <code>resolve_one</code>; a test asserts a lone forced hit resolves the same as a run of them</li>
+      <li>the 9 <code>fire_forced_on_*</code> helpers become thin wrappers</li>
+      <li>coordinator stops scanning twice</li>
+      <li>#836-style drift can't recur</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm">ADR 0008: this extends its exhaustive-classification discipline to <em>scope</em>. ADR 0010: <code>CandidateSource</code> is unchanged. <strong>Gate:</strong> unifying the paths would also count usage limits for forced abilities. That changes behaviour, so it needs a ruling. The hot-spot pass also noted that the lone-vs-run split comes from reading the code and no test confirms it yet. <a href="#c18" class="underline">18</a>'s <code>fire_at</code> is how you'd write that test.</div>
+</article>
+
+<!-- 03 -->
+<article id="c3" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">03</span><h3 class="font-serif text-2xl">Make the continuation stack a deep module with one exhaustive frame profile</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">workspace pass</span></div>
+  <p class="font-mono text-sm text-slate-600">state/game_state.rs:161, 354-2500, 1176-1375, 2876-3045 · dispatch/mod.rs:242-480, 513, 791-973 · every dispatch/*.rs · evaluator.rs</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4"><p class="schem text-slate-500 mb-3">Before: a <code>pub Vec</code> whose invariants ~25 callers keep by hand</p>
+      <div class="flex flex-wrap gap-1 mb-3">
+        <span class="chip px-1.5 py-0.5 border leakbox rounded">push ×44</span><span class="chip px-1.5 py-0.5 border leakbox rounded">pop ×35</span><span class="chip px-1.5 py-0.5 border leakbox rounded">last() ×65</span><span class="chip px-1.5 py-0.5 border leakbox rounded">last_mut ×12</span><span class="chip px-1.5 py-0.5 border leakbox rounded">"expected X on top" panics ×30</span><span class="chip px-1.5 py-0.5 border leakbox rounded">debug_assert top ×9</span>
+      </div>
+      <div class="h-8 border border-slate-400 flex items-center justify-center schem mb-4">pub continuations: Vec&lt;Continuation&gt;</div>
+      <p class="schem text-slate-500 mb-1">Each variant is classified 6 times</p>
+      <table class="text-xs w-full"><tbody>
+        <tr><td class="font-mono">is_phase_anchor</td><td class="text-red-600">matches!</td></tr>
+        <tr><td class="font-mono">is_queued_ability</td><td class="text-red-600">matches!</td></tr>
+        <tr><td class="font-mono">awaits_input</td><td class="text-red-600">other =&gt; default</td></tr>
+        <tr><td class="font-mono">drive_frames</td><td class="text-red-600">_ =&gt; idle</td></tr>
+        <tr><td class="font-mono">cancelled_by_scenario_end</td><td class="text-emerald-700">exhaustive</td></tr>
+        <tr><td class="font-mono">resolve_input</td><td class="text-emerald-700">exhaustive</td></tr>
+      </tbody></table>
+      <p class="text-xs text-red-600 mt-2">These have already drifted: <code>awaits_input</code> says yes for EncounterCard, PlayFromHand, MoveEnter and PlayerDraw, while <code>resolve_input</code> rejects all four.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4"><p class="schem text-slate-500 mb-3">After: one module owns the stack</p>
+      <div class="deep rounded-lg p-4 space-y-2">
+        <p class="schem text-slate-300">Continuation stack</p>
+        <div class="text-xs font-mono space-y-1 text-slate-200">
+          <div>pop_expect::&lt;Kind&gt;() · top_mut::&lt;Kind&gt;()</div>
+          <div>topmost_of::&lt;Kind&gt;()</div>
+          <div>push(frame): checks ADR 0003 / 0004 at the push</div>
+          <div>profile(frame) → Driven | Prompt | Inert + on-scenario-end</div>
+        </div>
+        <div class="grid grid-cols-3 gap-1 pt-2 text-[10px] text-slate-400">
+          <span class="border border-slate-600 rounded px-1">drive loop</span><span class="border border-slate-600 rounded px-1">input router</span><span class="border border-slate-600 rounded px-1">scenario-end gate</span>
+        </div>
+        <p class="text-[10px] text-slate-400">all derived from <code>profile</code></p>
+      </div>
+      <p class="text-xs text-slate-500 mt-3">Vehicle: move <code>Continuation</code> and its ~2150 lines of payload types out of <code>game_state.rs</code> into this module.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>The stack's invariants are kept only by convention: ScenarioEnd at the bottom, no queued ability under an anchor, one SkillTest, prompt on top. A bad push is never caught where it happens.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>A stack type in <code>state</code> that the engine can't bypass, plus one exhaustive per-variant profile that every predicate is derived from.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>locality: invariants fail at the push</li><li>~30 downcast blocks → one call</li><li>a new frame type is one decision</li><li>stack testable without <code>apply</code></li><li>the <code>Idle</code> outcome in <a href="#c18" class="underline">18</a> derives from <code>profile</code></li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm">Turns ADRs 0002, 0003 and 0004 from conventions into enforced structure. It reverses none of them. The wire format stays the same if the stack serialises as a <code>Vec</code>.</div>
+</article>
+
+<!-- 04 -->
+<article id="c4" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">04</span><h3 class="font-serif text-2xl">Taking an action: one module for cost, extra cost and attacks of opportunity, and one module per designated action</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">workspace pass</span></div>
+  <p class="font-mono text-sm text-slate-600">dispatch/actions.rs:55-1098 · abilities.rs:120-305 · cards.rs:639-1056 · reaction_windows.rs:1586-2428 · enumerate.rs:241-400 · designator.rs:60-140 · evaluator.rs:406-560, 2139, 2514 · skill_test.rs:1553-1712 · combat.rs:20-56</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">Before: what Fight means is spread over 6 files</p>
+<pre class="mermaid">
+flowchart LR
+  H["7 handlers<br/>investigate, resource, engage,<br/>move, draw, play, activate"] --> S1["spend_actions"]
+  H --> S2["charge_action (+surcharge)"]
+  H --> S3["inline saturating_sub<br/>in pay_activation_costs"]
+  H --> AO["push ActionResolution<br/>+ drive_aoo  x7"]
+  L1["validate_basic_action"] --- L2["move_action inline"]
+  L2 --- L3["enumerate.rs inline"]
+  L3 --- L4["check_activate_ability"]
+  L4 --- L5["check_play_action_available"]
+  F1["actions.rs Fight"] -.- F2["designator.rs targets"]
+  F2 -.- F3["evaluator perform_designated_fight"]
+  F3 -.- F4["skill_test.rs post-test damage"]
+  F4 -.- F5["enumerate.rs re-derives targets"]
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class S3,L2,L3,F5 leak
+</pre></div>
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">After: two tiers</p>
+<pre class="mermaid">
+flowchart TB
+  B["basic handlers"] --> T
+  P["play / activate"] --> T
+  M["turn menu (enumerate)"] --> T
+  T["Take-an-action<br/>legal? cost + surcharge,<br/>pay + event, provokes AoO?<br/>park the rest on a frame"]
+  T --> A1["Fight"]
+  T --> A2["Evade"]
+  T --> A3["Investigate"]
+  T --> A4["Move"]
+  D["designated ability<br/>(evaluator)"] --> A1
+  D --> A2
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class T,A1,A2,A3,A4 deep
+</pre></div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>There are three ways to spend actions and five separate "can this investigator act?" checks. The attack-of-opportunity exemption is written out twice. <code>combat.rs:25</code> says its target scope is shared "so the three can't drift", yet <code>enumerate.rs:319</code> works the targets out again on its own. Adding designated Evade and Move (TODO #818) would mean edits in 5 files.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>A take-an-action module owns legality, cost and the attack-of-opportunity step. Each designated action (Fight, Evade, Investigate, Move) gets its own module, which owns its targets, its core effect and its after-test step. Play and activate legality (~850 lines) move out of <code>reaction_windows.rs</code>, and their ability-side gates go to <a href="#c1" class="underline">01</a>.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>#818 becomes "add a module"</li><li>the turn menu can't drift from the handlers</li><li>one attack-of-opportunity test covers 7 entries</li><li>the hot file shrinks by a third</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm">Keeps ADR 0002: the <code>PlayCard</code> frame still carries the in-progress play. Uses the <strong>Action designator</strong> vocabulary from <code>CONTEXT.md</code>.</div>
+</article>
+
+<!-- 05 -->
+<article id="c5" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">05</span><h3 class="font-serif text-2xl">A public board &amp; zone module: find an instance, walk ability sources, send a leaving card to its owner</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-red-100 text-red-800">live rules divergence</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">both passes</span></div>
+  <p class="font-mono text-sm text-slate-600">ability_source.rs:156-440 (reachable_sources :156) · abilities_in_effect.rs:276-355 · modified_value.rs:621-680 · dispatch/cards.rs:402-453 (discard_card_from_play :402, place_card_leaving_play :429) · evaluator.rs:1108-1185 (discard_self) · threat_area.rs: discard_from_threat_area :185 · elimination.rs:345-357 · reaction_windows.rs: bump_usage_counter :1379 · cards/impls/crypt_chill.rs:104-131 · trapped.rs:113-137 · theyre_getting_out.rs:309 · web/src/decision.rs:109-131</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">Before: four board walks and four copies of "leave play"</p>
+<pre class="mermaid">
+flowchart TB
+  subgraph GC["game-core (private)"]
+    W1["modified_value::sweep (7 zones)"]
+    W2["granted_to (7 zones)"]
+    W3["instance_in_play / _mut"]
+    W4["forced scan subsets"]
+    W5["bump_usage_counter<br/>own 3-zone walk"]
+    DC["discard_card_from_play<br/>owner routing"]
+  end
+  CC["crypt_chill.rs<br/>to controller's discard"] -.-> X["no access"]
+  DS["discard_self<br/>TODO #371"] -.-> X
+  TA["threat_area::discard"] -.-> X
+  WEB["web decision_source<br/>controlled cards only"] -.-> X
+  RS["reaction scan<br/>controlled + act/agenda"] -.-> X
+  X -.- GC
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class CC,WEB,RS,DS,TA leak
+</pre></div>
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">After</p>
+<pre class="mermaid">
+flowchart TB
+  B["Board module (pub, via game_core::engine)<br/>sources(kind) -> (AbilitySource, code, placement)<br/>find_instance(id)<br/>move_card(cx, id, to: Destination)<br/>-> owner's pile, or removed if no owner"]
+  B --> M["modified_value"]
+  B --> G["granted abilities"]
+  B --> T["trigger scan (02)"]
+  B --> C["cards crate natives"]
+  B --> W["web anchor lookup"]
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class B deep
+</pre></div>
+  </div>
+  <div class="rounded-lg border border-slate-200 p-3 text-xs">
+    <p class="schem text-slate-500 mb-2">The reachability half: two answers to "which sources can I use?"</p>
+    <div class="flex gap-3">
+      <div class="flex-1 border rounded p-2"><div class="font-semibold">[action] / [free]</div><code>reachable_sources</code>: own cards · location · co-located scenario cards · act/agenda</div>
+      <div class="flex-1 leakbox rounded p-2"><div class="font-semibold">[reaction]</div>own cards · act/agenda<br/><span class="text-red-700">location, enemies and co-located cards are never scanned</span></div>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>The engine's owner-aware routing is <code>pub(in crate::engine)</code>, so the <code>cards</code> crate and the web client each write their own copy. The copies get Owner vs Controller wrong. Crypt Chill 01167 (verified at <code>crypt_chill.rs:124</code>) pushes the discarded asset onto the <em>controller's</em> discard. <code>elimination.rs</code> finds the owner through <code>card.owner</code> in one place and <code>metadata.weakness</code> in another. A native writes <code>agenda_doom</code> directly. <code>instance_id ==</code> lookups appear 19 times. Separately, the reaction scan walks its own set of zones instead of using ADR 0010's reachability predicate.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>One exported board module. It yields every ability source once for each trigger kind, finds any instance, and moves cards between zones, filing a leaving card by its <strong>owner</strong>. Every walker, card native and client lookup goes through it. The reaction arm becomes <code>reachable_sources ∩ event scope</code>.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>the Owner / Controller rule lives in one place</li><li>a new Dunwich zone is one edit</li><li>the client can't drift from the engine</li><li>reactions and activations agree on reachability, so ADR 0010 actually holds</li><li>zone-move invariants tested in one module</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm space-y-1">
+    <p>This does not reopen ADR 0010. The reaction scan simply doesn't follow it yet (<em>"One reachability predicate implements the bullets"</em>, for [free], [reaction] and [action] alike). That gap is latent: no card in the corpus prints a [reaction] on a location or a co-located card yet.</p>
+    <p><strong>Gates:</strong> the Crypt Chill routing and widening the reaction scan to co-located sources are both rules calls for you. Lita Chantler's ruling for 01117 (<a class="underline" href="https://arkhamdb.com/card/01117">arkhamdb.com/card/01117</a>): <em>"If Lita leaves play while a player controls her temporarily during "The Gathering" scenario (i.e. while she is technically not a part of that player's deck), remove her from the game (do not place her into any discard pile)."</em> Crypt Chill can be drawn in The Gathering, so a Lita that Crypt Chill discards should leave the game.</p>
+  </div>
+</article>
+
+<!-- 06 -->
+<article id="c6" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">06</span><h3 class="font-serif text-2xl">One phase skeleton instead of four copy-pasted phases</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-slate-100">wire change</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">workspace pass</span></div>
+  <p class="font-mono text-sm text-slate-600">dispatch/phases.rs:292-1270 (set_*_resume at 349/532/648/1249, advance_phase_entry 866-900) · state/game_state.rs:823-848, 1555-1652</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4"><p class="schem text-slate-500 mb-3">Before: the same bookends written 4 times (~350 lines)</p>
+      <div class="grid grid-cols-4 gap-1 text-[10px] text-center">
+        <div class="schem text-slate-500">Mythos</div><div class="schem text-slate-500">Investigation</div><div class="schem text-slate-500">Enemy</div><div class="schem text-slate-500">Upkeep</div>
+        <div class="border border-slate-300 py-1">enter</div><div class="border border-slate-300 py-1">enter</div><div class="border border-slate-300 py-1">enter</div><div class="border border-slate-300 py-1">enter</div>
+        <div class="border border-slate-300 py-1">Started + queue</div><div class="border border-slate-300 py-1">Started + queue</div><div class="border border-slate-300 py-1">Started + queue</div><div class="border border-slate-300 py-1">Started + queue</div>
+        <div class="border border-slate-300 py-1">set_resume</div><div class="border border-slate-300 py-1">set_resume</div><div class="leakbox py-1">set_anchor (silent no-op)</div><div class="border border-slate-300 py-1">set_resume</div>
+        <div class="border border-slate-300 py-1">Ended + queue</div><div class="border border-slate-300 py-1">Ended + queue</div><div class="border border-slate-300 py-1">Ended + queue</div><div class="border border-slate-300 py-1">Ended + queue</div>
+        <div class="border border-slate-300 py-1">transition</div><div class="border border-slate-300 py-1">transition</div><div class="border border-slate-300 py-1">transition</div><div class="border border-slate-300 py-1">transition</div>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">Also, <code>state.phase</code> is assigned at 6 sites, each mirroring the anchor.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4"><p class="schem text-slate-500 mb-3">After</p>
+      <div class="deep rounded-lg p-4 text-xs space-y-1">
+        <p class="schem text-slate-300">Phase skeleton: owns ADR 0003 ordering</p>
+        <div class="border border-slate-600 rounded px-2 py-1">enter → Started + timing point (tail)</div>
+        <div class="border-2 border-dashed border-emerald-400 rounded px-2 py-3 text-emerald-200">phase-specific steps (Mythos draws · turns · enemy attacks · upkeep)</div>
+        <div class="border border-slate-600 rounded px-2 py-1">Ended + timing point (tail) → transition</div>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">One anchor frame carries <code>(Phase, Resume)</code>. <code>phase</code> is either derived from the anchor or set in one place.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>All four phases repeat the same steps: enter, emit start, emit end, transition. Each copy repeats the ADR 0003 comment too. The four setters have already drifted: Enemy silently does nothing where the other three panic.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>One skeleton. Each phase supplies only its middle steps.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>leverage: ADR 0003 enforced once</li><li>phases.rs shrinks to about a quarter</li><li>the mirrored <code>phase</code> field can't drift</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm">This changes the serialised <code>Continuation</code> shape, which affects replay logs and the wire format. Do it after <a href="#c3" class="underline">03</a>, which gives the anchor a home.</div>
+</article>
+
+<!-- 07 -->
+<article id="c7" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">07</span><h3 class="font-serif text-2xl">Split the evaluator into effect families</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">workspace pass</span></div>
+  <p class="font-mono text-sm text-slate-600">engine/evaluator.rs (2571 lines, 89 commits since June): step_leaf 580-780 · ground_chosen_targets 1929 · effect_can_change_state 2299 · investigator_target_eligible 2407 · stray rule queries 1221, 2465, 2514, 2562</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4"><p class="schem text-slate-500 mb-3">Before: one effect's meaning spread across 4 matches</p>
+      <table class="w-full text-[11px] text-center border-collapse">
+        <thead><tr class="text-slate-500"><th></th><th class="font-mono font-normal">step_leaf</th><th class="font-mono font-normal">ground_targets</th><th class="font-mono font-normal">can_change</th><th class="font-mono font-normal">target_eligible</th></tr></thead>
+        <tbody>
+          <tr><td class="text-left font-mono">Heal</td><td class="border">:614</td><td class="border">:1937</td><td class="border">:2332</td><td class="border">:2412</td></tr>
+          <tr><td class="text-left font-mono">Damage</td><td class="border">·</td><td class="border">·</td><td class="border">·</td><td class="border">·</td></tr>
+          <tr><td class="text-left font-mono">Discover</td><td class="border">·</td><td class="border">·</td><td class="border">·</td><td class="border"></td></tr>
+          <tr><td class="text-left font-mono">new effect</td><td class="border">·</td><td class="border">·</td><td class="border leakbox text-red-600">_ =&gt; true</td><td class="border">·</td></tr>
+        </tbody></table>
+      <p class="text-xs text-slate-500 mt-2">The evaluator also holds the action surcharge, the play prohibition and control status, and 5 card impls call these directly.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4"><p class="schem text-slate-500 mb-3">After: rows become modules</p>
+      <div class="space-y-1 text-xs">
+        <div class="deep rounded px-3 py-2">Harm family: targets · can-change · apply</div>
+        <div class="deep rounded px-3 py-2">Clues family: targets · can-change · apply</div>
+        <div class="deep rounded px-3 py-2">Cards/zones family: …</div>
+        <div class="deep rounded px-3 py-2">Test-scoped family: …</div>
+        <div class="border border-slate-300 rounded px-3 py-2">Evaluator: frame walker + dispatch only</div>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">The surcharge goes to <a href="#c4" class="underline">04</a>, the play prohibition to <a href="#c1" class="underline">01</a>, and control status to <a href="#c5" class="underline">05</a>.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>Adding an <code>Effect</code> takes four edits, and one of the four quietly falls back to a default if you miss it.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>Group effects into families, each owning all four aspects. The evaluator keeps the walk.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>locality: one effect, one file</li><li>the silent default becomes explicit</li><li>the stale "Phase-3 PR-J" doc comment goes</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm">ADRs 0005 and 0006 are unaffected, and the <code>modify</code> recording stays. <code>modified_value.rs</code> passes the deletion test and should be left alone. <a href="#c10" class="underline">10</a> deepens its interface but leaves its fold as it is.</div>
+</article>
+
+<!-- 08 -->
+<article id="c8" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">08</span><h3 class="font-serif text-2xl">Enemy engagement changes in one module</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">workspace pass</span></div>
+  <p class="font-mono text-sm text-slate-600">actions.rs:315-347, 612-645 · hunters.rs:236-370 · skill_test.rs:1629-1644 · elimination.rs:395-415 · combat.rs:722-731 · game_state.rs:3007</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">Before</p>
+<pre class="mermaid">
+flowchart LR
+  EN["engage: hunters::engage_enemy_with<br/>+ inline copy in actions.rs:340"]
+  DI["disengage: 3 inline copies"]
+  EX["exhaust: 2 inline copies"]
+  FI["'engaged with X' filter<br/>7 inline copies<br/>(accessor exists, unused)"]
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class DI,EX,FI leak
+</pre></div>
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">After</p>
+<pre class="mermaid">
+flowchart LR
+  C["evade · engage action · hunters ·<br/>elimination · retaliate"] --> M["Engagement<br/>engage / disengage / exhaust /<br/>follow-move / re-engage + events"]
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class M deep
+</pre></div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>Engagement state changes and their events are written out by hand at five sites.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>One module that owns engagement transitions and emits their events.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>consistent events</li><li>a future engage timing point is one edit</li></ul></dd></div>
+  </dl>
+</article>
+
+<!-- 09 -->
+<article id="c9" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">09</span><h3 class="font-serif text-2xl">Resolve the card &amp; scenario registries once per apply, carried on <code>Cx</code></h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-slate-100">local-substitutable</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">both passes</span></div>
+  <p class="font-mono text-sm text-slate-600">card_registry.rs (OnceLock, first install wins) · <code>card_registry::current()</code>: 53 non-test calls in 21 files, 69 in 31 files counting tests, +5 in web (re-counted for this merge) · test_support/mock_registry.rs (a second OnceLock, because fn pointers can't capture) · 116 <code>#[ctor::ctor]</code> installs · state/investigator.rs: max_health() :199 · scenario.rs:274-305 · engine/mod.rs:132-172, 314-322 · set_aside.rs:154 · skill_test.rs:466</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">Before: one process global, six different "no registry" behaviours</p>
+<pre class="mermaid">
+flowchart LR
+  G["OnceLock (global)"] --> A["reject<br/>cards.rs:906"]
+  G --> B["cost 0<br/>cards.rs:492"]
+  G --> C["skip icon check<br/>skill_test.rs:1342"]
+  G --> D["encounter discard<br/>evaluator.rs:1158"]
+  G --> E["empty list<br/>skill_test.rs:1716"]
+  G --> SM["state::max_health<br/>(state reads the global)"]
+  X["apply_with_scenario_registry"] --> F["finalize only"]
+  G --> L["scenario_layout,<br/>resolve_symbol_token"]
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class B,C,D,L,SM leak
+</pre></div>
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">After</p>
+<pre class="mermaid">
+flowchart LR
+  AP["apply boundary"] --> CX["Cx<br/>cards: lookup adapter<br/>scenario: Option of module"]
+  CX --> H["handlers, evaluator,<br/>trigger scan, modified_value"]
+  P["production: cards::REGISTRY"] -.adapter.-> AP
+  T["tests: MockRegistry / per-test"] -.adapter.-> AP
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class CX deep
+</pre></div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd><code>architecture.md</code> says handlers "reject cleanly on None", but most don't. A test that passes an explicit scenario registry still runs partly on the global one. Because the global is set once per process, each registry shape needs its own test binary, and state code reads the registry from inside <code>state</code>.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>One lookup adapter with one rule for a missing registry, resolved at the apply boundary and read from <code>Cx</code>.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>two adapters already exist (<code>cards::REGISTRY</code>, <code>MockRegistry</code>), so the seam is real; only its global-ness costs</li><li>per-test registries stop fighting the OnceLock</li><li>enables in-crate trigger-scan tests (<a href="#c2" class="underline">02</a>)</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm">⚠ This touches the layering rule in CLAUDE.md, which calls <code>card_registry</code> <em>"the only cross-crate bridge"</em>, and the <code>CardRegistry</code> design in <code>architecture.md</code>. Neither is an ADR. The bridge stays as function pointers, and the crate layering is unchanged. Only how the registry is passed around changes. <strong>Ratings differed:</strong> the hot-spot pass rated this Speculative and the workspace pass Worth exploring. This report keeps Worth exploring, because it unblocks 02's tests.</div>
+</article>
+
+<!-- 10 -->
+<article id="c10" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">10</span><h3 class="font-serif text-2xl">Base values stop masquerading as modified values</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-slate-200 text-slate-700">Speculative</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">both passes</span></div>
+  <p class="font-mono text-sm text-slate-600">engine/modified_value.rs: modified_value(state, registry, target, quantity, ctx) :298 (4 call sites) · dispatch/combat.rs: damage_enemy :88, 95 (enemy.max_health) · :484, 517 (inv.max_health()) · state/investigator.rs: max_health() :199 · web/src/board.rs, map.rs, enemy_card.rs render printed numbers</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4 text-xs">
+      <p class="schem text-slate-500 mb-2">Before: mass diagram</p>
+      <div class="flex items-end gap-6 h-40">
+        <div class="flex flex-col items-center gap-1"><div class="w-16 h-32 bg-slate-300 rounded"></div><span class="text-center">interface<br/>(pub fields + fn)</span></div>
+        <div class="flex flex-col items-center gap-1"><div class="w-16 h-36 bg-slate-700 rounded"></div><span>implementation</span></div>
+      </div>
+      <p class="text-red-700 mt-2">Prey ranking reads the modified MaxHealth, while the defeat check reads the raw value, so the two can disagree.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 text-xs">
+      <p class="schem text-slate-500 mb-2">After</p>
+      <div class="flex items-end gap-6 h-40">
+        <div class="flex flex-col items-center gap-1"><div class="w-16 h-8 bg-slate-300 rounded"></div><span>value_of(target, qty)</span></div>
+        <div class="flex flex-col items-center gap-1"><div class="w-16 h-36 deep rounded"></div><span>fold + printed_* fields</span></div>
+      </div>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>Printed values sit on public fields that are named as if they were the current value. Callers can't tell which one they're reading.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>Rename the printed values to <code>printed_*</code> fields and route every read through one <code>value_of</code>, which also covers web rendering.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>defeat and prey can't disagree</li><li>the client shows what the engine uses</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm">This follows ADR 0005 rather than contradicting it. The workspace pass listed it only as a gate. It is latent today, because no implemented card modifies max health or sanity. It stays Speculative until such a card (e.g. a "+1 health" asset) is scheduled.</div>
+</article>
+
+<h2 class="font-serif text-2xl border-b border-slate-300 pb-2">Content: <span class="font-mono text-lg">card-dsl · cards · card-data-pipeline</span></h2>
+
+<!-- 11 -->
+<article id="c11" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">11</span><h3 class="font-serif text-2xl">One grounded-choice interface for evaluator arms and card natives</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">workspace pass</span></div>
+  <p class="font-mono text-sm text-slate-600">cards/impls/crypt_chill.rs:67-100 · dynamite_blast.rs:82-108 · dispatch/choice.rs:123-131 · evaluator.rs:807-830, 950-975, 1980-2015</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">Before: the resume protocol written 5 times</p>
+<pre class="mermaid">
+flowchart TB
+  N1["Crypt Chill native"] --> SN["suspend_for_native_choice<br/>3 of 5 params ignored"]
+  N2["Dynamite Blast native"] --> SN
+  SN --> L["labels: format!('{id:?}')<br/>un-anchored"]
+  E1["ChooseOne arm"] --> RG
+  E2["SearchDeck arm"] --> RG
+  RG["resolve_grounded_choice<br/>(private, deep)"]
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class SN,L leak
+</pre></div>
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">After</p>
+<pre class="mermaid">
+flowchart TB
+  N1["natives"] --> C
+  E["evaluator arms"] --> C
+  C["engine::choice::grounded<br/>candidates, prompt, label + OptionTarget each<br/>returns Picked(T) or Suspend/Empty"]
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class C deep
+</pre></div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>Card natives can't reach the deep choice function. Instead they get a pass-through wrapper that fails the deletion test. The player sees <code>CardInstanceId(3)</code> as a menu label (verified).</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>Export the generic grounded-choice function and delete <code>suspend_for_native_choice</code>.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>every Dunwich native gets anchoring for free</li><li>the protocol is tested once</li><li>the rule that resuming re-indexes the options lives in one place</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm">The Debug labels contradict ADR 0011, which retired exactly this for ChooseOne. Also relates to ADR 0015.</div>
+</article>
+
+<!-- 12 -->
+<article id="c12" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">12</span><h3 class="font-serif text-2xl">One registration record per card, plus a corpus-wide "every tag resolves" test</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">workspace pass</span></div>
+  <p class="font-mono text-sm text-slate-600">cards/src/impls/mod.rs:130-243 · cards/src/lib.rs:76-121 · 16 per-card native_*_for fns · game-core/src/card_registry.rs:113-117</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4"><p class="schem text-slate-500 mb-3">Before: a new card touches up to 6 lists</p>
+      <div class="flex gap-3 items-start">
+        <div class="border border-slate-400 rounded px-2 py-3 text-xs">card module</div>
+        <div class="flex-1 space-y-1 text-[11px]">
+          <div class="border border-slate-300 px-2 py-0.5">pub mod line</div>
+          <div class="border border-slate-300 px-2 py-0.5">abilities_for (50 arms)</div>
+          <div class="border border-slate-300 px-2 py-0.5">back_abilities_for</div>
+          <div class="leakbox px-2 py-0.5">native_effect_for chain (11 cards)</div>
+          <div class="leakbox px-2 py-0.5">native_eligibility_for chain (3)</div>
+          <div class="leakbox px-2 py-0.5">native_condition_for chain (2)</div>
+        </div>
+      </div>
+      <p class="text-xs text-red-600 mt-2">If a card is left out of a chain, its tag is never registered and the card is rejected at runtime. Only Lita's test checks this through the registry.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4"><p class="schem text-slate-500 mb-3">After</p>
+      <div class="deep rounded p-3 text-xs font-mono space-y-1">
+        <div>pub const CARD: CardImpl = { code, abilities, back,</div>
+        <div class="pl-4">natives: &amp;[(tag, fn)], eligibility, conditions }</div>
+      </div>
+      <div class="text-xs mt-2 border border-slate-300 rounded px-2 py-1">impls::ALL: &amp;[CardImpl] → six lookups become searches</div>
+      <div class="text-xs mt-1 border border-emerald-400 rounded px-2 py-1">test: walk every ability; every tag resolves via REGISTRY and is <code>&lt;code&gt;:</code>-prefixed</div>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>Registration is spread over hand-kept lists. Tags are spelled inconsistently (<code>board-build</code> vs <code>round_end_advance</code>).</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>Each card exports one record, and the record is listed once. One test guards the whole corpus.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>delete 16 lookup fns + ~8 tests</li><li>one list edit per card</li><li>a runtime rejection becomes a test failure</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm"><code>card_registry.rs:113</code> says Machete is the only <code>native_condition_for</code> consumer and forbids a second one. Yet <code>mod.rs:242</code> registers <code>theyre_getting_out</code> there. The doc and the code disagree.</div>
+</article>
+
+<!-- 13 -->
+<article id="c13" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">13</span><h3 class="font-serif text-2xl">Pipeline normalises into <code>CardMetadata</code>, not a stringly shadow struct</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">workspace pass</span></div>
+  <p class="font-mono text-sm text-slate-600">card-data-pipeline/src/main.rs:438-522 (run), 613-667 (NormalizedCard), 755-993 (render_kind) · Cargo.toml · src/tests/emit_card.rs</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">Before</p>
+<pre class="mermaid">
+flowchart LR
+  J["snapshot JSON"] --> N["NormalizedCard<br/>45 fields, class: &str,<br/>card_type: &str"]
+  N --> R["render_kind<br/>format! strings, panic! fallback"]
+  R --> G["generated/cards.rs"]
+  G -->|"drift found here"| CC["cargo build of cards"]
+  run["run(): I/O + spawn resolution<br/>(untested)"] --- N
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class N,R,run leak
+</pre></div>
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">After</p>
+<pre class="mermaid">
+flowchart LR
+  J["snapshot JSON"] --> B["build_corpus(raw)<br/>-> CardMetadata map + warnings"]
+  B --> E["emitter: exhaustive match on CardKind"]
+  E --> G["generated/cards.rs"]
+  D["card-dsl types"] -.-> B
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class B deep
+</pre></div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>The pipeline doesn't depend on <code>card-dsl</code> (verified: serde only), which contradicts <code>architecture.md</code>. Its tests substring-match the generated Rust source. Spawn resolution has no tests.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>Normalise into the real types through a pure <code>build_corpus</code>, then emit with an exhaustive match. An alternative is to emit JSON and load it with serde, but that gives up compile-time checking of the corpus.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>vocabulary drift becomes a pipeline compile error</li><li>typed assertions at <code>build_corpus</code></li><li>I/O separated from logic</li></ul></dd></div>
+  </dl>
+</article>
+
+<!-- 14 -->
+<article id="c14" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">14</span><h3 class="font-serif text-2xl">DSL primitives already past the two-consumer threshold</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">workspace pass</span></div>
+  <p class="font-mono text-sm text-slate-600">card-dsl/src/dsl.rs:915-944 · cover_up.rs · the_barrier.rs · machete.rs · rise_of_the_ghouls.rs:76 · theyre_getting_out.rs:215-233 · trapped.rs:87-139 · whats_going_on.rs:98 · evaluator.rs:997-1012 (filter_matches)</p>
+  <div class="grid md:grid-cols-3 gap-3 text-sm">
+    <div class="rounded-lg border border-slate-200 p-3 space-y-2"><p class="schem text-slate-500">a · eligibility → Condition</p>
+      <div class="flex gap-1 text-[11px]"><span class="border px-1">EligibilityFn</span><span>≡</span><span class="border px-1">NativeConditionFn</span></div>
+      <p class="text-xs">They have the same fn type, yet they get two registry slots and two tag namespaces. Folding them together gives eligibility the declarative <code>Condition</code> vocabulary. <em>This conflicts with #609's plan to delete <code>Condition::Native</code>, so decide between them first.</em></p></div>
+    <div class="rounded-lg border border-slate-200 p-3 space-y-2"><p class="schem text-slate-500">b · CardFilter::matches</p>
+      <p class="text-xs"><code>is_ghoul_enemy</code> re-implements the evaluator's private <code>filter_matches</code>, and 6 trait checks done by string comparison span 3 crates. Adding <code>CardFilter::matches</code> and <code>CardMetadata::has_trait</code> in card-dsl makes the check pure and testable without a registry.</p></div>
+    <div class="rounded-lg border border-slate-200 p-3 space-y-2"><p class="schem text-slate-500">c · Put set-aside into play</p>
+      <p class="text-xs">Trapped and The Barrier make two consumers, so <code>standards.md</code> allows a new <code>Effect</code>. Their natives shrink to the parts that are truly bespoke. The three "each investigator" natives also disagree on order and on skipping eliminated players (see gates).</p></div>
+  </div>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm">Touches ADR 0013, ADR 0014, #363 and #609. Obscuring Fog → <code>AttachSelfToLocation</code> is already tracked (#373), so it is not proposed again.</div>
+</article>
+
+<h2 class="font-serif text-2xl border-b border-slate-300 pb-2">Client &amp; server: <span class="font-mono text-lg">web · server · protocol · scenarios</span></h2>
+
+<!-- 15 -->
+<article id="c15" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">15</span><h3 class="font-serif text-2xl">One pure prompt-layout module in <code>web</code>, anchored surfaces as thin adapters</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">workspace pass</span></div>
+  <p class="font-mono text-sm text-slate-600">web/src/interaction.rs:28-209 · decision.rs:57-104 · skill_test_result.rs:95-110 · prompt_banner.rs:34-146 · app.rs:29-60 · act_agenda.rs · enemy_card.rs · card.rs · map.rs · controls.rs:36-61</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">Before: nothing owns "each part of a prompt has one home"</p>
+<pre class="mermaid">
+flowchart TB
+  P["~9 free predicates<br/>options_for, prompt_anchor,<br/>modal_is_live x2, menus_suppressed..."]
+  B["PromptBanner filters<br/>(wasm-only, untestable natively)"]
+  A["7 entity copies of<br/>context read + options_for +<br/>RwSignal + cfg menu_layer"]
+  S1["controls::submit<br/>'the one place'"]
+  S2["ContextMenu sends directly"]
+  P --- B
+  P --- A
+  A --> S2
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class B,A,S2 leak
+</pre></div>
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">After</p>
+<pre class="mermaid">
+flowchart TB
+  L["layout(&ClientState) -> PromptLayout<br/>modal, banner, per-target options,<br/>confirm anchor, multi-select"]
+  L --> AN["Anchored target=..<br/>(context, cfg, menu)"]
+  L --> BN["banner adapter"]
+  AN --> S["controls::submit"]
+  BN --> S
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class L,AN deep
+</pre></div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>#847 (Parley unreachable), #541 (double render) and #856 (banner and modal both live) all come from this one gap. 25 of 26 web test files are wasm-only, and those run only in CI.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>One pure function decides every surface. An <code>&lt;Anchored&gt;</code> wrapper replaces 7 copies, and every submit goes through <code>controls::submit</code>.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>native test: every option lands on exactly one surface</li><li>cfg noise leaves the entity files</li><li>one submit path</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm">Puts ADRs 0011 and 0015 into practice without changing them. Pairs with <a href="#c11" class="underline">11</a>: once natives are anchored, they land here too.</div>
+</article>
+
+<!-- 16 -->
+<article id="c16" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">16</span><h3 class="font-serif text-2xl">Skill-test result read from engine state, not from event latches</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">workspace pass</span></div>
+  <p class="font-mono text-sm text-slate-600">web/src/store.rs:40-168 · skill_test_result.rs:34-110 · game-core state/game_state.rs:1759-1850 (InFlightSkillTest.resolved), 2883 (current_skill_test)</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">Before</p>
+<pre class="mermaid">
+sequenceDiagram
+  participant S as Server
+  participant St as store.rs
+  participant M as result modal
+  S->>St: events batch 1 (difficulty)
+  St->>St: latch last_difficulty
+  S->>St: events batch 2 (token, result)
+  St->>St: latch token, result (60 lines of ordering)
+  S->>St: Hello (reconnect)
+  St->>St: clears latches, modal lost
+  St->>M: summarize: difficulty +/- margin
+</pre></div>
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">After</p>
+<pre class="mermaid">
+sequenceDiagram
+  participant S as Server
+  participant M as result modal
+  S->>M: GameState (AcknowledgeOutcome frame on stack)
+  M->>M: game.current_skill_test(): token, difficulty, total, outcome
+</pre></div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>Events split across batches have caused two bugs (#787, #853), and a reconnect drops the modal. A comment in the store itself describes the better design.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>The engine records the revealed token and the resolved difficulty and total on <code>InFlightSkillTest</code>. The client reads it.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>delete the latch state machine</li><li>survives reconnect</li><li>the result is a pure function of state</li></ul></dd></div>
+  </dl>
+</article>
+
+<!-- 17 -->
+<article id="c17" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">17</span><h3 class="font-serif text-2xl">A pure session core under the server, and protocol messages for what the client currently guesses</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-slate-100">ports &amp; adapters</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">workspace pass</span></div>
+  <p class="font-mono text-sm text-slate-600">server/src/session.rs:137-222 · ws.rs:48-176 · web/tests/board_is_the_input_surface.rs:137-165 · web/tests/skill_test_result_across_batches.rs · web/src/transport.rs · store.rs:165-171</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">Before</p>
+<pre class="mermaid">
+flowchart TB
+  GS["GameSession<br/>engine loop + sqlx"]
+  T1["web test copy<br/>'mirrors the server exactly'"]
+  T2["web test copy"]
+  WS["ws: drops socket for<br/>unknown OR unreplayable"] --> C["client guesses 'stale id'<br/>abandons game"]
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class T1,T2,C leak
+</pre></div>
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">After: three adapters, a real seam</p>
+<pre class="mermaid">
+flowchart TB
+  S["Session (pure, wasm-safe)<br/>seed, apply -> ServerMessage, replay"]
+  S --> A1["server: + store + broadcast"]
+  S --> A2["web tests"]
+  S --> A3["server tests"]
+  P["protocol: UnknownGame, Unreplayable,<br/>Applied carries its action"]
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class S deep
+</pre></div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>The code that maps engine results to wire messages exists in three places. The client infers that a game id is stale from a closed socket. The log header takes whichever <code>Applied</code> message arrives next, which can be another connection's batch.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>Extract the pure core, and turn these conventions into protocol types.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>session testable without SQLite</li><li>no silent game abandonment</li><li>one mapping, three adapters</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-slate-50 border border-slate-200 px-3 py-2 text-sm">Side finding: <code>get_or_load_room</code> (<code>ws.rs:52-66</code>) holds the global rooms mutex while it replays a game's full log, so loading one game blocks every other game.</div>
+</article>
+
+<h2 class="font-serif text-2xl border-b border-slate-300 pb-2">Test harness: <span class="font-mono text-lg">test_support · builder · */tests</span></h2>
+
+<!-- 18 -->
+<article id="c18" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">18</span><h3 class="font-serif text-2xl">Step-wise test driving: an <code>Idle</code> outcome, <code>open_turn</code>, one drain loop, one session, <code>fire_at</code></h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">both passes</span></div>
+  <p class="font-mono text-sm text-slate-600">engine/outcome.rs (EngineOutcome::{Done, AwaitingInput, …}) · emit.rs: queue_event (always returns Done) · state/builder.rs:173-311 · test_support/resolver.rs:384, 509 (drain_with_applier), 657-740 (drive_to_terminal_no_commits, at_open_turn_menu) · test_support/mod.rs:229-487 · ~100 test files</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4"><p class="schem text-slate-500 mb-3">Before: a wide, shallow harness that reaches under the interface</p>
+      <div class="space-y-1 text-[11px]">
+        <div class="flex justify-between border-b py-0.5"><span>peeks <code>continuations.last()</code> to tell "idle" from "done"</span><span class="font-mono text-red-600">~97 reads</span></div>
+        <div class="flex justify-between border-b py-0.5"><span>open-turn setup (5 coordinated builder calls)</span><span class="font-mono text-red-600">132 sites / 76 files</span></div>
+        <div class="flex justify-between border-b py-0.5"><span><code>with_investigator_turn</code> without the anchor</span><span class="font-mono text-red-600">86, giving stacks the engine can't reach</span></div>
+        <div class="flex justify-between border-b py-0.5"><span><code>Continuation::</code> frames built by hand</span><span class="font-mono">85</span></div>
+        <div class="flex justify-between border-b py-0.5"><span>raw <code>engine::apply</code> between prompts</span><span class="font-mono">171 / 62 files</span></div>
+        <div class="flex justify-between border-b py-0.5"><span><code>ResolveInput</code> hand-built</span><span class="font-mono">284 / 94 files</span></div>
+        <div class="flex justify-between border-b py-0.5"><span>positional <code>OptionId(n)</code></span><span class="font-mono text-red-600">136</span></div>
+        <div class="flex justify-between border-b py-0.5"><span>copy-pasted <code>pick</code>/<code>resolve</code>/<code>engaged_attacker</code></span><span class="font-mono">6 / 3 / 8</span></div>
+        <div class="flex justify-between border-b py-0.5"><span>resolver public drivers · drain loops</span><span class="font-mono">8 · 2</span></div>
+        <div class="flex justify-between border-b py-0.5"><span><code>fire_forced_*</code>: skip the coordinator, the 2+ run and reactions</span><span class="font-mono text-red-600">10–13 fns / 45–80 calls</span></div>
+      </div>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4"><p class="schem text-slate-500 mb-3">After</p>
+      <div class="deep rounded-lg p-4 text-xs space-y-1">
+        <p class="schem text-slate-300">Engine outcome</p>
+        <div class="font-mono text-emerald-300">EngineOutcome::Idle { TurnMenu | ParkedWindow }</div>
+        <div class="border-t border-slate-600 pt-1 mt-1"><p class="schem text-slate-300">TestSession (step-wise)</p></div>
+        <div class="font-mono text-slate-200">take(&amp;TurnAction) · pick(OptionTarget) · pick_nth · confirm · skip</div>
+        <div class="font-mono text-slate-200">prompt() · expect_rejected() · state() · events()</div>
+        <div class="border-t border-slate-600 pt-1 mt-1 text-slate-300">one drain loop, reply policy = a <code>ChoiceResolver</code> adapter</div>
+        <div class="text-slate-300"><code>fire_at(state, TestTimingPoint)</code> over <code>apply_via</code>: the one way into forced/reaction behaviour</div>
+      </div>
+      <div class="border border-slate-300 rounded px-3 py-2 mt-2 text-xs"><code>GameStateBuilder::open_turn(inv)</code> + <code>with_enemy_engaged(e, inv)</code>, so the builder owns the stack invariant.</div>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd><code>Done</code> means both "finished" and "idle with a window open", so every test driver works out which from the stack's internals. The harness only runs a test start to finish in one call, so tests drop to wire types and magic indices whenever they need to act between prompts. Picking options by label is the coupling ADR 0011 rejected. Many fixtures build stacks the engine could never produce. Forced-trigger tests skip the real timing sequence.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>The outcome says when the engine is idle. Tests drive a step-wise session over a single drain loop, a builder that produces legal turns, and one entry point for timing points that goes through the production latch. <code>queue_event</code> returns <code>()</code> (or a <code>#[must_use]</code> <code>Queued</code> marker), within ADR 0003.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>the resolver shrinks to one loop</li><li>~5 lines → 1 at 130+ sites</li><li>picks by anchor survive rewording</li><li>forced triggers run under the real latch, so <a href="#c2" class="underline">02</a>'s lone-vs-run drift becomes testable</li><li>de-risks every kernel refactor above</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm">Conforms to ADRs 0011 and 0016. Routing <code>fire_at</code> through <code>apply_via</code> brings in ADR 0004's latch, so confirm that's what those tests want. <code>Idle</code> is cleanest once <a href="#c3" class="underline">03</a>'s frame profile exists. <strong>Counts differed:</strong> the hot-spot pass counted 10 <code>fire_forced_*</code> helpers with 45 call sites; the workspace pass counted 13 functions with ~80 calls, probably because it included the <code>_on_</code> variants.</div>
+</article>
+
+<!-- 19 -->
+<article id="c19" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">19</span><h3 class="font-serif text-2xl">Make <code>TEST_INV</code> resolvable under the real registry</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-red-100 text-red-800">time-boxed by #778</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">workspace pass</span></div>
+  <p class="font-mono text-sm text-slate-600">test_support/mod.rs:141 · 25 binaries in cards/tests, scenarios/tests, web/tests</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">Before</p>
+<pre class="mermaid">
+flowchart LR
+  T["25 binaries"] -->|"x42"| S["investigator_card.code = 01003<br/>'Skids has no abilities'"]
+  S --> R["cards::REGISTRY"]
+  F["#778 implements Skids"] -.breaks.-> S
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class S,F leak
+</pre></div>
+    <div class="rounded-lg border border-slate-200 p-3"><p class="schem text-slate-500 mb-2">After</p>
+<pre class="mermaid">
+flowchart LR
+  T["real-registry binaries"] --> I["install_real_with_test_inv()<br/>REGISTRY + metadata_for_test_inv"]
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class I deep
+</pre></div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>The tests use a real card as an opaque placeholder, which is the anti-pattern ADR 0016 itself warns against. Once #778 lands, all 25 binaries gain Skids' ability.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>One shared install that adds the test investigator to the real registry, the same way <code>MockRegistry</code> already does.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>delete 42 swaps + ~30 comments</li><li><code>test_investigator</code> means one thing</li></ul></dd></div>
+  </dl>
+</article>
+
+</section>
+
+<section id="sequencing" class="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+  <h2 class="font-serif text-2xl">Sequencing map</h2>
+  <p class="text-sm text-slate-600">Neither report drew this. Each pass linked a few of its own candidates. Combined, the links form one dependency graph. A solid arrow means "lands better first". A dashed arrow means "makes the next one testable".</p>
+<pre class="mermaid">
+flowchart LR
+  n19["19 TEST_INV"] --> i778(["#778 Skids"])
+  n01["01 Initiation gate"] --> n02["02 Scan + fire"]
+  n05["05 Board & zones"] --> n02
+  n09["09 Registries on Cx"] -.-> n02
+  n18["18 Step-wise harness"] -.-> n02
+  n18 -.-> n04["04 Taking an action"]
+  n01 --- n04
+  n03["03 Continuation stack"] --> n06["06 Phase skeleton"]
+  n03 --> n18
+  n04 --> n07["07 Evaluator families"]
+  n05 --> n07
+  n01 --> n07
+  n11["11 Grounded choice"] --> n15["15 Prompt layout"]
+  n05 --> n10["10 Modified base values"]
+  n12["12 One record per card"]
+  n13["13 Typed pipeline"]
+  n14["14 DSL primitives"]
+  n16["16 Skill-test result"]
+  n17["17 Session core"]
+  n08["08 Engagement"]
+  classDef strong fill:#d1fae5,stroke:#047857
+  classDef worth fill:#fef3c7,stroke:#b45309
+  classDef spec fill:#e2e8f0,stroke:#475569
+  class n01,n02,n03,n04,n05,n11,n12,n13,n15,n16,n18,n19 strong
+  class n06,n07,n08,n09,n14,n17 worth
+  class n10 spec
+</pre>
+  <p class="text-xs text-slate-500">Free-standing (no ordering constraint): 08, 12, 13, 14, 16, 17.</p>
+</section>
+
+<section id="gates" class="rounded-xl border-2 border-amber-300 bg-amber-50 p-6 space-y-4">
+  <h2 class="font-serif text-2xl">Gates surfaced along the way</h2>
+  <p class="text-sm text-slate-600">These are not refactors. Under CLAUDE.md's gate rules they need your decision. For this merge, the card text and rulings for 01165, 01167 and 01117 were read from the vendored snapshot and FAQ files. The rules-reference text has not been read for the rest.</p>
+  <div class="grid md:grid-cols-2 gap-4 text-sm">
+    <div><p class="schem text-amber-800 mb-1">Rules questions (gate 2)</p><ul class="list-disc ml-4 space-y-1">
+      <li><strong>Dissonant Voices 01165 vs hand Fast events</strong>. The card says <em>"You cannot play assets or events."</em> The hand-Fast scan never asks <code>play_is_prohibited</code>. This is verified and live (<a href="#c1" class="underline">01</a>). 01165 has no rulings (<code>no-rulings.txt</code>).</li>
+      <li><strong>Crypt Chill 01167 → controller's discard</strong> (verified at <code>crypt_chill.rs:124</code>). The card says <em>"choose and discard 1 asset you control"</em>. A Lita who left play this way should be removed from the game, per her ruling (<a href="#c5" class="underline">05</a>).</li>
+      <li><strong>Reaction scan never reaches co-located sources</strong> (your location, an enemy there, a teammate's threat area), while activations do, via ADR 0010's predicate.</li>
+      <li><strong>Usage limits on activated abilities are never enforced</strong>, and activation ignores <code>eligibility</code> (<a href="#c1" class="underline">01</a>).</li>
+      <li><strong>"Each investigator" natives disagree</strong> on order and on skipping eliminated investigators. What's Going On?! may discard from an eliminated player's hand.</li>
+      <li><strong>A forced ability alone vs with a sibling</strong>: only the ordered path counts usage limits and binds <code>attacking_enemy</code> / <code>clue_discovery_count</code>. Unifying the paths would also make forced abilities count usage limits (<a href="#c2" class="underline">02</a>).</li>
+      <li><strong>Defeat checks read printed max health/sanity</strong>, not the modified value (ADR 0005). This is latent: no corpus card modifies them yet (<a href="#c10" class="underline">10</a>).</li></ul></div>
+    <div><p class="schem text-amber-800 mb-1">Code vs doc / ADR (gate 3)</p><ul class="list-disc ml-4 space-y-1">
+      <li>Silent drops: <code>forced_point</code> returns <code>None</code> for DiscoverClues, DamageAssigned, DamagePlaced and EnteredPlay, and <code>trigger_matches</code> ends <code>_ =&gt; false</code>. Both contradict the "no silent no-op" standard.</li>
+      <li><code>card_registry.rs:113</code> says "Machete is the only consumer", but <code>theyre_getting_out</code> is registered there too.</li>
+      <li><code>architecture.md</code> says the pipeline "consumes card-dsl" (it doesn't) and that handlers "reject cleanly on None" (most don't).</li>
+      <li>Native choices label options with Debug strings, against ADR 0011.</li>
+      <li><code>awaits_input</code> and <code>resolve_input</code> disagree on 4 frame kinds.</li>
+      <li>The reaction scan bypasses ADR 0010's single reachability predicate.</li></ul></div>
+  </div>
+  <p class="text-xs text-slate-500">Small cleanups, not ranked: <code>queue_event</code> always returns <code>Done</code> (folded into 18) · the <code>Event</code> doc comment is attached to <code>TraumaKind</code> · tombstone comments in <code>game_state.rs</code> · <code>start_skill_test</code> takes 10 args, and 5 of its 6 callers pass <code>None, None</code> · <code>picker.rs:82</code> hardcodes the scenario · <code>web/tests</code> has no <code>common/</code>.</p>
+</section>
+
+<section id="disagreements" class="rounded-xl border border-slate-200 bg-white p-6 space-y-3">
+  <h2 class="font-serif text-2xl">Where the passes disagreed</h2>
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-500 border-b"><th class="py-1">Point</th><th>Hot-spot pass</th><th>Workspace pass</th><th>This report</th></tr></thead>
+    <tbody class="align-top">
+      <tr class="border-b"><td class="py-1">Top pick</td><td>Initiation gate</td><td>Trigger scan + fire</td><td>Initiation gate first, scan + fire next (see below)</td></tr>
+      <tr class="border-b"><td class="py-1"><code>card_registry::current()</code> calls</td><td>53 / 21 files</td><td>58 / 21 files (+5 web)</td><td>Re-counted: 53 / 21 non-test, 69 / 31 counting tests, +5 web</td></tr>
+      <tr class="border-b"><td class="py-1">Registries on Cx</td><td>Speculative</td><td>Worth exploring</td><td>Worth exploring: it enables in-crate scan tests</td></tr>
+      <tr class="border-b"><td class="py-1">Modified base values</td><td>Its own candidate (Speculative)</td><td>A gate only</td><td>Its own candidate, Speculative, with the gate kept</td></tr>
+      <tr class="border-b"><td class="py-1"><code>fire_forced_*</code> helpers</td><td>10 fns / 45 calls</td><td>13 fns / ~80 calls</td><td>Shown as a range; doesn't change the case</td></tr>
+      <tr><td class="py-1">Lone-vs-run forced split</td><td>"not yet test-confirmed"</td><td>stated as fact</td><td>Read from the code; no test confirms it yet</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="top" class="rounded-2xl deep p-8 space-y-4">
+  <p class="schem text-emerald-300">Top recommendation</p>
+  <h2 class="font-serif text-3xl"><a href="#c1" class="underline decoration-emerald-400">01 · One initiation gate</a>, then <a href="#c2" class="underline decoration-emerald-400">02 · one scan and one firing path</a></h2>
+  <div class="text-slate-200 max-w-3xl space-y-2">
+    <p>The two runs each picked one half of the same seam. The workspace pass chose scan + fire because it is the most co-changed code in the engine: 34 of 41 commits touch both halves. The hot-spot pass chose the gate because it has a verified live bug (Dissonant Voices vs hand Fast events). It is also the root of the #707 / #791 / #852 bug class.</p>
+    <p><strong>Recommendation: do the gate first.</strong> It is smaller and has a clear interface (<code>check_initiation → Result&lt;Initiable, Refusal&gt;</code>). It fixes a real bug with a regression test you can name today. And it gives 02's unified <code>initiate</code> one gate to call instead of six. If you do 02 first, it has to carry those six gate variants through the merge.</p>
+    <p>The case for doing 02 first: it's where the next Dunwich forced or reaction card lands, and its silent drops (<code>_ =&gt; false</code>) are a bigger hidden-failure surface than one mis-gated card.</p>
+  </div>
+  <div class="grid md:grid-cols-3 gap-3 text-sm text-slate-300">
+    <div class="border border-slate-600 rounded p-3"><p class="schem text-emerald-300 mb-1">Do first, it's tiny</p>19 · TEST_INV. It must land before #778, or 25 test binaries change meaning.</div>
+    <div class="border border-slate-600 rounded p-3"><p class="schem text-emerald-300 mb-1">Then, the other side</p>03 · Continuation stack. It is the foundation for 06 and for 18's <code>Idle</code> outcome.</div>
+    <div class="border border-slate-600 rounded p-3"><p class="schem text-emerald-300 mb-1">Counter-view</p>18 · The step-wise harness first, so the kernel refactors land on tests that drive through the interface. It is slower to show value but lower risk.</div>
+  </div>
+</section>
+
+</main>
+</body>
+</html>
