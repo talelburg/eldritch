@@ -238,7 +238,7 @@ impl EvalContext {
     /// [`ability_source`](Self::ability_source) narrowed through
     /// [`AbilitySource::instance`](crate::state::AbilitySource::instance).
     /// Named for the narrow reading rather than for the descriptor, which
-    /// `CONTEXT.md`'s *Ability source* entry keeps the bare word for, and
+    /// `GLOSSARY.md`'s *Ability source* entry keeps the bare word for, and
     /// mirroring the two sibling accessors that already spell the narrowing
     /// this way.
     ///

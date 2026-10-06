@@ -11,20 +11,20 @@ Standards live in exactly one place each. A few have a home elsewhere — this f
 | Validate-first / mutate-second handler contract, and the `apply_via` rollback that backstops it | [`architecture.md`](architecture.md) → Event-sourced state |
 | Card text and rules citation policy (read the vendored text locally, always read the FAQ, never fetch) | `CLAUDE.md` → Cite card text and rules from the vendored sources |
 | Running local checks with CI's exact strict flags | `CLAUDE.md` → Commands |
-| Domain vocabulary — use the glossary's words in names and test titles | `CONTEXT.md` |
+| Domain vocabulary — use the glossary's words in names and test titles | `GLOSSARY.md` |
 | How the docs are written, not the code — the file to read before adding a rule to `CLAUDE.md` or writing an ADR, since both have a bar this file does not state | [`docs/agents/writing.md`](writing.md) |
 
 ## Defined here
 
 ### Match a card's declared `EventTiming` to its quoted trigger word
 
-Every card module opens with the printed text verbatim. That block is the evidence: **read the declared `EventTiming` against the trigger word the module itself quotes**, and which cell each word names is **Timing cell** in `CONTEXT.md`. A mismatch in the corpus is a bug.
+Every card module opens with the printed text verbatim. That block is the evidence: **read the declared `EventTiming` against the trigger word the module itself quotes**, and which cell each word names is **Timing cell** in `GLOSSARY.md`. A mismatch in the corpus is a bug.
 
 **Say in prose which cell the ability resolves in, and why.** Write *"the `at` cell of the `EnemyDefeated` condition"* in the paragraph under the quoted text — not a description of the engine window the ability happens to ride. The form is a **bold inline lead-in opening *"Cell: …"***, not a `# Cell` rustdoc heading, so the paragraph sits in the header's flow next to the quoted text rather than opening a section a reader can scroll past. A module declaring two cells writes two such paragraphs, each naming which ability it is for (`the_barrier`, `cover_up`).
 
 A card declaring `EventTiming::When` on a triggering condition whose resolve step has not been migrated to coordinator-owned resolution is **rejected**; migrating that condition is the fix, not retagging the card. See [ADR 0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md) and `ConditionResolution::Caller` (`crates/game-core/src/engine/dispatch/emit.rs`) for the per-condition migration and its cost. **No card is licensed to declare one cell and resolve in another**, and none can be.
 
-**Why, and why there is no automated check:** the trigger word is not mechanically derivable from the printed text — *"if … would …"* is when-tier while a bare *"if"* on a settled state is at-tier, a tiering `CONTEXT.md` argues from the rules rather than quoting. A parser would encode one reading and then be trusted as though it had checked. The six mis-tags #694 audited were not a gap in the evidence: every one of those modules quoted its own trigger word directly above the wrong enum. The failure was an unassigned reading, and this section is where it is assigned.
+**Why, and why there is no automated check:** the trigger word is not mechanically derivable from the printed text — *"if … would …"* is when-tier while a bare *"if"* on a settled state is at-tier, a tiering `GLOSSARY.md` argues from the rules rather than quoting. A parser would encode one reading and then be trusted as though it had checked. The six mis-tags #694 audited were not a gap in the evidence: every one of those modules quoted its own trigger word directly above the wrong enum. The failure was an unassigned reading, and this section is where it is assigned.
 
 ### Don't add DSL primitives speculatively
 
@@ -101,7 +101,7 @@ Treat card citations in existing comments and docs as unverified until checked, 
 
 So a call site with post-emit work arms its own resume point *before* emitting, and emits as the last thing it does: re-park a phase anchor at a new resume (`enemy_phase_end`, `upkeep_phase_end`), flag the frame it is already riding (`end_turn`'s `InvestigatorTurn { ending: true }`), or push a dedicated frame for the tail (`move_primary_effect`'s `MoveEnter`). Inspecting the returned outcome is not a substitute for any of that — `if !matches!(out, Done) { … }` and `debug_assert!(matches!(out, Done))` both pass in the ordinary single-ability case, while the ability sits unresolved on the stack.
 
-A `debug_assert` in the `drive` loop backstops the class: no queued ability frame may sit beneath a phase anchor. See `docs/adr/0003-emitting-a-timing-point-queues-abilities.md`, and **Queued ability** in `CONTEXT.md`.
+A `debug_assert` in the `drive` loop backstops the class: no queued ability frame may sit beneath a phase anchor. See `docs/adr/0003-emitting-a-timing-point-queues-abilities.md`, and **Queued ability** in `GLOSSARY.md`.
 
 **Why:** four call sites believed the emit resolved, and each carried a comment asserting a loud guard that had not existed since the effect-frame migration. The worst pushed the Upkeep phase anchor over agenda 01107's forced Ghoul movement, stranding it at the bottom of the stack — that ability never fired in a real game of The Gathering (#569).
 

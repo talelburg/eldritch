@@ -29,7 +29,7 @@
 //! differently shaped: Cover Up 01007 replaces *a discovery*, so two of 1
 //! discard 2 clues from Cover Up where one of 2 (capped at the location's
 //! clues) discards 1 — the bug #471 fixed. See the **Discovery** entry in
-//! `CONTEXT.md`.
+//! `GLOSSARY.md`.
 //!
 //! The **"while investigating a location"** qualifier is the kind gate — the
 //! same shape as Vicious Blow 01025's "during an attack". Gating on

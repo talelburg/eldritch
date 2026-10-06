@@ -676,5 +676,5 @@ someone has already written down.
   (`state/investigator.rs:194-205`) is behaviourally harmless today and misleading the day
   campaign play lands, when "killed" becomes a distinct, stickier state than "defeated".
   Not filed as a finding because it is a naming question with no current behavioural
-  divergence; `CONTEXT.md` has no entry for either term. **What would settle it:** a
+  divergence; `GLOSSARY.md` has no entry for either term. **What would settle it:** a
   domain-glossary decision, not a rules lookup.

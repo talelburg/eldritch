@@ -1,6 +1,6 @@
 # Workflow doctrine runs on the mattpocock-skills suite
 
-The repo previously mandated the `superpowers` skills (brainstorm → TDD plan → task-by-task execution) in `CLAUDE.md`, and the plugin injected a session-start instruction reinforcing it. We replaced that with the `mattpocock-skills` suite, disabled the `superpowers` plugin, and moved the domain terminology that had accumulated in `CLAUDE.md` into a real glossary at `CONTEXT.md`. The reason is that most of what `CLAUDE.md` carried was never workflow — it was domain vocabulary and verification discipline sharing a file with process instructions, and the suite gives each of those a proper home (`CONTEXT.md`, `docs/adr/`, `docs/agents/`).
+The repo previously mandated the `superpowers` skills (brainstorm → TDD plan → task-by-task execution) in `CLAUDE.md`, and the plugin injected a session-start instruction reinforcing it. We replaced that with the `mattpocock-skills` suite, disabled the `superpowers` plugin, and moved the domain terminology that had accumulated in `CLAUDE.md` into a real glossary at `GLOSSARY.md`. The reason is that most of what `CLAUDE.md` carried was never workflow — it was domain vocabulary and verification discipline sharing a file with process instructions, and the suite gives each of those a proper home (`GLOSSARY.md`, `docs/adr/`, `docs/agents/`).
 
 ## Considered options
 
@@ -17,3 +17,6 @@ Four superpowers skills had no analogue and were consciously dropped: `verificat
 Every flow entry point in the suite — `grill-with-docs`, `to-spec`, `to-tickets`, `implement`, `wayfinder`, `triage` — is user-invocation-only. An agent cannot start one; it must ask. This is a deliberate shift of the agency boundary toward the user, replacing an earlier preference for running non-trivial issues straight through to an opened PR without pausing.
 
 Closed phases were **not** retro-migrated: their existing "Decisions made" entries stay in the phase docs, and only new decisions become ADRs. Phase 7's drift from the phase-doc template is likewise left alone.
+
+*Folded in: [#922](https://github.com/talelburg/eldritch/issues/922) — the glossary, created as `CONTEXT.md`, is renamed
+`GLOSSARY.md` to follow the suite's 1.3.0 convention.*

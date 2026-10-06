@@ -3,7 +3,7 @@
 The corpus the build compiles is Core + Dunwich (48 hand-written impls). The
 snapshot vendored under `data/arkhamdb-snapshot/pack/` is all of Chapter 1 —
 roughly 4,500 distinct cards across twelve pack directories — and it is
-planning input, nothing more (`CONTEXT.md`, **Snapshot** / **Corpus**). This
+planning input, nothing more (`GLOSSARY.md`, **Snapshot** / **Corpus**). This
 document measures that planning input against the DSL and engine we have, and
 sorts what it finds into four buckets: expressible today, wants a new DSL
 primitive, wants a new engine capability, or **contradicts an architectural
@@ -766,7 +766,7 @@ argument. Two variants exist because two cards wanted two fields (Vicious Blow
 cards; under this shape each is a new `Effect` variant carrying a fresh copy of
 that paragraph. Caveat: `DiscoverAdditionalClues` also carries the
 raises-one-discovery-rather-than-adding-a-second semantic (#617, **Discovery**
-in `CONTEXT.md`) — that governs how the follow-up *reads* the accumulated value,
+in `GLOSSARY.md`) — that governs how the follow-up *reads* the accumulated value,
 not the accumulation, so it does not block a merge.
 
 **C2 — the three native escape hatches are one concept.** The registry holds

@@ -25,7 +25,7 @@
 //! > use of the activate action […]
 //!
 //! Terminology: what `ArkhamDB`'s card text writes as the `[fast]` token is the
-//! **free triggered ability** icon, not the `Fast` keyword (`CONTEXT.md`,
+//! **free triggered ability** icon, not the `Fast` keyword (`GLOSSARY.md`,
 //! *Fast*). This file says "zero-action ability" throughout.
 //!
 //! **This is confirmation, not construction.** `enumerate_fast_plays` and

@@ -341,7 +341,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // Lita Chantler 01117 after a Parley — is the scenario's, so it goes to
     // `GameState::removed_from_game` beside the victory display. The two piles
     // wear the same words and mean different things; see **Removed from game**
-    // in `CONTEXT.md`.
+    // in `GLOSSARY.md`.
     let (owned, controlled_only): (Vec<CardInPlay>, Vec<CardInPlay>) = inv
         .cards_in_play
         .drain(..)
@@ -560,7 +560,7 @@ pub fn defeat_investigator(cx: &mut Cx, investigator: InvestigatorId) {
 ///   ends the scenario at
 ///   [`ScenarioEnding::NoResolution`](crate::scenario::ScenarioEnding::NoResolution)
 ///   rather than at a resolution point. That ending is **not** a loss; see the
-///   **No resolution reached** entry in `CONTEXT.md`.
+///   **No resolution reached** entry in `GLOSSARY.md`.
 ///
 /// **No-ops on an investigator who is not `Active`**, via
 /// `apply_investigator_elimination`'s own status gate.

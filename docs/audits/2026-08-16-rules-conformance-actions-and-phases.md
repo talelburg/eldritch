@@ -59,7 +59,7 @@ structure or the phase sequence.
    `EventPattern` / `Restriction` / `ActionClass`.
 3. **Grounded every finding in the shipping corpus.** Where a rule has a
    consumer, the consumer was found by `jq` over the Core and Dunwich pack
-   files (the corpus the build compiles, per `CONTEXT.md`) and its text quoted
+   files (the corpus the build compiles, per `GLOSSARY.md`) and its text quoted
    verbatim. A rule with no corpus consumer is still reported when the engine
    actively models the concept and gets it wrong, and is labelled latent.
 4. **Cross-referenced the tracker.** Every `TODO(#NNN)` and issue reference

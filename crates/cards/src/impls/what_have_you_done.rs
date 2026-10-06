@@ -43,7 +43,7 @@
 //!
 //! The controller of a Forced ability declared on the act is
 //! `turn_order.first()`, which stands in for the printed *"lead investigator"*;
-//! the two coincide in solo. See **Lead investigator** in `CONTEXT.md` for
+//! the two coincide in solo. See **Lead investigator** in `GLOSSARY.md` for
 //! where the proxy diverges in multiplayer.
 //!
 //! The options anchor to `OptionTarget::Act`, so the host renders them on the

@@ -187,7 +187,7 @@ pub enum ActionDesignator {
     /// **Evade.** You get +3 \[agility\] for this test…"*, whose `+3` is the
     /// [`Fight`](Self::Fight) modification's twin, and Strange Solution 02264's
     /// *"\[action\] Spend 1 supply: **Evade.** Evade with a base \[agility\]
-    /// skill of 6."*, whose **base-value replacement** (`CONTEXT.md`, "Base
+    /// skill of 6."*, whose **base-value replacement** (`GLOSSARY.md`, "Base
     /// value") is a shape no designator payload carries yet. So the field is
     /// unfixed because two live cards disagree about what it should be, not
     /// for want of a sample.
@@ -637,7 +637,7 @@ pub enum EventPattern {
     /// The engine binds *you* = the discovering investigator and, for a `when`
     /// ability, the would-be discovery's count (Cover Up's "that many"). That
     /// count is what would **actually** be discovered — capped at the clues
-    /// present, per the **Discovery** entry in `CONTEXT.md` (#471).
+    /// present, per the **Discovery** entry in `GLOSSARY.md` (#471).
     DiscoverClues,
     /// The game ended (a scenario resolution latched). Fired forced via
     /// `ForcedTriggerPoint::GameEnd` from `fire_scenario_resolution`,
@@ -1299,7 +1299,7 @@ pub enum Effect {
     ///
     /// It raises that one discovery's count rather than making a second
     /// discovery — a card-text distinction, not an implementation detail; see
-    /// the **Discovery** entry in `CONTEXT.md` and Deduction's module doc for
+    /// the **Discovery** entry in `GLOSSARY.md` and Deduction's module doc for
     /// the FAQ that settles it.
     DiscoverAdditionalClues(u8),
     /// A constant restriction the source card imposes while in play
