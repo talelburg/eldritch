@@ -680,6 +680,8 @@ pub(super) fn drive_player_draw(cx: &mut Cx) -> EngineOutcome {
 /// [`drive_player_draw`] step knows whether to draw again), then push the card's
 /// disposition + Revelation frames via [`resolve_encounter_card`]. Returns its
 /// outcome (`Done` with frames pushed, or a registry/empty-deck reject).
+/// An empty deck and discard rejects only on the chain's first card; past
+/// it, the draw panics as malformed scenario data.
 ///
 /// Called only by [`drive_player_draw`] — the first draw and every surge
 /// re-draw of a drawer's chain (including after a mid-chain engagement tie
