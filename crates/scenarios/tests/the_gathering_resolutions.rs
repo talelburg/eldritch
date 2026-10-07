@@ -943,3 +943,32 @@ fn a_real_gathering_walk_replays_identically_across_a_serialize_round_trip() {
         "a real Gathering walk must replay identically across a serialize round-trip",
     );
 }
+
+/// `Done` means the game is over: across a real Gathering walk replayed from
+/// its log, every apply that returns `Done` leaves the continuation stack empty
+/// — every other resting point is a prompt the client is asked to answer.
+#[test]
+fn every_done_in_a_real_gathering_walk_comes_with_an_empty_stack() {
+    let (log, _, _) = drive_the_walk();
+
+    let mut state = walk_start();
+    let mut dones = 0;
+    for action in &log {
+        let r = engine::apply(state, action.clone());
+        if r.outcome == EngineOutcome::Done {
+            dones += 1;
+            assert!(
+                r.state.continuations.is_empty(),
+                "{action:?} returned Done with frames left on the stack: {:?}",
+                r.state.continuations,
+            );
+        }
+        state = r.state;
+    }
+
+    assert_eq!(state.ending, Some(ScenarioEnding::NoResolution));
+    assert_eq!(
+        dones, 1,
+        "only the walk's last apply, which ends the game, is Done"
+    );
+}

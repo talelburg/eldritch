@@ -33,7 +33,7 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, GameStateBuilder, InvestigatorId, LocationId,
-    Phase, Status,
+    Status,
 };
 use game_core::test_support;
 
@@ -110,12 +110,9 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
     let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         .build();
 
@@ -179,12 +176,9 @@ fn playing_a_non_fast_event_spends_one_action() {
     let resources_before = investigator.resources;
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
 
     let result = test_support::take_turn_action(
@@ -223,12 +217,9 @@ fn playing_a_non_fast_card_with_no_actions_is_rejected() {
     investigator.hand = vec![CardCode::new(EMERGENCY_CACHE)];
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
 
     // 0 actions remaining → PlayCard not offered; bypass the gate.
@@ -278,12 +269,9 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
     let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(location)
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         .build();
 
@@ -349,12 +337,9 @@ fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
     let attacker = ready_attacker(7, 50, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         .build();
 
@@ -423,12 +408,9 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
     let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         .build();
 
@@ -504,12 +486,9 @@ fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
     let attacker = ready_attacker(7, 50, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         .build();
 

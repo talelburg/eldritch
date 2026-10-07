@@ -17,7 +17,7 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase,
+    GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::{assert_event, test_support};
 
@@ -45,12 +45,9 @@ fn board() -> GameState {
     ];
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
         .with_location(test_support::test_location(10, "Study"))
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build()
 }
 

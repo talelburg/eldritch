@@ -22,10 +22,7 @@ use cards::REGISTRY;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
-use game_core::state::{
-    CardCode, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, InvestigatorId,
-    LocationId, Phase,
-};
+use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Phase};
 use game_core::test_support;
 
 const COVER_UP: &str = "01007";
@@ -54,17 +51,9 @@ fn upkeep_draw_of_cover_up_does_not_panic_and_cedes_to_the_drive_loop() {
     ];
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
-        .with_active_investigator(id)
-        .with_turn_order([id])
         .with_location(test_support::test_location(101, "Study"))
-        // Mid-Investigation invariant: EndTurn cascades through the phase anchor.
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        // Open-turn invariant: the InvestigatorTurn frame EndTurn pops.
-        .with_investigator_turn(id)
+        .open_turn(id)
         .build();
 
     // The round-ending EndTurn cascades Investigation → Enemy → Upkeep. At

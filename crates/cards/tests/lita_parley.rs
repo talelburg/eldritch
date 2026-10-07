@@ -57,7 +57,8 @@ use game_core::engine::{ApplyResult, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, Zone,
+    ContinuationStack, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind,
+    Zone,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
 
@@ -117,13 +118,10 @@ fn board(token: ChaosToken) -> GameState {
     inv.skills.intellect = 5;
 
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(inv, PARLOR_ID)
         .with_location(parlor)
         .with_location(hallway)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([token]))
         .build();
     state
@@ -358,8 +356,11 @@ fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
         // Health 3: one damage already on her, so the two soaked points defeat
         // her.
         inv.cards_in_play[0].accumulated_damage = 1;
-        inv.actions_remaining = 3;
     }
+    // Drop the open-turn prompt and draw straight: an encounter card is
+    // revealed at rest, never beneath an outstanding prompt.
+    state.continuations = ContinuationStack::new();
+    state.phase = Phase::Mythos;
     // Agility 3 against Grasping Hands' printed 3, minus 2 — a failure by 2,
     // so the treachery deals 2 damage.
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];

@@ -263,31 +263,6 @@ fn remove_topmost_takes_a_buried_frame_and_keeps_the_rest_in_order() {
     assert_eq!(stack.remove_topmost::<InFlightSkillTest>(), None);
 }
 
-// --- At rest ----------------------------------------------------------------
-
-#[test]
-fn the_stack_is_at_rest_empty_or_with_a_prompt_on_top() {
-    assert!(ContinuationStack::new().is_at_rest());
-    let mut stack = ContinuationStack::new();
-    stack.push(anchor());
-    stack.push(hand_size_discard());
-    assert!(stack.is_at_rest());
-}
-
-#[test]
-fn the_stack_is_not_at_rest_with_a_driven_or_inert_frame_on_top() {
-    let mut driven = ContinuationStack::new();
-    driven.push(Continuation::PlayerDraw(PlayerDrawFrame {
-        investigator: InvestigatorId(1),
-        chain_count: 0,
-        surge_pending: false,
-    }));
-    assert!(!driven.is_at_rest());
-    let mut inert = ContinuationStack::new();
-    inert.push(anchor());
-    assert!(!inert.is_at_rest());
-}
-
 // --- The unchecked constructor ----------------------------------------------
 
 #[test]

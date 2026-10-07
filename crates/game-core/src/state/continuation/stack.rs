@@ -22,8 +22,8 @@ use crate::state::continuation::{
 ///   by `insert_ending_at_bottom`; pushing one is refused.
 /// - **A Prompt is on top whenever the engine waits for input**: not a push
 ///   rule — frames are legitimately pushed above a prompt while it resolves its
-///   own input — but checked at the end of every `apply`
-///   ([`is_at_rest`](Self::is_at_rest)).
+///   own input — but checked at the end of every `apply`, together with its
+///   converse: an `apply` that returns `Done` leaves the stack empty.
 ///
 /// The checks are debug assertions, ADR 0003's posture: a violation is a
 /// programmer error, so release builds pay nothing for them.
@@ -126,15 +126,6 @@ impl ContinuationStack {
     /// Mutable counterpart to [`topmost_of`](Self::topmost_of).
     pub(crate) fn topmost_of_mut<F: Frame>(&mut self) -> Option<&mut F> {
         self.frames.iter_mut().rev().find_map(F::downcast_mut)
-    }
-
-    /// Whether the stack may rest here at an `apply` boundary: empty, or a
-    /// frame that [awaits input](Continuation::awaits_input) on top. Any other
-    /// top is a frame a resolution left stranded — nothing would ever advance
-    /// it.
-    #[must_use]
-    pub fn is_at_rest(&self) -> bool {
-        self.top().is_none_or(Continuation::awaits_input)
     }
 
     /// Push `frame` on top.

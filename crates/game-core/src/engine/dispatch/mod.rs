@@ -509,7 +509,21 @@ pub(crate) fn seat_and_open(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutcom
 /// #423): `EncounterCardRevealed` now pushes a [`Continuation::EncounterCard`]
 /// disposition frame plus the card's Revelation effect frames for the loop to
 /// step, rather than resolving synchronously.
+///
+/// Rejected while a prompt is outstanding — the gate [`resolve_input`] has,
+/// inverted. A record in a replay log only ever sits where the engine was at
+/// rest, never between a prompt and its answer; applied there, it would run
+/// beneath the prompt and leave it stranded.
 pub fn apply_engine_record(cx: &mut Cx, record: &EngineRecord) -> EngineOutcome {
+    if let Some(top) = cx.state.continuations.top().filter(|t| t.awaits_input()) {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "engine record {record:?} cannot be applied while a prompt is outstanding \
+                 (the top frame awaits input: {top:?})"
+            )
+            .into(),
+        };
+    }
     let outcome = match record {
         EngineRecord::DeckShuffled { investigator } => cards::deck_shuffled(cx, *investigator),
         EngineRecord::EncounterDeckShuffled => encounter::encounter_deck_shuffled(cx),

@@ -222,13 +222,26 @@ pub(crate) fn apply_via(
             // an unrelated suspension can be surfaced by the same apply that
             // finalized nothing, and the check is cheap and self-guarding.
             finalize_scenario_end(&mut cx, registry);
-            // Every Driven frame was drained and the ending, if finished, popped:
-            // whatever remains must be a prompt the next `apply` can answer, or
-            // nothing at all. A stranded non-prompt top would never advance.
+            // The rest invariant (#938): `Done` means the game is over, so the
+            // stack is empty; `AwaitingInput` means a prompt is on top for the
+            // next `apply` to answer. It holds because every prompt frame's push
+            // site returns `AwaitingInput`, and every resume handler pops its
+            // frame before doing more work — so a prompt is never exposed
+            // without being surfaced, and nothing else may rest. A `Done` over a
+            // non-empty stack is a frame nothing will ever advance, or a prompt
+            // nobody was asked.
             debug_assert!(
-                cx.state.continuations.is_at_rest(),
-                "`apply` returned {outcome:?} with a non-prompt frame on top of the \
-                 continuation stack, which nothing will ever advance: {:?}",
+                match outcome {
+                    EngineOutcome::Done => cx.state.continuations.is_empty(),
+                    _ => cx
+                        .state
+                        .continuations
+                        .top()
+                        .is_some_and(Continuation::awaits_input),
+                },
+                "`apply` returned {outcome:?} with {:?} on top of the continuation \
+                 stack: `Done` must leave it empty, `AwaitingInput` must leave a \
+                 prompt on top",
                 cx.state.continuations.top(),
             );
         }

@@ -38,7 +38,7 @@ use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameStateBuilder, InvestigatorId,
-    LocationId, Phase,
+    LocationId,
 };
 use game_core::test_support;
 
@@ -114,13 +114,10 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
     let attacker = ready_attacker(7, 2, 3);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(study)
         .with_location(hallway)
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         .build();
 
@@ -267,13 +264,10 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
     let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(study)
         .with_location(hallway)
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         .build();
 
@@ -372,13 +366,10 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
     let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(study)
         .with_location(hallway)
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         .build();
 

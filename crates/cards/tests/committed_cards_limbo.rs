@@ -22,7 +22,7 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{ApplyResult, EngineOutcome, InputRequest, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId,
     TokenModifiers, Zone,
 };
 use game_core::test_support::{self, ChoiceResolver};
@@ -58,12 +58,9 @@ fn board(hand: &[&str], resources: u8) -> (GameState, InvestigatorId, LocationId
     inv.current_location = Some(loc_id);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(loc)
         .with_investigator(inv)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build();

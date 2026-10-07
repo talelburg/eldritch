@@ -9,7 +9,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, Zone,
+    GameStateBuilder, InvestigatorId, LocationId, Zone,
 };
 use game_core::{assert_event, assert_no_event, test_support};
 
@@ -32,12 +32,9 @@ fn board(enemy_present: bool) -> GameState {
         .push(CardInPlay::enter_play(CardCode::new(BEAT_COP), COP_INST));
 
     let mut builder = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
         .with_location(test_support::test_location(10, "Study"))
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV);
+        .open_turn(INV);
     if enemy_present {
         let mut enemy = test_support::test_enemy(100, "Ghoul");
         enemy.max_health = 3;

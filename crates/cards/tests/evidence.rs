@@ -16,7 +16,7 @@ use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers, Zone,
+    GameStateBuilder, InvestigatorId, LocationId, TokenModifiers, Zone,
 };
 use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -56,11 +56,8 @@ fn investigator_with_evidence_and_enemy(
     loc.clues = location_clues;
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_round(0)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -359,11 +356,8 @@ fn window_offers_both_in_play_reaction_and_hand_evidence() {
     loc.clues = 2;
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_round(0)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)

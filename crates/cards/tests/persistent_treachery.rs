@@ -11,9 +11,9 @@ use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
     AbilityAddress, AbilitySource, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
-    ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigationPhaseFrame,
-    InvestigationResume, InvestigatorId, InvestigatorTurnFrame, Location, LocationId,
-    ModifierTarget, Phase, SkillKind, TokenModifiers, UpkeepPhaseFrame, UpkeepResume, UseKind,
+    ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigatorId,
+    InvestigatorTurnFrame, Location, LocationId, ModifierTarget, Phase, SkillKind, TokenModifiers,
+    UpkeepPhaseFrame, UpkeepResume, UseKind,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
 
@@ -94,10 +94,7 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(20));
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .with_investigator(inv)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -285,12 +282,10 @@ fn frozen_in_fear_surcharges_first_move_each_round_only() {
         CardInstanceId(0),
     ));
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
-        .with_active_investigator(InvestigatorId(1))
         .with_location(test_support::test_location(1, "A"))
         .with_location(test_support::test_location(2, "B"))
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
     state.connect(LocationId(1), LocationId(2));
     assert_eq!(state.investigators[&InvestigatorId(1)].actions_remaining, 3);
@@ -335,19 +330,10 @@ fn frozen_in_fear_board(token: ChaosToken) -> GameState {
         CardInstanceId(0),
     ));
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv1)
         .with_investigator(test_support::test_investigator(2))
-        .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
-        // Mid-Investigation invariant (slice 1a): EndTurn rotates / cascades
-        // through the InvestigationPhase anchor.
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
-        // EndTurn pops (or strands a skill test below, then pops on resume).
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
     state.chaos_bag.tokens = vec![token];
     state
@@ -428,19 +414,10 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
         CardInstanceId(1),
     ));
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv1)
         .with_investigator(test_support::test_investigator(2))
-        .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
-        // Mid-Investigation invariant (slice 1a): EndTurn rotates / cascades
-        // through the InvestigationPhase anchor.
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
-        // EndTurn pops (or strands a skill test below, then pops on resume).
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
     // Two Numeric(0) draws → willpower 3 vs difficulty 3 → both succeed.
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(0), ChaosToken::Numeric(0)];
@@ -540,13 +517,10 @@ fn frozen_in_fear_with_weapon_board() -> GameState {
     enemy.current_location = Some(LocationId(20));
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LocationId(20))
         .with_location(test_support::test_location(20, "Here"))
         .with_enemy(enemy)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build()

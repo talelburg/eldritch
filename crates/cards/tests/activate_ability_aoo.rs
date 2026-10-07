@@ -45,8 +45,7 @@ use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    Enemy, EnemyId, GameStateBuilder, Investigator, InvestigatorId, LocationId, Phase, Status,
-    UseKind,
+    Enemy, EnemyId, GameStateBuilder, Investigator, InvestigatorId, LocationId, Status, UseKind,
 };
 use game_core::test_support;
 
@@ -132,12 +131,9 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
     let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         .build();
 
@@ -230,12 +226,9 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
     let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         // The Fight starts a Combat skill test, which needs a non-empty bag.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -299,12 +292,9 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
     let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         .build();
 
@@ -375,12 +365,9 @@ fn activating_an_investigate_designated_ability_while_engaged_provokes_an_aoo() 
     let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         // Only so the investigation has a bag to draw from once the AoO has
         // resolved and the parked effect runs.
@@ -449,12 +436,9 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
     let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         .build();
 
@@ -538,12 +522,9 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
     let attacker = ready_attacker(7, 50, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         .build();
 

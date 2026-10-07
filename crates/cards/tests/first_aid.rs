@@ -15,7 +15,7 @@ use game_core::engine::{
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, UseKind,
+    GameStateBuilder, InvestigatorId, LocationId, UseKind,
 };
 use game_core::{assert_event, test_support};
 
@@ -47,12 +47,9 @@ fn board_with_harm(supplies: u8, damage: u8, horror: u8) -> GameState {
     inv.cards_in_play.push(kit);
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
         .with_location(test_support::test_location(10, "Study"))
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build()
 }
 
@@ -239,13 +236,10 @@ fn two_investigators(healer_damage: u8, patient_damage: u8) -> GameState {
     patient.investigator_card.accumulated_damage = patient_damage;
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(healer, LOC)
         .with_investigator_at(patient, LOC)
         .with_location(test_support::test_location(10, "Study"))
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build()
 }
 

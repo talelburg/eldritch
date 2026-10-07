@@ -65,7 +65,7 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Phase,
+    InvestigatorId, LocationId,
 };
 use game_core::{assert_event_sequence, test_support};
 
@@ -177,12 +177,9 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     study.clues = 1;
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(study)
         .with_investigator(roland)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy(goat_spawn(7, inv_id, loc))
         .build();
 

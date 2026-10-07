@@ -42,7 +42,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, Act, Agenda, CardCode, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Phase,
+    InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -107,14 +107,12 @@ fn install_probe_registry() {
 /// two-act deck plus a one-agenda deck, both cursors at the front.
 fn board() -> GameState {
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(test_support::test_investigator(1), HERE)
         .with_investigator_at(test_support::test_investigator(2), THERE)
         .with_location(test_support::test_location(1, "Study"))
         .with_location(test_support::test_location(2, "Hallway"))
-        .with_active_investigator(MINE)
         .with_turn_order([MINE, NEIGHBOUR])
-        .with_investigator_turn(MINE)
+        .open_turn(MINE)
         .build();
     state.act_deck = vec![
         Act {
