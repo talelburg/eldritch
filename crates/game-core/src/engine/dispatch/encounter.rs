@@ -563,10 +563,11 @@ pub fn reshuffle_encounter_discard(cx: &mut Cx) {
 /// the deck and the discard are empty. No caller treats that as a
 /// scenario condition: `EncounterCardRevealed` rejects, and the Mythos
 /// step-1.4 draw (`draw_encounter_card_into_frame`) rejects on a
-/// chain's first card and panics mid-chain as malformed scenario data. The Rules Reference
-/// covers only the empty deck ("shuffle the encounter discard pile back
-/// into the encounter deck") and the Official FAQ is silent on both
-/// piles being empty, so no rule makes this a scenario condition.
+/// chain's first card and panics mid-chain as malformed scenario data.
+/// The Rules Reference covers only the empty deck ("shuffle the
+/// encounter discard pile back into the encounter deck") and the
+/// Official FAQ is silent on both piles being empty, so no rule makes
+/// this a scenario condition.
 pub(super) fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
     if cx.state.encounter_deck.is_empty() {
         if cx.state.encounter_discard.is_empty() {
