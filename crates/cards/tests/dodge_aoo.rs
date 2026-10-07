@@ -68,22 +68,13 @@ fn pick_soaker(outcome: &EngineOutcome) -> OptionId {
         .id
 }
 
-/// An engaged ready enemy at `loc` dealing `damage` / 0 horror with `max_health`.
-/// `AoO` attackers are ready (not exhausted) and engaged; `max_health` lets
-/// callers ensure the attacker survives a Guard Dog retaliation.
-fn engaged_attacker(
-    id: u32,
-    inv: InvestigatorId,
-    loc: LocationId,
-    damage: u8,
-    max_health: u8,
-) -> Enemy {
+/// A ready enemy dealing `damage` / 0 horror, with `max_health`. Engage it
+/// with `with_enemy_engaged`, which places it at the investigator's location.
+fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
     let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
     e.attack_damage = damage;
     e.attack_horror = 0;
     e.max_health = max_health;
-    e.current_location = Some(loc);
-    e.engaged_with = Some(inv);
     e
 }
 
@@ -120,7 +111,7 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
     investigator.current_location = Some(from);
     investigator.hand = vec![CardCode::new(DODGE)];
 
-    let attacker = engaged_attacker(7, inv_id, from, 2, 3);
+    let attacker = ready_attacker(7, 2, 3);
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -130,7 +121,7 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     // Step 1: take the Move — AoO fires; Dodge is in hand so the
@@ -273,7 +264,7 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
     investigator.current_location = Some(from);
     investigator.hand = vec![CardCode::new(DODGE)];
 
-    let attacker = engaged_attacker(7, inv_id, from, 2, 5);
+    let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -283,7 +274,7 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     // Step 1: Move → AoO → BeforeEnemyAttack window.
@@ -378,7 +369,7 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
 
     // Attacker deals 2 damage; Guard Dog (health 3) survives (2 < 3) and
     // retaliates. Max health 5 ensures the attacker survives the 1 retaliate.
-    let attacker = engaged_attacker(7, inv_id, from, 2, 5);
+    let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -388,7 +379,7 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     // Step 1: Move → AoO → distribution prompt (Guard Dog has capacity, #44/K5b).

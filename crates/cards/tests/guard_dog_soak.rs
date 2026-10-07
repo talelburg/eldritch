@@ -56,21 +56,13 @@ fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// An engaged enemy at the investigator's location dealing `attack_damage`
-/// damage / 0 horror, ready (not exhausted), with `max_health`.
-fn engaged_attacker(
-    id: u32,
-    inv: InvestigatorId,
-    loc: LocationId,
-    attack_damage: u8,
-    max_health: u8,
-) -> Enemy {
+/// A ready enemy dealing `damage` / 0 horror, with `max_health`. Engage it
+/// with `with_enemy_engaged`, which places it at the investigator's location.
+fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
     let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
-    e.max_health = max_health;
-    e.attack_damage = attack_damage;
+    e.attack_damage = damage;
     e.attack_horror = 0;
-    e.current_location = Some(loc);
-    e.engaged_with = Some(inv);
+    e.max_health = max_health;
     e
 }
 
@@ -106,7 +98,7 @@ fn soak_state(
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id]);
     for enemy in enemies {
-        builder = builder.with_enemy(enemy);
+        builder = builder.with_enemy_engaged(enemy, inv_id);
     }
     // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
     // InvestigationPhase anchor at investigation_phase_end.
@@ -198,14 +190,9 @@ fn fire_retaliate(state: GameState) -> ApplyResult {
 fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
     let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
     // Attack deals 2 damage; Guard Dog (health 3) soaks all of it, the
     // investigator takes none.
-    let (mut state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog)],
-        vec![engaged_attacker(7, inv, loc, 2, 3)],
-    );
+    let (mut state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 2, 3)]);
 
     let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
     // Distribute the attack: assign both points onto Guard Dog (#44/K5b).
@@ -279,14 +266,9 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
 fn guard_dog_retaliates_on_a_lethal_assignment_then_is_defeated() {
     let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
     // Attack deals 3 damage = Guard Dog's printed health → the assignment is
     // lethal, and the dog is defeated once it is placed.
-    let (mut state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog)],
-        vec![engaged_attacker(7, inv, loc, 3, 3)],
-    );
+    let (mut state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 3, 3)]);
 
     let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
     let result = distribute_onto(result, dog);
@@ -364,15 +346,10 @@ fn guard_dog_retaliates_on_a_lethal_assignment_then_is_defeated() {
 fn an_attacker_defeated_by_the_retaliate_mid_attack_has_nothing_to_exhaust() {
     let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
     // The attacker has 1 health, so Guard Dog's 1 retaliate damage defeats it
     // in the `when` cell of its own attack's damage. Enemy phase, so it *would*
     // have exhausted had it survived (unlike the AoO/Retaliate cases).
-    let (mut state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog)],
-        vec![engaged_attacker(7, inv, loc, 2, 1)],
-    );
+    let (mut state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 2, 1)]);
 
     let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
     let result = distribute_onto(result, dog);
@@ -422,12 +399,7 @@ fn guard_dog_defeated_on_overflow_is_discarded_from_play() {
     // survived); a fresh 2-damage attack pushes it to 4 >= 3 → defeated.
     let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
-    let (mut state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog)],
-        vec![engaged_attacker(7, inv, loc, 2, 3)],
-    );
+    let (mut state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 2, 3)]);
     // Survived a prior attack: 2 already accumulated (under health 3).
     state.investigators.get_mut(&inv_id).unwrap().cards_in_play[0].accumulated_damage = 2;
 
@@ -488,11 +460,9 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
     let dog = CardInstanceId(1);
     let vest = CardInstanceId(2);
     let enemy_id = EnemyId(7);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
     let (mut state, inv_id, _) = soak_state(
         vec![(GUARD_DOG, dog), (BULLETPROOF_VEST, vest)],
-        vec![engaged_attacker(7, inv, loc, 2, 3)],
+        vec![ready_attacker(7, 2, 3)],
     );
 
     let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
@@ -572,8 +542,6 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
 #[test]
 fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     let dog = CardInstanceId(1);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
     let first = EnemyId(7);
     let second = EnemyId(8);
     // Two engaged attackers, each dealing 1 damage; Guard Dog (health 3)
@@ -582,10 +550,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     // attacks too. Both end exhausted.
     let (mut state, inv_id, _) = soak_state(
         vec![(GUARD_DOG, dog)],
-        vec![
-            engaged_attacker(7, inv, loc, 1, 3),
-            engaged_attacker(8, inv, loc, 1, 3),
-        ],
+        vec![ready_attacker(7, 1, 3), ready_attacker(8, 1, 3)],
     );
 
     // Two engaged attackers → the enemy phase first asks the player which
@@ -753,7 +718,7 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
 
     // Engaged ready attacker dealing 2 damage; Guard Dog (health 3) soaks
     // all of it and survives (2 < 3).
-    let attacker = engaged_attacker(7, inv_id, from, 2, 3);
+    let attacker = ready_attacker(7, 2, 3);
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -763,7 +728,7 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     // Step 1: take the Move — AoO runs; Guard Dog has no cancel reaction
@@ -881,17 +846,12 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
 #[test]
 fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
     let dog = CardInstanceId(1);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
     // Attack deals 5 damage. Guard Dog (printed health 3) soaks 3 and is
     // defeated by reaching its printed health; the remaining 2 must be
     // assigned to the investigator — landing on the investigator card's
     // `accumulated_damage`. The investigator has 8 health, so 2 < 8 →
     // the investigator survives.
-    let (mut state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog)],
-        vec![engaged_attacker(7, inv, loc, 5, 3)],
-    );
+    let (mut state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 5, 3)]);
 
     let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
     // Distribute soak-first: fill Guard Dog to capacity (3), then the rest
@@ -952,17 +912,12 @@ fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
 #[test]
 fn investigator_card_overflow_eliminates_the_investigator() {
     let dog = CardInstanceId(1);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
     // The investigator has 8 health. Pre-load the investigator card
     // with 7 damage (survived prior harm). A 4-damage attack: Guard Dog
     // soaks 3 (defeated), the remaining 1 lands on the investigator card →
     // 8 >= 8 → the investigator is eliminated (Defeated), not the card
     // discarded to a pile.
-    let (mut state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog)],
-        vec![engaged_attacker(7, inv, loc, 4, 3)],
-    );
+    let (mut state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 4, 3)]);
     state
         .investigators
         .get_mut(&inv_id)
@@ -1023,18 +978,13 @@ fn investigator_card_overflow_eliminates_the_investigator() {
 #[test]
 fn co_overflowing_asset_is_removed_from_game_not_discarded_when_investigator_eliminated() {
     let dog = CardInstanceId(1);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
     // The investigator has 8 health. Pre-load 5 onto the investigator card
     // and 2 onto Guard Dog (printed health 3). A 4-damage attack distributed
     // soak-first: Guard Dog takes 1 (→ 3 >= 3, would defeat) and the
     // remaining 3 land on the investigator card (→ 8 >= 8, eliminated). The
     // investigator is eliminated in step 2, draining cards_in_play to
     // removed_from_game before the asset sweep runs.
-    let (mut state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog)],
-        vec![engaged_attacker(7, inv, loc, 4, 3)],
-    );
+    let (mut state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 4, 3)]);
     {
         let inv_mut = state.investigators.get_mut(&inv_id).unwrap();
         inv_mut.investigator_card.accumulated_damage = 5;

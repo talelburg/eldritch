@@ -19,14 +19,12 @@ fn install_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// One engaged ready enemy at the investigator's location dealing `damage` / 0 horror.
-fn engaged_attacker(id: u32, inv: InvestigatorId, loc: LocationId, damage: u8) -> Enemy {
+/// One ready enemy dealing `damage` / 0 horror. `attack_state` engages it.
+fn ready_attacker(id: u32, damage: u8) -> Enemy {
     let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
     e.max_health = 5;
     e.attack_damage = damage;
     e.attack_horror = 0;
-    e.current_location = Some(loc);
-    e.engaged_with = Some(inv);
     e
 }
 
@@ -51,7 +49,7 @@ fn attack_state(assets: Vec<(&str, CardInstanceId)>, enemy: Enemy) -> (GameState
         .with_investigator(inv)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
-        .with_enemy(enemy)
+        .with_enemy_engaged(enemy, inv_id)
         .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
@@ -107,10 +105,7 @@ fn guard_dog_damage(state: &GameState, inv: InvestigatorId, inst: CardInstanceId
 #[test]
 fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
     let dog = CardInstanceId(1);
-    let (state, inv) = attack_state(
-        vec![(GUARD_DOG, dog)],
-        engaged_attacker(7, InvestigatorId(1), LocationId(101), 2),
-    );
+    let (state, inv) = attack_state(vec![(GUARD_DOG, dog)], ready_attacker(7, 2));
 
     // EndTurn → enemy phase → distribution prompt (Guard Dog has capacity).
     let r1 = test_support::take_turn_action(state, &TurnAction::EndTurn);
@@ -156,10 +151,7 @@ fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
 #[test]
 fn player_may_decline_to_soak_taking_all_damage() {
     let dog = CardInstanceId(1);
-    let (state, inv) = attack_state(
-        vec![(GUARD_DOG, dog)],
-        engaged_attacker(7, InvestigatorId(1), LocationId(101), 2),
-    );
+    let (state, inv) = attack_state(vec![(GUARD_DOG, dog)], ready_attacker(7, 2));
 
     let r1 = test_support::take_turn_action(state, &TurnAction::EndTurn);
     // Both points to the investigator — decline to soak.
@@ -181,10 +173,7 @@ fn player_may_decline_to_soak_taking_all_damage() {
 #[test]
 fn a_full_soaker_drops_out_of_the_next_prompt() {
     let dog = CardInstanceId(1);
-    let (mut state, inv) = attack_state(
-        vec![(GUARD_DOG, dog)],
-        engaged_attacker(7, InvestigatorId(1), LocationId(101), 2),
-    );
+    let (mut state, inv) = attack_state(vec![(GUARD_DOG, dog)], ready_attacker(7, 2));
     // Pre-damage Guard Dog to 2 (health 3) → 1 remaining capacity.
     state.investigators.get_mut(&inv).unwrap().cards_in_play[0].accumulated_damage = 2;
 
