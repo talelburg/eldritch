@@ -342,7 +342,8 @@ fn only_the_damage_mode_is_offered_with_no_horror_to_heal() {
 
     // Option 0 = the damage mode; the heal's target grounding then raises its
     // own one-option prompt (the sole co-located investigator).
-    let s = s.pick_nth(0).pick_unanchored();
+    let me = s.state().investigators[&INV].card_anchor();
+    let s = s.pick_nth(0).pick(me);
     assert_eq!(
         s.state().investigators[&INV].damage(),
         1,
@@ -398,7 +399,8 @@ fn the_offered_index_names_the_live_mode_not_the_printed_one() {
     // Option 0 = the horror mode; the heal's target grounding then raises its
     // own one-option prompt (the sole co-located investigator) under
     // `interactive_acknowledge`.
-    let s = s.pick_nth(0).pick_unanchored();
+    let me = s.state().investigators[&INV].card_anchor();
+    let s = s.pick_nth(0).pick(me);
     assert_eq!(
         s.state().investigators[&INV].horror(),
         1,

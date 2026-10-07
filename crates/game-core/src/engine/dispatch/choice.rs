@@ -11,7 +11,7 @@ use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
 use crate::engine::{Cx, EvalContext};
-use crate::state::{Continuation, EffectFrame};
+use crate::state::{Continuation, EffectFrame, GameState, InvestigatorId};
 
 /// Outcome of applying the uniform resolve convention to a count of legal
 /// options (umbrella §3.4 / spec §5). `pub` so card-local natives can apply
@@ -71,6 +71,35 @@ fn choice_options(options: Vec<(String, Option<OptionTarget>)>) -> Vec<ChoiceOpt
         .collect()
 }
 
+/// Build the offered options for a candidate list: option `i` is
+/// `candidates[i]`, labelled and anchored by `option` (#205 will make the
+/// labels human). Every candidate here is a board entity, so `option` returns
+/// a bare [`OptionTarget`] rather than an `Option`: a caller cannot leave one
+/// un-anchored and land it in the prompt banner (ADR 0011, #950).
+pub(super) fn candidate_options<T>(
+    candidates: &[T],
+    option: impl Fn(&T) -> (String, OptionTarget),
+) -> Vec<ChoiceOption> {
+    candidates
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let (label, target) = option(c);
+            ChoiceOption::new(
+                OptionId(u32::try_from(i).expect("candidate count fits u32")),
+                label,
+            )
+            .at(target)
+        })
+        .collect()
+}
+
+/// The option for one tied investigator: labelled by id, anchored to their
+/// investigator card.
+pub(super) fn investigator_option(state: &GameState, id: InvestigatorId) -> (String, OptionTarget) {
+    (format!("{id:?}"), state.investigators[&id].card_anchor())
+}
+
 /// Build the `AwaitingInput` for a **decision** — a choice among alternatives
 /// printed on one card, rather than among board entities (ADR 0015). Every
 /// branch shares `anchor`, so it rides on the request as well as on each option:
@@ -82,8 +111,10 @@ fn choice_options(options: Vec<(String, Option<OptionTarget>)>) -> Vec<ChoiceOpt
 /// the source left play during cost payment, and the prompt falls back to the
 /// banner like any un-anchored one.
 ///
-/// The sole caller is the evaluator's `Effect::ChooseOne` step. Every other
-/// suspend goes through [`awaiting_choice_anchored`] and keeps the
+/// Two callers: the evaluator's `Effect::ChooseOne` step, and the skill-test
+/// substitution offer (Mind over Matter 01036), whose source has left play and
+/// so passes no anchor. Every other suspend goes through
+/// [`awaiting_choice_anchored`] and keeps the
 /// [`Selection`](crate::engine::PromptNature::Selection) default.
 pub(crate) fn awaiting_decision(
     prompt: impl Into<String>,
@@ -104,17 +135,19 @@ pub(crate) fn awaiting_decision(
 
 /// Build the `AwaitingInput` for a controller choice from one render label per
 /// offered option, each **un-anchored** (no board home, so the host renders it in
-/// the prompt banner). Delegates to [`awaiting_choice_anchored`]. Used by
-/// card-local native-leaf choices, whose options the engine cannot name a board
-/// home for. The effect-branch `ChooseOne` went the other way in #775: its
-/// options anchor to the card the effect is printed on, when the dispatch site
-/// knows which that is.
+/// the prompt banner). Delegates to [`awaiting_choice_anchored`]. Used by the
+/// search-deck pick, whose options are cards in a deck with no board surface
+/// (ADR 0015 excludes it). Card-local native-leaf choices went the other way
+/// in #950: [`suspend_for_native_choice`] takes an anchor per option.
 pub(crate) fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) -> EngineOutcome {
     awaiting_choice_anchored(prompt, labels.into_iter().map(|l| (l, None)).collect())
 }
 
 /// Suspend a card-local native leaf for a controller pick (#422): build the
-/// `AwaitingInput` from `labels`. The native's `Leaf` frame stays on the stack;
+/// `AwaitingInput` from one `(label, anchor)` per offered option, in offered
+/// order. A native's options are board entities, so each names the surface it
+/// renders on (ADR 0011, #950); an option with no board home spells it `None`
+/// explicitly rather than by default. The native's `Leaf` frame stays on the stack;
 /// resume re-invokes the native with the pick threaded via
 /// [`EvalContext::chosen_option`](crate::engine::EvalContext::chosen_option).
 /// The native re-enumerates its candidates and indexes by the picked
@@ -123,11 +156,11 @@ pub(crate) fn awaiting_choice(prompt: impl Into<String>, labels: Vec<String>) ->
 pub fn suspend_for_native_choice(
     _cx: &mut Cx,
     prompt: impl Into<String>,
-    labels: Vec<String>,
+    options: Vec<(String, Option<OptionTarget>)>,
     _tag: &str,
     _ctx: &EvalContext,
 ) -> EngineOutcome {
-    awaiting_choice(prompt, labels)
+    awaiting_choice_anchored(prompt, options)
 }
 
 /// Resume an effect node suspended in place for a controller pick (#422): the

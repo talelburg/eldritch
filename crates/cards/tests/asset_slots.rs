@@ -49,15 +49,6 @@ fn play(session: TestSession, id: InvestigatorId) -> TestSession {
     })
 }
 
-/// Discard the `position`th occupier to make room. The make-room prompt's
-/// options are un-anchored (#950), so nothing but their position tells them
-/// apart: they are offered in play order.
-fn discard_to_make_room(position: u32) -> Action {
-    Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::PickSingle(OptionId(position)),
-    })
-}
-
 fn at_turn_menu(session: &TestSession, id: InvestigatorId) -> bool {
     session.prompt().target == Some(OptionTarget::TurnControl(id))
 }
@@ -149,8 +140,10 @@ fn third_hand_asset_prompts_to_choose_which_to_discard() {
         session.prompt()
     );
 
-    // Discard Machete (played first) to make room.
-    let session = session.apply(discard_to_make_room(0));
+    // Discard Machete (played first) to make room, by the instance its
+    // option anchors to.
+    let machete = session.state().investigators[&id].cards_in_play[0].instance_id;
+    let session = session.pick(OptionTarget::CardInstance(machete));
     assert!(at_turn_menu(&session, id));
     let inv = &session.state().investigators[&id];
     let codes: Vec<&str> = inv.cards_in_play.iter().map(|c| c.code.as_str()).collect();
@@ -169,8 +162,11 @@ fn out_of_range_make_room_pick_is_rejected_and_keeps_the_prompt() {
     let prompt = session.prompt().clone();
     assert!(!at_turn_menu(&session, id));
 
-    // Option 99 is out of range → Rejected, the prompt persists.
-    let session = session.apply(discard_to_make_room(99));
+    // Option 99 is out of range → Rejected, the prompt persists. A malformed
+    // id is the point here, so the response is raw rather than a `pick`.
+    let session = session.apply(Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(OptionId(99)),
+    }));
     assert!(!session.expect_rejected().is_empty());
     assert_eq!(
         session.prompt(),

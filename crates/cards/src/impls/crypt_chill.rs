@@ -20,7 +20,7 @@ use card_dsl::card_data::{CardKind, SkillKind};
 use card_dsl::dsl::{self, Ability};
 use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, ChoiceResolution, Cx, EngineOutcome};
+use game_core::engine::{self, ChoiceResolution, Cx, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{CardInstanceId, InvestigatorId, Zone};
 
@@ -89,11 +89,14 @@ fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         ChoiceResolution::Auto(i) => discard_asset_instance(cx, controller, assets[i]),
         // 2+ → suspend for the controller's choice.
         ChoiceResolution::Suspend => {
-            let labels = assets.iter().map(|id| format!("{id:?}")).collect();
+            let options = assets
+                .iter()
+                .map(|id| (format!("{id:?}"), Some(OptionTarget::CardInstance(*id))))
+                .collect();
             engine::suspend_for_native_choice(
                 cx,
                 "Choose an asset to discard",
-                labels,
+                options,
                 CRYPT_CHILL_FAIL,
                 ctx,
             )

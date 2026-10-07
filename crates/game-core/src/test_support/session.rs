@@ -31,8 +31,7 @@ use crate::state::{EmitEventFrame, EmitStep, GameState, GameStateBuilder, Invest
 ///   fixture whose top frame cannot re-surface its prompt is a stack the engine
 ///   never rests at, and construction panics.
 /// - **Every step applies once, then drains to the next rest.** The steps are
-///   [`take`](Self::take), [`pick`](Self::pick),
-///   [`pick_unanchored`](Self::pick_unanchored), [`pick_nth`](Self::pick_nth),
+///   [`take`](Self::take), [`pick`](Self::pick), [`pick_nth`](Self::pick_nth),
 ///   [`confirm`](Self::confirm), [`skip`](Self::skip), the framework entry
 ///   points [`fire_at`](Self::fire_at) and [`take_damage`](Self::take_damage),
 ///   and the raw [`apply`](Self::apply). The drain answers prompts through the session's
@@ -51,7 +50,7 @@ use crate::state::{EmitEventFrame, EmitStep, GameState, GameStateBuilder, Invest
 /// the continuation stack: the turn menu is the prompt anchored to
 /// [`TurnControl`](OptionTarget::TurnControl), any other `AwaitingInput` is a
 /// prompt, and `Done` is game over. No step matches on option labels — an
-/// option is chosen by the board entity it anchors to (or by having none), or
+/// option is chosen by the board entity it anchors to, or
 /// by printed position for a [`Decision`](PromptNature::Decision) alone
 /// (ADR 0011, ADR 0015).
 ///
@@ -286,26 +285,13 @@ impl TestSession {
     // inline like every other step's argument.
     #[allow(clippy::needless_pass_by_value)]
     pub fn pick(self, target: OptionTarget) -> Self {
-        let id = self.sole_option_at(Some(&target), "pick");
-        self.respond(InputResponse::PickSingle(id))
-    }
-
-    /// Step: choose the one option of the current prompt the engine left
-    /// un-anchored (ADR 0011 spells "no board home" as no anchor), then drain —
-    /// the investigator's own entry in a soak prompt, beside the anchored
-    /// soakers.
-    ///
-    /// # Panics
-    ///
-    /// Panics at the turn menu, or unless exactly one option is un-anchored.
-    pub fn pick_unanchored(self) -> Self {
-        let id = self.sole_option_at(None, "pick_unanchored");
+        let id = self.sole_option_at(&target, "pick");
         self.respond(InputResponse::PickSingle(id))
     }
 
     /// The id of the one option of the current prompt whose anchor is
-    /// `target` (`None` = un-anchored), or a panic naming why there isn't one.
-    fn sole_option_at(&self, target: Option<&OptionTarget>, step: &str) -> OptionId {
+    /// `target`, or a panic naming why there isn't one.
+    fn sole_option_at(&self, target: &OptionTarget, step: &str) -> OptionId {
         self.assert_off_turn_menu(step);
         sole_option_at(self.prompt(), target, &format!("TestSession::{step}"))
     }

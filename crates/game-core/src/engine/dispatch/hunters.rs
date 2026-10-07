@@ -6,9 +6,9 @@ use card_dsl::card_data::{Prey, PreyDirection, PreyMeasure};
 
 use crate::action::InputResponse;
 use crate::card_registry::{self, CardRegistry};
-use crate::engine::dispatch::{cursor, movement, phases};
+use crate::engine::dispatch::{choice, cursor, movement, phases};
 use crate::engine::modified_value::{self, ModifiedQuantity, ModifierTarget, ReadContext};
-use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken};
 use crate::engine::{pathfinding, Cx};
 use crate::event::Event;
 use crate::state::{
@@ -420,21 +420,6 @@ pub(crate) fn drive_hunter_moves(cx: &mut Cx) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Build the offered options for a candidate list: option `i` is
-/// `candidates[i]`, label = its debug repr (#205 will make these human).
-pub(super) fn candidate_options<T: Debug>(candidates: &[T]) -> Vec<ChoiceOption> {
-    candidates
-        .iter()
-        .enumerate()
-        .map(|(i, c)| {
-            ChoiceOption::new(
-                OptionId(u32::try_from(i).expect("candidate count fits u32")),
-                format!("{c:?}"),
-            )
-        })
-        .collect()
-}
-
 /// Store the pending hunter choice and return `AwaitingInput` for the lead
 /// investigator: the candidates ride the request as structured options, and the
 /// resume comes back as `PickSingle(OptionId)` indexing the candidate list (#348).
@@ -445,14 +430,16 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
                 "Hunter {enemy:?} movement: lead investigator picks a destination among \
                  {candidates:?}"
             ),
-            candidate_options(candidates),
+            choice::candidate_options(candidates, |l| {
+                (format!("{l:?}"), OptionTarget::Location(*l))
+            }),
         ),
         HunterChoice::Engage { enemy, candidates } => (
             format!(
                 "Hunter {enemy:?} engagement: lead investigator picks whom to engage among \
                  {candidates:?}"
             ),
-            candidate_options(candidates),
+            choice::candidate_options(candidates, |i| choice::investigator_option(cx.state, *i)),
         ),
     };
     cx.state

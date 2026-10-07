@@ -35,7 +35,7 @@
 use card_dsl::dsl::{self, Ability};
 use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, ChoiceResolution, Cx, EngineOutcome};
+use game_core::engine::{self, ChoiceResolution, Cx, EngineOutcome, OptionTarget};
 use game_core::state::{EnemyId, InvestigatorId, LocationId};
 
 /// `ArkhamDB` code for Dynamite Blast (original-Core printing).
@@ -102,8 +102,11 @@ fn dynamite_blast(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         ChoiceResolution::Auto(i) => blast_location(cx, controller, locations[i]),
         // 2+ → suspend for the controller's pick.
         ChoiceResolution::Suspend => {
-            let labels = locations.iter().map(|id| format!("{id:?}")).collect();
-            engine::suspend_for_native_choice(cx, "Choose a location to blast", labels, BLAST, ctx)
+            let options = locations
+                .iter()
+                .map(|id| (format!("{id:?}"), Some(OptionTarget::Location(*id))))
+                .collect();
+            engine::suspend_for_native_choice(cx, "Choose a location to blast", options, BLAST, ctx)
         }
     }
 }

@@ -37,9 +37,8 @@
 //! observable is where the card lands.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionId, OptionTarget};
+use game_core::engine::OptionTarget;
 use game_core::state::{
     CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
@@ -148,14 +147,11 @@ fn dodging_the_aoo_of_a_non_fast_event_does_not_erase_it() {
     );
 
     // Drive the rest of the play: Dynamite Blast's location choice, if it
-    // suspended. LOC_A + LOC_B are both candidates; its options are
-    // un-anchored (#950), so the pick is positional.
+    // suspended. LOC_A + LOC_B are both candidates; blast your own.
     let s = if at_turn_menu(&s) {
         s
     } else {
-        s.apply(Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }))
+        s.pick(OptionTarget::Location(LOC_A))
     };
 
     let discard = &s.state().investigators[&INV].discard;

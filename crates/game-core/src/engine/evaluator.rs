@@ -88,8 +88,8 @@ use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
     AbilitySource, AdvanceTrigger, CandidateSource, CardCode, CardInstanceId, Continuation,
-    DamageSource, DifficultyBasis, EffectFrame, EnemyId, GameState, InvestigatorId, Lifetime,
-    LocationId, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp, Zone,
+    DamageSource, DifficultyBasis, EffectFrame, EnemyId, GameState, Investigator, InvestigatorId,
+    Lifetime, LocationId, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp, Zone,
 };
 
 /// Failure margin of the just-resolved skill test (bound only while running an
@@ -2059,7 +2059,12 @@ fn ground_investigator_choice(
         "Chosen investigator: no candidate in scope",
         "Choose an investigator",
         |id| format!("{id:?}"),
-        |_id| None, // investigator-choice anchoring is out of S5 scope
+        |id| {
+            cx.state
+                .investigators
+                .get(id)
+                .map(Investigator::card_anchor)
+        },
         |id| {
             let mut ctx = eval_ctx;
             ctx.set_chosen_investigator(id);

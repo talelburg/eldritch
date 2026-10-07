@@ -31,9 +31,8 @@
 //! `docs/adr/0009-damage-is-assigned-then-placed.md`.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionId, OptionTarget, TimingEvent};
+use game_core::engine::{OptionTarget, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
     AttackLoopFrame, CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, Enemy,
@@ -109,15 +108,6 @@ fn guard_dog_card(state: &GameState, inv: InvestigatorId, inst: CardInstanceId) 
         .expect("Guard Dog still in play")
 }
 
-/// Choose which attacker attacks next. The attack-order prompt (#143) offers
-/// the attackers in `EnemyId` order, and its options are un-anchored (#950), so
-/// position is all that tells them apart: option 0 is the lowest `EnemyId`.
-fn attacks_next(position: u32) -> Action {
-    Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::PickSingle(OptionId(position)),
-    })
-}
-
 /// Resolve a soak distribution (#44/K5b) by assigning every point to the soaker
 /// `inst` while it has capacity, then to the investigator once it is full —
 /// reproducing the pre-K5b soak-first default. Returns the session at the first
@@ -126,15 +116,17 @@ fn attacks_next(position: u32) -> Action {
 fn distribute_onto(mut session: TestSession, inst: CardInstanceId) -> TestSession {
     while !session.prompt().skippable {
         let soaker = OptionTarget::CardInstance(inst);
-        session = if session
+        let offered = session
             .prompt()
             .options
             .iter()
-            .any(|o| o.target.as_ref() == Some(&soaker))
-        {
+            .any(|o| o.target.as_ref() == Some(&soaker));
+        session = if offered {
             session.pick(soaker)
         } else {
-            session.pick_unanchored()
+            // The sole defender: every fixture here seats investigator 1.
+            let me = session.state().investigators[&InvestigatorId(1)].card_anchor();
+            session.pick(me)
         };
     }
     session
@@ -523,7 +515,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
 
     // The chosen first attacker attacks: its 1 damage prompts the soak
     // distribution (#44/K5b) — assign it to Guard Dog → suspend on the soak window.
-    let session = distribute_onto(session.apply(attacks_next(0)), dog);
+    let session = distribute_onto(session.pick(OptionTarget::Enemy(first)), dog);
     let state = session.state();
     assert!(
         session.prompt().skippable,

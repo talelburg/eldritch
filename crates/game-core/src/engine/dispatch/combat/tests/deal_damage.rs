@@ -271,12 +271,10 @@ fn soak_options_anchor_assets_to_card_instances() {
         DistributionTarget::Investigator,
         DistributionTarget::Asset(CardInstanceId(7)),
     ];
-    let opts = soak_options(&targets);
-    // Anchors: the investigator has no card home; a soaker asset points at its card.
-    assert_eq!(
-        opts[0].target, None,
-        "the investigator is not a board anchor"
-    );
+    let me = OptionTarget::CardInstance(CardInstanceId(1));
+    let opts = soak_options(&targets, &me);
+    // Anchors: the investigator to their own card; a soaker asset to its card.
+    assert_eq!(opts[0].target, Some(me), "the investigator's own card");
     assert_eq!(
         opts[1].target,
         Some(OptionTarget::CardInstance(CardInstanceId(7)))

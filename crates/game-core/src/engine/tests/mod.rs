@@ -10,7 +10,7 @@ use crate::state::{
     EliminationCause, EnemyId, GameStateBuilder, InvestigatorId, Lifetime, LocationId, Phase,
     RecordedModifier, SkillKind, SkillTestId, Status, TokenModifiers, TokenResolution, Zone,
 };
-use crate::test_support::{self, ScriptedResolver};
+use crate::test_support::{self, ScriptedResolver, TestSession};
 use crate::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
 
 mod activate_ability;
@@ -161,18 +161,4 @@ fn move_scenario_with_engaged_enemy() -> (InvestigatorId, LocationId, LocationId
     enemy.attack_horror = 0;
     state.enemies.insert(enemy_id, enemy);
     (inv_id, a, b, enemy_id, state)
-}
-
-/// From a suspended `AwaitingInput` outcome, the attack-order (#143)
-/// `PickSingle` `OptionId` whose label matches `enemy`'s debug repr.
-fn attack_order_pick(outcome: &EngineOutcome, enemy: EnemyId) -> OptionId {
-    let EngineOutcome::AwaitingInput { request, .. } = outcome else {
-        panic!("expected an attack-order prompt, got {outcome:?}");
-    };
-    request
-        .options
-        .iter()
-        .find(|o| o.label == format!("{enemy:?}"))
-        .unwrap_or_else(|| panic!("{enemy:?} not offered in {:?}", request.options))
-        .id
 }

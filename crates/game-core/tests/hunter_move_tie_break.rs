@@ -13,10 +13,9 @@
 //! it, not about hunter movement at large. The spawn-engagement tie that also
 //! lived in that file went to real cards under #877.
 
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, OptionId};
-use game_core::state::{EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::engine::OptionTarget;
+use game_core::state::{EnemyId, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, MockRegistry};
 
 #[ctor::ctor(unsafe)]
@@ -28,7 +27,7 @@ fn install() {
 
 #[test]
 fn hunter_move_tie_break_replays_identically() {
-    fn diamond_state() -> GameState {
+    fn diamond_state() -> GameStateBuilder {
         let mut loc_a = test_support::test_location(1, "A");
         let mut loc_b = test_support::test_location(2, "B");
         let mut loc_c = test_support::test_location(3, "C");
@@ -50,30 +49,20 @@ fn hunter_move_tie_break_replays_identically() {
             .with_investigator(inv)
             .with_enemy(hunter)
             .open_turn(InvestigatorId(1))
-            .build()
     }
 
-    // Candidates are the sorted first-steps toward D: [LocationId(2), LocationId(3)],
-    // so LocationId(3) is offered option id 1.
-
-    let mut s1 = diamond_state();
-    s1 = test_support::take_turn_action(s1, &TurnAction::EndTurn).state;
-    s1 = engine::apply(
-        s1,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(1)),
-        }),
-    )
-    .state;
-    let mut s2 = diamond_state();
-    s2 = test_support::take_turn_action(s2, &TurnAction::EndTurn).state;
-    s2 = engine::apply(
-        s2,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(1)),
-        }),
-    )
-    .state;
+    // The two tied first-steps toward D are B(2) and C(3); take C, by the
+    // location its option anchors to. Each run applies the same action log.
+    let run = || {
+        diamond_state()
+            .session()
+            .take(&TurnAction::EndTurn)
+            .pick(OptionTarget::Location(LocationId(3)))
+            .state()
+            .clone()
+    };
+    let s1 = run();
+    let s2 = run();
     // Replay determinism is a whole-state property: replaying an
     // identical action log reproduces state bit-for-bit.
     assert_eq!(
