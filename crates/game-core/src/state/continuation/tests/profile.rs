@@ -65,19 +65,19 @@ fn investigator_turn(ending: bool) -> Continuation {
 
 #[test]
 fn an_encounter_card_disposal_does_not_await_input() {
-    let f = Continuation::EncounterCard {
+    let f = Continuation::EncounterCard(EncounterCardFrame {
         card: CardCode::new("01163"),
         disposition: EncounterDisposition::Discard,
-    };
+    });
     assert!(!f.awaits_input());
 }
 
 #[test]
 fn a_hand_play_disposal_does_not_await_input() {
-    let f = Continuation::PlayFromHand {
+    let f = Continuation::PlayFromHand(PlayFromHandFrame {
         investigator: InvestigatorId(1),
         card: Some(CardCode::new("01022")),
-    };
+    });
     assert!(!f.awaits_input());
 }
 
@@ -92,11 +92,11 @@ fn the_entered_location_half_of_a_move_does_not_await_input() {
 
 #[test]
 fn a_mythos_surge_chain_does_not_await_input() {
-    let f = Continuation::PlayerDraw {
+    let f = Continuation::PlayerDraw(PlayerDrawFrame {
         investigator: InvestigatorId(1),
         chain_count: 0,
         surge_pending: false,
-    };
+    });
     assert!(!f.awaits_input());
 }
 
@@ -287,17 +287,17 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(PROMPT, COMPLETE),
         ),
         (
-            Continuation::SubstitutionPrompt {
+            Continuation::SubstitutionPrompt(SubstitutionPromptFrame {
                 investigator: InvestigatorId(1),
-            },
+            }),
             profile(PROMPT, COMPLETE),
         ),
         (
-            Continuation::SlotDiscard {
+            Continuation::SlotDiscard(SlotDiscardFrame {
                 investigator: InvestigatorId(1),
                 card: None,
                 entry: AssetEntry::PlayedFromHand,
-            },
+            }),
             profile(PROMPT, COMPLETE),
         ),
         (
@@ -344,15 +344,15 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(PROMPT, CANCEL),
         ),
         (
-            Continuation::Mulligan {
+            Continuation::Mulligan(MulliganFrame {
                 remaining: vec![InvestigatorId(1)],
-            },
+            }),
             profile(PROMPT, CANCEL),
         ),
         (
-            Continuation::EncounterDraw {
+            Continuation::EncounterDraw(EncounterDrawFrame {
                 remaining: vec![InvestigatorId(1)],
-            },
+            }),
             profile(PROMPT, CANCEL),
         ),
         (investigator_turn(false), profile(PROMPT, CANCEL)),
@@ -367,11 +367,11 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(DRIVEN, CANCEL),
         ),
         (
-            Continuation::PlayerDraw {
+            Continuation::PlayerDraw(PlayerDrawFrame {
                 investigator: InvestigatorId(1),
                 chain_count: 1,
                 surge_pending: true,
-            },
+            }),
             profile(DRIVEN, CANCEL),
         ),
         // Internal sequencing the loop drives, which completes.
@@ -391,19 +391,19 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(DRIVEN, COMPLETE),
         ),
         (
-            Continuation::EncounterCard {
+            Continuation::EncounterCard(EncounterCardFrame {
                 card: CardCode::new("01116"),
                 disposition: EncounterDisposition::Spawn {
                     investigator: InvestigatorId(1),
                 },
-            },
+            }),
             profile(DRIVEN, COMPLETE),
         ),
         (
-            Continuation::PlayFromHand {
+            Continuation::PlayFromHand(PlayFromHandFrame {
                 investigator: InvestigatorId(1),
                 card: None,
-            },
+            }),
             profile(DRIVEN, COMPLETE),
         ),
         (

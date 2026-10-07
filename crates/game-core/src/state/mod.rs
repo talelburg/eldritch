@@ -34,6 +34,11 @@ pub use continuation::{
     ScenarioEndStep, SkillTestFollowUp, SkillTestStep, SpawnEngagePending, TimingMode, TimingSub,
     UpkeepResume,
 };
+// Draw, encounter and play frame payloads (#931).
+pub use continuation::{
+    EncounterCardFrame, EncounterDrawFrame, MulliganFrame, PlayFromHandFrame, PlayerDrawFrame,
+    SlotDiscardFrame, SubstitutionPromptFrame,
+};
 pub(crate) use counter::define_id;
 pub use enemy::{Enemy, EnemyId};
 pub use game_state::{

@@ -86,6 +86,7 @@ use crate::engine::outcome::{EngineOutcome, OptionId, OptionTarget};
 use crate::engine::{designator, Cx};
 use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
+use crate::state::PlayFromHandFrame;
 use crate::state::{
     AbilitySource, AdvanceTrigger, CandidateSource, CardCode, CardInstanceId, Continuation,
     DamageSource, DifficultyBasis, EffectFrame, EnemyId, GameState, InvestigatorId, Lifetime,
@@ -1038,10 +1039,10 @@ fn apply_attach_self_to_location(cx: &mut Cx) -> EngineOutcome {
             .enumerate()
             .rev()
             .find_map(|(i, frame)| match frame {
-                Continuation::PlayFromHand {
+                Continuation::PlayFromHand(PlayFromHandFrame {
                     investigator,
                     card: Some(_),
-                } => Some((i, *investigator)),
+                }) => Some((i, *investigator)),
                 _ => None,
             })
     else {
