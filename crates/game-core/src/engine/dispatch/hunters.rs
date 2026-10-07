@@ -13,7 +13,7 @@ use crate::engine::{pathfinding, Cx};
 use crate::event::Event;
 use crate::state::{
     Continuation, Enemy, EnemyId, GameState, HunterChoice, Investigator, InvestigatorId,
-    LocationId, Status,
+    LocationId, SpawnEngagePending, Status,
 };
 
 /// Result of narrowing a candidate investigator set by a prey
@@ -470,10 +470,7 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
 /// invalid pick, rejects and leaves the `HunterMove` frame on the stack so
 /// the client can retry. (#128)
 pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let Some(Continuation::HunterMove(pending)) = cx.state.continuations.last() else {
-        unreachable!("resume_hunter_choice: called with no HunterMove frame on top of the stack")
-    };
-    let pending = pending.clone();
+    let pending = cx.state.continuations.top_expect::<HunterChoice>().clone();
     let InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -494,8 +491,7 @@ pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> Eng
                     .into(),
                 };
             };
-            // Pop the HunterMove frame we validated against (it is the top frame).
-            cx.state.continuations.pop();
+            cx.state.continuations.pop_expect::<HunterChoice>();
             place_enemy_at(cx, *enemy, loc);
             // After the move, attempt engage-on-arrival; that itself may
             // suspend on an engagement tie.
@@ -514,8 +510,7 @@ pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> Eng
                     .into(),
                 };
             };
-            // Pop the HunterMove frame we validated against (it is the top frame).
-            cx.state.continuations.pop();
+            cx.state.continuations.pop_expect::<HunterChoice>();
             engage_enemy_with(cx, *enemy, who);
             *enemy
         }
@@ -554,10 +549,11 @@ pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> Eng
 /// `EncounterCardRevealed` / agenda-reverse-draw paths have no `PlayerDraw`
 /// frame beneath, so the loop simply finishes.
 pub(super) fn resume_spawn_engage(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let Some(Continuation::SpawnEngage(pending)) = cx.state.continuations.last() else {
-        unreachable!("resume_spawn_engage: called with no SpawnEngage frame on top of the stack")
-    };
-    let pending = pending.clone();
+    let pending = cx
+        .state
+        .continuations
+        .top_expect::<SpawnEngagePending>()
+        .clone();
     let InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -575,8 +571,7 @@ pub(super) fn resume_spawn_engage(cx: &mut Cx, response: &InputResponse) -> Engi
             .into(),
         };
     };
-    // Pop the SpawnEngage frame we validated against (it is the top frame).
-    cx.state.continuations.pop();
+    cx.state.continuations.pop_expect::<SpawnEngagePending>();
     engage_enemy_with(cx, pending.enemy, who);
     // The exposed `PlayerDraw` frame (if any) is driven by the `drive` loop;
     // nothing else to do here.

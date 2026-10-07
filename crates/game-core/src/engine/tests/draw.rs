@@ -17,7 +17,7 @@ fn draw_scenario() -> (InvestigatorId, GameState) {
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
         .with_rng_seed(13)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(id)

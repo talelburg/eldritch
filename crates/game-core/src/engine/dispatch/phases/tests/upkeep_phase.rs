@@ -446,7 +446,7 @@ fn end_turn_cascades_through_upkeep_to_mythos_draw_prompt() {
         .with_round(1)
         // Mid-Investigation invariant: the InvestigationPhase anchor (slice
         // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(id)

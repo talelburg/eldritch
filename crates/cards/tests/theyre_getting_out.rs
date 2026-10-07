@@ -22,9 +22,10 @@ use game_core::engine::{EngineOutcome, TimingEvent};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
-    Act, Agenda, CardCode, Continuation, EliminationCause, Enemy, EnemyId, EnemyResume, GameState,
-    GameStateBuilder, InvestigationResume, InvestigatorId, Location, LocationId, Phase, Status,
-    TimingMode, UpkeepResume,
+    Act, Agenda, CardCode, Continuation, EliminationCause, Enemy, EnemyId, EnemyPhaseFrame,
+    EnemyResume, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
+    InvestigatorId, InvestigatorTurnFrame, Location, LocationId, Phase, Status, TimingMode,
+    TimingPointWindowFrame, UpkeepPhaseFrame, UpkeepResume,
 };
 use game_core::test_support;
 
@@ -100,10 +101,13 @@ fn enemy_phase_end_moves_ghoul_before_the_upkeep_transition() {
     state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2)));
     // The step-3.4 site runs with the Enemy anchor on top (its
     // `AfterAllInvestigatorsAttacked` window has just closed).
-    state.continuations.push(Continuation::EnemyPhase {
-        resume: EnemyResume::AfterAllAttacked,
-        attacking: None,
-    });
+    state.continuations =
+        test_support::from_frames_unchecked(state.continuations.iter().cloned().chain([
+            Continuation::EnemyPhase(EnemyPhaseFrame {
+                resume: EnemyResume::AfterAllAttacked,
+                attacking: None,
+            }),
+        ]));
 
     let mut events = Vec::new();
     let _ = test_support::run_enemy_phase_end(&mut state, &mut events);
@@ -169,10 +173,13 @@ fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
     state.enemies.insert(EnemyId(1), walker);
     // Step 3.4 runs with the Enemy anchor on top (the
     // `AfterAllInvestigatorsAttacked` window has just closed).
-    state.continuations.push(Continuation::EnemyPhase {
-        resume: EnemyResume::AfterAllAttacked,
-        attacking: None,
-    });
+    state.continuations =
+        test_support::from_frames_unchecked(state.continuations.iter().cloned().chain([
+            Continuation::EnemyPhase(EnemyPhaseFrame {
+                resume: EnemyResume::AfterAllAttacked,
+                attacking: None,
+            }),
+        ]));
 
     let mut events = Vec::new();
     let _ = test_support::run_enemy_phase_end(&mut state, &mut events);
@@ -200,15 +207,15 @@ fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
     let damage_before = state.investigators[&InvestigatorId(1)].damage();
     state.phase = Phase::Investigation;
     state.active_investigator = Some(InvestigatorId(1));
-    state.continuations = vec![
-        Continuation::InvestigationPhase {
+    state.continuations = test_support::from_frames_unchecked(vec![
+        Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        },
-        Continuation::InvestigatorTurn {
+        }),
+        Continuation::InvestigatorTurn(InvestigatorTurnFrame {
             investigator: InvestigatorId(1),
             ending: false,
-        },
-    ];
+        }),
+    ]);
     // A ready enemy attacks; the Upkeep readying in between would have done
     // this anyway, but assert the precondition rather than assume it.
     assert!(!state.enemies[&EnemyId(1)].exhausted);
@@ -249,9 +256,12 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
     let mut state = board_with_agenda();
     state.phase = Phase::Upkeep;
     // UpkeepPhase anchor (slice 1a): the round-end teardown pops it.
-    state.continuations.push(Continuation::UpkeepPhase {
-        resume: UpkeepResume::Begins,
-    });
+    state.continuations =
+        test_support::from_frames_unchecked(state.continuations.iter().cloned().chain([
+            Continuation::UpkeepPhase(UpkeepPhaseFrame {
+                resume: UpkeepResume::Begins,
+            }),
+        ]));
 
     // Affordable act window: investigator in the Hallway (01112) with >= 3 clues.
     state.act_deck = vec![Act {
@@ -274,12 +284,12 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
     // The act's `when the round ends` window opens first...
     assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
     assert!(matches!(
-        state.continuations.last(),
-        Some(Continuation::TimingPointWindow {
+        state.continuations.top(),
+        Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
             event: TimingEvent::RoundEnded,
             mode: TimingMode::Reaction,
             ..
-        })
+        }))
     ));
     // ...and the agenda's `at the end of the round` doom is NOT placed yet.
     assert_eq!(

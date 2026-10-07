@@ -4,7 +4,7 @@ use crate::state::GameStateBuilder;
 #[test]
 fn enemy_phase_anchor_attacking_round_trips_through_serde() {
     let mut state = GameStateBuilder::new().build();
-    state.continuations.push(Continuation::EnemyPhase {
+    state.continuations.push(EnemyPhaseFrame {
         resume: EnemyResume::BeforeInvestigatorAttacked,
         attacking: Some(InvestigatorId(7)),
     });
@@ -16,7 +16,7 @@ fn enemy_phase_anchor_attacking_round_trips_through_serde() {
 #[test]
 fn deal_damage_frame_round_trips_through_serde() {
     let mut state = GameStateBuilder::new().build();
-    state.continuations.push(Continuation::DealDamage {
+    state.continuations.push(DealDamageFrame {
         investigator: InvestigatorId(1),
         source: DamageSource::EnemyAttack { enemy: EnemyId(5) },
         assignment: Assignment::default(),
@@ -33,7 +33,7 @@ fn deal_damage_frame_round_trips_through_serde() {
 #[test]
 fn attack_loop_frame_round_trips_through_serde() {
     let mut state = GameStateBuilder::new().build();
-    state.continuations.push(Continuation::AttackLoop {
+    state.continuations.push(AttackLoopFrame {
         investigator: InvestigatorId(7),
         remaining_attackers: vec![EnemyId(2), EnemyId(3)],
         source: EnemyAttackSource::EnemyPhase,
@@ -47,7 +47,7 @@ fn attack_loop_frame_round_trips_through_serde() {
 #[test]
 fn attack_loop_pick_order_stage_round_trips_through_serde() {
     let mut state = GameStateBuilder::new().build();
-    state.continuations.push(Continuation::AttackLoop {
+    state.continuations.push(AttackLoopFrame {
         investigator: InvestigatorId(1),
         remaining_attackers: vec![EnemyId(2), EnemyId(3)],
         source: EnemyAttackSource::EnemyPhase,

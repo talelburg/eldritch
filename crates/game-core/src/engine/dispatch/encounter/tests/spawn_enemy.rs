@@ -531,7 +531,7 @@ fn spawn_tie_suspends_for_lead_pick() {
     );
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(matches!(
-        state.continuations.last(),
+        state.continuations.top(),
         Some(Continuation::SpawnEngage(_))
     ));
     let spawned = state.enemies.values().next().expect("one enemy");
@@ -569,7 +569,7 @@ fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
         &metadata,
     );
     assert!(matches!(
-        state.continuations.last(),
+        state.continuations.top(),
         Some(Continuation::SpawnEngage(_))
     ));
 
@@ -587,7 +587,7 @@ fn resume_spawn_engage_rejects_bad_pick_and_preserves_pending() {
     );
     assert!(
         matches!(
-            state.continuations.last(),
+            state.continuations.top(),
             Some(Continuation::SpawnEngage(_))
         ),
         "pending must survive a rejected pick for retry",

@@ -85,7 +85,7 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionTarge
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
-    ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
     MythosResume, Phase, SkillKind,
 };
 use game_core::test_support::{self, MockRegistry};
@@ -210,7 +210,7 @@ fn board() -> GameState {
         // Mythos, not Investigation: the window must be the only thing that
         // permits the activation (see the module header).
         .with_phase(Phase::Mythos)
-        .with_phase_anchor(Continuation::MythosPhase {
+        .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
         .with_investigator_at(mine, HERE)

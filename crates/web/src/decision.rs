@@ -226,8 +226,9 @@ mod tests {
     use game_core::engine::{InputRequest, OptionId};
     use game_core::event::Event;
     use game_core::state::{
-        Act, AdvanceStep, AdvanceTrigger, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken,
-        Continuation, GameStateBuilder, InvestigatorId, TokenResolution, UseKind,
+        Act, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, Agenda, CardCode, CardInPlay,
+        CardInstanceId, ChaosToken, Continuation, GameStateBuilder, InvestigatorId,
+        TokenResolution, UseKind,
     };
     use game_core::{card_registry, test_support};
 
@@ -243,13 +244,13 @@ mod tests {
     /// The continuation the engine pushes while `deck`'s advance fires its
     /// reverse — the step a decision printed on that reverse arises from.
     fn advancing(deck: AdvanceDeck, code: CardCode) -> Continuation {
-        Continuation::AdvanceReverse {
+        Continuation::AdvanceReverse(AdvanceReverseFrame {
             deck,
             from: 0,
             leaving_code: code,
             step: AdvanceStep::FireReverse,
             trigger: AdvanceTrigger::Forced,
-        }
+        })
     }
 
     fn install_registry() {
@@ -339,8 +340,10 @@ mod tests {
             doom_threshold: 3,
         }];
         game.agenda_index = 0;
-        game.continuations
-            .push(advancing(AdvanceDeck::Agenda, CardCode::new(AGENDA_1)));
+        game.continuations = test_support::from_frames_unchecked([advancing(
+            AdvanceDeck::Agenda,
+            CardCode::new(AGENDA_1),
+        )]);
         let state = awaiting(
             Some(game),
             InputRequest::pick_single("Choose one", branches())
@@ -447,8 +450,10 @@ mod tests {
             clue_threshold: 2,
         }];
         game.act_index = 0;
-        game.continuations
-            .push(advancing(AdvanceDeck::Act, CardCode::new(ACT_3)));
+        game.continuations = test_support::from_frames_unchecked([advancing(
+            AdvanceDeck::Act,
+            CardCode::new(ACT_3),
+        )]);
         let state = awaiting(
             Some(game),
             InputRequest::pick_single("Choose one", branches())

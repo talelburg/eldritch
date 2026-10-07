@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::EnemyPhaseFrame;
 
 /// The parked loop's re-exposure (#704): the head attacker's sequence has
 /// popped, so the loop takes it off, exhausts it, and — with none left —
@@ -21,12 +22,12 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
         .with_investigator(test_support::test_investigator(1))
         .with_turn_order([inv_id])
         .with_enemy(enemy)
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
         })
         .build();
-    state.continuations.push(Continuation::AttackLoop {
+    state.continuations.push(AttackLoopFrame {
         investigator: inv_id,
         remaining_attackers: vec![attacker], // the head, mid-sequence
         source: EnemyAttackSource::EnemyPhase,
@@ -44,7 +45,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
         !state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::AttackLoop { .. })),
+            .any(|c| matches!(c, Continuation::AttackLoop(_))),
         "the parked attack-loop frame is consumed"
     );
     assert!(
@@ -59,10 +60,10 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
     assert!(
         !state.continuations.iter().any(|c| matches!(
             c,
-            Continuation::EnemyPhase {
+            Continuation::EnemyPhase(EnemyPhaseFrame {
                 attacking: Some(_),
                 ..
-            }
+            })
         )),
         "cursor advanced past the sole investigator (no anchor still attacking)"
     );
@@ -89,12 +90,12 @@ fn a_head_attacker_that_dealt_nothing_still_exhausts() {
         .with_investigator(test_support::test_investigator(1))
         .with_turn_order([inv_id])
         .with_enemy(enemy)
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
         })
         .build();
-    state.continuations.push(Continuation::AttackLoop {
+    state.continuations.push(AttackLoopFrame {
         investigator: inv_id,
         remaining_attackers: vec![attacker],
         source: EnemyAttackSource::EnemyPhase,
@@ -136,7 +137,7 @@ fn an_attack_of_opportunity_attacker_never_exhausts() {
         .with_turn_order([inv_id])
         .with_enemy(enemy)
         .build();
-    state.continuations.push(Continuation::AttackLoop {
+    state.continuations.push(AttackLoopFrame {
         investigator: inv_id,
         remaining_attackers: vec![attacker],
         source: EnemyAttackSource::AttackOfOpportunity,
@@ -271,12 +272,12 @@ fn drive_aoo_offers_order_pick_for_two_engaged_enemies() {
     // The parked frame carries the AoO source + PickOrder stage (frame spans
     // the whole AoO, not just a window suspension).
     assert!(matches!(
-        state.continuations.last(),
-        Some(Continuation::AttackLoop {
+        state.continuations.top(),
+        Some(Continuation::AttackLoop(AttackLoopFrame {
             source: EnemyAttackSource::AttackOfOpportunity,
             stage: AttackLoopStage::PickOrder,
             ..
-        })
+        }))
     ));
 
     // Pick EnemyId(6) (dmg 2) first → option 1 in EnemyId order [5, 6].
@@ -350,10 +351,10 @@ fn resume_attack_order_pick_rejects_invalid_input_and_keeps_frame() {
     assert!(matches!(rejected2, EngineOutcome::Rejected { .. }));
     // The PickOrder frame survives both rejections for retry.
     assert!(matches!(
-        state.continuations.last(),
-        Some(Continuation::AttackLoop {
+        state.continuations.top(),
+        Some(Continuation::AttackLoop(AttackLoopFrame {
             stage: AttackLoopStage::PickOrder,
             ..
-        })
+        }))
     ));
 }

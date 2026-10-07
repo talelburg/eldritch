@@ -11,9 +11,9 @@ use crate::engine::outcome::EngineOutcome;
 use crate::engine::{designator, evaluator, Cx};
 use crate::event::Event;
 use crate::state::{
-    AbilitySource, ActionResume, CardInstanceId, Continuation, DifficultyBasis, Enemy, EnemyId,
-    GameState, Investigator, InvestigatorId, LocationId, ModifierTarget, Phase, SkillKind,
-    SkillTestFollowUp, Status,
+    AbilitySource, ActionResolutionFrame, ActionResume, CardInstanceId, DifficultyBasis, Enemy,
+    EnemyId, GameState, Investigator, InvestigatorId, LocationId, ModifierTarget, MoveEnterFrame,
+    Phase, SkillKind, SkillTestFollowUp, Status,
 };
 
 /// Handler for `TurnAction::Investigate`.
@@ -89,7 +89,7 @@ pub(super) fn investigate(cx: &mut Cx, investigator: InvestigatorId) -> EngineOu
     // (only Fight, Evade, Parley, Resign are), so each ready engaged
     // enemy attacks before the skill test resolves.
     spend_one_action(cx, investigator);
-    cx.state.continuations.push(Continuation::ActionResolution {
+    cx.state.continuations.push(ActionResolutionFrame {
         investigator,
         resume: ActionResume::Investigate,
     });
@@ -198,7 +198,7 @@ pub(super) fn resource_action(cx: &mut Cx, investigator: InvestigatorId) -> Engi
     // Parley, Resign are), so each ready engaged enemy attacks before the
     // gain resolves.
     spend_one_action(cx, investigator);
-    cx.state.continuations.push(Continuation::ActionResolution {
+    cx.state.continuations.push(ActionResolutionFrame {
         investigator,
         resume: ActionResume::Resource,
     });
@@ -294,7 +294,7 @@ pub(super) fn engage(
     // Parley, Resign are). The target is not yet engaged so it cannot AoO;
     // only OTHER ready engaged enemies do.
     spend_one_action(cx, investigator);
-    cx.state.continuations.push(Continuation::ActionResolution {
+    cx.state.continuations.push(ActionResolutionFrame {
         investigator,
         resume: ActionResume::Engage { enemy: enemy_id },
     });
@@ -458,7 +458,7 @@ pub(super) fn move_action(
     // Park the move over its attack-of-opportunity loop (#293): push the
     // resume frame, then drive the AoO. If a cancel/soak window opens the loop
     // suspends here; otherwise `drive` resumes the frame and relocates.
-    cx.state.continuations.push(Continuation::ActionResolution {
+    cx.state.continuations.push(ActionResolutionFrame {
         investigator,
         resume: ActionResume::Move { destination },
     });
@@ -526,7 +526,7 @@ pub(super) fn move_primary_effect(
     // above the abilities the emit had just queued, so entering resolved
     // before leaving. The destination reveal rides that frame too; it is the
     // arrival's business, not the departure's.
-    cx.state.continuations.push(Continuation::MoveEnter {
+    cx.state.continuations.push(MoveEnterFrame {
         investigator,
         destination,
     });
@@ -650,13 +650,10 @@ pub(super) fn resolve_departure(
 /// left location's queued `LeftLocation` forced abilities have resolved (#569).
 /// Pops the frame, auto-engages, and emits `EnteredLocation` in tail position.
 pub(super) fn resume_move_enter(cx: &mut Cx) -> EngineOutcome {
-    let Some(Continuation::MoveEnter {
+    let MoveEnterFrame {
         investigator,
         destination,
-    }) = cx.state.continuations.pop()
-    else {
-        unreachable!("resume_move_enter: top frame is not a MoveEnter");
-    };
+    } = cx.state.continuations.pop_expect();
     // Reveal the destination if this is the first investigator entry
     // (Rules Reference p.14). No-op if already revealed. Lives here rather than
     // in `move_primary_effect` because it is the arrival's business: the

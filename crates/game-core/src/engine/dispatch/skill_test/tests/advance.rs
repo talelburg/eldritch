@@ -200,7 +200,7 @@ fn commit_emits_then_resolves_through_advance() {
         "the AwaitingCommit arm emits the commit prompt: {request:?}",
     );
     assert!(matches!(
-        cx.state.continuations.last(),
+        cx.state.continuations.top(),
         Some(Continuation::SkillTest(_))
     ));
 
@@ -414,7 +414,7 @@ fn finish_skill_test_parks_the_resolution_for_the_loop() {
     assert_eq!(out, EngineOutcome::Done);
     assert!(
         matches!(
-            cx.state.continuations.last(),
+            cx.state.continuations.top(),
             Some(Continuation::SkillTest(t)) if matches!(t.continuation, SkillTestStep::PreTokenWindow)
         ),
         "the commit hop parks the SkillTest at PreTokenWindow for the loop to drive",

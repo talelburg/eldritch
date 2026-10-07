@@ -16,7 +16,7 @@ use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::engine::{abilities_in_effect, Cx};
 use crate::state::{
-    self, AbilitySource, CandidateSource, CardCode, Continuation, EnemyId, GameState,
+    self, AbilitySource, AcknowledgeForcedFrame, CandidateSource, CardCode, EnemyId, GameState,
     InvestigatorId, LocationId, ResolutionCandidate, Status,
 };
 
@@ -211,11 +211,9 @@ pub(crate) fn queue_forced_triggers(
                 && matches!(out, EngineOutcome::Done)
                 && !effect.as_ref().is_some_and(is_only_an_advance)
             {
-                cx.state
-                    .continuations
-                    .push(Continuation::AcknowledgeForced {
-                        candidate: hit.clone(),
-                    });
+                cx.state.continuations.push(AcknowledgeForcedFrame {
+                    candidate: hit.clone(),
+                });
             }
             out
         }
@@ -781,11 +779,11 @@ fn forced_source_name(code: &CardCode) -> String {
 /// pick precedes the forced effect's resolution ("confirm before the effect"),
 /// and for an act/agenda reverse it is the whole of what an advance asks (#858).
 pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
-    let Some(Continuation::AcknowledgeForced { candidate }) = cx.state.continuations.last() else {
-        return EngineOutcome::Rejected {
-            reason: "drive_acknowledge_forced: top frame is not AcknowledgeForced".into(),
-        };
-    };
+    let candidate = &cx
+        .state
+        .continuations
+        .top_expect::<AcknowledgeForcedFrame>()
+        .candidate;
     let name = forced_source_name(&candidate.code);
     let anchor = reaction_windows::candidate_anchor(candidate);
     EngineOutcome::AwaitingInput {
@@ -807,11 +805,9 @@ pub(crate) fn resume_acknowledge_forced(cx: &mut Cx, response: &InputResponse) -
                 .into(),
         };
     }
-    debug_assert!(matches!(
-        cx.state.continuations.last(),
-        Some(Continuation::AcknowledgeForced { .. })
-    ));
-    cx.state.continuations.pop();
+    cx.state
+        .continuations
+        .pop_expect::<AcknowledgeForcedFrame>();
     EngineOutcome::Done
 }
 
@@ -819,12 +815,12 @@ pub(crate) fn resume_acknowledge_forced(cx: &mut Cx, response: &InputResponse) -
 mod tests {
     use super::*;
     use crate::engine::outcome::OptionTarget;
-    use crate::state::{AbilityAddress, Agenda, CardInstanceId, GameStateBuilder};
+    use crate::state::{AbilityAddress, Agenda, CardInstanceId, Continuation, GameStateBuilder};
 
     #[test]
     fn acknowledge_forced_suspends_then_pops_on_pick() {
         let mut state = GameStateBuilder::default().build();
-        state.continuations.push(Continuation::AcknowledgeForced {
+        state.continuations.push(AcknowledgeForcedFrame {
             candidate: ResolutionCandidate::new(
                 CardCode::new("01113"),
                 InvestigatorId(1),
@@ -861,7 +857,7 @@ mod tests {
         // Validate-first: a Confirm/Skip (not the single PickSingle) is rejected
         // and leaves the frame in place.
         let mut state = GameStateBuilder::default().build();
-        state.continuations.push(Continuation::AcknowledgeForced {
+        state.continuations.push(AcknowledgeForcedFrame {
             candidate: ResolutionCandidate::new(
                 CardCode::new("01113"),
                 InvestigatorId(1),
@@ -878,8 +874,8 @@ mod tests {
         assert!(matches!(out, EngineOutcome::Rejected { .. }));
         assert!(
             matches!(
-                cx.state.continuations.last(),
-                Some(Continuation::AcknowledgeForced { .. })
+                cx.state.continuations.top(),
+                Some(Continuation::AcknowledgeForced(_))
             ),
             "a rejected resume must leave the frame in place"
         );
@@ -890,7 +886,7 @@ mod tests {
         // A forced ability on an in-play instance surfaces a one-option pick
         // anchored to that card (#553), not Global.
         let mut state = GameStateBuilder::default().build();
-        state.continuations.push(Continuation::AcknowledgeForced {
+        state.continuations.push(AcknowledgeForcedFrame {
             candidate: ResolutionCandidate::new(
                 CardCode::new("01020"),
                 InvestigatorId(1),
@@ -920,7 +916,7 @@ mod tests {
         // A location's own forced ability (the Attic's on-enter horror) surfaces a
         // one-option pick anchored to the location on the map (#553), not Global.
         let mut state = GameStateBuilder::default().build();
-        state.continuations.push(Continuation::AcknowledgeForced {
+        state.continuations.push(AcknowledgeForcedFrame {
             candidate: ResolutionCandidate::new(
                 CardCode::new("01113"),
                 InvestigatorId(1),
@@ -955,7 +951,7 @@ mod tests {
             doom_threshold: 3,
         }];
         state.agenda_index = 0;
-        state.continuations.push(Continuation::AcknowledgeForced {
+        state.continuations.push(AcknowledgeForcedFrame {
             candidate: ResolutionCandidate::new(
                 CardCode::new("01105"),
                 InvestigatorId(1),

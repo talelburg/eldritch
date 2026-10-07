@@ -251,7 +251,7 @@ fn elimination_without_a_step_zero_ability_still_runs_its_steps() {
         !state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::Elimination { .. })),
+            .any(|c| matches!(c, Continuation::Elimination(_))),
         "elimination stays synchronous with no step-0 ability; stack = {:?}",
         state.continuations,
     );
@@ -303,7 +303,7 @@ fn interactive_elimination_acknowledges_step_zero_before_running_the_steps() {
             .state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::Elimination { .. })),
+            .any(|c| matches!(c, Continuation::Elimination(_))),
         "no stranded elimination frame; stack = {:?}",
         done.state.continuations,
     );

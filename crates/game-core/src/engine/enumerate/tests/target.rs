@@ -96,7 +96,7 @@ fn end_turn_target_is_none_without_an_open_turn() {
     // `EndTurn` carries no investigator field, so its anchor comes from the
     // turn frame; off-turn there is nothing to anchor to.
     let mut state = open_turn_state();
-    state.continuations.clear();
+    state.continuations = crate::state::ContinuationStack::new();
     assert_eq!(TurnAction::EndTurn.target(&state), None);
 }
 

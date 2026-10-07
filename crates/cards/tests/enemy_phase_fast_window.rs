@@ -49,8 +49,8 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionTarge
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, FastActorScope,
-    FastWindowKind, GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId,
-    Phase, PhaseStep,
+    FastWindowFrame, FastWindowKind, GameState, GameStateBuilder, InvestigationPhaseFrame,
+    InvestigationResume, InvestigatorId, LocationId, Phase, PhaseStep,
 };
 use game_core::test_support;
 
@@ -103,7 +103,7 @@ fn board(beat_cop: bool, enemy_health: u8) -> (GameState, InvestigatorId, EnemyI
         .with_enemy(engaged_attacker(inv_id, loc_id, enemy_health))
         // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
         // InvestigationPhase anchor at investigation_phase_end.
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
@@ -133,11 +133,11 @@ fn before_investigator_attacked_pauses_when_a_fast_play_is_eligible() {
     );
     assert_eq!(
         result.state.open_windows(),
-        vec![&Continuation::FastWindow {
+        vec![&Continuation::FastWindow(FastWindowFrame {
             candidates: Vec::new(),
             fast_actors: FastActorScope::Any,
             kind: FastWindowKind::Phase(PhaseStep::BeforeInvestigatorAttacked),
-        }],
+        })],
         "the step-3.3 window is the one left standing open",
     );
 
@@ -289,7 +289,7 @@ fn the_window_auto_skips_when_nothing_is_fast_eligible() {
             .state
             .open_windows()
             .iter()
-            .any(|w| matches!(w, Continuation::FastWindow { .. })),
+            .any(|w| matches!(w, Continuation::FastWindow(_))),
         "no window is left open on the auto-skip path; windows = {:?}",
         result.state.open_windows()
     );

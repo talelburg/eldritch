@@ -48,7 +48,7 @@ fn push_effect_then_drive_runs_to_completion() {
         ctx(1),
     );
     assert!(
-        matches!(cx.state.continuations.last(), Some(Continuation::Effect(_))),
+        matches!(cx.state.continuations.top(), Some(Continuation::Effect(_))),
         "the effect root frame is pushed for the loop",
     );
 

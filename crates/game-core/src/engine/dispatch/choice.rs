@@ -144,7 +144,7 @@ pub(crate) fn resume_effect_choice(cx: &mut Cx, response: &InputResponse) -> Eng
             reason: "ResolveInput: a choice is open; expected InputResponse::PickSingle".into(),
         };
     };
-    match cx.state.continuations.last_mut() {
+    match cx.state.continuations.top_frame_mut() {
         Some(Continuation::Effect(
             EffectFrame::Leaf { ctx, .. } | EffectFrame::Designated { ctx, .. },
         )) => {
@@ -266,7 +266,7 @@ mod tests {
             "a 2-branch ChooseOne suspends for a pick",
         );
 
-        let Some(Continuation::Effect(EffectFrame::Leaf { ctx, .. })) = state.continuations.last()
+        let Some(Continuation::Effect(EffectFrame::Leaf { ctx, .. })) = state.continuations.top()
         else {
             panic!("expected a suspended effect Leaf frame on the stack");
         };

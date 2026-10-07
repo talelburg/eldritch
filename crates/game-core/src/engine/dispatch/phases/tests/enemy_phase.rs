@@ -30,7 +30,7 @@ fn enemy_phase_runs_hunters_then_attack_loop_when_no_tie() {
         // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
         // These tests construct the state directly (bypassing
         // investigation_phase), so stage both explicitly.
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(InvestigatorId(1))
@@ -88,7 +88,7 @@ fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
         // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
         // These tests construct the state directly (bypassing
         // investigation_phase), so stage both explicitly.
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(InvestigatorId(1))
@@ -112,7 +112,7 @@ fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
         state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::EnemyPhase { .. })),
+            .any(|c| matches!(c, Continuation::EnemyPhase(_))),
         "EnemyPhase anchor present while suspended in the Enemy phase; stack = {:?}",
         state.continuations,
     );
@@ -157,7 +157,7 @@ fn resolve_attacks_for_investigator_fires_engaged_ready_enemy_and_exhausts() {
         // The loop's own tail advances the enemy-phase cursor once it drains
         // (#704), so it needs its anchor; driving past it cascades on into
         // the next phase, which these assertions do not read.
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
         })
@@ -234,7 +234,7 @@ fn resolve_attacks_for_investigator_excludes_exhausted_and_unengaged_enemies() {
         .with_enemy(e2)
         .with_enemy(e3)
         // See the sibling test: the drained loop advances its own cursor.
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
         })
@@ -293,7 +293,7 @@ fn resolve_attacks_for_investigator_pick_overrides_enemy_id_order() {
         .with_turn_order([inv_id])
         .with_enemy(e_higher) // inserted non-id order: BTreeMap still snapshots 2 then 10
         .with_enemy(e_lower)
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
         })
@@ -388,7 +388,7 @@ fn resolve_attacks_for_investigator_early_breaks_when_target_defeated_mid_loop()
         .with_turn_order([inv_id])
         .with_enemy(e1)
         .with_enemy(e2)
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
         })
@@ -511,7 +511,7 @@ fn enemy_phase_emits_phase_started_and_cascades_to_mythos_in_no_eligibility_case
         !state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::EnemyPhase { .. })),
+            .any(|c| matches!(c, Continuation::EnemyPhase(_))),
         "EnemyPhase anchor popped at phase end (cursor gone with it)"
     );
 }
@@ -760,7 +760,7 @@ fn enemy_phase_resumes_via_skip_input() {
         .with_enemy(enemy)
         .with_phase(Phase::Enemy)
         .with_turn_order([inv_id])
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
         })
@@ -812,7 +812,7 @@ fn enemy_phase_resumes_via_skip_input() {
             .state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::EnemyPhase { .. })),
+            .any(|c| matches!(c, Continuation::EnemyPhase(_))),
         "the EnemyPhase anchor (with its `attacking` cursor) is gone after the \
          continuation advances past the last Active investigator and the AfterAll \
          window auto-skips"

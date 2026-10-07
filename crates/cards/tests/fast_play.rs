@@ -43,8 +43,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, InputKind, OptionTarget};
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    Continuation, EnemyId, FastActorScope, FastWindowKind, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, MythosResume, Phase, PhaseStep, SkillKind,
+    EnemyId, FastActorScope, FastWindowKind, GameState, GameStateBuilder, InvestigatorId,
+    LocationId, MythosPhaseFrame, MythosResume, Phase, PhaseStep, SkillKind,
 };
 use game_core::test_support;
 
@@ -73,9 +73,10 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
     a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast.
     let state = GameStateBuilder::new()
         .with_investigator(a)
+        .with_turn_order([InvestigatorId(1)])
         .with_phase(Phase::Mythos)
         .with_active_investigator(InvestigatorId(1))
-        .with_phase_anchor(Continuation::MythosPhase {
+        .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
         })
         .with_open_window(
@@ -233,13 +234,14 @@ fn board_with_beat_cop(open_window: bool) -> GameState {
     let mut builder = GameStateBuilder::new()
         .with_investigator(a)
         .with_investigator(b)
+        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         .with_location(test_support::test_location(101, "Study"))
         .with_enemy(enemy)
         .with_phase(Phase::Mythos)
         .with_active_investigator(InvestigatorId(1));
     if open_window {
         builder = builder
-            .with_phase_anchor(Continuation::MythosPhase {
+            .with_phase_anchor(MythosPhaseFrame {
                 resume: MythosResume::AfterDraws,
             })
             .with_open_window(

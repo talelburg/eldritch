@@ -7,9 +7,9 @@ use crate::event::FailureReason;
 use crate::scenario::{ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule};
 use crate::state::{
     AbilityAddress, AbilitySource, Act, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EliminationCause, EnemyId, GameStateBuilder, InvestigationResume, InvestigatorId, Lifetime,
-    LocationId, Phase, RecordedModifier, SkillKind, SkillTestId, Status, TokenModifiers,
-    TokenResolution, Zone,
+    EliminationCause, EnemyId, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
+    InvestigatorId, Lifetime, LocationId, Phase, RecordedModifier, SkillKind, SkillTestId, Status,
+    TokenModifiers, TokenResolution, Zone,
 };
 use crate::test_support::{self, ScriptedResolver};
 use crate::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};
@@ -84,7 +84,7 @@ fn investigate_scenario(clues: u8, shroud: u8) -> (InvestigatorId, LocationId, G
         .with_chaos_bag(bag_only_zero())
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(inv_id)
@@ -120,7 +120,7 @@ fn move_scenario() -> (InvestigatorId, LocationId, LocationId, GameState) {
         .with_location(loc_b)
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(inv_id)
@@ -155,7 +155,7 @@ fn fight_evade_scenario() -> (InvestigatorId, EnemyId, GameState) {
         .with_chaos_bag(bag_only_zero())
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(inv_id)

@@ -44,7 +44,7 @@ fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
     };
     assert!(matches!(out, EngineOutcome::AwaitingInput { .. }), "prompt");
     assert!(
-        matches!(state.continuations.last(), Some(Continuation::SubstitutionPrompt { investigator }) if *investigator == inv)
+        matches!(state.continuations.top(), Some(Continuation::SubstitutionPrompt(SubstitutionPromptFrame { investigator })) if *investigator == inv)
     );
 
     let out = {
@@ -92,8 +92,8 @@ fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
         "the row itself is still recorded — the stat mismatch is what drops it",
     );
     assert!(!matches!(
-        state.continuations.last(),
-        Some(Continuation::SubstitutionPrompt { .. })
+        state.continuations.top(),
+        Some(Continuation::SubstitutionPrompt(_))
     ));
 }
 
@@ -128,7 +128,7 @@ fn substitution_prompt_keeps_the_test_on_its_frame() {
         "substitution prompt should suspend",
     );
     assert!(
-        matches!(state.continuations.last(), Some(Continuation::SubstitutionPrompt { investigator }) if *investigator == inv)
+        matches!(state.continuations.top(), Some(Continuation::SubstitutionPrompt(SubstitutionPromptFrame { investigator })) if *investigator == inv)
     );
     assert!(
         state.current_skill_test().is_some(),
@@ -241,13 +241,13 @@ fn resume_substitution_choice_parks_for_the_loop() {
     );
     assert!(
         !matches!(
-            state.continuations.last(),
-            Some(Continuation::SubstitutionPrompt { .. })
+            state.continuations.top(),
+            Some(Continuation::SubstitutionPrompt(_))
         ),
         "the SubstitutionPrompt was consumed",
     );
     assert!(
-        matches!(state.continuations.last(), Some(Continuation::SkillTest(_))),
+        matches!(state.continuations.top(), Some(Continuation::SkillTest(_))),
         "the SkillTest frame is parked on top for the loop to drive",
     );
     assert_eq!(
@@ -300,8 +300,8 @@ fn no_active_substitution_opens_commit_window_directly() {
     assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
     assert!(
         !matches!(
-            state.continuations.last(),
-            Some(Continuation::SubstitutionPrompt { .. })
+            state.continuations.top(),
+            Some(Continuation::SubstitutionPrompt(_))
         ),
         "no prompt"
     );

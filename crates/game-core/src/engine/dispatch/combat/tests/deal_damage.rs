@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::EmitEventFrame;
 
 #[test]
 fn soak_and_place_with_no_soakers_matches_old_behavior() {
@@ -64,7 +65,7 @@ fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
         .with_investigator(test_support::test_investigator(1))
         .build();
     // Park a DealDamage frame mid-distribution (2 damage to assign).
-    state.continuations.push(Continuation::DealDamage {
+    state.continuations.push(DealDamageFrame {
         investigator: inv_id,
         source: DamageSource::EnemyAttack { enemy: EnemyId(7) },
         assignment: Assignment::default(),
@@ -92,14 +93,14 @@ fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
     // to retry — a rejection must not advance the cursor.
     assert!(
         matches!(
-            state.continuations.last(),
-            Some(Continuation::DealDamage {
+            state.continuations.top(),
+            Some(Continuation::DealDamage(DealDamageFrame {
                 step: DealDamageStep::Distribute {
                     remaining_damage: 2,
                     remaining_horror: 0
                 },
                 ..
-            })
+            }))
         ),
         "DealDamage{{Distribute}} frame retained after invalid picks"
     );
@@ -137,23 +138,20 @@ fn deal_damage_cursor_walks_distribute_announce_place_finish() {
     );
     assert_eq!(out, EngineOutcome::Done);
     assert!(matches!(
-        cx.state.continuations.last(),
-        Some(Continuation::DealDamage {
+        cx.state.continuations.top(),
+        Some(Continuation::DealDamage(DealDamageFrame {
             step: DealDamageStep::Distribute { .. },
             ..
-        })
+        }))
     ));
 
     // Distribute: no soaker can take a point, so it drains without
     // prompting and the cursor reaches `Announce` with the whole 2 on the
     // investigator's share.
     assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
-    let Some(Continuation::DealDamage {
+    let DealDamageFrame {
         assignment, step, ..
-    }) = cx.state.continuations.last()
-    else {
-        panic!("frame gone after Distribute");
-    };
+    } = cx.state.continuations.top_expect::<DealDamageFrame>();
     assert_eq!(*step, DealDamageStep::Announce);
     assert_eq!(assignment.investigator_damage, 2);
 
@@ -161,11 +159,11 @@ fn deal_damage_cursor_walks_distribute_announce_place_finish() {
     // the coordinator it pushed is now on top.
     assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
     assert!(matches!(
-        cx.state.continuations.last(),
-        Some(Continuation::EmitEvent {
+        cx.state.continuations.top(),
+        Some(Continuation::EmitEvent(EmitEventFrame {
             event: TimingEvent::DamageAssigned { .. },
             ..
-        })
+        }))
     ));
     assert_eq!(
         cx.state.investigators[&id].damage(),
@@ -178,10 +176,10 @@ fn deal_damage_cursor_walks_distribute_announce_place_finish() {
     // Place: same shape, and again nothing has landed until the coordinator
     // reaches its resolve step.
     assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
-    let Some(Continuation::EmitEvent {
+    let Some(Continuation::EmitEvent(EmitEventFrame {
         event: placed @ TimingEvent::DamagePlaced { .. },
         ..
-    }) = cx.state.continuations.last().cloned()
+    })) = cx.state.continuations.top().cloned()
     else {
         panic!("Place must emit DamagePlaced");
     };
@@ -214,7 +212,7 @@ fn deal_damage_cursor_walks_distribute_announce_place_finish() {
         !cx.state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::DealDamage { .. })),
+            .any(|c| matches!(c, Continuation::DealDamage(_))),
         "the frame pops at Finish"
     );
 }

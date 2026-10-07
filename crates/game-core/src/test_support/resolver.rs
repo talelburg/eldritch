@@ -53,7 +53,8 @@ use crate::engine::{
 };
 use crate::scenario_registry;
 use crate::state::{
-    CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
+    CardCode, GameState, GameStateBuilder, InvestigatorId, InvestigatorTurnFrame, LocationId,
+    SkillKind,
 };
 
 /// Provide a response for an `AwaitingInput` prompt during a
@@ -352,10 +353,10 @@ pub fn apply_no_commits(state: GameState, action: Action) -> ApplyResult {
 /// action's prompt, not a window to resolve, so driving past it would silently
 /// consume another turn action.
 fn at_open_turn_menu(state: &GameState) -> bool {
-    matches!(
-        state.continuations.last(),
-        Some(Continuation::InvestigatorTurn { ending: false, .. })
-    )
+    state
+        .continuations
+        .top_of::<InvestigatorTurnFrame>()
+        .is_some_and(|turn| !turn.ending)
 }
 
 /// Start a plain skill test (the [`perform_skill_test`] synthetic entry point)
@@ -750,7 +751,10 @@ mod tests {
     use super::*;
     use crate::engine::ResumeToken;
     use crate::event::Event;
-    use crate::state::{ChaosBag, ChaosToken, InvestigationResume, Phase, SkillTestId};
+    use crate::state::{
+        ChaosBag, ChaosToken, Continuation, InvestigationPhaseFrame, InvestigationResume, Phase,
+        SkillTestId,
+    };
     use crate::test_support;
 
     #[test]
@@ -763,7 +767,7 @@ mod tests {
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1)])
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-            .with_phase_anchor(Continuation::InvestigationPhase {
+            .with_phase_anchor(InvestigationPhaseFrame {
                 resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(InvestigatorId(1))
@@ -1106,7 +1110,7 @@ mod tests {
             .with_location(test_support::test_location(10, "Study"))
             .with_active_investigator(id)
             .with_turn_order([id, InvestigatorId(2)])
-            .with_phase_anchor(Continuation::InvestigationPhase {
+            .with_phase_anchor(InvestigationPhaseFrame {
                 resume: InvestigationResume::TurnBegins,
             })
             .with_investigator_turn(id)

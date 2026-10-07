@@ -26,7 +26,7 @@ fn round_end_clears_round_scoped_skill_substitutions() {
         .with_turn_order([id])
         .with_active_investigator(id)
         // upkeep_round_end_teardown pops the UpkeepPhase anchor (slice 1a).
-        .with_phase_anchor(Continuation::UpkeepPhase {
+        .with_phase_anchor(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,
         })
         .build();

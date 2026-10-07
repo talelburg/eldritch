@@ -379,7 +379,9 @@ mod tests {
                 enemy: if monster { EnemyId(1) } else { EnemyId(2) },
                 extra_damage: 0,
             };
-            state.continuations.push(Continuation::SkillTest(test));
+            // The builder staged no frame, so the test is the whole stack.
+            state.continuations =
+                test_support::from_frames_unchecked([Continuation::SkillTest(test)]);
         }
         state
     }

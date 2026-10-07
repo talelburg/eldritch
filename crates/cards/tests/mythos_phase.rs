@@ -68,8 +68,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind};
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, Continuation, FastWindowKind, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, PhaseStep,
+    Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, Continuation, FastWindowFrame,
+    FastWindowKind, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, PhaseStep,
 };
 use game_core::{assert_event, test_support};
 
@@ -332,7 +332,7 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
         suspended.outcome,
     );
     assert!(matches!(
-        suspended.state.continuations.last(),
+        suspended.state.continuations.top(),
         Some(Continuation::SpawnEngage(_))
     ));
     let enemy = suspended
@@ -374,7 +374,7 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
         EngineOutcome::AwaitingInput { .. }
     ));
     assert!(!matches!(
-        resumed.state.continuations.last(),
+        resumed.state.continuations.top(),
         Some(Continuation::SpawnEngage(_))
     ));
     let enemy = resumed
@@ -590,10 +590,10 @@ fn mythos_after_draws_window_stays_open_when_a_fast_play_is_eligible() {
     assert!(
         matches!(
             result.state.open_windows().last(),
-            Some(Continuation::FastWindow {
+            Some(Continuation::FastWindow(FastWindowFrame {
                 kind: FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
                 ..
-            })
+            }))
         ),
         "top open window must be MythosAfterDraws; got {:?}",
         result.state.open_windows().last()
@@ -667,10 +667,10 @@ fn mythos_after_draws_window_closed_by_skip_and_transitions_to_investigation() {
     assert!(
         matches!(
             skip_result.state.open_windows().last(),
-            Some(Continuation::FastWindow {
+            Some(Continuation::FastWindow(FastWindowFrame {
                 kind: FastWindowKind::Phase(PhaseStep::InvestigationBegins),
                 ..
-            })
+            }))
         ),
         "top window must be InvestigationBegins; got {:?}",
         skip_result.state.open_windows().last()

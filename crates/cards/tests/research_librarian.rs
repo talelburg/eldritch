@@ -117,11 +117,11 @@ fn an_empty_deck_does_not_open_the_tutor_reaction() {
     assert!(
         r.state
             .continuations
-            .last()
+            .top()
             .and_then(Continuation::pending_candidates)
             .is_none_or(Vec::is_empty),
         "no reaction offered for a search that cannot change the game state: {:?}",
-        r.state.continuations.last(),
+        r.state.continuations.top(),
     );
 }
 
@@ -189,7 +189,7 @@ fn two_tome_assets_prompt_a_choice_then_tutor_the_pick() {
     assert!(
         r.state
             .continuations
-            .last()
+            .top()
             .and_then(Continuation::pending_candidates)
             .is_none_or(Vec::is_empty),
         "the reaction window closed",

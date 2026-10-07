@@ -26,16 +26,19 @@
 //! use game_core::engine::enumerate::TurnAction;
 //! use game_core::event::Event;
 //! use game_core::state::{
-//!     Continuation, GameStateBuilder, InvestigationResume, InvestigatorId, Phase,
+//!     Continuation, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
+//!     InvestigatorId, Phase,
 //! };
 //! use game_core::{assert_event, assert_no_event, test_support};
 //!
 //! let state = GameStateBuilder::new()
 //!     .with_phase(Phase::Investigation)
 //!     .with_investigator(test_support::test_investigator(1))
+//!     .with_investigator(test_support::test_investigator(2))
+//!     .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
 //!     .with_active_investigator(InvestigatorId(1))
 //!     // A state constructed mid-phase needs its phase anchor (slice 1a).
-//!     .with_phase_anchor(Continuation::InvestigationPhase {
+//!     .with_phase_anchor(InvestigationPhaseFrame {
 //!         resume: InvestigationResume::TurnBegins,
 //!     })
 //!     // ...and the open-turn frame above it (slice 2a-i), popped by EndTurn.

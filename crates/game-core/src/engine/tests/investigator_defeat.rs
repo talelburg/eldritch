@@ -364,9 +364,10 @@ fn all_investigators_eliminated_fires_only_when_last_active_falls() {
         .with_location(test_support::test_location(11, "B"))
         .with_chaos_bag(bag_only_zero())
         .with_phase(Phase::Investigation)
+        .with_turn_order([inv1, inv2])
         .with_active_investigator(inv1)
         .with_enemy(e)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(inv1)

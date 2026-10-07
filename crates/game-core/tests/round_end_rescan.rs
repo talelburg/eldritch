@@ -19,8 +19,8 @@ use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::state::{
-    Act, CardCode, CardInPlay, CardInstanceId, Continuation, GameState, GameStateBuilder,
-    InvestigatorId, Phase, UpkeepResume,
+    Act, CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, InvestigatorId, Phase,
+    UpkeepPhaseFrame, UpkeepResume,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -79,7 +79,7 @@ fn rescan_state() -> GameState {
     ));
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Upkeep)
-        .with_phase_anchor(Continuation::UpkeepPhase {
+        .with_phase_anchor(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,
         })
         .with_investigator(investigator)

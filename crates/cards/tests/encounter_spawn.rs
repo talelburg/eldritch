@@ -157,7 +157,7 @@ fn revealing_flesh_eater_with_two_investigators_at_the_attic_suspends_for_lead_p
         result.outcome,
     );
     assert!(matches!(
-        result.state.continuations.last(),
+        result.state.continuations.top(),
         Some(Continuation::SpawnEngage(_))
     ));
     let enemy = result.state.enemies.values().next().expect("enemy placed");

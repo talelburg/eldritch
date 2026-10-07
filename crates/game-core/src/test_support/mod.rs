@@ -23,7 +23,7 @@ use crate::card_registry::{self, CardRegistry};
 use crate::engine::{self, Cx, EngineOutcome, ForcedTriggerPoint, TimingEvent};
 use crate::event::Event;
 use crate::state::{
-    CardCode, Continuation, EmitStep, EnemyId, GameState, InvestigatorId, LocationId, Phase,
+    CardCode, EmitEventFrame, EmitStep, EnemyId, GameState, InvestigatorId, LocationId, Phase,
 };
 
 pub mod assertions;
@@ -213,8 +213,8 @@ pub fn install_test_registry() {
 pub use fixtures::{
     awaiting_commit_input, awaiting_confirm_input, awaiting_pick_single_input,
     awaiting_pick_single_with, awaiting_request, awaiting_skippable_commit_input,
-    awaiting_skippable_pick_single_input, awaiting_skippable_pick_single_with, test_enemy,
-    test_investigator, test_location, test_skill_test,
+    awaiting_skippable_pick_single_input, awaiting_skippable_pick_single_with,
+    from_frames_unchecked, test_enemy, test_investigator, test_location, test_skill_test,
 };
 pub use mock_registry::MockRegistry;
 pub use resolver::{
@@ -320,7 +320,7 @@ pub fn run_timing_sequence(
     event: TimingEvent,
 ) -> EngineOutcome {
     let mut cx = Cx { state, events };
-    cx.state.continuations.push(Continuation::EmitEvent {
+    cx.state.continuations.push(EmitEventFrame {
         event,
         step: EmitStep::When,
     });

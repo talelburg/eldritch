@@ -86,7 +86,7 @@ fn skill_test_pushes_and_pops_a_continuation_frame() {
     );
     assert!(
         matches!(
-            paused.state.continuations.first(),
+            paused.state.continuations.iter().next(),
             Some(Continuation::SkillTest(_))
         ),
         "the single frame is the SkillTest frame carrying the in-flight test",

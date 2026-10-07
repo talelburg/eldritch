@@ -14,8 +14,9 @@ use crate::engine::outcome::{EngineOutcome, InputRequest, OptionTarget, ResumeTo
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    CardCode, Continuation, EncounterDisposition, Enemy, FastWindowKind, InvestigatorId,
-    LocationId, PhaseStep, SpawnEngagePending, Status,
+    CardCode, Continuation, EncounterCardFrame, EncounterDisposition, EncounterDrawFrame, Enemy,
+    FastWindowKind, InvestigatorId, LocationId, PhaseStep, PlayerDrawFrame, SpawnEngagePending,
+    Status,
 };
 
 /// Hard cap on a single Mythos draw chain. Real scenarios surge ≤2
@@ -186,7 +187,7 @@ pub fn resolve_encounter_card(
         .map(|a| a.effect)
         .collect();
 
-    cx.state.continuations.push(Continuation::EncounterCard {
+    cx.state.continuations.push(EncounterCardFrame {
         card: code,
         disposition,
     });
@@ -611,10 +612,11 @@ pub(super) fn prompt_encounter_draw(cx: &Cx) -> EngineOutcome {
 /// re-prompts the next drawer, or — when drained — pops the loop frame and opens
 /// the post-1.4 `MythosAfterDraws` window. Rejections leave state untouched.
 pub(super) fn resume_encounter_draw(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let Some(Continuation::EncounterDraw { remaining, .. }) = cx.state.continuations.last() else {
-        unreachable!("resume_encounter_draw: no EncounterDraw frame on top of the stack")
-    };
-    let drawer = remaining[0];
+    let drawer = cx
+        .state
+        .continuations
+        .top_expect::<EncounterDrawFrame>()
+        .remaining[0];
     if !matches!(response, InputResponse::Confirm) {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -627,7 +629,7 @@ pub(super) fn resume_encounter_draw(cx: &mut Cx, response: &InputResponse) -> En
     // `drive` loop's `PlayerDraw` arm draw the first card (chain_count == 0).
     // Surge recursion and the loop advance happen on that frame, not here
     // (callsite-migration).
-    cx.state.continuations.push(Continuation::PlayerDraw {
+    cx.state.continuations.push(PlayerDrawFrame {
         investigator: drawer,
         chain_count: 0,
         surge_pending: false,
@@ -653,20 +655,16 @@ pub(super) fn resume_encounter_draw(cx: &mut Cx, response: &InputResponse) -> En
 /// Never awaits input itself (mirrors [`Continuation::EncounterCard`]); a draw
 /// may suspend on a spawn-engagement tie or reject — propagated to the caller.
 pub(super) fn drive_player_draw(cx: &mut Cx) -> EngineOutcome {
-    let Some(Continuation::PlayerDraw {
+    let PlayerDrawFrame {
         investigator,
         chain_count,
         surge_pending,
-    }) = cx.state.continuations.last()
-    else {
-        unreachable!("drive_player_draw: no PlayerDraw frame on top of the stack")
-    };
-    let investigator = *investigator;
-    if *chain_count == 0 || *surge_pending {
+    } = *cx.state.continuations.top_expect::<PlayerDrawFrame>();
+    if chain_count == 0 || surge_pending {
         draw_encounter_card_into_frame(cx, investigator)
     } else {
         // Chain over: drop this drawer's PlayerDraw frame and advance the loop.
-        cx.state.continuations.pop();
+        cx.state.continuations.pop_expect::<PlayerDrawFrame>();
         advance_encounter_draw(cx)
     }
 }
@@ -701,12 +699,9 @@ fn draw_encounter_card_into_frame(cx: &mut Cx, investigator: InvestigatorId) -> 
 
     // Bump + cap-check the live chain position. The drawer's `PlayerDraw` frame
     // is on top (its card-resolution frames are pushed above it next).
-    let Some(Continuation::PlayerDraw { chain_count, .. }) = cx.state.continuations.last_mut()
-    else {
-        unreachable!("draw_encounter_card_into_frame: PlayerDraw must be the top frame")
-    };
-    *chain_count += 1;
-    let chain_count = *chain_count;
+    let frame = cx.state.continuations.top_mut::<PlayerDrawFrame>();
+    frame.chain_count += 1;
+    let chain_count = frame.chain_count;
     if chain_count > MAX_SURGE_CHAIN {
         unreachable!(
             "Mythos draw chain exceeded MAX_SURGE_CHAIN ({}) for \
@@ -752,11 +747,10 @@ fn draw_encounter_card_into_frame(cx: &mut Cx, investigator: InvestigatorId) -> 
     // or end the chain. Still the top frame — the draw only mutated the deck,
     // pushing nothing above it.
     let surges = metadata.surge();
-    let Some(Continuation::PlayerDraw { surge_pending, .. }) = cx.state.continuations.last_mut()
-    else {
-        unreachable!("draw_encounter_card_into_frame: PlayerDraw must be the top frame")
-    };
-    *surge_pending = surges;
+    cx.state
+        .continuations
+        .top_mut::<PlayerDrawFrame>()
+        .surge_pending = surges;
 
     // Step 2: Check for the peril keyword on the drawn card.
     skill_test::peril_check(cx, &code, investigator, metadata.peril());
@@ -780,11 +774,13 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
     // The finished drawer's `PlayerDraw` frame has just been popped, so the
     // `EncounterDraw` loop frame is on top. Pull the queue out to advance it
     // without aliasing `state.investigators`.
-    let Some(Continuation::EncounterDraw { remaining, .. }) = cx.state.continuations.last_mut()
-    else {
-        unreachable!("advance_encounter_draw: EncounterDraw must be the top frame")
-    };
-    let mut queue = mem::take(remaining);
+    let mut queue = mem::take(
+        &mut cx
+            .state
+            .continuations
+            .top_mut::<EncounterDrawFrame>()
+            .remaining,
+    );
     queue.remove(0); // drop the finished drawer
     while let Some(&next) = queue.first() {
         if cx
@@ -798,7 +794,7 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
         queue.remove(0); // skip a now-eliminated investigator (RR p.10)
     }
     if queue.is_empty() {
-        cx.state.continuations.pop(); // pop the drained frame (it is on top)
+        cx.state.continuations.pop_expect::<EncounterDrawFrame>(); // the drained frame, on top
         let outcome = reaction_windows::open_fast_window(
             cx,
             FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
@@ -813,11 +809,10 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
         // Write the advanced queue back and prompt the next drawer. The surge
         // budget is per-`PlayerDraw` now (a fresh frame is pushed on the next
         // drawer's Confirm), so there is nothing to reset here (callsite-migration).
-        let Some(Continuation::EncounterDraw { remaining, .. }) = cx.state.continuations.last_mut()
-        else {
-            unreachable!("advance_encounter_draw: EncounterDraw must be the top frame")
-        };
-        *remaining = queue;
+        cx.state
+            .continuations
+            .top_mut::<EncounterDrawFrame>()
+            .remaining = queue;
         prompt_encounter_draw(cx)
     }
 }
@@ -853,12 +848,14 @@ pub(super) fn advance_encounter_draw(cx: &mut Cx) -> EngineOutcome {
 /// Called from the `drive` loop's [`Continuation::EncounterCard`] arm once a
 /// Revelation's whole sub-resolution completes and the frame is top again.
 pub(super) fn dispose_encounter_card_if_top(cx: &mut Cx) -> EngineOutcome {
-    while let Some(Continuation::EncounterCard { card, disposition }) =
-        cx.state.continuations.last()
+    while cx
+        .state
+        .continuations
+        .top_of::<EncounterCardFrame>()
+        .is_some()
     {
-        let card = card.clone();
-        let disposition = disposition.clone();
-        cx.state.continuations.pop();
+        let EncounterCardFrame { card, disposition } =
+            cx.state.continuations.pop_expect::<EncounterCardFrame>();
 
         match disposition {
             EncounterDisposition::Discard => {

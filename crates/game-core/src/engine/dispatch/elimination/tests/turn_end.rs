@@ -4,13 +4,14 @@
 //! through the real `apply` loop.
 
 use super::*;
+use crate::state::InvestigatorTurnFrame;
 
 fn turn_frame(state: &GameState) -> Option<(InvestigatorId, bool)> {
     state.continuations.iter().rev().find_map(|c| match c {
-        Continuation::InvestigatorTurn {
+        Continuation::InvestigatorTurn(InvestigatorTurnFrame {
             investigator,
             ending,
-        } => Some((*investigator, *ending)),
+        }) => Some((*investigator, *ending)),
         _ => None,
     })
 }
@@ -101,11 +102,11 @@ fn defeat_while_the_turn_is_already_ending_does_not_re_announce_it() {
     // end is announced exactly once.
     let dead = InvestigatorId(1);
     let mut state = two_investigator_open_turn(dead);
-    for c in &mut state.continuations {
-        if let Continuation::InvestigatorTurn { ending, .. } = c {
-            *ending = true;
-        }
-    }
+    state
+        .continuations
+        .topmost_of_mut::<InvestigatorTurnFrame>()
+        .expect("the fixture opens a turn")
+        .ending = true;
     let mut events = Vec::new();
 
     apply_investigator_elimination(

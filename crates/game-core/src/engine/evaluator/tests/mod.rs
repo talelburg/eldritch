@@ -63,16 +63,16 @@ fn drive_effect_run_to(cx: &mut Cx, base: usize) -> EngineOutcome {
         if cx.state.continuations.len() <= base {
             return EngineOutcome::Done;
         }
-        let outcome = match cx.state.continuations.last() {
+        let outcome = match cx.state.continuations.top() {
             Some(Continuation::Effect(_)) => step_effect_frame(cx),
-            Some(Continuation::EmitEvent { .. }) => coordinator::dispatch_emit_event(cx),
-            Some(Continuation::TimingPoint { .. }) => coordinator::dispatch_timing_point(cx),
+            Some(Continuation::EmitEvent(_)) => coordinator::dispatch_emit_event(cx),
+            Some(Continuation::TimingPoint(_)) => coordinator::dispatch_timing_point(cx),
             // `Effect::Deal` parks one of these and returns in tail position
             // (#727): the two steps of dealing the damage are the frame's,
             // not the effect walk's. The real `drive` loop dispatches it, so
             // this bounded stand-in must too, or `Deal` in a unit test
             // assigns damage that is never placed.
-            Some(Continuation::DealDamage { .. }) => combat::drive_deal_damage(cx),
+            Some(Continuation::DealDamage(_)) => combat::drive_deal_damage(cx),
             _ => return EngineOutcome::Done,
         };
         match outcome {
@@ -129,11 +129,11 @@ fn offered_count(outcome: &EngineOutcome) -> usize {
 fn assert_suspended_leaf(state: &GameState) {
     assert!(
         matches!(
-            state.continuations.last(),
+            state.continuations.top(),
             Some(Continuation::Effect(EffectFrame::Leaf { .. })),
         ),
         "expected a suspended effect Leaf frame on top, got {:?}",
-        state.continuations.last(),
+        state.continuations.top(),
     );
 }
 

@@ -27,7 +27,8 @@ use crate::scenario::TokenEffect;
 use crate::state::{
     self, AbilitySource, CardCode, ChaosToken, Continuation, DifficultyBasis, FastWindowKind,
     GameState, InFlightSkillTest, InvestigatorId, Lifetime, RecordedModifier, ResolvedTest,
-    SkillKind, SkillTestFollowUp, SkillTestStep, Status, TokenResolution, Zone,
+    SkillKind, SkillTestFollowUp, SkillTestStep, Status, SubstitutionPromptFrame, TokenResolution,
+    Zone,
 };
 use crate::{card_registry, scenario};
 
@@ -208,7 +209,7 @@ pub(in crate::engine) fn start_skill_test(
     if substitution_covers(cx.state, investigator, skill) {
         cx.state
             .continuations
-            .push(Continuation::SubstitutionPrompt { investigator });
+            .push(SubstitutionPromptFrame { investigator });
         let use_skill = SkillKind::Intellect; // sole substitution in scope
         return EngineOutcome::AwaitingInput {
             request: InputRequest::pick_single(
@@ -260,7 +261,9 @@ pub(in crate::engine) fn resume_substitution_choice(
     }
     // Pop the SubstitutionPrompt frame we validated against (it is the top
     // frame, above the SkillTest frame the mutation below reaches).
-    cx.state.continuations.pop();
+    cx.state
+        .continuations
+        .pop_expect::<SubstitutionPromptFrame>();
     if *opt == 0 {
         // Use Intellect: the test becomes an Intellect test (base / icons /
         // bonuses all key off `skill`). A weapon's combat bonus falls away on
@@ -988,7 +991,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
         // `last()` while this driver runs, so "not the SkillTest on top" simply
         // means "a sub-frame above me" — no `rposition` self-location.
         if !matches!(
-            cx.state.continuations.last(),
+            cx.state.continuations.top(),
             Some(Continuation::SkillTest(_))
         ) {
             return EngineOutcome::Done;

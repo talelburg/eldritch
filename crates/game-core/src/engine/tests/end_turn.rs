@@ -8,8 +8,10 @@ fn end_turn_drains_actions_and_emits_turn_ended() {
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(roland)
+        .with_investigator(test_support::test_investigator(2))
+        .with_turn_order([id, InvestigatorId(2)])
         .with_active_investigator(id)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(id)

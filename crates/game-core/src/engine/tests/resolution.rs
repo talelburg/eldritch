@@ -47,7 +47,7 @@ fn terminal_act_state(scenario_id: Option<&str>) -> GameState {
         .with_investigator(investigator)
         .with_active_investigator(inv)
         .with_turn_order([inv])
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(inv);

@@ -13,8 +13,8 @@ use crate::engine::outcome::EngineOutcome;
 use crate::engine::{abilities_in_effect, ability_source, Cx};
 use crate::event::Event;
 use crate::state::{
-    AbilityAddress, AbilitySource, ActionResume, CandidateSource, CardCode, CardInPlay,
-    CardInstanceId, Continuation, GameState, Investigator, InvestigatorId, UseKind,
+    AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume, CandidateSource, CardCode,
+    CardInPlay, CardInstanceId, GameState, Investigator, InvestigatorId, UseKind,
 };
 
 /// Handler for `TurnAction::ActivateAbility`.
@@ -139,7 +139,7 @@ pub(super) fn activate_ability(
     // frame and drive the AoO loop (which may open a Dodge cancel / Guard Dog
     // soak window), then run the effect on resume. (#361, K3.)
     if provokes_aoo(action_cost, designator.as_ref()) {
-        cx.state.continuations.push(Continuation::ActionResolution {
+        cx.state.continuations.push(ActionResolutionFrame {
             investigator,
             resume: ActionResume::ActivateAbility {
                 source,

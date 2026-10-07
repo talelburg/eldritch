@@ -73,7 +73,7 @@ use card_dsl::card_data::CardKind;
 use crate::action::{Action, RosterEntry};
 use crate::event::Event;
 use crate::scenario::ScenarioRegistry;
-use crate::state::{CardCode, Continuation, GameState, ScenarioEndStep};
+use crate::state::{CardCode, Continuation, GameState, ScenarioEndFrame, ScenarioEndStep};
 use crate::{card_registry, scenario_registry};
 
 /// The result of a single [`apply`] call.
@@ -222,6 +222,15 @@ pub(crate) fn apply_via(
             // an unrelated suspension can be surfaced by the same apply that
             // finalized nothing, and the check is cheap and self-guarding.
             finalize_scenario_end(&mut cx, registry);
+            // Every Driven frame was drained and the ending, if finished, popped:
+            // whatever remains must be a prompt the next `apply` can answer, or
+            // nothing at all. A stranded non-prompt top would never advance.
+            debug_assert!(
+                cx.state.continuations.is_at_rest(),
+                "`apply` returned {outcome:?} with a non-prompt frame on top of the \
+                 continuation stack, which nothing will ever advance: {:?}",
+                cx.state.continuations.top(),
+            );
         }
         outcome
         // `cx` drops here, releasing borrows on `state` and `events`.
@@ -261,14 +270,14 @@ pub(crate) fn apply_via(
 /// `apply_resolution` needs the registry/module.
 fn finalize_scenario_end(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
     if !matches!(
-        cx.state.continuations.last(),
-        Some(Continuation::ScenarioEnd {
+        cx.state.continuations.top(),
+        Some(Continuation::ScenarioEnd(ScenarioEndFrame {
             step: ScenarioEndStep::Finalize,
-        })
+        }))
     ) {
         return;
     }
-    cx.state.continuations.pop();
+    cx.state.continuations.pop_expect::<ScenarioEndFrame>();
     let Some(ending) = cx.state.ending else {
         debug_assert!(
             false,

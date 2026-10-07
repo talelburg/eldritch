@@ -16,7 +16,7 @@ use crate::engine::dispatch::{cards, hunters};
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::engine::Cx;
 use crate::state::{
-    AssetEntry, CardCode, CardInPlay, CardInstanceId, Continuation, GameState, InvestigatorId,
+    AssetEntry, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId, SlotDiscardFrame,
 };
 
 /// Per-type slot counts (a multiset). `BTreeMap` keeps iteration deterministic.
@@ -194,7 +194,7 @@ pub(in crate::engine) fn enter_asset_making_room(
     if candidates.len() >= 2 {
         // Genuine choice: the player picks which occupier to discard. The asset
         // stays mid-play, riding this frame across the prompt.
-        cx.state.continuations.push(Continuation::SlotDiscard {
+        cx.state.continuations.push(SlotDiscardFrame {
             investigator,
             card: Some(card),
             entry,
@@ -231,14 +231,15 @@ fn prompt_slot_discard(
 /// pick rejects and keeps the frame (the `DealDamage` / `HunterMove`
 /// contract).
 pub(super) fn resume_slot_discard(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let Some(Continuation::SlotDiscard {
+    let SlotDiscardFrame {
         investigator,
         card,
         entry,
-    }) = cx.state.continuations.last().cloned()
-    else {
-        unreachable!("resume_slot_discard: top frame is not SlotDiscard");
-    };
+    } = cx
+        .state
+        .continuations
+        .top_expect::<SlotDiscardFrame>()
+        .clone();
     let Some(card) = card else {
         // Elimination is the only thing that empties a `SlotDiscard` frame (see
         // `Continuation::take_play_in_progress`), and it cannot run while this
@@ -267,7 +268,7 @@ pub(super) fn resume_slot_discard(cx: &mut Cx, response: &InputResponse) -> Engi
         };
     };
     // Valid: pop the frame we validated against, discard the choice, continue.
-    cx.state.continuations.pop();
+    cx.state.continuations.pop_expect::<SlotDiscardFrame>();
     cards::discard_card_from_play(cx, investigator, inst);
     enter_asset_making_room(cx, investigator, card, entry)
 }

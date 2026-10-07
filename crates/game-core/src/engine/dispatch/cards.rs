@@ -18,8 +18,8 @@ use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    ActionResume, AssetEntry, CardCode, CardInPlay, CardInstanceId, Continuation, InvestigatorId,
-    Zone,
+    ActionResolutionFrame, ActionResume, AssetEntry, CardCode, CardInPlay, CardInstanceId,
+    InvestigatorId, MulliganFrame, PlayFromHandFrame, Zone,
 };
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
@@ -647,7 +647,7 @@ pub(super) fn draw(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     // Evade, Parley, Resign are), so each ready engaged enemy attacks
     // before the card is drawn (RR p.5).
     actions::spend_one_action(cx, investigator);
-    cx.state.continuations.push(Continuation::ActionResolution {
+    cx.state.continuations.push(ActionResolutionFrame {
         investigator,
         resume: ActionResume::Draw,
     });
@@ -673,9 +673,7 @@ pub(super) fn draw_primary_effect(cx: &mut Cx, investigator: InvestigatorId) -> 
 /// and [`resume_mulligan`] (re-prompt after a queue pop). `remaining` must be
 /// non-empty; callers ensure this.
 pub(super) fn prompt_mulligan(cx: &mut Cx, remaining: Vec<InvestigatorId>) -> EngineOutcome {
-    cx.state
-        .continuations
-        .push(Continuation::Mulligan { remaining });
+    cx.state.continuations.push(MulliganFrame { remaining });
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_multiple(
             "Mulligan: choose cards to redraw (an empty selection keeps your hand).",
@@ -788,10 +786,12 @@ fn perform_mulligan_redraw(cx: &mut Cx, investigator: InvestigatorId, sorted: &[
 /// Otherwise re-prompt the next investigator. Rejections leave state and events
 /// untouched.
 pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let Some(Continuation::Mulligan { remaining }) = cx.state.continuations.last() else {
-        unreachable!("resume_mulligan: no Mulligan frame on top of the stack")
-    };
-    let remaining = remaining.clone();
+    let remaining = cx
+        .state
+        .continuations
+        .top_expect::<MulliganFrame>()
+        .remaining
+        .clone();
     let investigator = remaining[0];
 
     let InputResponse::PickMultiple { selected } = response else {
@@ -846,7 +846,7 @@ pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOu
     let mut remaining = remaining;
     remaining.remove(0);
     // Pop the current Mulligan frame (validated above; it is the top frame).
-    cx.state.continuations.pop();
+    cx.state.continuations.pop_expect::<MulliganFrame>();
     if remaining.is_empty() {
         // All mulligans complete. Flush every investigator's set-aside
         // weaknesses back into their deck (RR setup step 8: "Upon completion
@@ -1048,7 +1048,7 @@ pub(super) fn play_card(
     // soak windows); `complete_play` runs on resume. Fast plays are not actions
     // and resolve immediately. (#378.)
     if !is_fast {
-        cx.state.continuations.push(Continuation::ActionResolution {
+        cx.state.continuations.push(ActionResolutionFrame {
             investigator,
             resume: ActionResume::PlayCard { card: Some(card) },
         });
@@ -1116,10 +1116,8 @@ pub(in crate::engine) fn enter_asset_into_play(
 /// re-homed it (Barricade 01038). Either way there is nothing left to place and
 /// the pop is the whole disposal.
 pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
-    let Some(Continuation::PlayFromHand { investigator, card }) = cx.state.continuations.pop()
-    else {
-        unreachable!("dispose_play_from_hand: top frame is not PlayFromHand");
-    };
+    let PlayFromHandFrame { investigator, card } =
+        cx.state.continuations.pop_expect::<PlayFromHandFrame>();
     let Some(card) = card else {
         return EngineOutcome::Done;
     };
@@ -1185,7 +1183,7 @@ fn complete_play(cx: &mut Cx, investigator: InvestigatorId, card: CardCode) -> E
     // below a PlayFromHand frame that holds the card and disposes of it (event →
     // discard; asset → enter play) once the effect pops. (Slice D #423 — replaces
     // the synchronous apply_effect + asset tail + manual window open.)
-    cx.state.continuations.push(Continuation::PlayFromHand {
+    cx.state.continuations.push(PlayFromHandFrame {
         investigator,
         card: Some(card),
     });

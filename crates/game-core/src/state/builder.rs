@@ -13,17 +13,20 @@
 //! use game_core::engine::enumerate::TurnAction;
 //! use game_core::engine::EngineOutcome;
 //! use game_core::state::{
-//!     Continuation, GameStateBuilder, InvestigationResume, InvestigatorId, Phase,
+//!     Continuation, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
+//!     InvestigatorId, Phase,
 //! };
 //! use game_core::test_support;
 //!
 //! let state = GameStateBuilder::new()
 //!     .with_phase(Phase::Investigation)
 //!     .with_investigator(test_support::test_investigator(1))
+//!     .with_investigator(test_support::test_investigator(2))
+//!     .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
 //!     .with_location(test_support::test_location(10, "Study"))
 //!     .with_active_investigator(InvestigatorId(1))
 //!     // A state constructed mid-phase needs its phase anchor (slice 1a).
-//!     .with_phase_anchor(Continuation::InvestigationPhase {
+//!     .with_phase_anchor(InvestigationPhaseFrame {
 //!         resume: InvestigationResume::TurnBegins,
 //!     })
 //!     // ...and the open-turn frame above it (slice 2a-i), popped by EndTurn.
@@ -39,8 +42,10 @@ use std::collections::{BTreeMap, VecDeque};
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
 use crate::state::{
-    ChaosBag, Continuation, Counter, Enemy, EnemyId, FastActorScope, FastWindowKind, GameState,
-    HandSizeDiscard, Investigator, InvestigatorId, Location, LocationId, Phase, TokenModifiers,
+    ChaosBag, Continuation, ContinuationStack, Counter, EncounterDrawFrame, Enemy, EnemyId,
+    FastActorScope, FastWindowFrame, FastWindowKind, GameState, HandSizeDiscard, Investigator,
+    InvestigatorId, InvestigatorTurnFrame, Location, LocationId, MulliganFrame, Phase,
+    TokenModifiers,
 };
 
 /// Fluent builder for a [`GameState`].
@@ -267,11 +272,14 @@ impl GameStateBuilder {
         // Framework player windows are `FastWindow` (#433 A-ii). The builder
         // only constructs framework windows; event windows / the forced run
         // (`TimingPointWindow`) are produced by the engine, not seeded here.
-        self.open_windows.push(Continuation::FastWindow {
-            candidates: Vec::new(),
-            fast_actors,
-            kind,
-        });
+        self.open_windows.push(
+            FastWindowFrame {
+                candidates: Vec::new(),
+                fast_actors,
+                kind,
+            }
+            .into(),
+        );
         self
     }
 
@@ -284,20 +292,15 @@ impl GameStateBuilder {
     ///
     /// # Panics
     ///
-    /// Panics if `c` is not a `*Phase` anchor variant (`MythosPhase` /
+    /// Panics if `anchor` is not a `*Phase` anchor (`MythosPhase` /
     /// `InvestigationPhase` / `EnemyPhase` / `UpkeepPhase`).
-    pub fn with_phase_anchor(mut self, c: Continuation) -> Self {
+    pub fn with_phase_anchor(mut self, anchor: impl Into<Continuation>) -> Self {
+        let frame = anchor.into();
         assert!(
-            matches!(
-                c,
-                Continuation::MythosPhase { .. }
-                    | Continuation::InvestigationPhase { .. }
-                    | Continuation::EnemyPhase { .. }
-                    | Continuation::UpkeepPhase { .. }
-            ),
-            "with_phase_anchor expects a *Phase anchor variant, got {c:?}",
+            frame.is_phase_anchor(),
+            "with_phase_anchor expects a *Phase anchor variant, got {frame:?}",
         );
-        self.phase_anchor = Some(c);
+        self.phase_anchor = Some(frame);
         self
     }
 
@@ -349,16 +352,21 @@ impl GameStateBuilder {
         // `HandSizeDiscard` frame on top of them (#348).
         // A staged `*Phase` anchor (slice 1a, #393) sits at the bottom of the
         // stack — beneath any windows, which open *above* it during the phase.
-        let mut continuations: Vec<Continuation> = self.phase_anchor.into_iter().collect();
+        let mut continuations = ContinuationStack::new();
+        if let Some(anchor) = self.phase_anchor {
+            continuations.push(anchor);
+        }
         // A staged open turn (slice 2a-i, #393) sits directly above the anchor;
         // any window opened during the turn is a sub-resolution above it.
         if let Some(investigator) = self.investigator_turn {
-            continuations.push(Continuation::InvestigatorTurn {
+            continuations.push(InvestigatorTurnFrame {
                 investigator,
                 ending: false,
             });
         }
-        continuations.extend(self.open_windows);
+        for window in self.open_windows {
+            continuations.push(window);
+        }
         if let Some(hsd) = self.hand_size_discard_pending {
             continuations.push(Continuation::HandSizeDiscard(hsd));
         }
@@ -366,12 +374,12 @@ impl GameStateBuilder {
         // upkeep are disjoint phases, so this never coexists with a staged
         // hand-size discard; push order is immaterial.
         if let Some(remaining) = self.mulligan_remaining {
-            continuations.push(Continuation::Mulligan { remaining });
+            continuations.push(MulliganFrame { remaining });
         }
         // A staged Mythos encounter draw becomes an `EncounterDraw` frame
         // (#348). Disjoint from setup/upkeep, so push order is immaterial.
         if let Some(remaining) = self.mythos_draw_remaining {
-            continuations.push(Continuation::EncounterDraw { remaining });
+            continuations.push(EncounterDrawFrame { remaining });
         }
         GameState {
             investigators: self.investigators,
@@ -455,10 +463,10 @@ mod with_open_window_tests {
         assert_eq!(state.open_windows().len(), 1);
         assert!(matches!(
             state.open_windows()[0],
-            Continuation::FastWindow {
+            Continuation::FastWindow(FastWindowFrame {
                 fast_actors: FastActorScope::Any,
                 ..
-            }
+            })
         ));
         assert!(state.open_windows()[0]
             .pending_candidates()
@@ -482,10 +490,10 @@ mod with_open_window_tests {
         assert_eq!(state.open_windows().len(), 2);
         assert!(matches!(
             state.open_windows()[1],
-            Continuation::FastWindow {
+            Continuation::FastWindow(FastWindowFrame {
                 kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
                 ..
-            }
+            })
         ));
     }
 }

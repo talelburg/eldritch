@@ -21,8 +21,8 @@ use game_core::action::Action;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
-    GameStateBuilder, InvestigationResume, InvestigatorId, LocationId, Phase, UseKind,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
+    InvestigationPhaseFrame, InvestigationResume, InvestigatorId, LocationId, Phase, UseKind,
 };
 use game_core::test_support;
 use leptos::prelude::*;
@@ -62,7 +62,7 @@ fn open_turn_with_one_action() -> GameState {
         .with_turn_order([INV])
         .with_active_investigator(INV)
         .with_round(1)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(INV)
@@ -285,7 +285,7 @@ fn open_turn_with_first_aid() -> GameState {
         .with_turn_order([INV])
         .with_active_investigator(INV)
         .with_round(1)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(INV)

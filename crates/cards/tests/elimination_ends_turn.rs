@@ -31,8 +31,8 @@ use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
 use game_core::state::{
-    CardCode, Continuation, Enemy, GameState, GameStateBuilder, InvestigationResume,
-    InvestigatorId, LocationId, Phase, Status,
+    CardCode, Continuation, Enemy, GameState, GameStateBuilder, InvestigationPhaseFrame,
+    InvestigationResume, InvestigatorId, InvestigatorTurnFrame, LocationId, Phase, Status,
 };
 use game_core::test_support;
 
@@ -75,7 +75,7 @@ fn board(turn_order: &[InvestigatorId]) -> GameState {
         .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
         .with_investigator(dying)
         .with_active_investigator(DYING)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(DYING)
@@ -116,11 +116,11 @@ fn defeat_mid_turn_hands_the_turn_to_the_next_investigator() {
     );
     assert!(
         matches!(
-            state.continuations.last(),
-            Some(Continuation::InvestigatorTurn {
+            state.continuations.top(),
+            Some(Continuation::InvestigatorTurn(InvestigatorTurnFrame {
                 investigator,
                 ending: false,
-            }) if *investigator == SURVIVOR
+            })) if *investigator == SURVIVOR
         ),
         "the survivor's open turn is on top, not the dead investigator's: {:?}",
         state.continuations,
@@ -204,7 +204,7 @@ fn solo_defeat_ends_the_scenario_instead_of_rotating() {
             .state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::InvestigatorTurn { .. })),
+            .any(|c| matches!(c, Continuation::InvestigatorTurn(_))),
         "the armed turn frame is cancelled, not resumed: {:?}",
         result.state.continuations,
     );

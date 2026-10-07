@@ -14,7 +14,7 @@ fn resource_action_spends_action_and_gains_one_resource() {
             i
         })
         .with_active_investigator(inv_id)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(inv_id)
@@ -54,7 +54,7 @@ fn resource_action_fires_aoo_from_ready_engaged_enemy() {
         })
         .with_active_investigator(inv_id)
         .with_enemy(enemy)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(inv_id)
@@ -165,7 +165,7 @@ fn resource_action_aoo_that_eliminates_suppresses_the_gain() {
         })
         .with_active_investigator(inv_id)
         .with_enemy(enemy)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(inv_id)

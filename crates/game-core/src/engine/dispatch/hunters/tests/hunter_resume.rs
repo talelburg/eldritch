@@ -1,6 +1,6 @@
 use super::*;
 use crate::engine::{dispatch, Cx};
-use crate::state::{EnemyId, EnemyResume, InvestigatorId, LocationId, Phase};
+use crate::state::{EnemyId, EnemyPhaseFrame, EnemyResume, InvestigatorId, LocationId, Phase};
 use crate::{assert_event, test_support};
 
 /// Build the `PickSingle` response selecting the offered option whose label
@@ -55,7 +55,7 @@ fn hunter_move_tie_suspends_then_resumes_on_pick_location() {
         .with_enemy(hunter)
         // EnemyPhase anchor (slice 1a): the resume cascade reaches the
         // attack kickoff / enemy_phase_end, which require it.
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: None,
         })
@@ -67,7 +67,7 @@ fn hunter_move_tie_suspends_then_resumes_on_pick_location() {
     });
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(matches!(
-        state.continuations.last(),
+        state.continuations.top(),
         Some(Continuation::HunterMove(_))
     ));
     // Resume by picking C.
@@ -91,7 +91,7 @@ fn hunter_move_tie_suspends_then_resumes_on_pick_location() {
         Some(LocationId(3))
     );
     assert!(!matches!(
-        state.continuations.last(),
+        state.continuations.top(),
         Some(Continuation::HunterMove(_))
     ));
     assert_event!(ev2, Event::EnemyMoved { enemy, to } if *enemy == EnemyId(1) && *to == LocationId(3));
@@ -139,10 +139,7 @@ fn hunter_move_tie_rejects_invalid_pick() {
     );
     assert!(matches!(result, EngineOutcome::Rejected { .. }));
     assert!(
-        matches!(
-            state.continuations.last(),
-            Some(Continuation::HunterMove(_))
-        ),
+        matches!(state.continuations.top(), Some(Continuation::HunterMove(_))),
         "pending stays open on invalid pick"
     );
 }
@@ -172,7 +169,7 @@ fn hunter_engage_tie_suspends_then_resumes_on_pick_investigator() {
         .with_enemy(h)
         // EnemyPhase anchor (slice 1a): resume cascades into the attack
         // kickoff / enemy_phase_end.
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: None,
         })
@@ -206,7 +203,7 @@ fn hunter_engage_tie_suspends_then_resumes_on_pick_investigator() {
         Some(InvestigatorId(2))
     );
     assert!(!matches!(
-        state.continuations.last(),
+        state.continuations.top(),
         Some(Continuation::HunterMove(_))
     ));
 }
@@ -296,7 +293,7 @@ fn multi_hunter_one_suspends_then_next_processed_on_resume() {
         .with_enemy(clean_hunter)
         // EnemyPhase anchor (slice 1a): resume cascades into the attack
         // kickoff / enemy_phase_end.
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: None,
         })
@@ -361,7 +358,7 @@ fn hunter_move_tie_rejects_wrong_response_kind() {
         .with_enemy(hunter)
         // EnemyPhase anchor (slice 1a): the resume cascade reaches the
         // attack kickoff / enemy_phase_end, which require it.
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: None,
         })
@@ -373,7 +370,7 @@ fn hunter_move_tie_rejects_wrong_response_kind() {
     });
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(matches!(
-        state.continuations.last(),
+        state.continuations.top(),
         Some(Continuation::HunterMove(_))
     ));
     // Submit a non-PickSingle response (Skip).
@@ -390,10 +387,7 @@ fn hunter_move_tie_rejects_wrong_response_kind() {
         "wrong response kind should be rejected"
     );
     assert!(
-        matches!(
-            state.continuations.last(),
-            Some(Continuation::HunterMove(_))
-        ),
+        matches!(state.continuations.top(), Some(Continuation::HunterMove(_))),
         "pending preserved so client can retry with PickSingle"
     );
 }
@@ -436,7 +430,7 @@ fn hunter_engage_tie_rejects_wrong_response_kind() {
     );
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(matches!(
-        state.continuations.last(),
+        state.continuations.top(),
         Some(Continuation::HunterMove(_))
     ));
     // Submit a non-PickSingle response (Skip).
@@ -453,10 +447,7 @@ fn hunter_engage_tie_rejects_wrong_response_kind() {
         "wrong response kind should be rejected"
     );
     assert!(
-        matches!(
-            state.continuations.last(),
-            Some(Continuation::HunterMove(_))
-        ),
+        matches!(state.continuations.top(), Some(Continuation::HunterMove(_))),
         "pending preserved so client can retry with PickSingle"
     );
 }

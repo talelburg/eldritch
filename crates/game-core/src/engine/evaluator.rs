@@ -89,7 +89,7 @@ use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
     AbilitySource, AdvanceTrigger, CandidateSource, CardCode, CardInstanceId, Continuation,
     DamageSource, DifficultyBasis, EffectFrame, EnemyId, GameState, InvestigatorId, Lifetime,
-    LocationId, RecordedModifier, SkillTestFollowUp, Zone,
+    LocationId, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp, Zone,
 };
 
 /// Failure margin of the just-resolved skill test (bound only while running an
@@ -376,10 +376,7 @@ fn frame_of(effect: &Effect, ctx: EvalContext) -> EffectFrame {
 /// `Continuation::Effect` arm (for effect frames parked across an `apply()`
 /// boundary).
 pub(crate) fn step_effect_frame(cx: &mut Cx) -> EngineOutcome {
-    let Some(Continuation::Effect(frame)) = cx.state.continuations.pop() else {
-        unreachable!("step_effect_frame: top frame is not a Continuation::Effect");
-    };
-    match frame {
+    match cx.state.continuations.pop_expect::<EffectFrame>() {
         EffectFrame::Seq { effects, next, ctx } => {
             if next < effects.len() {
                 let child = frame_of(&effects[next], ctx);
@@ -1041,10 +1038,10 @@ fn apply_attach_self_to_location(cx: &mut Cx) -> EngineOutcome {
             .enumerate()
             .rev()
             .find_map(|(i, frame)| match frame {
-                Continuation::PlayFromHand {
+                Continuation::PlayFromHand(PlayFromHandFrame {
                     investigator,
                     card: Some(_),
-                } => Some((i, *investigator)),
+                }) => Some((i, *investigator)),
                 _ => None,
             })
     else {
@@ -1063,8 +1060,12 @@ fn apply_attach_self_to_location(cx: &mut Cx) -> EngineOutcome {
         };
     };
     // Validated: take the card off its frame so it is re-homed, not discarded.
-    let (code, _owner) = cx.state.continuations[frame_idx]
-        .take_play_in_progress(investigator)
+    let (code, _owner) = cx
+        .state
+        .continuations
+        .frames_mut()
+        .nth(frame_idx)
+        .and_then(|frame| frame.take_play_in_progress(investigator))
         .expect("AttachSelfToLocation: the located frame still holds its card");
     threat_area::attach_to_location(cx, location, code);
     EngineOutcome::Done

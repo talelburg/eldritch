@@ -14,7 +14,7 @@ use crate::engine::Cx;
 use crate::event::Event;
 use crate::scenario::ScenarioEnding;
 use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, EliminationStep,
+    CardCode, CardInPlay, CardInstanceId, EliminationCause, EliminationFrame, EliminationStep,
     EmitStep, EnemyId, GameState, InvestigatorId, Status,
 };
 #[cfg(test)]
@@ -92,7 +92,7 @@ pub(super) fn apply_investigator_elimination(
     // have to ride a frame to honour it, and what that costs are all documented
     // once on `Continuation::Elimination`; this is the fork it describes.
     if has_weakness_game_end_ability(cx.state, investigator) {
-        cx.state.continuations.push(Continuation::Elimination {
+        cx.state.continuations.push(EliminationFrame {
             investigator,
             step: EliminationStep::FireWeaknessGameEnd,
         });
@@ -224,18 +224,15 @@ fn has_weakness_game_end_ability(state: &GameState, investigator: InvestigatorId
 /// The cursor advances *before* the emit: the emit only queues (ADR 0003), so
 /// its frames must land above a frame that is already pointing at its own tail.
 pub(super) fn drive_elimination(cx: &mut Cx) -> EngineOutcome {
-    let Some(Continuation::Elimination { investigator, step }) = cx.state.continuations.last_mut()
-    else {
-        unreachable!("drive_elimination: top frame is not an Elimination");
-    };
-    let investigator = *investigator;
-    match *step {
+    let frame = cx.state.continuations.top_mut::<EliminationFrame>();
+    let investigator = frame.investigator;
+    match frame.step {
         EliminationStep::FireWeaknessGameEnd => {
-            *step = EliminationStep::RunSteps;
+            frame.step = EliminationStep::RunSteps;
             emit::queue_event(cx, &TimingEvent::EliminationGameEnd { investigator })
         }
         EliminationStep::RunSteps => {
-            cx.state.continuations.pop();
+            cx.state.continuations.pop_expect::<EliminationFrame>();
             // Step 0's tail — "Then, remove those weaknesses from the game" —
             // is step 1's threat-area partition, which removes every owned
             // weakness whether or not it fired.
@@ -259,7 +256,7 @@ pub(super) fn drive_elimination(cx: &mut Cx) -> EngineOutcome {
 fn take_limbo_cards(cx: &mut Cx, investigator: InvestigatorId) -> (Vec<CardCode>, Vec<CardCode>) {
     let mut theirs = Vec::new();
     let mut scenarios = Vec::new();
-    for frame in &mut cx.state.continuations {
+    for frame in cx.state.continuations.frames_mut() {
         if let Some((card, owner)) = frame.take_play_in_progress(investigator) {
             if owner == Some(investigator) {
                 theirs.push(card);

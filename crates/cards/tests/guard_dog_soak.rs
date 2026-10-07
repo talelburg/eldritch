@@ -36,9 +36,9 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, Enemy, EnemyId,
-    GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId, Phase, Status,
-    Zone,
+    AttackLoopFrame, CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, Enemy,
+    EnemyId, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
+    InvestigatorId, LocationId, Phase, Status, Zone,
 };
 use game_core::test_support;
 
@@ -110,7 +110,7 @@ fn soak_state(
     }
     // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
     // InvestigationPhase anchor at investigation_phase_end.
-    builder = builder.with_phase_anchor(Continuation::InvestigationPhase {
+    builder = builder.with_phase_anchor(InvestigationPhaseFrame {
         resume: InvestigationResume::TurnBegins,
     });
     // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
@@ -405,7 +405,7 @@ fn an_attacker_defeated_by_the_retaliate_mid_attack_has_nothing_to_exhaust() {
         !state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::AttackLoop { .. })),
+            .any(|c| matches!(c, Continuation::AttackLoop(_))),
         "the attack loop completed: {:?}",
         state.continuations
     );
@@ -625,10 +625,10 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     // second attacker; the head comes off when its sequence pops.
     assert_eq!(
         state.continuations.iter().rev().find_map(|c| match c {
-            Continuation::AttackLoop {
+            Continuation::AttackLoop(AttackLoopFrame {
                 remaining_attackers,
                 ..
-            } => Some(remaining_attackers.clone()),
+            }) => Some(remaining_attackers.clone()),
             _ => None,
         }),
         Some(vec![first, second]),
@@ -674,7 +674,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::AttackLoop { .. })),
+            .any(|c| matches!(c, Continuation::AttackLoop(_))),
         "loop is parked again after the second attack"
     );
 
@@ -697,7 +697,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         !state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::AttackLoop { .. })),
+            .any(|c| matches!(c, Continuation::AttackLoop(_))),
         "no parked attack after both attackers fully resolve"
     );
     assert!(

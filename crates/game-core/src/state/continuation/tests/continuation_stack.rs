@@ -1,49 +1,40 @@
-use card_dsl::dsl::Effect;
-
 use super::*;
-use crate::engine::evaluator::EvalContext;
-use crate::engine::TimingEvent;
-use crate::state::{Continuation, EffectFrame, EmitStep, GameStateBuilder, InvestigatorId};
+use crate::state::GameStateBuilder;
 
 #[test]
-fn awaits_input_gates_suspensions_but_not_anchors_or_fast_windows() {
-    // slice 1b: the one guard rule keys off this. Phase anchors are inert
-    // (open turn / loop-driven), so typed actions run there.
-    assert!(!Continuation::InvestigationPhase {
+fn awaits_input_gates_suspensions_but_not_anchors() {
+    // Phase anchors are inert: they wake only when a child frame pops.
+    assert!(!Continuation::InvestigationPhase(InvestigationPhaseFrame {
         resume: InvestigationResume::TurnBegins,
-    }
+    })
     .awaits_input());
-    assert!(!Continuation::MythosPhase {
+    assert!(!Continuation::MythosPhase(MythosPhaseFrame {
         resume: MythosResume::Entry,
-    }
+    })
     .awaits_input());
-    // A Fast-play window (a `FastWindow` with no pending candidates) is a
-    // play opportunity, not a mandatory prompt — Fast plays stay allowed.
-    assert!(!Continuation::FastWindow {
+    // A framework Fast window is a prompt even with no pending candidates:
+    // `ResolveInput::Skip` closes it (#476; D1(a) on #927).
+    assert!(Continuation::FastWindow(FastWindowFrame {
         candidates: Vec::new(),
         fast_actors: FastActorScope::Any,
         kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-    }
+    })
     .awaits_input());
-    // Every other suspension hits the `_ => true` arm and awaits
-    // ResolveInput. This includes a `Choice` (e.g. a `ChooseOne` OnPlay
-    // event mid-resolution) and a `SubstitutionPrompt`, which the former
-    // eight-block guard ladder did NOT explicitly gate — the unified rule
-    // now correctly rejects typed actions while one is on top.
-    assert!(Continuation::SubstitutionPrompt {
+    // Suspensions awaiting `ResolveInput`.
+    assert!(Continuation::SubstitutionPrompt(SubstitutionPromptFrame {
         investigator: InvestigatorId(1),
-    }
+    })
     .awaits_input());
-    assert!(Continuation::Mulligan { remaining: vec![] }.awaits_input());
-    assert!(Continuation::EncounterDraw { remaining: vec![] }.awaits_input());
+    assert!(Continuation::Mulligan(MulliganFrame { remaining: vec![] }).awaits_input());
+    assert!(Continuation::EncounterDraw(EncounterDrawFrame { remaining: vec![] }).awaits_input());
 }
 
 #[test]
 fn investigator_turn_frame_classification() {
-    let frame = Continuation::InvestigatorTurn {
+    let frame = Continuation::InvestigatorTurn(InvestigatorTurnFrame {
         investigator: InvestigatorId(1),
         ending: false,
-    };
+    });
     // The open turn is not a framework anchor...
     assert!(!frame.is_phase_anchor());
     // ...and it DOES await input: the open turn surfaces its legal-action
@@ -51,10 +42,10 @@ fn investigator_turn_frame_classification() {
     // `ResolveInput(PickSingle(OptionId))` (2b, #447).
     assert!(frame.awaits_input());
     // The transient `ending: true` rotation sentinel is not a prompt.
-    assert!(!Continuation::InvestigatorTurn {
+    assert!(!Continuation::InvestigatorTurn(InvestigatorTurnFrame {
         investigator: InvestigatorId(1),
         ending: true,
-    }
+    })
     .awaits_input());
     // It carries no window candidates (the menu is re-enumerated, not stored).
     assert!(frame.pending_candidates().is_none());
@@ -65,10 +56,10 @@ fn investigator_turn_frame_round_trips_both_ending_states() {
     // The frame is replay state (the `ending` flag absorbed the former
     // `pending_end_turn`), so both flag values must serialize round-trip.
     for ending in [false, true] {
-        let frame = Continuation::InvestigatorTurn {
+        let frame = Continuation::InvestigatorTurn(InvestigatorTurnFrame {
             investigator: InvestigatorId(1),
             ending,
-        };
+        });
         let json = serde_json::to_string(&frame).unwrap();
         let back: Continuation = serde_json::from_str(&json).unwrap();
         assert_eq!(frame, back);
@@ -78,19 +69,19 @@ fn investigator_turn_frame_round_trips_both_ending_states() {
 #[test]
 fn phase_anchor_variants_round_trip_and_are_not_resolution_windows() {
     let anchors = [
-        Continuation::MythosPhase {
+        Continuation::MythosPhase(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
-        },
-        Continuation::InvestigationPhase {
+        }),
+        Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        },
-        Continuation::EnemyPhase {
+        }),
+        Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(InvestigatorId(3)),
-        },
-        Continuation::UpkeepPhase {
+        }),
+        Continuation::UpkeepPhase(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,
-        },
+        }),
     ];
     for a in anchors {
         // Anchors are framework frames, never reaction windows.
@@ -145,26 +136,26 @@ fn open_window_lives_on_the_continuation_stack_as_a_fast_window() {
         .build();
     assert_eq!(state.continuations.len(), 1);
     assert!(matches!(
-        state.continuations[0],
-        Continuation::FastWindow { .. }
+        state.continuations.top(),
+        Some(Continuation::FastWindow(_))
     ));
     // The read accessor surfaces it as the former `open_windows` view.
     assert_eq!(state.open_windows().len(), 1);
     assert!(matches!(
         state.open_windows()[0],
-        Continuation::FastWindow {
+        Continuation::FastWindow(FastWindowFrame {
             kind: FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
             ..
-        }
+        })
     ));
 }
 
 #[test]
 fn action_resolution_frame_never_awaits_input_and_is_not_a_phase_anchor() {
-    let f = Continuation::ActionResolution {
+    let f = Continuation::ActionResolution(ActionResolutionFrame {
         investigator: InvestigatorId(1),
         resume: ActionResume::Resource,
-    };
+    });
     assert!(
         !f.awaits_input(),
         "a mid-action frame is internal, never a prompt"
@@ -230,10 +221,10 @@ fn emit_step_walks_the_sequence_with_the_resolve_step_between_when_and_at() {
 
 #[test]
 fn emit_event_frame_roundtrips_serde() {
-    let frame = Continuation::EmitEvent {
+    let frame = Continuation::EmitEvent(EmitEventFrame {
         event: TimingEvent::RoundEnded,
         step: EmitStep::ResolveCondition,
-    };
+    });
     let json = serde_json::to_string(&frame).expect("serialize");
     let back: Continuation = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(frame, back);
@@ -256,11 +247,13 @@ fn hand_size_discard_serde_roundtrip() {
 /// `queue_event`, so a `matches!` on the variant alone would get one wrong.
 #[test]
 fn a_reaction_window_is_cancelled_but_its_forced_run_twin_completes() {
-    let window = |mode| Continuation::TimingPointWindow {
-        event: TimingEvent::GameEnd,
-        bucket: EventTiming::After,
-        mode,
-        candidates: Vec::new(),
+    let window = |mode| {
+        Continuation::TimingPointWindow(TimingPointWindowFrame {
+            event: TimingEvent::GameEnd,
+            bucket: EventTiming::After,
+            mode,
+            candidates: Vec::new(),
+        })
     };
     assert!(
         window(TimingMode::Reaction).cancelled_by_scenario_end(),
@@ -274,9 +267,9 @@ fn a_reaction_window_is_cancelled_but_its_forced_run_twin_completes() {
 
 #[test]
 fn the_ending_frame_is_inert_and_survives_its_own_cancellation_pass() {
-    let f = Continuation::ScenarioEnd {
+    let f = Continuation::ScenarioEnd(ScenarioEndFrame {
         step: ScenarioEndStep::EmitGameEnd,
-    };
+    });
     assert!(
         !f.cancelled_by_scenario_end(),
         "the ending frame must not cancel itself"

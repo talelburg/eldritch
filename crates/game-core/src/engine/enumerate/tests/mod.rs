@@ -3,7 +3,7 @@ use crate::action::{Action, InputResponse, PlayerAction};
 use crate::engine::outcome::{EngineOutcome, OptionId};
 use crate::state::{
     Act, CardCode, CardInstanceId, ChaosBag, ChaosToken, Enemy, GameStateBuilder,
-    InvestigationResume,
+    InvestigationPhaseFrame, InvestigationResume,
 };
 use crate::{engine, test_support};
 
@@ -24,7 +24,7 @@ fn open_turn_state() -> GameState {
         // actions (Investigate) reject on an empty bag (a malformed-state
         // guard the enumerator does not replicate; real bags are never empty).
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(InvestigatorId(1))

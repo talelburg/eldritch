@@ -11,9 +11,9 @@ use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
     AbilityAddress, AbilitySource, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
-    ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigationResume,
-    InvestigatorId, Location, LocationId, ModifierTarget, Phase, SkillKind, TokenModifiers,
-    UpkeepResume, UseKind,
+    ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigationPhaseFrame,
+    InvestigationResume, InvestigatorId, InvestigatorTurnFrame, Location, LocationId,
+    ModifierTarget, Phase, SkillKind, TokenModifiers, UpkeepPhaseFrame, UpkeepResume, UseKind,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
 
@@ -210,7 +210,7 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
     ));
     let mut state = GameStateBuilder::new()
         .with_phase(Phase::Upkeep)
-        .with_phase_anchor(Continuation::UpkeepPhase {
+        .with_phase_anchor(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,
         })
         .with_investigator(inv)
@@ -342,7 +342,7 @@ fn frozen_in_fear_board(token: ChaosToken) -> GameState {
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         // Mid-Investigation invariant (slice 1a): EndTurn rotates / cascades
         // through the InvestigationPhase anchor.
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
@@ -382,11 +382,10 @@ fn frozen_in_fear_end_of_turn_success_discards_and_turn_resumes() {
     );
     // The turn was not left stranded: no InvestigatorTurn frame is mid-end
     // (slice 2a-i absorbed the former pending_end_turn into `ending`).
-    assert!(!r
-        .state
-        .continuations
-        .iter()
-        .any(|c| matches!(c, Continuation::InvestigatorTurn { ending: true, .. })));
+    assert!(!r.state.continuations.iter().any(|c| matches!(
+        c,
+        Continuation::InvestigatorTurn(InvestigatorTurnFrame { ending: true, .. })
+    )));
 }
 
 #[test]
@@ -404,11 +403,10 @@ fn frozen_in_fear_end_of_turn_failure_keeps_card_but_turn_still_resumes() {
     assert_eq!(r.state.active_investigator, Some(InvestigatorId(2)));
     // The turn was not left stranded: no InvestigatorTurn frame is mid-end
     // (slice 2a-i absorbed the former pending_end_turn into `ending`).
-    assert!(!r
-        .state
-        .continuations
-        .iter()
-        .any(|c| matches!(c, Continuation::InvestigatorTurn { ending: true, .. })));
+    assert!(!r.state.continuations.iter().any(|c| matches!(
+        c,
+        Continuation::InvestigatorTurn(InvestigatorTurnFrame { ending: true, .. })
+    )));
 }
 
 #[test]
@@ -437,7 +435,7 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         // Mid-Investigation invariant (slice 1a): EndTurn rotates / cascades
         // through the InvestigationPhase anchor.
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
         })
         // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
@@ -483,11 +481,10 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
     );
     // The turn was not left stranded: no InvestigatorTurn frame is mid-end
     // (slice 2a-i absorbed the former pending_end_turn into `ending`).
-    assert!(!r
-        .state
-        .continuations
-        .iter()
-        .any(|c| matches!(c, Continuation::InvestigatorTurn { ending: true, .. })));
+    assert!(!r.state.continuations.iter().any(|c| matches!(
+        c,
+        Continuation::InvestigatorTurn(InvestigatorTurnFrame { ending: true, .. })
+    )));
 }
 
 #[test]
