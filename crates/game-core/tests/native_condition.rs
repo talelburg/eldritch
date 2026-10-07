@@ -48,8 +48,9 @@ fn install() {
 }
 
 fn state_with_agenda(code: &str, doom: u8) -> GameState {
-    // `turn_order` must be non-empty: `PhaseEnded` forced dispatch binds
-    // the controller to `turn_order.first()` and returns no hits otherwise.
+    // `turn_order` must hold an Active investigator: `PhaseEnded` forced
+    // dispatch binds the controller to the first one and returns no hits
+    // otherwise.
     let mut state = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))
         .with_turn_order([INV])

@@ -11,6 +11,7 @@ use card_dsl::dsl::{
 
 use crate::action::InputResponse;
 use crate::card_registry;
+use crate::engine::dispatch::cursor;
 use crate::engine::dispatch::initiation::{self, InitiationKind};
 use crate::engine::dispatch::reaction_windows;
 use crate::engine::evaluator::{self, EvalContext};
@@ -270,7 +271,7 @@ pub(super) fn collect_forced_hits(
             );
         }
         ForcedTriggerPoint::ActAdvanced { code } => {
-            let Some(lead) = state.turn_order.first().copied() else {
+            let Some(lead) = cursor::first_active_investigator(state) else {
                 return hits;
             };
             push_matching(
@@ -284,7 +285,7 @@ pub(super) fn collect_forced_hits(
             );
         }
         ForcedTriggerPoint::AgendaAdvanced { code } => {
-            let Some(lead) = state.turn_order.first().copied() else {
+            let Some(lead) = cursor::first_active_investigator(state) else {
                 return hits;
             };
             push_matching(
@@ -298,7 +299,7 @@ pub(super) fn collect_forced_hits(
             );
         }
         ForcedTriggerPoint::EnemyDefeated { code } => {
-            let Some(lead) = state.turn_order.first().copied() else {
+            let Some(lead) = cursor::first_active_investigator(state) else {
                 return hits;
             };
             if let Some(act) = state.act_deck.get(state.act_index) {
@@ -339,7 +340,7 @@ pub(super) fn collect_forced_hits(
             );
         }
         ForcedTriggerPoint::RoundEnded => {
-            let Some(lead) = state.turn_order.first().copied() else {
+            let Some(lead) = cursor::first_active_investigator(state) else {
                 return hits;
             };
             if let Some(act) = state.act_deck.get(state.act_index) {
@@ -590,10 +591,11 @@ pub(super) fn collect_forced_hits(
 /// `want`, binding controller = the lead investigator.
 ///
 /// The scan both phase-boundary points share: the milestone is board-wide, so
-/// the controller it binds is the lead (first of `turn_order`) and the
-/// board-wide effects that key off a phase boundary ignore it. An empty
-/// `turn_order` finds nothing rather than panicking — a scenario with no seated
-/// investigator has no lead to bind.
+/// the controller it binds is the lead proxy, the first Active investigator in
+/// `turn_order` ([`cursor::first_active_investigator`]; GLOSSARY "Lead
+/// investigator"), and the board-wide effects that key off a phase boundary
+/// ignore it. With no Active investigator it finds nothing rather than
+/// panicking — there is no lead to bind.
 ///
 /// **Act and agenda only.** An enemy or asset in play printing a phase-boundary
 /// Forced — Wizard of the Order 01170, Hunting Horror 02141, Peter Clover
@@ -607,7 +609,7 @@ fn push_scenario_structure_matching(
     bucket: EventTiming,
     want: impl Fn(&EventPattern) -> bool + Copy,
 ) {
-    let Some(lead) = state.turn_order.first().copied() else {
+    let Some(lead) = cursor::first_active_investigator(state) else {
         return;
     };
     if let Some(act) = state.act_deck.get(state.act_index) {

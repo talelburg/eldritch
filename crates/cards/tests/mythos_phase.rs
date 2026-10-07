@@ -51,7 +51,8 @@
 //! no agenda ever advances — the advance path is `issue_482_advance.rs`'s. No
 //! act deck: nothing here discovers a clue.
 //!
-//! "The lead" below always means `turn_order.first()`, the proxy the engine
+//! "The lead" below always means the first Active investigator in
+//! `turn_order`, the proxy the engine
 //! actually binds — not the chosen lead investigator of
 //! `glossary/Lead_Investigator.md`, which we do not model (`GLOSSARY.md`, *Lead
 //! investigator*). The two coincide in the solo tests and are not guaranteed to
