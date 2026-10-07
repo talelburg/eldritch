@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionId, TimingEvent};
+use game_core::state::TimingPointWindowFrame;
 use game_core::state::{
     CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
     TimingMode,
@@ -159,11 +160,11 @@ fn drives_act_1_then_act_2_via_round_end_window() {
     );
     assert!(matches!(
         r.state.continuations.last(),
-        Some(Continuation::TimingPointWindow {
+        Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
             event: TimingEvent::RoundEnded,
             mode: TimingMode::Reaction,
             ..
-        })
+        }))
     ));
 
     // Pick the act-advance candidate (the window's sole option): act 2 advances

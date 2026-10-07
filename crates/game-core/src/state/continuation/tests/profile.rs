@@ -15,20 +15,20 @@ fn candidate() -> ResolutionCandidate {
 }
 
 fn timing_point_window(candidates: Vec<ResolutionCandidate>) -> Continuation {
-    Continuation::TimingPointWindow {
+    Continuation::TimingPointWindow(TimingPointWindowFrame {
         event: TimingEvent::RoundEnded,
         bucket: EventTiming::After,
         mode: TimingMode::Reaction,
         candidates,
-    }
+    })
 }
 
 fn fast_window(candidates: Vec<ResolutionCandidate>) -> Continuation {
-    Continuation::FastWindow {
+    Continuation::FastWindow(FastWindowFrame {
         candidates,
         fast_actors: FastActorScope::Any,
         kind: FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
-    }
+    })
 }
 
 fn attack_loop(stage: AttackLoopStage) -> Continuation {
@@ -102,20 +102,20 @@ fn a_mythos_surge_chain_does_not_await_input() {
 
 #[test]
 fn the_emit_event_coordinator_does_not_await_input() {
-    let f = Continuation::EmitEvent {
+    let f = Continuation::EmitEvent(EmitEventFrame {
         event: TimingEvent::RoundEnded,
         step: EmitStep::When,
-    };
+    });
     assert!(!f.awaits_input());
 }
 
 #[test]
 fn the_timing_point_coordinator_does_not_await_input() {
-    let f = Continuation::TimingPoint {
+    let f = Continuation::TimingPoint(TimingPointFrame {
         event: TimingEvent::RoundEnded,
         bucket: EventTiming::When,
         sub: TimingSub::Forced,
-    };
+    });
     assert!(!f.awaits_input());
 }
 
@@ -220,11 +220,13 @@ fn the_ending_frame_is_driven_until_it_rests_inert_at_finalize() {
 /// mandatory resolution — the disposition's one value-level split.
 #[test]
 fn a_reaction_window_cancels_and_its_forced_run_twin_completes() {
-    let window = |mode| Continuation::TimingPointWindow {
-        event: TimingEvent::GameEnd,
-        bucket: EventTiming::After,
-        mode,
-        candidates: vec![candidate()],
+    let window = |mode| {
+        Continuation::TimingPointWindow(TimingPointWindowFrame {
+            event: TimingEvent::GameEnd,
+            bucket: EventTiming::After,
+            mode,
+            candidates: vec![candidate()],
+        })
     };
     assert_eq!(window(TimingMode::Reaction).profile().scenario_end, CANCEL);
     assert_eq!(window(TimingMode::Forced).profile().scenario_end, COMPLETE);
@@ -249,12 +251,12 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(PROMPT, CANCEL),
         ),
         (
-            Continuation::TimingPointWindow {
+            Continuation::TimingPointWindow(TimingPointWindowFrame {
                 event: TimingEvent::RoundEnded,
                 bucket: EventTiming::When,
                 mode: TimingMode::Forced,
                 candidates: vec![candidate(), candidate()],
-            },
+            }),
             profile(PROMPT, COMPLETE),
         ),
         (fast_window(Vec::new()), profile(PROMPT, CANCEL)),
@@ -271,9 +273,9 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(PROMPT, COMPLETE),
         ),
         (
-            Continuation::AcknowledgeForced {
+            Continuation::AcknowledgeForced(AcknowledgeForcedFrame {
                 candidate: candidate(),
-            },
+            }),
             profile(PROMPT, COMPLETE),
         ),
         (
@@ -376,18 +378,18 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
         ),
         // Internal sequencing the loop drives, which completes.
         (
-            Continuation::EmitEvent {
+            Continuation::EmitEvent(EmitEventFrame {
                 event: TimingEvent::RoundEnded,
                 step: EmitStep::After,
-            },
+            }),
             profile(DRIVEN, COMPLETE),
         ),
         (
-            Continuation::TimingPoint {
+            Continuation::TimingPoint(TimingPointFrame {
                 event: TimingEvent::RoundEnded,
                 bucket: EventTiming::After,
                 sub: TimingSub::Reaction,
-            },
+            }),
             profile(DRIVEN, COMPLETE),
         ),
         (

@@ -24,6 +24,11 @@ pub use card_dsl::card_data::{SkillKind, Skills};
 pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
 pub use counter::Counter;
 // `define_id!` is used by the id submodules; kept crate-internal.
+// Window and timing frame payloads (#929).
+pub use continuation::{
+    AcknowledgeForcedFrame, EmitEventFrame, FastWindowFrame, TimingPointFrame,
+    TimingPointWindowFrame,
+};
 pub use continuation::{
     ActionResume, AdvanceDeck, AdvanceStep, AdvanceTrigger, AssetEntry, Assignment,
     AttackLoopStage, CandidateSource, Continuation, ContinuationStack, DamageSource,

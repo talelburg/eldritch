@@ -82,7 +82,7 @@ fn attic_forced_acknowledges_before_horror_when_interactive() {
             .state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::AcknowledgeForced { .. })),
+            .any(|c| matches!(c, Continuation::AcknowledgeForced(_))),
         "the acknowledge frame must be gone after resume"
     );
 }

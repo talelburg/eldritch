@@ -21,6 +21,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{EngineOutcome, TimingEvent};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
+use game_core::state::TimingPointWindowFrame;
 use game_core::state::{
     Act, Agenda, CardCode, Continuation, EliminationCause, Enemy, EnemyId, EnemyResume, GameState,
     GameStateBuilder, InvestigationResume, InvestigatorId, Location, LocationId, Phase, Status,
@@ -275,11 +276,11 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
     assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
     assert!(matches!(
         state.continuations.last(),
-        Some(Continuation::TimingPointWindow {
+        Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
             event: TimingEvent::RoundEnded,
             mode: TimingMode::Reaction,
             ..
-        })
+        }))
     ));
     // ...and the agenda's `at the end of the round` doom is NOT placed yet.
     assert_eq!(

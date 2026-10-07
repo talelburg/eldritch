@@ -2,14 +2,14 @@
 //! #434): the `when → at → after` cells of one triggering condition, with the
 //! condition's own resolution between the first two (#701).
 //!
-//! [`super::emit::queue_event`] pushes a [`Continuation::EmitEvent`] for **every**
+//! [`super::emit::queue_event`] pushes a [`Continuation::EmitEvent`](crate::state::Continuation::EmitEvent) for **every**
 //! triggering condition — no exceptions since #704 retired the last two, the
 //! enemy attack and its soak window; the `drive` loop dispatches it here.
 //!
 //! - [`dispatch_emit_event`] walks `When → ResolveCondition → At → After` —
 //!   the three RR timing cells with the triggering condition's own resolution
 //!   between the first two (#701) — pushing a
-//!   [`Continuation::TimingPoint`] for each *populated* bucket and **re-scanning
+//!   [`Continuation::TimingPoint`](crate::state::Continuation::TimingPoint) for each *populated* bucket and **re-scanning
 //!   each cell fresh** (the per-cell eligibility re-scan — a `when` reaction can
 //!   change whether an `at` forced fires; the grid is not pre-computed).
 //! - [`dispatch_timing_point`] resolves one cell's forced-then-reaction
@@ -36,14 +36,14 @@ use crate::engine::dispatch::emit::ConditionResolution;
 use crate::engine::dispatch::{forced_triggers, reaction_windows};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
-use crate::state::{Continuation, EmitStep, TimingSub};
+use crate::state::{EmitEventFrame, EmitStep, TimingPointFrame, TimingSub};
 
-/// Dispatch the [`Continuation::EmitEvent`] coordinator on top of the stack
+/// Dispatch the [`Continuation::EmitEvent`](crate::state::Continuation::EmitEvent) coordinator on top of the stack
 /// (called only by the `drive` loop with one on top). One step of the sequence
 /// `When → ResolveCondition → At → After`:
 ///
 /// - **a cell** (`When` / `At` / `After`) — re-scan it; if it holds any forced
-///   or reaction ability, push a [`Continuation::TimingPoint`] and yield,
+///   or reaction ability, push a [`Continuation::TimingPoint`](crate::state::Continuation::TimingPoint) and yield,
 ///   otherwise advance the cursor (popping the coordinator after `After`).
 /// - **`ResolveCondition`** — step 2 of `glossary/Nested_Sequences.md`: the
 ///   triggering condition's own impact, run by the coordinator when the
@@ -63,10 +63,7 @@ use crate::state::{Continuation, EmitStep, TimingSub};
 /// leaf can emit a condition whose own resolution happens here, so a driver that
 /// stopped at this frame would leave the effect half-resolved.
 pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
-    let Some(Continuation::EmitEvent { event, step }) = cx.state.continuations.last().cloned()
-    else {
-        unreachable!("dispatch_emit_event: top frame is not EmitEvent");
-    };
+    let EmitEventFrame { event, step } = cx.state.continuations.top_mut::<EmitEventFrame>().clone();
     let resolution = event.condition_resolution();
     if step == EmitStep::ResolveCondition {
         return match resolution {
@@ -123,7 +120,7 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
         return EngineOutcome::Done;
     }
     if has_forced || has_reaction {
-        cx.state.continuations.push(Continuation::TimingPoint {
+        cx.state.continuations.push(TimingPointFrame {
             event,
             bucket,
             sub: TimingSub::Forced,
@@ -134,7 +131,7 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Dispatch the [`Continuation::TimingPoint`] on top of the stack (called only
+/// Dispatch the [`Continuation::TimingPoint`](crate::state::Continuation::TimingPoint) on top of the stack (called only
 /// by the `drive` loop). Runs the `sub` cursor `Forced → Reaction → Done`:
 ///
 /// - **`Forced`** — fire the bucket's forced abilities (0/1 inline; 2+ via the
@@ -147,11 +144,8 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
 ///
 /// Visible to `engine` for the same reason as [`dispatch_emit_event`].
 pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
-    let Some(Continuation::TimingPoint { event, bucket, sub }) =
-        cx.state.continuations.last().cloned()
-    else {
-        unreachable!("dispatch_timing_point: top frame is not TimingPoint");
-    };
+    let TimingPointFrame { event, bucket, sub } =
+        cx.state.continuations.top_mut::<TimingPointFrame>().clone();
     if bucket == EventTiming::When && cx.state.pending_cancellation {
         // A `when`-cell ability just prevented the condition. The rest of *this*
         // cell is suppressed along with the cells after it (#714) — Dodge
@@ -208,27 +202,21 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
     }
 }
 
-/// Pop the finished [`Continuation::TimingPoint`] and advance the now-exposed
-/// parent [`Continuation::EmitEvent`]'s bucket cursor.
+/// Pop the finished [`Continuation::TimingPoint`](crate::state::Continuation::TimingPoint) and advance the now-exposed
+/// parent [`Continuation::EmitEvent`](crate::state::Continuation::EmitEvent)'s bucket cursor.
 fn finish_timing_point(cx: &mut Cx) {
-    let popped = cx.state.continuations.pop();
-    debug_assert!(
-        matches!(popped, Some(Continuation::TimingPoint { .. })),
-        "finish_timing_point: expected a TimingPoint on top, popped {popped:?}",
-    );
+    cx.state.continuations.pop_expect::<TimingPointFrame>();
     advance_or_finish_emit(cx);
 }
 
-/// Advance the top [`Continuation::EmitEvent`]'s cursor `When →
+/// Advance the top [`Continuation::EmitEvent`](crate::state::Continuation::EmitEvent)'s cursor `When →
 /// ResolveCondition → At → After`, or pop the coordinator once `After` is done.
 fn advance_or_finish_emit(cx: &mut Cx) {
-    let Some(Continuation::EmitEvent { step, .. }) = cx.state.continuations.last_mut() else {
-        unreachable!("advance_or_finish_emit: expected an EmitEvent on top");
-    };
-    match step.next() {
-        Some(next) => *step = next,
+    let emit = cx.state.continuations.top_mut::<EmitEventFrame>();
+    match emit.step.next() {
+        Some(next) => emit.step = next,
         None => {
-            cx.state.continuations.pop();
+            cx.state.continuations.pop_expect::<EmitEventFrame>();
         }
     }
 }
@@ -275,23 +263,18 @@ fn prevented_in_the_when_cell(cx: &mut Cx) -> bool {
     mem::take(&mut cx.state.pending_cancellation)
 }
 
-/// Pop the [`Continuation::EmitEvent`] coordinator on top **without** walking
+/// Pop the [`Continuation::EmitEvent`](crate::state::Continuation::EmitEvent) coordinator on top **without** walking
 /// the rest of its sequence — the prevented condition's exit (#714). The
 /// remaining cells are not visited at all, so nothing is left for a later
 /// re-dispatch to pick up.
 fn abandon_emit(cx: &mut Cx) {
-    // `unreachable!` rather than a debug-only assertion: the pop is unconditional,
-    // so a violated invariant would silently discard *someone else's* frame in a
-    // release build. Matches this file's other invariant checks.
-    let Some(Continuation::EmitEvent { .. }) = cx.state.continuations.pop() else {
-        unreachable!("abandon_emit: expected an EmitEvent on top of the stack");
-    };
+    // A checked pop rather than a debug-only assertion: the pop is
+    // unconditional, so a violated invariant would silently discard *someone
+    // else's* frame in a release build.
+    cx.state.continuations.pop_expect::<EmitEventFrame>();
 }
 
-/// Set the top [`Continuation::TimingPoint`]'s `sub` cursor.
+/// Set the top [`Continuation::TimingPoint`](crate::state::Continuation::TimingPoint)'s `sub` cursor.
 fn set_timing_sub(cx: &mut Cx, sub: TimingSub) {
-    match cx.state.continuations.last_mut() {
-        Some(Continuation::TimingPoint { sub: slot, .. }) => *slot = sub,
-        other => unreachable!("set_timing_sub: expected a TimingPoint on top, got {other:?}"),
-    }
+    cx.state.continuations.top_mut::<TimingPointFrame>().sub = sub;
 }

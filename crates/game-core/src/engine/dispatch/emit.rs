@@ -37,7 +37,7 @@ use crate::engine::dispatch::{actions, combat};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
 use crate::state::{
-    Assignment, CardCode, CardInstanceId, Continuation, DamageSource, EmitStep, EnemyId,
+    Assignment, CardCode, CardInstanceId, DamageSource, EmitEventFrame, EmitStep, EnemyId,
     InvestigatorId, LocationId, Phase,
 };
 
@@ -660,7 +660,7 @@ fn resolve_left_location(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
               frame, not after this call (ADR 0003). Return the outcome, or bind \
               it to `_` at a site whose caller owns the suspension channel"]
 pub(crate) fn queue_event(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
-    cx.state.continuations.push(Continuation::EmitEvent {
+    cx.state.continuations.push(EmitEventFrame {
         event: event.clone(),
         step: EmitStep::When,
     });

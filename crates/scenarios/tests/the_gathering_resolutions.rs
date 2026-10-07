@@ -15,6 +15,7 @@ use game_core::engine::{
 };
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
+use game_core::state::TimingPointWindowFrame;
 use game_core::state::{
     AdvanceDeck, AdvanceReverseFrame, AdvanceStep, CardCode, ChaosBag, ChaosToken, Continuation,
     EliminationCause, EnemyId, GameState, InvestigatorId, Status, TimingMode,
@@ -146,11 +147,11 @@ fn advance_to_the_terminal_act(state: GameState) -> GameState {
     );
     assert!(matches!(
         round_end.state.continuations.last(),
-        Some(Continuation::TimingPointWindow {
+        Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
             event: TimingEvent::RoundEnded,
             mode: TimingMode::Reaction,
             ..
-        })
+        }))
     ));
     let after_confirm = engine::apply(
         round_end.state,

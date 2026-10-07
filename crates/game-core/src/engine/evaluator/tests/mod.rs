@@ -65,8 +65,8 @@ fn drive_effect_run_to(cx: &mut Cx, base: usize) -> EngineOutcome {
         }
         let outcome = match cx.state.continuations.last() {
             Some(Continuation::Effect(_)) => step_effect_frame(cx),
-            Some(Continuation::EmitEvent { .. }) => coordinator::dispatch_emit_event(cx),
-            Some(Continuation::TimingPoint { .. }) => coordinator::dispatch_timing_point(cx),
+            Some(Continuation::EmitEvent(_)) => coordinator::dispatch_emit_event(cx),
+            Some(Continuation::TimingPoint(_)) => coordinator::dispatch_timing_point(cx),
             // `Effect::Deal` parks one of these and returns in tail position
             // (#727): the two steps of dealing the damage are the frame's,
             // not the effect walk's. The real `drive` loop dispatches it, so

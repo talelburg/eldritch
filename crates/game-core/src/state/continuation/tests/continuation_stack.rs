@@ -18,11 +18,11 @@ fn awaits_input_gates_suspensions_but_not_anchors() {
     .awaits_input());
     // A framework Fast window is a prompt even with no pending candidates:
     // `ResolveInput::Skip` closes it (#476; D1(a) on #927).
-    assert!(Continuation::FastWindow {
+    assert!(Continuation::FastWindow(FastWindowFrame {
         candidates: Vec::new(),
         fast_actors: FastActorScope::Any,
         kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
-    }
+    })
     .awaits_input());
     // Suspensions awaiting `ResolveInput`.
     assert!(Continuation::SubstitutionPrompt(SubstitutionPromptFrame {
@@ -141,16 +141,16 @@ fn open_window_lives_on_the_continuation_stack_as_a_fast_window() {
     assert_eq!(state.continuations.len(), 1);
     assert!(matches!(
         state.continuations[0],
-        Continuation::FastWindow { .. }
+        Continuation::FastWindow(_)
     ));
     // The read accessor surfaces it as the former `open_windows` view.
     assert_eq!(state.open_windows().len(), 1);
     assert!(matches!(
         state.open_windows()[0],
-        Continuation::FastWindow {
+        Continuation::FastWindow(FastWindowFrame {
             kind: FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
             ..
-        }
+        })
     ));
 }
 
@@ -225,10 +225,10 @@ fn emit_step_walks_the_sequence_with_the_resolve_step_between_when_and_at() {
 
 #[test]
 fn emit_event_frame_roundtrips_serde() {
-    let frame = Continuation::EmitEvent {
+    let frame = Continuation::EmitEvent(EmitEventFrame {
         event: TimingEvent::RoundEnded,
         step: EmitStep::ResolveCondition,
-    };
+    });
     let json = serde_json::to_string(&frame).expect("serialize");
     let back: Continuation = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(frame, back);
@@ -251,11 +251,13 @@ fn hand_size_discard_serde_roundtrip() {
 /// `queue_event`, so a `matches!` on the variant alone would get one wrong.
 #[test]
 fn a_reaction_window_is_cancelled_but_its_forced_run_twin_completes() {
-    let window = |mode| Continuation::TimingPointWindow {
-        event: TimingEvent::GameEnd,
-        bucket: EventTiming::After,
-        mode,
-        candidates: Vec::new(),
+    let window = |mode| {
+        Continuation::TimingPointWindow(TimingPointWindowFrame {
+            event: TimingEvent::GameEnd,
+            bucket: EventTiming::After,
+            mode,
+            candidates: Vec::new(),
+        })
     };
     assert!(
         window(TimingMode::Reaction).cancelled_by_scenario_end(),

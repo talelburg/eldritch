@@ -215,57 +215,14 @@ pub enum AssetEntry {
 /// window structure to keep in sync).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Continuation {
-    /// An event reaction window or the #213 forced run, keyed by the
-    /// [`TimingEvent`] that opened it (EmitEvent-frame
-    /// Slice A, #433). The [`mode`](TimingMode) distinguishes a skippable
-    /// reaction window from the mandatory forced run (which carries no resume
-    /// continuation — on close the `drive` loop re-dispatches the exposed parent
-    /// frame, #434). The `TimingEvent` is referenced in place rather than
-    /// relocated — [`Effect`](Self::Effect) already holds a `crate::engine`
-    /// type ([`EvalContext`], #345).
-    TimingPointWindow {
-        /// The timing event that opened this window/run.
-        event: TimingEvent,
-        /// The timing cell whose scan produced `candidates` — the cell the
-        /// `when → at → after` coordinator was resolving (#434/#702), or the
-        /// caller-named cell of one of the three conditions that still bypass it.
-        /// Carried so the fire-time re-validation of a reaction window (#568) can
-        /// re-ask the scan the *same* question it was first asked; re-deriving it
-        /// from `event` would answer for the wrong cell.
-        bucket: EventTiming,
-        /// Reaction window vs. forced run.
-        mode: TimingMode,
-        /// Candidates in resolution order (lead-ordered for the forced run;
-        /// active-investigator-first for a reaction window).
-        candidates: Vec<ResolutionCandidate>,
-    },
-    /// A framework "red-box" player window — a Rules-Reference timing step
-    /// that gates Fast actions and runs a per-step continuation on close
-    /// (EmitEvent-frame Slice A, #433). The [`FastWindowKind`] discriminant
-    /// routes the close continuation (`Phase` → the `*Phase`
-    /// anchor's `on_child_pop`; `SkillTest` → the skill-test driver). Carries no
-    /// `TimingEvent` — framework windows are not event-driven.
-    FastWindow {
-        /// Fast-play candidates (hand Fast events admitted at this window).
-        /// Usually empty (a pure Fast-gate) — non-empty only for an
-        /// Axis-C hand play offered at a framework step.
-        candidates: Vec<ResolutionCandidate>,
-        /// Which investigators may submit Fast actions here.
-        fast_actors: FastActorScope,
-        /// The framework step this window gates (and its event-payload kind).
-        kind: FastWindowKind,
-    },
+    /// See [`TimingPointWindowFrame`].
+    TimingPointWindow(TimingPointWindowFrame),
+    /// See [`FastWindowFrame`].
+    FastWindow(FastWindowFrame),
     /// See [`AdvanceReverseFrame`].
     AdvanceReverse(AdvanceReverseFrame),
-    /// A no-choice forced ability is about to resolve and the game is in
-    /// interactive mode (`interactive_acknowledge`): surface it as a one-option
-    /// pick so the player "performs" it before it lands (#466). Pushed by
-    /// `queue_forced_triggers` (the single-hit path) *above* the forced effect's
-    /// root frame; the `drive` loop suspends here, and on resume pops, letting the
-    /// effect frame beneath resolve. `candidate` is the forced ability's
-    /// [`ResolutionCandidate`] — its `code` names the prompt and its `source`
-    /// anchors the option to its source card (an in-play instance, or the act) (#553).
-    AcknowledgeForced { candidate: ResolutionCandidate },
+    /// See [`AcknowledgeForcedFrame`].
+    AcknowledgeForced(AcknowledgeForcedFrame),
     /// A skill test is mid-resolution. Carries the in-flight test's data
     /// directly (the former `GameState::in_flight_skill_test` singleton, folded
     /// onto the frame — #348). Pushed at test start; popped when the test fully
@@ -282,39 +239,10 @@ pub enum Continuation {
     /// A suspended upkeep hand-size discard (#111), migrated off the former
     /// `GameState::hand_size_discard_pending` field (#348).
     HandSizeDiscard(HandSizeDiscard),
-    /// Coordinator: walk one triggering condition's timing sequence — the three
-    /// cells `When → At → After` with the condition's *own* resolution between
-    /// the first two (EmitEvent-frame C-coordinators, #434; the resolve step,
-    /// #701). `step` is the cursor. Pushed by `queue_event` for **every**
-    /// triggering condition (#702; no exceptions since #704);
-    /// the `drive` loop dispatches it, pushing a
-    /// [`TimingPoint`](Self::TimingPoint) per populated cell and re-scanning
-    /// each cell fresh. Suspends wherever a cell opens a window — the round-end
-    /// `when` act-advance, a clue discovery's `when` replacement (#703).
-    EmitEvent {
-        /// The game event whose timing cells are being walked.
-        event: TimingEvent,
-        /// The sequence cursor (`When` → `ResolveCondition` → `At` → `After`).
-        ///
-        /// Renamed from `bucket` with no compatibility shim: a coordinator frame
-        /// exists only in memory, mid-sequence, between two `apply` calls, and
-        /// the server persists a seed state plus a `ResolveInput`-only action log
-        /// (`crates/server/src/session.rs`), so no persisted artifact can carry
-        /// this field.
-        step: EmitStep,
-    },
-    /// Coordinator: one timing bucket of an [`EmitEvent`](Self::EmitEvent) walk,
-    /// running forced then reaction (`sub` cursor). What single-bucket
-    /// `queue_event` does today, parameterized by bucket and made frame-resumable
-    /// (#434). Child of an `EmitEvent` frame.
-    TimingPoint {
-        /// The game event (carried for the forced/reaction scans).
-        event: TimingEvent,
-        /// Which bucket this point resolves.
-        bucket: EventTiming,
-        /// The forced-then-reaction sub-cursor.
-        sub: TimingSub,
-    },
+    /// See [`EmitEventFrame`].
+    EmitEvent(EmitEventFrame),
+    /// See [`TimingPointFrame`].
+    TimingPoint(TimingPointFrame),
     /// See [`SubstitutionPromptFrame`].
     SubstitutionPrompt(SubstitutionPromptFrame),
     /// See [`MulliganFrame`].
@@ -449,6 +377,11 @@ impl_frame!(HandSizeDiscard, HandSizeDiscard);
 impl_frame!(Effect, EffectFrame);
 
 // Window and timing frames (#929).
+impl_frame!(TimingPointWindow, TimingPointWindowFrame);
+impl_frame!(FastWindow, FastWindowFrame);
+impl_frame!(AcknowledgeForced, AcknowledgeForcedFrame);
+impl_frame!(EmitEvent, EmitEventFrame);
+impl_frame!(TimingPoint, TimingPointFrame);
 
 // Phase, turn and action frames (#930).
 
@@ -649,10 +582,10 @@ impl Continuation {
         matches!(
             self,
             Continuation::Effect(_)
-                | Continuation::AcknowledgeForced { .. }
-                | Continuation::TimingPointWindow { .. }
-                | Continuation::EmitEvent { .. }
-                | Continuation::TimingPoint { .. }
+                | Continuation::AcknowledgeForced(_)
+                | Continuation::TimingPointWindow(_)
+                | Continuation::EmitEvent(_)
+                | Continuation::TimingPoint(_)
                 // Not queued *by* an emit — `apply_investigator_elimination` pushes
                 // it — but it owes the loop the emit itself plus steps 1–6, and
                 // burying it strands an elimination mid-sequence exactly as it
@@ -704,9 +637,9 @@ impl Continuation {
             // The forced run is the 2+-simultaneous half of the dispatch that
             // queues a lone forced ability's `AcknowledgeForced`, so the two
             // travel together as mandatory resolution.
-            Continuation::TimingPointWindow {
+            Continuation::TimingPointWindow(TimingPointWindowFrame {
                 mode, candidates, ..
-            } => (
+            }) => (
                 if candidates.is_empty() {
                     Driven
                 } else {
@@ -723,7 +656,7 @@ impl Continuation {
             // pause, a substitution choice, a slot make-room pick, an effect
             // node's controller pick.
             Continuation::AdvanceReverse { .. }
-            | Continuation::AcknowledgeForced { .. }
+            | Continuation::AcknowledgeForced(_)
             | Continuation::SkillTest(_)
             | Continuation::SubstitutionPrompt(_)
             | Continuation::Effect(_)
@@ -753,7 +686,7 @@ impl Continuation {
             // A framework Fast window is a prompt with or without candidates:
             // `ResolveInput::Skip` closes it (#476), and the loop surfaces its
             // eligible plays as a skippable choice. An opportunity, so cancelled.
-            Continuation::FastWindow { .. }
+            Continuation::FastWindow(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
             | Continuation::HandSizeDiscard(_)
@@ -783,8 +716,8 @@ impl Continuation {
             // frames awaiting the framework's disposal of a card in no zone (ADR
             // 0002) or the rest of an action already taken (ADR 0004 — half-
             // resolving it is harder to reason about than completing it).
-            Continuation::EmitEvent { .. }
-            | Continuation::TimingPoint { .. }
+            Continuation::EmitEvent(_)
+            | Continuation::TimingPoint(_)
             | Continuation::EncounterCard(_)
             | Continuation::PlayFromHand(_)
             | Continuation::MoveEnter { .. }
@@ -842,8 +775,8 @@ impl Continuation {
     #[must_use]
     pub fn pending_candidates(&self) -> Option<&Vec<ResolutionCandidate>> {
         match self {
-            Continuation::TimingPointWindow { candidates, .. }
-            | Continuation::FastWindow { candidates, .. } => Some(candidates),
+            Continuation::TimingPointWindow(TimingPointWindowFrame { candidates, .. })
+            | Continuation::FastWindow(FastWindowFrame { candidates, .. }) => Some(candidates),
             _ => None,
         }
     }
@@ -851,8 +784,8 @@ impl Continuation {
     /// Mutable counterpart to [`Self::pending_candidates`].
     pub fn pending_candidates_mut(&mut self) -> Option<&mut Vec<ResolutionCandidate>> {
         match self {
-            Continuation::TimingPointWindow { candidates, .. }
-            | Continuation::FastWindow { candidates, .. } => Some(candidates),
+            Continuation::TimingPointWindow(TimingPointWindowFrame { candidates, .. })
+            | Continuation::FastWindow(FastWindowFrame { candidates, .. }) => Some(candidates),
             _ => None,
         }
     }
@@ -970,10 +903,10 @@ impl Continuation {
     pub fn is_forced(&self) -> bool {
         matches!(
             self,
-            Continuation::TimingPointWindow {
+            Continuation::TimingPointWindow(TimingPointWindowFrame {
                 mode: TimingMode::Forced,
                 ..
-            }
+            })
         )
     }
 
@@ -986,7 +919,7 @@ impl Continuation {
     #[must_use]
     pub fn window_timing_event(&self) -> Option<&TimingEvent> {
         match self {
-            Continuation::TimingPointWindow { event, .. } => Some(event),
+            Continuation::TimingPointWindow(TimingPointWindowFrame { event, .. }) => Some(event),
             _ => None,
         }
     }
@@ -999,11 +932,13 @@ impl Continuation {
     #[must_use]
     pub fn permits_fast(&self, investigator: InvestigatorId) -> bool {
         match self {
-            Continuation::FastWindow { fast_actors, .. } => fast_actors.permits(investigator),
-            Continuation::TimingPointWindow {
+            Continuation::FastWindow(FastWindowFrame { fast_actors, .. }) => {
+                fast_actors.permits(investigator)
+            }
+            Continuation::TimingPointWindow(TimingPointWindowFrame {
                 mode: TimingMode::Reaction,
                 ..
-            } => true,
+            }) => true,
             _ => false,
         }
     }
@@ -2161,6 +2096,103 @@ pub struct EliminationFrame {
     pub investigator: InvestigatorId,
     /// Where in the elimination we are.
     pub step: EliminationStep,
+}
+
+// --- Window and timing frame payloads (#929) ---
+
+/// An event reaction window or the #213 forced run, keyed by the
+/// [`TimingEvent`] that opened it (EmitEvent-frame
+/// Slice A, #433). The [`mode`](TimingMode) distinguishes a skippable
+/// reaction window from the mandatory forced run (which carries no resume
+/// continuation — on close the `drive` loop re-dispatches the exposed parent
+/// frame, #434). The `TimingEvent` is referenced in place rather than
+/// relocated — [`Effect`](Continuation::Effect) already holds a `crate::engine`
+/// type ([`EvalContext`], #345).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimingPointWindowFrame {
+    /// The timing event that opened this window/run.
+    pub event: TimingEvent,
+    /// The timing cell whose scan produced `candidates` — the cell the
+    /// `when → at → after` coordinator was resolving (#434/#702), or the
+    /// caller-named cell of one of the three conditions that still bypass it.
+    /// Carried so the fire-time re-validation of a reaction window (#568) can
+    /// re-ask the scan the *same* question it was first asked; re-deriving it
+    /// from `event` would answer for the wrong cell.
+    pub bucket: EventTiming,
+    /// Reaction window vs. forced run.
+    pub mode: TimingMode,
+    /// Candidates in resolution order (lead-ordered for the forced run;
+    /// active-investigator-first for a reaction window).
+    pub candidates: Vec<ResolutionCandidate>,
+}
+
+/// A framework "red-box" player window — a Rules-Reference timing step
+/// that gates Fast actions and runs a per-step continuation on close
+/// (EmitEvent-frame Slice A, #433). The [`FastWindowKind`] discriminant
+/// routes the close continuation (`Phase` → the `*Phase`
+/// anchor's `on_child_pop`; `SkillTest` → the skill-test driver). Carries no
+/// `TimingEvent` — framework windows are not event-driven.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FastWindowFrame {
+    /// Fast-play candidates (hand Fast events admitted at this window).
+    /// Usually empty (a pure Fast-gate) — non-empty only for an
+    /// Axis-C hand play offered at a framework step.
+    pub candidates: Vec<ResolutionCandidate>,
+    /// Which investigators may submit Fast actions here.
+    pub fast_actors: FastActorScope,
+    /// The framework step this window gates (and its event-payload kind).
+    pub kind: FastWindowKind,
+}
+
+/// A no-choice forced ability is about to resolve and the game is in
+/// interactive mode (`interactive_acknowledge`): surface it as a one-option
+/// pick so the player "performs" it before it lands (#466). Pushed by
+/// `queue_forced_triggers` (the single-hit path) *above* the forced effect's
+/// root frame; the `drive` loop suspends here, and on resume pops, letting the
+/// effect frame beneath resolve. `candidate` is the forced ability's
+/// [`ResolutionCandidate`] — its `code` names the prompt and its `source`
+/// anchors the option to its source card (an in-play instance, or the act) (#553).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AcknowledgeForcedFrame {
+    /// The forced ability being acknowledged.
+    pub candidate: ResolutionCandidate,
+}
+
+/// Coordinator: walk one triggering condition's timing sequence — the three
+/// cells `When → At → After` with the condition's *own* resolution between
+/// the first two (EmitEvent-frame C-coordinators, #434; the resolve step,
+/// #701). `step` is the cursor. Pushed by `queue_event` for **every**
+/// triggering condition (#702; no exceptions since #704);
+/// the `drive` loop dispatches it, pushing a
+/// [`TimingPoint`](TimingPointFrame) per populated cell and re-scanning
+/// each cell fresh. Suspends wherever a cell opens a window — the round-end
+/// `when` act-advance, a clue discovery's `when` replacement (#703).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EmitEventFrame {
+    /// The game event whose timing cells are being walked.
+    pub event: TimingEvent,
+    /// The sequence cursor (`When` → `ResolveCondition` → `At` → `After`).
+    ///
+    /// Renamed from `bucket` with no compatibility shim: a coordinator frame
+    /// exists only in memory, mid-sequence, between two `apply` calls, and
+    /// the server persists a seed state plus a `ResolveInput`-only action log
+    /// (`crates/server/src/session.rs`), so no persisted artifact can carry
+    /// this field.
+    pub step: EmitStep,
+}
+
+/// Coordinator: one timing bucket of an [`EmitEvent`](EmitEventFrame) walk,
+/// running forced then reaction (`sub` cursor). What single-bucket
+/// `queue_event` does today, parameterized by bucket and made frame-resumable
+/// (#434). Child of an `EmitEvent` frame.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimingPointFrame {
+    /// The game event (carried for the forced/reaction scans).
+    pub event: TimingEvent,
+    /// Which bucket this point resolves.
+    pub bucket: EventTiming,
+    /// The forced-then-reaction sub-cursor.
+    pub sub: TimingSub,
 }
 
 // --- Draw, encounter and play frame payloads (#931) ---
