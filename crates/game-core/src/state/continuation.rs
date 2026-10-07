@@ -12,11 +12,18 @@ use serde::{Deserialize, Serialize};
 use crate::engine::evaluator::EvalContext;
 use crate::engine::TimingEvent;
 use crate::event::FailureReason;
+use crate::state::continuation::frame::impl_frame;
 use crate::state::game_state::{DifficultyBasis, SkillTestId};
 use crate::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId,
     LocationId,
 };
+
+mod frame;
+mod stack;
+
+pub use frame::Frame;
+pub use stack::ContinuationStack;
 
 /// Which driver to resume after a mid-attack reaction window closes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -678,6 +685,26 @@ pub enum Continuation {
     },
 }
 
+// One `impl_frame!` per newtype variant (#925), one line each, grouped by the
+// ticket that converts the variant. Each group keeps its own header with a
+// blank line before the next, so concurrent conversions edit disjoint lines;
+// the headers can go once every variant is converted.
+
+// Newtype variants before #928.
+impl_frame!(SkillTest, InFlightSkillTest);
+impl_frame!(HunterMove, HunterChoice);
+impl_frame!(SpawnEngage, SpawnEngagePending);
+impl_frame!(HandSizeDiscard, HandSizeDiscard);
+impl_frame!(Effect, EffectFrame);
+
+// Window and timing frames (#929).
+
+// Phase, turn and action frames (#930).
+
+// Draw, encounter and play frames (#931).
+
+// Combat, damage and resolution frames (#932).
+
 /// Step cursor for the [`Elimination`](Continuation::Elimination) frame (#638).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EliminationStep {
@@ -852,7 +879,8 @@ impl Continuation {
     /// frame appearing *beneath* a [phase anchor](Self::is_phase_anchor) means a
     /// transition was pushed over work that had not happened yet — and since
     /// anchors pop-and-push rather than drain, that frame is stranded for the
-    /// rest of the scenario (#569). The `drive` loop debug-asserts against it.
+    /// rest of the scenario (#569). [`ContinuationStack`]'s checked push
+    /// debug-asserts against it.
     #[must_use]
     pub fn is_queued_ability(&self) -> bool {
         matches!(

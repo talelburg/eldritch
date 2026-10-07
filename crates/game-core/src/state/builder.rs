@@ -39,8 +39,9 @@ use std::collections::{BTreeMap, VecDeque};
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
 use crate::state::{
-    ChaosBag, Continuation, Counter, Enemy, EnemyId, FastActorScope, FastWindowKind, GameState,
-    HandSizeDiscard, Investigator, InvestigatorId, Location, LocationId, Phase, TokenModifiers,
+    ChaosBag, Continuation, ContinuationStack, Counter, Enemy, EnemyId, FastActorScope,
+    FastWindowKind, GameState, HandSizeDiscard, Investigator, InvestigatorId, Location, LocationId,
+    Phase, TokenModifiers,
 };
 
 /// Fluent builder for a [`GameState`].
@@ -349,7 +350,10 @@ impl GameStateBuilder {
         // `HandSizeDiscard` frame on top of them (#348).
         // A staged `*Phase` anchor (slice 1a, #393) sits at the bottom of the
         // stack — beneath any windows, which open *above* it during the phase.
-        let mut continuations: Vec<Continuation> = self.phase_anchor.into_iter().collect();
+        let mut continuations = ContinuationStack::new();
+        if let Some(anchor) = self.phase_anchor {
+            continuations.push(anchor);
+        }
         // A staged open turn (slice 2a-i, #393) sits directly above the anchor;
         // any window opened during the turn is a sub-resolution above it.
         if let Some(investigator) = self.investigator_turn {
@@ -358,7 +362,9 @@ impl GameStateBuilder {
                 ending: false,
             });
         }
-        continuations.extend(self.open_windows);
+        for window in self.open_windows {
+            continuations.push(window);
+        }
         if let Some(hsd) = self.hand_size_discard_pending {
             continuations.push(Continuation::HandSizeDiscard(hsd));
         }

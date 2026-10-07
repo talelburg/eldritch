@@ -259,7 +259,7 @@ pub(super) fn drive_elimination(cx: &mut Cx) -> EngineOutcome {
 fn take_limbo_cards(cx: &mut Cx, investigator: InvestigatorId) -> (Vec<CardCode>, Vec<CardCode>) {
     let mut theirs = Vec::new();
     let mut scenarios = Vec::new();
-    for frame in &mut cx.state.continuations {
+    for frame in cx.state.continuations.frames_mut() {
         if let Some((card, owner)) = frame.take_play_in_progress(investigator) {
             if owner == Some(investigator) {
                 theirs.push(card);

@@ -13,7 +13,7 @@ use crate::engine::{pathfinding, Cx};
 use crate::event::Event;
 use crate::state::{
     Continuation, Enemy, EnemyId, GameState, HunterChoice, Investigator, InvestigatorId,
-    LocationId, Status,
+    LocationId, SpawnEngagePending, Status,
 };
 
 /// Result of narrowing a candidate investigator set by a prey
@@ -470,10 +470,7 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
 /// invalid pick, rejects and leaves the `HunterMove` frame on the stack so
 /// the client can retry. (#128)
 pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let Some(Continuation::HunterMove(pending)) = cx.state.continuations.last() else {
-        unreachable!("resume_hunter_choice: called with no HunterMove frame on top of the stack")
-    };
-    let pending = pending.clone();
+    let pending = cx.state.continuations.top_mut::<HunterChoice>().clone();
     let InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -554,10 +551,11 @@ pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> Eng
 /// `EncounterCardRevealed` / agenda-reverse-draw paths have no `PlayerDraw`
 /// frame beneath, so the loop simply finishes.
 pub(super) fn resume_spawn_engage(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let Some(Continuation::SpawnEngage(pending)) = cx.state.continuations.last() else {
-        unreachable!("resume_spawn_engage: called with no SpawnEngage frame on top of the stack")
-    };
-    let pending = pending.clone();
+    let pending = cx
+        .state
+        .continuations
+        .top_mut::<SpawnEngagePending>()
+        .clone();
     let InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
             reason: format!(

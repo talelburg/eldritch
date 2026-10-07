@@ -101,7 +101,7 @@ fn defeat_while_the_turn_is_already_ending_does_not_re_announce_it() {
     // end is announced exactly once.
     let dead = InvestigatorId(1);
     let mut state = two_investigator_open_turn(dead);
-    for c in &mut state.continuations {
+    for c in state.continuations.frames_mut() {
         if let Continuation::InvestigatorTurn { ending, .. } = c {
             *ending = true;
         }

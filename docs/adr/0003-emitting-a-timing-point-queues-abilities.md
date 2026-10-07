@@ -16,6 +16,8 @@ This needs recording because four call sites read `Done` as "nothing happened" a
 
 `emit_event` becomes `queue_event` and `fire_forced_triggers` becomes `queue_forced_triggers`, both `#[must_use]`. "Fire" is the more subtle liar of the two — it reads as "resolve now" and appears in the doc-comments the broken sites were written against — so a half-rename would leave the trap in place.
 
-A `debug_assert` in the drive loop backstops the class: no queued ability frame may be buried beneath a newly-pushed phase anchor. It names the offending frame, costs nothing in release, and fires at the moment of the mistake rather than several phases later when the symptom appears.
+A debug assertion on `ContinuationStack::push` backstops the class: pushing a phase anchor while any queued ability frame is on the stack panics. It names the offending frame, costs nothing in release, and fires at the push that makes the mistake — reporting the caller's location — rather than several phases later when the symptom appears.
 
 Two sites keep their behaviour and lose only a false comment. `damage_enemy`'s `EnemyDefeated` emit is correct by construction — `apply_follow_up_step` pre-advances the `SkillTest` cursor before the follow-up pushes anything, and `advance` yields whenever the `SkillTest` is no longer the top frame — so its `debug_assert!(matches!(forced, Done))` was asserting the wrong invariant and would panic in debug on a legitimate 2+ ordering run. `place_queue_exhaust`'s comment claims the soak reaction window "opens before `EnemyExhausted`"; under the frame model the exhaust runs first.
+
+*Folded #928: the backstop moved from a drive-time check (the first `drive` step with the anchor on top) to the push itself, once the stack became an owned type that checks its invariants on every push.*

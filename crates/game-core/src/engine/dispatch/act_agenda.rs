@@ -12,7 +12,7 @@ use crate::engine::{evaluator, Cx};
 use crate::scenario::ScenarioEnding;
 use crate::state::{
     AdvanceDeck, AdvanceStep, AdvanceTrigger, Continuation, GameState, InvestigatorId, LocationId,
-    Phase, ScenarioEndStep,
+    Phase,
 };
 
 /// Whether the current act advances *only* at the end of the round (its
@@ -377,12 +377,7 @@ pub(crate) fn advance_act(cx: &mut Cx, trigger: AdvanceTrigger) {
 pub(crate) fn end_scenario(state: &mut GameState, ending: ScenarioEnding) {
     if state.ending.is_none() {
         state.ending = Some(ending);
-        state.continuations.insert(
-            0,
-            Continuation::ScenarioEnd {
-                step: ScenarioEndStep::EmitGameEnd,
-            },
-        );
+        state.continuations.insert_ending_at_bottom();
     }
 }
 

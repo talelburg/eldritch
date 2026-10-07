@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::rng::RngState;
 use crate::scenario::{ScenarioEnding, ScenarioId};
-use crate::state::continuation::{Continuation, InFlightSkillTest};
+use crate::state::continuation::{
+    Continuation, ContinuationStack, Frame, HandSizeDiscard, InFlightSkillTest,
+};
 use crate::state::{
     CardCode, CardInstanceId, ChaosBag, Counter, Enemy, EnemyId, Investigator, InvestigatorId,
     Location, LocationId, Phase, TokenModifiers,
@@ -152,8 +154,9 @@ pub struct GameState {
     /// legacy `pending_*` modes. Open reaction/fast windows live here as
     /// `TimingPointWindow` / `FastWindow` frames (the former `open_windows` Vec,
     /// absorbed into the one stack). Required on the wire (#453). Inspect
-    /// windows via [`Self::open_windows`] / [`Self::top_window`].
-    pub continuations: Vec<Continuation>,
+    /// windows via [`Self::open_windows`] / [`Self::top_window`]. The stack
+    /// checks its own invariants; see [`ContinuationStack`].
+    pub continuations: ContinuationStack,
     /// Identifier of the scenario this state belongs to, if any.
     ///
     /// `None` for tests and fixtures that don't care about scenario
@@ -743,31 +746,18 @@ impl GameState {
     /// resolution; "topmost `SkillTest` = the in-flight test".
     #[must_use]
     pub fn current_skill_test(&self) -> Option<&InFlightSkillTest> {
-        self.continuations.iter().rev().find_map(|c| match c {
-            Continuation::SkillTest(t) => Some(t),
-            _ => None,
-        })
+        self.continuations.topmost_of()
     }
 
     /// Mutable counterpart to [`Self::current_skill_test`].
     pub fn current_skill_test_mut(&mut self) -> Option<&mut InFlightSkillTest> {
-        self.continuations.iter_mut().rev().find_map(|c| match c {
-            Continuation::SkillTest(t) => Some(t),
-            _ => None,
-        })
+        self.continuations.topmost_of_mut()
     }
 
     /// Remove and return the in-flight skill test (popping its frame off the
     /// continuation stack). Called at test teardown.
     pub fn take_skill_test(&mut self) -> Option<InFlightSkillTest> {
-        let pos = self
-            .continuations
-            .iter()
-            .rposition(|c| matches!(c, Continuation::SkillTest(_)))?;
-        match self.continuations.remove(pos) {
-            Continuation::SkillTest(t) => Some(t),
-            _ => unreachable!("rposition matched SkillTest"),
-        }
+        self.continuations.remove_topmost()
     }
 
     /// Drop every [`RecordedModifier`] whose [`Lifetime`] ends with the
@@ -803,10 +793,10 @@ impl GameState {
     /// is correct (mirrors [`current_mulligan`](Self::current_mulligan)).
     #[must_use]
     pub fn current_hand_size_discard(&self) -> Option<InvestigatorId> {
-        match self.continuations.last() {
-            Some(Continuation::HandSizeDiscard(h)) => h.remaining.first().copied(),
-            _ => None,
-        }
+        self.continuations
+            .top()
+            .and_then(HandSizeDiscard::downcast_ref)
+            .and_then(|h| h.remaining.first().copied())
     }
 
     /// The investigator currently prompted to draw their Mythos step-1.4
@@ -849,8 +839,8 @@ impl GameState {
     #[must_use]
     pub fn has_skill_test_in_flight(&self) -> bool {
         self.continuations
-            .iter()
-            .any(|c| matches!(c, Continuation::SkillTest(_)))
+            .topmost_of::<InFlightSkillTest>()
+            .is_some()
     }
 
     /// Enemies engaged with `investigator`, in ascending [`EnemyId`] order

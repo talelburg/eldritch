@@ -1400,10 +1400,7 @@ fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
 /// — when the queue drains — runs [`upkeep_phase_end`] (4.6 + transition
 /// to Mythos). Rejections leave state and events untouched.
 pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let Some(Continuation::HandSizeDiscard(pending)) = cx.state.continuations.last() else {
-        unreachable!("resume_hand_size_discard: no HandSizeDiscard frame on top of the stack")
-    };
-    let pending = pending.clone();
+    let pending = cx.state.continuations.top_mut::<HandSizeDiscard>().clone();
     let current = pending.remaining[0];
 
     let InputResponse::PickMultiple { selected } = response else {

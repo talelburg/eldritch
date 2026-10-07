@@ -257,8 +257,6 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
         while scenario_end_cancels_top(cx.state) {
             cx.state.continuations.pop();
         }
-        #[cfg(debug_assertions)]
-        assert_no_queued_ability_beneath_anchor(cx.state);
         // Terminal: nothing left to drive.
         let Some(top) = cx.state.continuations.last().cloned() else {
             return EngineOutcome::Done;
@@ -423,42 +421,6 @@ fn scenario_end_cancels_top(state: &GameState) -> bool {
             .continuations
             .last()
             .is_some_and(Continuation::cancelled_by_scenario_end)
-}
-
-/// Backstop for the ADR-0003 defect class (#569): a queued ability frame must
-/// never be buried beneath a phase anchor.
-///
-/// Phase anchors **pop-and-push** rather than drain — a transition pops the
-/// outgoing anchor and pushes the incoming one on whatever is left — so an
-/// ability frame that ends up below one is not merely mis-ordered, it is
-/// stranded at the bottom of the stack for the rest of the scenario. That is
-/// exactly how agenda 01107's Ghoul movement was lost: `enemy_phase_end` read
-/// the emit's `Done` as "nothing happened" and pushed the Upkeep anchor over the
-/// frame it had just queued.
-///
-/// Checked at every `drive` step with an anchor on top (debug builds only), so
-/// it fires at the transition that made the mistake rather than several phases
-/// later when the ability visibly fails to have happened. What counts as queued
-/// is [`Continuation::is_queued_ability`], beside the anchor predicate it pairs
-/// with.
-#[cfg(debug_assertions)]
-fn assert_no_queued_ability_beneath_anchor(state: &GameState) {
-    let Some((top, beneath)) = state.continuations.split_last() else {
-        return;
-    };
-    if !top.is_phase_anchor() {
-        return;
-    }
-    let buried = beneath.iter().position(Continuation::is_queued_ability);
-    assert!(
-        buried.is_none(),
-        "a queued ability frame is buried beneath the {top:?} anchor at depth {depth} \
-         ({frame:?}) — a phase anchor was pushed over an ability a timing-point emit had \
-         queued, which strands it (#569). Emit in tail position and resume via a frame; \
-         see docs/adr/0003-emitting-a-timing-point-queues-abilities.md.",
-        depth = buried.unwrap_or_default(),
-        frame = buried.map(|i| &beneath[i]),
-    );
 }
 
 /// Resume a parked [`ActionResolution`](crate::state::Continuation::ActionResolution)

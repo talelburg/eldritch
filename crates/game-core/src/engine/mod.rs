@@ -222,6 +222,15 @@ pub(crate) fn apply_via(
             // an unrelated suspension can be surfaced by the same apply that
             // finalized nothing, and the check is cheap and self-guarding.
             finalize_scenario_end(&mut cx, registry);
+            // Every Driven frame was drained and the ending, if finished, popped:
+            // whatever remains must be a prompt the next `apply` can answer, or
+            // nothing at all. A stranded non-prompt top would never advance.
+            debug_assert!(
+                cx.state.continuations.is_at_rest(),
+                "`apply` returned {outcome:?} with a non-prompt frame on top of the \
+                 continuation stack, which nothing will ever advance: {:?}",
+                cx.state.continuations.top(),
+            );
         }
         outcome
         // `cx` drops here, releasing borrows on `state` and `events`.

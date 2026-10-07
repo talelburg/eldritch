@@ -376,10 +376,7 @@ fn frame_of(effect: &Effect, ctx: EvalContext) -> EffectFrame {
 /// `Continuation::Effect` arm (for effect frames parked across an `apply()`
 /// boundary).
 pub(crate) fn step_effect_frame(cx: &mut Cx) -> EngineOutcome {
-    let Some(Continuation::Effect(frame)) = cx.state.continuations.pop() else {
-        unreachable!("step_effect_frame: top frame is not a Continuation::Effect");
-    };
-    match frame {
+    match cx.state.continuations.pop_expect::<EffectFrame>() {
         EffectFrame::Seq { effects, next, ctx } => {
             if next < effects.len() {
                 let child = frame_of(&effects[next], ctx);

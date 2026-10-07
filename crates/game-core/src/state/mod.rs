@@ -26,12 +26,13 @@ pub use counter::Counter;
 // `define_id!` is used by the id submodules; kept crate-internal.
 pub use continuation::{
     ActionResume, AdvanceDeck, AdvanceStep, AdvanceTrigger, AssetEntry, Assignment,
-    AttackLoopStage, CandidateSource, Continuation, DamageSource, DealDamageStep, EffectFrame,
-    EliminationStep, EmitStep, EncounterDisposition, EnemyAttackSource, EnemyResume,
-    FastActorScope, FastWindowKind, FrameActivity, FrameProfile, HandSizeDiscard, HunterChoice,
-    InFlightSkillTest, InvestigationResume, MythosResume, PhaseStep, ResolutionCandidate,
-    ResolvedTest, ScenarioEndDisposition, ScenarioEndStep, SkillTestFollowUp, SkillTestStep,
-    SpawnEngagePending, TimingMode, TimingSub, UpkeepResume,
+    AttackLoopStage, CandidateSource, Continuation, ContinuationStack, DamageSource,
+    DealDamageStep, EffectFrame, EliminationStep, EmitStep, EncounterDisposition,
+    EnemyAttackSource, EnemyResume, FastActorScope, FastWindowKind, Frame, FrameActivity,
+    FrameProfile, HandSizeDiscard, HunterChoice, InFlightSkillTest, InvestigationResume,
+    MythosResume, PhaseStep, ResolutionCandidate, ResolvedTest, ScenarioEndDisposition,
+    ScenarioEndStep, SkillTestFollowUp, SkillTestStep, SpawnEngagePending, TimingMode, TimingSub,
+    UpkeepResume,
 };
 pub(crate) use counter::define_id;
 pub use enemy::{Enemy, EnemyId};

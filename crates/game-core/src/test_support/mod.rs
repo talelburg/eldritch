@@ -213,8 +213,8 @@ pub fn install_test_registry() {
 pub use fixtures::{
     awaiting_commit_input, awaiting_confirm_input, awaiting_pick_single_input,
     awaiting_pick_single_with, awaiting_request, awaiting_skippable_commit_input,
-    awaiting_skippable_pick_single_input, awaiting_skippable_pick_single_with, test_enemy,
-    test_investigator, test_location, test_skill_test,
+    awaiting_skippable_pick_single_input, awaiting_skippable_pick_single_with,
+    from_frames_unchecked, test_enemy, test_investigator, test_location, test_skill_test,
 };
 pub use mock_registry::MockRegistry;
 pub use resolver::{

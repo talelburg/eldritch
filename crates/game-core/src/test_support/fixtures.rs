@@ -24,9 +24,9 @@ use card_dsl::dsl::SkillTestKind;
 
 use crate::engine::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, DifficultyBasis, Enemy, EnemyId, InFlightSkillTest,
-    Investigator, InvestigatorId, Location, LocationId, SkillKind, SkillTestFollowUp, SkillTestId,
-    SkillTestStep, Skills, Status,
+    CardCode, CardInPlay, CardInstanceId, Continuation, ContinuationStack, DifficultyBasis, Enemy,
+    EnemyId, InFlightSkillTest, Investigator, InvestigatorId, Location, LocationId, SkillKind,
+    SkillTestFollowUp, SkillTestId, SkillTestStep, Skills, Status,
 };
 use crate::test_support;
 
@@ -176,6 +176,18 @@ pub fn test_skill_test(
         resolved: None,
         symbol_on_fail: None,
     }
+}
+
+/// A continuation stack built from raw frames, bottom first, **without**
+/// checking any of the stack's invariants.
+///
+/// For fixtures that model a state directly rather than reaching it through
+/// `apply`. The name marks the call as one that may build a stack the engine
+/// itself could never produce; step-wise test driving (review item 18)
+/// replaces these fixtures.
+#[must_use]
+pub fn from_frames_unchecked(frames: Vec<Continuation>) -> ContinuationStack {
+    ContinuationStack::from_frames_unchecked(frames)
 }
 
 /// A sample skill-test commit [`AwaitingInput`](EngineOutcome::AwaitingInput)

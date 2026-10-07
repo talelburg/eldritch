@@ -200,7 +200,7 @@ fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
     let damage_before = state.investigators[&InvestigatorId(1)].damage();
     state.phase = Phase::Investigation;
     state.active_investigator = Some(InvestigatorId(1));
-    state.continuations = vec![
+    state.continuations = test_support::from_frames_unchecked(vec![
         Continuation::InvestigationPhase {
             resume: InvestigationResume::TurnBegins,
         },
@@ -208,7 +208,7 @@ fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
             investigator: InvestigatorId(1),
             ending: false,
         },
-    ];
+    ]);
     // A ready enemy attacks; the Upkeep readying in between would have done
     // this anyway, but assert the precondition rather than assume it.
     assert!(!state.enemies[&EnemyId(1)].exhausted);
