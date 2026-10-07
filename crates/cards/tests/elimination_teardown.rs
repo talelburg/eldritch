@@ -55,8 +55,9 @@ fn install_registry() {
 /// The test investigator (8 health) at a location with `damage` already on it,
 /// `hand` in hand, and `threat` (code, clues) in its threat area (instance ids
 /// 1, 2, …). Grasping Hands sits on top of the encounter deck with a rigged
-/// `Numeric(-2)` token, so `reveal_committing` puts it through an Agility(3) test he fails by 2 — or by
-/// 1 when Survival Instinct's single [agility] icon is committed.
+/// `Numeric(-2)` token, so `reveal_committing` puts it through an Agility(3)
+/// test it fails by 2 — or by 1 when Survival Instinct's single [agility] icon
+/// is committed.
 fn board_at_lethal_range(damage: u8, hand: &[&str], threat: &[(&str, u8)]) -> GameState {
     let mut inv = test_support::test_investigator(1);
     inv.investigator_card.accumulated_damage = damage;

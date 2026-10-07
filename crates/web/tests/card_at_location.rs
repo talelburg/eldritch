@@ -38,7 +38,7 @@ const PARLOR: LocationId = LocationId(5);
 const LITA: CardInstanceId = CardInstanceId(60);
 const FOG: CardInstanceId = CardInstanceId(61);
 
-/// The Parlor with Lita Chantler at it, Roland standing in it, and — when
+/// The Parlor with Lita Chantler at it, the investigator standing in it, and — when
 /// `attached` — Obscuring Fog 01168 attached to the location.
 fn parlor_state(attached: bool) -> GameState {
     let mut parlor = test_support::test_location(5, "Parlor");
@@ -52,11 +52,7 @@ fn parlor_state(attached: bool) -> GameState {
             .attachments
             .push(CardInPlay::enter_play(CardCode::new("01168"), FOG));
     }
-    // The real registry is installed, so the investigator card must be a real
-    // code — the panel's capacity lookup reads it.
-    let mut inv = test_support::test_investigator(1);
-    inv.name = "Roland Banks".into();
-    inv.investigator_card.code = CardCode::new("01001");
+    let inv = test_support::test_investigator(1);
     GameStateBuilder::new()
         .with_location(parlor)
         .with_investigator_at(inv, PARLOR)

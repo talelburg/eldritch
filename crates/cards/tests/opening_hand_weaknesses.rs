@@ -209,9 +209,6 @@ fn opening_hand_weakness_set_aside_and_returned_to_deck() {
 #[test]
 fn mulligan_redraw_weakness_is_set_aside() {
     let mut inv = test_support::test_investigator(1);
-    // Roland, deliberately: Cover Up's `restrictions: investigator:01001`
-    // names him, so the deck below is a legal one.
-    inv.investigator_card.code = CardCode::new(ROLAND);
     // Hand: one non-weakness card to mulligan.
     inv.hand = vec![filler(1)];
     // Deck: only the weakness — guarantees the mulligan redraw draws it.

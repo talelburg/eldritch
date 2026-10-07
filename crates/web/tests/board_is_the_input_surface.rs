@@ -51,8 +51,8 @@ const ROTTING_REMAINS: &str = "01163";
 fn open_turn_with_one_action() -> GameState {
     let mut inv = test_support::test_investigator(1);
     inv.actions_remaining = 1;
-    // A real investigator card, so panel capacity resolves against the real
-    // corpus this binary installs — and a real encounter card can be drawn.
+    // A real investigator card: this test's subject is the rendered board, and
+    // a rendering test's substrate is the real corpus (ADR 0016).
     inv.investigator_card =
         CardInPlay::enter_play(CardCode::new(ROLAND), CardInstanceId(u32::MAX - 1));
     inv.deck = vec![CardCode::new("01020"), CardCode::new("01021")];
@@ -93,7 +93,7 @@ impl Harness {
     /// `state` and the engine's opening outcome for it.
     async fn mount(state: GameState, outcome: EngineOutcome) -> Self {
         // The real corpus, not the synthetic registry: this flow draws a real
-        // encounter card and reads a real investigator card's capacity. Its own
+        // encounter card and renders a real investigator card. Its own
         // binary, per the `tests/location_card.rs` first-wins-registry precedent.
         test_support::install_registry_with_test_cards(REGISTRY);
         let store = RwSignal::new(ClientState::default());

@@ -101,7 +101,7 @@ fn parley() -> TurnAction {
     }
 }
 
-/// The board: Daisy in the revealed Parlor, Lita in play *at* the Parlor under
+/// The board: the investigator in the revealed Parlor, Lita in play *at* the Parlor under
 /// nobody's control, and a Hallway to stand in instead. `token` is the only
 /// chaos token in the bag, so the test's outcome is fixed.
 fn board(token: ChaosToken) -> GameState {
@@ -194,8 +194,8 @@ fn the_parley_is_no_longer_offered_once_she_is_controlled() {
 // ---- the test and its consequence ------------------------------------
 
 /// *"Test \[intellect\] (4). If you succeed, take control of Lita Chantler."*
-/// Daisy's 5 against difficulty 4 with a `0` token succeeds, and she moves out
-/// of the Parlor's `cards_at_location` and into Daisy's play area — *"it enters
+/// Intellect 5 against difficulty 4 with a `0` token succeeds, and she moves out
+/// of the Parlor's `cards_at_location` and into the investigator's play area — *"it enters
 /// your play area (not your hand)"*.
 #[test]
 fn a_successful_parley_takes_control_of_lita() {
@@ -220,11 +220,15 @@ fn a_successful_parley_takes_control_of_lita() {
         "she left the location's zone",
     );
     let in_play = &result.state.investigators[&INV].cards_in_play;
-    assert_eq!(in_play.len(), 1, "she is the one card in Daisy's play area");
+    assert_eq!(
+        in_play.len(),
+        1,
+        "she is the one card in the investigator's play area"
+    );
     assert_eq!(in_play[0].code.as_str(), LITA);
 }
 
-/// A failed Parley costs the action and nothing else: Daisy's 5 minus the
+/// A failed Parley costs the action and nothing else: intellect 5 minus the
 /// `[-2]` token is 3 against difficulty 4, and the take-control is on the
 /// **success** side alone.
 #[test]
@@ -306,10 +310,10 @@ fn taking_control_preserves_her_instance() {
 }
 
 /// **Gaining control contests the ally slot.** With Beat Cop already filling
-/// Daisy's one ally slot, the make-room machinery runs on the way in — and with
+/// the investigator's one ally slot, the make-room machinery runs on the way in — and with
 /// exactly one occupier there is no choice to offer, so it is discarded
 /// outright (the RR's *"must choose and discard"* has a single answer). Beat
-/// Cop is Daisy's own card, so it lands in her discard pile.
+/// Cop is the investigator's own card, so it lands in their discard pile.
 #[test]
 fn taking_control_makes_room_in_the_ally_slot() {
     let mut state = board(ChaosToken::Numeric(0));
@@ -331,7 +335,7 @@ fn taking_control_makes_room_in_the_ally_slot() {
     assert_eq!(inv.cards_in_play[0].code.as_str(), LITA);
     assert!(
         inv.discard.contains(&CardCode::new(BEAT_COP)),
-        "Beat Cop is Daisy's own card, so it goes to her discard; got {:?}",
+        "Beat Cop is the investigator's own card, so it goes to their discard; got {:?}",
         inv.discard,
     );
 }

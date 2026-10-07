@@ -24,9 +24,6 @@ async fn board_renders_card_and_location_names() {
 
     let inv_id = InvestigatorId(1);
     let mut inv = test_support::test_investigator(1);
-    // Use a real investigator code so the board's max-health/sanity reads resolve
-    // against cards::REGISTRY (the synthetic TEST_INV code is absent from it).
-    inv.investigator_card.code = CardCode::new("01001"); // Roland Banks
     inv.current_location = Some(LocationId(10));
     inv.hand.push(CardCode::new("01030")); // Magnifying Glass
 

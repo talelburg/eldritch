@@ -58,7 +58,8 @@ fn test_investigator_takes_harm_under_the_real_registry() {
 fn a_real_investigator_keeps_its_corpus_capacity() {
     let mut roland = test_support::test_investigator(1);
     roland.investigator_card.code = CardCode::new("01001");
-    // Roland Banks 01001 prints 9 health / 5 sanity.
+    // Roland Banks 01001 prints 9 health / 5 sanity
+    // (`data/arkhamdb-snapshot/pack/core/core.json`).
     assert_eq!((roland.max_health(), roland.max_sanity()), (9, 5));
 }
 

@@ -17,8 +17,7 @@
 //! taken a turn this round, proceed to 2.3."*
 //!
 //! Lives in `crates/cards/tests/` because the defeat is reached the real way —
-//! an attack of opportunity provoked by a non-fast play — and `max_health()`
-//! reads the investigator's capacity from the installed corpus registry (#448).
+//! an attack of opportunity provoked by a non-fast play.
 //!
 //! ## Verified card text (`data/arkhamdb-snapshot`, 2026-08-24)
 //!

@@ -474,9 +474,7 @@ fn map_leaving_barricaded_a(enemy: Option<Enemy>) -> GameState {
 
 const INV2: InvestigatorId = InvestigatorId(2);
 
-/// An investigator at `at` with a real card code, so `max_health()` /
-/// `max_sanity()` read from the installed registry (see
-/// `map_with_barricade_at_b`).
+/// An investigator at `at`.
 fn inv_at(id: u32, at: LocationId) -> Investigator {
     let mut inv = test_support::test_investigator(id);
     inv.current_location = Some(at);

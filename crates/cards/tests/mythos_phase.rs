@@ -85,9 +85,8 @@ const ATTIC: &str = "01113";
 const BEAT_COP: &str = "01018";
 /// Rise of the Ghouls — the board's sole agenda.
 const RISE_OF_THE_GHOULS: &str = "01106";
-/// Roland Banks / Daisy Walker — two distinct seated investigators.
+/// Roland Banks — seated through the roster, which reads his printed metadata.
 const ROLAND: &str = "01001";
-const DAISY: &str = "01002";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
@@ -166,7 +165,7 @@ fn setup_at_mythos_draw(state: GameState) -> GameState {
     test_support::take_turn_action(state, &TurnAction::EndTurn).state
 }
 
-/// The two-investigator equivalent: Roland and Daisy, both seated at the
+/// The two-investigator equivalent: Roland and the test investigator, both seated at the
 /// Attic by `seat_and_open`, both mulliganed, both turns ended — which ticks
 /// through the phases into Mythos with the cursor on inv1.
 fn setup_two_investigators_at_mythos_draw(state: GameState) -> GameState {
@@ -176,7 +175,7 @@ fn setup_two_investigators_at_mythos_draw(state: GameState) -> GameState {
             deck: vec![],
         },
         RosterEntry {
-            investigator: CardCode::new(DAISY),
+            investigator: CardCode::new(test_support::TEST_INV),
             deck: vec![],
         },
     ];
