@@ -27,7 +27,7 @@ use crate::engine::dispatch::{
     PlayCheckResult,
 };
 use crate::engine::enumerate::TurnAction;
-use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::evaluator::EvalContext;
 use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
@@ -1013,12 +1013,14 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // responding to. Operate on it directly; the stack-is-resolution-order
     // invariant means the active window is always `last()` (Slice C-plumbing).
     // Snapshot to avoid borrowing state across the apply_effect call.
-    let (trigger, pending_idx) = {
-        let candidates = cx
+    let (trigger, pending_idx, event) = {
+        let window = cx
             .state
             .continuations
             .top()
-            .and_then(Continuation::pending_candidates)
+            .expect("fire_pending_trigger: top frame is an open window/run");
+        let candidates = window
+            .pending_candidates()
             .expect("fire_pending_trigger: top frame is an open window/run");
         let idx = match usize::try_from(i) {
             Ok(idx) if idx < candidates.len() => idx,
@@ -1033,7 +1035,20 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
                 };
             }
         };
-        (candidates[idx].clone(), idx)
+        // The timing point the window is open at, which the fired effect binds
+        // from. Only a `TimingPointWindow` holds candidates — a framework
+        // `FastWindow`'s list is always empty, so its picks were rejected as out
+        // of bounds above.
+        let event = window
+            .window_timing_event()
+            .unwrap_or_else(|| {
+                unreachable!(
+                    "fire_pending_trigger: a window holding candidates is a timing-point \
+                     window, which records its timing event"
+                )
+            })
+            .clone();
+        (candidates[idx].clone(), idx, event)
     };
 
     // The initiation gate, at initiation (#568). Both prompt sites withdraw
@@ -1066,7 +1081,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
             .and_then(Continuation::pending_candidates_mut)
             .expect("fire_pending_trigger: top frame is an open window/run")
             .remove(pending_idx);
-        return play_fast_event(cx, &trigger);
+        return play_fast_event(cx, &trigger, &event);
     }
 
     // Look up the ability fresh from the registry. The card may have
@@ -1084,12 +1099,11 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // engine enforces. `candidate_still_offerable` above has already rejected a
     // source that left play, so what survives to here is the side flip.
     //
-    // Abilities resolve by code (works for in-play instances and scenario
-    // board cards alike); `source` is the firing instance, when any.
+    // Validate-first: this checks the ability still resolves before the window
+    // is touched, so a rejected pick leaves the window as it was. `initiate`
+    // resolves it again below, and nothing in between changes the answer.
     let code = trigger.code.clone();
-    let Some(ability) =
-        abilities_in_effect::resolve(cx.state, trigger.source, &code, &trigger.address)
-    else {
+    if abilities_in_effect::resolve(cx.state, trigger.source, &code, &trigger.address).is_none() {
         return EngineOutcome::Rejected {
             reason: format!(
                 "ResolveInput: reaction-window PickSingle(OptionId({i})) names {code}, which no \
@@ -1100,52 +1114,13 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
             )
             .into(),
         };
-    };
-
-    // Thread the source instance (if any) into the EvalContext so effects
-    // that self-reference (`DiscardSelf`) or push source-attributed state
-    // resolve against the firing card. Board-card candidates (act / agenda)
-    // have no source; hand candidates were handled above.
-    let mut eval_ctx = EvalContext::for_controller_with_optional_source(
-        trigger.controller,
-        trigger.source.ability(),
-    );
-    // For a `DamageAssigned` window whose source is an enemy attack, bind the
-    // attacking enemy into the context so Guard Dog's native retaliate
-    // (`Effect::Native("01021:retaliate")`) can name the attacker via
-    // `eval_ctx.attacking_enemy`. Mirrors `failed_by` /
-    // `clue_discovery_count`. `None` for all other window kinds. (C5b
-    // #237.)
-    match cx
-        .state
-        .continuations
-        .top()
-        .and_then(Continuation::window_timing_event)
-    {
-        Some(TimingEvent::DamageAssigned {
-            source: DamageSource::EnemyAttack { enemy },
-            ..
-        }) => {
-            eval_ctx.set_attacking_enemy(*enemy);
-        }
-        // For `DiscoverClues`, bind the would-be discovery count so the
-        // replacement effect (Cover Up's "discard that many") discards the
-        // right number. Mirrors `attacking_enemy`. `count` is the **capped**
-        // count — `discover_clue` caps at the location's clues before emitting
-        // (#471) — so "that many" is what would actually have been discovered,
-        // not what was requested.
-        Some(TimingEvent::DiscoverClues { count, .. }) => {
-            eval_ctx.set_clue_discovery_count(*count);
-        }
-        _ => {}
     }
-    let usage_limit = ability.usage_limit;
 
     // Drop the fired entry *before* resolving its effect: if the effect
     // suspends (a forced ability that initiates a skill test — Frozen in
     // Fear 01164), the entry must already be consumed so the resume drives
     // the *remaining* siblings, not this one again. The window is still the
-    // top frame here (apply_effect runs after).
+    // top frame here (`initiate` pushes the effect above it).
     cx.state
         .continuations
         .top_frame_mut()
@@ -1153,14 +1128,17 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         .expect("fire_pending_trigger: top frame is an open window/run")
         .remove(pending_idx);
 
-    // Appendix I step 3: the ability attempts to initiate, so its use counts
-    // now, before its effect is pushed — a use whose effects are cancelled still
-    // counts. The window frame beneath stays on top with its remaining
-    // candidates and `advance_resolution` re-dispatches it once the effect (and
-    // any nested skill test) pops. In-scope suspending forced effects (Frozen in
-    // Fear 01164) carry no usage limit, so recording is a no-op for them.
-    initiation::record_initiation(cx.state, &trigger, usage_limit);
-    evaluator::push_effect(cx, &ability.effect, eval_ctx);
+    // The one firing path a lone forced hit shares (#964): resolve, bind from
+    // the window's timing event, record the use, push. The window frame beneath
+    // stays with its remaining candidates, and `advance_resolution`
+    // re-dispatches it once the effect (and any nested skill test) pops.
+    if let Err(refusal) = initiation::initiate(cx, &trigger, &event) {
+        unreachable!(
+            "fire_pending_trigger: {code} resolved at {address:?} above and nothing has changed \
+             since, yet initiate refused it ({refusal:?})",
+            address = trigger.address,
+        );
+    }
     EngineOutcome::Done
 }
 
@@ -1187,7 +1165,11 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
 /// is a cost the wallet holds. The caller has already removed the candidate from
 /// the run, so a suspending effect's resume drives the remaining siblings, not
 /// this play again.
-fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcome {
+fn play_fast_event(
+    cx: &mut Cx,
+    candidate: &ResolutionCandidate,
+    event: &TimingEvent,
+) -> EngineOutcome {
     let controller = candidate.controller;
     // Find the event in the controller's hand by code (first match — copies
     // are fungible; resolving by code avoids stale indices after a prior play).
@@ -1256,7 +1238,9 @@ fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcom
         investigator: controller,
         card: Some(card),
     });
-    evaluator::push_effect(cx, &effect, eval_ctx);
+    // The bind-and-push tail a triggered ability's `initiate` ends on, so an
+    // event naming "that enemy" or "that many" is bound as a reaction is (#964).
+    initiation::push_bound_effect(cx, &effect, eval_ctx, event);
     EngineOutcome::Done
 }
 
