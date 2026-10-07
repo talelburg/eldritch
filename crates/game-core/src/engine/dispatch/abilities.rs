@@ -7,14 +7,17 @@ use card_dsl::card_data::CardKind;
 use card_dsl::dsl::{ActionDesignator, Cost, Effect, Trigger, UsageLimit};
 
 use crate::card_registry;
-use crate::engine::dispatch::{cards, combat, reaction_windows, threat_area, ActivateCheckResult};
+use crate::engine::dispatch::{
+    cards, combat, initiation, reaction_windows, threat_area, ActivateCheckResult,
+};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{abilities_in_effect, ability_source, Cx};
 use crate::event::Event;
 use crate::state::{
     AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume, CandidateSource, CardCode,
-    CardInPlay, CardInstanceId, GameState, Investigator, InvestigatorId, UseKind,
+    CardInPlay, CardInstanceId, GameState, Investigator, InvestigatorId, ResolutionCandidate,
+    UseKind,
 };
 
 /// Handler for `TurnAction::ActivateAbility`.
@@ -103,6 +106,7 @@ pub(super) fn activate_ability(
         designator,
         costs,
         effect,
+        usage_limit,
         source_exhausted: _,
     } = match reaction_windows::check_activate_ability(cx.state, investigator, source, address) {
         Ok(r) => r,
@@ -110,6 +114,27 @@ pub(super) fn activate_ability(
     };
 
     // Mutate.
+    //
+    // Count the use before the costs are paid rather than after: a
+    // `DiscardSelf` cost, or `SpendUses` emptying a `discard_when_empty` asset,
+    // takes the source — and the per-instance counter with it — out of play
+    // mid-payment. Within this one `apply` the order is unobservable: nothing
+    // between here and step 3 reads the counter, and a payment that rejects
+    // snapshot-restores the whole activation, the recorded use included (#161).
+    // A use on an instance that then leaves play is correctly lost —
+    // `glossary/Limits_and_Maximums.md`: *"If a card leaves play and re-enters
+    // play during the same period, the card is considered to be bringing a new
+    // instance of the ability to the game."*
+    initiation::record_initiation(
+        cx.state,
+        &ResolutionCandidate::new(
+            source_code.clone(),
+            investigator,
+            address.clone(),
+            CandidateSource::Ability(source),
+        ),
+        usage_limit,
+    );
     if let Err(reason) = pay_activation_costs(
         cx,
         investigator,

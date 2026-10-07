@@ -9,7 +9,7 @@
 //! ones.
 
 use card_dsl::card_data::CardType;
-use card_dsl::dsl::{Ability, ActionDesignator, Cost, Effect};
+use card_dsl::dsl::{Ability, ActionDesignator, Cost, Effect, UsageLimit};
 
 use crate::action::{EngineRecord, InputResponse, PlayerAction, RosterEntry};
 use crate::engine::dispatch::emit::TimingEvent;
@@ -595,6 +595,9 @@ pub(super) struct ActivateCheckResult {
     pub costs: Vec<Cost>,
     /// The effect to dispatch after paying costs.
     pub effect: Effect,
+    /// The *"Limit X per \[period\]"* cap, if the ability prints one — what
+    /// `initiation::record_initiation` counts the activation against.
+    pub usage_limit: Option<UsageLimit>,
     /// Whether the source card was exhausted at validation time —
     /// load-bearing for activated abilities whose payment includes
     /// `Cost::Exhaust`.
