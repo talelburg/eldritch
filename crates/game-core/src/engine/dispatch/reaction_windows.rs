@@ -472,16 +472,18 @@ fn scan_hand_fast_events(
     plays
 }
 
-/// Returns whether an [`Trigger::OnEvent`] ability with the given
-/// `pattern` and `timing`, owned by `controller`, matches a window of
-/// the given `kind`.
+/// Returns whether a reaction [`Trigger::OnEvent`] ability declaring `pattern`,
+/// owned by `controller`, matches `event`.
 ///
-/// Phase-3 mapping:
-/// - the after-enemy-defeated reaction window
-///   ([`TimingEvent::EnemyDefeated`]) matches
-///   [`EventPattern::EnemyDefeated`] with
-///   [`EventTiming::After`]. The `by_controller` qualifier narrows to
-///   defeats credited to this ability's controller.
+/// Two steps, both exhaustive (#963):
+///
+/// 1. **The condition.** The pattern's [`EventPattern::condition`] must equal
+///    the event's [`TimingEvent::condition`]. Both maps are exhaustive, so a new
+///    pattern or a new event cannot compile without naming its condition, and
+///    no pairing is left to a wildcard.
+/// 2. **The narrowing.** A `match` on the event, one arm per variant, applies
+///    what that condition's pattern and the event say beyond the condition
+///    itself: Roland Banks 01001's *"you defeat"*, a test's outcome and kind.
 ///
 /// **Timing is not consulted here** (#704). Which cell an ability resolves in is
 /// the coordinator's business — it scans one cell at a time and `push_matching` /
@@ -496,22 +498,19 @@ fn trigger_matches(
     pattern: &EventPattern,
     controller: InvestigatorId,
 ) -> bool {
-    match (event, pattern) {
-        (
-            TimingEvent::EnemyDefeated { by, .. },
-            EventPattern::EnemyDefeated {
-                by_controller,
-                code: _,
-            },
-        ) => {
-            if *by_controller {
-                *by == Some(controller)
-            } else {
-                true
-            }
+    if pattern.condition() != event.condition() {
+        return false;
+    }
+    match event {
+        TimingEvent::EnemyDefeated { by, .. } => {
+            // Same condition, so this is the one pattern that has it.
+            let EventPattern::EnemyDefeated { by_controller, .. } = pattern else {
+                return false;
+            };
+            !*by_controller || *by == Some(controller)
         }
-        // Three pairings whose narrowing is entirely someone else's: the pattern
-        // matching its condition is the whole answer here.
+        // Two conditions whose narrowing is entirely someone else's: the
+        // pattern matching its condition is the whole answer here.
         //
         // - "an enemy attacks an investigator at your location" — Dodge 01023 in
         //   the `when` cell, Silver Twilight Acolyte 01102 in the `after` one.
@@ -519,15 +518,14 @@ fn trigger_matches(
         // - "When the round ends, investigators … may … advance" — act 01109's
         //   group advance (#434). Board-scoped; the contributor scoping lives in
         //   the native and in the round-end coordinator's `when` cell.
-        (TimingEvent::EnemyAttacks { .. }, EventPattern::EnemyAttacks)
-        | (TimingEvent::RoundEnded, EventPattern::RoundEnded) => true,
+        TimingEvent::EnemyAttacks { .. } | TimingEvent::RoundEnded => true,
         // "**When an enemy attack** deals damage to Guard Dog" (01021). The
         // self-binding half — that this card is one the assignment gives damage
         // to — is the instance filter in `scan_pending_triggers`, so only such
         // an instance reaches here; what is left is the card's own narrowing of
         // the condition to an enemy attack, which `Effect::Deal` harm (Dynamite
         // Blast, a treachery) does not satisfy.
-        (TimingEvent::DamageAssigned { source, .. }, EventPattern::EnemyAttackDamagedSelf) => {
+        TimingEvent::DamageAssigned { source, .. } => {
             matches!(source, DamageSource::EnemyAttack { .. })
         }
         // "after you succeed/fail a skill test" — narrowed by outcome,
@@ -542,42 +540,52 @@ fn trigger_matches(
         // narrowing — Lita Chantler 01117's *"an investigator at your
         // location"* is her own native eligibility tag, since it is about the
         // board rather than about the event.
-        (
-            TimingEvent::SkillTestResolved {
-                investigator,
-                kind,
-                outcome,
-            },
-            EventPattern::SkillTestResolved {
+        TimingEvent::SkillTestResolved {
+            investigator,
+            kind,
+            outcome,
+        } => {
+            // Same condition, so this is the one pattern that has it.
+            let EventPattern::SkillTestResolved {
                 outcome: p_out,
                 kind: p_kind,
                 by_controller,
-            },
-        ) => {
+            } = pattern
+            else {
+                return false;
+            };
             (!*by_controller || *investigator == controller)
                 && outcome == p_out
                 && (p_kind.is_none() || *p_kind == Some(*kind))
         }
-        // "…you discover clues": scoped to the discovering investigator, the way
-        // the `when` pairing above is. The "at your location" narrowing lives in
-        // the scan, which has the board (#703).
-        (TimingEvent::DiscoverClues { investigator, .. }, EventPattern::DiscoverClues) => {
-            *investigator == controller
-        }
+        // "…you discover clues": scoped to the discovering investigator. The
+        // "at your location" narrowing lives in the scan, which has the board
+        // (#703).
+        TimingEvent::DiscoverClues { investigator, .. } => *investigator == controller,
         // Scoped to the entered card's owner; the self-instance scoping is in
         // the scan (Research Librarian 01032).
-        (
-            TimingEvent::EnteredPlay {
-                controller: window_controller,
-                ..
-            },
-            EventPattern::EnteredPlay,
-        ) => *window_controller == controller,
-        // Every other (event, pattern) pairing opens no reaction: the
-        // forced-only conditions (PhaseStarted / PhaseEnded / ActAdvanced / AgendaAdvanced /
-        // EndOfTurn / GameEnd / EliminationGameEnd / EnteredLocation /
-        // LeftLocation) never open a reaction window.
-        _ => false,
+        TimingEvent::EnteredPlay {
+            controller: window_controller,
+            ..
+        } => *window_controller == controller,
+        // No reaction is matched on these.
+        //
+        // - The forced-only conditions, first nine: each has a pattern, but only
+        //   the forced dispatch path reads it, scanning the zones its
+        //   `ForcedTriggerPoint` names.
+        // - `DamagePlaced`: no pattern has this condition yet (Mark Harrigan
+        //   03001 and Baron Samedi 05019 are outside the corpus), so the
+        //   condition check above has already refused every pattern.
+        TimingEvent::EnteredLocation { .. }
+        | TimingEvent::PhaseStarted { .. }
+        | TimingEvent::PhaseEnded { .. }
+        | TimingEvent::ActAdvanced { .. }
+        | TimingEvent::AgendaAdvanced { .. }
+        | TimingEvent::EndOfTurn { .. }
+        | TimingEvent::GameEnd
+        | TimingEvent::EliminationGameEnd { .. }
+        | TimingEvent::LeftLocation { .. }
+        | TimingEvent::DamagePlaced { .. } => false,
     }
 }
 
