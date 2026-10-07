@@ -150,9 +150,7 @@ fn board_with_enemies(
     inv.cards_in_play.push(weapon);
 
     let mut builder = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(id)
-        .with_investigator_turn(id)
+        .open_turn(id)
         .with_location(test_support::test_location(1, "Study"))
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default());
@@ -183,9 +181,7 @@ fn play_card_seeds_the_ammo_pool_from_metadata() {
     let mut inv = test_support::test_investigator(1);
     inv.hand.push(CardCode::new(WEAPON));
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(id)
-        .with_investigator_turn(id)
+        .open_turn(id)
         .with_investigator(inv)
         .build();
 

@@ -45,7 +45,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -172,13 +172,10 @@ fn board() -> GameState {
     attacker.attack_horror = 0;
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(mine, HERE)
         .with_location(parlor)
         .with_enemy(attacker)
-        .with_active_investigator(MINE)
-        .with_turn_order([MINE])
-        .with_investigator_turn(MINE)
+        .open_turn(MINE)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build()
 }

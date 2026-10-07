@@ -800,10 +800,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 mod turn_menu_tests {
     use crate::engine::outcome::OptionTarget;
     use crate::engine::{dispatch, enumerate};
-    use crate::state::{
-        ChaosBag, ChaosToken, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
-        InvestigatorId, Phase,
-    };
+    use crate::state::{ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId};
     use crate::test_support;
 
     #[test]
@@ -813,14 +810,8 @@ mod turn_menu_tests {
         // propagates each action's target — not just Global.
         let mut state = GameStateBuilder::default()
             .with_investigator(test_support::test_investigator(1))
-            .with_phase(Phase::Investigation)
-            .with_active_investigator(InvestigatorId(1))
-            .with_turn_order([InvestigatorId(1)])
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-            .with_phase_anchor(InvestigationPhaseFrame {
-                resume: InvestigationResume::TurnBegins,
-            })
-            .with_investigator_turn(InvestigatorId(1))
+            .open_turn(InvestigatorId(1))
             .build();
         let loc = test_support::test_location(10, "Study");
         let loc_id = loc.id;

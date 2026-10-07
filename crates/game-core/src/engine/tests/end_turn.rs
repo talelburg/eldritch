@@ -6,15 +6,10 @@ fn end_turn_drains_actions_and_emits_turn_ended() {
     let mut roland = test_support::test_investigator(1);
     roland.actions_remaining = 3;
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(roland)
         .with_investigator(test_support::test_investigator(2))
         .with_turn_order([id, InvestigatorId(2)])
-        .with_active_investigator(id)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(id)
+        .open_turn(id)
         .build();
 
     let result = test_support::take_turn_action(state, &TurnAction::EndTurn);

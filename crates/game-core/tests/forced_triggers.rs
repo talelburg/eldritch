@@ -22,8 +22,8 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, OptionTarget
 use game_core::event::Event;
 use game_core::state::{
     self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
-    EnemyId, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
-    InvestigatorId, LocationId, TokenModifiers, UpkeepPhaseFrame, UpkeepResume,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
+    UpkeepPhaseFrame, UpkeepResume,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
@@ -285,10 +285,7 @@ fn move_into_forced_location_fires_its_effect() {
         .with_investigator(inv)
         .with_location(from)
         .with_location(attic)
-        .with_phase(state::Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
 
     let result = move_action(state, InvestigatorId(1), LocationId(11));
@@ -629,17 +626,7 @@ fn end_turn_fires_end_of_turn_forced_for_the_ending_investigator() {
     let state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_location(test_support::test_location(10, "Study"))
-        .with_phase(state::Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
-        // InvestigationPhase anchor at investigation_phase_end.
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
-        // EndTurn pops (or strands a skill test below, then pops on resume).
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
 
     let result = {
@@ -737,10 +724,7 @@ fn successful_investigate_fires_after_location_investigated_forced() {
     loc.shroud = 0;
     loc.clues = 1;
     let state = GameStateBuilder::new()
-        .with_phase(state::Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .with_investigator(inv)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -801,10 +785,7 @@ fn two_simultaneous_forced_triggers_present_a_choice() {
         .with_investigator(inv)
         .with_location(from)
         .with_location(double)
-        .with_phase(state::Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
 
     let result = move_action(state, InvestigatorId(1), LocationId(11));
@@ -839,10 +820,7 @@ fn two_simultaneous_forced_triggers_resolved_in_lead_chosen_order() {
         .with_investigator(inv)
         .with_location(from)
         .with_location(double)
-        .with_phase(state::Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
 
     let paused = move_action(state, InvestigatorId(1), LocationId(11));
@@ -980,10 +958,7 @@ fn suspending_left_location_forced_still_engages_and_fires_entered_location() {
         .with_investigator(inv)
         .with_location(from)
         .with_location(attic)
-        .with_phase(state::Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
     state.enemies.insert(EnemyId(1), enemy);
 
@@ -1078,10 +1053,7 @@ fn a_when_cell_left_location_forced_resolves_before_the_departure_lands() {
         .with_investigator(inv)
         .with_location(from)
         .with_location(attic)
-        .with_phase(state::Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
     state.enemies.insert(EnemyId(1), enemy);
 
@@ -1141,10 +1113,7 @@ fn the_destination_reveal_belongs_to_the_arrival_not_the_departure() {
         .with_investigator(inv)
         .with_location(from)
         .with_location(attic)
-        .with_phase(state::Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
 
     let r = move_action(state, InvestigatorId(1), LocationId(11));
@@ -1198,10 +1167,7 @@ fn a_suspended_when_cell_sees_the_investigator_still_at_the_location_they_are_le
         .with_investigator(inv)
         .with_location(from)
         .with_location(attic)
-        .with_phase(state::Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
     state.enemies.insert(EnemyId(1), enemy);
 
@@ -1304,13 +1270,7 @@ fn board_with_two_phase_end_forced() -> GameState {
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_location(test_support::test_location(10, "Study"))
-        .with_phase(state::Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
     state.act_deck = vec![Act {
         code: CardCode(DOOM_ACT.into()),

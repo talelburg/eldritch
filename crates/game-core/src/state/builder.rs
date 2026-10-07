@@ -44,6 +44,11 @@ use crate::state::{
 /// Construct with [`GameStateBuilder::new`], chain `.with_*` setters and
 /// adders, then call [`build`](GameStateBuilder::build) to get a `GameState`
 /// ready for [`apply`](crate::engine::apply).
+///
+/// To build a state with an investigator's turn open, use
+/// [`open_turn`](GameStateBuilder::open_turn): it stages the Investigation
+/// phase anchor and the turn frame together, so no caller can build a turn
+/// without the anchor beneath it.
 #[derive(Debug, Clone)]
 #[must_use = "GameStateBuilder is a builder; call .build() to produce a GameState"]
 pub struct GameStateBuilder {
@@ -332,16 +337,18 @@ impl GameStateBuilder {
             }
             .into(),
         );
-        self.investigator_turn = Some(investigator);
-        self
+        self.with_investigator_turn(investigator)
     }
 
     /// Stage an [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame
     /// (slice 2a-i, #393) on top of the staged `*Phase` anchor — the realistic
     /// invariant for a state constructed mid-turn (the real driver pushes it once
-    /// the `InvestigatorTurnBegins` window closes). Pair with
-    /// `with_phase_anchor(InvestigationPhase { resume: TurnBegins })`.
-    pub fn with_investigator_turn(mut self, investigator: InvestigatorId) -> Self {
+    /// the `InvestigatorTurnBegins` window closes).
+    ///
+    /// Private: a turn frame without its phase anchor is a state the engine
+    /// never rests in, so [`open_turn`](Self::open_turn) is the only public way
+    /// to open a turn — it stages the anchor and the turn together (#942).
+    fn with_investigator_turn(mut self, investigator: InvestigatorId) -> Self {
         self.investigator_turn = Some(investigator);
         self
     }
