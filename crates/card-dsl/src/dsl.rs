@@ -452,11 +452,12 @@ pub enum TriggerKind {
 
 /// Which engine event(s) an [`Trigger::OnEvent`] ability listens for.
 ///
-/// Phase-3 minimal set: just the variant Roland Banks needs. Grows as
-/// later cards demand new patterns (skill-test outcomes, investigator
-/// movement, clue placement, …); the engine evaluator exhaustively
-/// matches on this enum so adding a variant is a deliberate change
-/// rather than a silent broadening.
+/// Grows as cards demand new patterns. Every pattern listens to exactly one
+/// [`TriggeringCondition`], answered by the exhaustive
+/// [`condition`](Self::condition), so a new variant does not compile until it
+/// says which condition it belongs to. A pattern with no condition that could
+/// match it is decoration, and is not added until a card needs it together
+/// with its condition.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EventPattern {
     /// An enemy was defeated. `by_controller` narrows the match to
@@ -474,37 +475,6 @@ pub enum EventPattern {
         /// `None` matches any enemy's defeat (e.g. Roland's reaction).
         code: Option<String>,
     },
-    /// An encounter card was revealed (drawn from the encounter deck
-    /// and announced via the engine's on-draw path). `card_type`
-    /// narrows the match: `None` matches any reveal, `Some(card_type)`
-    /// matches only reveals whose card type equals the given value.
-    ///
-    /// Canonical listener shape: a hypothetical Forewarned-style
-    /// cancellation effect would set `card_type: Some(CardType::Treachery)`
-    /// to react only to treachery reveals. No card uses this pattern in
-    /// the Phase-4 scope; the DSL surface lands here, the engine's
-    /// reaction-window machinery (#52) fires it.
-    ///
-    /// **Why `card_type` not `by_controller`:** encounter draws are
-    /// engine-driven, not card-controlled. The `EnemyDefeated`-style
-    /// `by_controller: bool` qualifier doesn't fit. Treachery-vs-enemy
-    /// narrowing is the load-bearing distinction for hypothetical
-    /// listener cards instead.
-    CardRevealed {
-        /// Narrow the match by card type. `None` = any reveal.
-        card_type: Option<CardType>,
-    },
-    /// An enemy spawned at a location (entered play from the
-    /// encounter deck via the on-draw resolution path).
-    ///
-    /// Intentionally bare (no narrowing fields). YAGNI on
-    /// `by_controller` / `card_type` / `location_filter` until a
-    /// real listener forces a shape. Concrete-consumer-first.
-    ///
-    /// First listener will likely be a Phase-7+ "after an enemy
-    /// spawns at your location" reaction; that PR gets to extend
-    /// this variant with whatever narrowing field it needs.
-    EnemySpawned,
     /// An investigator entered the location this ability is printed on
     /// (Forced "after you enter \<location\>" effects: Attic `01113`
     /// takes 1 horror, Cellar `01114` takes 1 damage).
@@ -707,6 +677,91 @@ pub enum EventPattern {
     /// investigator (controller) and scans the *left* location's attachment
     /// zone. Matched only by the forced dispatch path
     /// (`ForcedTriggerPoint::LeftLocation`), never a reaction window.
+    LeftLocation,
+}
+
+impl EventPattern {
+    /// The one triggering condition this pattern listens to. An **exhaustive**
+    /// match: a new pattern cannot compile without naming its condition, and
+    /// the engine's matcher refuses a pattern whose condition differs from the
+    /// timing event's before it reads any of the pattern's narrowing.
+    ///
+    /// The engine's side of the pairing is `TimingEvent::condition`, also
+    /// exhaustive, so neither a new event nor a new pattern can be silently
+    /// left unpaired: the classification discipline of
+    /// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`,
+    /// extended from who resolves a condition to which patterns it matches.
+    pub fn condition(&self) -> TriggeringCondition {
+        match self {
+            EventPattern::EnemyDefeated { .. } => TriggeringCondition::EnemyDefeated,
+            EventPattern::EnteredLocation => TriggeringCondition::EnteredLocation,
+            EventPattern::PhaseStarted { .. } => TriggeringCondition::PhaseStarted,
+            EventPattern::PhaseEnded { .. } => TriggeringCondition::PhaseEnded,
+            EventPattern::ActAdvanced => TriggeringCondition::ActAdvanced,
+            EventPattern::AgendaAdvanced => TriggeringCondition::AgendaAdvanced,
+            EventPattern::RoundEnded => TriggeringCondition::RoundEnded,
+            EventPattern::EndOfTurn => TriggeringCondition::EndOfTurn,
+            EventPattern::SkillTestResolved { .. } => TriggeringCondition::SkillTestResolved,
+            EventPattern::DiscoverClues => TriggeringCondition::DiscoverClues,
+            EventPattern::GameEnd => TriggeringCondition::GameEnd,
+            // "When an enemy attack deals damage to Guard Dog" (01021) is the
+            // card's narrowing of the damage *assignment*, not a condition of
+            // its own (ADR 0009).
+            EventPattern::EnemyAttackDamagedSelf => TriggeringCondition::DamageAssigned,
+            EventPattern::EnemyAttacks => TriggeringCondition::EnemyAttacks,
+            EventPattern::EnteredPlay => TriggeringCondition::EnteredPlay,
+            EventPattern::LeftLocation => TriggeringCondition::LeftLocation,
+        }
+    }
+}
+
+/// A **triggering condition**: the one game occurrence an [`EventPattern`]
+/// listens to and a timing event announces. `glossary/Nested_Sequences.md`:
+/// *"Each time a triggering condition occurs, the following sequence is
+/// followed: …"*. Every condition has all three timing cells, so a condition
+/// is not a cell.
+///
+/// The meeting point of the two exhaustive maps, [`EventPattern::condition`]
+/// here and `TimingEvent::condition` in `game-core`, which is why it lives in
+/// `card-dsl`, below both. Fieldless: what narrows a match within one condition
+/// (a phase, a test outcome, *"you"*) is on the pattern and the event, not here.
+///
+/// A condition can have no pattern yet: `DamagePlaced` is announced by the
+/// engine but no corpus card listens to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TriggeringCondition {
+    /// An investigator entered a location.
+    EnteredLocation,
+    /// A game phase began.
+    PhaseStarted,
+    /// A game phase ended.
+    PhaseEnded,
+    /// An act advanced.
+    ActAdvanced,
+    /// An agenda advanced.
+    AgendaAdvanced,
+    /// An enemy was defeated.
+    EnemyDefeated,
+    /// The round ended.
+    RoundEnded,
+    /// An investigator's turn ended.
+    EndOfTurn,
+    /// The game ended, for everyone or for one eliminated investigator's
+    /// weaknesses (a weakness prints one *"when the game ends"*).
+    GameEnd,
+    /// Damage and/or horror was assigned (step 1 of dealing it, ADR 0009).
+    DamageAssigned,
+    /// Assigned damage and/or horror was placed (step 2, ADR 0009).
+    DamagePlaced,
+    /// A skill test's success or failure was determined (RR ST.6).
+    SkillTestResolved,
+    /// An enemy attacks an investigator.
+    EnemyAttacks,
+    /// An investigator discovers clues.
+    DiscoverClues,
+    /// A card entered play.
+    EnteredPlay,
+    /// An investigator left a location.
     LeftLocation,
 }
 
