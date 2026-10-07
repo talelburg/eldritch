@@ -35,7 +35,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, GameStateBuilder, InvestigatorId, LocationId,
     Phase, Status,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 /// Emergency Cache (01088): non-fast event, `OnPlay` gain 3 resources → provokes.
 const EMERGENCY_CACHE: &str = "01088";
@@ -48,7 +48,7 @@ const MACHETE: &str = "01020";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Resolve a soak-distribution prompt (#44/K5b — an `AoO` against an investigator

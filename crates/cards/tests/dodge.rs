@@ -19,14 +19,14 @@ use game_core::state::{
     Agenda, CardCode, Continuation, Enemy, EnemyId, GameState, GameStateBuilder,
     InvestigationResume, InvestigatorId, LocationId, Phase,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 /// Dodge (01023): Neutral Tactic, Fast, the before-attack cancel reaction.
 const DODGE: &str = "01023";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// An engaged ready enemy at `loc` dealing 2 damage / 1 horror. Both tracks are

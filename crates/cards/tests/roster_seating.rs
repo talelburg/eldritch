@@ -5,7 +5,6 @@
 
 use cards::REGISTRY;
 use game_core::action::RosterEntry;
-use game_core::card_registry;
 use game_core::engine::{self, EngineOutcome};
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, Skills};
 
@@ -14,7 +13,7 @@ use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, Skills};
 /// the futile second `install` call.
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    game_core::test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 #[test]

@@ -48,7 +48,7 @@ use game_core::state::{
     Enemy, EnemyId, GameStateBuilder, Investigator, InvestigatorId, LocationId, Phase, Status,
     UseKind,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 /// First Aid (01019): Guardian Item, `[action] Spend 1 supply: Heal …`. A
 /// non-fight action ability → provokes an `AoO`.
@@ -69,7 +69,7 @@ const DODGE: &str = "01023";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// An engaged ready enemy at `loc` dealing `damage` / 0 horror with `max_health`.

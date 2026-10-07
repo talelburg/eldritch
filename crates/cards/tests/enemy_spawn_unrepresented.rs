@@ -20,7 +20,6 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
-use game_core::card_registry;
 use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, ScriptedResolver};
@@ -34,7 +33,7 @@ const STUDY: &str = "01111";
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// One investigator in the Study, with `top` on top of the encounter deck.

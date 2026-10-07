@@ -16,11 +16,11 @@ use game_core::state::{
     InvestigatorId, LocationId, Zone,
 };
 use game_core::test_support::{self, ScriptedResolver};
-use game_core::{assert_event, assert_event_count, card_registry};
+use game_core::{assert_event, assert_event_count};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Reveal the top encounter card for investigator 1, auto-committing no

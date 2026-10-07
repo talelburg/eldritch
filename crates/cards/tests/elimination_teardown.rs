@@ -40,7 +40,7 @@ use game_core::state::{
     LocationId, Status, Zone,
 };
 use game_core::test_support::{self, ChoiceResolver, ScriptedResolver};
-use game_core::{assert_event, assert_event_count, assert_no_event, card_registry};
+use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// Roland Banks — health 9, sanity 5.
 const ROLAND: &str = "01001";
@@ -51,7 +51,7 @@ const DISSONANT_VOICES: &str = "01165";
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Roland at a location with `damage` already on him, `hand` in hand, and

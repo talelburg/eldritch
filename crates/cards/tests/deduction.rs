@@ -20,13 +20,13 @@ use game_core::state::{
     SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
-use game_core::{assert_event, assert_event_count, assert_no_event, card_registry};
+use game_core::{assert_event, assert_event_count, assert_no_event};
 
 const DEDUCTION: &str = "01039";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Build a state with Deduction in hand, the active investigator at

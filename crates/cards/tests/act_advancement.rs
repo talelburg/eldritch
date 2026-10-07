@@ -11,11 +11,11 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, InputRequest, OptionId, OptionTarget};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Phase};
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 fn act3_state() -> GameState {

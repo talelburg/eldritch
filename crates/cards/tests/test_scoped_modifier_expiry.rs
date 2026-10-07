@@ -25,6 +25,7 @@
 use card_dsl::dsl::{IntExpr, Stat};
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
+use game_core::assert_event_count;
 use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
@@ -32,7 +33,6 @@ use game_core::state::{
     Lifetime, LocationId, RecordedModifier, SkillTestId, Status,
 };
 use game_core::test_support::{self, ScriptedResolver};
-use game_core::{assert_event_count, card_registry};
 
 const GRASPING_HANDS: &str = "01162";
 const GUARD_DOG: &str = "01021";
@@ -46,7 +46,7 @@ const ANOTHER_TEST: SkillTestId = SkillTestId(99);
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Roland at a location with `damage` already on him and `soakers` in play,

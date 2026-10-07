@@ -22,9 +22,7 @@ use game_core::state::{
     GameStateBuilder, InvestigationResume, Investigator, InvestigatorId, Location, LocationId,
     Phase,
 };
-use game_core::{
-    assert_event, assert_event_sequence, assert_no_event, card_registry, test_support,
-};
+use game_core::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
 const BARRICADE: &str = "01038";
 const GHOUL_PRIEST: &str = "01116"; // Humanoid. Monster. Ghoul. Elite. + Hunter
@@ -36,7 +34,7 @@ const ATT_INST: CardInstanceId = CardInstanceId(900);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// A ready, unengaged ghoul (code `code`) at location `at`, with the printed

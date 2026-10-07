@@ -9,7 +9,7 @@ use game_core::state::CardCode;
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    game_core::test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Agenda 01105 ("What's Going On?!") flips to "A Lapse in Time", whose

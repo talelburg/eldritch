@@ -43,7 +43,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 use protocol::ServerMessage;
 use web::skill_test_result;
 use web::store::{self, ClientState};
@@ -120,7 +120,7 @@ struct Pause {
 /// any offered reaction (the only `PickSingle` in flight is Lita's window) and
 /// commits no cards. Returns one entry per pause the client rendered.
 fn fight_ghoul(lita_in_play: bool) -> Vec<Pause> {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
     let state = board(lita_in_play);
 
     let fight = TurnAction::Fight {

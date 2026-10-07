@@ -6,6 +6,7 @@
 //! Own process → installs `cards::REGISTRY`.
 
 use cards::REGISTRY;
+use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -14,7 +15,6 @@ use game_core::state::{
     LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
-use game_core::{assert_event, card_registry};
 
 const VICIOUS_BLOW: &str = "01025";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -22,7 +22,7 @@ const ENEMY: EnemyId = EnemyId(100);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Board: the controller (combat 3) engaged with one enemy (fight 2,

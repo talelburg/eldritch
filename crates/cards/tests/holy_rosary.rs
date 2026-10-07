@@ -16,13 +16,13 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, Phase, SkillKind,
     TokenModifiers,
 };
-use game_core::{assert_event, card_registry, test_support};
+use game_core::{assert_event, test_support};
 
 const HOLY_ROSARY: &str = "01059";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Build a state where the controller has Holy Rosary in hand, is the

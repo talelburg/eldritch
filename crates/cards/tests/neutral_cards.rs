@@ -19,7 +19,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, Phase, SkillKind,
     TokenModifiers,
 };
-use game_core::{assert_event, assert_no_event, card_registry, test_support};
+use game_core::{assert_event, assert_no_event, test_support};
 
 const EMERGENCY_CACHE: &str = "01088";
 const GUTS: &str = "01089";
@@ -27,7 +27,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 #[test]

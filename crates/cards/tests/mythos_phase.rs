@@ -71,7 +71,7 @@ use game_core::state::{
     Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, Continuation, FastWindowKind, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Phase, PhaseStep,
 };
-use game_core::{assert_event, card_registry, test_support};
+use game_core::{assert_event, test_support};
 
 /// Ancient Evils — *"**Revelation** - Place 1 doom on the current agenda. This
 /// effect can cause the current agenda to advance."*
@@ -91,7 +91,7 @@ const DAISY: &str = "01002";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Rise of the Ghouls' printed doom threshold, read from the corpus rather

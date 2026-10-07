@@ -14,6 +14,7 @@
 
 use card_dsl::dsl::HarmKind;
 use cards::REGISTRY;
+use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
@@ -22,7 +23,6 @@ use game_core::state::{
     GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
-use game_core::{assert_event, card_registry};
 
 const MEDICAL_TEXTS: &str = "01035";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -31,7 +31,7 @@ const BOOK_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Board: Medical Texts in play; the active investigator with `intellect`

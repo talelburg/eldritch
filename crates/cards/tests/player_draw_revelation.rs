@@ -7,14 +7,14 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase};
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 const COVER_UP: &str = "01007";
 const HOLY_ROSARY: &str = "01059"; // a non-weakness asset, for the negative case
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Solo investigator at a revealed location, mid-Investigation, 3 actions, no

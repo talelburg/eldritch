@@ -11,7 +11,7 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, Zone,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 const BEAT_COP: &str = "01018"; // Guardian Ally
 const GUARD_DOG: &str = "01021"; // Guardian Ally
@@ -21,7 +21,7 @@ const FLASHLIGHT: &str = "01087"; // single Hand
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// A one-investigator scenario, mid-investigation, with `hand` in hand, plenty

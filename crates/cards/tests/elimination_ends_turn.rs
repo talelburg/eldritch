@@ -35,7 +35,7 @@ use game_core::state::{
     CardCode, Continuation, Enemy, GameState, GameStateBuilder, InvestigationResume,
     InvestigatorId, LocationId, Phase, Status,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 /// Emergency Cache (01088): non-fast event → playing it provokes.
 const EMERGENCY_CACHE: &str = "01088";
@@ -49,7 +49,7 @@ const ELSEWHERE: LocationId = LocationId(102);
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// An enemy engaged with `inv`, ready, hitting for 3 damage.

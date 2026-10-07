@@ -24,7 +24,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
     GameStateBuilder, InvestigationResume, InvestigatorId, LocationId, Phase, UseKind,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
 use protocol::{ClientMessage, ServerMessage};
@@ -95,7 +95,7 @@ impl Harness {
         // The real corpus, not the synthetic registry: this flow draws a real
         // encounter card and reads a real investigator card's capacity. Its own
         // binary, per the `tests/location_card.rs` first-wins-registry precedent.
-        let _ = card_registry::install(REGISTRY);
+        test_support::install_registry_with_test_cards(REGISTRY);
         let store = RwSignal::new(ClientState::default());
         let (tx, rx) = mpsc::unbounded::<ClientMessage>();
         let tx_for_mount: OutboundTx = tx;

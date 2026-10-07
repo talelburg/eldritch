@@ -40,7 +40,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameStateBuilder, InvestigatorId,
     LocationId, Phase,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.
 const DODGE: &str = "01023";
@@ -50,7 +50,7 @@ const GUARD_DOG: &str = "01021";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// The soak-distribution `PickSingle` `OptionId` for the soaker asset (#44/K5b —

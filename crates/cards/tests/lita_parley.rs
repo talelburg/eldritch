@@ -51,6 +51,7 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
+use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{ApplyResult, OptionId};
 use game_core::event::Event;
@@ -59,7 +60,6 @@ use game_core::state::{
     GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, Zone,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
-use game_core::{assert_event, card_registry};
 
 /// Lita Chantler — the `Ally` the Parlor grants to.
 const LITA: &str = "01117";
@@ -82,7 +82,7 @@ const COP_INST: CardInstanceId = CardInstanceId(51);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// The address the Parley lands at: the Parlor's ability 1 (its grant), first

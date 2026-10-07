@@ -26,7 +26,7 @@ use game_core::state::{
     TokenModifiers, Zone,
 };
 use game_core::test_support::{self, ChoiceResolver};
-use game_core::{assert_event, assert_event_count, card_registry};
+use game_core::{assert_event, assert_event_count};
 
 /// Working a Hunch — `01037`. "Fast. Play only during your turn. / Discover 1
 /// clue at your location." Two intellect icons; costs 2 resources.
@@ -37,7 +37,7 @@ const DEDUCTION: &str = "01039";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Investigation-phase board with one investigator at a 3-clue, shroud-2

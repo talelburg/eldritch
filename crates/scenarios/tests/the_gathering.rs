@@ -12,13 +12,13 @@ use game_core::state::{
     CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
     TimingMode,
 };
-use game_core::{card_registry, scenario_registry, test_support};
+use game_core::{scenario_registry, test_support};
 use scenarios::the_gathering;
 
 #[ctor::ctor(unsafe)]
 fn install_registries() {
     let _ = scenario_registry::install(scenarios::REGISTRY);
-    let _ = card_registry::install(cards::REGISTRY);
+    test_support::install_registry_with_test_cards(cards::REGISTRY);
 }
 
 /// Apply one action, asserting it is not `Rejected`.

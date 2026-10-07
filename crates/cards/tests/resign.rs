@@ -43,7 +43,7 @@ use game_core::state::{
     EliminationCause, GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId,
     Phase, Status,
 };
-use game_core::{assert_event, card_registry, test_support};
+use game_core::{assert_event, test_support};
 
 /// The Parlor.
 const PARLOR_CODE: &str = "01115";
@@ -67,7 +67,7 @@ const RESIGN: u8 = 0;
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// The resigner stands at the Parlor holding 2 clues and 3 resources, with a

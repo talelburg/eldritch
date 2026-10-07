@@ -44,7 +44,7 @@ use game_core::action::{Action, EngineRecord};
 use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId, Phase};
-use game_core::{assert_event, card_registry, test_support};
+use game_core::{assert_event, test_support};
 
 /// Ancient Evils — *"**Revelation** - Place 1 doom on the current agenda."*
 const ANCIENT_EVILS: &str = "01166";
@@ -57,7 +57,7 @@ const ROLAND: &str = "01001";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Rise of the Ghouls' printed doom threshold, read from the corpus rather than

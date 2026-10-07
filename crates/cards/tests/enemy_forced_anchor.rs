@@ -25,11 +25,11 @@ use card_dsl::dsl::EventTiming;
 use cards::REGISTRY;
 use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::state::{Agenda, CardCode, EnemyId, GameStateBuilder, InvestigatorId};
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 #[test]

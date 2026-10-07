@@ -9,7 +9,6 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
-use game_core::card_registry;
 use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
@@ -19,7 +18,7 @@ use game_core::test_support::{self, ScriptedResolver};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Investigator 1 at a location, controlling `soaker` (instance 1), with

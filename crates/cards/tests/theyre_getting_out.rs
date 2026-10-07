@@ -26,11 +26,11 @@ use game_core::state::{
     GameStateBuilder, InvestigationResume, InvestigatorId, Location, LocationId, Phase, Status,
     TimingMode, UpkeepResume,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 fn ghoul(id: u32, at: LocationId) -> Enemy {

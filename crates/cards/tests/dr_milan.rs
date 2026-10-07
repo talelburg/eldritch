@@ -12,7 +12,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Phase, TokenModifiers,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 const DR_MILAN: &str = "01033";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -20,7 +20,7 @@ const LOC: LocationId = LocationId(10);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Board: the investigator at a 1-clue location of shroud 2 with **base

@@ -6,7 +6,6 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord, InputResponse, PlayerAction};
-use game_core::card_registry;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
@@ -20,7 +19,7 @@ use game_core::test_support::{self, ScriptedResolver, TestSession};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Reveal the top encounter card for investigator 1, committing no cards

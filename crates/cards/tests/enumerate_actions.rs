@@ -13,7 +13,7 @@ use game_core::state::{
     ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigationResume,
     InvestigatorId, LocationId, Phase, UseKind,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 const HOLY_ROSARY: &str = "01059"; // Mystic asset, cost 2, constant +1 willpower.
 const FLASHLIGHT: &str = "01087"; // Asset with an activated ability (uses: Supplies).
@@ -22,7 +22,7 @@ const LOC: LocationId = LocationId(10);
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// A single-investigator open-turn state (`InvestigatorTurn` frame on top of the

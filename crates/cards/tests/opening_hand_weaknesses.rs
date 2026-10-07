@@ -51,7 +51,7 @@ use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, Phase};
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 /// Cover Up — the real Core Set weakness this file sets aside.
 const COVER_UP: &str = "01007";
@@ -69,7 +69,7 @@ fn filler(n: u8) -> CardCode {
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 const INV: InvestigatorId = InvestigatorId(1);

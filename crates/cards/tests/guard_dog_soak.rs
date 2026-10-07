@@ -40,7 +40,7 @@ use game_core::state::{
     GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId, Phase, Status,
     Zone,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 /// Guard Dog (01021): Guardian Ally, health 3 / sanity 1, with the
 /// damage-retaliate reaction.
@@ -53,7 +53,7 @@ const BULLETPROOF_VEST: &str = "01094";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// An engaged enemy at the investigator's location dealing `attack_damage`

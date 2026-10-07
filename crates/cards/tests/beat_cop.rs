@@ -11,7 +11,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Phase, Zone,
 };
-use game_core::{assert_event, assert_no_event, card_registry, test_support};
+use game_core::{assert_event, assert_no_event, test_support};
 
 const BEAT_COP: &str = "01018";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -21,7 +21,7 @@ const COP_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Board: Beat Cop in play, the active investigator at `LOC`, and (when

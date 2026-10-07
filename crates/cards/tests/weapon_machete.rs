@@ -16,6 +16,7 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
@@ -24,7 +25,6 @@ use game_core::state::{
     EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
-use game_core::{assert_event, card_registry};
 
 const MACHETE: &str = "01020";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -33,7 +33,7 @@ const MACHETE_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Board with Machete in play, `enemy_count` enemies engaged with the actor.

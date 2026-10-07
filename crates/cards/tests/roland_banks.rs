@@ -24,7 +24,7 @@ use game_core::state::{
     GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
-use game_core::{assert_event, assert_no_event, card_registry};
+use game_core::{assert_event, assert_no_event};
 
 /// `ArkhamDB` code for original-Core Roland Banks.
 const ROLAND: &str = "01001";
@@ -36,7 +36,7 @@ const ROLAND_INSTANCE: u32 = 1;
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Build a Fight-ready scenario with Roland engaged with an enemy at

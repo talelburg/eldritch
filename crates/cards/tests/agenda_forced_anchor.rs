@@ -14,11 +14,11 @@ use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::{self, EngineOutcome, OptionId, OptionTarget, PromptNature};
 use game_core::state::{Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 fn state_on_agenda_01105() -> GameState {

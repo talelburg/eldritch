@@ -10,7 +10,7 @@ use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{
     Act, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, CardCode, Continuation, GameStateBuilder,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
 use protocol::ClientMessage;
@@ -37,7 +37,7 @@ fn section_text() -> String {
 
 #[wasm_bindgen_test]
 async fn act_and_agenda_render_name_text_and_thresholds() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
     // Act 01109 "The Barrier" (Objective text); Agenda 01107 "They're Getting
     // Out!" (Forced text).
     let mut state = GameStateBuilder::new().build();
@@ -84,7 +84,7 @@ fn act_card() -> Element {
 /// Mount `act_agenda_view` (act 01109) with a store carrying `outcome`, a derived
 /// `PendingOptions`, an `OutboundTx`, and a capturing channel.
 async fn mount_with_prompt(outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
     let mut state = GameStateBuilder::new().build();
     state.act_deck = vec![Act {
         code: CardCode::new("01109"),
@@ -215,7 +215,7 @@ async fn agenda_card_inert_without_an_agenda_anchored_option() {
 /// Mount `act_agenda_view` with the given deck's leaving card mid-advance at
 /// `step`. Pushes an `AdvanceReverse` frame as the engine would (#558).
 async fn mount_advancing(deck: AdvanceDeck, code: &str, step: AdvanceStep) {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
     let mut state = GameStateBuilder::new().build();
     match deck {
         AdvanceDeck::Agenda => {

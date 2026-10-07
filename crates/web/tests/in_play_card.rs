@@ -8,7 +8,7 @@ use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{CardCode, CardInPlay, CardInstanceId};
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
 use protocol::ClientMessage;
@@ -33,7 +33,7 @@ fn last_slot() -> Element {
 /// Mount `InPlayCardView` (Machete 01020, instance 3) with a store carrying
 /// `outcome`, a derived `PendingOptions`, and a capturing channel.
 async fn mount(outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
     let store = RwSignal::new(ClientState::default());
     store.update(|s| s.outcome = Some(outcome));
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();

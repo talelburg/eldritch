@@ -67,7 +67,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId, Phase,
 };
-use game_core::{assert_event_sequence, card_registry, test_support};
+use game_core::{assert_event_sequence, test_support};
 
 /// Roland Banks (01001) — the example's investigator, and the source of the
 /// nested sequence that hangs off the Goat Spawn's defeat.
@@ -80,7 +80,7 @@ const AUTOMATIC_45: &str = "01016";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// The Goat Spawn's stand-in: engaged, ready, **2 damage already on it** and 3
