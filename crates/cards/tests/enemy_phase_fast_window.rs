@@ -64,15 +64,13 @@ fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// A ready enemy engaged with `inv` at `loc`, dealing 1 damage. `max_health` is
-/// the caller's to choose: 2 leaves it alive through a single point of Beat Cop
-/// damage, 1 lets the Fast play defeat it before it ever attacks.
-fn engaged_attacker(inv: InvestigatorId, loc: LocationId, max_health: u8) -> Enemy {
+/// A ready enemy dealing 1 damage. `max_health` is the caller's to choose: 2
+/// leaves it alive through a single point of Beat Cop damage, 1 lets the Fast
+/// play defeat it before it ever attacks.
+fn ready_attacker(max_health: u8) -> Enemy {
     let mut e = test_support::test_enemy(7, "Attacker");
     e.max_health = max_health;
     e.attack_damage = 1;
-    e.current_location = Some(loc);
-    e.engaged_with = Some(inv);
     e
 }
 
@@ -100,7 +98,7 @@ fn board(beat_cop: bool, enemy_health: u8) -> (GameState, InvestigatorId, EnemyI
         .with_investigator(inv)
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
-        .with_enemy(engaged_attacker(inv_id, loc_id, enemy_health))
+        .with_enemy_engaged(ready_attacker(enemy_health), inv_id)
         // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
         // InvestigationPhase anchor at investigation_phase_end.
         .with_phase_anchor(InvestigationPhaseFrame {

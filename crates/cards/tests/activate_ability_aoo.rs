@@ -72,20 +72,13 @@ fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// An engaged ready enemy at `loc` dealing `damage` / 0 horror with `max_health`.
-fn engaged_attacker(
-    id: u32,
-    inv: InvestigatorId,
-    loc: LocationId,
-    damage: u8,
-    max_health: u8,
-) -> Enemy {
+/// A ready enemy dealing `damage` / 0 horror, with `max_health`. Engage it
+/// with `with_enemy_engaged`, which places it at the investigator's location.
+fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
     let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
     e.attack_damage = damage;
     e.attack_horror = 0;
     e.max_health = max_health;
-    e.current_location = Some(loc);
-    e.engaged_with = Some(inv);
     e
 }
 
@@ -136,7 +129,7 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
     investigator.current_location = Some(loc);
     first_aid_and_guard_dog(&mut investigator, dog, kit);
 
-    let attacker = engaged_attacker(7, inv_id, loc, 2, 5);
+    let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -145,7 +138,7 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     // Activate First Aid (ability 0). Action-cost, non-fight → provokes an AoO
@@ -234,7 +227,7 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
         CardInPlay::enter_play(CardCode::new(MACHETE), blade),
     ];
 
-    let attacker = engaged_attacker(7, inv_id, loc, 2, 5);
+    let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -243,7 +236,7 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, inv_id)
         // The Fight starts a Combat skill test, which needs a non-empty bag.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
@@ -303,7 +296,7 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
     investigator.current_location = Some(loc);
     investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(BEAT_COP), cop)];
 
-    let attacker = engaged_attacker(7, inv_id, loc, 2, 5);
+    let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -312,7 +305,7 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     // Beat Cop ability 1 is the `[fast]` deal-1-damage (ability 0 is its
@@ -379,7 +372,7 @@ fn activating_an_investigate_designated_ability_while_engaged_provokes_an_aoo() 
     flashlight.uses.insert(UseKind::Supplies, 3);
     investigator.cards_in_play = vec![flashlight];
 
-    let attacker = engaged_attacker(7, inv_id, loc, 2, 5);
+    let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -388,7 +381,7 @@ fn activating_an_investigate_designated_ability_while_engaged_provokes_an_aoo() 
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, inv_id)
         // Only so the investigation has a bag to draw from once the AoO has
         // resolved and the parked effect runs.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -453,7 +446,7 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
     first_aid.uses.insert(UseKind::Supplies, 3);
     investigator.cards_in_play = vec![first_aid];
 
-    let attacker = engaged_attacker(7, inv_id, loc, 2, 5);
+    let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -462,7 +455,7 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     // Activate First Aid → AoO → Dodge is in hand, so the BeforeEnemyAttack
@@ -542,7 +535,7 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
 
     // A lethal AoO and no soaker / no Dodge → the actor is defeated before the
     // heal effect can resume.
-    let attacker = engaged_attacker(7, inv_id, loc, 50, 5);
+    let attacker = ready_attacker(7, 50, 5);
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -551,7 +544,7 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     let result = test_support::take_turn_action(

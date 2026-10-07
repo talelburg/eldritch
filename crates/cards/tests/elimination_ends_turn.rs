@@ -49,14 +49,12 @@ fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// An enemy engaged with `inv`, ready, hitting for 3 damage.
-fn engaged_attacker(inv: InvestigatorId) -> Enemy {
+/// A ready enemy hitting for 3 damage.
+fn ready_attacker() -> Enemy {
     let mut e = test_support::test_enemy(7, "Attacker");
     e.attack_damage = 3;
     e.attack_horror = 0;
     e.max_health = 5;
-    e.current_location = Some(HERE);
-    e.engaged_with = Some(inv);
     e
 }
 
@@ -79,7 +77,7 @@ fn board(turn_order: &[InvestigatorId]) -> GameState {
             resume: InvestigationResume::TurnBegins,
         })
         .with_investigator_turn(DYING)
-        .with_enemy(engaged_attacker(DYING))
+        .with_enemy_engaged(ready_attacker(), DYING)
         .build();
 
     if turn_order.contains(&SURVIVOR) {

@@ -77,20 +77,13 @@ fn soak_onto_asset(mut result: ApplyResult) -> ApplyResult {
     result
 }
 
-/// An engaged ready enemy at `loc` dealing `damage` / 0 horror with `max_health`.
-fn engaged_attacker(
-    id: u32,
-    inv: InvestigatorId,
-    loc: LocationId,
-    damage: u8,
-    max_health: u8,
-) -> Enemy {
+/// A ready enemy dealing `damage` / 0 horror, with `max_health`. Engage it
+/// with `with_enemy_engaged`, which places it at the investigator's location.
+fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
     let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
     e.attack_damage = damage;
     e.attack_horror = 0;
     e.max_health = max_health;
-    e.current_location = Some(loc);
-    e.engaged_with = Some(inv);
     e
 }
 
@@ -114,7 +107,7 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
     investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog)];
     let resources_before = investigator.resources;
 
-    let attacker = engaged_attacker(7, inv_id, loc, 2, 5);
+    let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -123,7 +116,7 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     let result = test_support::take_turn_action(
@@ -282,7 +275,7 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
     let mut location = test_support::test_location(101, "Study");
     location.clues = 1;
 
-    let attacker = engaged_attacker(7, inv_id, loc, 2, 5);
+    let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -291,7 +284,7 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     let result = test_support::take_turn_action(
@@ -353,7 +346,7 @@ fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
 
     // Lethal AoO, no soaker / no Dodge → the actor is defeated before the
     // "gain 3 resources" effect can resolve.
-    let attacker = engaged_attacker(7, inv_id, loc, 50, 5);
+    let attacker = ready_attacker(7, 50, 5);
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -362,7 +355,7 @@ fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     let result = test_support::take_turn_action(
@@ -427,7 +420,7 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
     investigator.hand = vec![CardCode::new(MACHETE)];
     investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog)];
 
-    let attacker = engaged_attacker(7, inv_id, loc, 2, 5);
+    let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -436,7 +429,7 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     // Step 1: play Machete → AoO soaks onto Guard Dog → soak window; Machete is
@@ -508,7 +501,7 @@ fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
     investigator.hand = vec![CardCode::new(MACHETE)];
 
     // Lethal AoO, no soaker / no Dodge → defeated before Machete enters play.
-    let attacker = engaged_attacker(7, inv_id, loc, 50, 5);
+    let attacker = ready_attacker(7, 50, 5);
 
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -517,7 +510,7 @@ fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     let result = test_support::take_turn_action(
