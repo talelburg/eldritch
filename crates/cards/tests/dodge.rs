@@ -13,7 +13,7 @@
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, OptionId, TimingEvent};
+use game_core::engine::{self, EngineOutcome, OptionId, OptionTarget, TimingEvent};
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
@@ -316,7 +316,7 @@ fn declining_the_before_attack_window_lets_the_attack_land() {
 const DISSONANT_VOICES: &str = "01165";
 
 /// Put Dissonant Voices into `inv_id`'s threat area.
-fn ban_plays(state: &mut GameState, inv_id: InvestigatorId) {
+fn put_dissonant_voices_in_threat_area(state: &mut GameState, inv_id: InvestigatorId) {
     state
         .investigators
         .get_mut(&inv_id)
@@ -328,6 +328,24 @@ fn ban_plays(state: &mut GameState, inv_id: InvestigatorId) {
         ));
 }
 
+/// The anchor of `holder`'s Dodge in a reaction window's prompt.
+fn dodge_in_hand_of(holder: InvestigatorId) -> OptionTarget {
+    OptionTarget::HandCardByCode {
+        investigator: holder,
+        code: CardCode::new(DODGE),
+    }
+}
+
+/// The anchors of the options the session's prompt offers.
+fn offered(session: &TestSession) -> Vec<Option<OptionTarget>> {
+    session
+        .prompt()
+        .options
+        .iter()
+        .map(|option| option.target.clone())
+        .collect()
+}
+
 /// #917, at the offer. A Fast event is still *played* — `glossary/Fast.md`:
 /// *"A fast card does not cost an action to be played and is not played using
 /// the "Play" action."* — so Dissonant Voices' ban on playing events keeps
@@ -335,17 +353,17 @@ fn ban_plays(state: &mut GameState, inv_id: InvestigatorId) {
 #[test]
 fn dissonant_voices_keeps_dodge_out_of_the_attack_window() {
     let (mut state, inv_id, _) = dodge_state();
-    ban_plays(&mut state, inv_id);
+    put_dissonant_voices_in_threat_area(&mut state, inv_id);
 
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
+    let session = TestSession::new(state).take(&TurnAction::EndTurn);
 
     assert_event!(
-        result.events,
+        session.events(),
         Event::DamageTaken { investigator, amount: 2 } if *investigator == inv_id
     );
-    assert_no_event!(result.events, Event::CardPlayed { .. });
+    assert_no_event!(session.events(), Event::CardPlayed { .. });
     assert!(
-        result.state.investigators[&inv_id]
+        session.state().investigators[&inv_id]
             .hand
             .contains(&CardCode::new(DODGE)),
         "Dodge was never offered, so it stays in hand",
@@ -359,34 +377,29 @@ fn dissonant_voices_keeps_dodge_out_of_the_attack_window() {
 #[test]
 fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
     let (state, inv_id, _) = dodge_state();
-    let offered = test_support::take_turn_action(state, &TurnAction::EndTurn);
-    assert!(
-        matches!(offered.outcome, EngineOutcome::AwaitingInput { .. }),
-        "without the ban the window offers Dodge: {:?}",
-        offered.outcome,
+    let offered_dodge = TestSession::new(state).take(&TurnAction::EndTurn);
+    assert_eq!(
+        offered(&offered_dodge),
+        vec![Some(dodge_in_hand_of(inv_id))],
+        "without the ban the window offers Dodge",
     );
-    let mut state = offered.state;
-    ban_plays(&mut state, inv_id);
 
-    let pick = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
+    let refused = offered_dodge
+        .edit_state(|state| put_dissonant_voices_in_threat_area(state, inv_id))
+        .pick(dodge_in_hand_of(inv_id));
+    let reason = refused.expect_rejected();
+    assert!(
+        reason.contains("can no longer be initiated"),
+        "Dodge can no longer be played, so picking it is refused: {reason}",
     );
     assert!(
-        matches!(pick.outcome, EngineOutcome::Rejected { .. }),
-        "Dodge can no longer be played, so picking it is refused: {:?}",
-        pick.outcome,
-    );
-    assert!(
-        pick.state.investigators[&inv_id]
+        refused.state().investigators[&inv_id]
             .hand
             .contains(&CardCode::new(DODGE)),
         "the refused pick left Dodge in hand",
     );
 
-    let resurfaced = TestSession::new(pick.state);
+    let resurfaced = TestSession::new(refused.state().clone());
     let events = resurfaced.events();
     assert_event!(
         events,
@@ -428,16 +441,7 @@ fn dodge_lapses_as_out_of_scope_once_its_holder_leaves_the_attacked_location() {
         enemy: EnemyId(7),
         investigator: attacked,
     });
-    let offered: Vec<_> = opened
-        .state()
-        .top_window()
-        .and_then(|w| w.pending_candidates())
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|c| (c.code, c.controller))
-        .collect();
-    assert_eq!(offered, vec![(CardCode::new(DODGE), dodger)]);
+    assert_eq!(offered(&opened), vec![Some(dodge_in_hand_of(dodger))]);
 
     let mut state = opened.state().clone();
     state

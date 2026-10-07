@@ -23,7 +23,7 @@ use game_core::state::{
     GameState, GameStateBuilder, InvestigatorId, Lifetime, LocationId, Phase, RecordedModifierKind,
     SkillKind, Status, TokenModifiers,
 };
-use game_core::test_support::{self, MockRegistry, TakeOneFastPlay};
+use game_core::test_support::{self, MockRegistry, TakeOneFastPlay, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// Mock card code: `[fast] Spend 1 resource: gain 1 resource.` —
@@ -495,17 +495,18 @@ fn a_once_per_round_activated_ability_is_offered_once_per_round() {
         "an unused limited ability is offered",
     );
 
-    let after_first = test_support::take_turn_action(state, &action);
-    assert_eq!(after_first.state.investigators[&id].resources, 5 + 1);
+    let after_first = TestSession::new(state).take(&action);
+    assert_eq!(after_first.state().investigators[&id].resources, 5 + 1);
     assert!(
-        !enumerate::legal_actions(&after_first.state).contains(&action),
+        !enumerate::legal_actions(after_first.state()).contains(&action),
         "a once-per-round ability used this round is not offered again",
     );
-    let refused = test_support::dispatch_turn_action_unchecked(after_first.state.clone(), &action);
+    let refused =
+        test_support::dispatch_turn_action_unchecked(after_first.state().clone(), &action);
     assert!(matches!(refused.outcome, EngineOutcome::Rejected { .. }));
     assert!(refused.events.is_empty());
 
-    let mut next_round = after_first.state;
+    let mut next_round = after_first.state().clone();
     next_round.round += 1;
     assert!(
         enumerate::legal_actions(&next_round).contains(&action),
@@ -537,10 +538,10 @@ fn a_limited_ability_on_a_card_the_activator_does_not_control_counts_its_use() {
         address: AbilityAddress::Printed(0),
     };
 
-    let after_first = test_support::take_turn_action(state, &action);
-    assert_eq!(after_first.state.investigators[&id].resources, 5 + 1);
+    let after_first = TestSession::new(state).take(&action);
+    assert_eq!(after_first.state().investigators[&id].resources, 5 + 1);
     assert!(
-        !enumerate::legal_actions(&after_first.state).contains(&action),
+        !enumerate::legal_actions(after_first.state()).contains(&action),
         "the use is counted against the attached card",
     );
 }

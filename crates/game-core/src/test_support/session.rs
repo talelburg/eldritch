@@ -207,6 +207,22 @@ impl TestSession {
         })
     }
 
+    /// Change the resting state in place **without** settling, so the prompt
+    /// the session rests at is not re-asked: it is now stale, like a prompt a
+    /// client still holds after the board changed under it. The next step
+    /// answers that prompt against the edited state.
+    ///
+    /// For a check the engine makes when an answer resolves rather than when
+    /// the option was offered — a play-ban that arrives between a reaction
+    /// window's offer and the pick (#917). A change that play can make is made
+    /// by playing; this is for the change no step can make while a prompt is
+    /// open. To have the prompt re-asked against the edit instead, settle the
+    /// edited state with [`new`](Self::new).
+    pub fn edit_state(mut self, edit: impl FnOnce(&mut GameState)) -> Self {
+        edit(&mut self.state);
+        self
+    }
+
     /// Apply one framework entry point `dispatch` through the production
     /// `apply` scaffolding, then drive on and drain.
     fn framework_step(self, dispatch: impl FnOnce(&mut Cx) -> EngineOutcome) -> Self {
