@@ -36,7 +36,7 @@ use crate::event::{Event, LapseReason};
 use crate::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, Continuation,
     DamageSource, FastActorScope, FastWindowFrame, FastWindowKind, GameState, InvestigatorId,
-    Phase, PlayFromHandFrame, ResolutionCandidate, Status, TimingMode, TimingPointWindowFrame,
+    Phase, PlayFromHandFrame, ResolutionCandidate, TimingMode, TimingPointWindowFrame,
 };
 
 /// Push a reaction window frame for `candidates` at `bucket`. The shared push
@@ -1700,31 +1700,6 @@ fn check_play_action_available(
     Ok(())
 }
 
-/// Classify a printed play cost into a payable number of resources, or the
-/// reason it has none. The three shapes and why they differ are spelled out on
-/// [`initiation::play_cost_payable`]; this is the arm split on its own so it
-/// can be tested without a registry.
-pub(super) fn payable_play_cost(
-    play_cost: Option<i8>,
-    code: &CardCode,
-) -> Result<u8, Cow<'static, str>> {
-    match play_cost {
-        // A negative cost is ArkhamDB's X sentinel, never a real price;
-        // `u8::try_from` would silently make it free, so it rejects here.
-        Some(cost) => u8::try_from(cost).map_err(|_| {
-            Cow::from(format!(
-                "PlayCard: {code} has an X cost, which is not yet modeled \
-                 (TODO(#577): X needs a player-chosen amount)."
-            ))
-        }),
-        None => Err(format!(
-            "PlayCard: {code} has a printed cost of \"–\", so it has no cost \
-             that can be paid and cannot be played."
-        )
-        .into()),
-    }
-}
-
 /// Reject an activation that cannot get what it needs, at the check layer —
 /// **before any cost is paid**, so the rejection is honest for
 /// `any_fast_play_eligible` and the evaluator can treat a missing target as an
@@ -1944,17 +1919,12 @@ pub(crate) fn check_activate_ability(
     source: AbilitySource,
     address: &AbilityAddress,
 ) -> Result<ActivateCheckResult, Cow<'static, str>> {
-    let Some(inv) = state.investigators.get(&investigator) else {
+    // Whether the investigator is Active is the gate's question, asked last;
+    // this lookup only lets the action-economy check below read their actions.
+    if !state.investigators.contains_key(&investigator) {
         return Err(
             format!("ActivateAbility: investigator {investigator:?} is not in state").into(),
         );
-    };
-    if inv.status != Status::Active {
-        return Err(format!(
-            "ActivateAbility: {investigator:?} is not Active (status {:?})",
-            inv.status,
-        )
-        .into());
     }
     // Which sources exist is the reachability predicate's answer, and it is the
     // same one the turn-menu enumerator lists from (#707). Addressed by
@@ -2020,7 +1990,6 @@ pub(crate) fn check_activate_ability(
         designated_action_surcharge(state, investigator, action_cost, designator.as_ref());
     let action_cost = action_cost.saturating_add(surcharge);
 
-    // Re-borrow inv after state borrows above.
     let inv = state.investigators.get(&investigator).expect("checked");
 
     // Action-economy check.
@@ -2038,16 +2007,16 @@ pub(crate) fn check_activate_ability(
     // check's (`initiation::performs_an_action`).
     check_activation_target_available(state, investigator, designator.as_ref(), &effect)?;
     let candidate = ResolutionCandidate::new(
-        source_code.clone(),
+        source_code,
         investigator,
         address.clone(),
         CandidateSource::Ability(source),
     );
     initiation::check(state, &candidate, InitiationKind::Activated)
-        .map_err(|refusal| activation_refusal(refusal, &source_code))?;
+        .map_err(|refusal| activation_refusal(refusal, &candidate.code))?;
 
     Ok(ActivateCheckResult {
-        source_code,
+        candidate,
         action_cost,
         surcharge_sources,
         designator,

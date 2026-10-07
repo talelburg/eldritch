@@ -19,8 +19,9 @@ use crate::engine::outcome::{
 };
 use crate::engine::{enumerate, evaluator, Cx};
 use crate::state::{
-    ActionResolutionFrame, ActionResume, CardCode, CardInstanceId, Continuation, FastWindowFrame,
-    FrameActivity, GameState, InvestigatorTurnFrame, ScenarioEndFrame, ScenarioEndStep, Status,
+    ActionResolutionFrame, ActionResume, CardInstanceId, Continuation, FastWindowFrame,
+    FrameActivity, GameState, InvestigatorTurnFrame, ResolutionCandidate, ScenarioEndFrame,
+    ScenarioEndStep, Status,
 };
 pub(crate) use control::take_control;
 
@@ -50,8 +51,8 @@ mod cursor;
 pub(super) mod elimination;
 pub(super) mod encounter;
 pub(super) mod forced_triggers;
-// The initiation gate (ADR 0017): every play and ability path asks it whether.
 pub(crate) mod hunters;
+// The initiation gate (ADR 0017): every play and ability path asks it whether.
 mod initiation;
 pub(crate) mod movement;
 pub(super) mod phases;
@@ -574,8 +575,11 @@ pub(crate) struct PlayCheckResult {
 #[derive(Debug)]
 #[allow(dead_code)] // Fields consumed by any_fast_play_eligible in T05.
 pub(super) struct ActivateCheckResult {
-    /// The card code of the source card.
-    pub source_code: CardCode,
+    /// The activation as the initiation gate checked it — the source card's
+    /// code, the activating investigator, the ability's address and its source.
+    /// What `initiation::record_initiation` counts the use against, so the
+    /// handler records the very candidate the gate approved.
+    pub candidate: ResolutionCandidate,
     /// Action points this activation costs: the ability's
     /// `Trigger::Activated` cost **plus** any `ExtraActionCost` surcharge on
     /// the action class its designator names (#754). What the affordability

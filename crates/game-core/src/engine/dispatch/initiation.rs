@@ -28,12 +28,12 @@ use card_dsl::card_data::{CardMetadata, CardType};
 use card_dsl::dsl::{Ability, ActionDesignator, Trigger, UsageLimit};
 
 use crate::card_registry::{self, CardRegistry};
-use crate::engine::dispatch::{abilities, reaction_windows};
+use crate::engine::dispatch::abilities;
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::{abilities_in_effect, ability_source};
 use crate::state::{
-    AbilitySource, CandidateSource, CardCode, GameState, InvestigatorId, ResolutionCandidate,
-    Status,
+    AbilitySource, CandidateSource, CardCode, GameState, Investigator, InvestigatorId,
+    ResolutionCandidate, Status,
 };
 
 /// Which path is asking. The kind decides which of the gate's checks apply
@@ -165,6 +165,24 @@ const fn applies(check: Check, kind: InitiationKind) -> bool {
     }
 }
 
+// Every kind the cost check applies to is one the status check applies to, so
+// the cost check always reads a seated investigator ([`confirm`]). Asserted at
+// compile time: a table edit that breaks it fails the build rather than
+// reaching `confirm`'s `unreachable!`.
+const _: () = {
+    let kinds = [
+        InitiationKind::Forced,
+        InitiationKind::Reaction,
+        InitiationKind::Activated,
+        InitiationKind::Play,
+    ];
+    let mut i = 0;
+    while i < kinds.len() {
+        assert!(!applies(Check::Cost, kinds[i]) || applies(Check::Status, kinds[i]));
+        i += 1;
+    }
+};
+
 /// Whether `candidate` may initiate as `kind` — Appendix I's two preliminary
 /// confirmations, restricted to the checks [`applies`] gives `kind`.
 ///
@@ -207,25 +225,44 @@ pub(super) fn check_with(
     candidate: &ResolutionCandidate,
     kind: InitiationKind,
 ) -> Result<(), Refusal> {
-    let controller = candidate.controller;
-    status_ok(state, controller, kind)?;
-    let ability = abilities_in_effect::resolve_with(
+    confirm(
         state,
         reg,
-        candidate.source,
+        candidate.controller,
         &candidate.code,
-        &candidate.address,
+        kind,
+        || {
+            let ability = abilities_in_effect::resolve_with(
+                state,
+                reg,
+                candidate.source,
+                &candidate.code,
+                &candidate.address,
+            )
+            .ok_or(Refusal::SideNotInEffect)?;
+            restrictions_met(
+                state,
+                reg,
+                &ability,
+                candidate.source,
+                candidate.controller,
+                kind,
+            )?;
+            if applies(Check::UsageLimit, kind)
+                && usage_exhausted(state, candidate, ability.usage_limit)
+            {
+                return Err(Refusal::UsageLimitReached);
+            }
+            Ok(ability)
+        },
+        |inv, ability| {
+            if kind == InitiationKind::Play {
+                play_cost_payable(reg, inv, &candidate.code)
+            } else {
+                ability_cost_payable(state, inv, ability, candidate.source)
+            }
+        },
     )
-    .ok_or(Refusal::SideNotInEffect)?;
-    restrictions_met(state, reg, &ability, candidate.source, controller, kind)?;
-    if applies(Check::UsageLimit, kind) && usage_exhausted(state, candidate, ability.usage_limit) {
-        return Err(Refusal::UsageLimitReached);
-    }
-    play_not_banned(state, reg, controller, &candidate.code, kind)?;
-    if applies(Check::Cost, kind) {
-        cost_payable(state, reg, &ability, candidate, kind).map_err(Refusal::CostUnpayable)?;
-    }
-    Ok(())
 }
 
 /// Whether `controller` may play `code` from hand — [`check`] as
@@ -264,48 +301,86 @@ pub(super) fn check_play_with(
     code: &CardCode,
 ) -> Result<(), Refusal> {
     let kind = InitiationKind::Play;
-    status_ok(state, controller, kind)?;
-    let card_type = (reg.metadata_for)(code)
-        .map(CardMetadata::card_type)
-        .ok_or(Refusal::SideNotInEffect)?;
-    if card_type == CardType::Event {
-        // The first refusal when no `OnPlay` effect passes; `NoStateChange`
-        // when the event has none at all, since nothing would resolve.
-        let mut refusal = None;
-        let playable = (reg.abilities_for)(code)
-            .unwrap_or_default()
-            .iter()
-            .filter(|ability| matches!(ability.trigger, Trigger::OnPlay))
-            .any(|ability| {
-                restrictions_met(state, reg, ability, CandidateSource::Hand, controller, kind)
-                    .map_err(|r| refusal.get_or_insert(r))
-                    .is_ok()
-            });
-        if !playable {
-            return Err(refusal.unwrap_or(Refusal::NoStateChange));
-        }
-    }
-    play_not_banned(state, reg, controller, code, kind)?;
-    play_cost_payable(state, reg, controller, code).map_err(Refusal::CostUnpayable)
+    confirm(
+        state,
+        reg,
+        controller,
+        code,
+        kind,
+        || {
+            let card_type = (reg.metadata_for)(code)
+                .map(CardMetadata::card_type)
+                .ok_or(Refusal::SideNotInEffect)?;
+            if card_type != CardType::Event {
+                return Ok(());
+            }
+            // The first refusal when no `OnPlay` effect passes; `NoStateChange`
+            // when the event has none at all, since nothing would resolve.
+            let mut refusal = None;
+            let playable = (reg.abilities_for)(code)
+                .unwrap_or_default()
+                .iter()
+                .filter(|ability| matches!(ability.trigger, Trigger::OnPlay))
+                .any(|ability| {
+                    restrictions_met(state, reg, ability, CandidateSource::Hand, controller, kind)
+                        .map_err(|r| refusal.get_or_insert(r))
+                        .is_ok()
+                });
+            if playable {
+                Ok(())
+            } else {
+                Err(refusal.unwrap_or(Refusal::NoStateChange))
+            }
+        },
+        |inv, ()| play_cost_payable(reg, inv, code),
+    )
 }
 
-/// The status check: `controller` is [`Status::Active`], when it applies to
-/// `kind`.
-fn status_ok(
-    state: &GameState,
+/// **The chain every check runs**, in Appendix I's order: status, then what is
+/// being initiated — `subject`, which resolves it and runs its change-state,
+/// eligibility and usage-limit checks — then the play-ban, then the cost. Each
+/// check runs only where [`applies`] gives it `kind`; `subject` applies the
+/// table to its own checks.
+///
+/// `cost` is handed the seated controller and whatever `subject` resolved. It
+/// is only called where the cost check applies, and every such kind gets the
+/// status check too (asserted at compile time beside [`applies`]), so the
+/// controller is always seated by then.
+fn confirm<'s, T>(
+    state: &'s GameState,
+    reg: &CardRegistry,
     controller: InvestigatorId,
+    code: &CardCode,
     kind: InitiationKind,
+    subject: impl FnOnce() -> Result<T, Refusal>,
+    cost: impl FnOnce(&'s Investigator, &T) -> Result<(), Cow<'static, str>>,
 ) -> Result<(), Refusal> {
-    if !applies(Check::Status, kind) {
-        return Ok(());
+    let seated = if applies(Check::Status, kind) {
+        let inv = state.investigators.get(&controller);
+        match inv.map(|inv| inv.status) {
+            Some(Status::Active) => inv,
+            status => {
+                return Err(Refusal::NotActive {
+                    investigator: controller,
+                    status,
+                })
+            }
+        }
+    } else {
+        None
+    };
+    let subject = subject()?;
+    play_not_banned(state, reg, controller, code, kind)?;
+    if applies(Check::Cost, kind) {
+        let inv = seated.unwrap_or_else(|| {
+            unreachable!(
+                "initiation: the cost check applies to {kind:?}, so the status check does too \
+                 and has seated {controller:?}"
+            )
+        });
+        cost(inv, &subject).map_err(Refusal::CostUnpayable)?;
     }
-    match state.investigators.get(&controller).map(|inv| inv.status) {
-        Some(Status::Active) => Ok(()),
-        status => Err(Refusal::NotActive {
-            investigator: controller,
-            status,
-        }),
-    }
+    Ok(())
 }
 
 /// The play-ban check: no constant "cannot play" forbids `controller` the
@@ -405,29 +480,18 @@ fn usage_exhausted(
         .unwrap_or(false)
 }
 
-/// Whether the cost of initiating `ability` as `kind` can be paid in full.
-fn cost_payable(
+/// Whether `inv` can pay every printed cost of initiating `ability` from
+/// `source` in full.
+fn ability_cost_payable(
     state: &GameState,
-    reg: &CardRegistry,
+    inv: &Investigator,
     ability: &Ability,
-    candidate: &ResolutionCandidate,
-    kind: InitiationKind,
+    source: CandidateSource,
 ) -> Result<(), Cow<'static, str>> {
-    if kind == InitiationKind::Play {
-        return play_cost_payable(state, reg, candidate.controller, &candidate.code);
-    }
     if ability.costs.is_empty() {
         return Ok(());
     }
-    let Some(inv) = state.investigators.get(&candidate.controller) else {
-        return Err(format!(
-            "investigator {ctl:?} is not in state",
-            ctl = candidate.controller
-        )
-        .into());
-    };
-    let source = candidate
-        .source
+    let source = source
         .ability()
         .and_then(|source| ability_source::source_card(state, source));
     let exhausted = source.is_some_and(|card| card.exhausted());
@@ -441,7 +505,7 @@ fn cost_payable(
 /// Playing a card is paying its resource cost in full (RR p.22, Initiation
 /// Sequence — the cost must be established as payable before initiation, and is
 /// then paid before attacks of opportunity resolve). Returns the reject reason
-/// when `investigator` cannot pay `code`'s printed cost. A 0-cost card is always
+/// when `inv` cannot pay `code`'s printed cost. A 0-cost card is always
 /// affordable.
 ///
 /// The two costs that are not a number reject for **different reasons**, and
@@ -468,28 +532,46 @@ fn cost_payable(
 ///
 /// `Ok` for a card with no metadata — the registry-free validation paths
 /// the engine's own unit tests exercise.
-pub(super) fn play_cost_payable(
-    state: &GameState,
+fn play_cost_payable(
     reg: &CardRegistry,
-    investigator: InvestigatorId,
+    inv: &Investigator,
     code: &CardCode,
 ) -> Result<(), Cow<'static, str>> {
     let Some(meta) = (reg.metadata_for)(code) else {
         return Ok(());
     };
-    let resources = state
-        .investigators
-        .get(&investigator)
-        .map_or(0, |inv| inv.resources);
-    let cost = reaction_windows::payable_play_cost(meta.play_cost(), code)?;
-    if resources < cost {
+    let cost = payable_play_cost(meta.play_cost(), code)?;
+    if inv.resources < cost {
         return Err(format!(
-            "PlayCard: playing {code} costs {cost} resource(s); \
-             {investigator:?} has {resources}"
+            "PlayCard: playing {code} costs {cost} resource(s); {investigator:?} has {resources}",
+            investigator = inv.id,
+            resources = inv.resources,
         )
         .into());
     }
     Ok(())
+}
+
+/// Classify a printed play cost into a payable number of resources, or the
+/// reason it has none. The three shapes and why they differ are spelled out on
+/// [`play_cost_payable`]; this is the arm split on its own so it can be tested
+/// without a registry.
+fn payable_play_cost(play_cost: Option<i8>, code: &CardCode) -> Result<u8, Cow<'static, str>> {
+    match play_cost {
+        // A negative cost is ArkhamDB's X sentinel, never a real price;
+        // `u8::try_from` would silently make it free, so it rejects here.
+        Some(cost) => u8::try_from(cost).map_err(|_| {
+            Cow::from(format!(
+                "PlayCard: {code} has an X cost, which is not yet modeled \
+                 (TODO(#577): X needs a player-chosen amount)."
+            ))
+        }),
+        None => Err(format!(
+            "PlayCard: {code} has a printed cost of \"–\", so it has no cost \
+             that can be paid and cannot be played."
+        )
+        .into()),
+    }
 }
 
 /// Record one initiation of the ability `candidate` names against its

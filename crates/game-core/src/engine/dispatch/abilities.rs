@@ -16,8 +16,7 @@ use crate::engine::{abilities_in_effect, ability_source, Cx};
 use crate::event::Event;
 use crate::state::{
     AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume, CandidateSource, CardCode,
-    CardInPlay, CardInstanceId, GameState, Investigator, InvestigatorId, ResolutionCandidate,
-    UseKind,
+    CardInPlay, CardInstanceId, GameState, Investigator, InvestigatorId, UseKind,
 };
 
 /// Handler for `TurnAction::ActivateAbility`.
@@ -100,7 +99,7 @@ pub(super) fn activate_ability(
     address: &AbilityAddress,
 ) -> EngineOutcome {
     let ActivateCheckResult {
-        source_code,
+        candidate,
         action_cost,
         surcharge_sources,
         designator,
@@ -125,16 +124,8 @@ pub(super) fn activate_ability(
     // `glossary/Limits_and_Maximums.md`: *"If a card leaves play and re-enters
     // play during the same period, the card is considered to be bringing a new
     // instance of the ability to the game."*
-    initiation::record_initiation(
-        cx.state,
-        &ResolutionCandidate::new(
-            source_code.clone(),
-            investigator,
-            address.clone(),
-            CandidateSource::Ability(source),
-        ),
-        usage_limit,
-    );
+    initiation::record_initiation(cx.state, &candidate, usage_limit);
+    let source_code = candidate.code;
     if let Err(reason) = pay_activation_costs(
         cx,
         investigator,
