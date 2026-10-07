@@ -49,12 +49,15 @@ use std::collections::VecDeque;
 use crate::action::{Action, InputResponse, PlayerAction};
 use crate::engine::enumerate::TurnAction;
 use crate::engine::{
-    self, enumerate, ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget,
-    PromptNature,
+    self, enumerate, ApplyResult, Cx, EngineOutcome, InputKind, InputRequest, OptionId,
+    OptionTarget, PromptNature, TimingEvent,
 };
 use crate::event::Event;
 use crate::scenario_registry;
-use crate::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind};
+use crate::state::{
+    CardCode, EmitEventFrame, EmitStep, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    SkillKind,
+};
 
 /// Provide a response for an `AwaitingInput` prompt during a
 /// [`drive`]-style session.
@@ -597,8 +600,9 @@ pub fn perform_skill_test(
 /// - **Every step applies once, then drains to the next rest.** The steps are
 ///   [`take`](Self::take), [`pick`](Self::pick),
 ///   [`pick_unanchored`](Self::pick_unanchored), [`pick_nth`](Self::pick_nth),
-///   [`confirm`](Self::confirm), [`skip`](Self::skip) and the raw
-///   [`apply`](Self::apply). The drain answers prompts through the session's
+///   [`confirm`](Self::confirm), [`skip`](Self::skip), the framework entry
+///   points [`fire_at`](Self::fire_at) and [`take_damage`](Self::take_damage),
+///   and the raw [`apply`](Self::apply). The drain answers prompts through the session's
 ///   reply policy and stops at the turn menu, at `Done` (the game is over), at
 ///   `Rejected`, or at the first prompt the policy has no answer for — which is
 ///   where the next step picks up.
@@ -722,6 +726,62 @@ impl TestSession {
     /// Step: apply a raw `action`, then drain. The escape hatch for engine
     /// records and hand-built responses; prefer the named steps.
     pub fn apply(self, action: Action) -> Self {
+        self.advance(|state| engine::apply(state, action))
+    }
+
+    /// Step: fire the timing point `event` from where the session rests, the
+    /// way the engine fires it in play, then drain.
+    ///
+    /// The event's coordinator is pushed on top of the resting stack and driven
+    /// through the production `apply` scaffolding, so a rejection restores the
+    /// state and an ending latched along the way is finalized. The coordinator
+    /// walks the condition's whole sequence, as `glossary/Nested_Sequences.md`
+    /// puts it: *"1) execute “when...” effects that interrupt that triggering
+    /// condition, (2) resolve the triggering condition, and then, (3) execute
+    /// “after...” effects in response to that triggering condition."* — so
+    /// firing [`EnemyAttacks`](TimingEvent::EnemyAttacks) deals the attack, and
+    /// a caller-owned condition with a `when` ability declared on it rejects.
+    /// Each cell resolves its forced abilities before it offers reactions
+    /// (`glossary/Ability.md`: *"all forced abilities initiated in reference to
+    /// that timing point must resolve before any [reaction] abilities …
+    /// referencing the same timing point in the same manner may be
+    /// initiated"*), and two or more simultaneous forced abilities become the
+    /// lead's ordering prompt (`glossary/Priority_of_Simultaneous_Resolution.md`:
+    /// *"the lead investigator determines the order in which the abilities
+    /// resolve"*).
+    ///
+    /// When the sequence completes, the frame it was fired above is exposed
+    /// again: at the turn menu the session comes back to the menu.
+    pub fn fire_at(self, event: TimingEvent) -> Self {
+        self.framework_step(|cx| {
+            cx.state.continuations.push(EmitEventFrame {
+                event,
+                step: EmitStep::When,
+            });
+            engine::drive(cx, EngineOutcome::Done)
+        })
+    }
+
+    /// Step: deal `amount` damage to `investigator` outside any attack, the
+    /// way a card effect does, then drain. Lethal damage defeats them and runs
+    /// `glossary/Elimination.md` to its end — including the scenario ending
+    /// once no investigator is left.
+    pub fn take_damage(self, investigator: InvestigatorId, amount: u8) -> Self {
+        self.framework_step(|cx| {
+            engine::take_damage(cx, investigator, amount);
+            engine::drive(cx, EngineOutcome::Done)
+        })
+    }
+
+    /// Apply one framework entry point `dispatch` through the production
+    /// `apply` scaffolding, then drive on and drain.
+    fn framework_step(self, dispatch: impl FnOnce(&mut Cx) -> EngineOutcome) -> Self {
+        self.advance(|state| engine::apply_via(state, scenario_registry::current(), dispatch))
+    }
+
+    /// The one step body: apply `first` to the resting state, then drain its
+    /// prompts through the script to the next rest.
+    fn advance(self, first: impl FnOnce(GameState) -> ApplyResult) -> Self {
         let Self {
             state,
             rest,
@@ -731,7 +791,7 @@ impl TestSession {
             mut script,
         } = self;
         let result = drain_with_applier(
-            engine::apply(state, action),
+            first(state),
             |request, state| (script.remaining() > 0).then(|| script.next(request, state)),
             engine::apply,
         );
