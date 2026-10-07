@@ -13,9 +13,9 @@ use crate::engine::outcome::{
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    Assignment, AttackLoopStage, CardCode, CardInPlay, CardInstanceId, Continuation, DamageSource,
-    DealDamageStep, EliminationCause, EnemyAttackSource, EnemyId, GameState, InvestigatorId,
-    Status,
+    Assignment, AttackLoopFrame, AttackLoopStage, CardCode, CardInPlay, CardInstanceId,
+    DamageSource, DealDamageFrame, DealDamageStep, EliminationCause, EnemyAttackSource, EnemyId,
+    GameState, InvestigatorId, Status,
 };
 
 /// The scope of enemies a Fight (basic action or designated **Fight** ability)
@@ -568,7 +568,7 @@ pub(crate) fn begin_deal_damage(
     horror: u8,
     source: DamageSource,
 ) -> EngineOutcome {
-    cx.state.continuations.push(Continuation::DealDamage {
+    cx.state.continuations.push(DealDamageFrame {
         investigator,
         source,
         assignment: Assignment::default(),
@@ -856,20 +856,16 @@ fn soak_options(targets: &[DistributionTarget]) -> Vec<ChoiceOption> {
 /// `DealDamage` frame must already be at [`DealDamageStep::Distribute`]). Damage
 /// points precede horror.
 fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    let Some(Continuation::DealDamage {
-        assignment,
-        step:
-            DealDamageStep::Distribute {
-                remaining_damage,
-                remaining_horror,
-            },
-        ..
-    }) = cx.state.continuations.last()
+    let DealDamageFrame {
+        assignment, step, ..
+    } = cx.state.continuations.top_mut::<DealDamageFrame>().clone();
+    let DealDamageStep::Distribute {
+        remaining_damage: rd,
+        remaining_horror: rh,
+    } = step
     else {
-        unreachable!("prompt_current_point: top frame is not DealDamage{{Distribute}}");
+        unreachable!("prompt_current_point: the DealDamage frame is not at Distribute");
     };
-    let (rd, rh) = (*remaining_damage, *remaining_horror);
-    let assignment = assignment.clone();
     let soakers = build_soakers(cx.state, investigator);
     let damage_point = rd > 0;
     let targets = eligible_targets(&soakers, &assignment, damage_point);
@@ -894,18 +890,18 @@ fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
 /// placement are the frame's other steps, which the `drive` loop reaches when
 /// this returns `Done` (ADR 0009).
 pub(super) fn resume_damage_distribution(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let Some(Continuation::DealDamage {
+    let DealDamageFrame {
         investigator,
         mut assignment,
-        step:
-            DealDamageStep::Distribute {
-                mut remaining_damage,
-                mut remaining_horror,
-            },
+        step,
         ..
-    }) = cx.state.continuations.last().cloned()
+    } = cx.state.continuations.top_mut::<DealDamageFrame>().clone();
+    let DealDamageStep::Distribute {
+        mut remaining_damage,
+        mut remaining_horror,
+    } = step
     else {
-        unreachable!("resume_damage_distribution: top frame is not DealDamage{{Distribute}}");
+        unreachable!("resume_damage_distribution: the DealDamage frame is not at Distribute");
     };
     let InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
@@ -950,15 +946,9 @@ pub(super) fn resume_damage_distribution(cx: &mut Cx, response: &InputResponse) 
 /// cursor. The frame owns the assignment — each emit only snapshots it — so this
 /// is the single writer (ADR 0009).
 fn set_deal_damage(cx: &mut Cx, new_assignment: Assignment, new_step: DealDamageStep) {
-    match cx.state.continuations.last_mut() {
-        Some(Continuation::DealDamage {
-            assignment, step, ..
-        }) => {
-            *assignment = new_assignment;
-            *step = new_step;
-        }
-        other => unreachable!("set_deal_damage: expected a DealDamage on top, got {other:?}"),
-    }
+    let frame = cx.state.continuations.top_mut::<DealDamageFrame>();
+    frame.assignment = new_assignment;
+    frame.step = new_step;
 }
 
 /// Dispatch the top [`Continuation::DealDamage`] frame one step — the `drive`
@@ -982,18 +972,12 @@ fn set_deal_damage(cx: &mut Cx, new_assignment: Assignment, new_step: DealDamage
 /// position (ADR 0003): the coordinator they push lands above this frame and
 /// runs its whole sequence before the loop re-exposes this one.
 pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
-    let Some(Continuation::DealDamage {
+    let DealDamageFrame {
         investigator,
         source,
         assignment,
         step,
-    }) = cx.state.continuations.last().cloned()
-    else {
-        unreachable!(
-            "drive_deal_damage: top frame is not DealDamage; the `drive` loop routes \
-             here only when it is — state-corruption invariant violation"
-        );
-    };
+    } = cx.state.continuations.top_mut::<DealDamageFrame>().clone();
     match step {
         DealDamageStep::Distribute {
             mut remaining_damage,
@@ -1047,7 +1031,7 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
             )
         }
         DealDamageStep::Finish => {
-            cx.state.continuations.pop();
+            cx.state.continuations.pop_expect::<DealDamageFrame>();
             match source {
                 // The attack's own sequence continues on the frames beneath: its
                 // `at` and `after` cells on the coordinator, then the parked
@@ -1118,7 +1102,7 @@ fn begin_head_attack(
     let enemy = *attackers
         .first()
         .expect("begin_head_attack called with an empty attacker list");
-    cx.state.continuations.push(Continuation::AttackLoop {
+    cx.state.continuations.push(AttackLoopFrame {
         investigator,
         remaining_attackers: attackers,
         source,
@@ -1138,19 +1122,17 @@ fn begin_head_attack(
 /// was cancelled in its `when` cell), so take the head off, exhaust it, and
 /// continue with the rest.
 pub(super) fn drive_parked_attack_loop(cx: &mut Cx) -> EngineOutcome {
-    let Some(Continuation::AttackLoop {
+    let AttackLoopFrame {
         investigator,
         mut remaining_attackers,
         source,
-        stage: AttackLoopStage::Attacking,
-    }) = cx.state.continuations.pop()
-    else {
-        unreachable!(
-            "drive_parked_attack_loop: top frame is not an AttackLoop{{Attacking}}; \
-             the `drive` loop routes here only when it is — state-corruption \
-             invariant violation"
-        )
-    };
+        stage,
+    } = cx.state.continuations.pop_expect::<AttackLoopFrame>();
+    assert_eq!(
+        stage,
+        AttackLoopStage::Attacking,
+        "drive_parked_attack_loop: the `drive` loop routes here only at Attacking"
+    );
     let attacked = remaining_attackers.remove(0);
     exhaust_after_attack(cx, attacked, source);
     drive_attack_loop(cx, investigator, remaining_attackers, source)
@@ -1174,7 +1156,7 @@ fn suspend_order_pick(
         attackers.len()
     );
     let options = hunters::candidate_options(&attackers);
-    cx.state.continuations.push(Continuation::AttackLoop {
+    cx.state.continuations.push(AttackLoopFrame {
         investigator,
         remaining_attackers: attackers,
         source,
@@ -1263,19 +1245,17 @@ fn finish_attack_loop(
 /// the chosen enemy to the head and begin its attack ([`begin_head_attack`]) —
 /// the parked loop then drives the rest, re-prompting if 2+ still remain.
 pub(super) fn resume_attack_order_pick(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let Some(Continuation::AttackLoop {
+    let AttackLoopFrame {
         investigator,
         remaining_attackers,
         source,
-        stage: AttackLoopStage::PickOrder,
-    }) = cx.state.continuations.last().cloned()
-    else {
-        unreachable!(
-            "resume_attack_order_pick: top frame is not an AttackLoop{{PickOrder}}; \
-             resolve_input only routes here when it is — state-corruption invariant \
-             violation"
-        )
-    };
+        stage,
+    } = cx.state.continuations.top_mut::<AttackLoopFrame>().clone();
+    assert_eq!(
+        stage,
+        AttackLoopStage::PickOrder,
+        "resume_attack_order_pick: resolve_input routes here only at PickOrder"
+    );
     let InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -1297,7 +1277,7 @@ pub(super) fn resume_attack_order_pick(cx: &mut Cx, response: &InputResponse) ->
 
     // Valid pick: pop the frame we validated against, then move the chosen enemy
     // to the head (preserving the others' relative order for the next prompt).
-    cx.state.continuations.pop();
+    cx.state.continuations.pop_expect::<AttackLoopFrame>();
     let mut attackers = remaining_attackers;
     let chosen = attackers.remove(i);
     attackers.insert(0, chosen);

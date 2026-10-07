@@ -26,7 +26,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
             attacking: Some(inv_id),
         })
         .build();
-    state.continuations.push(Continuation::AttackLoop {
+    state.continuations.push(AttackLoopFrame {
         investigator: inv_id,
         remaining_attackers: vec![attacker], // the head, mid-sequence
         source: EnemyAttackSource::EnemyPhase,
@@ -94,7 +94,7 @@ fn a_head_attacker_that_dealt_nothing_still_exhausts() {
             attacking: Some(inv_id),
         })
         .build();
-    state.continuations.push(Continuation::AttackLoop {
+    state.continuations.push(AttackLoopFrame {
         investigator: inv_id,
         remaining_attackers: vec![attacker],
         source: EnemyAttackSource::EnemyPhase,
@@ -136,7 +136,7 @@ fn an_attack_of_opportunity_attacker_never_exhausts() {
         .with_turn_order([inv_id])
         .with_enemy(enemy)
         .build();
-    state.continuations.push(Continuation::AttackLoop {
+    state.continuations.push(AttackLoopFrame {
         investigator: inv_id,
         remaining_attackers: vec![attacker],
         source: EnemyAttackSource::AttackOfOpportunity,
@@ -271,12 +271,12 @@ fn drive_aoo_offers_order_pick_for_two_engaged_enemies() {
     // The parked frame carries the AoO source + PickOrder stage (frame spans
     // the whole AoO, not just a window suspension).
     assert!(matches!(
-        state.continuations.last(),
-        Some(Continuation::AttackLoop {
+        state.continuations.top(),
+        Some(Continuation::AttackLoop(AttackLoopFrame {
             source: EnemyAttackSource::AttackOfOpportunity,
             stage: AttackLoopStage::PickOrder,
             ..
-        })
+        }))
     ));
 
     // Pick EnemyId(6) (dmg 2) first → option 1 in EnemyId order [5, 6].
@@ -350,10 +350,10 @@ fn resume_attack_order_pick_rejects_invalid_input_and_keeps_frame() {
     assert!(matches!(rejected2, EngineOutcome::Rejected { .. }));
     // The PickOrder frame survives both rejections for retry.
     assert!(matches!(
-        state.continuations.last(),
-        Some(Continuation::AttackLoop {
+        state.continuations.top(),
+        Some(Continuation::AttackLoop(AttackLoopFrame {
             stage: AttackLoopStage::PickOrder,
             ..
-        })
+        }))
     ));
 }

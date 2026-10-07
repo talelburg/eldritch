@@ -255,28 +255,8 @@ pub enum Continuation {
         /// The framework step this window gates (and its event-payload kind).
         kind: FastWindowKind,
     },
-    /// An act/agenda is advancing (#482). A small resumable sub-process that
-    /// pushes the observable `…Advanced` event, for a forced advance in
-    /// interactive mode pauses for a one-option on-card flip pick (#558), fires
-    /// the leaving card's Forced on-advance reverse (which may itself suspend —
-    /// 01105's interactive `ChooseOne`), then bumps the deck cursor *after* the
-    /// reverse resolves (RR order). Driven by the `drive` loop and resumed via
-    /// `resolve_input` (mirrors the `SkillTest` frame). Replaces the former
-    /// synchronous `advance_agenda`/`advance_act` emit-then-bump, whose
-    /// post-forced bookkeeping stranded a suspending reverse.
-    AdvanceReverse {
-        /// Which deck is advancing.
-        deck: AdvanceDeck,
-        /// Cursor index of the leaving card (before the bump).
-        from: usize,
-        /// Printed code of the leaving card (its reverse fires).
-        leaving_code: CardCode,
-        /// Where in the sub-process we are.
-        step: AdvanceStep,
-        /// Whether this advance was forced (prompts the flip pick) or
-        /// deliberate (the ack is skipped) (#558).
-        trigger: AdvanceTrigger,
-    },
+    /// See [`AdvanceReverseFrame`].
+    AdvanceReverse(AdvanceReverseFrame),
     /// A no-choice forced ability is about to resolve and the game is in
     /// interactive mode (`interactive_acknowledge`): surface it as a one-option
     /// pick so the player "performs" it before it lands (#466). Pushed by
@@ -525,32 +505,8 @@ pub enum Continuation {
         /// test leaves it `false`.
         ending: bool,
     },
-    /// A parked enemy-attack loop: the attackers of one investigator, resolved
-    /// one at a time (RR p.25 step 3.3). Since #704 the loop parks itself on
-    /// this frame around **every** attack rather than only around a reaction
-    /// window: the head attacker's `EnemyAttacks` condition walks the
-    /// [`EmitEvent`](Self::EmitEvent) coordinator pushed above this frame, and
-    /// the `drive` loop re-exposes this one when that coordinator pops. So the
-    /// loop never reads the stack after emitting (ADR 0003) and an attack may
-    /// suspend anywhere inside its own sequence.
-    ///
-    /// Never awaits player input at [`AttackLoopStage::Attacking`] — the
-    /// coordinator above it owns any prompt; at
-    /// [`AttackLoopStage::PickOrder`] it *is* the prompt. Lifted off the former
-    /// `GameState::pending_enemy_attack` (#411, step 3 of #393).
-    AttackLoop {
-        /// The investigator whose engaged enemies are attacking.
-        investigator: InvestigatorId,
-        /// Attackers not yet resolved, in resolution order. At
-        /// [`AttackLoopStage::Attacking`] the attacker whose sequence is running
-        /// is still at the head — the loop removes it (and exhausts it) when the
-        /// coordinator pops.
-        remaining_attackers: Vec<EnemyId>,
-        /// Which loop to re-enter.
-        source: EnemyAttackSource,
-        /// Where in the per-attacker sequence the loop stands (#704).
-        stage: AttackLoopStage,
-    },
+    /// See [`AttackLoopFrame`].
+    AttackLoop(AttackLoopFrame),
     /// An action paused over its attack-of-opportunity loop (#293, keystone of
     /// #393). Pushed above [`Self::InvestigatorTurn`] when an AoO-provoking action is
     /// taken; the `AoO` [`Self::AttackLoop`] is its child. On the loop's pop the
@@ -564,33 +520,8 @@ pub enum Continuation {
         /// Which primary effect to run when the `AoO` loop completes.
         resume: ActionResume,
     },
-    /// One deal of damage and/or horror, in progress — the Rules Reference's
-    /// two numbered steps and the window between them
-    /// (`glossary/Dealing_Damage_Horror.md`), walked by the
-    /// [`step`](DealDamageStep) cursor `Distribute → Announce → Place → Finish`.
-    ///
-    /// **This frame owns the live assignment**; each of the two emits snapshots
-    /// it into its own event, so both events are true when emitted and there is
-    /// no write-back protocol — `Place` simply re-reads the frame after
-    /// `DamageAssigned`'s cells have had their chance to edit it. See
-    /// `docs/adr/0009-damage-is-assigned-then-placed.md`.
-    ///
-    /// Awaits input only at [`Distribute`](DealDamageStep::Distribute), where it
-    /// is the top frame and *is* the per-point prompt (resumed by
-    /// `resume_damage_distribution`); at every other step the `drive` loop
-    /// dispatches it the moment it is exposed.
-    DealDamage {
-        /// The investigator the harm is being dealt to.
-        investigator: InvestigatorId,
-        /// What is dealing it — the scoping both conditions carry, and how this
-        /// frame resumes its caller at `Finish`.
-        source: DamageSource,
-        /// The live assignment: accumulating at `Distribute`, settled from
-        /// `Announce` on.
-        assignment: Assignment,
-        /// Where in the two-step procedure this deal stands.
-        step: DealDamageStep,
-    },
+    /// See [`DealDamageFrame`].
+    DealDamage(DealDamageFrame),
     /// A node of an in-progress card-effect walk (#422). The effect evaluator is
     /// frame-driven: each control-flow node parks here while its children
     /// resolve; the global `drive` loop steps the top frame. Replaces the former
@@ -601,88 +532,10 @@ pub enum Continuation {
     /// own [`EvalContext`] snapshot (#345's grouped
     /// bindings) so resume re-binds without replay.
     Effect(EffectFrame),
-    /// The scenario's ending, in progress (#566). Pushed at the **bottom** of the
-    /// stack by the engine's `end_scenario` the moment the resolution
-    /// latches, so it is reached only once every frame above it has either
-    /// completed or been cancelled
-    /// ([`cancelled_by_scenario_end`](Self::cancelled_by_scenario_end)). It then
-    /// emits the [`GameEnd`](crate::engine::TimingEvent::GameEnd) timing point —
-    /// Cover Up 01007's *"Forced – When the game ends, if there are any clues on
-    /// Cover Up: You suffer 1 mental trauma"* — whose forced abilities drain
-    /// *above* it, possibly across an `apply` boundary (the interactive
-    /// acknowledge). When it is exposed again at
-    /// [`Finalize`](ScenarioEndStep::Finalize) the apply boundary — the only place
-    /// holding the [`ScenarioRegistry`](crate::scenario::ScenarioRegistry) — pops
-    /// it and runs the victory-display scan + the module's `apply_resolution`.
-    ///
-    /// That shape is also what makes `GameEnd` a **bare milestone**, and so
-    /// coordinator-owned with a no-op resolve step (#720): the ending's teardown
-    /// belongs to this frame's `Finalize` step, *after* the whole timing
-    /// sequence, rather than to the condition. So the `when` cell is safe to
-    /// walk, which is the cell Cover Up's *"When the game ends"* prints. See
-    /// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
-    ///
-    /// Never awaits input (the acknowledge above it is the prompt); pushed once
-    /// per scenario and popped once, so its presence *is* the once-only finalize
-    /// marker: [`GameState::ending`](crate::state::game_state::GameState::ending) answers "did the scenario end", this
-    /// frame answers "has the ending finished". See
-    /// `docs/adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md`.
-    ScenarioEnd {
-        /// Where in the ending we are.
-        step: ScenarioEndStep,
-    },
-    /// An investigator's elimination, in progress (#638). Pushed by
-    /// `apply_investigator_elimination` **only** when the investigator owns an in-play
-    /// weakness carrying a *"when the game ends"* Forced ability — Rules
-    /// Reference p.10 Elimination **step 0**:
-    ///
-    /// > For the purpose of resolving weakness cards, the game has ended for the
-    /// > eliminated investigator. Trigger any "when the game ends" abilities on
-    /// > each weakness the eliminated investigator owns that is in play. Then,
-    /// > remove those weaknesses from the game.
-    ///
-    /// Step 0's abilities must resolve **before** step 1 removes their cards
-    /// (Cover Up 01007's *"Forced - When the game ends, if there are any clues
-    /// on Cover Up: You suffer 1 mental trauma"* reads the clues still sitting
-    /// on its own instance), and emitting a timing point only *queues* (ADR
-    /// 0003) — so the remaining steps ride this frame while the queued abilities
-    /// drain above it, and the loop re-exposes it to run steps 1–6.
-    ///
-    /// # The fork, and what it costs
-    ///
-    /// With no such weakness there is nothing to sequence, so
-    /// `apply_investigator_elimination` runs the steps inline instead of pushing this
-    /// frame. That is not merely an optimisation: it keeps the far commoner path
-    /// — every elimination bar a Roland holding clues on Cover Up — reading a
-    /// *finished* elimination, exactly as it did before #638.
-    ///
-    /// The two paths are **not** equivalent for a caller that resumes after
-    /// `apply_investigator_elimination` returns. On this frame's path the investigator
-    /// is already off `Status::Active`, but their cards are still in play and
-    /// `check_all_eliminated` has not run — so no `AllInvestigatorsEliminated` and no
-    /// `ScenarioEnding` latch yet. Post-defeat bookkeeping must therefore key
-    /// off `Status`, never off a zone having been drained;
-    /// `combat::place_assignment`'s asset sweep is the one such caller today and
-    /// does exactly that.
-    ///
-    /// Same shape, same conclusion as [`ScenarioEnd`](Self::ScenarioEnd):
-    /// `EliminationGameEnd` is a **bare milestone** too (#720). Steps 1–6 —
-    /// including step 0's own *"Then, remove those weaknesses from the game"*
-    /// tail — ride this frame and run at `RunSteps`, after the whole sequence,
-    /// so they are not the condition's impact and its `when` cell is safe to
-    /// walk. `apply_investigator_elimination`'s fork predicate must therefore ask
-    /// about **every** cell: a hardcoded one drops a retagged ability silently,
-    /// by taking the inline path and removing the weakness unfired.
-    ///
-    /// Never awaits input (the interactive acknowledge above it is the prompt),
-    /// and never cancelled by a latched resolution: elimination is mandatory
-    /// resolution already under way (ADR 0004).
-    Elimination {
-        /// The investigator being eliminated.
-        investigator: InvestigatorId,
-        /// Where in the elimination we are.
-        step: EliminationStep,
-    },
+    /// See [`ScenarioEndFrame`].
+    ScenarioEnd(ScenarioEndFrame),
+    /// See [`EliminationFrame`].
+    Elimination(EliminationFrame),
 }
 
 // One `impl_frame!` per newtype variant (#925), one line each, grouped by the
@@ -704,6 +557,11 @@ impl_frame!(Effect, EffectFrame);
 // Draw, encounter and play frames (#931).
 
 // Combat, damage and resolution frames (#932).
+impl_frame!(AdvanceReverse, AdvanceReverseFrame);
+impl_frame!(AttackLoop, AttackLoopFrame);
+impl_frame!(DealDamage, DealDamageFrame);
+impl_frame!(ScenarioEnd, ScenarioEndFrame);
+impl_frame!(Elimination, EliminationFrame);
 
 /// Step cursor for the [`Elimination`](Continuation::Elimination) frame (#638).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -972,7 +830,7 @@ impl Continuation {
             // dispatches on sight. Under way either way: half of it is the
             // placement, and abandoning it would leave an assignment that never
             // lands.
-            Continuation::DealDamage { step, .. } => (
+            Continuation::DealDamage(DealDamageFrame { step, .. }) => (
                 match step {
                     DealDamageStep::Distribute { .. } => Prompt,
                     DealDamageStep::Announce | DealDamageStep::Place | DealDamageStep::Finish => {
@@ -1005,7 +863,7 @@ impl Continuation {
             // The attack loop is the attack-order pick at `PickOrder` (#143) and
             // otherwise re-exposed beneath the head attacker's coordinator, which
             // owns any prompt the attack raises (#704).
-            Continuation::AttackLoop { stage, .. } => (
+            Continuation::AttackLoop(AttackLoopFrame { stage, .. }) => (
                 match stage {
                     AttackLoopStage::PickOrder => Prompt,
                     AttackLoopStage::Attacking => Driven,
@@ -1035,7 +893,7 @@ impl Continuation {
             // The ending emits `GameEnd` when driven, then rests at `Finalize`
             // for the apply boundary — the only place holding the scenario
             // registry — to pop (#566). It is the ending itself, so it completes.
-            Continuation::ScenarioEnd { step } => (
+            Continuation::ScenarioEnd(ScenarioEndFrame { step }) => (
                 match step {
                     ScenarioEndStep::EmitGameEnd => Driven,
                     ScenarioEndStep::Finalize => Inert,
@@ -2229,6 +2087,175 @@ impl ResolutionCandidate {
             source,
         }
     }
+}
+
+// --- Combat, damage and resolution frame payloads (#932) ---
+
+/// An act/agenda is advancing (#482). A small resumable sub-process that
+/// pushes the observable `…Advanced` event, for a forced advance in
+/// interactive mode pauses for a one-option on-card flip pick (#558), fires
+/// the leaving card's Forced on-advance reverse (which may itself suspend —
+/// 01105's interactive `ChooseOne`), then bumps the deck cursor *after* the
+/// reverse resolves (RR order). Driven by the `drive` loop and resumed via
+/// `resolve_input` (mirrors the `SkillTest` frame). Replaces the former
+/// synchronous `advance_agenda`/`advance_act` emit-then-bump, whose
+/// post-forced bookkeeping stranded a suspending reverse.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdvanceReverseFrame {
+    /// Which deck is advancing.
+    pub deck: AdvanceDeck,
+    /// Cursor index of the leaving card (before the bump).
+    pub from: usize,
+    /// Printed code of the leaving card (its reverse fires).
+    pub leaving_code: CardCode,
+    /// Where in the sub-process we are.
+    pub step: AdvanceStep,
+    /// Whether this advance was forced (prompts the flip pick) or
+    /// deliberate (the ack is skipped) (#558).
+    pub trigger: AdvanceTrigger,
+}
+
+/// A parked enemy-attack loop: the attackers of one investigator, resolved
+/// one at a time (RR p.25 step 3.3). Since #704 the loop parks itself on
+/// this frame around **every** attack rather than only around a reaction
+/// window: the head attacker's `EnemyAttacks` condition walks the
+/// [`EmitEvent`](Continuation::EmitEvent) coordinator pushed above this frame, and
+/// the `drive` loop re-exposes this one when that coordinator pops. So the
+/// loop never reads the stack after emitting (ADR 0003) and an attack may
+/// suspend anywhere inside its own sequence.
+///
+/// Never awaits player input at [`AttackLoopStage::Attacking`] — the
+/// coordinator above it owns any prompt; at
+/// [`AttackLoopStage::PickOrder`] it *is* the prompt. Lifted off the former
+/// `GameState::pending_enemy_attack` (#411, step 3 of #393).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttackLoopFrame {
+    /// The investigator whose engaged enemies are attacking.
+    pub investigator: InvestigatorId,
+    /// Attackers not yet resolved, in resolution order. At
+    /// [`AttackLoopStage::Attacking`] the attacker whose sequence is running
+    /// is still at the head — the loop removes it (and exhausts it) when the
+    /// coordinator pops.
+    pub remaining_attackers: Vec<EnemyId>,
+    /// Which loop to re-enter.
+    pub source: EnemyAttackSource,
+    /// Where in the per-attacker sequence the loop stands (#704).
+    pub stage: AttackLoopStage,
+}
+
+/// One deal of damage and/or horror, in progress — the Rules Reference's
+/// two numbered steps and the window between them
+/// (`glossary/Dealing_Damage_Horror.md`), walked by the
+/// [`step`](DealDamageStep) cursor `Distribute → Announce → Place → Finish`.
+///
+/// **This frame owns the live assignment**; each of the two emits snapshots
+/// it into its own event, so both events are true when emitted and there is
+/// no write-back protocol — `Place` simply re-reads the frame after
+/// `DamageAssigned`'s cells have had their chance to edit it. See
+/// `docs/adr/0009-damage-is-assigned-then-placed.md`.
+///
+/// Awaits input only at [`Distribute`](DealDamageStep::Distribute), where it
+/// is the top frame and *is* the per-point prompt (resumed by
+/// `resume_damage_distribution`); at every other step the `drive` loop
+/// dispatches it the moment it is exposed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DealDamageFrame {
+    /// The investigator the harm is being dealt to.
+    pub investigator: InvestigatorId,
+    /// What is dealing it — the scoping both conditions carry, and how this
+    /// frame resumes its caller at `Finish`.
+    pub source: DamageSource,
+    /// The live assignment: accumulating at `Distribute`, settled from
+    /// `Announce` on.
+    pub assignment: Assignment,
+    /// Where in the two-step procedure this deal stands.
+    pub step: DealDamageStep,
+}
+
+/// The scenario's ending, in progress (#566). Pushed at the **bottom** of the
+/// stack by the engine's `end_scenario` the moment the resolution
+/// latches, so it is reached only once every frame above it has either
+/// completed or been cancelled
+/// ([`cancelled_by_scenario_end`](Continuation::cancelled_by_scenario_end)). It then
+/// emits the [`GameEnd`](crate::engine::TimingEvent::GameEnd) timing point —
+/// Cover Up 01007's *"Forced – When the game ends, if there are any clues on
+/// Cover Up: You suffer 1 mental trauma"* — whose forced abilities drain
+/// *above* it, possibly across an `apply` boundary (the interactive
+/// acknowledge). When it is exposed again at
+/// [`Finalize`](ScenarioEndStep::Finalize) the apply boundary — the only place
+/// holding the [`ScenarioRegistry`](crate::scenario::ScenarioRegistry) — pops
+/// it and runs the victory-display scan + the module's `apply_resolution`.
+///
+/// That shape is also what makes `GameEnd` a **bare milestone**, and so
+/// coordinator-owned with a no-op resolve step (#720): the ending's teardown
+/// belongs to this frame's `Finalize` step, *after* the whole timing
+/// sequence, rather than to the condition. So the `when` cell is safe to
+/// walk, which is the cell Cover Up's *"When the game ends"* prints. See
+/// `docs/adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md`.
+///
+/// Never awaits input (the acknowledge above it is the prompt); pushed once
+/// per scenario and popped once, so its presence *is* the once-only finalize
+/// marker: [`GameState::ending`](crate::state::game_state::GameState::ending) answers "did the scenario end", this
+/// frame answers "has the ending finished". See
+/// `docs/adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScenarioEndFrame {
+    /// Where in the ending we are.
+    pub step: ScenarioEndStep,
+}
+
+/// An investigator's elimination, in progress (#638). Pushed by
+/// `apply_investigator_elimination` **only** when the investigator owns an in-play
+/// weakness carrying a *"when the game ends"* Forced ability — Rules
+/// Reference p.10 Elimination **step 0**:
+///
+/// > For the purpose of resolving weakness cards, the game has ended for the
+/// > eliminated investigator. Trigger any "when the game ends" abilities on
+/// > each weakness the eliminated investigator owns that is in play. Then,
+/// > remove those weaknesses from the game.
+///
+/// Step 0's abilities must resolve **before** step 1 removes their cards
+/// (Cover Up 01007's *"Forced - When the game ends, if there are any clues
+/// on Cover Up: You suffer 1 mental trauma"* reads the clues still sitting
+/// on its own instance), and emitting a timing point only *queues* (ADR
+/// 0003) — so the remaining steps ride this frame while the queued abilities
+/// drain above it, and the loop re-exposes it to run steps 1–6.
+///
+/// # The fork, and what it costs
+///
+/// With no such weakness there is nothing to sequence, so
+/// `apply_investigator_elimination` runs the steps inline instead of pushing this
+/// frame. That is not merely an optimisation: it keeps the far commoner path
+/// — every elimination bar a Roland holding clues on Cover Up — reading a
+/// *finished* elimination, exactly as it did before #638.
+///
+/// The two paths are **not** equivalent for a caller that resumes after
+/// `apply_investigator_elimination` returns. On this frame's path the investigator
+/// is already off `Status::Active`, but their cards are still in play and
+/// `check_all_eliminated` has not run — so no `AllInvestigatorsEliminated` and no
+/// `ScenarioEnding` latch yet. Post-defeat bookkeeping must therefore key
+/// off `Status`, never off a zone having been drained;
+/// `combat::place_assignment`'s asset sweep is the one such caller today and
+/// does exactly that.
+///
+/// Same shape, same conclusion as [`ScenarioEnd`](ScenarioEndFrame):
+/// `EliminationGameEnd` is a **bare milestone** too (#720). Steps 1–6 —
+/// including step 0's own *"Then, remove those weaknesses from the game"*
+/// tail — ride this frame and run at `RunSteps`, after the whole sequence,
+/// so they are not the condition's impact and its `when` cell is safe to
+/// walk. `apply_investigator_elimination`'s fork predicate must therefore ask
+/// about **every** cell: a hardcoded one drops a retagged ability silently,
+/// by taking the inline path and removing the weakness unfired.
+///
+/// Never awaits input (the interactive acknowledge above it is the prompt),
+/// and never cancelled by a latched resolution: elimination is mandatory
+/// resolution already under way (ADR 0004).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EliminationFrame {
+    /// The investigator being eliminated.
+    pub investigator: InvestigatorId,
+    /// Where in the elimination we are.
+    pub step: EliminationStep,
 }
 
 #[cfg(test)]

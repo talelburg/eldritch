@@ -1,5 +1,5 @@
 use super::*;
-use crate::state::{GameStateBuilder, InvestigationResume};
+use crate::state::{Continuation, GameStateBuilder, InvestigationResume};
 use crate::{assert_event, assert_no_event, test_support};
 
 mod defeat;

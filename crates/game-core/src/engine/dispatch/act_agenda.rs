@@ -11,8 +11,8 @@ use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
 use crate::scenario::ScenarioEnding;
 use crate::state::{
-    AdvanceDeck, AdvanceStep, AdvanceTrigger, Continuation, GameState, InvestigatorId, LocationId,
-    Phase,
+    AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, GameState, InvestigatorId,
+    LocationId, Phase,
 };
 
 /// Whether the current act advances *only* at the end of the round (its
@@ -99,7 +99,7 @@ pub(super) fn advance_agenda(cx: &mut Cx) {
     // then bumps the cursor at Finalize (RR order — after the reverse resolves).
     // The drive loop owns it from here; the terminal-card guard now lives in
     // `advance_reverse::finalize`.
-    cx.state.continuations.push(Continuation::AdvanceReverse {
+    cx.state.continuations.push(AdvanceReverseFrame {
         deck: AdvanceDeck::Agenda,
         from,
         leaving_code,
@@ -337,7 +337,7 @@ pub(crate) fn advance_act(cx: &mut Cx, trigger: AdvanceTrigger) {
     // reverse, which may suspend → bump the cursor at Finalize, RR order). The
     // drive loop owns it; the terminal-card guard lives in
     // `advance_reverse::finalize`.
-    cx.state.continuations.push(Continuation::AdvanceReverse {
+    cx.state.continuations.push(AdvanceReverseFrame {
         deck: AdvanceDeck::Act,
         from,
         leaving_code,

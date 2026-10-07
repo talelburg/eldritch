@@ -34,6 +34,10 @@ pub use continuation::{
     ScenarioEndStep, SkillTestFollowUp, SkillTestStep, SpawnEngagePending, TimingMode, TimingSub,
     UpkeepResume,
 };
+// Combat, damage and resolution frame payloads (#932).
+pub use continuation::{
+    AdvanceReverseFrame, AttackLoopFrame, DealDamageFrame, EliminationFrame, ScenarioEndFrame,
+};
 pub(crate) use counter::define_id;
 pub use enemy::{Enemy, EnemyId};
 pub use game_state::{

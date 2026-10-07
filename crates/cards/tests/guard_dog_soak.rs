@@ -36,9 +36,9 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, Enemy, EnemyId,
-    GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId, Phase, Status,
-    Zone,
+    AttackLoopFrame, CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, Enemy,
+    EnemyId, GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId, Phase,
+    Status, Zone,
 };
 use game_core::test_support;
 
@@ -625,10 +625,10 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     // second attacker; the head comes off when its sequence pops.
     assert_eq!(
         state.continuations.iter().rev().find_map(|c| match c {
-            Continuation::AttackLoop {
+            Continuation::AttackLoop(AttackLoopFrame {
                 remaining_attackers,
                 ..
-            } => Some(remaining_attackers.clone()),
+            }) => Some(remaining_attackers.clone()),
             _ => None,
         }),
         Some(vec![first, second]),

@@ -16,8 +16,8 @@ use game_core::engine::{
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
-    AdvanceDeck, AdvanceStep, CardCode, ChaosBag, ChaosToken, Continuation, EliminationCause,
-    EnemyId, GameState, InvestigatorId, Status, TimingMode,
+    AdvanceDeck, AdvanceReverseFrame, AdvanceStep, CardCode, ChaosBag, ChaosToken, Continuation,
+    EliminationCause, EnemyId, GameState, InvestigatorId, Status, TimingMode,
 };
 use game_core::{assert_event, scenario_registry, test_support};
 use scenarios::the_gathering;
@@ -431,12 +431,12 @@ fn act_3_advances_in_two_clicks_and_its_choice_follows_the_second() {
     );
     assert!(
         matches!(
-            r.state.continuations.last(),
-            Some(Continuation::AdvanceReverse {
+            r.state.continuations.top(),
+            Some(Continuation::AdvanceReverse(AdvanceReverseFrame {
                 deck: AdvanceDeck::Act,
                 step: AdvanceStep::AwaitAck,
                 ..
-            })
+            }))
         ),
         "the Objective's own acknowledge is suppressed, so nothing sits above the \
          advance: {:?}",

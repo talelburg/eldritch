@@ -123,7 +123,7 @@ fn pushing_a_second_skill_test_is_refused() {
 #[should_panic(expected = "only `insert_ending_at_bottom` may create one")]
 fn pushing_an_ending_frame_is_refused() {
     let mut stack = ContinuationStack::new();
-    stack.push(Continuation::ScenarioEnd {
+    stack.push(ScenarioEndFrame {
         step: ScenarioEndStep::EmitGameEnd,
     });
 }
@@ -139,9 +139,9 @@ fn the_ending_frame_is_inserted_beneath_everything_under_way() {
     assert_eq!(
         stack,
         vec![
-            Continuation::ScenarioEnd {
+            Continuation::ScenarioEnd(ScenarioEndFrame {
                 step: ScenarioEndStep::EmitGameEnd,
-            },
+            }),
             anchor(),
             Continuation::SkillTest(skill_test(0)),
         ]
@@ -265,9 +265,9 @@ fn the_unchecked_constructor_builds_stacks_the_checks_would_refuse() {
         anchor(),
         Continuation::SkillTest(skill_test(0)),
         Continuation::SkillTest(skill_test(1)),
-        Continuation::ScenarioEnd {
+        Continuation::ScenarioEnd(ScenarioEndFrame {
             step: ScenarioEndStep::EmitGameEnd,
-        },
+        }),
     ];
     let stack = test_support::from_frames_unchecked(frames.clone());
     assert_eq!(stack, frames);

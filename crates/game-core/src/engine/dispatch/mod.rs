@@ -20,7 +20,7 @@ use crate::engine::outcome::{
 use crate::engine::{enumerate, evaluator, Cx};
 use crate::state::{
     ActionResume, CardCode, CardInstanceId, Continuation, FrameActivity, GameState,
-    ScenarioEndStep, Status,
+    ScenarioEndFrame, ScenarioEndStep, Status,
 };
 pub(crate) use control::take_control;
 
@@ -383,11 +383,8 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // Cover Up 01007's trauma (plus its interactive acknowledge) must
             // resolve above this frame, possibly across an `apply` boundary.
             Continuation::ScenarioEnd { .. } => {
-                let Some(Continuation::ScenarioEnd { step }) = cx.state.continuations.last_mut()
-                else {
-                    unreachable!("drive: the ScenarioEnd arm ran without one on top");
-                };
-                *step = ScenarioEndStep::Finalize;
+                cx.state.continuations.top_mut::<ScenarioEndFrame>().step =
+                    ScenarioEndStep::Finalize;
                 emit::queue_event(cx, &TimingEvent::GameEnd)
             }
             // Prompts whose handler surfaced `AwaitingInput` when it pushed

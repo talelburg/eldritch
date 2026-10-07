@@ -8,7 +8,9 @@
 
 use game_core::card_registry;
 use game_core::engine::OptionTarget;
-use game_core::state::{Act, AdvanceDeck, AdvanceStep, Agenda, CardCode, Continuation, GameState};
+use game_core::state::{
+    Act, AdvanceDeck, AdvanceReverseFrame, AdvanceStep, Agenda, CardCode, Continuation, GameState,
+};
 use leptos::prelude::*;
 
 use crate::interaction::{self, PendingOptions};
@@ -31,7 +33,7 @@ pub enum Face {
 /// deck isn't advancing (#558).
 pub(crate) fn deck_face(game: &GameState, deck: AdvanceDeck) -> Face {
     for c in &game.continuations {
-        if let Continuation::AdvanceReverse { deck: d, step, .. } = c {
+        if let Continuation::AdvanceReverse(AdvanceReverseFrame { deck: d, step, .. }) = c {
             if *d == deck {
                 return match step {
                     AdvanceStep::AwaitAck => Face::Front,

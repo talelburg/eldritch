@@ -73,7 +73,7 @@ use card_dsl::card_data::CardKind;
 use crate::action::{Action, RosterEntry};
 use crate::event::Event;
 use crate::scenario::ScenarioRegistry;
-use crate::state::{CardCode, Continuation, GameState, ScenarioEndStep};
+use crate::state::{CardCode, Continuation, GameState, ScenarioEndFrame, ScenarioEndStep};
 use crate::{card_registry, scenario_registry};
 
 /// The result of a single [`apply`] call.
@@ -270,14 +270,14 @@ pub(crate) fn apply_via(
 /// `apply_resolution` needs the registry/module.
 fn finalize_scenario_end(cx: &mut Cx, registry: Option<&ScenarioRegistry>) {
     if !matches!(
-        cx.state.continuations.last(),
-        Some(Continuation::ScenarioEnd {
+        cx.state.continuations.top(),
+        Some(Continuation::ScenarioEnd(ScenarioEndFrame {
             step: ScenarioEndStep::Finalize,
-        })
+        }))
     ) {
         return;
     }
-    cx.state.continuations.pop();
+    cx.state.continuations.pop_expect::<ScenarioEndFrame>();
     let Some(ending) = cx.state.ending else {
         debug_assert!(
             false,
