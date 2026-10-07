@@ -172,7 +172,7 @@ impl MockRegistry {
     ///
     /// **First install wins**, matching
     /// [`card_registry::install`] and
-    /// [`install_registry_with_terminal_cards`](super::install_registry_with_terminal_cards):
+    /// [`install_registry_with_test_cards`](super::install_registry_with_test_cards):
     /// a later call is a silent no-op rather than a panic, so a `#[ctor]` and a
     /// belt-and-braces call from a test body can coexist. That holds against
     /// *any* earlier claimant, not just another `MockRegistry` — the tables are
