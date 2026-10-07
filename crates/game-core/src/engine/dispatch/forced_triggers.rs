@@ -24,9 +24,9 @@ use crate::state::{
 /// abilities on scenario-structure cards may fire. Each variant carries
 /// the binding context the fired effect needs.
 ///
-/// `pub(crate)` — not part of the public API. [`crate::test_support`]
-/// constructs it internally via `fire_forced_on_enter` (a primitive-arg
-/// helper), so integration tests never need to name this type directly.
+/// `pub(crate)` — not part of the public API. Tests reach a timing point
+/// through `TestSession::fire_at`, which takes the public
+/// [`TimingEvent`](crate::engine::TimingEvent).
 /// Wired into `move_action` (`EnteredLocation`) and all eight phase boundaries
 /// (`PhaseStarted` / `PhaseEnded`, #697).
 #[derive(Debug, Clone, PartialEq, Eq)]

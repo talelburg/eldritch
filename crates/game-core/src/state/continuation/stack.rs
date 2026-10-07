@@ -61,8 +61,8 @@ impl ContinuationStack {
     }
 
     /// Build a stack from raw frames, bottom first, **without** checking any
-    /// invariant. For fixtures that model a state directly; reached publicly
-    /// only through
+    /// invariant. For render-only fixtures that are never applied; reached
+    /// publicly only through
     /// [`test_support::from_frames_unchecked`](crate::test_support::from_frames_unchecked).
     pub(crate) fn from_frames_unchecked(frames: Vec<Continuation>) -> Self {
         Self { frames }

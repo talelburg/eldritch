@@ -45,23 +45,10 @@ pub use outcome::{
 };
 pub use pathfinding::shortest_first_steps;
 
-// Crate-internal re-exports for `test_support::fire_forced_on_enter`.
-// Neither is public API: `ForcedTriggerPoint` stays internal; the
-// integration test constructs it through the primitive-arg helper so
-// it never needs to name the enum. `queue_forced_triggers` is wired into
-// `move_action` (EnteredLocation) and `enemy_phase_end`/`upkeep_phase_end`
-// (PhaseEnded).
-pub(crate) use dispatch::forced_triggers::{queue_forced_triggers, ForcedTriggerPoint};
 // The unified trigger-dispatch chokepoint's key (Axis-B T5a).
 pub use dispatch::emit::TimingEvent;
-// Round-end driver + act-window resume, exposed for `test_support`'s
-// `run_upkeep_round_end` / `resume_round_end_window` (the `when→at` ordering
-// regression in `crates/cards/tests/theyre_getting_out.rs` drives them end-to-end).
-// `enemy_phase_end` likewise backs `run_enemy_phase_end`, which drives step 3.4's
-// queued forced abilities through the real Enemy→Upkeep transition (#569).
-pub(crate) use dispatch::phases::{enemy_phase_end, upkeep_phase_end};
-// `pub(crate)` for `test_support` round-end helpers: drive the coordinator the
-// real loop drives (#434), and resume a window via the player-action entry.
+// `pub(crate)`: `apply` routes player actions through `apply_player_action`, and
+// `test_support`'s session drives turn actions and the loop directly.
 pub(crate) use dispatch::{apply_player_action, dispatch_turn_action, drive};
 // `pub(crate)` so `test_support::perform_skill_test` can start a plain skill test
 // directly (the synthetic entry point that replaced the retired

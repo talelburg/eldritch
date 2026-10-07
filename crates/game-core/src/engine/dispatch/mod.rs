@@ -49,8 +49,6 @@ mod cursor;
 // crate::engine::dispatch::elimination (a sibling of dispatch).
 pub(super) mod elimination;
 pub(super) mod encounter;
-// pub(super): engine/mod.rs re-exports ForcedTriggerPoint + queue_forced_triggers
-// via pub(crate) for test_support::fire_forced_at (Task 2 of #215).
 pub(super) mod forced_triggers;
 pub(crate) mod hunters;
 pub(crate) mod movement;
