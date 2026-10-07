@@ -5,9 +5,9 @@
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{Cx, EngineOutcome};
+use game_core::engine::{ApplyResult, Cx, EngineOutcome, TimingEvent};
 use game_core::state::{self, Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, MockRegistry, TestSession};
 
 const AGENDA: &str = "TEST-AGENDA";
 const AGENDA_BAD: &str = "TEST-AGENDA-BAD";
@@ -54,28 +54,24 @@ fn state_with_agenda(code: &str) -> GameState {
 
 #[test]
 fn native_effect_runs_via_registry() {
-    let mut state = state_with_agenda(AGENDA);
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_phase_end(
-        &mut state,
-        &mut events,
-        state::Phase::Enemy,
-        EventTiming::After,
-    );
+    let state = state_with_agenda(AGENDA);
+    let ApplyResult { state, outcome, .. } = TestSession::new(state)
+        .fire_at(TimingEvent::PhaseEnded {
+            phase: state::Phase::Enemy,
+        })
+        .finish();
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.agenda_doom, 7, "native effect mutated state");
 }
 
 #[test]
 fn native_effect_rejects_unknown_tag() {
-    let mut state = state_with_agenda(AGENDA_BAD);
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_phase_end(
-        &mut state,
-        &mut events,
-        state::Phase::Enemy,
-        EventTiming::After,
-    );
+    let state = state_with_agenda(AGENDA_BAD);
+    let ApplyResult { state, outcome, .. } = TestSession::new(state)
+        .fire_at(TimingEvent::PhaseEnded {
+            phase: state::Phase::Enemy,
+        })
+        .finish();
     assert!(
         matches!(outcome, EngineOutcome::Rejected { .. }),
         "unknown tag rejects"

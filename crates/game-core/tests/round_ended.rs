@@ -5,12 +5,12 @@ use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, Cx, EngineOutcome, OptionId};
+use game_core::engine::{self, ApplyResult, Cx, EngineOutcome, OptionId, TimingEvent};
 use game_core::state::{
     Agenda, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, LocationId,
     Phase,
 };
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, MockRegistry, TestSession};
 
 const AGENDA: &str = "TEST-AGENDA";
 
@@ -59,8 +59,9 @@ fn round_ended_fires_agenda_forced_ability() {
         doom_threshold: 10,
     }];
     state.agenda_index = 0;
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_round_end(&mut state, &mut events);
+    let ApplyResult { state, outcome, .. } = TestSession::new(state)
+        .fire_at(TimingEvent::RoundEnded)
+        .finish();
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.agenda_doom, 5, "RoundEnded fired the agenda ability");
 }

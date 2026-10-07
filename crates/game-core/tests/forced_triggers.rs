@@ -18,12 +18,11 @@ use card_dsl::dsl::{
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, OptionTarget};
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, OptionTarget, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
     self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
     EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
-    UpkeepPhaseFrame, UpkeepResume,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
@@ -245,19 +244,23 @@ fn forced_on_enter_resolves_immediately() {
     let mut loc = test_support::test_location(10, "Attic");
     loc.code = CardCode(HORROR_ATTIC.into());
 
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_investigator_at(test_support::test_investigator(1), LocationId(10))
         .with_location(loc)
         .with_active_investigator(InvestigatorId(1))
         .build();
 
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_enter(
-        &mut state,
-        &mut events,
-        InvestigatorId(1),
-        LocationId(10),
-    );
+    let ApplyResult {
+        state,
+        events,
+        outcome,
+        ..
+    } = TestSession::new(state)
+        .fire_at(TimingEvent::EnteredLocation {
+            investigator: InvestigatorId(1),
+            location: LocationId(10),
+        })
+        .finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 1);
@@ -328,19 +331,23 @@ fn forced_on_enter_no_op_when_location_has_no_abilities() {
     let mut loc = test_support::test_location(10, "Plain Room");
     loc.code = CardCode("plain-loc".into());
 
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_investigator_at(test_support::test_investigator(1), LocationId(10))
         .with_location(loc)
         .with_active_investigator(InvestigatorId(1))
         .build();
 
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_enter(
-        &mut state,
-        &mut events,
-        InvestigatorId(1),
-        LocationId(10),
-    );
+    let ApplyResult {
+        state,
+        events,
+        outcome,
+        ..
+    } = TestSession::new(state)
+        .fire_at(TimingEvent::EnteredLocation {
+            investigator: InvestigatorId(1),
+            location: LocationId(10),
+        })
+        .finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 0);
@@ -370,14 +377,17 @@ fn state_with_doom_agenda() -> GameState {
 
 #[test]
 fn forced_on_enemy_phase_end_fires_agenda_ability() {
-    let mut state = state_with_doom_agenda();
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_phase_end(
-        &mut state,
-        &mut events,
-        state::Phase::Enemy,
-        EventTiming::After,
-    );
+    let state = state_with_doom_agenda();
+    let ApplyResult {
+        state,
+        events,
+        outcome,
+        ..
+    } = TestSession::new(state)
+        .fire_at(TimingEvent::PhaseEnded {
+            phase: state::Phase::Enemy,
+        })
+        .finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
@@ -394,14 +404,17 @@ fn forced_on_enemy_phase_end_fires_agenda_ability() {
 #[test]
 fn forced_on_phase_end_wrong_phase_fires_nothing() {
     // The agenda ability is keyed to Enemy; firing Mythos should be a no-op.
-    let mut state = state_with_doom_agenda();
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_phase_end(
-        &mut state,
-        &mut events,
-        state::Phase::Mythos,
-        EventTiming::After,
-    );
+    let state = state_with_doom_agenda();
+    let ApplyResult {
+        state,
+        events,
+        outcome,
+        ..
+    } = TestSession::new(state)
+        .fire_at(TimingEvent::PhaseEnded {
+            phase: state::Phase::Mythos,
+        })
+        .finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
@@ -424,14 +437,15 @@ fn dsl_phase_mapping_non_enemy_phases_produce_no_hits() {
         state::Phase::Investigation,
         state::Phase::Upkeep,
     ] {
-        let mut state = state_with_doom_agenda();
-        let mut events = Vec::new();
-        let outcome = test_support::fire_forced_on_phase_end(
-            &mut state,
-            &mut events,
-            phase,
-            EventTiming::After,
-        );
+        let state = state_with_doom_agenda();
+        let ApplyResult {
+            state,
+            events,
+            outcome,
+            ..
+        } = TestSession::new(state)
+            .fire_at(TimingEvent::PhaseEnded { phase: phase })
+            .finish();
 
         assert_eq!(
             outcome,
@@ -464,13 +478,16 @@ fn forced_on_phase_end_no_op_when_agenda_has_no_abilities() {
     }];
     state.agenda_index = 0;
 
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_phase_end(
-        &mut state,
-        &mut events,
-        state::Phase::Enemy,
-        EventTiming::After,
-    );
+    let ApplyResult {
+        state,
+        events,
+        outcome,
+        ..
+    } = TestSession::new(state)
+        .fire_at(TimingEvent::PhaseEnded {
+            phase: state::Phase::Enemy,
+        })
+        .finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 0);
@@ -481,19 +498,19 @@ fn forced_on_phase_end_no_op_when_agenda_has_no_abilities() {
 fn forced_on_phase_end_no_op_when_no_act_or_agenda() {
     // Empty decks — common fixture shape for tests not modeling scenarios.
     let inv = test_support::test_investigator(1);
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_turn_order([InvestigatorId(1)])
         .build();
     // state.agenda_deck / act_deck are empty by default from GameStateBuilder.
 
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_phase_end(
-        &mut state,
-        &mut events,
-        state::Phase::Enemy,
-        EventTiming::After,
-    );
+    let ApplyResult {
+        events, outcome, ..
+    } = TestSession::new(state)
+        .fire_at(TimingEvent::PhaseEnded {
+            phase: state::Phase::Enemy,
+        })
+        .finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert!(events.is_empty(), "no events when decks are empty");
@@ -505,13 +522,13 @@ fn forced_on_phase_end_no_op_when_no_lead_investigator() {
     let mut state = state_with_doom_agenda();
     state.turn_order.clear();
 
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_phase_end(
-        &mut state,
-        &mut events,
-        state::Phase::Enemy,
-        EventTiming::After,
-    );
+    let ApplyResult {
+        events, outcome, ..
+    } = TestSession::new(state)
+        .fire_at(TimingEvent::PhaseEnded {
+            phase: state::Phase::Enemy,
+        })
+        .finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert!(events.is_empty(), "no events without a lead investigator");
@@ -536,13 +553,16 @@ fn forced_on_phase_end_fires_act_ability() {
     }];
     state.agenda_index = 0;
 
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_phase_end(
-        &mut state,
-        &mut events,
-        state::Phase::Enemy,
-        EventTiming::After,
-    );
+    let ApplyResult {
+        state,
+        events,
+        outcome,
+        ..
+    } = TestSession::new(state)
+        .fire_at(TimingEvent::PhaseEnded {
+            phase: state::Phase::Enemy,
+        })
+        .finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
@@ -559,24 +579,27 @@ fn forced_on_phase_end_fires_act_ability() {
 // ── EndOfTurn tests ───────────────────────────────────────────────────────────
 
 #[test]
-fn fire_forced_at_end_of_turn_resolves_threat_area_ability() {
+fn end_of_turn_forced_resolves_threat_area_ability() {
     let mut inv = test_support::test_investigator(1);
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode(END_OF_TURN_CARD.into()),
         CardInstanceId(1),
     ));
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_turn_order([InvestigatorId(1)])
         .build();
 
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_at_end_of_turn(
-        &mut state,
-        &mut events,
-        InvestigatorId(1),
-        EventTiming::After,
-    );
+    let ApplyResult {
+        state,
+        events,
+        outcome,
+        ..
+    } = TestSession::new(state)
+        .fire_at(TimingEvent::EndOfTurn {
+            investigator: InvestigatorId(1),
+        })
+        .finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 1);
@@ -587,19 +610,22 @@ fn fire_forced_at_end_of_turn_resolves_threat_area_ability() {
 }
 
 #[test]
-fn fire_forced_at_end_of_turn_no_op_without_threat_area_card() {
-    let mut state = GameStateBuilder::new()
+fn end_of_turn_forced_no_op_without_threat_area_card() {
+    let state = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))
         .with_turn_order([InvestigatorId(1)])
         .build();
 
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_at_end_of_turn(
-        &mut state,
-        &mut events,
-        InvestigatorId(1),
-        EventTiming::After,
-    );
+    let ApplyResult {
+        state,
+        events,
+        outcome,
+        ..
+    } = TestSession::new(state)
+        .fire_at(TimingEvent::EndOfTurn {
+            investigator: InvestigatorId(1),
+        })
+        .finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 0);
@@ -656,25 +682,31 @@ fn end_turn_fires_end_of_turn_forced_for_the_ending_investigator() {
 // ── AfterLocationInvestigated tests ───────────────────────────────────────────
 
 #[test]
-fn fire_forced_after_investigate_resolves_threat_area_ability() {
+fn after_investigate_forced_resolves_threat_area_ability() {
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(10));
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode(AFTER_INVESTIGATE_CARD.into()),
         CardInstanceId(1),
     ));
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_location(test_support::test_location(10, "Study"))
         .with_turn_order([InvestigatorId(1)])
         .build();
 
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_after_location_investigated(
-        &mut state,
-        &mut events,
-        InvestigatorId(1),
-    );
+    let ApplyResult {
+        state,
+        events,
+        outcome,
+        ..
+    } = TestSession::new(state)
+        .fire_at(TimingEvent::SkillTestResolved {
+            investigator: InvestigatorId(1),
+            kind: SkillTestKind::Investigate,
+            outcome: TestOutcome::Success,
+        })
+        .finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 1);
@@ -685,21 +717,27 @@ fn fire_forced_after_investigate_resolves_threat_area_ability() {
 }
 
 #[test]
-fn fire_forced_after_investigate_no_op_without_threat_area_card() {
+fn after_investigate_forced_no_op_without_threat_area_card() {
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(10));
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_location(test_support::test_location(10, "Study"))
         .with_turn_order([InvestigatorId(1)])
         .build();
 
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_after_location_investigated(
-        &mut state,
-        &mut events,
-        InvestigatorId(1),
-    );
+    let ApplyResult {
+        state,
+        events,
+        outcome,
+        ..
+    } = TestSession::new(state)
+        .fire_at(TimingEvent::SkillTestResolved {
+            investigator: InvestigatorId(1),
+            kind: SkillTestKind::Investigate,
+            outcome: TestOutcome::Success,
+        })
+        .finish();
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(state.investigators[&InvestigatorId(1)].horror(), 0);
@@ -1222,11 +1260,8 @@ fn upkeep_phase_end_forced_resolves_before_the_round_end() {
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_location(test_support::test_location(10, "Study"))
-        .with_phase(state::Phase::Upkeep)
         .with_turn_order([InvestigatorId(1)])
-        .with_phase_anchor(UpkeepPhaseFrame {
-            resume: UpkeepResume::Begins,
-        })
+        .ending_upkeep_phase()
         .build();
     state.act_deck = vec![Act {
         code: CardCode(UPKEEP_END_ACT.into()),
@@ -1239,8 +1274,8 @@ fn upkeep_phase_end_forced_resolves_before_the_round_end() {
     }];
     state.agenda_index = 0;
 
-    let mut events = Vec::new();
-    let _ = test_support::run_upkeep_round_end(&mut state, &mut events);
+    let session = TestSession::new(state);
+    let events = session.events();
 
     let phase_end = events
         .iter()
@@ -1318,19 +1353,18 @@ fn order_first() -> Action {
 fn horror_after_entering(code: &str) -> u8 {
     let mut loc = test_support::test_location(10, "Attic");
     loc.code = CardCode(code.into());
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_investigator_at(test_support::test_investigator(1), LocationId(10))
         .with_location(loc)
         .with_active_investigator(InvestigatorId(1))
         .build();
 
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_enter(
-        &mut state,
-        &mut events,
-        InvestigatorId(1),
-        LocationId(10),
-    );
+    let ApplyResult { state, outcome, .. } = TestSession::new(state)
+        .fire_at(TimingEvent::EnteredLocation {
+            investigator: InvestigatorId(1),
+            location: LocationId(10),
+        })
+        .finish();
     assert_eq!(outcome, EngineOutcome::Done);
     state.investigators[&InvestigatorId(1)].horror()
 }

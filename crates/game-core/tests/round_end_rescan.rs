@@ -15,14 +15,12 @@
 //! play, so the `at` forced fires (one clue). The difference is the re-scan.
 
 use card_dsl::dsl::{self, EventPattern, EventTiming};
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, Cx, EngineOutcome, OptionId};
+use game_core::engine::{Cx, EngineOutcome, OptionTarget};
 use game_core::state::{
-    Act, CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, InvestigatorId, Phase,
-    UpkeepPhaseFrame, UpkeepResume,
+    Act, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId,
 };
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, MockRegistry, TestSession};
 
 const TEST_ACT: &str = "TESTACT";
 const TEST_X: &str = "TESTX";
@@ -67,9 +65,10 @@ fn install() {
         .install();
 }
 
-/// Upkeep, the test act current, the lead holding `TESTX` (the `at`-forced
-/// source) in their threat area with 0 clues.
-fn rescan_state() -> GameState {
+/// The end of the Upkeep phase, the test act current, the lead holding `TESTX`
+/// (the `at`-forced source) in their threat area with 0 clues. Settled, it rests
+/// at the round end's `when` reaction window.
+fn round_end_window() -> TestSession {
     let inv = InvestigatorId(1);
     let mut investigator = test_support::test_investigator(1);
     investigator.clues = 0;
@@ -78,10 +77,7 @@ fn rescan_state() -> GameState {
         CardInstanceId(0),
     ));
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Upkeep)
-        .with_phase_anchor(UpkeepPhaseFrame {
-            resume: UpkeepResume::Begins,
-        })
+        .ending_upkeep_phase()
         .with_investigator(investigator)
         .with_turn_order([inv])
         .build();
@@ -90,28 +86,16 @@ fn rescan_state() -> GameState {
         clue_threshold: 0,
     }];
     state.act_index = 0;
-    state
+    TestSession::new(state)
 }
 
 #[test]
 fn when_cell_picked_suppresses_the_at_forced() {
-    let mut state = rescan_state();
-    let mut events = Vec::new();
-    let out = test_support::run_upkeep_round_end(&mut state, &mut events);
-    assert!(
-        matches!(out, EngineOutcome::AwaitingInput { .. }),
-        "the `when` reaction window opens: {out:?}"
-    );
     // Pick the `when` reaction (sole candidate): it removes TESTX before the
     // `at` cell is scanned, so the `at` forced never fires.
-    let r = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
+    let session = round_end_window().pick(OptionTarget::Act);
     assert_eq!(
-        r.state.investigators[&InvestigatorId(1)].clues,
+        session.state().investigators[&InvestigatorId(1)].clues,
         0,
         "the `at` forced must NOT fire: the `when` cell removed its source (per-cell re-scan)"
     );
@@ -121,17 +105,9 @@ fn when_cell_picked_suppresses_the_at_forced() {
 fn when_cell_skipped_leaves_the_at_forced_eligible() {
     // Control: skip the `when` reaction → TESTX stays in play → the `at` forced
     // fires (one clue). Isolates "the re-scan suppressed it" from "it never fired".
-    let mut state = rescan_state();
-    let mut events = Vec::new();
-    let _ = test_support::run_upkeep_round_end(&mut state, &mut events);
-    let r = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Skip,
-        }),
-    );
+    let session = round_end_window().skip();
     assert_eq!(
-        r.state.investigators[&InvestigatorId(1)].clues,
+        session.state().investigators[&InvestigatorId(1)].clues,
         1,
         "the `at` forced fires when the `when` cell leaves its source in play"
     );
