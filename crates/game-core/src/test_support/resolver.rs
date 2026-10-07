@@ -647,8 +647,10 @@ pub fn perform_skill_test(
 #[must_use = "a TestSession step returns the advanced session"]
 pub struct TestSession {
     state: GameState,
-    /// Where the session rests: the outcome of the last step the engine
-    /// accepted (or of settling). A rejected step leaves it standing.
+    /// Where the session rests: the outcome of the last step (or of settling).
+    /// A rejected step rests at the last prompt it reached — the one whose
+    /// scripted reply the engine rejected — or, if its first apply was
+    /// rejected, where it already rested.
     rest: EngineOutcome,
     /// The last step's own outcome and events, rejection included.
     last_outcome: EngineOutcome,
@@ -794,10 +796,21 @@ impl TestSession {
             mut events,
             mut script,
         } = self;
+        // The last prompt the step reached. A reply the engine rejects restores
+        // the state to that prompt, so the session rests there rather than where
+        // the step started.
+        let mut reached: Option<EngineOutcome> = None;
+        let mut note = |result: ApplyResult| {
+            if matches!(result.outcome, EngineOutcome::AwaitingInput { .. }) {
+                reached = Some(result.outcome.clone());
+            }
+            result
+        };
+        let first = note(first(state));
         let result = drain_with_applier(
-            first(state),
+            first,
             |request, state| (script.remaining() > 0).then(|| script.next(request, state)),
-            engine::apply,
+            |state, action| note(engine::apply(state, action)),
         );
         let ApplyResult {
             state,
@@ -808,7 +821,7 @@ impl TestSession {
         Self {
             state,
             rest: match outcome {
-                EngineOutcome::Rejected { .. } => rest,
+                EngineOutcome::Rejected { .. } => reached.unwrap_or(rest),
                 _ => outcome.clone(),
             },
             last_outcome: outcome,
@@ -955,8 +968,10 @@ impl TestSession {
         }
     }
 
-    /// The reason the last step was rejected. A rejected step leaves the state
-    /// and the prompt as they were.
+    /// The reason the last step was rejected. A step rejected on its first
+    /// apply leaves the state and the prompt as they were; one whose scripted
+    /// reply is rejected partway through its drain rests at the prompt that
+    /// reply answered, with the state as of that prompt.
     ///
     /// # Panics
     ///

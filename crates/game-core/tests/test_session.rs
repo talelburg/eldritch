@@ -438,6 +438,33 @@ fn a_rejected_step_reads_back_and_leaves_the_prompt_standing() {
     );
 }
 
+/// A scripted reply the engine rejects partway through a step's drain leaves
+/// the session at the prompt that reply answered, not where the step started:
+/// the activation's action is already spent, so the prompt and the state agree
+/// on standing at the choice, and the next step answers it.
+#[test]
+fn a_rejected_reply_in_the_drain_rests_at_the_prompt_it_answered() {
+    let session = board()
+        .open_turn(INV)
+        .session()
+        .resolve_choices(|c| {
+            c.pick_single(OptionId(99));
+        })
+        .take(&activate(DECIDE_INST));
+
+    assert!(!session.expect_rejected().is_empty());
+    assert_eq!(session.prompt().nature, PromptNature::Decision);
+    assert_eq!(session.state().investigators[&INV].actions_remaining, 2);
+
+    let session = session.pick_nth(1);
+
+    assert_eq!(resources(&session), 7);
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(INV))
+    );
+}
+
 /// `expect_rejected` on a step that was accepted panics.
 #[test]
 #[should_panic(expected = "was not rejected")]
