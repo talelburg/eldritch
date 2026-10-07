@@ -560,9 +560,11 @@ pub fn reshuffle_encounter_discard(cx: &mut Cx) {
 ///
 /// Returns `Some(code)` when a card was available (either from the
 /// deck directly or after the reshuffle). Returns `None` when both
-/// the deck and the discard are empty — callers decide how to
-/// interpret this (#69's Mythos loop treats it as a scenario
-/// condition rather than an engine error).
+/// the deck and the discard are empty, a state no rule defines: the
+/// Rules Reference covers only the empty deck ("shuffle the encounter
+/// discard pile back into the encounter deck"). Callers therefore
+/// reject it or treat it as malformed scenario data; each documents
+/// which.
 pub(super) fn draw_encounter_top(cx: &mut Cx) -> Option<CardCode> {
     if cx.state.encounter_deck.is_empty() {
         if cx.state.encounter_discard.is_empty() {
@@ -678,6 +680,8 @@ pub(super) fn drive_player_draw(cx: &mut Cx) -> EngineOutcome {
 /// [`drive_player_draw`] step knows whether to draw again), then push the card's
 /// disposition + Revelation frames via [`resolve_encounter_card`]. Returns its
 /// outcome (`Done` with frames pushed, or a registry/empty-deck reject).
+/// An empty deck and discard rejects only on the chain's first card; past
+/// it, the draw panics as malformed scenario data.
 ///
 /// Called only by [`drive_player_draw`] — the first draw and every surge
 /// re-draw of a drawer's chain (including after a mid-chain engagement tie
