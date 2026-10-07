@@ -34,9 +34,10 @@ use crate::rng::RngState;
 use crate::scenario::ScenarioId;
 use crate::state::{
     ChaosBag, Continuation, ContinuationStack, Counter, EncounterDrawFrame, Enemy, EnemyId,
-    FastActorScope, FastWindowFrame, FastWindowKind, GameState, HandSizeDiscard,
-    InvestigationPhaseFrame, InvestigationResume, Investigator, InvestigatorId,
+    EnemyPhaseFrame, EnemyResume, FastActorScope, FastWindowFrame, FastWindowKind, GameState,
+    HandSizeDiscard, InvestigationPhaseFrame, InvestigationResume, Investigator, InvestigatorId,
     InvestigatorTurnFrame, Location, LocationId, MulliganFrame, Phase, TokenModifiers,
+    UpkeepPhaseFrame, UpkeepResume,
 };
 
 /// Fluent builder for a [`GameState`].
@@ -338,6 +339,50 @@ impl GameStateBuilder {
             .into(),
         );
         self.with_investigator_turn(investigator)
+    }
+
+    /// End the Enemy phase: the moment after the last investigator's attacks,
+    /// when step 3.4 runs.
+    ///
+    /// Sets the Enemy phase and stages its anchor at
+    /// [`AfterAllAttacked`](EnemyResume::AfterAllAttacked), so the engine's next
+    /// drive runs the phase end — Rules Reference 3.4, *"This step formalizes the
+    /// end of the enemy phase."* — resolves the `PhaseEnded { Enemy }` forced
+    /// abilities, and transitions to Upkeep.
+    pub fn ending_enemy_phase(mut self) -> Self {
+        self.phase = Phase::Enemy;
+        self.phase_anchor = Some(
+            EnemyPhaseFrame {
+                resume: EnemyResume::AfterAllAttacked,
+                attacking: None,
+            }
+            .into(),
+        );
+        self
+    }
+
+    /// End the Upkeep phase, and with it the round: the moment after step 4.4's
+    /// draw and resource.
+    ///
+    /// Sets the Upkeep phase and stages its anchor at
+    /// [`AfterDraw`](UpkeepResume::AfterDraw), so the engine's next drive runs
+    /// step 4.5 (*"each investigator with more than 8 cards in hand chooses and
+    /// discards cards from his or her hand until he or she has 8 cards remaining
+    /// in hand"* — nothing, unless a hand is over the cap) and then step 4.6:
+    /// *"This step formalizes the end of the upkeep phase. As the upkeep phase is
+    /// the final phase in the round, this step also formalizes the end of the
+    /// round. Any active "until the end of the round" lasting effects expire at
+    /// this time."* The `PhaseEnded { Upkeep }` forced abilities resolve, then
+    /// the round end's, then play proceeds to the next round's Mythos phase.
+    pub fn ending_upkeep_phase(mut self) -> Self {
+        self.phase = Phase::Upkeep;
+        self.phase_anchor = Some(
+            UpkeepPhaseFrame {
+                resume: UpkeepResume::AfterDraw,
+            }
+            .into(),
+        );
+        self
     }
 
     /// Stage an [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame

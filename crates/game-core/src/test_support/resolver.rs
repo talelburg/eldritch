@@ -595,6 +595,10 @@ pub fn perform_skill_test(
 /// - **Construction settles** the built state through the production `apply`
 ///   scaffolding, so the session starts where the engine would rest. An open
 ///   turn yields the turn menu; an open Fast window re-surfaces its prompt. A
+///   phase anchor staged at its phase end
+///   ([`ending_enemy_phase`](crate::state::GameStateBuilder::ending_enemy_phase),
+///   [`ending_upkeep_phase`](crate::state::GameStateBuilder::ending_upkeep_phase))
+///   runs that phase end, and play goes on from it. A
 ///   fixture whose top frame cannot re-surface its prompt is a stack the engine
 ///   never rests at, and construction panics.
 /// - **Every step applies once, then drains to the next rest.** The steps are

@@ -3,14 +3,16 @@
 //! A timing point fired from a test runs the way it does in play: the
 //! coordinator walks its cells, each cell resolves its forced abilities before
 //! its reactions, two simultaneous forced abilities become the lead's ordering
-//! run, and an ending latched along the way is finalized. Every test drives
+//! run, and an ending latched along the way is finalized. A phase the builder
+//! stages at its end runs that phase end when the session settles. Every test drives
 //! through the session's public steps and asserts on the prompt, the events and
 //! the board. The one read of the continuation stack is the ending test's: a
 //! finished game leaves nothing to resolve.
 //!
 //! Synthetic probes only (ADR 0016). Each `_fa_*` code models one primitive —
 //! a forced ability at the end of the round that marks which ability fired, a
-//! reaction at the same timing point, a forced ability that reaches a
+//! reaction at the same timing point, a forced ability at a phase end that
+//! marks the same way, a forced ability that reaches a
 //! resolution point — and none stands in for a printed card. They live here,
 //! the one binary that reads them.
 
@@ -20,8 +22,8 @@ use game_core::engine::{Cx, EngineOutcome, InputKind, OptionTarget, TimingEvent}
 use game_core::event::Event;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
-    Act, CardCode, CardInPlay, CardInstanceId, EnemyPhaseFrame, EnemyResume, GameStateBuilder,
-    InvestigatorId, Phase,
+    Act, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, Investigator, InvestigatorId,
+    Phase,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_sequence};
@@ -36,6 +38,9 @@ const REACTION: &str = "_fa_reaction";
 /// `Forced - At the end of the enemy phase: mark 4.` An act ability, since
 /// the phase-end scan reads the current act and agenda.
 const PHASE_END: &str = "_fa_phase_end";
+/// `Forced - At the end of the upkeep phase: mark 5.` An act ability, like
+/// [`PHASE_END`].
+const UPKEEP_END: &str = "_fa_upkeep_end";
 /// `Forced - At the end of the round: (→R1)` — reaches a resolution point.
 const RESOLVES: &str = "_fa_resolves";
 
@@ -91,25 +96,40 @@ fn install() {
                 dsl::native("_fa:mark4"),
             )]
         })
+        .with_abilities(UPKEEP_END, || {
+            vec![dsl::forced_on_event(
+                EventPattern::PhaseEnded {
+                    phase: dsl::Phase::Upkeep,
+                },
+                EventTiming::At,
+                dsl::native("_fa:mark5"),
+            )]
+        })
         .with_native_effect("_fa:mark4", |cx, ctx| mark(cx, ctx, 4))
+        .with_native_effect("_fa:mark5", |cx, ctx| mark(cx, ctx, 5))
         .with_native_effect("_fa:mark1", |cx, ctx| mark(cx, ctx, 1))
         .with_native_effect("_fa:mark2", |cx, ctx| mark(cx, ctx, 2))
         .with_native_effect("_fa:mark3", |cx, ctx| mark(cx, ctx, 3))
         .install();
 }
 
-/// One investigator holding `codes` in their threat area, instance ids from 1
+/// The investigator, holding `codes` in their threat area, instance ids from 1
 /// in order — the round-end scans read the cards each active investigator
 /// controls.
-fn session_holding(codes: &[&str]) -> TestSession {
+fn holding(codes: &[&str]) -> Investigator {
     let mut investigator = test_support::test_investigator(1);
     for (i, code) in codes.iter().enumerate() {
         investigator
             .threat_area
             .push(CardInPlay::enter_play(CardCode::new(*code), instance(i)));
     }
+    investigator
+}
+
+/// One investigator holding `codes`, settled.
+fn session_holding(codes: &[&str]) -> TestSession {
     GameStateBuilder::new()
-        .with_investigator(investigator)
+        .with_investigator(holding(codes))
         .with_turn_order([INV])
         .session()
 }
@@ -262,27 +282,28 @@ fn lethal_damage_eliminates_the_last_investigator_and_ends_the_scenario() {
     );
 }
 
-/// The phase end is not a step: a session never rests with a phase anchor
-/// exposed, so settling a state parked after the phase's attacks is what runs
-/// step 3.4 — through the same production scaffolding a step uses — and the
-/// phase-end forced ability resolves before the transition to Upkeep.
-#[test]
-fn settling_an_enemy_phase_parked_after_its_attacks_ends_the_phase() {
-    let mut state = GameStateBuilder::new()
-        .with_investigator(test_support::test_investigator(1))
+/// One investigator holding `held` in their threat area, `builder`'s staging,
+/// and an act carrying `act`'s ability — the phase-end scans read the current
+/// act — settled.
+fn acting(act: &str, held: &[&str], builder: GameStateBuilder) -> TestSession {
+    let mut state = builder
+        .with_investigator(holding(held))
         .with_turn_order([INV])
-        .with_phase(Phase::Enemy)
-        .with_phase_anchor(EnemyPhaseFrame {
-            resume: EnemyResume::AfterAllAttacked,
-            attacking: None,
-        })
         .build();
     state.act_deck = vec![Act {
-        code: CardCode::new(PHASE_END),
+        code: CardCode::new(act),
         clue_threshold: 0,
     }];
+    TestSession::new(state)
+}
 
-    let session = TestSession::new(state);
+/// The phase end is not a step: a session never rests with a phase anchor
+/// exposed, so the builder stages the phase at its end and settling runs step
+/// 3.4 — through the same production scaffolding a step uses. The phase-end
+/// forced ability resolves before the transition to Upkeep.
+#[test]
+fn ending_the_enemy_phase_resolves_its_forced_abilities_then_starts_upkeep() {
+    let session = acting(PHASE_END, &[], GameStateBuilder::new().ending_enemy_phase());
 
     assert_event_sequence!(
         session.events(),
@@ -292,6 +313,35 @@ fn settling_an_enemy_phase_parked_after_its_attacks_ends_the_phase() {
         Event::ResourcesGained { amount: 4, .. },
         Event::PhaseStarted {
             phase: Phase::Upkeep
+        },
+    );
+}
+
+/// Settling an upkeep staged at its end runs steps 4.5 and 4.6 alone — the
+/// draw-and-resource step does not re-run — so the phase end's forced ability
+/// resolves, then the round end's, and the next round's Mythos phase begins.
+#[test]
+fn ending_upkeep_ends_the_phase_then_the_round_then_starts_mythos() {
+    let session = acting(
+        UPKEEP_END,
+        &[FORCED_A],
+        GameStateBuilder::new().ending_upkeep_phase(),
+    );
+
+    assert_eq!(
+        marks(&session),
+        vec![5, 1],
+        "the phase-end forced ability, then the round-end one, and no upkeep resource"
+    );
+    assert_event_sequence!(
+        session.events(),
+        Event::PhaseEnded {
+            phase: Phase::Upkeep
+        },
+        Event::ResourcesGained { amount: 5, .. },
+        Event::ResourcesGained { amount: 1, .. },
+        Event::PhaseStarted {
+            phase: Phase::Mythos
         },
     );
 }
