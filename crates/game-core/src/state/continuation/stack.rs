@@ -99,8 +99,8 @@ impl ContinuationStack {
     }
 
     /// The top frame if it is of kind `F`; `None` when the stack is empty or
-    /// its top is another kind. The read counterpart to
-    /// [`top_mut`](Self::top_mut), which panics instead.
+    /// its top is another kind. The read counterpart to the crate-private
+    /// `top_mut`, which panics instead.
     #[must_use]
     pub fn top_of<F: Frame>(&self) -> Option<&F> {
         self.top().and_then(F::downcast_ref)
