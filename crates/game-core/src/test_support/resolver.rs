@@ -595,7 +595,8 @@ pub fn perform_skill_test(
 ///   fixture whose top frame cannot re-surface its prompt is a stack the engine
 ///   never rests at, and construction panics.
 /// - **Every step applies once, then drains to the next rest.** The steps are
-///   [`take`](Self::take), [`pick`](Self::pick), [`pick_nth`](Self::pick_nth),
+///   [`take`](Self::take), [`pick`](Self::pick),
+///   [`pick_unanchored`](Self::pick_unanchored), [`pick_nth`](Self::pick_nth),
 ///   [`confirm`](Self::confirm), [`skip`](Self::skip) and the raw
 ///   [`apply`](Self::apply). The drain answers prompts through the session's
 ///   reply policy and stops at the turn menu, at `Done` (the game is over), at
@@ -613,8 +614,9 @@ pub fn perform_skill_test(
 /// the continuation stack: the turn menu is the prompt anchored to
 /// [`TurnControl`](OptionTarget::TurnControl), any other `AwaitingInput` is a
 /// prompt, and `Done` is game over. No step matches on option labels — an
-/// option is chosen by the board entity it anchors to, or by printed position
-/// for a [`Decision`](PromptNature::Decision) alone (ADR 0011, ADR 0015).
+/// option is chosen by the board entity it anchors to (or by having none), or
+/// by printed position for a [`Decision`](PromptNature::Decision) alone
+/// (ADR 0011, ADR 0015).
 ///
 /// ```
 /// # use game_core::engine::{enumerate::TurnAction, OptionTarget};
@@ -779,32 +781,58 @@ impl TestSession {
     ///
     /// Panics at the turn menu (take a turn action with [`take`](Self::take)),
     /// or unless exactly one option is anchored to `target`.
+    // By value so a call reads `pick(OptionTarget::Enemy(id))`, the anchor named
+    // inline like every other step's argument.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn pick(self, target: OptionTarget) -> Self {
+        let id = self.sole_option_at(Some(&target), "pick");
+        self.respond(InputResponse::PickSingle(id))
+    }
+
+    /// Step: choose the one option of the current prompt the engine left
+    /// un-anchored (ADR 0011 spells "no board home" as no anchor), then drain —
+    /// the investigator's own entry in a soak prompt, beside the anchored
+    /// soakers.
+    ///
+    /// # Panics
+    ///
+    /// Panics at the turn menu, or unless exactly one option is un-anchored.
+    pub fn pick_unanchored(self) -> Self {
+        let id = self.sole_option_at(None, "pick_unanchored");
+        self.respond(InputResponse::PickSingle(id))
+    }
+
+    /// The id of the one option of the current prompt whose anchor is
+    /// `target` (`None` = un-anchored), or a panic naming why there isn't one.
+    fn sole_option_at(&self, target: Option<&OptionTarget>, step: &str) -> OptionId {
         assert!(
             !self.at_turn_menu(),
-            "TestSession::pick: the session is at the turn menu; take a turn action \
+            "TestSession::{step}: the session is at the turn menu; take a turn action \
              with `take(&TurnAction)`",
         );
         let request = self.prompt();
-        let mut anchored = request
+        let what = target.map_or_else(
+            || "un-anchored".to_owned(),
+            |t| format!("anchored to {t:?}"),
+        );
+        let mut matching = request
             .options
             .iter()
-            .filter(|o| o.target.as_ref() == Some(&target));
-        let Some(option) = anchored.next() else {
+            .filter(|o| o.target.as_ref() == target);
+        let Some(option) = matching.next() else {
             panic!(
-                "TestSession::pick: no option anchored to {target:?}; prompt {:?} offers {:?}",
+                "TestSession::{step}: no option {what}; prompt {:?} offers {:?}",
                 request.prompt, request.options,
             );
         };
         assert!(
-            anchored.next().is_none(),
-            "TestSession::pick: several options are anchored to {target:?}, so the anchor \
-             does not say which; prompt {:?} offers {:?}",
+            matching.next().is_none(),
+            "TestSession::{step}: several options are {what}, so the anchor does not say \
+             which; prompt {:?} offers {:?}",
             request.prompt,
             request.options,
         );
-        let id = option.id;
-        self.respond(InputResponse::PickSingle(id))
+        option.id
     }
 
     /// Step: choose the `n`th option (0-based) of the current prompt, then
