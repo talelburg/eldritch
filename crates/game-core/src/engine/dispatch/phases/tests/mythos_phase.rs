@@ -1,7 +1,7 @@
 use super::*;
 use crate::engine::dispatch;
 use crate::engine::outcome::InputKind;
-use crate::state::{GameStateBuilder, InvestigatorId, Phase, Status};
+use crate::state::{GameStateBuilder, InvestigatorId, MythosPhaseFrame, Phase, Status};
 use crate::test_support;
 
 #[test]
@@ -56,9 +56,9 @@ fn mythos_drives_from_entry_via_the_loop() {
     let mut state = GameStateBuilder::default()
         .with_investigator(test_support::test_investigator(1))
         .with_phase(Phase::Mythos)
-        .with_phase_anchor(Continuation::MythosPhase {
+        .with_phase_anchor(Continuation::MythosPhase(MythosPhaseFrame {
             resume: MythosResume::Entry,
-        })
+        }))
         .build();
     state.turn_order = vec![InvestigatorId(1)];
     let mut events = Vec::new();
@@ -112,7 +112,7 @@ fn mythos_anchor_pushed_during_phase() {
         state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::MythosPhase { .. })),
+            .any(|c| matches!(c, Continuation::MythosPhase(_))),
         "MythosPhase anchor on the stack during the phase; stack = {:?}",
         state.continuations,
     );
@@ -167,9 +167,9 @@ fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
         .with_investigator(test_support::test_investigator(1))
         .with_phase(Phase::Mythos)
         .with_turn_order([InvestigatorId(1)])
-        .with_phase_anchor(Continuation::MythosPhase {
+        .with_phase_anchor(Continuation::MythosPhase(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
-        })
+        }))
         .build();
     let mut events = Vec::new();
 
@@ -187,7 +187,7 @@ fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
         !state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::MythosPhase { .. })),
+            .any(|c| matches!(c, Continuation::MythosPhase(_))),
         "mythos_phase_end pops the Mythos anchor (the cascade into \
          Investigation then pushes its own anchor)",
     );

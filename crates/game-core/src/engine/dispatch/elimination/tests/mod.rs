@@ -1,5 +1,5 @@
 use super::*;
-use crate::state::{GameStateBuilder, InvestigationResume};
+use crate::state::{GameStateBuilder, InvestigationPhaseFrame, InvestigationResume};
 use crate::{assert_event, assert_no_event, test_support};
 
 mod defeat;
@@ -20,9 +20,9 @@ fn two_investigator_open_turn(whose: InvestigatorId) -> GameState {
         .with_investigator(second)
         .with_active_investigator(whose)
         .with_turn_order([a, b])
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(whose)
         .build()
 }

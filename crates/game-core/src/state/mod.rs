@@ -25,6 +25,10 @@ pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenRe
 pub use counter::Counter;
 // `define_id!` is used by the id submodules; kept crate-internal.
 pub use continuation::{
+    ActionResolutionFrame, EnemyPhaseFrame, InvestigationPhaseFrame, InvestigatorTurnFrame,
+    MoveEnterFrame, MythosPhaseFrame, UpkeepPhaseFrame,
+};
+pub use continuation::{
     ActionResume, AdvanceDeck, AdvanceStep, AdvanceTrigger, AssetEntry, Assignment,
     AttackLoopStage, CandidateSource, Continuation, ContinuationStack, DamageSource,
     DealDamageStep, EffectFrame, EliminationStep, EmitStep, EncounterDisposition,

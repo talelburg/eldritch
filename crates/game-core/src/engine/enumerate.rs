@@ -10,8 +10,8 @@ use crate::engine::dispatch::{act_agenda, actions, movement, reaction_windows};
 use crate::engine::outcome::OptionTarget;
 use crate::engine::{abilities_in_effect, ability_source};
 use crate::state::{
-    AbilityAddress, AbilitySource, Continuation, EnemyId, GameState, InvestigatorId, LocationId,
-    Phase, Status,
+    AbilityAddress, AbilitySource, EnemyId, Frame, GameState, InvestigatorId,
+    InvestigatorTurnFrame, LocationId, Phase, Status,
 };
 
 /// The enumerated open-turn actions for the active investigator.
@@ -189,10 +189,11 @@ impl TurnAction {
 /// [`TurnAction::EndTurn`] carries no investigator field, so its `TurnControl`
 /// anchor has to come from the frame.
 fn active_investigator(state: &GameState) -> Option<InvestigatorId> {
-    match state.continuations.last() {
-        Some(Continuation::InvestigatorTurn { investigator, .. }) => Some(*investigator),
-        _ => None,
-    }
+    state
+        .continuations
+        .top()
+        .and_then(InvestigatorTurnFrame::downcast_ref)
+        .map(|turn| turn.investigator)
 }
 
 /// The legal [`TurnAction`]s the active investigator may take at the open
@@ -209,11 +210,9 @@ fn active_investigator(state: &GameState) -> Option<InvestigatorId> {
 /// handler-acceptance by construction (routing via `OptionId` is 2b).
 #[must_use]
 pub fn legal_actions(state: &GameState) -> Vec<TurnAction> {
-    let Some(Continuation::InvestigatorTurn { investigator, .. }) = state.continuations.last()
-    else {
+    let Some(investigator) = active_investigator(state) else {
         return Vec::new();
     };
-    let investigator = *investigator;
     let mut actions = Vec::new();
     push_basic_actions(state, investigator, &mut actions);
     push_combat_engage_actions(state, investigator, &mut actions);

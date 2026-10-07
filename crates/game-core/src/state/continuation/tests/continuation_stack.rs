@@ -3,18 +3,22 @@ use card_dsl::dsl::Effect;
 use super::*;
 use crate::engine::evaluator::EvalContext;
 use crate::engine::TimingEvent;
-use crate::state::{Continuation, EffectFrame, EmitStep, GameStateBuilder, InvestigatorId};
+use crate::state::{
+    ActionResolutionFrame, Continuation, EffectFrame, EmitStep, EnemyPhaseFrame, GameStateBuilder,
+    InvestigationPhaseFrame, InvestigatorId, InvestigatorTurnFrame, MythosPhaseFrame,
+    UpkeepPhaseFrame,
+};
 
 #[test]
 fn awaits_input_gates_suspensions_but_not_anchors() {
     // Phase anchors are inert: they wake only when a child frame pops.
-    assert!(!Continuation::InvestigationPhase {
+    assert!(!Continuation::InvestigationPhase(InvestigationPhaseFrame {
         resume: InvestigationResume::TurnBegins,
-    }
+    })
     .awaits_input());
-    assert!(!Continuation::MythosPhase {
+    assert!(!Continuation::MythosPhase(MythosPhaseFrame {
         resume: MythosResume::Entry,
-    }
+    })
     .awaits_input());
     // A framework Fast window is a prompt even with no pending candidates:
     // `ResolveInput::Skip` closes it (#476; D1(a) on #927).
@@ -35,10 +39,10 @@ fn awaits_input_gates_suspensions_but_not_anchors() {
 
 #[test]
 fn investigator_turn_frame_classification() {
-    let frame = Continuation::InvestigatorTurn {
+    let frame = Continuation::InvestigatorTurn(InvestigatorTurnFrame {
         investigator: InvestigatorId(1),
         ending: false,
-    };
+    });
     // The open turn is not a framework anchor...
     assert!(!frame.is_phase_anchor());
     // ...and it DOES await input: the open turn surfaces its legal-action
@@ -46,10 +50,10 @@ fn investigator_turn_frame_classification() {
     // `ResolveInput(PickSingle(OptionId))` (2b, #447).
     assert!(frame.awaits_input());
     // The transient `ending: true` rotation sentinel is not a prompt.
-    assert!(!Continuation::InvestigatorTurn {
+    assert!(!Continuation::InvestigatorTurn(InvestigatorTurnFrame {
         investigator: InvestigatorId(1),
         ending: true,
-    }
+    })
     .awaits_input());
     // It carries no window candidates (the menu is re-enumerated, not stored).
     assert!(frame.pending_candidates().is_none());
@@ -60,10 +64,10 @@ fn investigator_turn_frame_round_trips_both_ending_states() {
     // The frame is replay state (the `ending` flag absorbed the former
     // `pending_end_turn`), so both flag values must serialize round-trip.
     for ending in [false, true] {
-        let frame = Continuation::InvestigatorTurn {
+        let frame = Continuation::InvestigatorTurn(InvestigatorTurnFrame {
             investigator: InvestigatorId(1),
             ending,
-        };
+        });
         let json = serde_json::to_string(&frame).unwrap();
         let back: Continuation = serde_json::from_str(&json).unwrap();
         assert_eq!(frame, back);
@@ -73,19 +77,19 @@ fn investigator_turn_frame_round_trips_both_ending_states() {
 #[test]
 fn phase_anchor_variants_round_trip_and_are_not_resolution_windows() {
     let anchors = [
-        Continuation::MythosPhase {
+        Continuation::MythosPhase(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
-        },
-        Continuation::InvestigationPhase {
+        }),
+        Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        },
-        Continuation::EnemyPhase {
+        }),
+        Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(InvestigatorId(3)),
-        },
-        Continuation::UpkeepPhase {
+        }),
+        Continuation::UpkeepPhase(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,
-        },
+        }),
     ];
     for a in anchors {
         // Anchors are framework frames, never reaction windows.
@@ -156,10 +160,10 @@ fn open_window_lives_on_the_continuation_stack_as_a_fast_window() {
 
 #[test]
 fn action_resolution_frame_never_awaits_input_and_is_not_a_phase_anchor() {
-    let f = Continuation::ActionResolution {
+    let f = Continuation::ActionResolution(ActionResolutionFrame {
         investigator: InvestigatorId(1),
         resume: ActionResume::Resource,
-    };
+    });
     assert!(
         !f.awaits_input(),
         "a mid-action frame is internal, never a prompt"

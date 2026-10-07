@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::EnemyPhaseFrame;
 
 /// The parked loop's re-exposure (#704): the head attacker's sequence has
 /// popped, so the loop takes it off, exhausts it, and — with none left —
@@ -21,10 +22,10 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
         .with_investigator(test_support::test_investigator(1))
         .with_turn_order([inv_id])
         .with_enemy(enemy)
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
-        })
+        }))
         .build();
     state.continuations.push(Continuation::AttackLoop {
         investigator: inv_id,
@@ -59,10 +60,10 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
     assert!(
         !state.continuations.iter().any(|c| matches!(
             c,
-            Continuation::EnemyPhase {
+            Continuation::EnemyPhase(EnemyPhaseFrame {
                 attacking: Some(_),
                 ..
-            }
+            })
         )),
         "cursor advanced past the sole investigator (no anchor still attacking)"
     );
@@ -89,10 +90,10 @@ fn a_head_attacker_that_dealt_nothing_still_exhausts() {
         .with_investigator(test_support::test_investigator(1))
         .with_turn_order([inv_id])
         .with_enemy(enemy)
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
-        })
+        }))
         .build();
     state.continuations.push(Continuation::AttackLoop {
         investigator: inv_id,

@@ -37,8 +37,8 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, TimingEvent}
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, Enemy, EnemyId,
-    GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId, Phase, Status,
-    Zone,
+    GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, InvestigatorId,
+    LocationId, Phase, Status, Zone,
 };
 use game_core::test_support;
 
@@ -110,9 +110,10 @@ fn soak_state(
     }
     // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
     // InvestigationPhase anchor at investigation_phase_end.
-    builder = builder.with_phase_anchor(Continuation::InvestigationPhase {
-        resume: InvestigationResume::TurnBegins,
-    });
+    builder =
+        builder.with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+            resume: InvestigationResume::TurnBegins,
+        }));
     // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
     // EndTurn cascade pops before advancing into the Enemy phase.
     builder = builder.with_investigator_turn(inv_id);

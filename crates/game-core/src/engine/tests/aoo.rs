@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::InvestigationPhaseFrame;
 
 #[test]
 fn move_with_ready_engaged_enemy_fires_aoo_and_enemy_follows() {
@@ -92,9 +93,9 @@ fn draw_action_fires_aoo_from_ready_engaged_enemy() {
         })
         .with_active_investigator(inv_id)
         .with_enemy(enemy)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(inv_id)
         .build();
 
@@ -135,9 +136,9 @@ fn draw_with_lethal_aoo_suppresses_the_draw() {
         })
         .with_active_investigator(inv_id)
         .with_enemy(enemy)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(inv_id)
         .build();
 
@@ -180,9 +181,9 @@ fn draw_with_no_engaged_enemy_draws_normally() {
             i
         })
         .with_active_investigator(inv_id)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(inv_id)
         .build();
 

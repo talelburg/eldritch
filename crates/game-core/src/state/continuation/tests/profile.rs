@@ -1,3 +1,7 @@
+use crate::state::{
+    ActionResolutionFrame, EnemyPhaseFrame, InvestigationPhaseFrame, InvestigatorTurnFrame,
+    MoveEnterFrame, MythosPhaseFrame, UpkeepPhaseFrame,
+};
 use card_dsl::dsl::Effect;
 
 use super::*;
@@ -50,10 +54,10 @@ fn deal_damage(step: DealDamageStep) -> Continuation {
 }
 
 fn investigator_turn(ending: bool) -> Continuation {
-    Continuation::InvestigatorTurn {
+    Continuation::InvestigatorTurn(InvestigatorTurnFrame {
         investigator: InvestigatorId(1),
         ending,
-    }
+    })
 }
 
 // --- The eight corrected answers (#925 / #927) -----------------------------
@@ -83,10 +87,10 @@ fn a_hand_play_disposal_does_not_await_input() {
 
 #[test]
 fn the_entered_location_half_of_a_move_does_not_await_input() {
-    let f = Continuation::MoveEnter {
+    let f = Continuation::MoveEnter(MoveEnterFrame {
         investigator: InvestigatorId(1),
         destination: LocationId(2),
-    };
+    });
     assert!(!f.awaits_input());
 }
 
@@ -407,17 +411,17 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(DRIVEN, COMPLETE),
         ),
         (
-            Continuation::MoveEnter {
+            Continuation::MoveEnter(MoveEnterFrame {
                 investigator: InvestigatorId(1),
                 destination: LocationId(2),
-            },
+            }),
             profile(DRIVEN, COMPLETE),
         ),
         (
-            Continuation::ActionResolution {
+            Continuation::ActionResolution(ActionResolutionFrame {
                 investigator: InvestigatorId(1),
                 resume: ActionResume::Resource,
-            },
+            }),
             profile(DRIVEN, COMPLETE),
         ),
         (
@@ -452,28 +456,28 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
         ),
         // Phase anchors: woken only when a child frame pops.
         (
-            Continuation::MythosPhase {
+            Continuation::MythosPhase(MythosPhaseFrame {
                 resume: MythosResume::Entry,
-            },
+            }),
             profile(INERT, CANCEL),
         ),
         (
-            Continuation::InvestigationPhase {
+            Continuation::InvestigationPhase(InvestigationPhaseFrame {
                 resume: InvestigationResume::TurnBegins,
-            },
+            }),
             profile(INERT, CANCEL),
         ),
         (
-            Continuation::EnemyPhase {
+            Continuation::EnemyPhase(EnemyPhaseFrame {
                 resume: EnemyResume::BeforeInvestigatorAttacked,
                 attacking: None,
-            },
+            }),
             profile(INERT, CANCEL),
         ),
         (
-            Continuation::UpkeepPhase {
+            Continuation::UpkeepPhase(UpkeepPhaseFrame {
                 resume: UpkeepResume::Begins,
-            },
+            }),
             profile(INERT, CANCEL),
         ),
     ]

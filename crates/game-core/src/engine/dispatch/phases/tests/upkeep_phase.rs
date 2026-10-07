@@ -3,8 +3,8 @@ use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::EngineOutcome;
 use crate::event::Event;
 use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
-    Phase, Status,
+    CardCode, CardInPlay, CardInstanceId, EnemyId, GameStateBuilder, InvestigationPhaseFrame,
+    InvestigatorId, LocationId, Phase, Status,
 };
 use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
@@ -446,9 +446,9 @@ fn end_turn_cascades_through_upkeep_to_mythos_draw_prompt() {
         .with_round(1)
         // Mid-Investigation invariant: the InvestigationPhase anchor (slice
         // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(id)
         .build();
 

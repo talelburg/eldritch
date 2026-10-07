@@ -3,7 +3,7 @@
 //! These are pure lookup functions with no side effects; they call only into
 //! `crate::state` / `card_dsl::dsl` and are called by multiple dispatch handlers.
 
-use crate::state::{Continuation, GameState, InvestigatorId, LocationId, Status};
+use crate::state::{GameState, InvestigatorId, InvestigatorTurnFrame, LocationId, Status};
 
 /// Investigators (Active, on the map) at `loc`, in `turn_order` order
 /// so prey ties carry a deterministic, lead-first candidate list.
@@ -120,13 +120,11 @@ pub(super) fn turn_frame_ending_mut(
     state: &mut GameState,
     investigator: InvestigatorId,
 ) -> Option<&mut bool> {
-    state.continuations.iter_mut().rev().find_map(|c| match c {
-        Continuation::InvestigatorTurn {
-            investigator: whose,
-            ending,
-        } if *whose == investigator => Some(ending),
-        _ => None,
-    })
+    state
+        .continuations
+        .topmost_of_mut::<InvestigatorTurnFrame>()
+        .filter(|turn| turn.investigator == investigator)
+        .map(|turn| &mut turn.ending)
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 use super::*;
 use crate::engine::dispatch;
 use crate::engine::outcome::OptionId;
-use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
+use crate::state::{CardCode, GameStateBuilder, InvestigatorId, UpkeepPhaseFrame};
 use crate::{assert_no_event, test_support};
 
 #[test]
@@ -52,7 +52,7 @@ fn upkeep_anchor_present_while_suspended_at_hand_size() {
         state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::UpkeepPhase { .. })),
+            .any(|c| matches!(c, Continuation::UpkeepPhase(_))),
         "UpkeepPhase anchor present while suspended; stack = {:?}",
         state.continuations,
     );
@@ -158,9 +158,9 @@ fn resume_hand_size_discard_discards_overflow_and_advances_to_mythos() {
         .with_phase(Phase::Upkeep)
         // UpkeepPhase anchor (slice 1a) sits beneath the staged hand-size
         // discard; the round-end teardown pops it.
-        .with_phase_anchor(Continuation::UpkeepPhase {
+        .with_phase_anchor(Continuation::UpkeepPhase(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,
-        })
+        }))
         .with_hand_size_discard_pending([id])
         .build();
     // 10-card hand: discard exactly 2 (indices 0 and 1) → land at 8.

@@ -19,8 +19,8 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, GameState,
-    GameStateBuilder, InvestigationResume, Investigator, InvestigatorId, Location, LocationId,
-    Phase,
+    GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, Investigator, InvestigatorId,
+    Location, LocationId, Phase,
 };
 use game_core::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
@@ -119,9 +119,9 @@ fn map_with_barricade_at_b(inv_at: LocationId, enemy: Enemy) -> GameState {
         .with_turn_order([INV])
         // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
         // InvestigationPhase anchor at investigation_phase_end.
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
         // EndTurn cascade pops before rotating / cascading.
         .with_investigator_turn(INV)
@@ -511,9 +511,9 @@ fn board(
         .with_enemy(hunter)
         .with_active_investigator(turn_order[0])
         .with_turn_order(turn_order.clone())
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(turn_order[0]);
     for loc in locations {
         builder = builder.with_location(loc);

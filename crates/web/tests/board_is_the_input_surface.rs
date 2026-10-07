@@ -22,7 +22,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
-    GameStateBuilder, InvestigationResume, InvestigatorId, LocationId, Phase, UseKind,
+    GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, InvestigatorId, LocationId,
+    Phase, UseKind,
 };
 use game_core::test_support;
 use leptos::prelude::*;
@@ -62,9 +63,9 @@ fn open_turn_with_one_action() -> GameState {
         .with_turn_order([INV])
         .with_active_investigator(INV)
         .with_round(1)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(INV)
         // A one-token bag makes the test's outcome deterministic: +1 against
         // Willpower 3 vs difficulty 3 passes, so the flow is stable run to run.
@@ -285,9 +286,9 @@ fn open_turn_with_first_aid() -> GameState {
         .with_turn_order([INV])
         .with_active_investigator(INV)
         .with_round(1)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(INV)
         .build()
 }

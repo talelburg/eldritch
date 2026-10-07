@@ -3,6 +3,7 @@
 
 use super::profile::every_variant_rows;
 use super::*;
+use crate::state::UpkeepPhaseFrame;
 use crate::test_support;
 
 // --- Wire format -----------------------------------------------------------
@@ -41,9 +42,9 @@ fn skill_test(id: u32) -> InFlightSkillTest {
 }
 
 fn anchor() -> Continuation {
-    Continuation::UpkeepPhase {
+    Continuation::UpkeepPhase(UpkeepPhaseFrame {
         resume: UpkeepResume::Begins,
-    }
+    })
 }
 
 fn effect() -> EffectFrame {

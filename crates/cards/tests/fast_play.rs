@@ -44,7 +44,7 @@ use game_core::engine::{self, EngineOutcome, InputKind, OptionTarget};
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     Continuation, EnemyId, FastActorScope, FastWindowKind, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, MythosResume, Phase, PhaseStep, SkillKind,
+    InvestigatorId, LocationId, MythosPhaseFrame, MythosResume, Phase, PhaseStep, SkillKind,
 };
 use game_core::test_support;
 
@@ -76,9 +76,9 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
         .with_turn_order([InvestigatorId(1)])
         .with_phase(Phase::Mythos)
         .with_active_investigator(InvestigatorId(1))
-        .with_phase_anchor(Continuation::MythosPhase {
+        .with_phase_anchor(Continuation::MythosPhase(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
-        })
+        }))
         .with_open_window(
             FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
             FastActorScope::Any,
@@ -241,9 +241,9 @@ fn board_with_beat_cop(open_window: bool) -> GameState {
         .with_active_investigator(InvestigatorId(1));
     if open_window {
         builder = builder
-            .with_phase_anchor(Continuation::MythosPhase {
+            .with_phase_anchor(Continuation::MythosPhase(MythosPhaseFrame {
                 resume: MythosResume::AfterDraws,
-            })
+            }))
             .with_open_window(
                 FastWindowKind::Phase(PhaseStep::MythosAfterDraws),
                 FastActorScope::Any,
