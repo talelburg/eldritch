@@ -185,7 +185,7 @@ impl TurnAction {
 }
 
 /// The investigator whose turn is open, or `None` when no
-/// [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame is on top —
+/// [`InvestigatorTurn`](crate::state::Continuation::InvestigatorTurn) frame is on top —
 /// [`TurnAction::EndTurn`] carries no investigator field, so its `TurnControl`
 /// anchor has to come from the frame.
 fn active_investigator(state: &GameState) -> Option<InvestigatorId> {
@@ -199,7 +199,7 @@ fn active_investigator(state: &GameState) -> Option<InvestigatorId> {
 /// The legal [`TurnAction`]s the active investigator may take at the open
 /// turn, in stable order (position = the `OptionId` accepted by
 /// `ResolveInput(PickSingle(OptionId))`). Empty unless an
-/// [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame is on top — the
+/// [`InvestigatorTurn`](crate::state::Continuation::InvestigatorTurn) frame is on top — the
 /// only point gameplay actions are taken (slice 2a-ii, #393).
 ///
 /// Covers the full open-turn surface: `EndTurn`, `Resource`, `Draw`,
