@@ -23,10 +23,7 @@ fn install_registry() {
 
 fn state_on_agenda_01105() -> GameState {
     let lead = InvestigatorId(1);
-    // A real investigator code so any registry-backed lookup resolves; Skids
-    // O'Toole (01003) has no implemented abilities (mirrors agenda_reverses.rs).
-    let mut inv = test_support::test_investigator(1);
-    inv.investigator_card.code = CardCode::new("01003");
+    let inv = test_support::test_investigator(1);
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_turn_order([lead])

@@ -104,10 +104,6 @@ fn playing_barricade_attaches_one_card_and_does_not_discard_the_event() {
 /// and `enemy` on the board.
 fn map_with_barricade_at_b(inv_at: LocationId, enemy: Enemy) -> GameState {
     let mut inv = test_support::test_investigator(1);
-    // Use a real investigator code so max_health()/max_sanity() can read from
-    // the installed cards registry; TEST_INV is only in the game-core test
-    // registry (#448 cp2a). Skids O'Toole (01003, 8/6) — no implemented abilities.
-    inv.investigator_card.code = CardCode::new("01003");
     inv.current_location = Some(inv_at);
     let mut a = test_support::test_location(1, "A");
     a.connections = vec![B];
@@ -435,9 +431,6 @@ fn an_engaged_enemy_still_disengages_on_the_move_that_discards_barricade() {
 /// card's own forced self-discard.
 fn map_leaving_barricaded_a(enemy: Option<Enemy>) -> GameState {
     let mut inv = test_support::test_investigator(1);
-    // A real investigator code, so max_health()/max_sanity() read from the
-    // installed cards registry (see `map_with_barricade_at_b`).
-    inv.investigator_card.code = CardCode::new("01003");
     inv.current_location = Some(A);
     let mut a = test_support::test_location(1, "A");
     a.connections = vec![B];
@@ -486,7 +479,6 @@ const INV2: InvestigatorId = InvestigatorId(2);
 /// `map_with_barricade_at_b`).
 fn inv_at(id: u32, at: LocationId) -> Investigator {
     let mut inv = test_support::test_investigator(id);
-    inv.investigator_card.code = CardCode::new("01003");
     inv.current_location = Some(at);
     inv
 }

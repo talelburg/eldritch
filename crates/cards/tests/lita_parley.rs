@@ -67,9 +67,6 @@ const LITA: &str = "01117";
 const PARLOR: &str = "01115";
 /// Beat Cop 01018 — a second `Ally`, for the slot cases. Costs 4.
 const BEAT_COP: &str = "01018";
-/// Daisy Walker 01002 — intellect 5, so a `[intellect]` (4) test turns on the
-/// chaos token rather than on the investigator.
-const DAISY: &str = "01002";
 /// Grasping Hands 01162 — *"**Revelation** - Test \[agility\] (3). For each
 /// point you fail by, take 1 damage."* The soak-defeat exit's driver.
 const GRASPING_HANDS: &str = "01162";
@@ -115,7 +112,8 @@ fn board(token: ChaosToken) -> GameState {
     hallway.code = CardCode::new("01112");
 
     let mut inv = test_support::test_investigator(1);
-    inv.investigator_card.code = CardCode::new(DAISY);
+    // Intellect 5, so a `[intellect]` (4) test turns on the chaos token rather
+    // than on the investigator.
     inv.skills.intellect = 5;
 
     let mut state = GameStateBuilder::new()
@@ -406,8 +404,8 @@ fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
 fn eliminating_her_controller_removes_her_to_the_scenarios_pile() {
     let mut state = drive_parley(board(ChaosToken::Numeric(0))).state;
     let mut events = Vec::new();
-    // Daisy Walker 01002 has 5 health; 5 damage defeats her outright.
-    test_support::eliminate_by_damage(&mut state, &mut events, INV, 5);
+    // The test investigator has 8 health; 8 damage defeats it outright.
+    test_support::eliminate_by_damage(&mut state, &mut events, INV, 8);
 
     let inv = &state.investigators[&INV];
     assert!(

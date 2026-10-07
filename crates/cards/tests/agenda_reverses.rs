@@ -24,11 +24,7 @@ fn install_registry() {
 #[test]
 fn agenda_01105_reverse_choice_lead_takes_two_horror() {
     let lead = InvestigatorId(1);
-    let mut inv = test_support::test_investigator(1);
-    // Use a real investigator code so max_sanity() can read from the installed
-    // cards registry; TEST_INV is only known to the game-core test registry
-    // (#448 cp2a). Skids O'Toole (01003, 8/6) — no implemented abilities.
-    inv.investigator_card.code = CardCode::new("01003");
+    let inv = test_support::test_investigator(1);
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_turn_order([lead])

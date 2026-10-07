@@ -50,9 +50,6 @@ use web::store::{self, ClientState};
 
 /// Lita Chantler.
 const LITA: &str = "01117";
-/// "Skids" O'Toole — a real investigator card, which the fixture's own code is
-/// not; nothing here reads his stats, but the registry must know him.
-const SKIDS: &str = "01003";
 
 /// Lita's controller.
 const KEEPER: InvestigatorId = InvestigatorId(1);
@@ -67,7 +64,6 @@ const GHOUL: EnemyId = EnemyId(100);
 /// the `[[Monster]]` Ghoul, both investigators in the Parlor — is fixed.
 fn board(lita_in_play: bool) -> GameState {
     let mut keeper = test_support::test_investigator(1);
-    keeper.investigator_card.code = CardCode::new(SKIDS);
     keeper.current_location = Some(PARLOR);
     keeper.skills.combat = 3;
     if lita_in_play {
@@ -78,7 +74,6 @@ fn board(lita_in_play: bool) -> GameState {
     }
 
     let mut other = test_support::test_investigator(2);
-    other.investigator_card.code = CardCode::new(SKIDS);
     other.current_location = Some(PARLOR);
     other.skills.combat = 3;
 

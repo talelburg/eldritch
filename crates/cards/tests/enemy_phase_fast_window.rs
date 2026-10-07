@@ -85,10 +85,6 @@ fn board(beat_cop: bool, enemy_health: u8) -> (GameState, InvestigatorId, EnemyI
 
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
-    // A real investigator code so max_health()/max_sanity() resolve against the
-    // installed corpus; TEST_INV lives only in game-core's test registry.
-    // Skids O'Toole (01003, 8/6) — no implemented abilities of his own.
-    inv.investigator_card.code = CardCode::new("01003");
     if beat_cop {
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new(BEAT_COP),

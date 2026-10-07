@@ -375,9 +375,6 @@ fn activating_an_investigate_designated_ability_while_engaged_provokes_an_aoo() 
 
     let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(loc);
-    // A real investigator card: the parked investigation reads its intellect
-    // out of the corpus once the AoO has resolved.
-    investigator.investigator_card.code = CardCode::new("01003");
     let mut flashlight = CardInPlay::enter_play(CardCode::new(FLASHLIGHT), torch);
     flashlight.uses.insert(UseKind::Supplies, 3);
     investigator.cards_in_play = vec![flashlight];
@@ -444,10 +441,6 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
 
     let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(loc);
-    // Use a real investigator code so max_health()/max_sanity() can read from
-    // the installed cards registry (test_investigator uses TEST_INV which only
-    // the game-core test registry knows about, #448 cp2a).
-    investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
 
     // Something for First Aid to heal — *both* harms, so both of its modes stay
     // live and the damage-or-horror choice still prompts: #664 filters a mode
@@ -542,9 +535,6 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
 
     let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(loc);
-    // Use a real investigator code so max_health()/max_sanity() can read from
-    // the installed cards registry (#448 cp2a).
-    investigator.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
     investigator.investigator_card.accumulated_damage = 2;
     let mut first_aid = CardInPlay::enter_play(CardCode::new(FIRST_AID), kit);
     first_aid.uses.insert(UseKind::Supplies, 3);

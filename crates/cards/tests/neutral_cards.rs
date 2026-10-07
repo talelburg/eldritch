@@ -113,8 +113,6 @@ fn guts_on_an_empty_deck_reshuffles_the_discard_and_takes_one_horror() {
             .investigators
             .get_mut(&INV)
             .expect("test investigator");
-        // Horror lands on the investigator card, so it needs a real code.
-        inv.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
         inv.deck.clear();
         inv.discard = vec![CardCode::new("spare-1"), CardCode::new("spare-2")];
     }

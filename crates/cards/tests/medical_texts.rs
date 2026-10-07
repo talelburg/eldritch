@@ -40,9 +40,6 @@ fn install() {
 /// both off the difficulty boundary.
 fn board(intellect: i8, damage: u8) -> GameState {
     let mut inv = test_support::test_investigator(1);
-    // Real investigator code so max_health()/max_sanity() reads from the
-    // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
-    inv.investigator_card.code = CardCode::new("01003");
     inv.skills.intellect = intellect;
     // Harm accumulates on the investigator card after #448 cp2a.
     inv.investigator_card.accumulated_damage = damage;
