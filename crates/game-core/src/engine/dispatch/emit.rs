@@ -29,7 +29,7 @@
 //! logged [`Event`](crate::event::Event) — call sites still emit their own
 //! (e.g. `EnemyDefeated`, `InvestigatorMoved`).
 
-use card_dsl::dsl::{SkillTestKind, TestOutcome};
+use card_dsl::dsl::{SkillTestKind, TestOutcome, TriggeringCondition};
 use serde::{Deserialize, Serialize};
 
 use crate::engine::dispatch::forced_triggers::ForcedTriggerPoint;
@@ -302,6 +302,37 @@ impl TimingEvent {
             | TimingEvent::DamagePlaced { .. }
             | TimingEvent::EnteredPlay { .. }
             | TimingEvent::DiscoverClues { .. } => None,
+        }
+    }
+
+    /// The triggering condition this event announces: the engine's side of the
+    /// pattern ↔ condition pairing whose card side is
+    /// [`EventPattern::condition`](card_dsl::dsl::EventPattern::condition). An
+    /// **exhaustive** match, so a new timing event cannot compile without
+    /// naming the condition whose patterns it matches. The reaction matcher
+    /// refuses a pattern of another condition before it reads any narrowing.
+    pub(crate) fn condition(&self) -> TriggeringCondition {
+        match self {
+            TimingEvent::EnteredLocation { .. } => TriggeringCondition::EnteredLocation,
+            TimingEvent::PhaseStarted { .. } => TriggeringCondition::PhaseStarted,
+            TimingEvent::PhaseEnded { .. } => TriggeringCondition::PhaseEnded,
+            TimingEvent::ActAdvanced { .. } => TriggeringCondition::ActAdvanced,
+            TimingEvent::AgendaAdvanced { .. } => TriggeringCondition::AgendaAdvanced,
+            TimingEvent::EnemyDefeated { .. } => TriggeringCondition::EnemyDefeated,
+            TimingEvent::RoundEnded => TriggeringCondition::RoundEnded,
+            TimingEvent::EndOfTurn { .. } => TriggeringCondition::EndOfTurn,
+            // One card-facing condition with two scans: a weakness prints one
+            // *"when the game ends"*, which elimination step 0 also triggers.
+            TimingEvent::GameEnd | TimingEvent::EliminationGameEnd { .. } => {
+                TriggeringCondition::GameEnd
+            }
+            TimingEvent::DamageAssigned { .. } => TriggeringCondition::DamageAssigned,
+            TimingEvent::DamagePlaced { .. } => TriggeringCondition::DamagePlaced,
+            TimingEvent::SkillTestResolved { .. } => TriggeringCondition::SkillTestResolved,
+            TimingEvent::EnemyAttacks { .. } => TriggeringCondition::EnemyAttacks,
+            TimingEvent::DiscoverClues { .. } => TriggeringCondition::DiscoverClues,
+            TimingEvent::EnteredPlay { .. } => TriggeringCondition::EnteredPlay,
+            TimingEvent::LeftLocation { .. } => TriggeringCondition::LeftLocation,
         }
     }
 
