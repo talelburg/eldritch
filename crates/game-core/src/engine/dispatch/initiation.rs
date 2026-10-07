@@ -23,10 +23,9 @@
 //! [`applies`].
 
 use std::borrow::Cow;
-use std::iter;
 
 use card_dsl::card_data::{CardMetadata, CardType};
-use card_dsl::dsl::{Ability, Trigger, UsageLimit};
+use card_dsl::dsl::{Ability, ActionDesignator, Trigger, UsageLimit};
 
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::dispatch::{abilities, reaction_windows};
@@ -47,13 +46,6 @@ pub(super) enum InitiationKind {
     /// reaction scans.
     Reaction,
     /// An `[action]` or `[fast]` activated ability — the activation validator.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "TODO(#958): the activation validator asks as Activated"
-        )
-    )]
     Activated,
     /// Playing a card from hand — the play validator, and a Fast event offered
     /// in a reaction window, which is *played* (`glossary/Fast.md`: *"A fast
@@ -349,6 +341,7 @@ fn restrictions_met(
 ) -> Result<(), Refusal> {
     let ctx = EvalContext::for_controller_with_optional_source(controller, source.ability());
     if applies(Check::StateChange, kind)
+        && !performs_an_action(ability)
         && !evaluator::effect_can_change_state(state, ctx, &ability.effect)
     {
         return Err(Refusal::NoStateChange);
@@ -361,6 +354,29 @@ fn restrictions_met(
         }
     }
     Ok(())
+}
+
+/// Whether `ability` is an activated ability whose bold action designator
+/// performs an action — every designator but **Parley**, which performs nothing.
+///
+/// Such an ability's substance is the action, not the residual effect printed
+/// beside the bold word (#805; `glossary/Ability.md`: *"Activating such an
+/// ability **performs the designated action**"*), and every implemented one's
+/// residual is empty, which [`evaluator::effect_can_change_state`] proves inert.
+/// So the change-state question is asked of the **action** instead, by
+/// `designator::can_perform` — no co-located enemy, no Fight; no revealed
+/// location, no Investigate. That is a designator-target check, which ADR 0017
+/// leaves with the activation path: `check_activate_ability` asks it before it
+/// asks this gate. A Parley ability falls through to the residual, which is all
+/// it has to change the game state with.
+fn performs_an_action(ability: &Ability) -> bool {
+    matches!(
+        &ability.trigger,
+        Trigger::Activated {
+            designator: Some(designator),
+            ..
+        } if !matches!(designator, ActionDesignator::Parley)
+    )
 }
 
 /// Whether `ability` may initiate on its change-state and eligibility checks
@@ -485,11 +501,13 @@ pub(super) fn play_cost_payable(
 /// nothing.
 ///
 /// The counter is `CardInPlay::ability_usage`, per instance and keyed by
-/// printed index, so this resolves the instance across the controller's
-/// investigator card, cards in play and threat area — the zones
-/// `controlled_card_instances()` scans, which is how Roland Banks 01001's
-/// seated `[reaction]` reaches it. A granted ability has no printed index, so
-/// nothing is recorded for one (#829).
+/// printed index, so this resolves the instance **wherever it sits on the
+/// board** — the same walk `usage_exhausted` reads through
+/// (`ability_source::source_card`). That covers the controller's investigator
+/// card (Roland Banks 01001's seated `[reaction]`), cards in play and threat
+/// area, and the sources an activation reaches without controlling them: a
+/// co-located threat area, a location's attachments (#708). A granted ability
+/// has no printed index, so nothing is recorded for one (#829).
 ///
 /// **A limit on a source with no card instance is refused before it can reach
 /// here.** A location, enemy, act or agenda has nowhere to record a use, so
@@ -508,26 +526,12 @@ pub(super) fn record_initiation(
     let current_round = state.round;
     match candidate.source {
         CandidateSource::Ability(AbilitySource::InPlay(instance_id)) => {
-            let inv = state
-                .investigators
-                .get_mut(&candidate.controller)
-                .unwrap_or_else(|| {
+            let card =
+                ability_source::instance_in_play_mut(state, instance_id).unwrap_or_else(|| {
                     unreachable!(
-                        "record_initiation: controller {ctl:?} vanished while its ability was \
-                         initiating; state-corruption invariant violation",
-                        ctl = candidate.controller,
-                    )
-                });
-            let card = iter::once(&mut inv.investigator_card)
-                .chain(inv.cards_in_play.iter_mut())
-                .chain(inv.threat_area.iter_mut())
-                .find(|c| c.instance_id == instance_id)
-                .unwrap_or_else(|| {
-                    unreachable!(
-                        "record_initiation: instance {instance_id:?} vanished from controller \
-                         {ctl:?}'s investigator card / cards_in_play / threat area while its \
-                         ability was initiating; state-corruption invariant violation",
-                        ctl = candidate.controller,
+                        "record_initiation: instance {instance_id:?} vanished from play while \
+                         its ability was initiating; state-corruption invariant violation \
+                         (candidate {candidate:?})"
                     )
                 });
             if let Some(index) = candidate.address.printed_index() {

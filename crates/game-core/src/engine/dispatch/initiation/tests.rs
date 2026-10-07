@@ -8,8 +8,8 @@ use std::sync::OnceLock;
 
 use card_dsl::card_data::{CardKind, CardMetadata, CardType, Class, SkillIcons};
 use card_dsl::dsl::{
-    self, Ability, Cost, Effect, EventPattern, EventTiming, InvestigatorTarget, LocationTarget,
-    Restriction, UsageLimit, UsagePeriod,
+    self, Ability, ActionDesignator, Cost, Effect, EventPattern, EventTiming, InvestigatorTarget,
+    LocationTarget, Restriction, UsageLimit, UsagePeriod,
 };
 
 use super::*;
@@ -93,8 +93,10 @@ const ACTIVATED_INERT: u8 = 13;
 const ACTIVATED_SHUT_TAG: u8 = 14;
 const ACTIVATED_LIMITED: u8 = 15;
 const ACTIVATED_EXHAUST_COST: u8 = 16;
+const ACTIVATED_DESIGNATED_INERT: u8 = 17;
+const ACTIVATED_PARLEY_INERT: u8 = 18;
 /// One past the last printed index: an address nothing resolves to.
-const NOT_PRINTED: u8 = 17;
+const NOT_PRINTED: u8 = 19;
 
 fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     match code.as_str() {
@@ -116,6 +118,8 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             dsl::activated(0, vec![], live()).with_eligibility(SHUT_TAG),
             dsl::activated(0, vec![], live()).with_usage_limit(once_per_round()),
             dsl::activated(0, vec![Cost::Exhaust], live()),
+            dsl::activated_as(ActionDesignator::Evade, 1, vec![], inert()),
+            dsl::activated_as(ActionDesignator::Parley, 1, vec![], inert()),
         ]),
         COSTED_EVENT => Some(vec![reaction(live())]),
         PLAYED_LIVE => Some(vec![dsl::on_play(live())]),
@@ -279,6 +283,31 @@ fn activated_ability_that_cannot_change_state_is_refused() {
     assert_eq!(
         gate(&state, &in_play(ACTIVATED_LIVE), InitiationKind::Activated),
         Ok(())
+    );
+}
+
+/// A designated ability's substance is the action it performs, not its residual
+/// effect (#805), so an inert residual beside a bold word is not a no-op — the
+/// activation path asks the action's own question (`designator::can_perform`).
+/// **Parley** performs nothing, so its residual is all there is to ask about.
+#[test]
+fn a_designated_activated_ability_is_judged_by_its_action_not_its_residual() {
+    let state = state();
+    assert_eq!(
+        gate(
+            &state,
+            &in_play(ACTIVATED_DESIGNATED_INERT),
+            InitiationKind::Activated
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        gate(
+            &state,
+            &in_play(ACTIVATED_PARLEY_INERT),
+            InitiationKind::Activated
+        ),
+        Err(Refusal::NoStateChange)
     );
 }
 

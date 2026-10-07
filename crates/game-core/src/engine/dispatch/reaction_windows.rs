@@ -21,7 +21,7 @@ use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::abilities::ActivatedAbility;
 use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
-use crate::engine::dispatch::initiation::{self, InitiationKind};
+use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
 use crate::engine::dispatch::{
     abilities, actions, cards, combat, cursor, phases, skill_test, slots, ActivateCheckResult,
     PlayCheckResult,
@@ -1837,62 +1837,26 @@ fn designated_action_surcharge(
     }
 }
 
-/// The RR initiation gate on the activation path (#639).
+/// Render the initiation gate's [`Refusal`] in the activation validator's
+/// voice, so its rejection reasons read as they did before the gate (#958).
 ///
-/// `data/rules-reference/rules/glossary/Ability.md`, "Triggered Abilities":
-///
-/// > A triggered ability can only be initiated if its effect has the potential
-/// > to change the game state, and its cost (if any) has the potential to be
-/// > paid in full, taking active cost modifiers into account.
-///
-/// and `glossary/Costs.md`: *"An ability cannot initiate – and therefore its
-/// costs cannot be paid – if the resolution of its effect will not change the
-/// game state."* Rejecting here rather than during resolution is what keeps the
-/// action point and the ability's costs unspent.
-///
-/// Uses the same conservative
-/// [`effect_can_change_state`](crate::engine::evaluator::effect_can_change_state)
-/// evaluator as the play, reaction, and forced-trigger gates, so only provable
-/// no-ops are blocked. Being part of [`check_activate_ability`] rather than
-/// [`activate_ability`] is what keeps the turn menu and the fast-window
-/// enumerator — both of which filter on this validator — from offering an
-/// activation that would reject.
-fn check_activation_changes_state(
-    state: &GameState,
-    investigator: InvestigatorId,
-    source: AbilitySource,
-    code: &CardCode,
-    designator: Option<&ActionDesignator>,
-    effect: &Effect,
-) -> Result<(), Cow<'static, str>> {
-    // A designated ability's substance is the action it performs, not the
-    // residual effect beside it (#805) — and every implemented one's residual
-    // is empty, which the generic gate proves inert, so asking the gate of the
-    // *effect* here would refuse every weapon in the corpus.
-    //
-    // This is not a hole in the RR gate but a redirection of it: the same
-    // question, *"has this the potential to change the game state"*, is asked
-    // of the **action** by `can_perform` — no co-located enemy, no Fight; no
-    // revealed location, no Investigate — and `check_activate_ability` calls
-    // that immediately before this, so an ability reaching here has already
-    // answered it. The ordering is what makes the early return sound.
-    //
-    // **Parley** is the one designator that performs nothing, so it falls
-    // through to the generic gate on its residual, which is exactly right: a
-    // Parley ability whose effect is a no-op has nothing to change the game
-    // state with.
-    if designator.is_some_and(|d| !matches!(d, ActionDesignator::Parley)) {
-        return Ok(());
+/// The cost check already speaks it (`abilities::check_cost_payable`), and the
+/// change-state refusal keeps its #639 wording, which cites the rule it
+/// enforces — `glossary/Ability.md`, "Triggered Abilities": *"A triggered
+/// ability can only be initiated if its effect has the potential to change the
+/// game state, and its cost (if any) has the potential to be paid in full,
+/// taking active cost modifiers into account."* Every other refusal takes the
+/// validator's `ActivateAbility:` prefix.
+fn activation_refusal(refusal: Refusal, code: &CardCode) -> Cow<'static, str> {
+    match refusal {
+        Refusal::CostUnpayable(reason) => reason,
+        Refusal::NoStateChange => format!(
+            "ActivateAbility: {code}'s effect cannot change the game state right now, so the \
+             ability cannot be initiated (RR \"Ability\"/\"Costs\")."
+        )
+        .into(),
+        other => format!("ActivateAbility: {}", Cow::from(other)).into(),
     }
-    let ctx = EvalContext::for_controller_with_source(investigator, source);
-    if evaluator::effect_can_change_state(state, ctx, effect) {
-        return Ok(());
-    }
-    Err(format!(
-        "ActivateAbility: {code}'s effect cannot change the game state right now, so the \
-         ability cannot be initiated (RR \"Ability\"/\"Costs\")."
-    )
-    .into())
 }
 
 /// Reject an ability mixing [`Cost::DiscardSelf`](card_dsl::dsl::Cost::DiscardSelf)
@@ -2034,7 +1998,6 @@ pub(crate) fn check_activate_ability(
     let source_card = ability_source::resolve(state, investigator, source)?;
     let source_code = source_card.code().clone();
     let source_exhausted = source_card.exhausted();
-    let source_uses = source_card.uses();
 
     // Invariant: `resolve_activated_ability` currently returns only `Ok(...)`
     // (success) or `Err(EngineOutcome::Rejected { ... })` (validation failure).
@@ -2104,28 +2067,19 @@ pub(crate) fn check_activate_ability(
         .into());
     }
 
-    // Validate every payment cost is payable. Done as a pure read
-    // before any mutation so an all-or-nothing reject leaves state
-    // untouched.
-    for cost in &costs {
-        if let Err(reason) =
-            abilities::check_cost_payable(cost, inv, source_exhausted, &source_uses)
-        {
-            return Err(reason.into());
-        }
-    }
-
     reject_incompatible_costs(&costs)?;
     reject_source_costs_without_an_instance(source, &source_code, &costs)?;
+    // Before the gate: a designated ability's change-state question is this
+    // check's (`initiation::performs_an_action`).
     check_activation_target_available(state, investigator, designator.as_ref(), &effect)?;
-    check_activation_changes_state(
-        state,
+    let candidate = ResolutionCandidate::new(
+        source_code.clone(),
         investigator,
-        source,
-        &source_code,
-        designator.as_ref(),
-        &effect,
-    )?;
+        address.clone(),
+        CandidateSource::Ability(source),
+    );
+    initiation::check(state, &candidate, InitiationKind::Activated)
+        .map_err(|refusal| activation_refusal(refusal, &source_code))?;
 
     Ok(ActivateCheckResult {
         source_code,
@@ -2134,6 +2088,7 @@ pub(crate) fn check_activate_ability(
         designator,
         costs,
         effect,
+        usage_limit,
         source_exhausted,
     })
 }

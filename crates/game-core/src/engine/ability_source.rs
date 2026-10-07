@@ -412,7 +412,7 @@ fn instance_in_play(state: &GameState, instance_id: CardInstanceId) -> Option<&C
 /// The write-side mirror of the collections [`reachable_sources`] reads, kept as
 /// one walk so a source that became reachable through somebody else's
 /// collection is still payable against. [`instance_in_play`] is its read twin.
-fn instance_in_play_mut(
+pub(crate) fn instance_in_play_mut(
     state: &mut GameState,
     instance_id: CardInstanceId,
 ) -> Option<&mut CardInPlay> {

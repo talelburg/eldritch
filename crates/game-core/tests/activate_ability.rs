@@ -10,15 +10,18 @@
 //! Hyperawareness will be the first. Until then, mock cards are the
 //! only way to exercise the full activation flow.
 
-use card_dsl::dsl::{self, Cost, IntExpr, InvestigatorTarget, ModifierScope, Stat};
+use card_dsl::dsl::{
+    self, Cost, IntExpr, InvestigatorTarget, ModifierScope, Stat, UsageLimit, UsagePeriod,
+};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
+use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, Lifetime, Phase, RecordedModifierKind, SkillKind,
-    Status, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, Lifetime, LocationId, Phase, RecordedModifierKind,
+    SkillKind, Status, TokenModifiers,
 };
 use game_core::test_support::{self, MockRegistry, TakeOneFastPlay};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -46,6 +49,24 @@ const DISCARD_COST_ABILITY: &str = "MOCK4";
 /// you get +1 intellect for this skill test.` Exercises the
 /// `ThisSkillTest` push path + accumulator drain across resolution.
 const SKILL_BOOST: &str = "MOCK5";
+
+/// Mock card code: `[fast] Gain 1 resource. (Limit once per round.)` — a
+/// usage-limited activated ability, a primitive no corpus card prints yet
+/// (#958).
+const ONCE_PER_ROUND_GAIN: &str = "MOCK6";
+
+/// Mock card code: `[fast] Gain 1 resource.`, gated by an eligibility tag
+/// whose predicate holds only while the controller has a clue — an activated
+/// ability whose condition lives outside its effect (#958, the #791 class).
+const CLUE_GATED_GAIN: &str = "MOCK7";
+const HAS_A_CLUE_TAG: &str = "_activate:has_a_clue";
+
+fn has_a_clue(state: &GameState, ctx: &EvalContext) -> bool {
+    state
+        .investigators
+        .get(&ctx.controller)
+        .is_some_and(|inv| inv.clues > 0)
+}
 
 #[ctor::ctor(unsafe)]
 fn install_mock_registry() {
@@ -85,6 +106,22 @@ fn install_mock_registry() {
                 dsl::modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
             )]
         })
+        .with_abilities(ONCE_PER_ROUND_GAIN, || {
+            vec![
+                dsl::activated(0, vec![], dsl::gain_resources(InvestigatorTarget::You, 1))
+                    .with_usage_limit(UsageLimit {
+                        count: 1,
+                        period: UsagePeriod::Round,
+                    }),
+            ]
+        })
+        .with_abilities(CLUE_GATED_GAIN, || {
+            vec![
+                dsl::activated(0, vec![], dsl::gain_resources(InvestigatorTarget::You, 1))
+                    .with_eligibility(HAS_A_CLUE_TAG),
+            ]
+        })
+        .with_native_eligibility(HAS_A_CLUE_TAG, has_a_clue)
         .install();
 }
 
@@ -439,4 +476,100 @@ fn activating_a_test_scoped_modifier_outside_a_test_is_rejected() {
     // State unchanged by the rejection: no resource spent, nothing recorded.
     assert_eq!(result.state.investigators[&id].resources, resources_before);
     assert!(result.state.recorded_modifiers.is_empty());
+}
+
+/// A "Limit once per round" activated ability is offered once, refused once it
+/// has been used, and offered again the next round (#958).
+/// `glossary/Limits_and_Maximums.md`: *"Each instance of an ability with such a
+/// limit may be initiated X times during the designated period."*
+#[test]
+fn a_once_per_round_activated_ability_is_offered_once_per_round() {
+    let (state, id, instance_id) = state_with_in_play(ONCE_PER_ROUND_GAIN);
+    let action = TurnAction::ActivateAbility {
+        investigator: id,
+        source: AbilitySource::InPlay(instance_id),
+        address: AbilityAddress::Printed(0),
+    };
+    assert!(
+        enumerate::legal_actions(&state).contains(&action),
+        "an unused limited ability is offered",
+    );
+
+    let after_first = test_support::take_turn_action(state, &action);
+    assert_eq!(after_first.state.investigators[&id].resources, 5 + 1);
+    assert!(
+        !enumerate::legal_actions(&after_first.state).contains(&action),
+        "a once-per-round ability used this round is not offered again",
+    );
+    let refused = test_support::dispatch_turn_action_unchecked(after_first.state.clone(), &action);
+    assert!(matches!(refused.outcome, EngineOutcome::Rejected { .. }));
+    assert!(refused.events.is_empty());
+
+    let mut next_round = after_first.state;
+    next_round.round += 1;
+    assert!(
+        enumerate::legal_actions(&next_round).contains(&action),
+        "the limit resets when the round advances",
+    );
+}
+
+/// A limited ability on a source the activator reaches without controlling it —
+/// here a card attached to their location (#708) — records its use on that
+/// card, wherever it sits, and is refused for the rest of the round.
+#[test]
+fn a_limited_ability_on_a_card_the_activator_does_not_control_counts_its_use() {
+    let id = InvestigatorId(1);
+    let instance_id = CardInstanceId(0);
+    let location = LocationId(10);
+    let mut loc = test_support::test_location(location.0, "Somewhere");
+    loc.attachments.push(CardInPlay::enter_play(
+        CardCode::new(ONCE_PER_ROUND_GAIN),
+        instance_id,
+    ));
+    let state = GameStateBuilder::new()
+        .with_investigator_at(test_support::test_investigator(1), location)
+        .with_location(loc)
+        .open_turn(id)
+        .build();
+    let action = TurnAction::ActivateAbility {
+        investigator: id,
+        source: AbilitySource::InPlay(instance_id),
+        address: AbilityAddress::Printed(0),
+    };
+
+    let after_first = test_support::take_turn_action(state, &action);
+    assert_eq!(after_first.state.investigators[&id].resources, 5 + 1);
+    assert!(
+        !enumerate::legal_actions(&after_first.state).contains(&action),
+        "the use is counted against the attached card",
+    );
+}
+
+/// An activated ability whose eligibility tag is false is not offered, and a
+/// submission that skips the menu is refused; once the condition holds it is
+/// offered (#958). The activation side of the bug class #791 closed for forced
+/// abilities.
+#[test]
+fn a_tagged_activated_ability_is_not_offered_while_its_condition_is_false() {
+    let (state, id, instance_id) = state_with_in_play(CLUE_GATED_GAIN);
+    assert_eq!(state.investigators[&id].clues, 0);
+    let action = TurnAction::ActivateAbility {
+        investigator: id,
+        source: AbilitySource::InPlay(instance_id),
+        address: AbilityAddress::Printed(0),
+    };
+    assert!(
+        !enumerate::legal_actions(&state).contains(&action),
+        "a false eligibility condition keeps the ability off the menu",
+    );
+    let refused = test_support::dispatch_turn_action_unchecked(state.clone(), &action);
+    assert!(matches!(refused.outcome, EngineOutcome::Rejected { .. }));
+    assert!(refused.events.is_empty());
+
+    let mut with_a_clue = state;
+    with_a_clue.investigators.get_mut(&id).unwrap().clues = 1;
+    assert!(
+        enumerate::legal_actions(&with_a_clue).contains(&action),
+        "the ability is offered once its condition holds",
+    );
 }
