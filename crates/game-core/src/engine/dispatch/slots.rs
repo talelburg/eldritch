@@ -238,8 +238,7 @@ pub(super) fn resume_slot_discard(cx: &mut Cx, response: &InputResponse) -> Engi
     } = cx
         .state
         .continuations
-        .top_of::<SlotDiscardFrame>()
-        .expect("`resume_slot_discard` runs with a SlotDiscard frame on top")
+        .top_expect::<SlotDiscardFrame>()
         .clone();
     let Some(card) = card else {
         // Elimination is the only thing that empties a `SlotDiscard` frame (see

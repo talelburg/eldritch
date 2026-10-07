@@ -861,8 +861,7 @@ fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
     } = cx
         .state
         .continuations
-        .top_of::<DealDamageFrame>()
-        .expect("`prompt_current_point` runs with a DealDamage frame on top")
+        .top_expect::<DealDamageFrame>()
         .clone();
     let DealDamageStep::Distribute {
         remaining_damage: rd,
@@ -903,8 +902,7 @@ pub(super) fn resume_damage_distribution(cx: &mut Cx, response: &InputResponse) 
     } = cx
         .state
         .continuations
-        .top_of::<DealDamageFrame>()
-        .expect("`resume_damage_distribution` runs with a DealDamage frame on top")
+        .top_expect::<DealDamageFrame>()
         .clone();
     let DealDamageStep::Distribute {
         mut remaining_damage,
@@ -990,8 +988,7 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
     } = cx
         .state
         .continuations
-        .top_of::<DealDamageFrame>()
-        .expect("`drive_deal_damage` runs with a DealDamage frame on top")
+        .top_expect::<DealDamageFrame>()
         .clone();
     match step {
         DealDamageStep::Distribute {
@@ -1268,8 +1265,7 @@ pub(super) fn resume_attack_order_pick(cx: &mut Cx, response: &InputResponse) ->
     } = cx
         .state
         .continuations
-        .top_of::<AttackLoopFrame>()
-        .expect("`resume_attack_order_pick` runs with an AttackLoop frame on top")
+        .top_expect::<AttackLoopFrame>()
         .clone();
     assert_eq!(
         stage,

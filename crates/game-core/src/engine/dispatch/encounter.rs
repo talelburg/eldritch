@@ -615,8 +615,7 @@ pub(super) fn resume_encounter_draw(cx: &mut Cx, response: &InputResponse) -> En
     let drawer = cx
         .state
         .continuations
-        .top_of::<EncounterDrawFrame>()
-        .expect("`resume_encounter_draw` runs with an EncounterDraw frame on top")
+        .top_expect::<EncounterDrawFrame>()
         .remaining[0];
     if !matches!(response, InputResponse::Confirm) {
         return EngineOutcome::Rejected {
@@ -660,11 +659,7 @@ pub(super) fn drive_player_draw(cx: &mut Cx) -> EngineOutcome {
         investigator,
         chain_count,
         surge_pending,
-    } = *cx
-        .state
-        .continuations
-        .top_of::<PlayerDrawFrame>()
-        .expect("`drive_player_draw` runs with a PlayerDraw frame on top");
+    } = *cx.state.continuations.top_expect::<PlayerDrawFrame>();
     if chain_count == 0 || surge_pending {
         draw_encounter_card_into_frame(cx, investigator)
     } else {

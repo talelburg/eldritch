@@ -151,11 +151,7 @@ fn deal_damage_cursor_walks_distribute_announce_place_finish() {
     assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
     let DealDamageFrame {
         assignment, step, ..
-    } = cx
-        .state
-        .continuations
-        .top_of::<DealDamageFrame>()
-        .expect("the damage cursor is on top after Distribute");
+    } = cx.state.continuations.top_expect::<DealDamageFrame>();
     assert_eq!(*step, DealDamageStep::Announce);
     assert_eq!(assignment.investigator_damage, 2);
 

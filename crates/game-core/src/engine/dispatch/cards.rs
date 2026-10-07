@@ -789,8 +789,7 @@ pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOu
     let remaining = cx
         .state
         .continuations
-        .top_of::<MulliganFrame>()
-        .expect("`resume_mulligan` runs with a Mulligan frame on top")
+        .top_expect::<MulliganFrame>()
         .remaining
         .clone();
     let investigator = remaining[0];

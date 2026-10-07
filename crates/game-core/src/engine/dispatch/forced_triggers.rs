@@ -782,8 +782,7 @@ pub(crate) fn drive_acknowledge_forced(cx: &mut Cx) -> EngineOutcome {
     let candidate = &cx
         .state
         .continuations
-        .top_of::<AcknowledgeForcedFrame>()
-        .expect("`drive_acknowledge_forced` runs with an AcknowledgeForced frame on top")
+        .top_expect::<AcknowledgeForcedFrame>()
         .candidate;
     let name = forced_source_name(&candidate.code);
     let anchor = reaction_windows::candidate_anchor(candidate);

@@ -547,8 +547,6 @@ impl Continuation {
     #[allow(clippy::too_many_lines)]
     #[must_use]
     pub fn profile(&self) -> FrameProfile {
-        use FrameActivity::{Driven, Inert, Prompt};
-        use ScenarioEndDisposition::{Cancel, Complete};
         let (activity, scenario_end) = match self {
             // An event window or forced run is the prompt while it has
             // candidates; empty, the `drive` loop closes it on sight (its
@@ -564,13 +562,13 @@ impl Continuation {
                 mode, candidates, ..
             }) => (
                 if candidates.is_empty() {
-                    Driven
+                    FrameActivity::Driven
                 } else {
-                    Prompt
+                    FrameActivity::Prompt
                 },
                 match mode {
-                    TimingMode::Reaction => Cancel,
-                    TimingMode::Forced => Complete,
+                    TimingMode::Reaction => ScenarioEndDisposition::Cancel,
+                    TimingMode::Forced => ScenarioEndDisposition::Complete,
                 },
             ),
             // Mandatory resolution that surfaces its own prompt (the `drive`
@@ -585,7 +583,10 @@ impl Continuation {
             | Continuation::Effect(_)
             // Holds the asset mid-entry, in no zone (ADR 0002): discarding the
             // frame would leak the card out of every zone.
-            | Continuation::SlotDiscard(_) => (Prompt, Complete),
+            | Continuation::SlotDiscard(_) => (
+                FrameActivity::Prompt,
+                ScenarioEndDisposition::Complete,
+            ),
             // A deal of damage is the per-point prompt while distributing a
             // contested point (#44/K5b); its other steps are sequencing the loop
             // dispatches on sight. Under way either way: half of it is the
@@ -593,12 +594,12 @@ impl Continuation {
             // lands.
             Continuation::DealDamage(DealDamageFrame { step, .. }) => (
                 match step {
-                    DealDamageStep::Distribute { .. } => Prompt,
+                    DealDamageStep::Distribute { .. } => FrameActivity::Prompt,
                     DealDamageStep::Announce | DealDamageStep::Place | DealDamageStep::Finish => {
-                        Driven
+                        FrameActivity::Driven
                     }
                 },
-                Complete,
+                ScenarioEndDisposition::Complete,
             ),
             // Framework prompts. Hunter movement and spawn engagement are board
             // maintenance whose prompt would otherwise be put to a player after
@@ -614,26 +615,34 @@ impl Continuation {
             | Continuation::SpawnEngage(_)
             | Continuation::HandSizeDiscard(_)
             | Continuation::Mulligan(_)
-            | Continuation::EncounterDraw(_) => (Prompt, Cancel),
+            | Continuation::EncounterDraw(_) => (
+                FrameActivity::Prompt,
+                ScenarioEndDisposition::Cancel,
+            ),
             // The open turn surfaces its legal-action menu (2b, #447); once
             // `ending`, it is the rotation tail the loop drives after a
             // suspending `EndOfTurn` forced resolved.
             Continuation::InvestigatorTurn(InvestigatorTurnFrame { ending, .. }) => {
-                (if *ending { Driven } else { Prompt }, Cancel)
+                let activity = if *ending {
+                    FrameActivity::Driven
+                } else {
+                    FrameActivity::Prompt
+                };
+                (activity, ScenarioEndDisposition::Cancel)
             }
             // The attack loop is the attack-order pick at `PickOrder` (#143) and
             // otherwise re-exposed beneath the head attacker's coordinator, which
             // owns any prompt the attack raises (#704).
             Continuation::AttackLoop(AttackLoopFrame { stage, .. }) => (
                 match stage {
-                    AttackLoopStage::PickOrder => Prompt,
-                    AttackLoopStage::Attacking => Driven,
+                    AttackLoopStage::PickOrder => FrameActivity::Prompt,
+                    AttackLoopStage::Attacking => FrameActivity::Driven,
                 },
-                Cancel,
+                ScenarioEndDisposition::Cancel,
             ),
             // A surge chain is framework sequence; any prompt it opens (a
             // spawn-engagement tie) sits above it.
-            Continuation::PlayerDraw(_) => (Driven, Cancel),
+            Continuation::PlayerDraw(_) => (FrameActivity::Driven, ScenarioEndDisposition::Cancel),
             // Internal sequencing that pushes the prompt above itself rather
             // than being it: the `when → at → after` coordinators, and the
             // frames awaiting the framework's disposal of a card in no zone (ADR
@@ -650,23 +659,29 @@ impl Continuation {
             // its steps "any time a player is eliminated", and the weaknesses
             // whose game-end abilities drain above it are still in play until it
             // resumes (#638).
-            | Continuation::Elimination(_) => (Driven, Complete),
+            | Continuation::Elimination(_) => (
+                FrameActivity::Driven,
+                ScenarioEndDisposition::Complete,
+            ),
             // The ending emits `GameEnd` when driven, then rests at `Finalize`
             // for the apply boundary — the only place holding the scenario
             // registry — to pop (#566). It is the ending itself, so it completes.
             Continuation::ScenarioEnd(ScenarioEndFrame { step }) => (
                 match step {
-                    ScenarioEndStep::EmitGameEnd => Driven,
-                    ScenarioEndStep::Finalize => Inert,
+                    ScenarioEndStep::EmitGameEnd => FrameActivity::Driven,
+                    ScenarioEndStep::Finalize => FrameActivity::Inert,
                 },
-                Complete,
+                ScenarioEndDisposition::Complete,
             ),
             // Phase anchors wake only when a child frame pops; the framework
             // sequence they carry is over once the scenario has ended.
             Continuation::MythosPhase(_)
             | Continuation::InvestigationPhase(_)
             | Continuation::EnemyPhase(_)
-            | Continuation::UpkeepPhase(_) => (Inert, Cancel),
+            | Continuation::UpkeepPhase(_) => (
+                FrameActivity::Inert,
+                ScenarioEndDisposition::Cancel,
+            ),
         };
         FrameProfile {
             activity,

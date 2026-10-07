@@ -470,12 +470,7 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
 /// invalid pick, rejects and leaves the `HunterMove` frame on the stack so
 /// the client can retry. (#128)
 pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let pending = cx
-        .state
-        .continuations
-        .top_of::<HunterChoice>()
-        .expect("`resume_hunter_choice` runs with a HunterChoice frame on top")
-        .clone();
+    let pending = cx.state.continuations.top_expect::<HunterChoice>().clone();
     let InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -557,8 +552,7 @@ pub(super) fn resume_spawn_engage(cx: &mut Cx, response: &InputResponse) -> Engi
     let pending = cx
         .state
         .continuations
-        .top_of::<SpawnEngagePending>()
-        .expect("`resume_spawn_engage` runs with a SpawnEngagePending frame on top")
+        .top_expect::<SpawnEngagePending>()
         .clone();
     let InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {

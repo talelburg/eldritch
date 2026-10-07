@@ -1319,8 +1319,7 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
     let pending = cx
         .state
         .continuations
-        .top_of::<HandSizeDiscard>()
-        .expect("`resume_hand_size_discard` runs with a HandSizeDiscard frame on top")
+        .top_expect::<HandSizeDiscard>()
         .clone();
     let current = pending.remaining[0];
 

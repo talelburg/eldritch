@@ -56,8 +56,7 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
     } = cx
         .state
         .continuations
-        .top_of::<AdvanceReverseFrame>()
-        .expect("`drive` runs with an AdvanceReverse frame on top")
+        .top_expect::<AdvanceReverseFrame>()
         .clone();
     match step {
         AdvanceStep::AwaitAck => {
@@ -143,8 +142,7 @@ pub(super) fn resume(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     let step = cx
         .state
         .continuations
-        .top_of::<AdvanceReverseFrame>()
-        .expect("`resume` runs with an AdvanceReverse frame on top")
+        .top_expect::<AdvanceReverseFrame>()
         .step;
     if !matches!(step, AdvanceStep::AwaitAck) {
         return EngineOutcome::Rejected {

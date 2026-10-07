@@ -221,6 +221,22 @@ fn top_of_reads_the_top_frame_only_when_it_is_the_named_kind() {
 }
 
 #[test]
+fn top_expect_borrows_the_top_frame_of_the_named_kind() {
+    let mut stack = ContinuationStack::new();
+    stack.push(hand_size_discard());
+    stack.push(skill_test(0));
+    assert_eq!(stack.top_expect::<InFlightSkillTest>(), &skill_test(0));
+}
+
+#[test]
+#[should_panic(expected = "expected a SkillTest frame on top, found HandSizeDiscard")]
+fn top_expect_of_the_wrong_kind_panics() {
+    let mut stack = ContinuationStack::new();
+    stack.push(hand_size_discard());
+    stack.top_expect::<InFlightSkillTest>();
+}
+
+#[test]
 fn topmost_of_finds_a_buried_frame_of_the_named_kind() {
     let mut stack = ContinuationStack::new();
     stack.push(anchor());

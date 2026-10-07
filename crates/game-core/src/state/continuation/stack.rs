@@ -211,6 +211,23 @@ impl ContinuationStack {
             .expect("assert_top_is checked the top frame's kind")
     }
 
+    /// Borrow the top frame, which must be of kind `F`. The read-only
+    /// counterpart to [`top_mut`](Self::top_mut), for code that runs only with
+    /// an `F` on top; [`top_of`](Self::top_of) is the query for code that
+    /// doesn't know.
+    ///
+    /// # Panics
+    ///
+    /// If the stack is empty or its top is another kind; the panic reports the
+    /// caller's location.
+    #[track_caller]
+    pub(crate) fn top_expect<F: Frame>(&self) -> &F {
+        self.assert_top_is::<F>();
+        self.top()
+            .and_then(F::downcast_ref)
+            .expect("assert_top_is checked the top frame's kind")
+    }
+
     /// Pop the top frame, which must be of kind `F`, and return its payload.
     ///
     /// # Panics
