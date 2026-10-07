@@ -86,11 +86,11 @@ fn investigate_follow_up_pushes_one_discovery_carrying_the_clue_bonus() {
 
     apply_skill_test_follow_up(&mut cx, inv, SkillTestFollowUp::Investigate);
 
-    let Some(Continuation::Effect(EffectFrame::Leaf { effect, .. })) = state.continuations.last()
+    let Some(Continuation::Effect(EffectFrame::Leaf { effect, .. })) = state.continuations.top()
     else {
         panic!(
             "expected one pushed DiscoverClue leaf, got {:?}",
-            state.continuations.last()
+            state.continuations.top()
         );
     };
     assert_eq!(

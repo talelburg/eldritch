@@ -146,7 +146,7 @@ fn advance_to_the_terminal_act(state: GameState) -> GameState {
         round_end.outcome,
     );
     assert!(matches!(
-        round_end.state.continuations.last(),
+        round_end.state.continuations.top(),
         Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
             event: TimingEvent::RoundEnded,
             mode: TimingMode::Reaction,

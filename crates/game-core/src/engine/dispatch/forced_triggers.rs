@@ -874,7 +874,7 @@ mod tests {
         assert!(matches!(out, EngineOutcome::Rejected { .. }));
         assert!(
             matches!(
-                cx.state.continuations.last(),
+                cx.state.continuations.top(),
                 Some(Continuation::AcknowledgeForced(_))
             ),
             "a rejected resume must leave the frame in place"

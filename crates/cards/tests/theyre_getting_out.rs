@@ -104,12 +104,13 @@ fn enemy_phase_end_moves_ghoul_before_the_upkeep_transition() {
     state.enemies.insert(EnemyId(1), ghoul(1, LocationId(2)));
     // The step-3.4 site runs with the Enemy anchor on top (its
     // `AfterAllInvestigatorsAttacked` window has just closed).
-    state
-        .continuations
-        .push(Continuation::EnemyPhase(EnemyPhaseFrame {
-            resume: EnemyResume::AfterAllAttacked,
-            attacking: None,
-        }));
+    state.continuations =
+        test_support::from_frames_unchecked(state.continuations.iter().cloned().chain([
+            Continuation::EnemyPhase(EnemyPhaseFrame {
+                resume: EnemyResume::AfterAllAttacked,
+                attacking: None,
+            }),
+        ]));
 
     let mut events = Vec::new();
     let _ = test_support::run_enemy_phase_end(&mut state, &mut events);
@@ -175,12 +176,13 @@ fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
     state.enemies.insert(EnemyId(1), walker);
     // Step 3.4 runs with the Enemy anchor on top (the
     // `AfterAllInvestigatorsAttacked` window has just closed).
-    state
-        .continuations
-        .push(Continuation::EnemyPhase(EnemyPhaseFrame {
-            resume: EnemyResume::AfterAllAttacked,
-            attacking: None,
-        }));
+    state.continuations =
+        test_support::from_frames_unchecked(state.continuations.iter().cloned().chain([
+            Continuation::EnemyPhase(EnemyPhaseFrame {
+                resume: EnemyResume::AfterAllAttacked,
+                attacking: None,
+            }),
+        ]));
 
     let mut events = Vec::new();
     let _ = test_support::run_enemy_phase_end(&mut state, &mut events);
@@ -257,11 +259,12 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
     let mut state = board_with_agenda();
     state.phase = Phase::Upkeep;
     // UpkeepPhase anchor (slice 1a): the round-end teardown pops it.
-    state
-        .continuations
-        .push(Continuation::UpkeepPhase(UpkeepPhaseFrame {
-            resume: UpkeepResume::Begins,
-        }));
+    state.continuations =
+        test_support::from_frames_unchecked(state.continuations.iter().cloned().chain([
+            Continuation::UpkeepPhase(UpkeepPhaseFrame {
+                resume: UpkeepResume::Begins,
+            }),
+        ]));
 
     // Affordable act window: investigator in the Hallway (01112) with >= 3 clues.
     state.act_deck = vec![Act {
@@ -284,7 +287,7 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
     // The act's `when the round ends` window opens first...
     assert!(matches!(out, EngineOutcome::AwaitingInput { .. }));
     assert!(matches!(
-        state.continuations.last(),
+        state.continuations.top(),
         Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
             event: TimingEvent::RoundEnded,
             mode: TimingMode::Reaction,

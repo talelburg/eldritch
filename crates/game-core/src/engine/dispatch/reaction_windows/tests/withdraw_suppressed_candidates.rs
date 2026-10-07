@@ -61,7 +61,7 @@ fn withdraw(state: &mut GameState) -> (usize, Vec<Event>) {
 fn remaining(state: &GameState) -> usize {
     state
         .continuations
-        .last()
+        .top()
         .and_then(Continuation::pending_candidates)
         .expect("the window is still on top")
         .len()

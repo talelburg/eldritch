@@ -104,9 +104,9 @@ fn board(beat_cop: bool, enemy_health: u8) -> (GameState, InvestigatorId, EnemyI
         .with_enemy(engaged_attacker(inv_id, loc_id, enemy_health))
         // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
         // InvestigationPhase anchor at investigation_phase_end.
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
         // EndTurn cascade pops before advancing into the Enemy phase.
         .with_investigator_turn(inv_id)

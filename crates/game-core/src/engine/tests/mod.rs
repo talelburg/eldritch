@@ -84,9 +84,9 @@ fn investigate_scenario(clues: u8, shroud: u8) -> (InvestigatorId, LocationId, G
         .with_chaos_bag(bag_only_zero())
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(inv_id)
         .build();
     (inv_id, loc_id, state)
@@ -120,9 +120,9 @@ fn move_scenario() -> (InvestigatorId, LocationId, LocationId, GameState) {
         .with_location(loc_b)
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(inv_id)
         .build();
     (inv_id, a, b, state)
@@ -155,9 +155,9 @@ fn fight_evade_scenario() -> (InvestigatorId, EnemyId, GameState) {
         .with_chaos_bag(bag_only_zero())
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(inv_id)
         .build();
     (inv_id, enemy_id, state)

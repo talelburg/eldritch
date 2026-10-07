@@ -63,9 +63,9 @@ fn open_turn_with_one_action() -> GameState {
         .with_turn_order([INV])
         .with_active_investigator(INV)
         .with_round(1)
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(INV)
         // A one-token bag makes the test's outcome deterministic: +1 against
         // Willpower 3 vs difficulty 3 passes, so the flow is stable run to run.
@@ -286,9 +286,9 @@ fn open_turn_with_first_aid() -> GameState {
         .with_turn_order([INV])
         .with_active_investigator(INV)
         .with_round(1)
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(INV)
         .build()
 }

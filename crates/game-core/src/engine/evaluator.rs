@@ -1061,8 +1061,12 @@ fn apply_attach_self_to_location(cx: &mut Cx) -> EngineOutcome {
         };
     };
     // Validated: take the card off its frame so it is re-homed, not discarded.
-    let (code, _owner) = cx.state.continuations[frame_idx]
-        .take_play_in_progress(investigator)
+    let (code, _owner) = cx
+        .state
+        .continuations
+        .frames_mut()
+        .nth(frame_idx)
+        .and_then(|frame| frame.take_play_in_progress(investigator))
         .expect("AttachSelfToLocation: the located frame still holds its card");
     threat_area::attach_to_location(cx, location, code);
     EngineOutcome::Done

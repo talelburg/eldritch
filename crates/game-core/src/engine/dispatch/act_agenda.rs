@@ -574,8 +574,8 @@ mod advance_act_tests {
     use crate::event::Event;
     use crate::scenario::ResolutionId;
     use crate::state::{
-        Act, CardCode, Continuation, GameStateBuilder, InvestigationPhaseFrame,
-        InvestigationResume, InvestigatorId, Phase,
+        Act, CardCode, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
+        InvestigatorId, Phase,
     };
     use crate::{assert_event, test_support};
 
@@ -627,9 +627,9 @@ mod advance_act_tests {
             .with_investigator(investigator)
             .with_active_investigator(inv)
             .with_turn_order([inv])
-            .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+            .with_phase_anchor(InvestigationPhaseFrame {
                 resume: InvestigationResume::TurnBegins,
-            }))
+            })
             .with_investigator_turn(inv)
             .build();
         state.act_deck = vec![Act {
@@ -662,9 +662,9 @@ mod advance_act_tests {
             .with_investigator(investigator)
             .with_active_investigator(inv)
             .with_turn_order([inv])
-            .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+            .with_phase_anchor(InvestigationPhaseFrame {
                 resume: InvestigationResume::TurnBegins,
-            }))
+            })
             .with_investigator_turn(inv)
             .build();
         state.act_deck = vec![Act {
@@ -714,9 +714,9 @@ mod advance_act_tests {
             .with_investigator(investigator)
             .with_active_investigator(inv)
             .with_turn_order([inv])
-            .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+            .with_phase_anchor(InvestigationPhaseFrame {
                 resume: InvestigationResume::TurnBegins,
-            }))
+            })
             .with_investigator_turn(inv)
             .build();
         state.act_deck = vec![
@@ -758,9 +758,9 @@ mod advance_act_tests {
             .with_investigator(investigator)
             .with_active_investigator(inv)
             .with_turn_order([inv])
-            .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+            .with_phase_anchor(InvestigationPhaseFrame {
                 resume: InvestigationResume::TurnBegins,
-            }))
+            })
             .with_investigator_turn(inv)
             .build();
         state.act_deck = vec![Act {
@@ -793,9 +793,9 @@ mod advance_act_tests {
             .with_investigator(investigator)
             .with_active_investigator(inv)
             .with_turn_order([inv])
-            .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+            .with_phase_anchor(InvestigationPhaseFrame {
                 resume: InvestigationResume::TurnBegins,
-            }))
+            })
             .with_investigator_turn(inv)
             .build();
         state.act_deck = vec![
@@ -831,9 +831,9 @@ mod advance_act_tests {
             .with_investigator(inv2)
             .with_active_investigator(acting)
             .with_turn_order([acting, other])
-            .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+            .with_phase_anchor(InvestigationPhaseFrame {
                 resume: InvestigationResume::TurnBegins,
-            }))
+            })
             .with_investigator_turn(acting)
             .build();
         // Two acts so the first is non-terminal and its advance bumps the cursor

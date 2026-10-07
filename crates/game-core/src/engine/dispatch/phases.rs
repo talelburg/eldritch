@@ -866,7 +866,7 @@ fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
 // would only obscure the phase-boundary map it draws.
 #[allow(clippy::too_many_lines)]
 pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
-    let anchor = cx.state.continuations.last().cloned();
+    let anchor = cx.state.continuations.top().cloned();
     // `Entry` advances (slice 1b, #393) run the phase opening; delegated so this
     // function stays the boundary-dispatch it was in slice 1a.
     if let Some(out) = advance_phase_entry(cx, anchor.as_ref()) {
@@ -1103,9 +1103,9 @@ pub(super) fn upkeep_resume(cx: &mut Cx) -> EngineOutcome {
                                // stack (#566). That grows the depth without pushing anything above this
                                // anchor, so a length sentinel would cede to a Revelation that does not
                                // exist.
-    let top_before = cx.state.continuations.last().cloned();
+    let top_before = cx.state.continuations.top().cloned();
     upkeep_draw_and_resource(cx); // 4.4 — may push a drawn-weakness Revelation (#509)
-    if cx.state.continuations.last() != top_before.as_ref() {
+    if cx.state.continuations.top() != top_before.as_ref() {
         // 4.4 pushed a drawn-weakness Revelation above the (now-buried) UpkeepPhase
         // anchor. Cede: the drive loop resolves the Revelation, then re-exposes the
         // anchor at AfterDraw (anchor_on_child_pop → upkeep_after_draw) for 4.5/4.6.

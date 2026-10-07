@@ -20,9 +20,9 @@ fn two_investigator_open_turn(whose: InvestigatorId) -> GameState {
         .with_investigator(second)
         .with_active_investigator(whose)
         .with_turn_order([a, b])
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(whose)
         .build()
 }

@@ -19,9 +19,9 @@ fn engage_action_engages_unengaged_enemy_at_location() {
         })
         .with_active_investigator(inv_id)
         .with_enemy(enemy)
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(inv_id)
         .build();
 
@@ -65,9 +65,9 @@ fn engage_action_provokes_aoo_from_other_engaged_enemy_not_the_target() {
         .with_active_investigator(inv_id)
         .with_enemy(target)
         .with_enemy(other)
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(inv_id)
         .build();
 

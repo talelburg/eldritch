@@ -135,7 +135,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     let discard_pile_before = state.investigators[&inv1].discard.len();
     assert!(
         !matches!(
-            state.continuations.last(),
+            state.continuations.top(),
             Some(Continuation::HandSizeDiscard(_))
         ),
         "no discard should be pending before the round-ending EndTurn"
@@ -153,7 +153,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     );
     assert!(
         matches!(
-            r3.state.continuations.last(),
+            r3.state.continuations.top(),
             Some(Continuation::HandSizeDiscard(_))
         ),
         "a HandSizeDiscard frame must be on the stack while awaiting the discard"
@@ -198,7 +198,7 @@ fn upkeep_prompts_and_discards_down_to_eight() {
     );
     assert!(
         !matches!(
-            r4.state.continuations.last(),
+            r4.state.continuations.top(),
             Some(Continuation::HandSizeDiscard(_))
         ),
         "discard-pending must be cleared once the queue drains"

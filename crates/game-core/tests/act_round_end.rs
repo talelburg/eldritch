@@ -46,9 +46,9 @@ fn upkeep_round_end_state(clues: u8) -> GameState {
         .with_turn_order([inv])
         .with_phase(Phase::Upkeep)
         // UpkeepPhase anchor (slice 1a): the round-end teardown pops it.
-        .with_phase_anchor(Continuation::UpkeepPhase(UpkeepPhaseFrame {
+        .with_phase_anchor(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,
-        }))
+        })
         .with_location(Location::new(
             LocationId(2),
             CardCode("01112".into()),
@@ -86,7 +86,7 @@ fn opened_round_end_window(clues: u8) -> GameState {
     );
     assert!(
         matches!(
-            state.continuations.last(),
+            state.continuations.top(),
             Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
                 event: TimingEvent::RoundEnded,
                 mode: TimingMode::Reaction,
@@ -94,7 +94,7 @@ fn opened_round_end_window(clues: u8) -> GameState {
             }))
         ),
         "the open window is the round-end reaction window, got {:?}",
-        state.continuations.last(),
+        state.continuations.top(),
     );
     state
 }

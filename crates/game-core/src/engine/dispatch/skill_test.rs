@@ -991,7 +991,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
         // `last()` while this driver runs, so "not the SkillTest on top" simply
         // means "a sub-frame above me" — no `rposition` self-location.
         if !matches!(
-            cx.state.continuations.last(),
+            cx.state.continuations.top(),
             Some(Continuation::SkillTest(_))
         ) {
             return EngineOutcome::Done;

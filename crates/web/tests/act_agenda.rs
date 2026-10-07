@@ -234,15 +234,16 @@ async fn mount_advancing(deck: AdvanceDeck, code: &str, step: AdvanceStep) {
             state.act_index = 0;
         }
     }
-    state
-        .continuations
-        .push(Continuation::AdvanceReverse(AdvanceReverseFrame {
-            deck,
-            from: 0,
-            leaving_code: CardCode::new(code),
-            step,
-            trigger: AdvanceTrigger::Forced,
-        }));
+    state.continuations =
+        test_support::from_frames_unchecked(state.continuations.iter().cloned().chain([
+            Continuation::AdvanceReverse(AdvanceReverseFrame {
+                deck,
+                from: 0,
+                leaving_code: CardCode::new(code),
+                step,
+                trigger: AdvanceTrigger::Forced,
+            }),
+        ]));
     mount_to_body(move || act_agenda::act_agenda_view(&state));
     task::tick().await;
 }

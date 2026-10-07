@@ -31,9 +31,9 @@ fn enemy_phase_runs_hunters_then_attack_loop_when_no_tie() {
         // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
         // These tests construct the state directly (bypassing
         // investigation_phase), so stage both explicitly.
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(InvestigatorId(1))
         .build();
     let mut events = Vec::new();
@@ -89,9 +89,9 @@ fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
         // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
         // These tests construct the state directly (bypassing
         // investigation_phase), so stage both explicitly.
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(InvestigatorId(1))
         .build();
     let mut events = Vec::new();
@@ -158,10 +158,10 @@ fn resolve_attacks_for_investigator_fires_engaged_ready_enemy_and_exhausts() {
         // The loop's own tail advances the enemy-phase cursor once it drains
         // (#704), so it needs its anchor; driving past it cascades on into
         // the next phase, which these assertions do not read.
-        .with_phase_anchor(Continuation::EnemyPhase(EnemyPhaseFrame {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
-        }))
+        })
         .build();
     let mut events = Vec::new();
 
@@ -235,10 +235,10 @@ fn resolve_attacks_for_investigator_excludes_exhausted_and_unengaged_enemies() {
         .with_enemy(e2)
         .with_enemy(e3)
         // See the sibling test: the drained loop advances its own cursor.
-        .with_phase_anchor(Continuation::EnemyPhase(EnemyPhaseFrame {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
-        }))
+        })
         .build();
     let mut events = Vec::new();
 
@@ -294,10 +294,10 @@ fn resolve_attacks_for_investigator_pick_overrides_enemy_id_order() {
         .with_turn_order([inv_id])
         .with_enemy(e_higher) // inserted non-id order: BTreeMap still snapshots 2 then 10
         .with_enemy(e_lower)
-        .with_phase_anchor(Continuation::EnemyPhase(EnemyPhaseFrame {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
-        }))
+        })
         .build();
     let mut events = Vec::new();
 
@@ -389,10 +389,10 @@ fn resolve_attacks_for_investigator_early_breaks_when_target_defeated_mid_loop()
         .with_turn_order([inv_id])
         .with_enemy(e1)
         .with_enemy(e2)
-        .with_phase_anchor(Continuation::EnemyPhase(EnemyPhaseFrame {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
-        }))
+        })
         .build();
     let mut events = Vec::new();
 
@@ -761,10 +761,10 @@ fn enemy_phase_resumes_via_skip_input() {
         .with_enemy(enemy)
         .with_phase(Phase::Enemy)
         .with_turn_order([inv_id])
-        .with_phase_anchor(Continuation::EnemyPhase(EnemyPhaseFrame {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
-        }))
+        })
         .with_open_window(
             FastWindowKind::Phase(PhaseStep::BeforeInvestigatorAttacked),
             FastActorScope::Any,

@@ -716,7 +716,7 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
     let stored = cx
         .state
         .continuations
-        .last()
+        .top()
         .and_then(Continuation::pending_candidates)
         .cloned()
         .unwrap_or_default();
@@ -920,7 +920,7 @@ pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
     if cx
         .state
         .continuations
-        .last()
+        .top()
         .and_then(Continuation::pending_candidates)
         .is_some_and(Vec::is_empty)
     {
@@ -931,7 +931,7 @@ pub(crate) fn open_queued_reaction_window(cx: &mut Cx) -> EngineOutcome {
     let window = cx
         .state
         .continuations
-        .last()
+        .top()
         .filter(|c| c.pending_candidates().is_some())
         .expect("open_queued_reaction_window: top frame is the just-queued window");
     let skip_hint = if window.is_forced() {
@@ -989,7 +989,7 @@ pub(super) fn resume_reaction_window(cx: &mut Cx, response: &InputResponse) -> E
             if cx
                 .state
                 .continuations
-                .last()
+                .top()
                 .is_some_and(Continuation::is_forced)
             {
                 return EngineOutcome::Rejected {
@@ -1026,7 +1026,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         let candidates = cx
             .state
             .continuations
-            .last()
+            .top()
             .and_then(Continuation::pending_candidates)
             .expect("fire_pending_trigger: top frame is an open window/run");
         let idx = match usize::try_from(i) {
@@ -1071,7 +1071,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     if trigger.source == CandidateSource::Hand {
         cx.state
             .continuations
-            .last_mut()
+            .top_frame_mut()
             .and_then(Continuation::pending_candidates_mut)
             .expect("fire_pending_trigger: top frame is an open window/run")
             .remove(pending_idx);
@@ -1128,7 +1128,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     match cx
         .state
         .continuations
-        .last()
+        .top()
         .and_then(Continuation::window_timing_event)
     {
         Some(TimingEvent::DamageAssigned {
@@ -1157,7 +1157,7 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
     // top frame here (apply_effect runs after).
     cx.state
         .continuations
-        .last_mut()
+        .top_frame_mut()
         .and_then(Continuation::pending_candidates_mut)
         .expect("fire_pending_trigger: top frame is an open window/run")
         .remove(pending_idx);
@@ -1293,7 +1293,7 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
     let window = cx
         .state
         .continuations
-        .last()
+        .top()
         .expect("advance_resolution: called with a window on top");
     let candidates = window
         .pending_candidates()

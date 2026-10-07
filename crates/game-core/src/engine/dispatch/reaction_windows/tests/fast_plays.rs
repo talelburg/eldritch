@@ -24,9 +24,9 @@ fn open_fast_window_with_no_eligibility_auto_skips_inline() {
         .with_investigator(test_support::test_investigator(1))
         // The MythosAfterDraws window now closes onto the MythosPhase anchor
         // (slice 1a); stage it so the auto-skip continuation has its frame.
-        .with_phase_anchor(Continuation::MythosPhase(MythosPhaseFrame {
+        .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
-        }))
+        })
         .build();
     let mut events = Vec::new();
     open_fast_window(

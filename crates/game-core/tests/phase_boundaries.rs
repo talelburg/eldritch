@@ -28,8 +28,8 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    self, Act, CardCode, Continuation, GameState, GameStateBuilder, InvestigationPhaseFrame,
-    InvestigationResume, InvestigatorId, LocationId,
+    self, Act, CardCode, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
+    InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -190,9 +190,9 @@ fn mid_investigation() -> GameState {
         .with_phase(state::Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(InvestigatorId(1))
         .build();
     state.act_deck = vec![Act {

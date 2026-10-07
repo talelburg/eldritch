@@ -110,10 +110,9 @@ fn soak_state(
     }
     // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
     // InvestigationPhase anchor at investigation_phase_end.
-    builder =
-        builder.with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        }));
+    builder = builder.with_phase_anchor(InvestigationPhaseFrame {
+        resume: InvestigationResume::TurnBegins,
+    });
     // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
     // EndTurn cascade pops before advancing into the Enemy phase.
     builder = builder.with_investigator_turn(inv_id);
@@ -406,7 +405,7 @@ fn an_attacker_defeated_by_the_retaliate_mid_attack_has_nothing_to_exhaust() {
         !state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::AttackLoop { .. })),
+            .any(|c| matches!(c, Continuation::AttackLoop(_))),
         "the attack loop completed: {:?}",
         state.continuations
     );
@@ -675,7 +674,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::AttackLoop { .. })),
+            .any(|c| matches!(c, Continuation::AttackLoop(_))),
         "loop is parked again after the second attack"
     );
 
@@ -698,7 +697,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
         !state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::AttackLoop { .. })),
+            .any(|c| matches!(c, Continuation::AttackLoop(_))),
         "no parked attack after both attackers fully resolve"
     );
     assert!(

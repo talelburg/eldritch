@@ -22,10 +22,10 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
         .with_investigator(test_support::test_investigator(1))
         .with_turn_order([inv_id])
         .with_enemy(enemy)
-        .with_phase_anchor(Continuation::EnemyPhase(EnemyPhaseFrame {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
-        }))
+        })
         .build();
     state.continuations.push(AttackLoopFrame {
         investigator: inv_id,
@@ -45,7 +45,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
         !state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::AttackLoop { .. })),
+            .any(|c| matches!(c, Continuation::AttackLoop(_))),
         "the parked attack-loop frame is consumed"
     );
     assert!(
@@ -90,10 +90,10 @@ fn a_head_attacker_that_dealt_nothing_still_exhausts() {
         .with_investigator(test_support::test_investigator(1))
         .with_turn_order([inv_id])
         .with_enemy(enemy)
-        .with_phase_anchor(Continuation::EnemyPhase(EnemyPhaseFrame {
+        .with_phase_anchor(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: Some(inv_id),
-        }))
+        })
         .build();
     state.continuations.push(AttackLoopFrame {
         investigator: inv_id,

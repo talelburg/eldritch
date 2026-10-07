@@ -76,9 +76,9 @@ fn board(turn_order: &[InvestigatorId]) -> GameState {
         .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
         .with_investigator(dying)
         .with_active_investigator(DYING)
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(DYING)
         .with_enemy(engaged_attacker(DYING))
         .build();
@@ -117,7 +117,7 @@ fn defeat_mid_turn_hands_the_turn_to_the_next_investigator() {
     );
     assert!(
         matches!(
-            state.continuations.last(),
+            state.continuations.top(),
             Some(Continuation::InvestigatorTurn(InvestigatorTurnFrame {
                 investigator,
                 ending: false,

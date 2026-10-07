@@ -340,8 +340,10 @@ mod tests {
             doom_threshold: 3,
         }];
         game.agenda_index = 0;
-        game.continuations
-            .push(advancing(AdvanceDeck::Agenda, CardCode::new(AGENDA_1)));
+        game.continuations = test_support::from_frames_unchecked([advancing(
+            AdvanceDeck::Agenda,
+            CardCode::new(AGENDA_1),
+        )]);
         let state = awaiting(
             Some(game),
             InputRequest::pick_single("Choose one", branches())
@@ -448,8 +450,10 @@ mod tests {
             clue_threshold: 2,
         }];
         game.act_index = 0;
-        game.continuations
-            .push(advancing(AdvanceDeck::Act, CardCode::new(ACT_3)));
+        game.continuations = test_support::from_frames_unchecked([advancing(
+            AdvanceDeck::Act,
+            CardCode::new(ACT_3),
+        )]);
         let state = awaiting(
             Some(game),
             InputRequest::pick_single("Choose one", branches())

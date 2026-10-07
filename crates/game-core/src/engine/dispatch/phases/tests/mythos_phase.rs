@@ -56,9 +56,9 @@ fn mythos_drives_from_entry_via_the_loop() {
     let mut state = GameStateBuilder::default()
         .with_investigator(test_support::test_investigator(1))
         .with_phase(Phase::Mythos)
-        .with_phase_anchor(Continuation::MythosPhase(MythosPhaseFrame {
+        .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::Entry,
-        }))
+        })
         .build();
     state.turn_order = vec![InvestigatorId(1)];
     let mut events = Vec::new();
@@ -167,9 +167,9 @@ fn mythos_phase_end_emits_phase_ended_and_steps_to_investigation() {
         .with_investigator(test_support::test_investigator(1))
         .with_phase(Phase::Mythos)
         .with_turn_order([InvestigatorId(1)])
-        .with_phase_anchor(Continuation::MythosPhase(MythosPhaseFrame {
+        .with_phase_anchor(MythosPhaseFrame {
             resume: MythosResume::AfterDraws,
-        }))
+        })
         .build();
     let mut events = Vec::new();
 

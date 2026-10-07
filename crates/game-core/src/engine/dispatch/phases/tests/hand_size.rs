@@ -105,7 +105,7 @@ fn check_hand_size_is_noop_when_all_at_or_below_cap() {
 
     assert_eq!(outcome, EngineOutcome::Done);
     assert!(!matches!(
-        state.continuations.last(),
+        state.continuations.top(),
         Some(Continuation::HandSizeDiscard(_))
     ));
 }
@@ -133,7 +133,7 @@ fn upkeep_resume_parks_at_hand_size_discard() {
 
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(matches!(
-        state.continuations.last(),
+        state.continuations.top(),
         Some(Continuation::HandSizeDiscard(_))
     ));
     assert_eq!(
@@ -158,9 +158,9 @@ fn resume_hand_size_discard_discards_overflow_and_advances_to_mythos() {
         .with_phase(Phase::Upkeep)
         // UpkeepPhase anchor (slice 1a) sits beneath the staged hand-size
         // discard; the round-end teardown pops it.
-        .with_phase_anchor(Continuation::UpkeepPhase(UpkeepPhaseFrame {
+        .with_phase_anchor(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,
-        }))
+        })
         .with_hand_size_discard_pending([id])
         .build();
     // 10-card hand: discard exactly 2 (indices 0 and 1) → land at 8.
@@ -186,7 +186,7 @@ fn resume_hand_size_discard_discards_overflow_and_advances_to_mythos() {
     // steps into Mythos, pausing at the step-1.4 encounter-draw prompt.
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(!matches!(
-        state.continuations.last(),
+        state.continuations.top(),
         Some(Continuation::HandSizeDiscard(_))
     ));
     assert_eq!(state.investigators[&id].hand.len(), 8);
@@ -248,7 +248,7 @@ fn resume_hand_size_discard_rejects_wrong_count() {
     );
     assert!(
         matches!(
-            state.continuations.last(),
+            state.continuations.top(),
             Some(Continuation::HandSizeDiscard(_))
         ),
         "rejected: still pending"
@@ -370,7 +370,7 @@ fn resume_hand_size_discard_rejects_wrong_response_kind() {
     );
     assert!(
         matches!(
-            state.continuations.last(),
+            state.continuations.top(),
             Some(Continuation::HandSizeDiscard(_))
         ),
         "rejected: still pending"

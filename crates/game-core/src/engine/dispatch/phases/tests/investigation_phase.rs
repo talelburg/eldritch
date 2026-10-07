@@ -14,13 +14,13 @@ fn investigator_turn_defaults_to_not_ending() {
         .with_phase(Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(InvestigatorId(1))
         .build();
     assert_eq!(
-        state.continuations.last(),
+        state.continuations.top(),
         Some(&Continuation::InvestigatorTurn(InvestigatorTurnFrame {
             investigator: InvestigatorId(1),
             ending: false,
@@ -54,7 +54,7 @@ fn open_turn_leaves_investigator_turn_frame_on_top() {
     assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
     // Top frame is the InvestigatorTurn for investigator 1...
     assert_eq!(
-        state.continuations.last(),
+        state.continuations.top(),
         Some(&Continuation::InvestigatorTurn(InvestigatorTurnFrame {
             investigator: InvestigatorId(1),
             ending: false,
@@ -271,9 +271,9 @@ fn end_turn_for_last_investigator_ends_phase_and_steps_to_enemy() {
         .with_turn_order([InvestigatorId(1)])
         // Mid-Investigation invariant: the InvestigationPhase anchor (slice
         // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(InvestigatorId(1))
         .build();
 
@@ -340,9 +340,9 @@ fn end_turn_rotates_to_next_active_and_opens_turn_window() {
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         // Mid-Investigation invariant: the InvestigationPhase anchor (slice
         // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(InvestigatorId(1))
         .build();
 

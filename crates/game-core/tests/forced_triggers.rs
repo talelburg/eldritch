@@ -635,9 +635,9 @@ fn end_turn_fires_end_of_turn_forced_for_the_ending_investigator() {
         .with_turn_order([InvestigatorId(1)])
         // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
         // InvestigationPhase anchor at investigation_phase_end.
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
         // EndTurn pops (or strands a skill test below, then pops on resume).
         .with_investigator_turn(InvestigatorId(1))
@@ -1246,9 +1246,9 @@ fn upkeep_phase_end_forced_resolves_before_the_round_end() {
         .with_location(test_support::test_location(10, "Study"))
         .with_phase(state::Phase::Upkeep)
         .with_turn_order([InvestigatorId(1)])
-        .with_phase_anchor(Continuation::UpkeepPhase(UpkeepPhaseFrame {
+        .with_phase_anchor(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,
-        }))
+        })
         .build();
     state.act_deck = vec![Act {
         code: CardCode(UPKEEP_END_ACT.into()),
@@ -1295,9 +1295,9 @@ fn board_with_two_phase_end_forced() -> GameState {
         .with_phase(state::Phase::Investigation)
         .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1)])
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(InvestigatorId(1))
         .build();
     state.act_deck = vec![Act {

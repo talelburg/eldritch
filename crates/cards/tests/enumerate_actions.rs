@@ -10,8 +10,8 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::state::{
     AbilityAddress, AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
-    ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigationPhaseFrame,
-    InvestigationResume, InvestigatorId, LocationId, Phase, UseKind,
+    ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
+    InvestigatorId, LocationId, Phase, UseKind,
 };
 use game_core::test_support;
 
@@ -42,9 +42,9 @@ fn open_turn_state(hand: &[&str], in_play: Vec<CardInPlay>) -> GameState {
         .with_active_investigator(INV)
         .with_turn_order([INV])
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(INV)
         .build()
 }

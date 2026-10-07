@@ -159,7 +159,7 @@ fn drives_act_1_then_act_2_via_round_end_window() {
         r.outcome,
     );
     assert!(matches!(
-        r.state.continuations.last(),
+        r.state.continuations.top(),
         Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
             event: TimingEvent::RoundEnded,
             mode: TimingMode::Reaction,

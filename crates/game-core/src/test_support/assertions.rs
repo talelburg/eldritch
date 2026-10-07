@@ -38,9 +38,9 @@
 //!     .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
 //!     .with_active_investigator(InvestigatorId(1))
 //!     // A state constructed mid-phase needs its phase anchor (slice 1a).
-//!     .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+//!     .with_phase_anchor(InvestigationPhaseFrame {
 //!         resume: InvestigationResume::TurnBegins,
-//!     }))
+//!     })
 //!     // ...and the open-turn frame above it (slice 2a-i), popped by EndTurn.
 //!     .with_investigator_turn(InvestigatorId(1))
 //!     .build();

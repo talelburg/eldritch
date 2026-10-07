@@ -307,23 +307,24 @@ fn firing_a_candidate_whose_card_left_hand_rejects_instead_of_panicking() {
     let (inv_id, enemy_id, loc_id, mut state) = after_defeat_board(2, |_inv| {
         // Deliberately no Evidence! in hand.
     });
-    state
-        .continuations
-        .push(Continuation::TimingPointWindow(TimingPointWindowFrame {
-            event: TimingEvent::EnemyDefeated {
-                enemy: enemy_id,
-                by: Some(inv_id),
-                code: CardCode::new("_synth_enemy"),
-            },
-            bucket: EventTiming::After,
-            mode: TimingMode::Reaction,
-            candidates: vec![ResolutionCandidate::new(
-                CardCode::new(EVIDENCE),
-                inv_id,
-                AbilityAddress::Printed(0),
-                CandidateSource::Hand,
-            )],
-        }));
+    state.continuations =
+        test_support::from_frames_unchecked(state.continuations.iter().cloned().chain([
+            Continuation::TimingPointWindow(TimingPointWindowFrame {
+                event: TimingEvent::EnemyDefeated {
+                    enemy: enemy_id,
+                    by: Some(inv_id),
+                    code: CardCode::new("_synth_enemy"),
+                },
+                bucket: EventTiming::After,
+                mode: TimingMode::Reaction,
+                candidates: vec![ResolutionCandidate::new(
+                    CardCode::new(EVIDENCE),
+                    inv_id,
+                    AbilityAddress::Printed(0),
+                    CandidateSource::Hand,
+                )],
+            }),
+        ]));
 
     let result = engine::apply(
         state,

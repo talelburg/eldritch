@@ -93,9 +93,9 @@ fn draw_action_fires_aoo_from_ready_engaged_enemy() {
         })
         .with_active_investigator(inv_id)
         .with_enemy(enemy)
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(inv_id)
         .build();
 
@@ -136,9 +136,9 @@ fn draw_with_lethal_aoo_suppresses_the_draw() {
         })
         .with_active_investigator(inv_id)
         .with_enemy(enemy)
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(inv_id)
         .build();
 
@@ -181,9 +181,9 @@ fn draw_with_no_engaged_enemy_draws_normally() {
             i
         })
         .with_active_investigator(inv_id)
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(inv_id)
         .build();
 

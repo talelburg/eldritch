@@ -578,7 +578,7 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
     // differ, and only this one exercises `open_forced_resolution`.
     assert!(
         matches!(
-            state.continuations.last(),
+            state.continuations.top(),
             Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
                 mode: TimingMode::Forced,
                 ..
@@ -593,7 +593,7 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
         if !state
             .continuations
             .iter()
-            .any(|c| !matches!(c, Continuation::ScenarioEnd { .. }))
+            .any(|c| !matches!(c, Continuation::ScenarioEnd(_)))
         {
             break;
         }

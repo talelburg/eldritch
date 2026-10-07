@@ -39,9 +39,9 @@ use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, Continuation,
-    EliminationCause, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
-    InvestigatorId, LocationId, Phase, Status,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EliminationCause,
+    GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, InvestigatorId,
+    LocationId, Phase, Status,
 };
 use game_core::{assert_event, test_support};
 
@@ -87,9 +87,9 @@ fn board(solo: bool) -> GameState {
 
     let mut builder = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_at(resigner, PARLOR)
         .with_location(parlor)
         .with_active_investigator(RESIGNER)

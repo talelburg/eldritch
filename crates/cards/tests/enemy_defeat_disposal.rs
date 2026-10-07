@@ -46,8 +46,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, Phase, TokenModifiers,
+    CardCode, ChaosBag, ChaosToken, ContinuationStack, EnemyId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Phase, TokenModifiers,
 };
 use game_core::{assert_event, test_support};
 
@@ -145,7 +145,7 @@ fn defeated_ghoul_minion_is_drawn_again_once_the_encounter_deck_runs_out() {
     // Before this fix the discard was empty and the draw had nothing to find.
     let mut state = after;
     assert!(state.encounter_deck.is_empty());
-    state.continuations.clear(); // drop the open-turn prompt; draw straight
+    state.continuations = ContinuationStack::new(); // drop the open-turn prompt; draw straight
     state.phase = Phase::Mythos;
 
     let redraw = engine::apply(

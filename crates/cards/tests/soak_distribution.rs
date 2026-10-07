@@ -7,7 +7,7 @@ use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, GameState, GameStateBuilder,
+    CardCode, CardInPlay, CardInstanceId, Enemy, GameState, GameStateBuilder,
     InvestigationPhaseFrame, InvestigationResume, InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support;
@@ -52,9 +52,9 @@ fn attack_state(assets: Vec<(&str, CardInstanceId)>, enemy: Enemy) -> (GameState
         .with_active_investigator(inv_id)
         .with_turn_order([inv_id])
         .with_enemy(enemy)
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         .with_investigator_turn(inv_id)
         .build();
     (state, inv_id)

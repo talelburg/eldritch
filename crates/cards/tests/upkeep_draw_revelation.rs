@@ -23,8 +23,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, Continuation, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
-    InvestigatorId, LocationId, Phase,
+    CardCode, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, InvestigatorId,
+    LocationId, Phase,
 };
 use game_core::test_support;
 
@@ -60,9 +60,9 @@ fn upkeep_draw_of_cover_up_does_not_panic_and_cedes_to_the_drive_loop() {
         .with_turn_order([id])
         .with_location(test_support::test_location(101, "Study"))
         // Mid-Investigation invariant: EndTurn cascades through the phase anchor.
-        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+        .with_phase_anchor(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        }))
+        })
         // Open-turn invariant: the InvestigatorTurn frame EndTurn pops.
         .with_investigator_turn(id)
         .build();

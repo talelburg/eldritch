@@ -768,9 +768,9 @@ mod tests {
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1)])
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-            .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+            .with_phase_anchor(InvestigationPhaseFrame {
                 resume: InvestigationResume::TurnBegins,
-            }))
+            })
             .with_investigator_turn(InvestigatorId(1))
             .build();
         let result = take_turn_action(state, &TurnAction::EndTurn);
@@ -1111,9 +1111,9 @@ mod tests {
             .with_location(test_support::test_location(10, "Study"))
             .with_active_investigator(id)
             .with_turn_order([id, InvestigatorId(2)])
-            .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+            .with_phase_anchor(InvestigationPhaseFrame {
                 resume: InvestigationResume::TurnBegins,
-            }))
+            })
             .with_investigator_turn(id)
             .session()
             .take(&TurnAction::EndTurn)

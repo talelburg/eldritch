@@ -26,9 +26,9 @@
 //!     .with_location(test_support::test_location(10, "Study"))
 //!     .with_active_investigator(InvestigatorId(1))
 //!     // A state constructed mid-phase needs its phase anchor (slice 1a).
-//!     .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+//!     .with_phase_anchor(InvestigationPhaseFrame {
 //!         resume: InvestigationResume::TurnBegins,
-//!     }))
+//!     })
 //!     // ...and the open-turn frame above it (slice 2a-i), popped by EndTurn.
 //!     .with_investigator_turn(InvestigatorId(1))
 //!     .build();
@@ -293,17 +293,12 @@ impl GameStateBuilder {
     ///
     /// # Panics
     ///
-    /// Panics if `c` is not a `*Phase` anchor variant (`MythosPhase` /
+    /// Panics if `anchor` is not a `*Phase` anchor (`MythosPhase` /
     /// `InvestigationPhase` / `EnemyPhase` / `UpkeepPhase`).
-    pub fn with_phase_anchor(mut self, c: Continuation) -> Self {
+    pub fn with_phase_anchor(mut self, anchor: impl Into<Continuation>) -> Self {
+        let c = anchor.into();
         assert!(
-            matches!(
-                c,
-                Continuation::MythosPhase(_)
-                    | Continuation::InvestigationPhase(_)
-                    | Continuation::EnemyPhase(_)
-                    | Continuation::UpkeepPhase(_)
-            ),
+            c.is_phase_anchor(),
             "with_phase_anchor expects a *Phase anchor variant, got {c:?}",
         );
         self.phase_anchor = Some(c);

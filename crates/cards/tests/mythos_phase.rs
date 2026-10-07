@@ -333,7 +333,7 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
         suspended.outcome,
     );
     assert!(matches!(
-        suspended.state.continuations.last(),
+        suspended.state.continuations.top(),
         Some(Continuation::SpawnEngage(_))
     ));
     let enemy = suspended
@@ -375,7 +375,7 @@ fn mythos_phase_multi_investigator_spawn_suspends_then_resumes_chain() {
         EngineOutcome::AwaitingInput { .. }
     ));
     assert!(!matches!(
-        resumed.state.continuations.last(),
+        resumed.state.continuations.top(),
         Some(Continuation::SpawnEngage(_))
     ));
     let enemy = resumed

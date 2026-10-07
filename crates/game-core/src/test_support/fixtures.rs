@@ -185,9 +185,12 @@ pub fn test_skill_test(
 /// `apply`. The name marks the call as one that may build a stack the engine
 /// itself could never produce; step-wise test driving (review item 18)
 /// replaces these fixtures.
+///
+/// To stack a frame on a state the builder already staged, rebuild from its
+/// frames: `from_frames_unchecked(state.continuations.iter().cloned().chain([frame]))`.
 #[must_use]
-pub fn from_frames_unchecked(frames: Vec<Continuation>) -> ContinuationStack {
-    ContinuationStack::from_frames_unchecked(frames)
+pub fn from_frames_unchecked(frames: impl IntoIterator<Item = Continuation>) -> ContinuationStack {
+    ContinuationStack::from_frames_unchecked(frames.into_iter().collect())
 }
 
 /// A sample skill-test commit [`AwaitingInput`](EngineOutcome::AwaitingInput)

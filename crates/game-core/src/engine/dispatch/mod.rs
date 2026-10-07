@@ -261,7 +261,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             cx.state.continuations.pop();
         }
         // Terminal: nothing left to drive.
-        let Some(top) = cx.state.continuations.last().cloned() else {
+        let Some(top) = cx.state.continuations.top().cloned() else {
             return EngineOutcome::Done;
         };
         let outcome = match &top {
@@ -275,7 +275,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
                 // no active investigator) leaves the same anchor on top —
                 // break rather than spin.
                 if matches!(outcome, EngineOutcome::Done)
-                    && cx.state.continuations.last() == Some(&top)
+                    && cx.state.continuations.top() == Some(&top)
                 {
                     return EngineOutcome::Done;
                 }
@@ -308,7 +308,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // (acknowledge → reverse → finalize). A reverse it fires lands
             // above this frame and the loop drives it first; the frame is
             // re-exposed at Finalize when the reverse pops.
-            Continuation::AdvanceReverse { .. } => advance_reverse::drive(cx),
+            Continuation::AdvanceReverse(_) => advance_reverse::drive(cx),
             // #466: a one-option forced-effect acknowledge always suspends; on
             // resume it pops and the effect frame beneath resolves.
             Continuation::AcknowledgeForced(_) => {
@@ -344,15 +344,15 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // A deal of damage, mid-procedure (#727): step its cursor —
             // distribute (surfacing the per-point prompt while a point is
             // contested), announce the assignment, place it, resume the caller.
-            Continuation::DealDamage { .. } => combat::drive_deal_damage(cx),
+            Continuation::DealDamage(_) => combat::drive_deal_damage(cx),
             // The attack loop at its order pick is a prompt its handler already
             // surfaced: leave it on top for `resolve_input`.
-            Continuation::AttackLoop { .. } if top.awaits_input() => return EngineOutcome::Done,
+            Continuation::AttackLoop(_) if top.awaits_input() => return EngineOutcome::Done,
             // Otherwise it was re-exposed once the head attacker's
             // `EnemyAttacks` coordinator popped (#704): take the head off,
             // exhaust it (enemy phase), and either begin the next attack, prompt
             // for the order, or run the loop's source-keyed tail.
-            Continuation::AttackLoop { .. } => combat::drive_parked_attack_loop(cx),
+            Continuation::AttackLoop(_) => combat::drive_parked_attack_loop(cx),
             // The open turn is ending: a suspending `EndOfTurn` forced stranded
             // `end_turn` before rotation and flagged this frame. Re-exposed now
             // that the suspension resolved, drive the rotation tail.
@@ -375,11 +375,11 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // weakness-scoped game-end emit is in tail position (it only queues
             // — ADR 0003), so Cover Up 01007's trauma resolves above this frame;
             // the loop re-exposes it and steps 1–6 run.
-            Continuation::Elimination { .. } => elimination::drive_elimination(cx),
+            Continuation::Elimination(_) => elimination::drive_elimination(cx),
             // The ending at rest (Inert at `Finalize`): the loop has nothing to
             // drive, and hands the frame to the apply boundary, which holds the
             // `ScenarioRegistry` (#566).
-            Continuation::ScenarioEnd { .. } if top.profile().activity == FrameActivity::Inert => {
+            Continuation::ScenarioEnd(_) if top.profile().activity == FrameActivity::Inert => {
                 return EngineOutcome::Done
             }
             // The ending, exposed once everything above it has completed or been
@@ -387,7 +387,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // tail-position emit, since the emit only queues (ADR 0003) and
             // Cover Up 01007's trauma (plus its interactive acknowledge) must
             // resolve above this frame, possibly across an `apply` boundary.
-            Continuation::ScenarioEnd { .. } => {
+            Continuation::ScenarioEnd(_) => {
                 cx.state.continuations.top_mut::<ScenarioEndFrame>().step =
                     ScenarioEndStep::Finalize;
                 emit::queue_event(cx, &TimingEvent::GameEnd)
@@ -421,7 +421,7 @@ fn scenario_end_cancels_top(state: &GameState) -> bool {
     state.ending.is_some()
         && state
             .continuations
-            .last()
+            .top()
             .is_some_and(Continuation::cancelled_by_scenario_end)
 }
 
@@ -602,7 +602,7 @@ fn resume_window(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     let has_candidates = cx
         .state
         .continuations
-        .last()
+        .top()
         .and_then(Continuation::pending_candidates)
         .is_some_and(|c| !c.is_empty());
     if has_candidates {
@@ -689,7 +689,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // `SubstitutionPrompt` above its `SkillTest`, a reaction window above a
     // mid-test commit, etc.). So routing is "gate on the top frame's profile,
     // then dispatch on its kind".
-    let Some(top) = cx.state.continuations.last() else {
+    let Some(top) = cx.state.continuations.top() else {
         return EngineOutcome::Rejected {
             reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
         };
@@ -730,7 +730,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         // The advance acknowledge pause (#482/#558): the single on-card advance
         // pick (`PickSingle(0)`) resumes the AdvanceReverse frame past its AwaitAck
         // step into firing the leaving card's reverse.
-        Continuation::AdvanceReverse { .. } => advance_reverse::resume(cx, response),
+        Continuation::AdvanceReverse(_) => advance_reverse::resume(cx, response),
         // #466: the one-option forced-effect acknowledge — its PickSingle pops the
         // frame so the `drive` loop resolves the effect beneath.
         Continuation::AcknowledgeForced(_) => {
@@ -738,11 +738,11 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         }
         // The attack-order pick (#143): the `AttackLoop` frame at `PickOrder`
         // *is* the prompt.
-        Continuation::AttackLoop { .. } => combat::resume_attack_order_pick(cx, response),
+        Continuation::AttackLoop(_) => combat::resume_attack_order_pick(cx, response),
         // The interactive soak distribution's per-point prompt (#44/K5b): a
         // `DealDamage` frame at its `Distribute` step, resumed by its
         // `PickSingle`.
-        Continuation::DealDamage { .. } => combat::resume_damage_distribution(cx, response),
+        Continuation::DealDamage(_) => combat::resume_damage_distribution(cx, response),
         // The interactive slot make-room choice (#498).
         Continuation::SlotDiscard(_) => slots::resume_slot_discard(cx, response),
         // Open-turn OptionId dispatch (slice 2b, #447): `ResolveInput(PickSingle(OptionId))`
@@ -776,8 +776,8 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         | Continuation::EmitEvent(_)
         | Continuation::TimingPoint(_)
         | Continuation::ActionResolution(_)
-        | Continuation::Elimination { .. }
-        | Continuation::ScenarioEnd { .. }
+        | Continuation::Elimination(_)
+        | Continuation::ScenarioEnd(_)
         | Continuation::MythosPhase(_)
         | Continuation::InvestigationPhase(_)
         | Continuation::EnemyPhase(_)
@@ -792,8 +792,8 @@ mod turn_menu_tests {
     use crate::engine::outcome::OptionTarget;
     use crate::engine::{dispatch, enumerate};
     use crate::state::{
-        ChaosBag, ChaosToken, Continuation, GameStateBuilder, InvestigationPhaseFrame,
-        InvestigationResume, InvestigatorId, Phase,
+        ChaosBag, ChaosToken, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
+        InvestigatorId, Phase,
     };
     use crate::test_support;
 
@@ -808,9 +808,9 @@ mod turn_menu_tests {
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1)])
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-            .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
+            .with_phase_anchor(InvestigationPhaseFrame {
                 resume: InvestigationResume::TurnBegins,
-            }))
+            })
             .with_investigator_turn(InvestigatorId(1))
             .build();
         let loc = test_support::test_location(10, "Study");

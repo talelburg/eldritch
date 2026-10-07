@@ -743,21 +743,22 @@ impl GameState {
     /// The skill test currently in flight, if any; `None` outside a test. Reads
     /// the topmost `Continuation::SkillTest` frame — the continuation stack is
     /// the single source of truth for "a test is mid-resolution" (#348). Topmost
-    /// (not `.last()`) because a reaction window can sit above the test mid-
+    /// (not the top) because a reaction window can sit above the test mid-
     /// resolution; "topmost `SkillTest` = the in-flight test".
     #[must_use]
     pub fn current_skill_test(&self) -> Option<&InFlightSkillTest> {
         self.continuations.topmost_of()
     }
 
-    /// Mutable counterpart to [`Self::current_skill_test`].
-    pub fn current_skill_test_mut(&mut self) -> Option<&mut InFlightSkillTest> {
+    /// Mutable counterpart to [`Self::current_skill_test`]. Crate-private:
+    /// the stack is mutated only by the engine.
+    pub(crate) fn current_skill_test_mut(&mut self) -> Option<&mut InFlightSkillTest> {
         self.continuations.topmost_of_mut()
     }
 
     /// Remove and return the in-flight skill test (popping its frame off the
     /// continuation stack). Called at test teardown.
-    pub fn take_skill_test(&mut self) -> Option<InFlightSkillTest> {
+    pub(crate) fn take_skill_test(&mut self) -> Option<InFlightSkillTest> {
         self.continuations.remove_topmost()
     }
 
@@ -778,7 +779,7 @@ impl GameState {
     /// [`Continuation::Mulligan`] frame's `remaining[0]` — the continuation
     /// stack is the single source of truth for "a mulligan is pending" (#348,
     /// replacing the former `mulligan_pending` cursor). The frame is only ever
-    /// the top during setup, so `.last()` (not a topmost search) is correct.
+    /// the top during setup, so the top (not a topmost search) is correct.
     #[must_use]
     pub fn current_mulligan(&self) -> Option<InvestigatorId> {
         self.continuations
@@ -790,7 +791,7 @@ impl GameState {
     /// The investigator currently prompted to discard down to the hand-size
     /// limit, if an upkeep hand-size discard is in progress; `None` otherwise.
     /// Reads the top [`Continuation::HandSizeDiscard`] frame's `remaining[0]`
-    /// — the frame is only the top while the discard is pending, so `.last()`
+    /// — the frame is only the top while the discard is pending, so the top
     /// is correct (mirrors [`current_mulligan`](Self::current_mulligan)).
     #[must_use]
     pub fn current_hand_size_discard(&self) -> Option<InvestigatorId> {
@@ -805,7 +806,7 @@ impl GameState {
     /// otherwise. Reads the topmost [`Continuation::EncounterDraw`] frame's
     /// `remaining[0]` — the continuation stack is the single source of truth
     /// for "an encounter draw is pending" (#348, replacing the former
-    /// `mythos_draw_pending` cursor). Topmost (not `.last()`) because the
+    /// `mythos_draw_pending` cursor). Topmost (not the top) because the
     /// drawer's [`PlayerDraw`](Continuation::PlayerDraw) chain frame — and a
     /// mid-chain [`SpawnEngage`](Continuation::SpawnEngage) above it while a
     /// spawn-engagement tie is resolved — sit above the loop frame.
@@ -866,9 +867,6 @@ impl GameState {
             .map(|(id, e)| (*id, e))
     }
 
-    /// Iterator over the open windows on the continuation stack, in stack
-    /// order (bottom to top). The windows are `TimingPointWindow` / `FastWindow`
-    /// frames; non-window frames are skipped.
     /// Every open window/run frame on the stack, in stack order — legacy
     /// [`FastWindow`](Continuation::FastWindow) framework windows **and**
     /// [`TimingPointWindow`](Continuation::TimingPointWindow) event windows /

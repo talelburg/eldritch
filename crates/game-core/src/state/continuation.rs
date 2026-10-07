@@ -291,47 +291,35 @@ pub enum Continuation {
     Elimination(EliminationFrame),
 }
 
-// One `impl_frame!` per newtype variant (#925), one line each, grouped by the
-// ticket that converts the variant. Each group keeps its own header with a
-// blank line before the next, so concurrent conversions edit disjoint lines;
-// the headers can go once every variant is converted.
-
-// Newtype variants before #928.
+// One `impl_frame!` per variant, in declaration order: the `Frame` downcasts
+// and the `From` conversion from payload into frame.
+impl_frame!(TimingPointWindow, TimingPointWindowFrame);
+impl_frame!(FastWindow, FastWindowFrame);
+impl_frame!(AdvanceReverse, AdvanceReverseFrame);
+impl_frame!(AcknowledgeForced, AcknowledgeForcedFrame);
 impl_frame!(SkillTest, InFlightSkillTest);
 impl_frame!(HunterMove, HunterChoice);
 impl_frame!(SpawnEngage, SpawnEngagePending);
 impl_frame!(HandSizeDiscard, HandSizeDiscard);
-impl_frame!(Effect, EffectFrame);
-
-// Window and timing frames (#929).
-impl_frame!(TimingPointWindow, TimingPointWindowFrame);
-impl_frame!(FastWindow, FastWindowFrame);
-impl_frame!(AcknowledgeForced, AcknowledgeForcedFrame);
 impl_frame!(EmitEvent, EmitEventFrame);
 impl_frame!(TimingPoint, TimingPointFrame);
-
-// Phase, turn and action frames (#930).
-impl_frame!(MoveEnter, MoveEnterFrame);
-impl_frame!(MythosPhase, MythosPhaseFrame);
-impl_frame!(InvestigationPhase, InvestigationPhaseFrame);
-impl_frame!(EnemyPhase, EnemyPhaseFrame);
-impl_frame!(UpkeepPhase, UpkeepPhaseFrame);
-impl_frame!(InvestigatorTurn, InvestigatorTurnFrame);
-impl_frame!(ActionResolution, ActionResolutionFrame);
-
-// Draw, encounter and play frames (#931).
 impl_frame!(SubstitutionPrompt, SubstitutionPromptFrame);
 impl_frame!(Mulligan, MulliganFrame);
 impl_frame!(EncounterDraw, EncounterDrawFrame);
 impl_frame!(PlayerDraw, PlayerDrawFrame);
 impl_frame!(EncounterCard, EncounterCardFrame);
 impl_frame!(PlayFromHand, PlayFromHandFrame);
+impl_frame!(MoveEnter, MoveEnterFrame);
 impl_frame!(SlotDiscard, SlotDiscardFrame);
-
-// Combat, damage and resolution frames (#932).
-impl_frame!(AdvanceReverse, AdvanceReverseFrame);
+impl_frame!(MythosPhase, MythosPhaseFrame);
+impl_frame!(InvestigationPhase, InvestigationPhaseFrame);
+impl_frame!(EnemyPhase, EnemyPhaseFrame);
+impl_frame!(UpkeepPhase, UpkeepPhaseFrame);
+impl_frame!(InvestigatorTurn, InvestigatorTurnFrame);
 impl_frame!(AttackLoop, AttackLoopFrame);
+impl_frame!(ActionResolution, ActionResolutionFrame);
 impl_frame!(DealDamage, DealDamageFrame);
+impl_frame!(Effect, EffectFrame);
 impl_frame!(ScenarioEnd, ScenarioEndFrame);
 impl_frame!(Elimination, EliminationFrame);
 
@@ -527,7 +515,7 @@ impl Continuation {
                 // is only ever pushed with an anchor on top, i.e. beneath this
                 // frame); it is included so that stays true by assertion rather
                 // than by luck (#638).
-                | Continuation::Elimination { .. }
+                | Continuation::Elimination(_)
         )
     }
 
@@ -589,7 +577,7 @@ impl Continuation {
             // forced acknowledge, the skill test's commit window and result
             // pause, a substitution choice, a slot make-room pick, an effect
             // node's controller pick.
-            Continuation::AdvanceReverse { .. }
+            Continuation::AdvanceReverse(_)
             | Continuation::AcknowledgeForced(_)
             | Continuation::SkillTest(_)
             | Continuation::SubstitutionPrompt(_)
@@ -661,7 +649,7 @@ impl Continuation {
             // its steps "any time a player is eliminated", and the weaknesses
             // whose game-end abilities drain above it are still in play until it
             // resumes (#638).
-            | Continuation::Elimination { .. } => (Driven, Complete),
+            | Continuation::Elimination(_) => (Driven, Complete),
             // The ending emits `GameEnd` when driven, then rests at `Finalize`
             // for the apply boundary — the only place holding the scenario
             // registry — to pop (#566). It is the ending itself, so it completes.
@@ -1863,7 +1851,7 @@ impl ResolutionCandidate {
     }
 }
 
-// --- Phase, turn and action frame payloads (#930) ---
+// --- Phase, turn and action frame payloads ---
 
 /// The entered-location half of a Move, parked beneath the whole
 /// `LeftLocation` sequence (#569). Pushed by `move_primary_effect`
@@ -1966,7 +1954,7 @@ pub struct ActionResolutionFrame {
     pub resume: ActionResume,
 }
 
-// --- Combat, damage and resolution frame payloads (#932) ---
+// --- Combat, damage and resolution frame payloads ---
 
 /// An act/agenda is advancing (#482). A small resumable sub-process that
 /// pushes the observable `…Advanced` event, for a forced advance in
@@ -2135,7 +2123,7 @@ pub struct EliminationFrame {
     pub step: EliminationStep,
 }
 
-// --- Window and timing frame payloads (#929) ---
+// --- Window and timing frame payloads ---
 
 /// An event reaction window or the #213 forced run, keyed by the
 /// [`TimingEvent`] that opened it (EmitEvent-frame
@@ -2232,7 +2220,7 @@ pub struct TimingPointFrame {
     pub sub: TimingSub,
 }
 
-// --- Draw, encounter and play frame payloads (#931) ---
+// --- Draw, encounter and play frame payloads ---
 
 /// A skill test paused on its Mind-over-Matter "use X in place of Y?" prompt
 /// at initiation (#322), migrated off the former

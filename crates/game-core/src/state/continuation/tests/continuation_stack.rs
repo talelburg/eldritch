@@ -144,8 +144,8 @@ fn open_window_lives_on_the_continuation_stack_as_a_fast_window() {
         .build();
     assert_eq!(state.continuations.len(), 1);
     assert!(matches!(
-        state.continuations[0],
-        Continuation::FastWindow(_)
+        state.continuations.top(),
+        Some(Continuation::FastWindow(_))
     ));
     // The read accessor surfaces it as the former `open_windows` view.
     assert_eq!(state.open_windows().len(), 1);

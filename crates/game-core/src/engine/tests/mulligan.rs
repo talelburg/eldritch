@@ -294,7 +294,7 @@ fn mulligan_resolve_with_no_frame_outstanding_is_rejected() {
     // rejected with state + events untouched. Replaces the former
     // "mulligan after cursor cleared" test (the cursor is gone).
     let (_id, mut state) = mulligan_scenario();
-    state.continuations.clear();
+    state.continuations = crate::state::ContinuationStack::new();
     let result = apply(state, mulligan_resolve(&[0]));
     assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
     assert!(result.events.is_empty());

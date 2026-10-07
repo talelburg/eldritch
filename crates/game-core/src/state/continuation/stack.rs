@@ -1,8 +1,6 @@
 //! [`ContinuationStack`]: the one suspend/resume stack, as an owned type that
 //! checks its invariants at the push that would break them.
 
-use std::ops::{Deref, DerefMut};
-
 use serde::{Deserialize, Serialize};
 
 use crate::state::continuation::Frame;
@@ -27,6 +25,20 @@ use crate::state::{
 ///
 /// The checks are debug assertions, ADR 0003's posture: a violation is a
 /// programmer error, so release builds pay nothing for them.
+///
+/// The storage is private and every mutation is crate-private, so no code
+/// outside the engine can bypass the checks. Other crates read the stack
+/// ([`iter`](Self::iter), [`top`](Self::top), [`topmost_of`](Self::topmost_of))
+/// and build one for a fixture only through
+/// [`test_support::from_frames_unchecked`](crate::test_support::from_frames_unchecked):
+///
+/// ```compile_fail,E0624
+/// use game_core::state::{Continuation, ContinuationStack, MulliganFrame};
+///
+/// let mut stack = ContinuationStack::new();
+/// let frame: Continuation = MulliganFrame { remaining: vec![] }.into();
+/// stack.push(frame); // `push` is crate-private
+/// ```
 ///
 /// Serialises transparently, as the plain array of externally tagged frames it
 /// replaced, so the wire format and persisted seed states are unchanged.
@@ -65,10 +77,32 @@ impl ContinuationStack {
         self.frames.iter_mut()
     }
 
+    /// How many frames are on the stack.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.frames.len()
+    }
+
+    /// Whether the stack holds no frame.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.frames.is_empty()
+    }
+
     /// The top frame — the one the engine resumes next — or `None` when empty.
     #[must_use]
     pub fn top(&self) -> Option<&Continuation> {
         self.frames.last()
+    }
+
+    /// Mutably borrow the top frame, whatever its kind, or `None` when empty.
+    /// For code that accepts more than one kind on top — either window kind,
+    /// or an effect frame in any of its shapes — and so has no single [`Frame`]
+    /// type to name; prefer [`top_mut`](Self::top_mut) when one kind is
+    /// expected. The borrow must not change the frame's kind: that would
+    /// bypass the push checks.
+    pub(crate) fn top_frame_mut(&mut self) -> Option<&mut Continuation> {
+        self.frames.last_mut()
     }
 
     /// The topmost frame of kind `F`, possibly buried beneath others — e.g.
@@ -250,23 +284,5 @@ impl PartialEq<Vec<Continuation>> for ContinuationStack {
 impl PartialEq<ContinuationStack> for Vec<Continuation> {
     fn eq(&self, other: &ContinuationStack) -> bool {
         *self == other.frames
-    }
-}
-
-// TEMPORARY (#928 → #933): raw `Vec` access keeps the ~140 existing access
-// sites compiling while the newtype migrations (#929–#932) move them onto the
-// typed API. The inherent `push`/`pop` above take precedence inside the crate,
-// so engine pushes are already checked. #933 deletes both impls.
-impl Deref for ContinuationStack {
-    type Target = Vec<Continuation>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.frames
-    }
-}
-
-impl DerefMut for ContinuationStack {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.frames
     }
 }

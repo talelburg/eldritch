@@ -159,7 +159,7 @@ fn deal_damage_cursor_walks_distribute_announce_place_finish() {
     // the coordinator it pushed is now on top.
     assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
     assert!(matches!(
-        cx.state.continuations.last(),
+        cx.state.continuations.top(),
         Some(Continuation::EmitEvent(EmitEventFrame {
             event: TimingEvent::DamageAssigned { .. },
             ..
@@ -179,7 +179,7 @@ fn deal_damage_cursor_walks_distribute_announce_place_finish() {
     let Some(Continuation::EmitEvent(EmitEventFrame {
         event: placed @ TimingEvent::DamagePlaced { .. },
         ..
-    })) = cx.state.continuations.last().cloned()
+    })) = cx.state.continuations.top().cloned()
     else {
         panic!("Place must emit DamagePlaced");
     };
@@ -212,7 +212,7 @@ fn deal_damage_cursor_walks_distribute_announce_place_finish() {
         !cx.state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::DealDamage { .. })),
+            .any(|c| matches!(c, Continuation::DealDamage(_))),
         "the frame pops at Finish"
     );
 }

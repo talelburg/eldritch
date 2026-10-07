@@ -9,7 +9,7 @@
 use game_core::card_registry;
 use game_core::engine::OptionTarget;
 use game_core::state::{
-    Act, AdvanceDeck, AdvanceReverseFrame, AdvanceStep, Agenda, CardCode, Continuation, GameState,
+    Act, AdvanceDeck, AdvanceReverseFrame, AdvanceStep, Agenda, CardCode, Frame, GameState,
 };
 use leptos::prelude::*;
 
@@ -32,17 +32,17 @@ pub enum Face {
 /// passed its acknowledge (`step` ≥ `FireReverse`), else `Front`. `Front` when the
 /// deck isn't advancing (#558).
 pub(crate) fn deck_face(game: &GameState, deck: AdvanceDeck) -> Face {
-    for c in &game.continuations {
-        if let Continuation::AdvanceReverse(AdvanceReverseFrame { deck: d, step, .. }) = c {
-            if *d == deck {
-                return match step {
-                    AdvanceStep::AwaitAck => Face::Front,
-                    AdvanceStep::FireReverse | AdvanceStep::Finalize => Face::Reverse,
-                };
-            }
-        }
+    // A scan rather than `topmost_of`, which can't filter on the deck: the
+    // topmost advance may be the other deck's.
+    let advancing = game
+        .continuations
+        .iter()
+        .filter_map(AdvanceReverseFrame::downcast_ref)
+        .find(|frame| frame.deck == deck);
+    match advancing.map(|frame| frame.step) {
+        None | Some(AdvanceStep::AwaitAck) => Face::Front,
+        Some(AdvanceStep::FireReverse | AdvanceStep::Finalize) => Face::Reverse,
     }
-    Face::Front
 }
 
 /// Name (printed, or the raw code when no metadata) + raw ability text for an
