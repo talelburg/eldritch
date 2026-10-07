@@ -568,9 +568,14 @@ fn trigger_matches(
             controller: window_controller,
             ..
         } => *window_controller == controller,
-        // The forced-only conditions: no reaction on them is matched. Each has
-        // a pattern, but only the forced dispatch path reads it, scanning the
-        // zones its `ForcedTriggerPoint` names.
+        // No reaction is matched on these.
+        //
+        // - The forced-only conditions, first nine: each has a pattern, but only
+        //   the forced dispatch path reads it, scanning the zones its
+        //   `ForcedTriggerPoint` names.
+        // - `DamagePlaced`: no pattern has this condition yet (Mark Harrigan
+        //   03001 and Baron Samedi 05019 are outside the corpus), so the
+        //   condition check above has already refused every pattern.
         TimingEvent::EnteredLocation { .. }
         | TimingEvent::PhaseStarted { .. }
         | TimingEvent::PhaseEnded { .. }
@@ -579,11 +584,8 @@ fn trigger_matches(
         | TimingEvent::EndOfTurn { .. }
         | TimingEvent::GameEnd
         | TimingEvent::EliminationGameEnd { .. }
-        | TimingEvent::LeftLocation { .. } => false,
-        // No pattern has this condition yet (Mark Harrigan 03001 and Baron
-        // Samedi 05019 are outside the corpus), so the condition check above
-        // has already refused every pattern.
-        TimingEvent::DamagePlaced { .. } => false,
+        | TimingEvent::LeftLocation { .. }
+        | TimingEvent::DamagePlaced { .. } => false,
     }
 }
 
