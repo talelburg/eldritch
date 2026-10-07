@@ -189,7 +189,7 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
                 // parent `TimingPoint` (now at `Reaction`).
                 reaction_windows::open_forced_resolution(cx, &event, bucket, candidates)
             } else {
-                forced_triggers::queue_forced_triggers(cx, &point, bucket)
+                forced_triggers::queue_forced_triggers(cx, &event, &point, bucket)
             }
         }
         TimingSub::Reaction => {

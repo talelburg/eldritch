@@ -5,6 +5,8 @@
 //! a fixed deterministic order (see [`queue_forced_triggers`]), beneath the
 //! universal [`queue_event`](super::emit::queue_event) chokepoint.
 
+use std::borrow::Cow;
+
 use card_dsl::dsl::{
     self, Effect, EventPattern, EventTiming, SkillTestKind, TestOutcome, Trigger, TriggerKind,
 };
@@ -12,9 +14,9 @@ use card_dsl::dsl::{
 use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::cursor;
+use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::initiation::{self, InitiationKind};
 use crate::engine::dispatch::reaction_windows;
-use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::engine::{abilities_in_effect, Cx};
 use crate::state::{
@@ -167,16 +169,20 @@ pub(crate) enum ForcedTriggerPoint {
 /// At most one hit reaches here: 2+ simultaneous forced abilities route to the
 /// lead-ordered run (`open_forced_resolution`, #213, Rules Reference p.17 — the
 /// player orders simultaneous triggers, even in solo), so this path has no
-/// ordering to choose. Never returns `AwaitingInput`; a missing registry entry
-/// at resolve time returns `Rejected`.
+/// ordering to choose. It fires through [`initiation::initiate`], the path the
+/// ordered run and reactions share, so `event` — the timing point `point` was
+/// mapped from — supplies the same bindings either way. Never returns
+/// `AwaitingInput`; an ability that no longer resolves at its address returns
+/// `Rejected`.
 #[must_use = "queue_forced_triggers only pushes the forced effect's frame; the \
               effect has not run when this returns (ADR 0003)"]
 pub(crate) fn queue_forced_triggers(
     cx: &mut Cx,
+    event: &TimingEvent,
     point: &ForcedTriggerPoint,
     bucket: EventTiming,
 ) -> EngineOutcome {
-    // Frame-driven forced run (Slice D, #423): `resolve_one` pushes the
+    // Frame-driven forced run (Slice D, #423): `initiate` pushes the
     // candidate's effect root frame for the global `drive` loop to own; this
     // function does not drive. Callers under the loop (effect-eval emits) get the
     // forced effect driven next; callers with post-forced work (`end_turn`'s
@@ -194,33 +200,42 @@ pub(crate) fn queue_forced_triggers(
          open_forced_resolution); got {}",
         hits.len(),
     );
-    match hits.first() {
-        Some(hit) => {
-            let (out, effect) = resolve_one(cx, hit);
-            // #466: in interactive play, surface the lone forced effect as a
-            // one-option pick *before* it resolves. resolve_one already pushed the
-            // effect root frame and returned Done; push the ack *above* it so the
-            // `drive` loop hits the ack first (suspend), and on resume pops it —
-            // then resolves the effect. queue_forced_triggers still returns Done
-            // (push-frame contract), so emit callers stay correct. Scoped to this
-            // single-hit path: the 2+ ordered run resolves via the forced-window's
-            // own path (never `resolve_one`), so its ordering pick is the only
-            // confirmation (no per-effect ack).
-            //
-            // …except when the effect *is* an advance (#558's slice 4, #562).
-            // See `is_only_an_advance`.
-            if cx.state.interactive_acknowledge
-                && matches!(out, EngineOutcome::Done)
-                && !effect.as_ref().is_some_and(is_only_an_advance)
-            {
-                cx.state.continuations.push(AcknowledgeForcedFrame {
-                    candidate: hit.clone(),
-                });
-            }
-            out
+    let Some(hit) = hits.first() else {
+        return EngineOutcome::Done;
+    };
+    // The one firing path (#964): the lone hit resolves, binds from `event`
+    // and records its use exactly as it would had a sibling triggered alongside
+    // it and sent both to the lead's ordered run.
+    let effect = match initiation::initiate(cx, hit, event) {
+        Ok(effect) => effect,
+        Err(refusal) => {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "queue_forced_triggers: {} at {:?} cannot be fired: {}",
+                    hit.code,
+                    hit.address,
+                    Cow::from(refusal),
+                )
+                .into(),
+            };
         }
-        None => EngineOutcome::Done,
+    };
+    // #466: in interactive play, surface the lone forced effect as a one-option
+    // pick *before* it resolves. `initiate` already pushed the effect root frame;
+    // push the ack *above* it so the `drive` loop hits the ack first (suspend),
+    // and on resume pops it — then resolves the effect. queue_forced_triggers
+    // still returns Done (push-frame contract), so emit callers stay correct.
+    // Scoped to this single-hit path: in the 2+ ordered run the lead's ordering
+    // pick is the only confirmation (no per-effect ack).
+    //
+    // …except when the effect *is* an advance (#558's slice 4, #562). See
+    // `is_only_an_advance`.
+    if cx.state.interactive_acknowledge && !is_only_an_advance(&effect) {
+        cx.state.continuations.push(AcknowledgeForcedFrame {
+            candidate: hit.clone(),
+        });
     }
+    EngineOutcome::Done
 }
 
 // dispatcher: one match arm per ForcedTriggerPoint.
@@ -714,44 +729,6 @@ fn push_matching(
 /// pick was never stacked on top of one.
 fn is_only_an_advance(effect: &Effect) -> bool {
     matches!(effect, Effect::AdvanceCurrentAct)
-}
-
-/// Push `hit`'s effect root frame for the `drive` loop to resolve, and hand the
-/// effect back so the caller can decide whether it warrants a #466 acknowledge.
-fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> (EngineOutcome, Option<Effect>) {
-    if card_registry::current().is_none() {
-        return (
-            EngineOutcome::Rejected {
-                reason: "queue_forced_triggers: registry vanished between collect and resolve"
-                    .into(),
-            },
-            None,
-        );
-    }
-    let Some(ability) = abilities_in_effect::resolve(cx.state, hit.source, &hit.code, &hit.address)
-    else {
-        return (
-            EngineOutcome::Rejected {
-                reason: format!(
-                    "queue_forced_triggers: {} no longer has the ability at {:?} at resolve time",
-                    hit.code, hit.address,
-                )
-                .into(),
-            },
-            None,
-        );
-    };
-    let effect = ability.effect;
-    // A forced run holds only in-play / board candidates (`Hand` ⇒ `None` is
-    // harmless — hand Fast events are reaction-window plays, never forced).
-    // The source rides along as an `AbilitySource` too, so an effect-internal
-    // `ChooseOne` can anchor its options to the card the ability is printed on
-    // — the act's reverse (01110) and the agenda's (01105) both fire here, and
-    // both have `instance() == None` (#555).
-    let ctx =
-        EvalContext::for_controller_with_optional_source(hit.controller, hit.source.ability());
-    evaluator::push_effect(cx, &effect, ctx);
-    (EngineOutcome::Done, Some(effect))
 }
 
 /// Display name for the card a forced ability is printed on, for the
