@@ -3,8 +3,8 @@ use crate::engine::enumerate::TurnAction;
 use crate::engine::outcome::EngineOutcome;
 use crate::event::Event;
 use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, EnemyId, GameStateBuilder, InvestigationPhaseFrame,
-    InvestigatorId, LocationId, Phase, Status,
+    CardCode, CardInPlay, CardInstanceId, EnemyId, GameStateBuilder, InvestigatorId, LocationId,
+    Phase, Status,
 };
 use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 

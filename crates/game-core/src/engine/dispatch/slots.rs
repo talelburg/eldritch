@@ -15,8 +15,9 @@ use crate::card_registry;
 use crate::engine::dispatch::{cards, hunters};
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::engine::Cx;
-use crate::state::SlotDiscardFrame;
-use crate::state::{AssetEntry, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId};
+use crate::state::{
+    AssetEntry, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId, SlotDiscardFrame,
+};
 
 /// Per-type slot counts (a multiset). `BTreeMap` keeps iteration deterministic.
 pub(super) type SlotCounts = BTreeMap<Slot, u8>;
@@ -234,7 +235,12 @@ pub(super) fn resume_slot_discard(cx: &mut Cx, response: &InputResponse) -> Engi
         investigator,
         card,
         entry,
-    } = cx.state.continuations.top_mut::<SlotDiscardFrame>().clone();
+    } = cx
+        .state
+        .continuations
+        .top_of::<SlotDiscardFrame>()
+        .expect("`resume_slot_discard` runs with a SlotDiscard frame on top")
+        .clone();
     let Some(card) = card else {
         // Elimination is the only thing that empties a `SlotDiscard` frame (see
         // `Continuation::take_play_in_progress`), and it cannot run while this

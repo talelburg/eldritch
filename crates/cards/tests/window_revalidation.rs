@@ -32,11 +32,10 @@ use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, OptionId, TimingEvent};
 use game_core::event::{Event, LapseReason};
-use game_core::state::TimingPointWindowFrame;
 use game_core::state::{
     AbilityAddress, CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     Continuation, EnemyId, GameState, GameStateBuilder, Investigator, InvestigatorId, LocationId,
-    Phase, ResolutionCandidate, TimingMode, TokenModifiers,
+    Phase, ResolutionCandidate, TimingMode, TimingPointWindowFrame, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event};

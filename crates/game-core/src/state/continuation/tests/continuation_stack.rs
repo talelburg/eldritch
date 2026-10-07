@@ -1,13 +1,5 @@
-use card_dsl::dsl::Effect;
-
 use super::*;
-use crate::engine::evaluator::EvalContext;
-use crate::engine::TimingEvent;
-use crate::state::{
-    ActionResolutionFrame, Continuation, EffectFrame, EmitStep, EnemyPhaseFrame, GameStateBuilder,
-    InvestigationPhaseFrame, InvestigatorId, InvestigatorTurnFrame, MythosPhaseFrame,
-    UpkeepPhaseFrame,
-};
+use crate::state::GameStateBuilder;
 
 #[test]
 fn awaits_input_gates_suspensions_but_not_anchors() {

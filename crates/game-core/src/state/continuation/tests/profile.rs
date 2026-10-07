@@ -1,12 +1,4 @@
-use crate::state::{
-    ActionResolutionFrame, EnemyPhaseFrame, InvestigationPhaseFrame, InvestigatorTurnFrame,
-    MoveEnterFrame, MythosPhaseFrame, UpkeepPhaseFrame,
-};
-use card_dsl::dsl::Effect;
-
 use super::*;
-use crate::engine::evaluator::EvalContext;
-use crate::engine::TimingEvent;
 use crate::test_support;
 
 fn candidate() -> ResolutionCandidate {

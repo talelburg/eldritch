@@ -31,10 +31,9 @@ use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
 use game_core::state::{
-    CardCode, Continuation, Enemy, GameState, GameStateBuilder, InvestigationResume,
-    InvestigatorId, LocationId, Phase, Status,
+    CardCode, Continuation, Enemy, GameState, GameStateBuilder, InvestigationPhaseFrame,
+    InvestigationResume, InvestigatorId, InvestigatorTurnFrame, LocationId, Phase, Status,
 };
-use game_core::state::{InvestigationPhaseFrame, InvestigatorTurnFrame};
 use game_core::test_support;
 
 /// Emergency Cache (01088): non-fast event → playing it provokes.

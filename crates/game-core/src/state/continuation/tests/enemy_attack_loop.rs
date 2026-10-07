@@ -1,5 +1,5 @@
 use super::*;
-use crate::state::{EnemyPhaseFrame, GameStateBuilder};
+use crate::state::GameStateBuilder;
 
 #[test]
 fn enemy_phase_anchor_attacking_round_trips_through_serde() {

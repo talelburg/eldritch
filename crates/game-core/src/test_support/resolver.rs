@@ -53,8 +53,8 @@ use crate::engine::{
 };
 use crate::scenario_registry;
 use crate::state::{
-    CardCode, Frame, GameState, GameStateBuilder, InvestigatorId, InvestigatorTurnFrame,
-    LocationId, SkillKind,
+    CardCode, GameState, GameStateBuilder, InvestigatorId, InvestigatorTurnFrame, LocationId,
+    SkillKind,
 };
 
 /// Provide a response for an `AwaitingInput` prompt during a
@@ -355,8 +355,7 @@ pub fn apply_no_commits(state: GameState, action: Action) -> ApplyResult {
 fn at_open_turn_menu(state: &GameState) -> bool {
     state
         .continuations
-        .top()
-        .and_then(InvestigatorTurnFrame::downcast_ref)
+        .top_of::<InvestigatorTurnFrame>()
         .is_some_and(|turn| !turn.ending)
 }
 

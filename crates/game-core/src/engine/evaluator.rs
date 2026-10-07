@@ -86,11 +86,10 @@ use crate::engine::outcome::{EngineOutcome, OptionId, OptionTarget};
 use crate::engine::{designator, Cx};
 use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
-use crate::state::PlayFromHandFrame;
 use crate::state::{
     AbilitySource, AdvanceTrigger, CandidateSource, CardCode, CardInstanceId, Continuation,
     DamageSource, DifficultyBasis, EffectFrame, EnemyId, GameState, InvestigatorId, Lifetime,
-    LocationId, RecordedModifier, SkillTestFollowUp, Zone,
+    LocationId, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp, Zone,
 };
 
 /// Failure margin of the just-resolved skill test (bound only while running an

@@ -10,8 +10,8 @@ use crate::engine::dispatch::{act_agenda, actions, movement, reaction_windows};
 use crate::engine::outcome::OptionTarget;
 use crate::engine::{abilities_in_effect, ability_source};
 use crate::state::{
-    AbilityAddress, AbilitySource, EnemyId, Frame, GameState, InvestigatorId,
-    InvestigatorTurnFrame, LocationId, Phase, Status,
+    AbilityAddress, AbilitySource, EnemyId, GameState, InvestigatorId, InvestigatorTurnFrame,
+    LocationId, Phase, Status,
 };
 
 /// The enumerated open-turn actions for the active investigator.
@@ -191,8 +191,7 @@ impl TurnAction {
 fn active_investigator(state: &GameState) -> Option<InvestigatorId> {
     state
         .continuations
-        .top()
-        .and_then(InvestigatorTurnFrame::downcast_ref)
+        .top_of::<InvestigatorTurnFrame>()
         .map(|turn| turn.investigator)
 }
 

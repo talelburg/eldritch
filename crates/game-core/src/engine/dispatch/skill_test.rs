@@ -24,11 +24,11 @@ use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId
 use crate::engine::Cx;
 use crate::event::{Event, FailureReason};
 use crate::scenario::TokenEffect;
-use crate::state::SubstitutionPromptFrame;
 use crate::state::{
     self, AbilitySource, CardCode, ChaosToken, Continuation, DifficultyBasis, FastWindowKind,
     GameState, InFlightSkillTest, InvestigatorId, Lifetime, RecordedModifier, ResolvedTest,
-    SkillKind, SkillTestFollowUp, SkillTestStep, Status, TokenResolution, Zone,
+    SkillKind, SkillTestFollowUp, SkillTestStep, Status, SubstitutionPromptFrame, TokenResolution,
+    Zone,
 };
 use crate::{card_registry, scenario};
 

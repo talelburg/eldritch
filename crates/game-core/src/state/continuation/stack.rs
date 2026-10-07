@@ -1,11 +1,13 @@
 //! [`ContinuationStack`]: the one suspend/resume stack, as an owned type that
 //! checks its invariants at the push that would break them.
 
+use std::slice::{Iter, IterMut};
+
 use serde::{Deserialize, Serialize};
 
-use crate::state::continuation::Frame;
-use crate::state::{
-    Continuation, FrameActivity, InFlightSkillTest, ScenarioEndFrame, ScenarioEndStep,
+use crate::state::continuation::frame::Frame;
+use crate::state::continuation::{
+    Continuation, InFlightSkillTest, ScenarioEndFrame, ScenarioEndStep,
 };
 
 /// The continuation stack (umbrella §1 / Axis-B): every suspended resolution,
@@ -28,7 +30,8 @@ use crate::state::{
 ///
 /// The storage is private and every mutation is crate-private, so no code
 /// outside the engine can bypass the checks. Other crates read the stack
-/// ([`iter`](Self::iter), [`top`](Self::top), [`topmost_of`](Self::topmost_of))
+/// ([`iter`](Self::iter), [`top`](Self::top), [`top_of`](Self::top_of),
+/// [`topmost_of`](Self::topmost_of))
 /// and build one for a fixture only through
 /// [`test_support::from_frames_unchecked`](crate::test_support::from_frames_unchecked):
 ///
@@ -66,14 +69,14 @@ impl ContinuationStack {
     }
 
     /// The frames, bottom to top.
-    pub fn iter(&self) -> std::slice::Iter<'_, Continuation> {
+    pub fn iter(&self) -> Iter<'_, Continuation> {
         self.frames.iter()
     }
 
     /// The frames, bottom to top, mutably — for edits inside frames that leave
     /// every frame's kind as it was (elimination draining a card out of each
     /// frame holding it).
-    pub(crate) fn frames_mut(&mut self) -> std::slice::IterMut<'_, Continuation> {
+    pub(crate) fn frames_mut(&mut self) -> IterMut<'_, Continuation> {
         self.frames.iter_mut()
     }
 
@@ -93,6 +96,14 @@ impl ContinuationStack {
     #[must_use]
     pub fn top(&self) -> Option<&Continuation> {
         self.frames.last()
+    }
+
+    /// The top frame if it is of kind `F`; `None` when the stack is empty or
+    /// its top is another kind. The read counterpart to
+    /// [`top_mut`](Self::top_mut), which panics instead.
+    #[must_use]
+    pub fn top_of<F: Frame>(&self) -> Option<&F> {
+        self.top().and_then(F::downcast_ref)
     }
 
     /// Mutably borrow the top frame, whatever its kind, or `None` when empty.
@@ -118,12 +129,12 @@ impl ContinuationStack {
     }
 
     /// Whether the stack may rest here at an `apply` boundary: empty, or a
-    /// [Prompt](FrameActivity::Prompt) on top. Any other top is a frame a
-    /// resolution left stranded — nothing would ever advance it.
+    /// frame that [awaits input](Continuation::awaits_input) on top. Any other
+    /// top is a frame a resolution left stranded — nothing would ever advance
+    /// it.
     #[must_use]
     pub fn is_at_rest(&self) -> bool {
-        self.top()
-            .is_none_or(|top| top.profile().activity == FrameActivity::Prompt)
+        self.top().is_none_or(Continuation::awaits_input)
     }
 
     /// Push `frame` on top.
@@ -268,7 +279,7 @@ impl ContinuationStack {
 
 impl<'a> IntoIterator for &'a ContinuationStack {
     type Item = &'a Continuation;
-    type IntoIter = std::slice::Iter<'a, Continuation>;
+    type IntoIter = Iter<'a, Continuation>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.frames.iter()

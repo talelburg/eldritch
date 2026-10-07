@@ -858,7 +858,12 @@ fn soak_options(targets: &[DistributionTarget]) -> Vec<ChoiceOption> {
 fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     let DealDamageFrame {
         assignment, step, ..
-    } = cx.state.continuations.top_mut::<DealDamageFrame>().clone();
+    } = cx
+        .state
+        .continuations
+        .top_of::<DealDamageFrame>()
+        .expect("`prompt_current_point` runs with a DealDamage frame on top")
+        .clone();
     let DealDamageStep::Distribute {
         remaining_damage: rd,
         remaining_horror: rh,
@@ -895,7 +900,12 @@ pub(super) fn resume_damage_distribution(cx: &mut Cx, response: &InputResponse) 
         mut assignment,
         step,
         ..
-    } = cx.state.continuations.top_mut::<DealDamageFrame>().clone();
+    } = cx
+        .state
+        .continuations
+        .top_of::<DealDamageFrame>()
+        .expect("`resume_damage_distribution` runs with a DealDamage frame on top")
+        .clone();
     let DealDamageStep::Distribute {
         mut remaining_damage,
         mut remaining_horror,
@@ -977,7 +987,12 @@ pub(crate) fn drive_deal_damage(cx: &mut Cx) -> EngineOutcome {
         source,
         assignment,
         step,
-    } = cx.state.continuations.top_mut::<DealDamageFrame>().clone();
+    } = cx
+        .state
+        .continuations
+        .top_of::<DealDamageFrame>()
+        .expect("`drive_deal_damage` runs with a DealDamage frame on top")
+        .clone();
     match step {
         DealDamageStep::Distribute {
             mut remaining_damage,
@@ -1250,7 +1265,12 @@ pub(super) fn resume_attack_order_pick(cx: &mut Cx, response: &InputResponse) ->
         remaining_attackers,
         source,
         stage,
-    } = cx.state.continuations.top_mut::<AttackLoopFrame>().clone();
+    } = cx
+        .state
+        .continuations
+        .top_of::<AttackLoopFrame>()
+        .expect("`resume_attack_order_pick` runs with an AttackLoop frame on top")
+        .clone();
     assert_eq!(
         stage,
         AttackLoopStage::PickOrder,

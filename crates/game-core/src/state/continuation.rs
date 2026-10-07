@@ -12,12 +12,13 @@ use serde::{Deserialize, Serialize};
 use crate::engine::evaluator::EvalContext;
 use crate::engine::TimingEvent;
 use crate::event::FailureReason;
+use crate::state::ability_source::{AbilityAddress, AbilitySource};
+use crate::state::card::{CardCode, CardInPlay, CardInstanceId};
 use crate::state::continuation::frame::impl_frame;
+use crate::state::enemy::EnemyId;
 use crate::state::game_state::{DifficultyBasis, SkillTestId};
-use crate::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, InvestigatorId,
-    LocationId,
-};
+use crate::state::investigator::InvestigatorId;
+use crate::state::location::LocationId;
 
 mod frame;
 mod stack;

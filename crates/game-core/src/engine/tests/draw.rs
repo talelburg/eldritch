@@ -1,5 +1,4 @@
 use super::*;
-use crate::state::InvestigationPhaseFrame;
 
 /// Build a Draw scenario: one investigator at A, in Investigation
 /// phase, active, 3 actions. The caller mutates deck/hand/discard

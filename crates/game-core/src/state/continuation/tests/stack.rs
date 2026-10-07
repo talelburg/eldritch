@@ -1,9 +1,8 @@
 //! The continuation stack by itself, without `apply` (#925 Testing Decisions
 //! seam 3): what it answers and what it refuses.
 
-use super::profile::every_variant_rows;
 use super::*;
-use crate::state::UpkeepPhaseFrame;
+use crate::state::continuation::tests::profile::every_variant_rows;
 use crate::test_support;
 
 // --- Wire format -----------------------------------------------------------
@@ -14,7 +13,7 @@ use crate::test_support;
 const WIRE_FIXTURE: &str = include_str!("fixtures/stack_wire.json");
 
 /// The stack reads today's wire format into exactly the frames that produced
-/// it, and writes them back unchanged: a plain array of externally tagged
+/// it, and writes them back byte for byte: a plain array of externally tagged
 /// frames, as the `web` client and the server's persisted seed state expect.
 #[test]
 fn the_stack_round_trips_the_pre_928_wire_format() {
@@ -27,6 +26,12 @@ fn the_stack_round_trips_the_pre_928_wire_format() {
     );
     let fixture: serde_json::Value = serde_json::from_str(WIRE_FIXTURE).expect("fixture is JSON");
     assert_eq!(serde_json::to_value(&stack).expect("serialize"), fixture);
+    // Byte-identical, not just equal as JSON values: the fixture was written by
+    // the same pretty printer, so only its trailing newline is normalised.
+    assert_eq!(
+        serde_json::to_string_pretty(&stack).expect("serialize"),
+        WIRE_FIXTURE.trim_end()
+    );
 }
 
 // --- Fixtures ---------------------------------------------------------------
@@ -203,6 +208,16 @@ fn pop_expect_of_the_wrong_kind_panics() {
     let mut stack = ContinuationStack::new();
     stack.push(anchor());
     stack.pop_expect::<EffectFrame>();
+}
+
+#[test]
+fn top_of_reads_the_top_frame_only_when_it_is_the_named_kind() {
+    let mut stack = ContinuationStack::new();
+    assert_eq!(stack.top_of::<HandSizeDiscard>(), None);
+    stack.push(hand_size_discard());
+    stack.push(skill_test(0));
+    assert_eq!(stack.top_of::<InFlightSkillTest>(), Some(&skill_test(0)));
+    assert_eq!(stack.top_of::<HandSizeDiscard>(), None);
 }
 
 #[test]

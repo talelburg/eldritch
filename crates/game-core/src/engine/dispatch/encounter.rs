@@ -14,10 +14,10 @@ use crate::engine::outcome::{EngineOutcome, InputRequest, OptionTarget, ResumeTo
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    CardCode, Continuation, EncounterDisposition, Enemy, FastWindowKind, InvestigatorId,
-    LocationId, PhaseStep, SpawnEngagePending, Status,
+    CardCode, Continuation, EncounterCardFrame, EncounterDisposition, EncounterDrawFrame, Enemy,
+    FastWindowKind, InvestigatorId, LocationId, PhaseStep, PlayerDrawFrame, SpawnEngagePending,
+    Status,
 };
-use crate::state::{EncounterCardFrame, EncounterDrawFrame, Frame, PlayerDrawFrame};
 
 /// Hard cap on a single Mythos draw chain. Real scenarios surge ≤2
 /// in a chain; the cap exists purely to guarantee termination on
@@ -615,7 +615,8 @@ pub(super) fn resume_encounter_draw(cx: &mut Cx, response: &InputResponse) -> En
     let drawer = cx
         .state
         .continuations
-        .top_mut::<EncounterDrawFrame>()
+        .top_of::<EncounterDrawFrame>()
+        .expect("`resume_encounter_draw` runs with an EncounterDraw frame on top")
         .remaining[0];
     if !matches!(response, InputResponse::Confirm) {
         return EngineOutcome::Rejected {
@@ -659,7 +660,11 @@ pub(super) fn drive_player_draw(cx: &mut Cx) -> EngineOutcome {
         investigator,
         chain_count,
         surge_pending,
-    } = *cx.state.continuations.top_mut::<PlayerDrawFrame>();
+    } = *cx
+        .state
+        .continuations
+        .top_of::<PlayerDrawFrame>()
+        .expect("`drive_player_draw` runs with a PlayerDraw frame on top");
     if chain_count == 0 || surge_pending {
         draw_encounter_card_into_frame(cx, investigator)
     } else {
@@ -851,8 +856,7 @@ pub(super) fn dispose_encounter_card_if_top(cx: &mut Cx) -> EngineOutcome {
     while cx
         .state
         .continuations
-        .top()
-        .and_then(EncounterCardFrame::downcast_ref)
+        .top_of::<EncounterCardFrame>()
         .is_some()
     {
         let EncounterCardFrame { card, disposition } =

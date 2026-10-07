@@ -21,14 +21,11 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{EngineOutcome, TimingEvent};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
-use game_core::state::TimingPointWindowFrame;
 use game_core::state::{
-    Act, Agenda, CardCode, Continuation, EliminationCause, Enemy, EnemyId, EnemyResume, GameState,
-    GameStateBuilder, InvestigationResume, InvestigatorId, Location, LocationId, Phase, Status,
-    TimingMode, UpkeepResume,
-};
-use game_core::state::{
-    EnemyPhaseFrame, InvestigationPhaseFrame, InvestigatorTurnFrame, UpkeepPhaseFrame,
+    Act, Agenda, CardCode, Continuation, EliminationCause, Enemy, EnemyId, EnemyPhaseFrame,
+    EnemyResume, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
+    InvestigatorId, InvestigatorTurnFrame, Location, LocationId, Phase, Status, TimingMode,
+    TimingPointWindowFrame, UpkeepPhaseFrame, UpkeepResume,
 };
 use game_core::test_support;
 

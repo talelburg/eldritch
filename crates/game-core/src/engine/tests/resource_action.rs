@@ -1,5 +1,4 @@
 use super::*;
-use crate::state::InvestigationPhaseFrame;
 
 #[test]
 fn resource_action_spends_action_and_gains_one_resource() {

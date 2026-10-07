@@ -1,5 +1,4 @@
 use super::*;
-use crate::state::InvestigationPhaseFrame;
 
 /// Build a Move scenario with one ready engaged enemy at the
 /// origin. The investigator is configured to be defeated by the

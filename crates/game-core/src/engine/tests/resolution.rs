@@ -1,5 +1,4 @@
 use super::*;
-use crate::state::InvestigationPhaseFrame;
 
 /// `apply_resolution` that records it ran by stamping the acting
 /// investigator's resources to a sentinel value, so tests can assert

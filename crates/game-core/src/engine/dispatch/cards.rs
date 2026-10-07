@@ -19,9 +19,8 @@ use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     ActionResolutionFrame, ActionResume, AssetEntry, CardCode, CardInPlay, CardInstanceId,
-    InvestigatorId, Zone,
+    InvestigatorId, MulliganFrame, PlayFromHandFrame, Zone,
 };
-use crate::state::{MulliganFrame, PlayFromHandFrame};
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
 /// each investigator draws 5 cards before mulligan.
@@ -790,7 +789,8 @@ pub(super) fn resume_mulligan(cx: &mut Cx, response: &InputResponse) -> EngineOu
     let remaining = cx
         .state
         .continuations
-        .top_mut::<MulliganFrame>()
+        .top_of::<MulliganFrame>()
+        .expect("`resume_mulligan` runs with a Mulligan frame on top")
         .remaining
         .clone();
     let investigator = remaining[0];

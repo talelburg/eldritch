@@ -7,10 +7,9 @@ use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId, TimingEvent};
-use game_core::state::TimingPointWindowFrame;
 use game_core::state::{
     Act, CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
-    Phase, TimingMode, UpkeepPhaseFrame, UpkeepResume,
+    Phase, TimingMode, TimingPointWindowFrame, UpkeepPhaseFrame, UpkeepResume,
 };
 use game_core::test_support::{self, MockRegistry};
 

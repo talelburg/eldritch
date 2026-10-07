@@ -41,13 +41,12 @@ use std::collections::{BTreeMap, VecDeque};
 
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
-use crate::state::FastWindowFrame;
 use crate::state::{
-    ChaosBag, Continuation, ContinuationStack, Counter, Enemy, EnemyId, FastActorScope,
-    FastWindowKind, GameState, HandSizeDiscard, Investigator, InvestigatorId,
-    InvestigatorTurnFrame, Location, LocationId, Phase, TokenModifiers,
+    ChaosBag, Continuation, ContinuationStack, Counter, EncounterDrawFrame, Enemy, EnemyId,
+    FastActorScope, FastWindowFrame, FastWindowKind, GameState, HandSizeDiscard, Investigator,
+    InvestigatorId, InvestigatorTurnFrame, Location, LocationId, MulliganFrame, Phase,
+    TokenModifiers,
 };
-use crate::state::{EncounterDrawFrame, MulliganFrame};
 
 /// Fluent builder for a [`GameState`].
 ///
@@ -296,12 +295,12 @@ impl GameStateBuilder {
     /// Panics if `anchor` is not a `*Phase` anchor (`MythosPhase` /
     /// `InvestigationPhase` / `EnemyPhase` / `UpkeepPhase`).
     pub fn with_phase_anchor(mut self, anchor: impl Into<Continuation>) -> Self {
-        let c = anchor.into();
+        let frame = anchor.into();
         assert!(
-            c.is_phase_anchor(),
-            "with_phase_anchor expects a *Phase anchor variant, got {c:?}",
+            frame.is_phase_anchor(),
+            "with_phase_anchor expects a *Phase anchor variant, got {frame:?}",
         );
-        self.phase_anchor = Some(c);
+        self.phase_anchor = Some(frame);
         self
     }
 

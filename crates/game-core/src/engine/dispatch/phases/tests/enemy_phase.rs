@@ -5,7 +5,6 @@ use crate::engine::{self, dispatch};
 use crate::state::{
     EnemyId, FastActorScope, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
 };
-use crate::state::{EnemyPhaseFrame, InvestigationPhaseFrame};
 use crate::{assert_event, test_support};
 
 #[test]

@@ -470,7 +470,12 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
 /// invalid pick, rejects and leaves the `HunterMove` frame on the stack so
 /// the client can retry. (#128)
 pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let pending = cx.state.continuations.top_mut::<HunterChoice>().clone();
+    let pending = cx
+        .state
+        .continuations
+        .top_of::<HunterChoice>()
+        .expect("`resume_hunter_choice` runs with a HunterChoice frame on top")
+        .clone();
     let InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
             reason: format!(
@@ -491,8 +496,7 @@ pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> Eng
                     .into(),
                 };
             };
-            // Pop the HunterMove frame we validated against (it is the top frame).
-            cx.state.continuations.pop();
+            cx.state.continuations.pop_expect::<HunterChoice>();
             place_enemy_at(cx, *enemy, loc);
             // After the move, attempt engage-on-arrival; that itself may
             // suspend on an engagement tie.
@@ -511,8 +515,7 @@ pub(super) fn resume_hunter_choice(cx: &mut Cx, response: &InputResponse) -> Eng
                     .into(),
                 };
             };
-            // Pop the HunterMove frame we validated against (it is the top frame).
-            cx.state.continuations.pop();
+            cx.state.continuations.pop_expect::<HunterChoice>();
             engage_enemy_with(cx, *enemy, who);
             *enemy
         }
@@ -554,7 +557,8 @@ pub(super) fn resume_spawn_engage(cx: &mut Cx, response: &InputResponse) -> Engi
     let pending = cx
         .state
         .continuations
-        .top_mut::<SpawnEngagePending>()
+        .top_of::<SpawnEngagePending>()
+        .expect("`resume_spawn_engage` runs with a SpawnEngagePending frame on top")
         .clone();
     let InputResponse::PickSingle(OptionId(i)) = response else {
         return EngineOutcome::Rejected {
@@ -573,8 +577,7 @@ pub(super) fn resume_spawn_engage(cx: &mut Cx, response: &InputResponse) -> Engi
             .into(),
         };
     };
-    // Pop the SpawnEngage frame we validated against (it is the top frame).
-    cx.state.continuations.pop();
+    cx.state.continuations.pop_expect::<SpawnEngagePending>();
     engage_enemy_with(cx, pending.enemy, who);
     // The exposed `PlayerDraw` frame (if any) is driven by the `drive` loop;
     // nothing else to do here.

@@ -14,10 +14,9 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::ScenarioId;
-use game_core::state::TimingPointWindowFrame;
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, TimingMode,
+    GameStateBuilder, InvestigatorId, LocationId, Phase, TimingMode, TimingPointWindowFrame,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
 use game_core::{assert_event_sequence, assert_no_event};

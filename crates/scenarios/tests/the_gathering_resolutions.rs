@@ -15,10 +15,10 @@ use game_core::engine::{
 };
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
-use game_core::state::TimingPointWindowFrame;
 use game_core::state::{
     AdvanceDeck, AdvanceReverseFrame, AdvanceStep, CardCode, ChaosBag, ChaosToken, Continuation,
     EliminationCause, EnemyId, GameState, InvestigatorId, Status, TimingMode,
+    TimingPointWindowFrame,
 };
 use game_core::{assert_event, scenario_registry, test_support};
 use scenarios::the_gathering;

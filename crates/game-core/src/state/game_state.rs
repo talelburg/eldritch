@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 use crate::rng::RngState;
 use crate::scenario::{ScenarioEnding, ScenarioId};
 use crate::state::continuation::{
-    Continuation, ContinuationStack, Frame, HandSizeDiscard, InFlightSkillTest,
+    Continuation, ContinuationStack, EncounterDrawFrame, HandSizeDiscard, InFlightSkillTest,
+    MulliganFrame,
 };
-use crate::state::continuation::{EncounterDrawFrame, MulliganFrame};
 use crate::state::{
     CardCode, CardInstanceId, ChaosBag, Counter, Enemy, EnemyId, Investigator, InvestigatorId,
     Location, LocationId, Phase, TokenModifiers,
@@ -783,8 +783,7 @@ impl GameState {
     #[must_use]
     pub fn current_mulligan(&self) -> Option<InvestigatorId> {
         self.continuations
-            .top()
-            .and_then(MulliganFrame::downcast_ref)
+            .top_of::<MulliganFrame>()
             .and_then(|m| m.remaining.first().copied())
     }
 
@@ -796,8 +795,7 @@ impl GameState {
     #[must_use]
     pub fn current_hand_size_discard(&self) -> Option<InvestigatorId> {
         self.continuations
-            .top()
-            .and_then(HandSizeDiscard::downcast_ref)
+            .top_of::<HandSizeDiscard>()
             .and_then(|h| h.remaining.first().copied())
     }
 

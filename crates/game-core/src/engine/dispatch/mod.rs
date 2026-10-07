@@ -18,9 +18,8 @@ use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
 use crate::engine::{enumerate, evaluator, Cx};
-use crate::state::FastWindowFrame;
 use crate::state::{
-    ActionResolutionFrame, ActionResume, CardCode, CardInstanceId, Continuation, Frame,
+    ActionResolutionFrame, ActionResume, CardCode, CardInstanceId, Continuation, FastWindowFrame,
     FrameActivity, GameState, InvestigatorTurnFrame, ScenarioEndFrame, ScenarioEndStep, Status,
 };
 pub(crate) use control::take_control;
@@ -130,11 +129,7 @@ fn turn_menu(state: &GameState) -> InputRequest {
     // The prompt itself is anchored to the acting investigator's turn control, so
     // a host can suppress its "Choose an action" text structurally rather than by
     // matching the string (ADR 0011).
-    match state
-        .continuations
-        .top()
-        .and_then(InvestigatorTurnFrame::downcast_ref)
-    {
+    match state.continuations.top_of::<InvestigatorTurnFrame>() {
         Some(turn) => request.at(OptionTarget::TurnControl(turn.investigator)),
         None => request,
     }
@@ -353,23 +348,23 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // exhaust it (enemy phase), and either begin the next attack, prompt
             // for the order, or run the loop's source-keyed tail.
             Continuation::AttackLoop(_) => combat::drive_parked_attack_loop(cx),
-            // The open turn is ending: a suspending `EndOfTurn` forced stranded
-            // `end_turn` before rotation and flagged this frame. Re-exposed now
-            // that the suspension resolved, drive the rotation tail.
-            Continuation::InvestigatorTurn(InvestigatorTurnFrame {
-                investigator,
-                ending: true,
-            }) => phases::resume_end_turn(cx, *investigator),
             // The open turn surfaces its legal-action enumeration as an
             // `AwaitingInput` menu (2b, #447), re-enumerated at resolve rather
             // than cached — see the open-turn arm of `resolve_input`.
-            Continuation::InvestigatorTurn(InvestigatorTurnFrame { ending: false, .. }) => {
+            Continuation::InvestigatorTurn(_) if top.awaits_input() => {
                 return EngineOutcome::AwaitingInput {
                     request: turn_menu(cx.state),
                     // Deterministic resume-token is #458; placeholder like every
                     // other `AwaitingInput` site until then.
                     resume_token: ResumeToken(0),
                 };
+            }
+            // Otherwise the open turn is ending: a suspending `EndOfTurn` forced
+            // stranded `end_turn` before rotation and flagged this frame.
+            // Re-exposed now that the suspension resolved, drive the rotation
+            // tail.
+            Continuation::InvestigatorTurn(InvestigatorTurnFrame { investigator, .. }) => {
+                phases::resume_end_turn(cx, *investigator)
             }
             // An investigator's elimination, mid-sequence (#638). Step 0's
             // weakness-scoped game-end emit is in tail position (it only queues

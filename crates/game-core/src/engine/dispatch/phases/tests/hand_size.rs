@@ -1,7 +1,7 @@
 use super::*;
 use crate::engine::dispatch;
 use crate::engine::outcome::OptionId;
-use crate::state::{CardCode, GameStateBuilder, InvestigatorId, UpkeepPhaseFrame};
+use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
 use crate::{assert_no_event, test_support};
 
 #[test]

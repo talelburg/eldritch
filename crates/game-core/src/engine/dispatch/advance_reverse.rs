@@ -56,7 +56,8 @@ pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
     } = cx
         .state
         .continuations
-        .top_mut::<AdvanceReverseFrame>()
+        .top_of::<AdvanceReverseFrame>()
+        .expect("`drive` runs with an AdvanceReverse frame on top")
         .clone();
     match step {
         AdvanceStep::AwaitAck => {
@@ -139,7 +140,12 @@ fn finalize(cx: &mut Cx, deck: AdvanceDeck, from: usize) {
 /// Validate-first: any other response, or a frame past `AwaitAck`, rejects
 /// untouched.
 pub(super) fn resume(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let step = cx.state.continuations.top_mut::<AdvanceReverseFrame>().step;
+    let step = cx
+        .state
+        .continuations
+        .top_of::<AdvanceReverseFrame>()
+        .expect("`resume` runs with an AdvanceReverse frame on top")
+        .step;
     if !matches!(step, AdvanceStep::AwaitAck) {
         return EngineOutcome::Rejected {
             reason: format!("advance acknowledge: not at the acknowledge step (step {step:?})")

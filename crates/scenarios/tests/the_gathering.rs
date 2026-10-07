@@ -8,10 +8,9 @@ use std::collections::BTreeSet;
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionId, TimingEvent};
-use game_core::state::TimingPointWindowFrame;
 use game_core::state::{
     CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
-    TimingMode,
+    TimingMode, TimingPointWindowFrame,
 };
 use game_core::{scenario_registry, test_support};
 use scenarios::the_gathering;

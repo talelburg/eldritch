@@ -2,7 +2,7 @@ use card_dsl::card_data::SkillKind;
 
 use super::*;
 use crate::action::RosterEntry;
-use crate::state::{CardCode, GameStateBuilder, SkillSubstitution, UpkeepPhaseFrame};
+use crate::state::{CardCode, GameStateBuilder, SkillSubstitution};
 use crate::test_support::TEST_INV;
 use crate::{engine, test_support};
 

@@ -63,7 +63,12 @@ use crate::state::{EmitEventFrame, EmitStep, TimingPointFrame, TimingSub};
 /// leaf can emit a condition whose own resolution happens here, so a driver that
 /// stopped at this frame would leave the effect half-resolved.
 pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
-    let EmitEventFrame { event, step } = cx.state.continuations.top_mut::<EmitEventFrame>().clone();
+    let EmitEventFrame { event, step } = cx
+        .state
+        .continuations
+        .top_of::<EmitEventFrame>()
+        .expect("`dispatch_emit_event` runs with an EmitEvent frame on top")
+        .clone();
     let resolution = event.condition_resolution();
     if step == EmitStep::ResolveCondition {
         return match resolution {
@@ -144,8 +149,12 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
 ///
 /// Visible to `engine` for the same reason as [`dispatch_emit_event`].
 pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
-    let TimingPointFrame { event, bucket, sub } =
-        cx.state.continuations.top_mut::<TimingPointFrame>().clone();
+    let TimingPointFrame { event, bucket, sub } = cx
+        .state
+        .continuations
+        .top_of::<TimingPointFrame>()
+        .expect("`dispatch_timing_point` runs with a TimingPoint frame on top")
+        .clone();
     if bucket == EventTiming::When && cx.state.pending_cancellation {
         // A `when`-cell ability just prevented the condition. The rest of *this*
         // cell is suppressed along with the cells after it (#714) — Dodge

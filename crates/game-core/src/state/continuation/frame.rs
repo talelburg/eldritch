@@ -3,7 +3,7 @@
 //! list sits beside the enum in `continuation.rs`, where every payload type is
 //! already in scope.
 
-use crate::state::Continuation;
+use crate::state::continuation::Continuation;
 
 /// A frame payload: the type wrapped by exactly one newtype [`Continuation`]
 /// variant.
@@ -12,8 +12,10 @@ use crate::state::Continuation;
 /// [`topmost_of`](crate::state::ContinuationStack::topmost_of), `top_mut`,
 /// `pop_expect` — name a frame kind as a type parameter instead of each caller
 /// hand-writing a `match` with an "expected X on top" arm. Implemented only by
-/// the `impl_frame!` macro, never by hand, so every impl is the same downcast.
-pub trait Frame: Sized + Into<Continuation> {
+/// the `impl_frame!` macro, never by hand, so every impl is the same downcast:
+/// the trait is sealed, its supertrait reachable only inside
+/// `state::continuation`, so no other code can implement it.
+pub trait Frame: sealed::Sealed + Sized + Into<Continuation> {
     /// The variant's name, for accessor panic messages.
     const KIND: &'static str;
 
@@ -27,6 +29,13 @@ pub trait Frame: Sized + Into<Continuation> {
     fn downcast(frame: Continuation) -> Option<Self>;
 }
 
+/// The seal on [`Frame`]: a supertrait only `impl_frame!` names, in a module
+/// nothing outside `continuation` can reach.
+pub(super) mod sealed {
+    /// Implemented by `impl_frame!` alongside `Frame`, and by nothing else.
+    pub trait Sealed {}
+}
+
 /// Implement [`Frame`] for a newtype variant's payload, plus the conversion
 /// from payload into frame that the stack's checked push accepts.
 ///
@@ -34,34 +43,38 @@ pub trait Frame: Sized + Into<Continuation> {
 /// wrapping `Payload`.
 macro_rules! impl_frame {
     ($variant:ident, $payload:ty) => {
-        impl $crate::state::continuation::Frame for $payload {
+        impl $crate::state::continuation::frame::sealed::Sealed for $payload {}
+
+        impl $crate::state::continuation::frame::Frame for $payload {
             const KIND: &'static str = stringify!($variant);
 
-            fn downcast_ref(frame: &$crate::state::Continuation) -> Option<&Self> {
+            fn downcast_ref(frame: &$crate::state::continuation::Continuation) -> Option<&Self> {
                 match frame {
-                    $crate::state::Continuation::$variant(payload) => Some(payload),
+                    $crate::state::continuation::Continuation::$variant(payload) => Some(payload),
                     _ => None,
                 }
             }
 
-            fn downcast_mut(frame: &mut $crate::state::Continuation) -> Option<&mut Self> {
+            fn downcast_mut(
+                frame: &mut $crate::state::continuation::Continuation,
+            ) -> Option<&mut Self> {
                 match frame {
-                    $crate::state::Continuation::$variant(payload) => Some(payload),
+                    $crate::state::continuation::Continuation::$variant(payload) => Some(payload),
                     _ => None,
                 }
             }
 
-            fn downcast(frame: $crate::state::Continuation) -> Option<Self> {
+            fn downcast(frame: $crate::state::continuation::Continuation) -> Option<Self> {
                 match frame {
-                    $crate::state::Continuation::$variant(payload) => Some(payload),
+                    $crate::state::continuation::Continuation::$variant(payload) => Some(payload),
                     _ => None,
                 }
             }
         }
 
-        impl From<$payload> for $crate::state::Continuation {
+        impl From<$payload> for $crate::state::continuation::Continuation {
             fn from(payload: $payload) -> Self {
-                $crate::state::Continuation::$variant(payload)
+                $crate::state::continuation::Continuation::$variant(payload)
             }
         }
     };

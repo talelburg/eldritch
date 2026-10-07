@@ -1,5 +1,4 @@
 use super::*;
-use crate::state::InvestigationPhaseFrame;
 
 #[test]
 fn move_with_ready_engaged_enemy_fires_aoo_and_enemy_follows() {

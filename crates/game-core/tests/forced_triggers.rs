@@ -22,10 +22,9 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
-    EnemyId, GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId,
-    TokenModifiers, UpkeepResume,
+    EnemyId, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
+    InvestigatorId, LocationId, TokenModifiers, UpkeepPhaseFrame, UpkeepResume,
 };
-use game_core::state::{InvestigationPhaseFrame, UpkeepPhaseFrame};
 use game_core::test_support::{self, MockRegistry};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 

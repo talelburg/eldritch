@@ -1,7 +1,7 @@
 use super::*;
 use crate::engine::dispatch;
 use crate::engine::outcome::InputKind;
-use crate::state::{GameStateBuilder, InvestigatorId, MythosPhaseFrame, Phase, Status};
+use crate::state::{GameStateBuilder, InvestigatorId, Phase, Status};
 use crate::test_support;
 
 #[test]

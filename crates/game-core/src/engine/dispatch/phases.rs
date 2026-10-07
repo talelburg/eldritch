@@ -16,12 +16,11 @@ use crate::engine::dispatch::{
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::engine::Cx;
 use crate::event::Event;
-use crate::state::EncounterDrawFrame;
 use crate::state::{
-    CardCode, CardInPlay, Continuation, EnemyId, EnemyPhaseFrame, EnemyResume, FastWindowKind,
-    GameState, HandSizeDiscard, InvestigationPhaseFrame, InvestigationResume, Investigator,
-    InvestigatorId, InvestigatorTurnFrame, MythosPhaseFrame, MythosResume, Phase, PhaseStep,
-    Skills, Status, UpkeepPhaseFrame, UpkeepResume, Zone,
+    CardCode, CardInPlay, Continuation, EncounterDrawFrame, EnemyId, EnemyPhaseFrame, EnemyResume,
+    FastWindowKind, GameState, HandSizeDiscard, InvestigationPhaseFrame, InvestigationResume,
+    Investigator, InvestigatorId, InvestigatorTurnFrame, MythosPhaseFrame, MythosResume, Phase,
+    PhaseStep, Skills, Status, UpkeepPhaseFrame, UpkeepResume, Zone,
 };
 
 /// Action points granted to an investigator at the start of their
@@ -799,26 +798,28 @@ fn advance_phase_entry(cx: &mut Cx, anchor: Option<&Continuation>) -> Option<Eng
         Some(Continuation::MythosPhase(MythosPhaseFrame {
             resume: MythosResume::Entry,
         })) => {
-            cx.state.continuations.pop();
+            cx.state.continuations.pop_expect::<MythosPhaseFrame>();
             Some(mythos_phase(cx))
         }
         Some(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::Entry,
         })) => {
-            cx.state.continuations.pop();
+            cx.state
+                .continuations
+                .pop_expect::<InvestigationPhaseFrame>();
             Some(investigation_phase(cx))
         }
         Some(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::Entry,
             ..
         })) => {
-            cx.state.continuations.pop();
+            cx.state.continuations.pop_expect::<EnemyPhaseFrame>();
             Some(enemy_phase(cx))
         }
         Some(Continuation::UpkeepPhase(UpkeepPhaseFrame {
             resume: UpkeepResume::Entry,
         })) => {
-            cx.state.continuations.pop();
+            cx.state.continuations.pop_expect::<UpkeepPhaseFrame>();
             Some(upkeep_phase(cx))
         }
         _ => None,
@@ -1315,7 +1316,12 @@ fn check_hand_size(cx: &mut Cx) -> EngineOutcome {
 /// — when the queue drains — runs [`upkeep_phase_end`] (4.6 + transition
 /// to Mythos). Rejections leave state and events untouched.
 pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let pending = cx.state.continuations.top_mut::<HandSizeDiscard>().clone();
+    let pending = cx
+        .state
+        .continuations
+        .top_of::<HandSizeDiscard>()
+        .expect("`resume_hand_size_discard` runs with a HandSizeDiscard frame on top")
+        .clone();
     let current = pending.remaining[0];
 
     let InputResponse::PickMultiple { selected } = response else {
@@ -1392,8 +1398,7 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
     // ---- advance the queue ----
     let mut remaining = pending.remaining;
     remaining.remove(0);
-    // Pop the current HandSizeDiscard frame (validated above; it is the top frame).
-    cx.state.continuations.pop();
+    cx.state.continuations.pop_expect::<HandSizeDiscard>();
     if remaining.is_empty() {
         upkeep_phase_end(cx) // 4.6 + transition (may open the act round-end window)
     } else {

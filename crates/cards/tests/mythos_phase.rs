@@ -67,10 +67,9 @@ use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind};
 use game_core::event::Event;
-use game_core::state::FastWindowFrame;
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, Continuation, FastWindowKind, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, PhaseStep,
+    Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, Continuation, FastWindowFrame,
+    FastWindowKind, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, PhaseStep,
 };
 use game_core::{assert_event, test_support};
 
