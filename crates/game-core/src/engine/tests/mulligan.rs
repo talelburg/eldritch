@@ -230,13 +230,11 @@ fn mulligan_replays_from_the_action_log_bit_for_bit() {
     // caller holds the log and replays it against a fresh initial state.
     let id = InvestigatorId(1);
     let make_initial = || mulligan_scenario().1;
-    // A draw after the mulligan is what makes the RNG-cursor check bite:
-    // if the shuffle consumed a different number of RNG values, this draw
-    // diverges even when the post-mulligan hand happens to agree.
-    let log = vec![
-        mulligan_resolve(&[0, 2, 4]),
-        Action::Engine(EngineRecord::DeckShuffled { investigator: id }),
-    ];
+    // The RNG cursor is compared directly below, so a shuffle that consumed a
+    // different number of RNG values diverges even when the post-mulligan hand
+    // happens to agree. (No engine record follows the mulligan: the turn menu
+    // it opens is an outstanding prompt, and engine records reject there.)
+    let log = vec![mulligan_resolve(&[0, 2, 4])];
     let drive = |log: &[Action]| {
         let mut state = make_initial();
         let mut events = Vec::new();
