@@ -9,7 +9,6 @@
 //! alternatives, a free ability a Fast window can offer — and none stands in
 //! for a printed card. They live here, the one binary that reads them.
 
-use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Ability, EnemyTarget, InvestigatorTarget};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
@@ -31,10 +30,8 @@ const SELECT: &str = "_ts_select";
 const DECIDE: &str = "_ts_decide";
 /// `[free]: Gain 1 resource.` — a 0-action ability, which a Fast window offers.
 const FREE: &str = "_ts_free";
-/// An asset with 3 health and no abilities — a soaker for damage.
-const SOAK: &str = "_ts_soak";
 /// `[action]: Heal 1 damage from an investigator at your location.` — a choice
-/// among investigators, whose options the engine does not anchor.
+/// among investigators, whose options anchor to each investigator's card.
 const HEAL: &str = "_ts_heal";
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -42,8 +39,7 @@ const HERE: LocationId = LocationId(10);
 const SELECT_INST: CardInstanceId = CardInstanceId(1);
 const DECIDE_INST: CardInstanceId = CardInstanceId(2);
 const FREE_INST: CardInstanceId = CardInstanceId(3);
-const SOAK_INST: CardInstanceId = CardInstanceId(4);
-const HEAL_INST: CardInstanceId = CardInstanceId(5);
+const HEAL_INST: CardInstanceId = CardInstanceId(4);
 const FIRST: EnemyId = EnemyId(7);
 const SECOND: EnemyId = EnemyId(8);
 
@@ -73,7 +69,6 @@ fn install_mock_registry() {
                 ]),
             )]
         })
-        .with_card(soaker_metadata())
         .with_abilities(HEAL, || -> Vec<Ability> {
             vec![dsl::activated(
                 1,
@@ -89,32 +84,6 @@ fn install_mock_registry() {
             )]
         })
         .install();
-}
-
-fn soaker_metadata() -> CardMetadata {
-    CardMetadata {
-        code: SOAK.to_owned(),
-        name: "Soaker".to_owned(),
-        traits: vec![],
-        text: None,
-        back_name: None,
-        back_text: None,
-        pack_code: "_mock".to_owned(),
-        weakness: false,
-        kind: CardKind::Asset {
-            class: Class::Neutral,
-            cost: Some(0),
-            xp: None,
-            slots: vec![],
-            health: Some(3),
-            sanity: None,
-            skill_icons: SkillIcons::default(),
-            is_fast: false,
-            deck_limit: 1,
-            uses: None,
-            play_only_during_turn: false,
-        },
-    }
 }
 
 /// One investigator at `HERE` with the two action probes in play, two
@@ -156,21 +125,6 @@ fn board_with(in_play: &[(&str, CardInstanceId)]) -> GameStateBuilder {
         .with_enemy(first)
         .with_enemy(second)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-}
-
-/// An open turn with an enemy engaged, so any action provokes an attack of
-/// opportunity, and the soaker probe in play to take some of it.
-fn soak_board() -> GameStateBuilder {
-    let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(SOAK), SOAK_INST));
-    let mut attacker = test_support::test_enemy(FIRST.0, "Attacker");
-    attacker.max_health = 9;
-    GameStateBuilder::new()
-        .with_investigator_at(inv, HERE)
-        .with_location(test_support::test_location(HERE.0, "Study"))
-        .with_enemy_engaged(attacker, INV)
-        .open_turn(INV)
 }
 
 fn activate(inst: CardInstanceId) -> TurnAction {
@@ -304,51 +258,33 @@ fn pick_of_an_unoffered_target_panics() {
         .pick(OptionTarget::Enemy(EnemyId(99)));
 }
 
-/// `pick_unanchored` chooses the one option the engine left un-anchored: the
-/// investigator's own entry in a soak prompt, beside the anchored soaker.
+/// An option choosing an investigator anchors to that investigator's card, so
+/// `pick` names it through `Investigator::card_anchor` like any board entity
+/// (#950): the heal's choice between two damaged investigators.
 #[test]
-fn pick_unanchored_chooses_the_one_option_without_an_anchor() {
-    let session = soak_board()
-        .session()
-        .take(&TurnAction::Resource { investigator: INV });
-    assert!(
-        session
-            .prompt()
-            .options
-            .iter()
-            .any(|o| o.target == Some(OptionTarget::CardInstance(SOAK_INST))),
-        "the attack of opportunity offers the soaker: {:?}",
-        session.prompt(),
-    );
-
-    let session = session.pick_unanchored();
-
-    assert_eq!(session.state().investigators[&INV].damage(), 1);
-    assert_eq!(
-        session.prompt().target,
-        Some(OptionTarget::TurnControl(INV))
-    );
-}
-
-/// Several un-anchored options leave nothing to tell them apart: the heal's
-/// choice between two damaged investigators anchors neither.
-#[test]
-#[should_panic(expected = "several options are un-anchored")]
-fn pick_unanchored_among_several_panics() {
+fn pick_chooses_an_investigator_by_their_card() {
     let mut mine = test_support::test_investigator(1);
     mine.investigator_card.accumulated_damage = 1;
     mine.cards_in_play
         .push(CardInPlay::enter_play(CardCode::new(HEAL), HEAL_INST));
     let mut other = test_support::test_investigator(2);
     other.investigator_card.accumulated_damage = 1;
-    let _ = GameStateBuilder::new()
+    let session = GameStateBuilder::new()
         .with_investigator_at(mine, HERE)
         .with_investigator_at(other, HERE)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .open_turn(INV)
         .session()
-        .take(&activate(HEAL_INST))
-        .pick_unanchored();
+        .take(&activate(HEAL_INST));
+    let theirs = session.state().investigators[&InvestigatorId(2)].card_anchor();
+
+    let session = session.pick(theirs);
+
+    assert_eq!(
+        session.state().investigators[&InvestigatorId(2)].damage(),
+        0
+    );
+    assert_eq!(session.state().investigators[&INV].damage(), 1);
 }
 
 // ---- pick_nth --------------------------------------------------------------

@@ -7,6 +7,7 @@ use card_dsl::card_data::CardKind;
 use serde::{Deserialize, Serialize};
 
 use crate::card_registry;
+use crate::engine::OptionTarget;
 use crate::state::{CardCode, CardInPlay, CardInstanceId, LocationId, Skills};
 
 /// Stable identifier for an investigator within a scenario.
@@ -124,6 +125,18 @@ pub struct Investigator {
 }
 
 impl Investigator {
+    /// The board surface that names this investigator in a prompt: their own
+    /// investigator card. An option that chooses an investigator — whom a
+    /// hunter engages, a chosen investigator, the soak prompt's "take it
+    /// yourself" — anchors here, so it renders on the investigator panel's
+    /// card (ADR 0011, #950). The card, not the seat, because it is the
+    /// rendered surface and where damage and horror are placed; a test picks
+    /// such an option through this same method.
+    #[must_use]
+    pub fn card_anchor(&self) -> OptionTarget {
+        OptionTarget::CardInstance(self.investigator_card.instance_id)
+    }
+
     /// Every in-play card instance this investigator controls that can
     /// carry a triggerable ability: the **investigator card** first, then
     /// cards in play, then threat-area cards. The single definition both

@@ -70,13 +70,14 @@ fn guard_dog_damage(state: &GameState, inv: InvestigatorId, inst: CardInstanceId
 fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
     let dog = CardInstanceId(1);
     let (state, inv) = attack_state(vec![(GUARD_DOG, dog)], ready_attacker(7, 2));
+    let me = state.investigators[&inv].card_anchor();
 
     // EndTurn → enemy phase → distribution prompt (Guard Dog has capacity).
     // First point → Guard Dog; still contested → second prompt → self.
     let session = TestSession::new(state)
         .take(&TurnAction::EndTurn)
         .pick(OptionTarget::CardInstance(dog))
-        .pick_unanchored();
+        .pick(me.clone());
 
     // The distribution is complete but nothing is placed: Guard Dog is in the
     // assignment, so its `when` cell opens between the two rules steps (#727),
@@ -116,12 +117,13 @@ fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
 fn player_may_decline_to_soak_taking_all_damage() {
     let dog = CardInstanceId(1);
     let (state, inv) = attack_state(vec![(GUARD_DOG, dog)], ready_attacker(7, 2));
+    let me = state.investigators[&inv].card_anchor();
 
     // Both points to the investigator — decline to soak.
     let session = TestSession::new(state)
         .take(&TurnAction::EndTurn)
-        .pick_unanchored()
-        .pick_unanchored();
+        .pick(me.clone())
+        .pick(me);
 
     assert_eq!(
         session.state().investigators[&inv].damage(),

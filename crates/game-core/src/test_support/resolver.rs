@@ -176,7 +176,7 @@ impl ChoiceResolver for ScriptedResolver {
             },
             ScriptedStep::Pick(target) => InputResponse::PickSingle(sole_option_at(
                 request,
-                Some(&target),
+                &target,
                 "ScriptedResolver::pick",
             )),
         }
@@ -344,31 +344,27 @@ pub(super) fn is_turn_menu(request: &InputRequest) -> bool {
     matches!(request.target, Some(OptionTarget::TurnControl(_)))
 }
 
-/// The id of the one option of `request` whose anchor is `target` (`None` =
-/// un-anchored), or a panic naming `caller` and why there isn't one. The anchor
-/// lookup behind [`ScriptedResolver::pick`] and the session's `pick` steps.
+/// The id of the one option of `request` anchored to `target`, or a panic
+/// naming `caller` and why there isn't one. The anchor lookup behind
+/// [`ScriptedResolver::pick`] and the session's `pick` step.
 pub(super) fn sole_option_at(
     request: &InputRequest,
-    target: Option<&OptionTarget>,
+    target: &OptionTarget,
     caller: &str,
 ) -> OptionId {
-    let what = target.map_or_else(
-        || "un-anchored".to_owned(),
-        |t| format!("anchored to {t:?}"),
-    );
     let mut matching = request
         .options
         .iter()
-        .filter(|o| o.target.as_ref() == target);
+        .filter(|o| o.target.as_ref() == Some(target));
     let Some(option) = matching.next() else {
         panic!(
-            "{caller}: no option {what}; prompt {:?} offers {:?}",
+            "{caller}: no option anchored to {target:?}; prompt {:?} offers {:?}",
             request.prompt, request.options,
         );
     };
     assert!(
         matching.next().is_none(),
-        "{caller}: several options are {what}, so the anchor does not say which; \
+        "{caller}: several options are anchored to {target:?}, so the anchor does not say which; \
          prompt {:?} offers {:?}",
         request.prompt,
         request.options,

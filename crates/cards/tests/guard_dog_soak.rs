@@ -126,15 +126,17 @@ fn attacks_next(position: u32) -> Action {
 fn distribute_onto(mut session: TestSession, inst: CardInstanceId) -> TestSession {
     while !session.prompt().skippable {
         let soaker = OptionTarget::CardInstance(inst);
-        session = if session
+        let offered = session
             .prompt()
             .options
             .iter()
-            .any(|o| o.target.as_ref() == Some(&soaker))
-        {
+            .any(|o| o.target.as_ref() == Some(&soaker));
+        session = if offered {
             session.pick(soaker)
         } else {
-            session.pick_unanchored()
+            // The sole defender: every fixture here seats investigator 1.
+            let me = session.state().investigators[&InvestigatorId(1)].card_anchor();
+            session.pick(me)
         };
     }
     session

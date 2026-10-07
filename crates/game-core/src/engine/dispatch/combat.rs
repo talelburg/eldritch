@@ -831,9 +831,10 @@ fn credit_point(assignment: &mut Assignment, target: DistributionTarget, damage_
 
 /// Build the per-point soak options, anchoring each to its board home so a host
 /// renders it on the right card (S5, #540): a soaker asset to its card instance,
-/// the investigator to `Global` (no card). Labels match the former
-/// `hunters::candidate_options` debug repr, so the flat bar is byte-unchanged.
-fn soak_options(targets: &[DistributionTarget]) -> Vec<ChoiceOption> {
+/// the defending investigator to their own investigator card (`me`, #950).
+/// Labels match the former `hunters::candidate_options` debug repr, so the flat
+/// bar is byte-unchanged.
+fn soak_options(targets: &[DistributionTarget], me: &OptionTarget) -> Vec<ChoiceOption> {
     targets
         .iter()
         .enumerate()
@@ -844,9 +845,7 @@ fn soak_options(targets: &[DistributionTarget]) -> Vec<ChoiceOption> {
                 DistributionTarget::Asset(instance) => {
                     opt.at(OptionTarget::CardInstance(*instance))
                 }
-                // The investigator themself is not yet a board anchor; the option
-                // lands in the prompt banner.
-                DistributionTarget::Investigator => opt,
+                DistributionTarget::Investigator => opt.at(me.clone()),
             }
         })
         .collect()
@@ -879,7 +878,13 @@ fn prompt_current_point(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
          ({rd} damage / {rh} horror left)"
     );
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(prompt, soak_options(&targets)),
+        request: InputRequest::pick_single(
+            prompt,
+            soak_options(
+                &targets,
+                &cx.state.investigators[&investigator].card_anchor(),
+            ),
+        ),
         resume_token: ResumeToken(0),
     }
 }
