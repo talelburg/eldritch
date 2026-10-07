@@ -7,6 +7,7 @@ use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId, TimingEvent};
+use game_core::state::TimingPointWindowFrame;
 use game_core::state::{
     Act, CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
     Phase, TimingMode, UpkeepResume,
@@ -86,11 +87,11 @@ fn opened_round_end_window(clues: u8) -> GameState {
     assert!(
         matches!(
             state.continuations.last(),
-            Some(Continuation::TimingPointWindow {
+            Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
                 event: TimingEvent::RoundEnded,
                 mode: TimingMode::Reaction,
                 ..
-            })
+            }))
         ),
         "the open window is the round-end reaction window, got {:?}",
         state.continuations.last(),

@@ -47,6 +47,7 @@ use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionTarget};
 use game_core::event::Event;
+use game_core::state::FastWindowFrame;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, FastActorScope,
     FastWindowKind, GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId,
@@ -133,11 +134,11 @@ fn before_investigator_attacked_pauses_when_a_fast_play_is_eligible() {
     );
     assert_eq!(
         result.state.open_windows(),
-        vec![&Continuation::FastWindow {
+        vec![&Continuation::FastWindow(FastWindowFrame {
             candidates: Vec::new(),
             fast_actors: FastActorScope::Any,
             kind: FastWindowKind::Phase(PhaseStep::BeforeInvestigatorAttacked),
-        }],
+        })],
         "the step-3.3 window is the one left standing open",
     );
 
@@ -289,7 +290,7 @@ fn the_window_auto_skips_when_nothing_is_fast_eligible() {
             .state
             .open_windows()
             .iter()
-            .any(|w| matches!(w, Continuation::FastWindow { .. })),
+            .any(|w| matches!(w, Continuation::FastWindow(_))),
         "no window is left open on the auto-skip path; windows = {:?}",
         result.state.open_windows()
     );

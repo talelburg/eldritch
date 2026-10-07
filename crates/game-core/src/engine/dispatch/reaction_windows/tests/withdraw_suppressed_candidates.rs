@@ -1,5 +1,5 @@
 use super::*;
-use crate::state::{CardInstanceId, GameStateBuilder, LocationId, TimingSub};
+use crate::state::{CardInstanceId, GameStateBuilder, LocationId, TimingPointFrame, TimingSub};
 use crate::test_support;
 
 const INV: InvestigatorId = InvestigatorId(1);
@@ -35,7 +35,7 @@ fn state_with_window_of(
         .with_active_investigator(INV)
         .build();
     state.pending_cancellation = prevented;
-    state.continuations.push(Continuation::TimingPointWindow {
+    state.continuations.push(TimingPointWindowFrame {
         event,
         bucket,
         mode,
@@ -162,7 +162,7 @@ fn a_caller_owned_conditions_window_is_untouched() {
 fn a_non_window_frame_is_a_no_op() {
     let mut state = GameStateBuilder::default().build();
     state.pending_cancellation = true;
-    state.continuations.push(Continuation::TimingPoint {
+    state.continuations.push(TimingPointFrame {
         event: discovery(),
         bucket: EventTiming::When,
         sub: TimingSub::Reaction,

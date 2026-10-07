@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::FastWindowFrame;
 
 #[test]
 fn cancel_effect_sets_pending_cancellation() {
@@ -6,7 +7,7 @@ fn cancel_effect_sets_pending_cancellation() {
         .with_investigator(test_support::test_investigator(1))
         .build();
     // Effect::Cancel asserts an open window frame is present; push a minimal one.
-    state.continuations.push(Continuation::FastWindow {
+    state.continuations.push(FastWindowFrame {
         candidates: Vec::new(),
         fast_actors: FastActorScope::Any,
         kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),

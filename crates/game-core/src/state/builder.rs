@@ -40,6 +40,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use crate::rng::RngState;
 use crate::scenario::ScenarioId;
+use crate::state::FastWindowFrame;
 use crate::state::{
     ChaosBag, Continuation, ContinuationStack, Counter, Enemy, EnemyId, FastActorScope,
     FastWindowKind, GameState, HandSizeDiscard, Investigator, InvestigatorId, Location, LocationId,
@@ -270,11 +271,14 @@ impl GameStateBuilder {
         // Framework player windows are `FastWindow` (#433 A-ii). The builder
         // only constructs framework windows; event windows / the forced run
         // (`TimingPointWindow`) are produced by the engine, not seeded here.
-        self.open_windows.push(Continuation::FastWindow {
-            candidates: Vec::new(),
-            fast_actors,
-            kind,
-        });
+        self.open_windows.push(
+            FastWindowFrame {
+                candidates: Vec::new(),
+                fast_actors,
+                kind,
+            }
+            .into(),
+        );
         self
     }
 
@@ -463,10 +467,10 @@ mod with_open_window_tests {
         assert_eq!(state.open_windows().len(), 1);
         assert!(matches!(
             state.open_windows()[0],
-            Continuation::FastWindow {
+            Continuation::FastWindow(FastWindowFrame {
                 fast_actors: FastActorScope::Any,
                 ..
-            }
+            })
         ));
         assert!(state.open_windows()[0]
             .pending_candidates()
@@ -490,10 +494,10 @@ mod with_open_window_tests {
         assert_eq!(state.open_windows().len(), 2);
         assert!(matches!(
             state.open_windows()[1],
-            Continuation::FastWindow {
+            Continuation::FastWindow(FastWindowFrame {
                 kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
                 ..
-            }
+            })
         ));
     }
 }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::EmitEventFrame;
 
 #[test]
 fn soak_and_place_with_no_soakers_matches_old_behavior() {
@@ -162,10 +163,10 @@ fn deal_damage_cursor_walks_distribute_announce_place_finish() {
     assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
     assert!(matches!(
         cx.state.continuations.last(),
-        Some(Continuation::EmitEvent {
+        Some(Continuation::EmitEvent(EmitEventFrame {
             event: TimingEvent::DamageAssigned { .. },
             ..
-        })
+        }))
     ));
     assert_eq!(
         cx.state.investigators[&id].damage(),
@@ -178,10 +179,10 @@ fn deal_damage_cursor_walks_distribute_announce_place_finish() {
     // Place: same shape, and again nothing has landed until the coordinator
     // reaches its resolve step.
     assert_eq!(drive_deal_damage(&mut cx), EngineOutcome::Done);
-    let Some(Continuation::EmitEvent {
+    let Some(Continuation::EmitEvent(EmitEventFrame {
         event: placed @ TimingEvent::DamagePlaced { .. },
         ..
-    }) = cx.state.continuations.last().cloned()
+    })) = cx.state.continuations.last().cloned()
     else {
         panic!("Place must emit DamagePlaced");
     };

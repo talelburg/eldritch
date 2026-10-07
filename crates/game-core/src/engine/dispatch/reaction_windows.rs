@@ -38,6 +38,7 @@ use crate::state::{
     DamageSource, FastActorScope, FastWindowKind, GameState, InvestigatorId, Phase,
     ResolutionCandidate, Status, TimingMode,
 };
+use crate::state::{FastWindowFrame, TimingPointWindowFrame};
 
 /// Push a reaction window frame for `candidates` at `bucket`. The shared push
 /// behind [`open_reaction_run`] (which queues and then opens) and the coordinator's
@@ -52,14 +53,12 @@ fn push_reaction_window(
     bucket: EventTiming,
     candidates: Vec<ResolutionCandidate>,
 ) {
-    cx.state
-        .continuations
-        .push(Continuation::TimingPointWindow {
-            event: event.clone(),
-            bucket,
-            mode: TimingMode::Reaction,
-            candidates,
-        });
+    cx.state.continuations.push(TimingPointWindowFrame {
+        event: event.clone(),
+        bucket,
+        mode: TimingMode::Reaction,
+        candidates,
+    });
 }
 
 /// All reaction candidates (in-play + hand Fast + current act/agenda) for
@@ -132,14 +131,12 @@ pub(super) fn open_forced_resolution(
     bucket: EventTiming,
     candidates: Vec<ResolutionCandidate>,
 ) -> EngineOutcome {
-    cx.state
-        .continuations
-        .push(Continuation::TimingPointWindow {
-            event: event.clone(),
-            bucket,
-            mode: TimingMode::Forced,
-            candidates,
-        });
+    cx.state.continuations.push(TimingPointWindowFrame {
+        event: event.clone(),
+        bucket,
+        mode: TimingMode::Forced,
+        candidates,
+    });
     open_queued_reaction_window(cx)
 }
 
@@ -749,11 +746,10 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
             reason: lapse_reason(cx.state, candidate),
         });
     }
-    *cx.state
+    cx.state
         .continuations
-        .last_mut()
-        .and_then(Continuation::pending_candidates_mut)
-        .expect("withdraw_lapsed_candidates: the frame matched above is still on top") = kept;
+        .top_mut::<TimingPointWindowFrame>()
+        .candidates = kept;
     lapsed.len()
 }
 
@@ -789,13 +785,13 @@ fn withdraw_suppressed_candidates(cx: &mut Cx) -> usize {
     if !cx.state.pending_cancellation {
         return 0;
     }
-    let suppressed = match cx.state.continuations.last() {
-        Some(Continuation::TimingPointWindow {
+    let suppressed = match cx.state.continuations.top() {
+        Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
             event,
             bucket: EventTiming::When,
             candidates,
             ..
-        }) if matches!(
+        })) if matches!(
             event.condition_resolution(),
             ConditionResolution::Coordinator(_)
         ) =>
@@ -816,9 +812,8 @@ fn withdraw_suppressed_candidates(cx: &mut Cx) -> usize {
     }
     cx.state
         .continuations
-        .last_mut()
-        .and_then(Continuation::pending_candidates_mut)
-        .expect("withdraw_suppressed_candidates: the frame matched above is still on top")
+        .top_mut::<TimingPointWindowFrame>()
+        .candidates
         .clear();
     suppressed.len()
 }
@@ -830,13 +825,13 @@ fn withdraw_suppressed_candidates(cx: &mut Cx) -> usize {
 /// `None` for a forced run, for a [`FastWindow`](Continuation::FastWindow), and
 /// for every non-window frame; the two callers turn that into their own no-op.
 fn open_reaction_cell(state: &GameState) -> Option<(&TimingEvent, EventTiming)> {
-    match state.continuations.last() {
-        Some(Continuation::TimingPointWindow {
+    match state.continuations.top() {
+        Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
             event,
             bucket,
             mode: TimingMode::Reaction,
             ..
-        }) => Some((event, *bucket)),
+        })) => Some((event, *bucket)),
         _ => None,
     }
 }
@@ -1447,7 +1442,7 @@ pub(super) fn close_reaction_window(cx: &mut Cx) -> EngineOutcome {
     // frame the pop exposed. The forced run (#213/#434) never had one either,
     // which is why the two share an arm.
     let continuation = match &removed {
-        Continuation::FastWindow { kind, .. } => run_fast_continuation(cx, *kind),
+        Continuation::FastWindow(FastWindowFrame { kind, .. }) => run_fast_continuation(cx, *kind),
         _ => EngineOutcome::Done,
     };
     if matches!(continuation, EngineOutcome::AwaitingInput { .. }) {
@@ -1555,7 +1550,7 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutco
     // the candidate list is always empty; the Fast-play opportunity is gated by
     // `any_fast_play_eligible` below.
     let candidates = Vec::new();
-    cx.state.continuations.push(Continuation::FastWindow {
+    cx.state.continuations.push(FastWindowFrame {
         candidates,
         fast_actors: FastActorScope::Any,
         kind,

@@ -14,6 +14,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::{Event, TraumaKind};
 use game_core::scenario::ScenarioId;
+use game_core::state::TimingPointWindowFrame;
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Phase, TimingMode,
@@ -304,10 +305,10 @@ fn deduction_discard_is_capped_at_the_clues_cover_up_holds() {
     // the discovery sequence itself drained — the coordinator walked its
     // remaining cells and popped rather than stranding a cancelled emit.
     assert!(
-        !r.state.continuations.iter().any(|c| matches!(
-            c,
-            Continuation::EmitEvent { .. } | Continuation::TimingPoint { .. }
-        )),
+        !r.state
+            .continuations
+            .iter()
+            .any(|c| matches!(c, Continuation::EmitEvent(_) | Continuation::TimingPoint(_))),
         "no stranded discovery frames: {:?}",
         r.state.continuations,
     );
@@ -514,7 +515,7 @@ fn interactive_game_end_with_a_clueless_cover_up_neither_prompts_nor_resolves_it
         !r.state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::AcknowledgeForced { .. })),
+            .any(|c| matches!(c, Continuation::AcknowledgeForced(_))),
         "no acknowledge frame is pushed; stack = {:?}",
         r.state.continuations,
     );
@@ -578,10 +579,10 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
     assert!(
         matches!(
             state.continuations.last(),
-            Some(Continuation::TimingPointWindow {
+            Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
                 mode: TimingMode::Forced,
                 ..
-            })
+            }))
         ),
         "expected the lead-ordered forced run on top, got {:?}",
         state.continuations,

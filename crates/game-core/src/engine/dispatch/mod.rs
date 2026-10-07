@@ -18,6 +18,7 @@ use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
 use crate::engine::{enumerate, evaluator, Cx};
+use crate::state::FastWindowFrame;
 use crate::state::{
     ActionResume, CardCode, CardInstanceId, Continuation, FrameActivity, GameState,
     ScenarioEndStep, Status,
@@ -290,15 +291,17 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // continuation. A framework window holding candidates resolves
             // through the same driver. Operates on the top frame — the
             // invariant is that `last()` is what resolves next.
-            Continuation::TimingPointWindow { .. } => reaction_windows::advance_resolution(cx),
-            Continuation::FastWindow { candidates, .. } if !candidates.is_empty() => {
+            Continuation::TimingPointWindow(_) => reaction_windows::advance_resolution(cx),
+            Continuation::FastWindow(FastWindowFrame { candidates, .. })
+                if !candidates.is_empty() =>
+            {
                 reaction_windows::advance_resolution(cx)
             }
             // A pure Fast-gate window: surface its eligible fast plays as a
             // skippable choice, or close it when none remain (#476).
             // Re-examined after each fast play resolves — the re-open loop —
             // until the player Skips or runs out of plays.
-            Continuation::FastWindow { .. } => reaction_windows::drive_fast_window(cx),
+            Continuation::FastWindow(_) => reaction_windows::drive_fast_window(cx),
             // An act/agenda advance sub-process (#482): drive its step machine
             // (acknowledge → reverse → finalize). A reverse it fires lands
             // above this frame and the loop drives it first; the frame is
@@ -306,7 +309,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             Continuation::AdvanceReverse { .. } => advance_reverse::drive(cx),
             // #466: a one-option forced-effect acknowledge always suspends; on
             // resume it pops and the effect frame beneath resolves.
-            Continuation::AcknowledgeForced { .. } => {
+            Continuation::AcknowledgeForced(_) => {
                 return forced_triggers::drive_acknowledge_forced(cx)
             }
             // A skill test re-exposed on top (a mid-test window/effect closed):
@@ -334,8 +337,8 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // `TimingPoint` runs one bucket's forced-then-reaction. Every
             // condition walks them (#702), and a coordinator-owned one also
             // resolves its own impact mid-walk (#701/#703).
-            Continuation::EmitEvent { .. } => coordinator::dispatch_emit_event(cx),
-            Continuation::TimingPoint { .. } => coordinator::dispatch_timing_point(cx),
+            Continuation::EmitEvent(_) => coordinator::dispatch_emit_event(cx),
+            Continuation::TimingPoint(_) => coordinator::dispatch_timing_point(cx),
             // A deal of damage, mid-procedure (#727): step its cursor —
             // distribute (surfacing the per-point prompt while a point is
             // contested), announce the assignment, place it, resume the caller.
@@ -716,7 +719,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         // framework player windows (`FastWindow`, #433) resolve through the one
         // window driver — it reads candidates/mode through the frame-agnostic
         // accessors.
-        Continuation::TimingPointWindow { .. } | Continuation::FastWindow { .. } => {
+        Continuation::TimingPointWindow(_) | Continuation::FastWindow(_) => {
             resume_window(cx, response)
         }
         // An effect node suspended in place for a controller pick (#422): the
@@ -736,7 +739,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         Continuation::AdvanceReverse { .. } => advance_reverse::resume(cx, response),
         // #466: the one-option forced-effect acknowledge — its PickSingle pops the
         // frame so the `drive` loop resolves the effect beneath.
-        Continuation::AcknowledgeForced { .. } => {
+        Continuation::AcknowledgeForced(_) => {
             forced_triggers::resume_acknowledge_forced(cx, response)
         }
         // The attack-order pick (#143): the `AttackLoop` frame at `PickOrder`
@@ -776,8 +779,8 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         | Continuation::PlayFromHand { .. }
         | Continuation::MoveEnter { .. }
         | Continuation::PlayerDraw { .. }
-        | Continuation::EmitEvent { .. }
-        | Continuation::TimingPoint { .. }
+        | Continuation::EmitEvent(_)
+        | Continuation::TimingPoint(_)
         | Continuation::ActionResolution { .. }
         | Continuation::Elimination { .. }
         | Continuation::ScenarioEnd { .. }

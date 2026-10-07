@@ -23,7 +23,7 @@ use crate::card_registry::{self, CardRegistry};
 use crate::engine::{self, Cx, EngineOutcome, ForcedTriggerPoint, TimingEvent};
 use crate::event::Event;
 use crate::state::{
-    CardCode, Continuation, EmitStep, EnemyId, GameState, InvestigatorId, LocationId, Phase,
+    CardCode, EmitEventFrame, EmitStep, EnemyId, GameState, InvestigatorId, LocationId, Phase,
 };
 
 pub mod assertions;
@@ -320,7 +320,7 @@ pub fn run_timing_sequence(
     event: TimingEvent,
 ) -> EngineOutcome {
     let mut cx = Cx { state, events };
-    cx.state.continuations.push(Continuation::EmitEvent {
+    cx.state.continuations.push(EmitEventFrame {
         event,
         step: EmitStep::When,
     });
