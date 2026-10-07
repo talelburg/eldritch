@@ -293,18 +293,35 @@ impl TakeOneFastPlay {
 }
 
 impl ChoiceResolver for TakeOneFastPlay {
+    fn next(&mut self, request: &InputRequest, state: &GameState) -> InputResponse {
+        if request.skippable && !self.used && request.kind == InputKind::PickSingle {
+            self.used = true;
+            assert!(
+                request.options.len() > self.option_index,
+                "TakeOneFastPlay: option {} not offered; the window has {:?}",
+                self.option_index,
+                request.options,
+            );
+            return InputResponse::PickSingle(request.options[self.option_index].id);
+        }
+        NoCommits.next(request, state)
+    }
+}
+
+/// The "commit nothing" reply policy: decline every skippable prompt (a #476
+/// Fast window, a reaction window), acknowledge every `Confirm` (the #478
+/// pause), and submit an empty `PickMultiple` to anything else (the skill-test
+/// commit window).
+///
+/// It is a policy over the one drain loop rather than a loop of its own, so
+/// [`apply_no_commits`] and [`perform_skill_test_no_commits`] stop exactly
+/// where [`drive`] does: at the turn menu, at `Done`, or at `Rejected`.
+#[derive(Debug, Clone, Copy, Default)]
+struct NoCommits;
+
+impl ChoiceResolver for NoCommits {
     fn next(&mut self, request: &InputRequest, _state: &GameState) -> InputResponse {
         if request.skippable {
-            if !self.used && request.kind == InputKind::PickSingle {
-                self.used = true;
-                assert!(
-                    request.options.len() > self.option_index,
-                    "TakeOneFastPlay: option {} not offered; the window has {:?}",
-                    self.option_index,
-                    request.options,
-                );
-                return InputResponse::PickSingle(request.options[self.option_index].id);
-            }
             return InputResponse::Skip;
         }
         match request.kind {
@@ -325,25 +342,16 @@ impl ChoiceResolver for TakeOneFastPlay {
 /// [`ApplyResult`] exactly as they used to — `events` accumulates
 /// across `SkillTestStarted`, the empty `ResolveInput`, and the
 /// post-commit resolution chain; `outcome` is the terminal
-/// [`Done`](EngineOutcome::Done) or [`Rejected`](EngineOutcome::Rejected).
+/// [`Done`](EngineOutcome::Done) or [`Rejected`](EngineOutcome::Rejected),
+/// or the open-turn menu the action returns to.
 ///
-/// Like `drive(state, action, ScriptedResolver::commit_cards(&[]))`, with one
-/// addition: it also `Skip`s any framework Fast player window the action *parks*.
-/// The skill-test ST.1/ST.2 windows (#374) return `Done`-idle (no
-/// `AwaitingInput`) with the window on the stack whenever a Fast card/ability is
-/// available; a plain `drive` would mistake that idle for the terminal outcome,
-/// so we decline (Skip) the window and continue. (For callers with no Fast
-/// eligibility — the vast majority — the windows auto-skip and this is identical
-/// to the plain commit-nothing drive.)
-///
-/// **Assumes every `AwaitingInput` is the commit prompt** (answers each with an
-/// empty `PickMultiple`). A caller whose action drives a *reaction* window (a
-/// real `PickSingle`) must script it via [`drive`] instead — here it would be
-/// fed an empty `PickMultiple` and rejected. No current caller does this; the
-/// skill-test ST.1/ST.2 windows never surface a reaction prompt (they carry no
-/// `Trigger::OnEvent` candidates).
+/// [`drive`] with the no-commits policy: every skippable prompt (a Fast player
+/// window, a reaction window) is declined, every `Confirm` is acknowledged, and
+/// every other prompt gets an empty `PickMultiple`. A caller whose action needs
+/// a *non-skippable* `PickSingle` answered must script it via [`drive`] instead
+/// — here it would be fed an empty `PickMultiple` and rejected.
 pub fn apply_no_commits(state: GameState, action: Action) -> ApplyResult {
-    drive_to_terminal_no_commits(engine::apply(state, action))
+    drain_with_applier(engine::apply(state, action), &mut NoCommits, engine::apply)
 }
 
 /// Whether `state` is paused at the open-turn action menu (2b, #447): an
@@ -371,76 +379,11 @@ pub fn perform_skill_test_no_commits(
     skill: SkillKind,
     difficulty: i8,
 ) -> ApplyResult {
-    drive_to_terminal_no_commits(perform_skill_test(state, investigator, skill, difficulty))
-}
-
-/// Continue a no-commits drive from an already-applied [`ApplyResult`]: commit
-/// no cards (empty `PickMultiple` at every commit window) and *decline* every
-/// framework Fast player window (Skip). Most actions never open one, so this is
-/// identical to a plain commit-nothing drive — but the skill-test ST.1/ST.2
-/// player windows (#374) *park* (return `Done`-idle with the window on the
-/// stack, no `AwaitingInput`) whenever a Fast card/ability is available, and a
-/// plain `drive` would mistake that idle for the terminal outcome. So skip a
-/// parked window explicitly and continue.
-fn drive_to_terminal_no_commits(first: ApplyResult) -> ApplyResult {
-    const MAX_ITERATIONS: u32 = 1024;
-    let ApplyResult {
-        mut state,
-        mut events,
-        mut outcome,
-    } = first;
-    let mut iterations = 0u32;
-    loop {
-        // The open-turn action menu (2b, #447) is a TERMINAL stopping point: it
-        // is the next action's prompt, not a commit window, and resolving it
-        // would consume another turn action. Stop here — the post-flip
-        // equivalent of the old idle-`Done` open turn.
-        if matches!(outcome, EngineOutcome::AwaitingInput { .. }) && at_open_turn_menu(&state) {
-            return ApplyResult {
-                state,
-                events,
-                outcome,
-            };
-        }
-        // The `AwaitingInput`s in a no-commits drive are: the commit window
-        // (PickMultiple), the #478 acknowledge pause (Confirm), and any skippable
-        // window (a #476 fast-window prompt, a reaction window) which the
-        // no-commits drive declines with Skip. A `Done`-idle with an open window is
-        // a parked window to decline. Anything else is terminal.
-        let next = if let EngineOutcome::AwaitingInput { request, .. } = &outcome {
-            if request.skippable {
-                InputResponse::Skip
-            } else {
-                match request.kind {
-                    InputKind::Confirm => InputResponse::Confirm,
-                    _ => InputResponse::PickMultiple {
-                        selected: Vec::new(),
-                    },
-                }
-            }
-        } else if matches!(outcome, EngineOutcome::Done) && !state.open_windows().is_empty() {
-            InputResponse::Skip
-        } else {
-            return ApplyResult {
-                state,
-                events,
-                outcome,
-            };
-        };
-        iterations += 1;
-        assert!(
-            iterations <= MAX_ITERATIONS,
-            "drive_to_terminal_no_commits: exceeded {MAX_ITERATIONS} iterations without a \
-             terminal outcome; the engine appears to be cycling (re-parking a window?)",
-        );
-        let r = engine::apply(
-            state,
-            Action::Player(PlayerAction::ResolveInput { response: next }),
-        );
-        state = r.state;
-        events.extend(r.events);
-        outcome = r.outcome;
-    }
+    drain_with_applier(
+        perform_skill_test(state, investigator, skill, difficulty),
+        &mut NoCommits,
+        engine::apply,
+    )
 }
 
 /// Run `action` against `state`, draining
@@ -466,9 +409,9 @@ pub fn drive<R: ChoiceResolver>(state: GameState, action: Action, mut resolver: 
 
 /// Loop body of [`drive`] with the engine entry point parameterized.
 ///
-/// Tests in this module use this to substitute a fake `apply` that
-/// produces `AwaitingInput` (which no real engine path emits yet),
-/// exercising the drain logic without needing a real engine consumer.
+/// Tests in this module use this to substitute a fake `apply` that scripts
+/// the `AwaitingInput` sequence, exercising the drain logic independently of
+/// any particular engine prompt.
 pub(crate) fn drive_with_applier<R, F>(
     state: GameState,
     action: Action,
@@ -502,11 +445,14 @@ pub fn drive_skill_test<R: ChoiceResolver>(
     )
 }
 
-/// Continue a resolver-driven drive from an already-applied [`ApplyResult`]:
-/// drain every [`AwaitingInput`](EngineOutcome::AwaitingInput) through
-/// `resolver` (re-applying its `ResolveInput` responses via `applier`) until the
-/// engine returns Done/Rejected. The shared tail of [`drive_with_applier`] and
-/// [`drive_skill_test`], so neither re-implements the drain loop.
+/// The harness's one drain loop. Continues from an already-applied
+/// [`ApplyResult`], answering every [`AwaitingInput`](EngineOutcome::AwaitingInput)
+/// through `resolver` (re-applying its `ResolveInput` responses via `applier`)
+/// until the engine returns Done/Rejected or surfaces the open-turn menu.
+///
+/// Every driver ([`drive`], [`drive_skill_test`], [`apply_no_commits`],
+/// [`perform_skill_test_no_commits`]) is this loop under a different reply
+/// policy; none re-implements it.
 pub(crate) fn drain_with_applier<R, F>(
     first: ApplyResult,
     resolver: &mut R,
