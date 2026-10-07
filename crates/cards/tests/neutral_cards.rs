@@ -36,10 +36,7 @@ fn emergency_cache_play_gains_three_resources() {
     inv.hand = vec![CardCode::new(EMERGENCY_CACHE)];
     let before = inv.resources;
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .with_investigator(inv)
         .build();
 

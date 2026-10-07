@@ -20,7 +20,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, UseKind,
+    GameStateBuilder, InvestigatorId, LocationId, UseKind,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -105,12 +105,9 @@ fn board() -> GameState {
     ));
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
         .with_location(test_support::test_location(10, "Study"))
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build()
 }
 
@@ -163,12 +160,9 @@ fn costs_land_on_the_source_when_it_is_not_first_in_play() {
     inv.cards_in_play.push(depleter);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
         .with_location(test_support::test_location(10, "Study"))
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build();
 
     let result = test_support::dispatch_turn_action_unchecked(

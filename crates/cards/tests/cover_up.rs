@@ -16,7 +16,7 @@ use game_core::event::{Event, TraumaKind};
 use game_core::scenario::ScenarioId;
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, TimingMode, TimingPointWindowFrame,
+    GameStateBuilder, InvestigatorId, LocationId, TimingMode, TimingPointWindowFrame,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
 use game_core::{assert_event_sequence, assert_no_event};
@@ -98,12 +98,9 @@ fn investigate_state(cover_up_clues: u8) -> GameState {
     let mut location = test_support::test_location(10, "Study");
     location.clues = 2;
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(investigator, LOC)
         .with_location(location)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_rng_seed(1)
         .build()
@@ -174,12 +171,9 @@ fn investigate_state_with_deduction(location_clues: u8, held_clues: u8) -> GameS
     let mut location = test_support::test_location(10, "Study");
     location.clues = location_clues;
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(investigator, LOC)
         .with_location(location)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_rng_seed(1)
         .build()
@@ -322,11 +316,8 @@ fn resolving_state(cover_up_clues: u8) -> GameState {
     investigator.clues = 1; // meets the act's clue threshold
     investigator.threat_area.push(cover_up(cover_up_clues));
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(investigator)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .with_scenario_id(ScenarioId::new("unknown"))
         .build();
     state.act_deck = vec![Act {
@@ -551,12 +542,10 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
     second.threat_area.push(second_cover_up);
 
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(first)
         .with_investigator(second)
-        .with_active_investigator(INV)
         .with_turn_order([INV, INV2])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .with_scenario_id(ScenarioId::new("unknown"))
         .build();
     state.interactive_acknowledge = true;

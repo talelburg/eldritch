@@ -24,7 +24,7 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::EngineOutcome;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase,
+    GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, MockRegistry, TEST_INV};
 
@@ -144,13 +144,11 @@ fn board() -> GameState {
         .push(CardInPlay::enter_play(CardCode::new(THEIRS), THEIRS_INST));
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(mine, LOC)
         .with_investigator_at(them, LOC)
         .with_location(test_support::test_location(10, "Study"))
-        .with_active_investigator(MINE)
         .with_turn_order([MINE, THEM])
-        .with_investigator_turn(MINE)
+        .open_turn(MINE)
         .build()
 }
 

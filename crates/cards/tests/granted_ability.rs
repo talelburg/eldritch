@@ -33,7 +33,7 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::EngineOutcome;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase,
+    GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -126,13 +126,10 @@ fn board(granter_code: &str) -> GameState {
     here.code = CardCode::new(granter_code);
     here.clues = 0;
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(test_support::test_investigator(1), HERE)
         .with_location(here)
         .with_location(test_support::test_location(2, "Elsewhere"))
-        .with_active_investigator(MINE)
-        .with_turn_order([MINE])
-        .with_investigator_turn(MINE)
+        .open_turn(MINE)
         .build();
     let at_location = &mut state
         .locations

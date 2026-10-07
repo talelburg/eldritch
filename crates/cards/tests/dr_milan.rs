@@ -10,7 +10,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Phase, TokenModifiers,
+    InvestigatorId, LocationId, TokenModifiers,
 };
 use game_core::test_support;
 
@@ -38,10 +38,7 @@ fn board() -> GameState {
     let mut loc = test_support::test_location(10, "Study"); // shroud 2 by default
     loc.clues = 1;
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .with_investigator(inv)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -121,10 +118,7 @@ fn obscuring_fog_forced_discard_precedes_dr_milan_reaction_window() {
         CardInstanceId(2),
     ));
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .with_investigator(inv)
         .with_location(loc)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))

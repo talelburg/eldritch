@@ -37,8 +37,7 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, TimingEvent}
 use game_core::event::Event;
 use game_core::state::{
     AttackLoopFrame, CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, Enemy,
-    EnemyId, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
-    InvestigatorId, LocationId, Phase, Status, Zone,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Status, Zone,
 };
 use game_core::test_support;
 
@@ -92,22 +91,12 @@ fn soak_state(
     inv.deck = vec![CardCode::new("01087"); 5];
 
     let mut builder = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(inv)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id]);
+        .open_turn(inv_id);
     for enemy in enemies {
         builder = builder.with_enemy_engaged(enemy, inv_id);
     }
-    // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
-    // InvestigationPhase anchor at investigation_phase_end.
-    builder = builder.with_phase_anchor(InvestigationPhaseFrame {
-        resume: InvestigationResume::TurnBegins,
-    });
-    // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
-    // EndTurn cascade pops before advancing into the Enemy phase.
-    builder = builder.with_investigator_turn(inv_id);
     (builder.build(), inv_id, loc_id)
 }
 
@@ -721,13 +710,10 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
     let attacker = ready_attacker(7, 2, 3);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(study)
         .with_location(hallway)
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
         .build();
 

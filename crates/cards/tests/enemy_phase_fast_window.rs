@@ -49,8 +49,8 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionTarge
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, FastActorScope,
-    FastWindowFrame, FastWindowKind, GameState, GameStateBuilder, InvestigationPhaseFrame,
-    InvestigationResume, InvestigatorId, LocationId, Phase, PhaseStep,
+    FastWindowFrame, FastWindowKind, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    Phase, PhaseStep,
 };
 use game_core::test_support;
 
@@ -93,20 +93,10 @@ fn board(beat_cop: bool, enemy_health: u8) -> (GameState, InvestigatorId, EnemyI
     inv.deck = vec![CardCode::new("01088")];
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(inv)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
         .with_enemy_engaged(ready_attacker(enemy_health), inv_id)
-        // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
-        // InvestigationPhase anchor at investigation_phase_end.
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
-        // EndTurn cascade pops before advancing into the Enemy phase.
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
     (state, inv_id, EnemyId(7))
 }

@@ -35,7 +35,7 @@ use game_core::event::{Event, LapseReason};
 use game_core::state::{
     AbilityAddress, CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     Continuation, EnemyId, GameState, GameStateBuilder, Investigator, InvestigatorId, LocationId,
-    Phase, ResolutionCandidate, TimingMode, TimingPointWindowFrame, TokenModifiers,
+    ResolutionCandidate, TimingMode, TimingPointWindowFrame, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -78,11 +78,8 @@ fn after_defeat_board(
     loc.clues = location_clues;
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_round(0)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)

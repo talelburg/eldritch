@@ -41,7 +41,7 @@ use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
-    CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
+    CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
 use game_core::test_support;
 
@@ -91,14 +91,11 @@ fn board(hand: &[&str], resources: u8) -> GameState {
     attacker.attack_horror = 0;
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_location(loc_a)
         .with_location(loc_b)
         .with_enemy(attacker)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build()
 }
 

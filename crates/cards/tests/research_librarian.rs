@@ -16,7 +16,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::{assert_event, test_support};
 
@@ -40,12 +40,9 @@ fn board(deck: Vec<CardCode>) -> GameState {
     inv.deck = deck;
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
         .with_location(test_support::test_location(10, "Study"))
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build()
 }
 

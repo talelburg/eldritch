@@ -49,13 +49,10 @@ fn board(combat: i8, intellect: i8, hand: Vec<CardCode>) -> GameState {
     enemy.current_location = Some(LOC); // co-located: Fight is location-gated (#401)
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
         .with_location(test_support::test_location(10, "Study"))
         .with_enemy(enemy)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build()
 }
@@ -239,13 +236,10 @@ fn weapon_fight_substituting_uses_intellect_and_keeps_weapon_damage() {
     enemy.current_location = Some(LOC); // co-located: Fight is location-gated (#401)
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
         .with_location(test_support::test_location(10, "Study"))
         .with_enemy(enemy)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
 

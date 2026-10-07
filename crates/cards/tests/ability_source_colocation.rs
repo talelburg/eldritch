@@ -43,7 +43,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase,
+    GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, MockRegistry, TEST_INV};
 
@@ -169,7 +169,6 @@ fn board() -> GameState {
     distant_cultist.current_location = Some(THERE);
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(mine, HERE)
         .with_investigator_at(neighbour, HERE)
         .with_investigator_at(stranger, THERE)
@@ -177,9 +176,8 @@ fn board() -> GameState {
         .with_location(there)
         .with_enemy(nearby_cultist)
         .with_enemy(distant_cultist)
-        .with_active_investigator(MINE)
         .with_turn_order([MINE, NEIGHBOUR, STRANGER])
-        .with_investigator_turn(MINE)
+        .open_turn(MINE)
         .build()
 }
 

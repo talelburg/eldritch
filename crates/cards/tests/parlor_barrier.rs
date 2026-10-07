@@ -56,7 +56,7 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, GameState, GameStateBuilder, InvestigatorId,
-    Location, LocationId, Phase,
+    Location, LocationId,
 };
 use game_core::test_support;
 
@@ -104,14 +104,11 @@ fn board(parlor_revealed: bool) -> GameState {
     inv.current_location = Some(HALLWAY);
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_location(hallway)
         .with_location(parlor(parlor_revealed))
         .with_location(attic)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build()
 }
 
@@ -148,12 +145,9 @@ fn unrevealed_parlor_shows_its_back_and_revealed_shows_its_front() {
     let mut inv = test_support::test_investigator(INV.0);
     inv.current_location = Some(PARLOR);
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_location(parlor(true))
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build();
     let actions = enumerate::legal_actions(&state);
     assert!(
