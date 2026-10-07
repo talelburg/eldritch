@@ -359,6 +359,12 @@ impl GameStateBuilder {
     }
 
     /// Materialize the configured [`GameState`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if an enemy was engaged via
+    /// [`with_enemy_engaged`](Self::with_enemy_engaged) with an investigator
+    /// that was never added.
     pub fn build(mut self) -> GameState {
         // **A card in an investigator's play area when the board is built came
         // from that investigator's deck**, so it is theirs to own (#772). There
