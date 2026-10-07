@@ -444,7 +444,7 @@ fn dsl_phase_mapping_non_enemy_phases_produce_no_hits() {
             outcome,
             ..
         } = TestSession::new(state)
-            .fire_at(TimingEvent::PhaseEnded { phase: phase })
+            .fire_at(TimingEvent::PhaseEnded { phase })
             .finish();
 
         assert_eq!(
