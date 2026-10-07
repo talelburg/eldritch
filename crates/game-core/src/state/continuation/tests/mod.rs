@@ -6,3 +6,4 @@ mod enemy_attack_loop;
 mod fast_actor_scope;
 mod hunter_pending;
 mod open_window;
+mod profile;

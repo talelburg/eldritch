@@ -412,8 +412,8 @@ pub enum Continuation {
     /// (event → discard the held card; asset → enter play, emit `EnteredPlay`).
     /// Single-shot: `dispose_play_from_hand` pops the frame before emitting
     /// `EnteredPlay`, so the loop opens any after-enters-play window itself.
-    /// Framework-internal; never awaits input (the catch-all
-    /// `awaits_input`/`is_phase_anchor` arms cover it, as for `EncounterCard`).
+    /// Framework-internal: [Driven](FrameActivity::Driven), so it never awaits
+    /// input, as for `EncounterCard`.
     PlayFromHand {
         /// The playing investigator.
         investigator: InvestigatorId,
@@ -431,13 +431,11 @@ pub enum Continuation {
     ///
     /// Exists because the emit queues rather than resolves (ADR 0003): running
     /// the engage + entered-location emit inline after it pushed them *above*
-    /// the left-location abilities, inverting the two. Framework-internal: it is
-    /// only ever momentarily on top inside `drive`, which is why it never awaits
-    /// input — not because [`awaits_input`](Self::awaits_input) reports `false`
-    /// for it (the catch-all there answers `true`, as it does for
-    /// [`PlayFromHand`](Self::PlayFromHand)); `resolve_input` rejects it
-    /// defensively for the same reason. Deliberately narrow rather than a
-    /// resumable `ActionResolution`: no other primary needs one today (#612).
+    /// the left-location abilities, inverting the two. Framework-internal:
+    /// [Driven](FrameActivity::Driven), only ever momentarily on top inside
+    /// `drive`, so it never awaits input and `resolve_input` rejects it.
+    /// Deliberately narrow rather than a resumable `ActionResolution`: no other
+    /// primary needs one today (#612).
     MoveEnter {
         /// The investigator who moved.
         investigator: InvestigatorId,
@@ -450,8 +448,7 @@ pub enum Continuation {
     /// slot type the new asset needs; the asset stays mid-play, riding this
     /// frame until the deficit is cleared, then enters play. Resumed by
     /// `slots::resume_slot_discard` via a `PickSingle(OptionId)` indexing the
-    /// candidate list. Awaits input (covered by the `awaits_input` catch-all;
-    /// not a phase anchor).
+    /// candidate list. A [Prompt](FrameActivity::Prompt); not a phase anchor.
     SlotDiscard {
         /// The investigator playing the asset, or taking control of it.
         investigator: InvestigatorId,
@@ -827,9 +824,14 @@ pub enum ActionResume {
 }
 
 impl Continuation {
-    /// True if this is a `*Phase` anchor (slice 1b, #393): an inert framework
-    /// frame the main loop's `drive` advances, never one that awaits player
-    /// input itself. Everything else on top of the stack *is* awaiting input.
+    /// True if this is a `*Phase` anchor (slice 1b, #393): an
+    /// [Inert](FrameActivity::Inert) framework frame the main loop's `drive`
+    /// wakes when a child frame pops, never one that awaits player input
+    /// itself.
+    ///
+    /// A *kind* predicate, not an activity: it is what the ADR 0003 check
+    /// against [queued abilities](Self::is_queued_ability) keys on, and is
+    /// separate from the [profile](Self::profile) for that reason.
     #[must_use]
     pub fn is_phase_anchor(&self) -> bool {
         matches!(
@@ -871,160 +873,173 @@ impl Continuation {
         )
     }
 
-    /// True if a latched scenario resolution cancels this frame (#566).
+    /// This frame's [`FrameProfile`]: how play treats it while it is the top
+    /// frame, and what a latched scenario resolution does to it.
     ///
-    /// Rules Reference: *"Some instructions in the act and agenda decks (as well
-    /// as on other encounter cardtypes) contain resolution points, in the format
-    /// of: '(→R#).' If a resolution point is reached, the scenario ends."* The
-    /// `drive` loop acts on that frame by frame: a frame that is an **opportunity
-    /// to act** (a reaction window, a Fast window) or part of the **framework
-    /// sequence** (a phase anchor, the open turn, the encounter-draw loop, a surge
-    /// chain, the enemy attack loop, hunter movement, the hand-size discard, the
-    /// mulligan) is discarded when it reaches the top; a frame that is **mandatory
-    /// resolution already under way** (an effect frame, a skill test, an
-    /// advance-reverse, a forced ordering run, an acknowledge, a mid-resolution
-    /// prompt, a frame holding a card in no zone) completes.
+    /// **The one per-frame decision.** [`awaits_input`](Self::awaits_input),
+    /// input routing's gate, the `drive` loop's idle arms and the scenario-end
+    /// gate ([`cancelled_by_scenario_end`](Self::cancelled_by_scenario_end)) are
+    /// all derived from it, so they cannot disagree. Exhaustive with no wildcard,
+    /// so a new [`Continuation`] variant does not compile until it is classified.
     ///
-    /// Exhaustive rather than a `matches!`, so a new [`Continuation`] variant
-    /// cannot default into either bucket without a decision — the discipline
-    /// [`is_phase_anchor`](Self::is_phase_anchor) and [`awaits_input`](Self::awaits_input)
-    /// already use. See
+    /// Computed from the frame's *value*, not just its variant: an event window
+    /// is a prompt only while it has candidates, the open turn only while it is
+    /// not ending, a deal of damage only while it distributes, an attack loop
+    /// only at its order pick, and the ending frame rests inert at `Finalize`.
+    ///
+    /// The scenario-end disposition is ADR 0004's classification. Rules
+    /// Reference: *"Some instructions in the act and agenda decks (as well as on
+    /// other encounter cardtypes) contain resolution points, in the format of:
+    /// '(→R#).' If a resolution point is reached, the scenario ends."* A frame
+    /// that is an **opportunity to act** or part of the **framework sequence**
+    /// is cancelled when it reaches the top; a frame that is **mandatory
+    /// resolution already under way** completes. See
     /// `docs/adr/0004-a-latched-resolution-cancels-opportunities-not-resolutions.md`.
+    // One arm per variant (and per value-level split), each carrying the reason
+    // for its classification; splitting it would scatter the one decision.
+    #[allow(clippy::too_many_lines)]
     #[must_use]
-    pub fn cancelled_by_scenario_end(&self) -> bool {
-        match self {
-            // Opportunities to act. A reaction window must not open once the
-            // scenario has ended — act 01110's ruling that its Forced objective
-            // "will trigger as soon as you defeat the Ghoul Priest, before any
-            // 'After you defeat an enemy' reactions can be used" is only
-            // honoured if Roland Banks' window never opens at all.
+    pub fn profile(&self) -> FrameProfile {
+        use FrameActivity::{Driven, Inert, Prompt};
+        use ScenarioEndDisposition::{Cancel, Complete};
+        let (activity, scenario_end) = match self {
+            // An event window or forced run is the prompt while it has
+            // candidates; empty, the `drive` loop closes it on sight (its
+            // candidates are exhausted only by firing). A reaction window is an
+            // opportunity the ended scenario cancels — act 01110's ruling that
+            // its Forced objective "will trigger as soon as you defeat the Ghoul
+            // Priest, before any 'After you defeat an enemy' reactions can be
+            // used" is only honoured if Roland Banks' window never opens at all.
+            // The forced run is the 2+-simultaneous half of the dispatch that
+            // queues a lone forced ability's `AcknowledgeForced`, so the two
+            // travel together as mandatory resolution.
             Continuation::TimingPointWindow {
-                mode: TimingMode::Reaction,
-                ..
-            }
-            | Continuation::FastWindow { .. }
-            // The framework sequence: nothing further in the round happens.
-            | Continuation::MythosPhase { .. }
-            | Continuation::InvestigationPhase { .. }
-            | Continuation::EnemyPhase { .. }
-            | Continuation::UpkeepPhase { .. }
-            | Continuation::InvestigatorTurn { .. }
-            | Continuation::Mulligan { .. }
-            | Continuation::EncounterDraw { .. }
-            | Continuation::PlayerDraw { .. }
-            | Continuation::AttackLoop { .. }
-            | Continuation::HandSizeDiscard(_)
-            // Framework board maintenance whose prompt would otherwise be put to
-            // a player after the game is over, and whose outcome no longer
-            // reaches state anyone reads: which location an unengaged Hunter
-            // moves to, and which investigator a just-spawned enemy engages.
-            | Continuation::HunterMove(_)
-            | Continuation::SpawnEngage(_) => true,
-            // Mandatory resolution already under way. The forced ordering run is
-            // the 2+-simultaneous half of the same dispatch that queues a lone
-            // forced ability's `AcknowledgeForced`, so the two travel together.
-            Continuation::TimingPointWindow {
-                mode: TimingMode::Forced,
-                ..
-            }
+                mode, candidates, ..
+            } => (
+                if candidates.is_empty() {
+                    Driven
+                } else {
+                    Prompt
+                },
+                match mode {
+                    TimingMode::Reaction => Cancel,
+                    TimingMode::Forced => Complete,
+                },
+            ),
+            // A framework Fast window is a prompt with or without candidates:
+            // `ResolveInput::Skip` closes it (#476), and the loop surfaces its
+            // eligible plays as a skippable choice. An opportunity, so cancelled.
+            Continuation::FastWindow { .. } => (Prompt, Cancel),
+            // Mandatory resolution that surfaces its own prompt (the `drive`
+            // loop steps it until it does): the advance's flip acknowledge, the
+            // forced acknowledge, the skill test's commit window and result
+            // pause, a substitution choice, a slot make-room pick, an effect
+            // node's controller pick.
+            Continuation::AdvanceReverse { .. }
             | Continuation::AcknowledgeForced { .. }
-            | Continuation::Effect(_)
-            | Continuation::EmitEvent { .. }
-            | Continuation::TimingPoint { .. }
             | Continuation::SkillTest(_)
             | Continuation::SubstitutionPrompt { .. }
-            | Continuation::AdvanceReverse { .. }
-            // A deal of damage under way: half of it is the placement, and
-            // abandoning the frame between the two steps would leave an
-            // assignment that never lands.
-            | Continuation::DealDamage { .. }
-            // An action already taken finishes (ADR 0004): half-resolving it is
-            // harder to reason about than completing it, and the victory-display
-            // scan reads final board state.
-            | Continuation::ActionResolution { .. }
-            | Continuation::MoveEnter { .. }
-            // Frames holding a card that is in **no zone** (ADR 0002) or awaiting
-            // the framework's disposal of one. Discarding these would leak the
-            // card out of every zone rather than merely skipping a step.
-            | Continuation::PlayFromHand { .. }
-            | Continuation::SlotDiscard { .. }
+            | Continuation::Effect(_) => (Prompt, Complete),
+            // Holds the asset mid-entry, in no zone (ADR 0002): discarding the
+            // frame would leak the card out of every zone.
+            Continuation::SlotDiscard { .. } => (Prompt, Complete),
+            // A deal of damage is the per-point prompt while distributing a
+            // contested point (#44/K5b); its other steps are sequencing the loop
+            // dispatches on sight. Under way either way: half of it is the
+            // placement, and abandoning it would leave an assignment that never
+            // lands.
+            Continuation::DealDamage { step, .. } => (
+                match step {
+                    DealDamageStep::Distribute { .. } => Prompt,
+                    DealDamageStep::Announce | DealDamageStep::Place | DealDamageStep::Finish => {
+                        Driven
+                    }
+                },
+                Complete,
+            ),
+            // Framework prompts. Hunter movement and spawn engagement are board
+            // maintenance whose prompt would otherwise be put to a player after
+            // the game is over, and whose outcome no longer reaches state anyone
+            // reads; the rest are the framework sequence, in which nothing
+            // further in the round happens.
+            Continuation::HunterMove(_)
+            | Continuation::SpawnEngage(_)
+            | Continuation::HandSizeDiscard(_)
+            | Continuation::Mulligan { .. }
+            | Continuation::EncounterDraw { .. } => (Prompt, Cancel),
+            // The open turn surfaces its legal-action menu (2b, #447); once
+            // `ending`, it is the rotation tail the loop drives after a
+            // suspending `EndOfTurn` forced resolved.
+            Continuation::InvestigatorTurn { ending, .. } => {
+                (if *ending { Driven } else { Prompt }, Cancel)
+            }
+            // The attack loop is the attack-order pick at `PickOrder` (#143) and
+            // otherwise re-exposed beneath the head attacker's coordinator, which
+            // owns any prompt the attack raises (#704).
+            Continuation::AttackLoop { stage, .. } => (
+                match stage {
+                    AttackLoopStage::PickOrder => Prompt,
+                    AttackLoopStage::Attacking => Driven,
+                },
+                Cancel,
+            ),
+            // A surge chain is framework sequence; any prompt it opens (a
+            // spawn-engagement tie) sits above it.
+            Continuation::PlayerDraw { .. } => (Driven, Cancel),
+            // Internal sequencing that pushes the prompt above itself rather
+            // than being it: the `when → at → after` coordinators, and the
+            // frames awaiting the framework's disposal of a card in no zone (ADR
+            // 0002) or the rest of an action already taken (ADR 0004 — half-
+            // resolving it is harder to reason about than completing it).
+            Continuation::EmitEvent { .. }
+            | Continuation::TimingPoint { .. }
             | Continuation::EncounterCard { .. }
-            // An elimination already under way. Rules Reference p.10 runs its
-            // steps "any time a player is eliminated" — the weaknesses whose
-            // game-end abilities are draining above this frame are still in the
-            // threat area until it resumes, so discarding it would strand them
-            // in play for a scenario that has ended (#638).
-            | Continuation::Elimination { .. }
-            // The ending itself.
-            | Continuation::ScenarioEnd { .. } => false,
+            | Continuation::PlayFromHand { .. }
+            | Continuation::MoveEnter { .. }
+            | Continuation::ActionResolution { .. } => (Driven, Complete),
+            // An elimination under way: the acknowledge its step-0 emit queues
+            // is the prompt, and steps 1–6 ask nothing. Rules Reference p.10 runs
+            // its steps "any time a player is eliminated", and the weaknesses
+            // whose game-end abilities drain above it are still in play until it
+            // resumes (#638).
+            Continuation::Elimination { .. } => (Driven, Complete),
+            // The ending emits `GameEnd` when driven, then rests at `Finalize`
+            // for the apply boundary — the only place holding the scenario
+            // registry — to pop (#566). It is the ending itself, so it completes.
+            Continuation::ScenarioEnd { step } => (
+                match step {
+                    ScenarioEndStep::EmitGameEnd => Driven,
+                    ScenarioEndStep::Finalize => Inert,
+                },
+                Complete,
+            ),
+            // Phase anchors wake only when a child frame pops; the framework
+            // sequence they carry is over once the scenario has ended.
+            Continuation::MythosPhase { .. }
+            | Continuation::InvestigationPhase { .. }
+            | Continuation::EnemyPhase { .. }
+            | Continuation::UpkeepPhase { .. } => (Inert, Cancel),
+        };
+        FrameProfile {
+            activity,
+            scenario_end,
         }
     }
 
-    /// True if this top frame is a mandatory prompt that only `ResolveInput` may
-    /// advance (slice 1b, #393): a reaction/forced window, skill-test commit,
-    /// choice, hunter/spawn pick, hand-size discard, act round-end, substitution
-    /// prompt, mulligan, or encounter draw.
-    ///
-    /// Two exceptions return `false` — the engine accepts other actions:
-    /// - **`*Phase` anchors** are inert / the open turn, so typed actions run.
-    /// - a **Fast-play window** — a [`FastWindow`](Continuation::FastWindow) with
-    ///   *no* pending candidates — is a play *opportunity*, not a mandatory prompt:
-    ///   Fast `PlayCard`/`ActivateAbility` are allowed (the handlers gate
-    ///   eligibility) and `ResolveInput::Skip` closes it. A window *with* pending
-    ///   triggers (reaction or forced) does await `ResolveInput`.
-    ///
-    /// (`EncounterCard` is framework-internal and never sits on top at an action
-    /// boundary, so its `true` here is moot.)
+    /// True if a latched scenario resolution cancels this frame (#566): its
+    /// [profile](Self::profile)'s disposition is
+    /// [`Cancel`](ScenarioEndDisposition::Cancel).
+    #[must_use]
+    pub fn cancelled_by_scenario_end(&self) -> bool {
+        self.profile().scenario_end == ScenarioEndDisposition::Cancel
+    }
+
+    /// True if this frame is a prompt: its [profile](Self::profile)'s activity
+    /// is [`Prompt`](FrameActivity::Prompt), so it may rest on top at an `apply`
+    /// boundary and `resolve_input` accepts a response for it.
     #[must_use]
     pub fn awaits_input(&self) -> bool {
-        match self {
-            // A window/run awaits a mandatory `ResolveInput` iff it has
-            // candidates to resolve. An empty framework Fast-gate window
-            // (`FastWindow` with no pending plays) is *permissive* — the player
-            // may act but is not required to, so it does not block other actions.
-            Continuation::TimingPointWindow { .. } | Continuation::FastWindow { .. } => {
-                self.pending_candidates().is_some_and(|c| !c.is_empty())
-            }
-            // The open turn (`ending: false`) now surfaces its legal-action
-            // enumeration as an `AwaitingInput` menu, resolved solely by
-            // `ResolveInput(PickSingle(OptionId))` (2b, #447) — so it IS a
-            // mandatory prompt. `ending: true` is the transient rotation-tail
-            // sentinel (only ever momentarily on top inside `drive`'s resume
-            // tail), not a prompt.
-            //
-            // A `DealDamage` frame joins it for one step only: while distributing
-            // a contested point (#44/K5b) it *is* the prompt, and `resolve_input`
-            // routes it by step. Its other three steps are internal sequencing the
-            // `drive` loop dispatches on sight, so like a parked `AttackLoop` they
-            // never sit on top at a suspension boundary.
-            Continuation::InvestigatorTurn { ending: false, .. }
-            | Continuation::DealDamage {
-                step: DealDamageStep::Distribute { .. },
-                ..
-            } => true,
-            // The parked attack loop is internal sequencing: the coordinator
-            // above it owns any prompt the attack raises, and the `drive` loop
-            // dispatches this frame the moment it is exposed, so it is never on
-            // top at a suspension boundary (#411/#704). `PickOrder` is the one
-            // stage that *is* a prompt, and `resolve_input` routes it by
-            // stage. The `ending: true` rotation transient and
-            // `ActionResolution` likewise never await input here.
-            // The ending frame is inert like a phase anchor: the acknowledge /
-            // ordering run its `GameEnd` emit queues sits *above* it and is the
-            // prompt, and once those have drained the apply boundary finalizes
-            // without any player input (#566).
-            // An in-progress elimination is inert for the same reason as the
-            // ending frame: the acknowledge / ordering run its step-0 emit
-            // queues sits *above* it and is the prompt, and steps 1–6 need no
-            // player input (#638).
-            Continuation::InvestigatorTurn { .. }
-            | Continuation::AttackLoop { .. }
-            | Continuation::ActionResolution { .. }
-            | Continuation::DealDamage { .. }
-            | Continuation::Elimination { .. }
-            | Continuation::ScenarioEnd { .. } => false,
-            other => !other.is_phase_anchor(),
-        }
+        self.profile().activity == FrameActivity::Prompt
     }
 
     /// The resolution candidates of an open window/run on the stack —
@@ -1200,6 +1215,42 @@ impl Continuation {
             _ => false,
         }
     }
+}
+
+/// A frame's one classification — see [`Continuation::profile`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameProfile {
+    /// How play treats the frame while it is on top.
+    pub activity: FrameActivity,
+    /// What a latched scenario resolution does to the frame (ADR 0004).
+    pub scenario_end: ScenarioEndDisposition,
+}
+
+/// How play treats a frame while it is the top of the stack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameActivity {
+    /// The `drive` loop advances it; it never rests on top at an `apply`
+    /// boundary, and `resolve_input` rejects it.
+    Driven,
+    /// It may rest on top at an `apply` boundary, and `resolve_input` accepts a
+    /// response for it. The `drive` loop may still step it — the open turn
+    /// surfaces its menu, a skill test advances to its commit window — but it is
+    /// the one activity a frame can be waiting in when `apply` returns.
+    Prompt,
+    /// Neither the loop's step nor input advances it: a phase anchor, woken
+    /// only when a child frame pops, and the ending frame at
+    /// [`Finalize`](ScenarioEndStep::Finalize), which the apply boundary pops.
+    Inert,
+}
+
+/// What a latched scenario resolution does to a frame when it reaches the top
+/// (ADR 0004: a latched resolution cancels opportunities, not resolutions).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScenarioEndDisposition {
+    /// An opportunity to act, or the framework sequence: discarded.
+    Cancel,
+    /// Mandatory resolution already under way: completes.
+    Complete,
 }
 
 /// The Mythos-phase child-pop boundary an anchor resumes at (slice 1a, #393).

@@ -19,8 +19,8 @@ use crate::engine::outcome::{
 };
 use crate::engine::{enumerate, evaluator, Cx};
 use crate::state::{
-    ActionResume, AttackLoopStage, CardCode, CardInstanceId, Continuation, DealDamageStep,
-    GameState, ScenarioEndStep, Status,
+    ActionResume, CardCode, CardInstanceId, Continuation, FrameActivity, GameState,
+    ScenarioEndStep, Status,
 };
 pub(crate) use control::take_control;
 
@@ -182,7 +182,7 @@ pub fn apply_player_action(cx: &mut Cx, action: &PlayerAction) -> EngineOutcome 
 
     // Run the main loop (slice 1b, #393): advance any `*Phase` anchor a handler
     // left on top (a phase transition), carrying the cascade forward until it
-    // blocks on a suspension, idles at the open turn, or reaches terminal.
+    // blocks on a prompt (the open turn included) or reaches terminal.
     drive(cx, outcome)
 }
 
@@ -222,22 +222,30 @@ pub(crate) fn drive(cx: &mut Cx, mut outcome: EngineOutcome) -> EngineOutcome {
 
 /// One pass of the main loop: advance the top continuation frame until the
 /// engine blocks or idles. Always entered with the equivalent of `Done` —
-/// [`drive`] owns the suspension rule — and returns:
+/// [`drive`] owns the suspension rule.
 ///
-/// - a `*Phase` anchor on top is advanced via
-///   [`phases::anchor_on_child_pop`], which runs its resume-keyed chunk and,
-///   at a phase boundary, transitions by popping itself + pushing the next
-///   phase's anchor (`Entry`) — the loop then advances that;
-/// - an [`ActionResolution`](crate::state::Continuation::ActionResolution) frame
-///   on top is resumed via [`resume_action_resolution`], which runs the
-///   action's primary effect (or suppresses it if the actor was defeated);
-/// - the pass stops with `AwaitingInput` when an advance suspends, and with
-///   `Done` when an [`InvestigatorTurn`](crate::state::Continuation::InvestigatorTurn)
-///   frame is on top (the open turn — slice 2a-i, #393), at terminal (empty
-///   stack), or when an advance makes no progress (a parked phase, e.g.
-///   Investigation with no active investigator).
-// A single exhaustive dispatch over every steppable `Continuation` variant;
-// splitting it would only scatter the one place that says what each frame does.
+/// One exhaustive arm per frame kind, with no wildcard, so a new
+/// [`Continuation`] variant does not compile until it says what the loop does
+/// with it. What an arm may do is bounded by the frame's
+/// [profile](Continuation::profile):
+///
+/// - a **Driven** frame is always stepped: its driver advances or pops it, and
+///   the loop continues on whatever is then on top;
+/// - a **Prompt** frame is either stepped by a driver that surfaces or advances
+///   it (the open turn's menu, a skill test's commit window, a window's next
+///   candidate), or left on top — its handler already surfaced the prompt, and
+///   the loop returns `Done`;
+/// - an **Inert** frame is a phase anchor, woken via
+///   [`phases::anchor_on_child_pop`] (which at a phase boundary pops itself and
+///   pushes the next phase's anchor), or the ending frame at
+///   [`Finalize`](ScenarioEndStep::Finalize), which the loop hands to the apply
+///   boundary by returning `Done`.
+///
+/// The pass also returns `Done` at terminal (empty stack) and when an anchor's
+/// advance makes no progress (a parked phase, e.g. Investigation with no active
+/// investigator).
+// A single exhaustive dispatch over every `Continuation` variant; splitting it
+// would only scatter the one place that says what each frame does.
 #[allow(clippy::too_many_lines)]
 fn drive_frames(cx: &mut Cx) -> EngineOutcome {
     loop {
@@ -251,189 +259,108 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
         }
         #[cfg(debug_assertions)]
         assert_no_queued_ability_beneath_anchor(cx.state);
-        let top = cx.state.continuations.last().cloned();
-        match top {
-            Some(ref c) if c.is_phase_anchor() => {
-                match phases::anchor_on_child_pop(cx) {
-                    EngineOutcome::Done => {
-                        // No-progress guard: a parked phase (e.g. Investigation
-                        // with no active investigator) leaves the same anchor on
-                        // top — break rather than spin.
-                        if cx.state.continuations.last() == top.as_ref() {
-                            return EngineOutcome::Done;
-                        }
-                    }
-                    other => return other,
+        // Terminal: nothing left to drive.
+        let Some(top) = cx.state.continuations.last().cloned() else {
+            return EngineOutcome::Done;
+        };
+        let outcome = match &top {
+            // Inert phase anchors, woken because the child above them popped.
+            Continuation::MythosPhase { .. }
+            | Continuation::InvestigationPhase { .. }
+            | Continuation::EnemyPhase { .. }
+            | Continuation::UpkeepPhase { .. } => {
+                let outcome = phases::anchor_on_child_pop(cx);
+                // No-progress guard: a parked phase (e.g. Investigation with
+                // no active investigator) leaves the same anchor on top —
+                // break rather than spin.
+                if matches!(outcome, EngineOutcome::Done)
+                    && cx.state.continuations.last() == Some(&top)
+                {
+                    return EngineOutcome::Done;
                 }
+                outcome
             }
-            Some(Continuation::ActionResolution { .. }) => {
-                match resume_action_resolution(cx) {
-                    EngineOutcome::Done => {
-                        // Primary ran (or was suppressed) + frame popped; loop
-                        // on — the InvestigatorTurn frame beneath is now top.
-                    }
-                    other => return other, // primary effect suspended (e.g. skill test)
-                }
+            // A parked action resumed via [`resume_action_resolution`], which
+            // runs the action's primary effect (or suppresses it if the actor
+            // was defeated) and pops; the `InvestigatorTurn` beneath is then top.
+            Continuation::ActionResolution { .. } => resume_action_resolution(cx),
+            // An effect-walk frame (#422): step it via the shared effect driver
+            // — push a child, pop, or suspend in place for a controller pick.
+            Continuation::Effect(_) => evaluator::step_effect_frame(cx),
+            // An event window or forced run: advance one resume step —
+            // re-prompt the next candidate, or (empty) close and run its
+            // continuation. A framework window holding candidates resolves
+            // through the same driver. Operates on the top frame — the
+            // invariant is that `last()` is what resolves next.
+            Continuation::TimingPointWindow { .. } => reaction_windows::advance_resolution(cx),
+            Continuation::FastWindow { candidates, .. } if !candidates.is_empty() => {
+                reaction_windows::advance_resolution(cx)
             }
-            // An effect-walk frame parked across an `apply()` boundary (#422):
-            // e.g. an on-play effect that opened a reaction window now resumes
-            // after the window closed. Step it via the shared effect driver.
-            Some(Continuation::Effect(_)) => {
-                match evaluator::step_effect_frame(cx) {
-                    EngineOutcome::Done => {
-                        // Stepped (child pushed / frame popped); loop on.
-                    }
-                    other => return other, // suspended for a pick, or rejected
-                }
-            }
-            // A window on top (Slice C-plumbing): advance one resume step —
-            // re-prompt the next candidate, or (empty) close + run its
-            // continuation. A `TimingPointWindow` is always dispatched (its
-            // candidates are exhausted only by firing, so empty ⇒ close); an empty
-            // `FastWindow` is a permissive Fast-gate awaiting `Skip` and is left to
-            // idle below. Operates on the top frame — the invariant is that
-            // `last()` is what resolves next, so no reach-down index.
-            //
-            // The guard: `TimingPointWindow` matches the first disjunct (always
-            // dispatched). A `FastWindow`'s candidates are empty today (it is a
-            // pure Fast-gate — `open_fast_window` pushes `Vec::new()`), so
-            // `awaits_input()` is false and it idles; the `|| awaits_input()` arm
-            // is the (currently dormant) path that would dispatch a candidate-
-            // bearing framework window if one is ever added.
-            Some(
-                ref c @ (Continuation::TimingPointWindow { .. } | Continuation::FastWindow { .. }),
-            ) if matches!(c, Continuation::TimingPointWindow { .. }) || c.awaits_input() => {
-                match reaction_windows::advance_resolution(cx) {
-                    EngineOutcome::Done => {} // closed; loop on to the exposed frame
-                    other => return other,    // re-prompt, or a suspended continuation
-                }
-            }
-            // A framework Fast window on top (empty reaction candidates, so it
-            // failed the guarded arm above): surface its eligible fast plays as a
-            // skippable choice, or close it when none remain (#476). Re-examined
-            // after each fast play resolves — the re-open loop — until the player
-            // Skips or runs out of plays.
-            Some(Continuation::FastWindow { .. }) => {
-                match reaction_windows::drive_fast_window(cx) {
-                    EngineOutcome::Done => {} // closed (no eligible plays); loop on
-                    other => return other,    // the skippable prompt, or a continuation prompt
-                }
-            }
-            // A skill test re-exposed on top (a mid-test window/effect closed):
-            // step its driver. By the invariant it is top — no `rposition` /
-            // `win_idx > st` self-location.
-            // An act/agenda advance sub-process on top (#482): drive its step
-            // machine (acknowledge → reverse → finalize). A reverse it fires
-            // lands above this frame and the loop drives it first; the frame is
+            // A pure Fast-gate window: surface its eligible fast plays as a
+            // skippable choice, or close it when none remain (#476).
+            // Re-examined after each fast play resolves — the re-open loop —
+            // until the player Skips or runs out of plays.
+            Continuation::FastWindow { .. } => reaction_windows::drive_fast_window(cx),
+            // An act/agenda advance sub-process (#482): drive its step machine
+            // (acknowledge → reverse → finalize). A reverse it fires lands
+            // above this frame and the loop drives it first; the frame is
             // re-exposed at Finalize when the reverse pops.
-            Some(Continuation::AdvanceReverse { .. }) => match advance_reverse::drive(cx) {
-                EngineOutcome::Done => {}
-                other => return other,
-            },
+            Continuation::AdvanceReverse { .. } => advance_reverse::drive(cx),
             // #466: a one-option forced-effect acknowledge always suspends; on
             // resume it pops and the effect frame beneath resolves.
-            Some(Continuation::AcknowledgeForced { .. }) => {
+            Continuation::AcknowledgeForced { .. } => {
                 return forced_triggers::drive_acknowledge_forced(cx)
             }
-            Some(Continuation::SkillTest(_)) => match skill_test::advance(cx) {
-                EngineOutcome::Done => {}
-                other => return other,
-            },
-            // An encounter-card frame re-exposed after its Revelation's
-            // sub-resolution completed: dispose of the card (treachery discard /
-            // enemy spawn) + pop (#380). `dispose_…` pops the frame, so the top
-            // changes (exposing the drawer's `PlayerDraw` for the Mythos chain, or
-            // a non-draw frame) and the loop makes progress; an enemy spawn can
-            // suspend on an engagement tie, so a non-`Done` outcome propagates.
-            Some(Continuation::EncounterCard { .. }) => {
-                match encounter::dispose_encounter_card_if_top(cx) {
-                    EngineOutcome::Done => {}
-                    other => return other,
-                }
-            }
-            // A hand-play disposal frame re-exposed after its OnPlay effect
-            // resolved: place the card it holds (event → discard; asset → enter
-            // play, emit EnteredPlay) and pop (Slice D #423). Never suspends
-            // itself — any reaction window queued by queue_event lands on top and
-            // the loop drives it next.
-            Some(Continuation::PlayFromHand { .. }) => match cards::dispose_play_from_hand(cx) {
-                EngineOutcome::Done => {}
-                other => return other,
-            },
+            // A skill test re-exposed on top (a mid-test window/effect closed):
+            // step its driver. By the invariant it is top.
+            Continuation::SkillTest(_) => skill_test::advance(cx),
+            // An encounter card re-exposed after its Revelation's
+            // sub-resolution completed: dispose of the card (treachery discard
+            // / enemy spawn) and pop (#380). An enemy spawn can suspend on an
+            // engagement tie.
+            Continuation::EncounterCard { .. } => encounter::dispose_encounter_card_if_top(cx),
+            // A hand-play disposal re-exposed after its OnPlay effect resolved:
+            // place the card it holds (event → discard; asset → enter play,
+            // emit EnteredPlay) and pop (Slice D #423).
+            Continuation::PlayFromHand { .. } => cards::dispose_play_from_hand(cx),
             // The entered-location half of a Move, re-exposed once the left
-            // location's queued `LeftLocation` forced abilities resolved (#569):
+            // location's queued `LeftLocation` abilities resolved (#569):
             // auto-engage at the destination and emit `EnteredLocation`.
-            Some(Continuation::MoveEnter { .. }) => match actions::resume_move_enter(cx) {
-                EngineOutcome::Done => {}
-                other => return other,
-            },
-            // A per-drawer Mythos surge-chain frame (callsite-migration): draw
-            // the next card (first step or a pending surge), or — chain over —
-            // pop itself and advance the loop to the next drawer / post-1.4
-            // window. Re-exposed by an `EncounterCard` disposal or a `SpawnEngage`
-            // resume. A draw can suspend on an engagement tie, so a non-`Done`
-            // outcome propagates.
-            Some(Continuation::PlayerDraw { .. }) => match encounter::drive_player_draw(cx) {
-                EngineOutcome::Done => {}
-                other => return other,
-            },
+            Continuation::MoveEnter { .. } => actions::resume_move_enter(cx),
+            // A per-drawer Mythos surge chain: draw the next card (first step or
+            // a pending surge), or — chain over — pop itself and advance the
+            // loop to the next drawer / post-1.4 window.
+            Continuation::PlayerDraw { .. } => encounter::drive_player_draw(cx),
             // The `when → at → after` coordinator frames (#434). `EmitEvent`
             // walks the buckets (pushing a `TimingPoint` per populated cell);
-            // `TimingPoint` runs one bucket's forced-then-reaction. Each does one
-            // step and returns `Done` (loop re-dispatches the mutated top) or
-            // `AwaitingInput` (a window / forced run opened). Every condition
-            // walks them (#702), and a coordinator-owned one also resolves its
-            // own impact mid-walk (#701/#703).
-            Some(Continuation::EmitEvent { .. }) => match coordinator::dispatch_emit_event(cx) {
-                EngineOutcome::Done => {}
-                other => return other,
-            },
-            Some(Continuation::TimingPoint { .. }) => {
-                match coordinator::dispatch_timing_point(cx) {
-                    EngineOutcome::Done => {}
-                    other => return other,
-                }
-            }
+            // `TimingPoint` runs one bucket's forced-then-reaction. Every
+            // condition walks them (#702), and a coordinator-owned one also
+            // resolves its own impact mid-walk (#701/#703).
+            Continuation::EmitEvent { .. } => coordinator::dispatch_emit_event(cx),
+            Continuation::TimingPoint { .. } => coordinator::dispatch_timing_point(cx),
             // A deal of damage, mid-procedure (#727): step its cursor —
-            // distribute, announce the assignment, place it, resume the caller.
-            // Each emit lands a coordinator above this frame and the loop drives
-            // that first; the frame is re-exposed when the coordinator pops.
-            Some(Continuation::DealDamage { .. }) => match combat::drive_deal_damage(cx) {
-                EngineOutcome::Done => {}
-                other => return other,
-            },
-            // A parked enemy-attack loop re-exposed once the head attacker's
+            // distribute (surfacing the per-point prompt while a point is
+            // contested), announce the assignment, place it, resume the caller.
+            Continuation::DealDamage { .. } => combat::drive_deal_damage(cx),
+            // The attack loop at its order pick is a prompt its handler already
+            // surfaced: leave it on top for `resolve_input`.
+            Continuation::AttackLoop { .. } if top.awaits_input() => return EngineOutcome::Done,
+            // Otherwise it was re-exposed once the head attacker's
             // `EnemyAttacks` coordinator popped (#704): take the head off,
             // exhaust it (enemy phase), and either begin the next attack, prompt
-            // for the order, or run the loop's source-keyed tail. The
-            // `PickOrder` stage is a prompt the player owes an answer to, so it
-            // idles in the `_` arm instead.
-            Some(Continuation::AttackLoop {
-                stage: AttackLoopStage::Attacking,
-                ..
-            }) => match combat::drive_parked_attack_loop(cx) {
-                EngineOutcome::Done => {}
-                other => return other,
-            },
-            // The open turn is ending: a suspending `EndOfTurn` forced (a single
-            // skill test, or a 2+ forced run) stranded `end_turn` before rotation
-            // and flagged this frame. Re-exposed on top now that the suspension
-            // resolved, drive the rotation tail. `ending: false` stays the idle
-            // open-turn sentinel (the `_` arm below). Unifies the former two
-            // resume paths (the skill-test reach-down + `EndOfTurnAfterForced`).
-            Some(Continuation::InvestigatorTurn {
+            // for the order, or run the loop's source-keyed tail.
+            Continuation::AttackLoop { .. } => combat::drive_parked_attack_loop(cx),
+            // The open turn is ending: a suspending `EndOfTurn` forced stranded
+            // `end_turn` before rotation and flagged this frame. Re-exposed now
+            // that the suspension resolved, drive the rotation tail.
+            Continuation::InvestigatorTurn {
                 investigator,
                 ending: true,
-            }) => match phases::resume_end_turn(cx, investigator) {
-                EngineOutcome::Done => {} // rotated / phase ended; loop on
-                other => return other,
-            },
+            } => phases::resume_end_turn(cx, *investigator),
             // The open turn surfaces its legal-action enumeration as an
-            // `AwaitingInput` menu (2b, #447): gameplay input is now solely
-            // `ResolveInput(PickSingle(OptionId))` against this frame. The menu
-            // is re-enumerated at resolve (not cached) — see the
-            // `InvestigatorTurn { ending: false }` arm of `resolve_input`.
-            Some(Continuation::InvestigatorTurn { ending: false, .. }) => {
+            // `AwaitingInput` menu (2b, #447), re-enumerated at resolve rather
+            // than cached — see the open-turn arm of `resolve_input`.
+            Continuation::InvestigatorTurn { ending: false, .. } => {
                 return EngineOutcome::AwaitingInput {
                     request: turn_menu(cx.state),
                     // Deterministic resume-token is #458; placeholder like every
@@ -444,37 +371,42 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // An investigator's elimination, mid-sequence (#638). Step 0's
             // weakness-scoped game-end emit is in tail position (it only queues
             // — ADR 0003), so Cover Up 01007's trauma resolves above this frame;
-            // the loop re-exposes it and steps 1–6 run, removing those same
-            // weaknesses from the game. See `Continuation::Elimination`.
-            Some(Continuation::Elimination { .. }) => match elimination::drive_elimination(cx) {
-                EngineOutcome::Done => {} // emitted / steps ran + popped; loop on
-                other => return other,    // 2+ simultaneous: the lead orders them
-            },
-            // The scenario's ending, exposed once everything above it has
-            // completed or been cancelled (#566). `EmitGameEnd` advances the
-            // cursor *before* emitting — a tail-position emit, since the emit
-            // only queues (ADR 0003) and Cover Up 01007's trauma (plus its
-            // interactive acknowledge) must resolve above this frame, possibly
-            // across an `apply` boundary. At `Finalize` the loop stops and hands
-            // the frame to the apply boundary, which holds the `ScenarioRegistry`.
-            Some(Continuation::ScenarioEnd {
-                step: ScenarioEndStep::EmitGameEnd,
-            }) => {
+            // the loop re-exposes it and steps 1–6 run.
+            Continuation::Elimination { .. } => elimination::drive_elimination(cx),
+            // The ending at rest (Inert at `Finalize`): the loop has nothing to
+            // drive, and hands the frame to the apply boundary, which holds the
+            // `ScenarioRegistry` (#566).
+            Continuation::ScenarioEnd { .. } if top.profile().activity == FrameActivity::Inert => {
+                return EngineOutcome::Done
+            }
+            // The ending, exposed once everything above it has completed or been
+            // cancelled. Advance the cursor *before* emitting `GameEnd` — a
+            // tail-position emit, since the emit only queues (ADR 0003) and
+            // Cover Up 01007's trauma (plus its interactive acknowledge) must
+            // resolve above this frame, possibly across an `apply` boundary.
+            Continuation::ScenarioEnd { .. } => {
                 let Some(Continuation::ScenarioEnd { step }) = cx.state.continuations.last_mut()
                 else {
                     unreachable!("drive: the ScenarioEnd arm ran without one on top");
                 };
                 *step = ScenarioEndStep::Finalize;
-                match emit::queue_event(cx, &TimingEvent::GameEnd) {
-                    EngineOutcome::Done => {} // queued; loop on to drain it
-                    other => return other,    // 2+ simultaneous: the lead orders them
-                }
+                emit::queue_event(cx, &TimingEvent::GameEnd)
             }
-            // Idle: an empty `FastWindow` permissive gate, terminal (empty), a
-            // suspension on top (which a handler already surfaced as
-            // AwaitingInput), or a `ScenarioEnd` frame at `Finalize` — the loop
-            // has nothing left to drive there, and `apply` finalizes it.
-            _ => return EngineOutcome::Done,
+            // Prompts whose handler surfaced `AwaitingInput` when it pushed
+            // them: nothing to drive until `resolve_input` answers.
+            Continuation::SubstitutionPrompt { .. }
+            | Continuation::HunterMove(_)
+            | Continuation::SpawnEngage(_)
+            | Continuation::HandSizeDiscard(_)
+            | Continuation::Mulligan { .. }
+            | Continuation::EncounterDraw { .. }
+            | Continuation::SlotDiscard { .. } => return EngineOutcome::Done,
+        };
+        // A stepped frame: `Done` means it advanced (child pushed, frame
+        // popped, cursor moved) and the loop re-dispatches the new top; any
+        // other outcome (a suspension, a rejection) ends the pass.
+        if !matches!(outcome, EngineOutcome::Done) {
+            return outcome;
         }
     }
 }
@@ -777,144 +709,87 @@ fn resume_skill_test_commit(cx: &mut Cx, response: &InputResponse) -> EngineOutc
 /// Dispatch a [`PlayerAction::ResolveInput`].
 ///
 /// Routes on the **top** continuation frame — the prompt awaiting input — and
-/// returns through [`drive`] (Slice C-plumbing). A window on top resolves via
-/// [`resume_window`]; a mid-test reaction window closes, returns `Done`, and the
-/// loop re-dispatches the now-top `SkillTest`. Rejects when nothing is outstanding.
+/// returns through [`drive`] (Slice C-plumbing). The gate accepts exactly the
+/// frames whose [profile](Continuation::profile) is a
+/// [`Prompt`](FrameActivity::Prompt), so "this frame is a prompt" and "this
+/// frame accepts input" are one fact; anything else on top, or an empty stack,
+/// is rejected as no prompt outstanding.
 ///
-/// A pure-Fast window (pushed by [`open_fast_window`], empty `pending_triggers`)
-/// on top is a play *opportunity*: `InputResponse::Skip` closes it via
+/// A window on top resolves via [`resume_window`]; a mid-test reaction window
+/// closes, returns `Done`, and the loop re-dispatches the now-top `SkillTest`.
+/// A pure-Fast window (pushed by [`open_fast_window`], no candidates) on top is
+/// a play *opportunity*: `InputResponse::Skip` closes it via
 /// [`close_reaction_window`]. This covers the `MythosAfterDraws` window after all
 /// Fast plays have been made and the player is done.
-// One exhaustive arm per `Continuation` variant, as in `drive`: splitting it
-// would scatter the single place that says which frame a response routes to.
-#[allow(clippy::too_many_lines)]
 pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
     // Top-frame dispatch (umbrella §1 / #348): every suspension is a
     // `Continuation` frame, and the frame awaiting input is always the top of
     // the stack (each suspension pushes above whatever it suspended within — a
-    // `SubstitutionPrompt` above its `SkillTest`, a reaction `Resolution` above
-    // a mid-test commit, etc.). So routing is "dispatch on the top frame's
-    // variant"; the former hand-ordered `if pending_X.is_some()` priority
-    // cascade is gone.
-    let outcome = match cx.state.continuations.last() {
-        Some(Continuation::SubstitutionPrompt { .. }) => {
+    // `SubstitutionPrompt` above its `SkillTest`, a reaction window above a
+    // mid-test commit, etc.). So routing is "gate on the top frame's profile,
+    // then dispatch on its kind".
+    let Some(top) = cx.state.continuations.last() else {
+        return EngineOutcome::Rejected {
+            reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
+        };
+    };
+    if !top.awaits_input() {
+        return EngineOutcome::Rejected {
+            reason: format!(
+                "ResolveInput: no input prompt is outstanding (the top frame is not a prompt: \
+                 {top:?})"
+            )
+            .into(),
+        };
+    }
+    // Past the gate, a kind whose profile splits on its value is at its Prompt
+    // value: an `AttackLoop` at `PickOrder`, a `DealDamage` at `Distribute`, an
+    // `InvestigatorTurn` that is not ending, a `TimingPointWindow` with
+    // candidates. So each kind routes on its variant alone.
+    match top {
+        Continuation::SubstitutionPrompt { .. } => {
             skill_test::resume_substitution_choice(cx, response)
         }
         // Event reaction windows + the forced run (`TimingPointWindow`) and the
         // framework player windows (`FastWindow`, #433) resolve through the one
         // window driver — it reads candidates/mode through the frame-agnostic
         // accessors.
-        Some(Continuation::TimingPointWindow { .. } | Continuation::FastWindow { .. }) => {
+        Continuation::TimingPointWindow { .. } | Continuation::FastWindow { .. } => {
             resume_window(cx, response)
         }
         // An effect node suspended in place for a controller pick (#422): the
         // top `Continuation::Effect(Leaf)` frame *is* the prompt. Route its
         // `PickSingle` to the effect-choice resume. A non-suspending effect
         // frame is never on top here (the drive steps it before yielding).
-        Some(Continuation::Effect(_)) => choice::resume_effect_choice(cx, response),
-        Some(Continuation::HunterMove(_)) => hunters::resume_hunter_choice(cx, response),
-        Some(Continuation::SpawnEngage(_)) => hunters::resume_spawn_engage(cx, response),
-        Some(Continuation::HandSizeDiscard(_)) => phases::resume_hand_size_discard(cx, response),
-        Some(Continuation::Mulligan { .. }) => cards::resume_mulligan(cx, response),
-        Some(Continuation::EncounterDraw { .. }) => encounter::resume_encounter_draw(cx, response),
-        // An `EncounterCard` frame never awaits input — it only ever sits
-        // beneath a real suspension. If it is somehow top, no prompt is
-        // outstanding (defensive; #380).
-        Some(Continuation::EncounterCard { .. }) => EngineOutcome::Rejected {
-            reason: "ResolveInput: no input prompt is outstanding (encounter-card disposal is \
-                     framework-internal)"
-                .into(),
-        },
-        Some(Continuation::PlayFromHand { .. }) => EngineOutcome::Rejected {
-            reason: "ResolveInput: no input prompt is outstanding (hand-play disposal is \
-                     framework-internal)"
-                .into(),
-        },
-        // A `MoveEnter` frame never awaits input (#569) — the loop drives it the
-        // moment the left-location abilities above it resolve. Defensive, as for
-        // `PlayFromHand`.
-        Some(Continuation::MoveEnter { .. }) => EngineOutcome::Rejected {
-            reason: "ResolveInput: no input prompt is outstanding (the entered-location step of \
-                     a move is framework-internal)"
-                .into(),
-        },
-        // A `PlayerDraw` surge-chain frame never awaits input — the `drive` loop
-        // drives it, and any prompt it opens (a spawn-engagement tie) sits above
-        // it. If it is somehow top, no prompt is outstanding (defensive; mirrors
-        // the EncounterCard arm).
-        Some(Continuation::PlayerDraw { .. }) => EngineOutcome::Rejected {
-            reason: "ResolveInput: no input prompt is outstanding (the Mythos draw chain is \
-                     framework-internal)"
-                .into(),
-        },
-        Some(Continuation::SkillTest(_)) => resume_skill_test_commit(cx, response),
+        Continuation::Effect(_) => choice::resume_effect_choice(cx, response),
+        Continuation::HunterMove(_) => hunters::resume_hunter_choice(cx, response),
+        Continuation::SpawnEngage(_) => hunters::resume_spawn_engage(cx, response),
+        Continuation::HandSizeDiscard(_) => phases::resume_hand_size_discard(cx, response),
+        Continuation::Mulligan { .. } => cards::resume_mulligan(cx, response),
+        Continuation::EncounterDraw { .. } => encounter::resume_encounter_draw(cx, response),
+        Continuation::SkillTest(_) => resume_skill_test_commit(cx, response),
         // The advance acknowledge pause (#482/#558): the single on-card advance
         // pick (`PickSingle(0)`) resumes the AdvanceReverse frame past its AwaitAck
         // step into firing the leaving card's reverse.
-        Some(Continuation::AdvanceReverse { .. }) => advance_reverse::resume(cx, response),
+        Continuation::AdvanceReverse { .. } => advance_reverse::resume(cx, response),
         // #466: the one-option forced-effect acknowledge — its PickSingle pops the
         // frame so the `drive` loop resolves the effect beneath.
-        Some(Continuation::AcknowledgeForced { .. }) => {
+        Continuation::AcknowledgeForced { .. } => {
             forced_triggers::resume_acknowledge_forced(cx, response)
         }
-        // An order-pick suspension parks the `AttackLoop` frame as the top frame
-        // (it *is* the prompt) — route its `PickSingle` to the order resume
-        // (#143). Every other `AttackLoop` stage sits beneath a reaction window
-        // (the window is the prompt) and never legitimately awaits input here, so
-        // it rejects defensively (mirrors the EncounterCard arm).
-        Some(Continuation::AttackLoop {
-            stage: AttackLoopStage::PickOrder,
-            ..
-        }) => combat::resume_attack_order_pick(cx, response),
-        Some(Continuation::AttackLoop { .. }) => EngineOutcome::Rejected {
-            reason: "ResolveInput: no input prompt is outstanding (a parked attack loop is top)"
-                .into(),
-        },
+        // The attack-order pick (#143): the `AttackLoop` frame at `PickOrder`
+        // *is* the prompt.
+        Continuation::AttackLoop { .. } => combat::resume_attack_order_pick(cx, response),
         // The interactive soak distribution's per-point prompt (#44/K5b): a
-        // `DealDamage` frame at its `Distribute` step is the top prompt, resumed
-        // by its `PickSingle`. Its other three steps are internal sequencing the
-        // loop dispatches on sight and never await input, so they reject
-        // defensively (the `AttackLoop` contract).
-        Some(Continuation::DealDamage {
-            step: DealDamageStep::Distribute { .. },
-            ..
-        }) => combat::resume_damage_distribution(cx, response),
-        Some(Continuation::DealDamage { .. }) => EngineOutcome::Rejected {
-            reason: "ResolveInput: no input prompt is outstanding (a deal of damage \
-                     is mid-sequence)"
-                .into(),
-        },
-        // The interactive slot make-room choice (#498): the `SlotDiscard` frame
-        // is the top prompt, resumed by its `PickSingle`.
-        Some(Continuation::SlotDiscard { .. }) => slots::resume_slot_discard(cx, response),
-        // The scenario's ending never awaits input (#566): the acknowledge /
-        // ordering run its `GameEnd` emit queues sits above it and is the prompt,
-        // and the apply boundary finalizes without asking. Defensive, as for
-        // `EncounterCard`.
-        Some(Continuation::ScenarioEnd { .. }) => EngineOutcome::Rejected {
-            reason: "ResolveInput: no input prompt is outstanding (the scenario has ended)".into(),
-        },
-        // An in-progress elimination never awaits input either (#638): the
-        // acknowledge / ordering run its step-0 emit queues sits above it and is
-        // the prompt, and steps 1–6 ask nothing. Defensive, as for `ScenarioEnd`.
-        Some(Continuation::Elimination { .. }) => EngineOutcome::Rejected {
-            reason: "ResolveInput: no input prompt is outstanding (an investigator's elimination \
-                     is in progress)"
-                .into(),
-        },
-        // A mid-action ActionResolution frame never awaits input — it is only
-        // momentarily top inside `drive`. A ResolveInput here is spurious.
-        Some(Continuation::ActionResolution { .. }) => EngineOutcome::Rejected {
-            reason: "ResolveInput: no input prompt is outstanding (a mid-action resolution \
-                     frame is top)"
-                .into(),
-        },
+        // `DealDamage` frame at its `Distribute` step, resumed by its
+        // `PickSingle`.
+        Continuation::DealDamage { .. } => combat::resume_damage_distribution(cx, response),
+        // The interactive slot make-room choice (#498).
+        Continuation::SlotDiscard { .. } => slots::resume_slot_discard(cx, response),
         // Open-turn OptionId dispatch (slice 2b, #447): `ResolveInput(PickSingle(OptionId))`
         // at the open turn re-enumerates `legal_actions`, indexes by the submitted
-        // `OptionId`, and forwards to `dispatch_turn_action`. The `ending: false`
-        // arm is the live open turn; `ending: true` is only ever top momentarily
-        // inside `drive`'s resume tail and never legitimately awaits input here.
-        Some(Continuation::InvestigatorTurn { ending: false, .. }) => {
+        // `OptionId`, and forwards to `dispatch_turn_action`.
+        Continuation::InvestigatorTurn { .. } => {
             let InputResponse::PickSingle(opt) = response else {
                 return EngineOutcome::Rejected {
                     reason: "ResolveInput: the open turn expects PickSingle(OptionId)".into(),
@@ -933,43 +808,24 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
             };
             dispatch_turn_action(cx, &action)
         }
-        Some(Continuation::InvestigatorTurn { .. }) => EngineOutcome::Rejected {
-            reason: "ResolveInput: no input prompt is outstanding (transient rotation frame)"
-                .into(),
-        },
-        // Phase anchors (slice 1a, #393) never await input — they only sit
-        // beneath framework windows. If one is somehow top, no prompt is
-        // outstanding (defensive, mirrors the EncounterCard arm).
-        Some(
-            Continuation::MythosPhase { .. }
-            | Continuation::InvestigationPhase { .. }
-            | Continuation::EnemyPhase { .. }
-            | Continuation::UpkeepPhase { .. },
-        ) => EngineOutcome::Rejected {
-            reason: "ResolveInput: no input prompt is outstanding (a phase anchor is top)".into(),
-        },
-        // The `when/at/after` coordinator frames (#434) never await input — they
-        // push a child (a `TimingPoint`, a `TimingPointWindow`, a forced run)
-        // that is the prompt, and the loop drives them otherwise. If one is
-        // somehow top at ResolveInput, no prompt is outstanding (defensive).
-        Some(Continuation::EmitEvent { .. } | Continuation::TimingPoint { .. }) => {
-            EngineOutcome::Rejected {
-                reason: "ResolveInput: no input prompt is outstanding (an EmitEvent/TimingPoint \
-                         coordinator frame is top)"
-                    .into(),
-            }
+        // Never a prompt, so the gate has already rejected them. Named rather
+        // than wildcarded so a new kind must be routed or listed here.
+        Continuation::EncounterCard { .. }
+        | Continuation::PlayFromHand { .. }
+        | Continuation::MoveEnter { .. }
+        | Continuation::PlayerDraw { .. }
+        | Continuation::EmitEvent { .. }
+        | Continuation::TimingPoint { .. }
+        | Continuation::ActionResolution { .. }
+        | Continuation::Elimination { .. }
+        | Continuation::ScenarioEnd { .. }
+        | Continuation::MythosPhase { .. }
+        | Continuation::InvestigationPhase { .. }
+        | Continuation::EnemyPhase { .. }
+        | Continuation::UpkeepPhase { .. } => {
+            unreachable!("resolve_input: the gate admits only Prompt frames, got {top:?}")
         }
-        None => EngineOutcome::Rejected {
-            reason: "ResolveInput: no AwaitingInput prompt is currently outstanding".into(),
-        },
-    };
-    // An encounter-card Revelation that suspended parks its `EncounterCard`
-    // frame beneath the suspension (#380); once that sub-resolution completes
-    // the frame is top again and the `drive` loop's `EncounterCard` arm disposes
-    // of it — discarding a treachery or spawning an enemy — and continues any
-    // Mythos chain (#423). `apply_player_action` runs `drive(cx, outcome)` after
-    // this returns.
-    outcome
+    }
 }
 
 #[cfg(test)]

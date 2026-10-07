@@ -1062,7 +1062,7 @@ pub(super) fn anchor_on_child_pop(cx: &mut Cx) -> EngineOutcome {
         }) => {
             // 2.2.1 — push the InvestigatorTurn frame above the anchor (slice
             // 2a-i, #393). The anchor stays at TurnBegins beneath it; the frame
-            // is the open-turn idle point (drive breaks here, returning Done).
+            // is the open turn, a prompt (drive surfaces its action menu here).
             // `active_investigator` was set by rotate_to_active in
             // begin_investigator_turn; it is the frame's investigator.
             let investigator = cx.state.active_investigator.unwrap_or_else(|| {

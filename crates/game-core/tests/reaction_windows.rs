@@ -1094,8 +1094,8 @@ fn active_reaction_window_is_the_top_continuation_frame() {
     // pins the property that makes that correct. (Replaces the former
     // `close_reaction_window_at_removes_..._phase_gate_on_top` regression, which
     // hand-injected an empty gate *above* a pending reaction window — a shape the
-    // framework never produces, because a pending window's `awaits_input()` gates
-    // the framework from advancing to open one.)
+    // framework never produces, because the `drive` loop stops at a pending
+    // window's prompt, so the framework never advances past it to open one.)
     let (inv_id, enemy_id, _loc_id, state) = fight_to_defeat_scenario(&[(ROLAND_REACTION, 1)]);
     let action = fight_action(&state, inv_id, enemy_id);
     let paused = fight_through_commit_window(state, action);

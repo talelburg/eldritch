@@ -6,9 +6,8 @@ use crate::engine::TimingEvent;
 use crate::state::{Continuation, EffectFrame, EmitStep, GameStateBuilder, InvestigatorId};
 
 #[test]
-fn awaits_input_gates_suspensions_but_not_anchors_or_fast_windows() {
-    // slice 1b: the one guard rule keys off this. Phase anchors are inert
-    // (open turn / loop-driven), so typed actions run there.
+fn awaits_input_gates_suspensions_but_not_anchors() {
+    // Phase anchors are inert: they wake only when a child frame pops.
     assert!(!Continuation::InvestigationPhase {
         resume: InvestigationResume::TurnBegins,
     }
@@ -17,19 +16,15 @@ fn awaits_input_gates_suspensions_but_not_anchors_or_fast_windows() {
         resume: MythosResume::Entry,
     }
     .awaits_input());
-    // A Fast-play window (a `FastWindow` with no pending candidates) is a
-    // play opportunity, not a mandatory prompt — Fast plays stay allowed.
-    assert!(!Continuation::FastWindow {
+    // A framework Fast window is a prompt even with no pending candidates:
+    // `ResolveInput::Skip` closes it (#476; D1(a) on #927).
+    assert!(Continuation::FastWindow {
         candidates: Vec::new(),
         fast_actors: FastActorScope::Any,
         kind: FastWindowKind::Phase(PhaseStep::InvestigatorTurnBegins),
     }
     .awaits_input());
-    // Every other suspension hits the `_ => true` arm and awaits
-    // ResolveInput. This includes a `Choice` (e.g. a `ChooseOne` OnPlay
-    // event mid-resolution) and a `SubstitutionPrompt`, which the former
-    // eight-block guard ladder did NOT explicitly gate — the unified rule
-    // now correctly rejects typed actions while one is on top.
+    // Suspensions awaiting `ResolveInput`.
     assert!(Continuation::SubstitutionPrompt {
         investigator: InvestigatorId(1),
     }

@@ -28,10 +28,10 @@ pub use continuation::{
     ActionResume, AdvanceDeck, AdvanceStep, AdvanceTrigger, AssetEntry, Assignment,
     AttackLoopStage, CandidateSource, Continuation, DamageSource, DealDamageStep, EffectFrame,
     EliminationStep, EmitStep, EncounterDisposition, EnemyAttackSource, EnemyResume,
-    FastActorScope, FastWindowKind, HandSizeDiscard, HunterChoice, InFlightSkillTest,
-    InvestigationResume, MythosResume, PhaseStep, ResolutionCandidate, ResolvedTest,
-    ScenarioEndStep, SkillTestFollowUp, SkillTestStep, SpawnEngagePending, TimingMode, TimingSub,
-    UpkeepResume,
+    FastActorScope, FastWindowKind, FrameActivity, FrameProfile, HandSizeDiscard, HunterChoice,
+    InFlightSkillTest, InvestigationResume, MythosResume, PhaseStep, ResolutionCandidate,
+    ResolvedTest, ScenarioEndDisposition, ScenarioEndStep, SkillTestFollowUp, SkillTestStep,
+    SpawnEngagePending, TimingMode, TimingSub, UpkeepResume,
 };
 pub(crate) use counter::define_id;
 pub use enemy::{Enemy, EnemyId};
