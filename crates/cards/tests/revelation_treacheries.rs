@@ -9,7 +9,7 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
-use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, GameStateBuilder,
@@ -180,10 +180,12 @@ fn crypt_chill_with_two_assets_suspends_and_discards_the_chosen_one() {
         ));
     }
 
-    // Commit nothing at the test window, then pick option 1 (the second
-    // asset, Magnifying Glass) at the discard choice.
+    // Commit nothing at the test window, then pick the second asset
+    // (Magnifying Glass) at the discard choice, by the instance it anchors to.
     let mut resolver = ScriptedResolver::new();
-    resolver.commit_cards(&[]).pick_single(OptionId(1));
+    resolver
+        .commit_cards(&[])
+        .pick(OptionTarget::CardInstance(CardInstanceId(2)));
     let result = test_support::drive(
         state,
         Action::Engine(EngineRecord::EncounterCardRevealed {
@@ -202,7 +204,7 @@ fn crypt_chill_with_two_assets_suspends_and_discards_the_chosen_one() {
     // The chosen asset (Magnifying Glass) is gone; the other stays in play.
     assert!(
         inv.discard.contains(&CardCode::new("01030")),
-        "the chosen asset (option 1) was discarded",
+        "the chosen asset was discarded",
     );
     assert_eq!(
         inv.cards_in_play.len(),

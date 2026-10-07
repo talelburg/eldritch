@@ -14,9 +14,8 @@
 //! Own process → installs `cards::REGISTRY`.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{OptionId, OptionTarget};
+use game_core::engine::OptionTarget;
 use game_core::state::{
     CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
@@ -39,15 +38,6 @@ fn play(state: GameState) -> TestSession {
     TestSession::new(state).take(&TurnAction::PlayCard {
         investigator: INV,
         hand_index: 0,
-    })
-}
-
-/// Blast the `position`th candidate location (your location, then its
-/// connections). Dynamite Blast's card-local location choice is un-anchored
-/// (#950), so the pick is positional.
-fn blast(position: u32) -> Action {
-    Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::PickSingle(OptionId(position)),
     })
 }
 
@@ -111,7 +101,7 @@ fn blasts_only_the_chosen_location_then_discards_the_event() {
     );
 
     // candidate_locations = [LOC_A, LOC_B] → option 0 blasts LOC_A.
-    let s = s.apply(blast(0));
+    let s = s.pick(OptionTarget::Location(LOC_A));
     assert!(at_turn_menu(&s));
 
     // LOC_A: enemy defeated (3 dmg ≥ 3 health), controller took 3 (self-damage).
