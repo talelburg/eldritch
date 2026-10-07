@@ -11,6 +11,7 @@ use card_dsl::dsl::{
 
 use crate::action::InputResponse;
 use crate::card_registry;
+use crate::engine::dispatch::initiation::{self, InitiationKind};
 use crate::engine::dispatch::reaction_windows;
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
@@ -573,28 +574,15 @@ pub(super) fn collect_forced_hits(
             }
         }
     }
-    // RR p.2: a forced ability that lacks the potential to change the game state
-    // does not initiate. Drop such hits here — the single chokepoint feeding both
-    // the lone-hit path (`queue_forced_triggers`) and the 2+ ordered run
-    // (`open_forced_resolution`) — so a no-op forced neither resolves nor (post-
-    // #466) prompts. Conservative: only provable no-ops are dropped (#495).
-    //
-    // The gate is the same predicate the reaction side offers on, so a forced
-    // ability's `eligibility` tag counts here too (#786): Cover Up 01007's
-    // "if there are any clues on Cover Up" lives in an opaque native effect the
-    // generic check can't introspect, and without the tag layer a clueless Cover
-    // Up initiated — and prompted — at game end.
-    hits.retain(|hit| {
-        let Some(abilities) =
-            abilities_in_effect::for_candidate_source(state, hit.source, &hit.code)
-        else {
-            return false;
-        };
-        let Some((_, ability)) = abilities.iter().find(|(addr, _)| *addr == hit.address) else {
-            return false;
-        };
-        evaluator::ability_can_initiate(state, ability, hit.source, hit.controller)
-    });
+    // The initiation gate (ADR 0017), asked once at the single chokepoint feeding
+    // both the lone-hit path (`queue_forced_triggers`) and the 2+ ordered run
+    // (`open_forced_resolution`), so a forced ability that cannot initiate neither
+    // resolves nor (post-#466) prompts. As `Forced` it gets the change-state and
+    // eligibility checks: Cover Up 01007's "if there are any clues on Cover Up"
+    // lives in an opaque native effect the generic change-state check can't
+    // introspect, and without its eligibility tag a clueless Cover Up initiated —
+    // and prompted — at game end (#786).
+    hits.retain(|hit| initiation::check(state, hit, InitiationKind::Forced).is_ok());
     hits
 }
 

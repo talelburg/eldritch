@@ -1,5 +1,5 @@
 use card_dsl::card_data::CardMetadata;
-use card_dsl::dsl::{self, Choose, TestOutcome};
+use card_dsl::dsl::{self, Ability, Choose, TestOutcome};
 
 use super::*;
 use crate::action::InputResponse;

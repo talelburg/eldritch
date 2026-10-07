@@ -50,7 +50,9 @@ mod cursor;
 pub(super) mod elimination;
 pub(super) mod encounter;
 pub(super) mod forced_triggers;
+// The initiation gate (ADR 0017): every play and ability path asks it whether.
 pub(crate) mod hunters;
+mod initiation;
 pub(crate) mod movement;
 pub(super) mod phases;
 // pub(crate): engine/mod.rs re-exports `put_set_aside_card_into_play` for the

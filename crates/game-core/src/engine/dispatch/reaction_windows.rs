@@ -4,13 +4,12 @@
 //! windows ([`scan_pending_triggers`],
 //! [`trigger_matches`], [`open_queued_reaction_window`],
 //! [`resume_reaction_window`], [`fire_pending_trigger`],
-//! [`bump_usage_counter`], [`close_reaction_window`]) and the fast-window
+//! [`close_reaction_window`]) and the fast-window
 //! eligibility checks
 //! ([`check_play_card`], [`check_activate_ability`],
 //! [`any_fast_play_eligible`], [`open_fast_window`]).
 
 use std::borrow::Cow;
-use std::iter;
 
 use card_dsl::card_data::{CardMetadata, CardType};
 use card_dsl::dsl::{
@@ -22,6 +21,7 @@ use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::abilities::ActivatedAbility;
 use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
+use crate::engine::dispatch::initiation::{self, InitiationKind};
 use crate::engine::dispatch::{
     abilities, actions, cards, combat, cursor, phases, skill_test, slots, ActivateCheckResult,
     PlayCheckResult,
@@ -276,38 +276,21 @@ fn scan_pending_triggers(
                 if !trigger_matches(event, pattern, id) {
                     continue;
                 }
-                // "Limit X per [period]" — skip triggers whose per-
-                // instance counter has already reached the cap this
-                // round. Rules Reference page 14. A **granted** ability has no
-                // printed index to key the counter by, so it is never counted
-                // out here; `reject_untrackable_usage_limit` refuses one that
-                // prints a cap rather than silently ignoring it.
-                if address.printed_index().is_some_and(|idx| {
-                    card.is_usage_exhausted(idx, ability.usage_limit, state.round)
-                }) {
-                    continue;
-                }
-                // Eligibility gate (RR p.2): suppress a reaction whose effect
-                // can't change state (e.g. an emptied Cover Up 01007).
-                if !evaluator::ability_can_initiate(
-                    state,
-                    ability,
-                    CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
-                    id,
-                ) {
-                    continue;
-                }
                 // Reaction candidates always have a source instance — an
                 // in-play / threat-area card, or the investigator card itself
                 // (#448 cp3a, now folded into `controlled_card_instances()`);
-                // abilities resolve by `code`. `bump_usage_counter` resolves
-                // the instance against all three zones.
-                pending.push(ResolutionCandidate {
+                // abilities resolve by `code`.
+                let candidate = ResolutionCandidate {
                     code: card.code.clone(),
                     controller: id,
                     address: address.clone(),
                     source: CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
-                });
+                };
+                // The initiation gate (ADR 0017): change-state, eligibility, the
+                // "Limit X per [period]" counter, and cost.
+                if initiation::check(state, &candidate, InitiationKind::Reaction).is_ok() {
+                    pending.push(candidate);
+                }
             }
         }
     }
@@ -369,23 +352,18 @@ fn scan_act_agenda_reactions(
             {
                 continue;
             }
-            // Eligibility gate (RR p.2): suppress an act/agenda reaction whose
-            // effect can't change state (e.g. The Barrier 01109's round-end
-            // advance when the Hallway group can't afford the clue threshold).
-            if !evaluator::ability_can_initiate(
-                state,
-                ability,
-                CandidateSource::Ability(source),
-                lead,
-            ) {
-                continue;
-            }
-            hits.push(ResolutionCandidate {
+            let candidate = ResolutionCandidate {
                 code: code.clone(),
                 controller: lead,
                 address: address.clone(),
                 source: CandidateSource::Ability(source),
-            });
+            };
+            // The initiation gate (ADR 0017): suppress an act/agenda reaction
+            // that cannot initiate (e.g. The Barrier 01109's round-end advance
+            // when the Hallway group can't afford the clue threshold).
+            if initiation::check(state, &candidate, InitiationKind::Reaction).is_ok() {
+                hits.push(candidate);
+            }
         }
     }
     hits
@@ -465,7 +443,7 @@ fn scan_hand_fast_events(
                 // can't change game state — same rule as the in-play reaction scan
                 // (#495). Covers Evidence! 01022 (Roland's reaction sourced from
                 // hand: discover 1 clue at your location) at a 0-clue location.
-                if !evaluator::ability_can_initiate(state, ability, CandidateSource::Hand, id) {
+                if !initiation::ability_can_initiate(state, ability, CandidateSource::Hand, id) {
                     continue;
                 }
                 // RR p.22 affordability: don't offer a Fast event whose resource
@@ -852,7 +830,7 @@ fn lapse_reason(state: &GameState, candidate: &ResolutionCandidate) -> LapseReas
     let still_eligible =
         abilities_in_effect::resolve(state, candidate.source, &candidate.code, &candidate.address)
             .is_some_and(|ability| {
-                evaluator::ability_can_initiate(
+                initiation::ability_can_initiate(
                     state,
                     &ability,
                     candidate.source,
@@ -1160,16 +1138,13 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         .expect("fire_pending_trigger: top frame is an open window/run")
         .remove(pending_idx);
 
-    // Usage is consumed when the ability fires — the former "bump only on
-    // `Done`" was purely defensive against an `unreachable!` `Rejected`. Bump
-    // now, then push the effect for the drive loop; the window frame beneath
-    // stays on top with its remaining candidates and `advance_resolution`
-    // re-dispatches it once the effect (and any nested skill test) pops. In-scope
-    // suspending forced effects (Frozen in Fear 01164) carry no usage limit, so
-    // the early bump is a no-op for them. Slice D, #423.
-    if usage_limit.is_some() {
-        bump_usage_counter(cx.state, &trigger);
-    }
+    // Appendix I step 3: the ability attempts to initiate, so its use counts
+    // now, before its effect is pushed — a use whose effects are cancelled still
+    // counts. The window frame beneath stays on top with its remaining
+    // candidates and `advance_resolution` re-dispatches it once the effect (and
+    // any nested skill test) pops. In-scope suspending forced effects (Frozen in
+    // Fear 01164) carry no usage limit, so recording is a no-op for them.
+    initiation::record_initiation(cx.state, &trigger, usage_limit);
     evaluator::push_effect(cx, &ability.effect, eval_ctx);
     EngineOutcome::Done
 }
@@ -1322,91 +1297,6 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request,
         resume_token: ResumeToken(0),
-    }
-}
-
-/// Bump the per-instance ability-usage counter for the just-fired
-/// trigger. Called by [`fire_pending_trigger`] only for abilities
-/// whose `usage_limit` is `Some(_)`; for abilities with no limit
-/// nothing tracks them.
-///
-/// Routes on [`CandidateSource`]: `InPlay` bumps the `CardInPlay` instance —
-/// the investigator card, a card in play, or a threat-area card, resolved by
-/// instance id over all three zones (#448 cp3a folded the investigator card,
-/// e.g. Roland Banks's seated `[reaction]`, onto this path; its usage now lives
-/// on `investigator_card.ability_usage`). `Board`, `Hand`, and `Location`
-/// candidates carry no per-instance usage limits and are `unreachable!` here.
-///
-/// **A limit on a source with no card instance is refused before it can reach
-/// here.** Usage state is `CardInPlay::ability_usage`, per-instance, so a
-/// location / enemy / act / agenda source has nowhere to record a use;
-/// `reject_untrackable_usage_limit` rejects the activation-side case at
-/// validation, and no corpus card prints such a forced or reaction ability.
-/// **#699** builds the state-level counter the Dunwich locations will need,
-/// and is what lifts both.
-///
-/// **TODO (cancellation-counts-against-limit).** Rules Reference
-/// page 14: *"If the effects of a card or ability with a limit or
-/// maximum are canceled, it is still counted against the
-/// limit/maximum, because the ability has been initiated."* Phase-3
-/// has no cancellation primitive, so today we only bump on successful
-/// resolution. When cancellation lands, the bump call must move
-/// before the effect resolves (or fork into both paths) so canceled
-/// fires still count.
-fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
-    let current_round = state.round;
-    match trigger.source {
-        CandidateSource::Ability(AbilitySource::InPlay(instance_id)) => {
-            let inv = state
-                .investigators
-                .get_mut(&trigger.controller)
-                .unwrap_or_else(|| {
-                    unreachable!(
-                        "bump_usage_counter: controller {ctl:?} vanished while reaction window \
-                         was open; state-corruption invariant violation",
-                        ctl = trigger.controller,
-                    )
-                });
-            // Search the investigator card first, then cards in play, then the
-            // threat area — the same zones `controlled_card_instances()` scans,
-            // so an investigator-card reaction (Roland Banks) resolves here.
-            let card = iter::once(&mut inv.investigator_card)
-                .chain(inv.cards_in_play.iter_mut())
-                .chain(inv.threat_area.iter_mut())
-                .find(|c| c.instance_id == instance_id)
-                .unwrap_or_else(|| {
-                    unreachable!(
-                        "bump_usage_counter: instance {instance_id:?} vanished from controller \
-                         {ctl:?}'s investigator card / cards_in_play / threat area while reaction \
-                         window was open; state-corruption invariant violation",
-                        ctl = trigger.controller,
-                    )
-                });
-            // A granted ability has no printed index to key the counter by, so
-            // there is nothing to bump — `reject_untrackable_usage_limit`
-            // refuses one that prints a *"Limit X per \[period\]"* cap before
-            // any cost is paid, so nothing is silently uncapped here.
-            if let Some(index) = trigger.address.printed_index() {
-                card.bump_ability_usage(index, current_round);
-            }
-        }
-        // Listed kind by kind rather than wildcarded: a sixth `AbilitySource`
-        // kind *that carries an instance* must break this build rather than
-        // reach a panic at runtime.
-        CandidateSource::Ability(
-            AbilitySource::Location(_)
-            | AbilitySource::Enemy(_)
-            | AbilitySource::Act
-            | AbilitySource::Agenda,
-        )
-        | CandidateSource::Hand => {
-            unreachable!(
-                "bump_usage_counter: a usage-limited candidate must be an in-play instance \
-                 (a hand candidate, and an ability source with no card instance behind it — a \
-                 location, an enemy, the act, the agenda — have nowhere to record uses); \
-                 candidate {trigger:?}"
-            )
-        }
     }
 }
 
@@ -1900,29 +1790,20 @@ fn check_play_resource_cost_payable(
     investigator: InvestigatorId,
     code: &CardCode,
 ) -> Result<(), Cow<'static, str>> {
-    let Some(meta) = card_registry::current().and_then(|reg| (reg.metadata_for)(code)) else {
+    let Some(reg) = card_registry::current() else {
         return Ok(());
     };
-    let resources = state
-        .investigators
-        .get(&investigator)
-        .map_or(0, |inv| inv.resources);
-    let cost = payable_play_cost(meta.play_cost(), code)?;
-    if resources < cost {
-        return Err(format!(
-            "PlayCard: playing {code} costs {cost} resource(s); \
-             {investigator:?} has {resources}"
-        )
-        .into());
-    }
-    Ok(())
+    initiation::play_cost_payable(state, reg, investigator, code)
 }
 
 /// Classify a printed play cost into a payable number of resources, or the
 /// reason it has none. The three shapes and why they differ are spelled out on
 /// [`check_play_resource_cost_payable`]; this is the arm split on its own so it
 /// can be tested without a registry.
-fn payable_play_cost(play_cost: Option<i8>, code: &CardCode) -> Result<u8, Cow<'static, str>> {
+pub(super) fn payable_play_cost(
+    play_cost: Option<i8>,
+    code: &CardCode,
+) -> Result<u8, Cow<'static, str>> {
     match play_cost {
         // A negative cost is ArkhamDB's X sentinel, never a real price;
         // `u8::try_from` would silently make it free, so it rejects here.
@@ -2100,8 +1981,8 @@ fn reject_incompatible_costs(costs: &[Cost]) -> Result<(), Cow<'static, str>> {
 /// the agenda.
 ///
 /// Usage state is `CardInPlay::ability_usage`, a per-instance map, and a
-/// location has no instance (`bump_usage_counter`'s `unreachable!` says so for
-/// the reaction path). Making these sources activatable is what first puts that
+/// location has no instance (`initiation::record_initiation`'s `unreachable!`
+/// says so for the reaction path). Making these sources activatable is what first puts that
 /// branch behind player input, and **a panic reachable from player input must
 /// not ship** — so the limit is refused, loudly, rather than silently ignored
 /// or crashed into.
