@@ -137,12 +137,13 @@ enum Check {
 
 /// **The check × kind table** — which preliminary confirmations each kind gets.
 ///
-/// - **Status.** Activated and Play. A forced ability's collector arms decide
-///   for themselves: the round-end and game-end arms reach only Active
+/// - **Status.** Reaction, Activated and Play — an eliminated investigator
+///   initiates nothing (`glossary/Elimination.md`: *"The only manner in which
+///   eliminated investigators interact with the game is when establishing "per
+///   investigator" values"*). A forced ability's collector arms decide for
+///   themselves: the round-end and game-end arms reach only Active
 ///   investigators, while the elimination game-end collector deliberately
-///   reaches the investigator being eliminated. `TODO(#959)`: enforced on
-///   Reaction too, and the act/agenda reaction scan binds the first Active
-///   investigator.
+///   reaches the investigator being eliminated.
 /// - **Potential to change the game state, and eligibility.** Every kind. A
 ///   forced ability gets exactly these (`glossary/Ability.md`: *"If a forced
 ///   ability does not have the potential to change the game state, the ability
@@ -156,7 +157,7 @@ enum Check {
 const fn applies(check: Check, kind: InitiationKind) -> bool {
     use InitiationKind::{Activated, Forced, Play, Reaction};
     match check {
-        Check::Status => matches!(kind, Activated | Play),
+        Check::Status => matches!(kind, Reaction | Activated | Play),
         Check::StateChange | Check::Eligibility => true,
         Check::UsageLimit => matches!(kind, Reaction | Activated),
         Check::PlayBan => matches!(kind, Play),
