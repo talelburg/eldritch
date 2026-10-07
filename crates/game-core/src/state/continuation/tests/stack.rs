@@ -60,9 +60,9 @@ fn hand_size_discard() -> HandSizeDiscard {
 }
 
 fn mulligan() -> Continuation {
-    Continuation::Mulligan {
+    Continuation::Mulligan(MulliganFrame {
         remaining: vec![InvestigatorId(1)],
-    }
+    })
 }
 
 // --- Push-time checks -------------------------------------------------------
@@ -245,11 +245,11 @@ fn the_stack_is_at_rest_empty_or_with_a_prompt_on_top() {
 #[test]
 fn the_stack_is_not_at_rest_with_a_driven_or_inert_frame_on_top() {
     let mut driven = ContinuationStack::new();
-    driven.push(Continuation::PlayerDraw {
+    driven.push(Continuation::PlayerDraw(PlayerDrawFrame {
         investigator: InvestigatorId(1),
         chain_count: 0,
         surge_pending: false,
-    });
+    }));
     assert!(!driven.is_at_rest());
     let mut inert = ContinuationStack::new();
     inert.push(anchor());

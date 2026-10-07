@@ -205,7 +205,7 @@ fn out_of_range_make_room_pick_is_rejected_and_keeps_the_prompt() {
         r4.state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::SlotDiscard { .. })),
+            .any(|c| matches!(c, Continuation::SlotDiscard(_))),
         "the SlotDiscard prompt frame must persist after a rejected pick"
     );
 }

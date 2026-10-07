@@ -97,7 +97,7 @@ fn enemy_encounter_card_spawns_via_the_disposition_frame() {
             .state
             .continuations
             .iter()
-            .any(|c| matches!(c, Continuation::EncounterCard { .. })),
+            .any(|c| matches!(c, Continuation::EncounterCard(_))),
         "no EncounterCard frame remains after disposal",
     );
 }

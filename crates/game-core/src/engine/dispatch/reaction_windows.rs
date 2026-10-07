@@ -33,6 +33,7 @@ use crate::engine::outcome::{
 };
 use crate::engine::{abilities_in_effect, ability_source, designator, Cx};
 use crate::event::{Event, LapseReason};
+use crate::state::PlayFromHandFrame;
 use crate::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, Continuation,
     DamageSource, FastActorScope, FastWindowKind, GameState, InvestigatorId, Phase,
@@ -1263,7 +1264,7 @@ fn play_fast_event(cx: &mut Cx, candidate: &ResolutionCandidate) -> EngineOutcom
     // push its effect for the drive loop. On the effect's completion,
     // PlayFromHand disposal places the event in discard (RR Appendix I step 4)
     // and the window beneath resumes its candidate scan. (Slice D #423.)
-    cx.state.continuations.push(Continuation::PlayFromHand {
+    cx.state.continuations.push(PlayFromHandFrame {
         investigator: controller,
         card: Some(card),
     });

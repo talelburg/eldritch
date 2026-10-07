@@ -24,6 +24,7 @@ pub use card_dsl::card_data::{SkillKind, Skills};
 pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
 pub use counter::Counter;
 // `define_id!` is used by the id submodules; kept crate-internal.
+// Window and timing frame payloads (#929).
 pub use continuation::{
     AcknowledgeForcedFrame, EmitEventFrame, FastWindowFrame, TimingPointFrame,
     TimingPointWindowFrame,
@@ -37,6 +38,11 @@ pub use continuation::{
     MythosResume, PhaseStep, ResolutionCandidate, ResolvedTest, ScenarioEndDisposition,
     ScenarioEndStep, SkillTestFollowUp, SkillTestStep, SpawnEngagePending, TimingMode, TimingSub,
     UpkeepResume,
+};
+// Draw, encounter and play frame payloads (#931).
+pub use continuation::{
+    EncounterCardFrame, EncounterDrawFrame, MulliganFrame, PlayFromHandFrame, PlayerDrawFrame,
+    SlotDiscardFrame, SubstitutionPromptFrame,
 };
 pub(crate) use counter::define_id;
 pub use enemy::{Enemy, EnemyId};

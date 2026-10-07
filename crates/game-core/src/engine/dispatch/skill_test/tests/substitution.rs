@@ -44,7 +44,7 @@ fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
     };
     assert!(matches!(out, EngineOutcome::AwaitingInput { .. }), "prompt");
     assert!(
-        matches!(state.continuations.last(), Some(Continuation::SubstitutionPrompt { investigator }) if *investigator == inv)
+        matches!(state.continuations.last(), Some(Continuation::SubstitutionPrompt(SubstitutionPromptFrame { investigator })) if *investigator == inv)
     );
 
     let out = {
@@ -93,7 +93,7 @@ fn combat_test_with_substitution_prompts_then_becomes_intellect_on_yes() {
     );
     assert!(!matches!(
         state.continuations.last(),
-        Some(Continuation::SubstitutionPrompt { .. })
+        Some(Continuation::SubstitutionPrompt(_))
     ));
 }
 
@@ -128,7 +128,7 @@ fn substitution_prompt_keeps_the_test_on_its_frame() {
         "substitution prompt should suspend",
     );
     assert!(
-        matches!(state.continuations.last(), Some(Continuation::SubstitutionPrompt { investigator }) if *investigator == inv)
+        matches!(state.continuations.last(), Some(Continuation::SubstitutionPrompt(SubstitutionPromptFrame { investigator })) if *investigator == inv)
     );
     assert!(
         state.current_skill_test().is_some(),
@@ -242,7 +242,7 @@ fn resume_substitution_choice_parks_for_the_loop() {
     assert!(
         !matches!(
             state.continuations.last(),
-            Some(Continuation::SubstitutionPrompt { .. })
+            Some(Continuation::SubstitutionPrompt(_))
         ),
         "the SubstitutionPrompt was consumed",
     );
@@ -301,7 +301,7 @@ fn no_active_substitution_opens_commit_window_directly() {
     assert!(
         !matches!(
             state.continuations.last(),
-            Some(Continuation::SubstitutionPrompt { .. })
+            Some(Continuation::SubstitutionPrompt(_))
         ),
         "no prompt"
     );

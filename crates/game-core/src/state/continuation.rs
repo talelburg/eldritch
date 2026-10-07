@@ -263,98 +263,18 @@ pub enum Continuation {
     EmitEvent(EmitEventFrame),
     /// See [`TimingPointFrame`].
     TimingPoint(TimingPointFrame),
-    /// A skill test paused on its Mind-over-Matter "use X in place of Y?" prompt
-    /// at initiation (#322), migrated off the former
-    /// `GameState::pending_substitution_prompt` field (#348). Pushed *above* the
-    /// `SkillTest` frame, so top-frame dispatch routes it before the commit
-    /// window; resumed by [`resume_substitution_choice`](crate::engine).
-    SubstitutionPrompt {
-        /// The investigator taking the test.
-        investigator: InvestigatorId,
-    },
-    /// The setup mulligan loop (Rules Reference p.27), migrated off the former
-    /// `GameState::mulligan_pending` cursor field (#348). `remaining[0]` is the
-    /// investigator currently prompted to mulligan; the queue is the Active
-    /// investigators in [`turn_order`](crate::state::game_state::GameState::turn_order). Pushed by
-    /// `start_scenario`, advanced by `resume_mulligan` as each investigator
-    /// submits their `PickMultiple` redraw indices, popped when drained — at
-    /// which point setup ends and the Investigation phase begins. While present,
-    /// the engine rejects every non-`ResolveInput` action. Read the prompted
-    /// investigator via [`GameState::current_mulligan`](crate::state::game_state::GameState::current_mulligan).
-    Mulligan {
-        /// Active investigators yet to mulligan, in player order; front =
-        /// currently prompted.
-        remaining: Vec<InvestigatorId>,
-    },
-    /// The Mythos step-1.4 encounter-draw loop (Rules Reference p.24), migrated
-    /// off the former `GameState::mythos_draw_pending` cursor field (#348).
-    /// `remaining[0]` is the investigator currently prompted to draw; the queue
-    /// is the Active investigators in [`turn_order`](crate::state::game_state::GameState::turn_order).
-    /// Pushed by `mythos_phase`, advanced by `resume_encounter_draw` as each
-    /// investigator confirms (pushing a [`PlayerDraw`](Continuation::PlayerDraw)
-    /// frame that owns that drawer's surge chain), popped when drained — at which
-    /// point the post-1.4 `MythosAfterDraws` window opens. While present, the
-    /// engine rejects every non-`ResolveInput` action. Read the prompted drawer
-    /// via [`GameState::current_encounter_drawer`](crate::state::game_state::GameState::current_encounter_drawer).
-    EncounterDraw {
-        /// Active investigators yet to draw, in player order; front =
-        /// currently prompted.
-        remaining: Vec<InvestigatorId>,
-    },
-    /// One drawer's Mythos surge chain (#423 / callsite-migration). Pushed by
-    /// [`EncounterDraw`](Continuation::EncounterDraw)'s `Confirm` for the current
-    /// drawer (above the loop frame); owns the surge cap budget across input
-    /// round-trips. The `drive` loop's `PlayerDraw` arm drives it: on the first
-    /// step (`chain_count == 0`) or when `surge_pending`, it draws the next card
-    /// — bumping `chain_count`, enforcing [`MAX_SURGE_CHAIN`](crate::engine), and
-    /// pushing an [`EncounterCard`](Continuation::EncounterCard) frame whose
-    /// disposal exposes this one again; otherwise it pops itself and advances the
-    /// loop to the next drawer. A mid-chain spawn-engagement tie pushes a
-    /// [`SpawnEngage`](Continuation::SpawnEngage) frame *above* this one. Never
-    /// awaits input itself (mirrors `EncounterCard`).
-    PlayerDraw {
-        /// Whose surge chain this is (the current `EncounterDraw` drawer).
-        investigator: InvestigatorId,
-        /// Cards drawn so far in this chain. `0` means "haven't drawn the first
-        /// card yet"; bumped per draw and capped at
-        /// [`MAX_SURGE_CHAIN`](crate::engine).
-        chain_count: usize,
-        /// Whether the last-drawn card carried `surge` — i.e. whether the next
-        /// drive step draws another card. `false` on the first step (no card
-        /// drawn yet; `chain_count == 0` triggers the first draw instead).
-        surge_pending: bool,
-    },
-    /// A drawn encounter card whose Revelation is mid-resolution (#380), tagged
-    /// with how the framework disposes of it once the Revelation's whole
-    /// sub-resolution completes (#423). Pushed by `resolve_encounter_card`
-    /// *before* it runs the Revelation; sits beneath any suspension the
-    /// Revelation opens (a skill test, a choice, a nested effect). When that
-    /// sub-resolution completes and this frame is top again, the **framework**
-    /// disposes of the card per its [`EncounterDisposition`] and pops:
-    /// a treachery (`Discard`) goes to `encounter_discard` (or — if persistent —
-    /// is skipped, having placed itself during its Revelation); an enemy
-    /// (`Spawn`) is minted into play. Suspension-reason-agnostic. Never emits
-    /// `AwaitingInput`.
-    EncounterCard {
-        /// The drawn card's code, disposed of at teardown.
-        card: CardCode,
-        /// How the framework disposes of the card once its Revelation resolves.
-        disposition: EncounterDisposition,
-    },
-    /// A card being played from hand, mid-resolution (Slice D #423). Pushed
-    /// **below** the card's pushed `OnPlay`/`OnEvent` effect; when that effect
-    /// pops, the drive loop's `PlayFromHand` arm runs `dispose_play_from_hand`
-    /// (event → discard the held card; asset → enter play, emit `EnteredPlay`).
-    /// Single-shot: `dispose_play_from_hand` pops the frame before emitting
-    /// `EnteredPlay`, so the loop opens any after-enters-play window itself.
-    /// Framework-internal: [Driven](FrameActivity::Driven), so it never awaits
-    /// input, as for `EncounterCard`.
-    PlayFromHand {
-        /// The playing investigator.
-        investigator: InvestigatorId,
-        /// The card mid-play — see [`Continuation::play_in_progress`].
-        card: Option<CardCode>,
-    },
+    /// See [`SubstitutionPromptFrame`].
+    SubstitutionPrompt(SubstitutionPromptFrame),
+    /// See [`MulliganFrame`].
+    Mulligan(MulliganFrame),
+    /// See [`EncounterDrawFrame`].
+    EncounterDraw(EncounterDrawFrame),
+    /// See [`PlayerDrawFrame`].
+    PlayerDraw(PlayerDrawFrame),
+    /// See [`EncounterCardFrame`].
+    EncounterCard(EncounterCardFrame),
+    /// See [`PlayFromHandFrame`].
+    PlayFromHand(PlayFromHandFrame),
     /// The entered-location half of a Move, parked beneath the whole
     /// `LeftLocation` sequence (#569). Pushed by `move_primary_effect`
     /// immediately before it emits `LeftLocation` — and since #721 that emit
@@ -377,30 +297,8 @@ pub enum Continuation {
         /// The location they entered.
         destination: LocationId,
     },
-    /// A slot-conflicting asset play paused for the player to choose which
-    /// occupying asset to discard to make room (RR p.19, #498). Pushed by
-    /// `slots::enter_asset_making_room` when 2+ co-controlled assets occupy a
-    /// slot type the new asset needs; the asset stays mid-play, riding this
-    /// frame until the deficit is cleared, then enters play. Resumed by
-    /// `slots::resume_slot_discard` via a `PickSingle(OptionId)` indexing the
-    /// candidate list. A [Prompt](FrameActivity::Prompt); not a phase anchor.
-    SlotDiscard {
-        /// The investigator playing the asset, or taking control of it.
-        investigator: InvestigatorId,
-        /// The asset mid-entry — see [`Continuation::play_in_progress`].
-        ///
-        /// A whole [`CardInPlay`] rather than a bare code (#772): the frame's
-        /// job is to hold the card that is in no zone (ADR 0002), and the
-        /// instance serves that strictly better than the code once
-        /// [`TakeControl`](card_dsl::dsl::Effect::TakeControl) can be what put it
-        /// there. Lita Chantler 01117 arrives here mid-Parley carrying her
-        /// accumulated damage and horror, her uses and her usage counters, and
-        /// a code would drop all four.
-        card: Option<CardInPlay>,
-        /// Why the asset is entering the play area — which decides whether it
-        /// is announced as *entering play* once the deficit clears.
-        entry: AssetEntry,
-    },
+    /// See [`SlotDiscardFrame`].
+    SlotDiscard(SlotDiscardFrame),
     /// The Mythos phase anchor (slice 1a, #393). Pushed at Mythos entry; sits
     /// beneath the phase's framework windows. On a child window's close the
     /// framework routes to the anchor's `on_child_pop` (keyed by `resume`).
@@ -635,6 +533,13 @@ impl_frame!(TimingPoint, TimingPointFrame);
 // Phase, turn and action frames (#930).
 
 // Draw, encounter and play frames (#931).
+impl_frame!(SubstitutionPrompt, SubstitutionPromptFrame);
+impl_frame!(Mulligan, MulliganFrame);
+impl_frame!(EncounterDraw, EncounterDrawFrame);
+impl_frame!(PlayerDraw, PlayerDrawFrame);
+impl_frame!(EncounterCard, EncounterCardFrame);
+impl_frame!(PlayFromHand, PlayFromHandFrame);
+impl_frame!(SlotDiscard, SlotDiscardFrame);
 
 // Combat, damage and resolution frames (#932).
 
@@ -895,11 +800,11 @@ impl Continuation {
             Continuation::AdvanceReverse { .. }
             | Continuation::AcknowledgeForced(_)
             | Continuation::SkillTest(_)
-            | Continuation::SubstitutionPrompt { .. }
+            | Continuation::SubstitutionPrompt(_)
             | Continuation::Effect(_)
             // Holds the asset mid-entry, in no zone (ADR 0002): discarding the
             // frame would leak the card out of every zone.
-            | Continuation::SlotDiscard { .. } => (Prompt, Complete),
+            | Continuation::SlotDiscard(_) => (Prompt, Complete),
             // A deal of damage is the per-point prompt while distributing a
             // contested point (#44/K5b); its other steps are sequencing the loop
             // dispatches on sight. Under way either way: half of it is the
@@ -927,8 +832,8 @@ impl Continuation {
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
             | Continuation::HandSizeDiscard(_)
-            | Continuation::Mulligan { .. }
-            | Continuation::EncounterDraw { .. } => (Prompt, Cancel),
+            | Continuation::Mulligan(_)
+            | Continuation::EncounterDraw(_) => (Prompt, Cancel),
             // The open turn surfaces its legal-action menu (2b, #447); once
             // `ending`, it is the rotation tail the loop drives after a
             // suspending `EndOfTurn` forced resolved.
@@ -947,7 +852,7 @@ impl Continuation {
             ),
             // A surge chain is framework sequence; any prompt it opens (a
             // spawn-engagement tie) sits above it.
-            Continuation::PlayerDraw { .. } => (Driven, Cancel),
+            Continuation::PlayerDraw(_) => (Driven, Cancel),
             // Internal sequencing that pushes the prompt above itself rather
             // than being it: the `when → at → after` coordinators, and the
             // frames awaiting the framework's disposal of a card in no zone (ADR
@@ -955,8 +860,8 @@ impl Continuation {
             // resolving it is harder to reason about than completing it).
             Continuation::EmitEvent(_)
             | Continuation::TimingPoint(_)
-            | Continuation::EncounterCard { .. }
-            | Continuation::PlayFromHand { .. }
+            | Continuation::EncounterCard(_)
+            | Continuation::PlayFromHand(_)
             | Continuation::MoveEnter { .. }
             | Continuation::ActionResolution { .. }
             // An elimination under way: the acknowledge its step-0 emit queues
@@ -1051,14 +956,14 @@ impl Continuation {
                 investigator,
                 resume: ActionResume::PlayCard { card },
             }
-            | Continuation::PlayFromHand { investigator, card } => {
+            | Continuation::PlayFromHand(PlayFromHandFrame { investigator, card }) => {
                 card.as_ref().map(|c| (*investigator, c))
             }
             // Same role, different payload: this frame holds the whole instance
             // (#772), so the code is read off it.
-            Continuation::SlotDiscard {
+            Continuation::SlotDiscard(SlotDiscardFrame {
                 investigator, card, ..
-            } => card.as_ref().map(|c| (*investigator, &c.code)),
+            }) => card.as_ref().map(|c| (*investigator, &c.code)),
             _ => None,
         }
     }
@@ -1099,15 +1004,15 @@ impl Continuation {
                 investigator: owner,
                 resume: ActionResume::PlayCard { card },
             }
-            | Continuation::PlayFromHand {
+            | Continuation::PlayFromHand(PlayFromHandFrame {
                 investigator: owner,
                 card,
-            } if *owner == investigator => card.take().map(|code| (code, Some(investigator))),
-            Continuation::SlotDiscard {
+            }) if *owner == investigator => card.take().map(|code| (code, Some(investigator))),
+            Continuation::SlotDiscard(SlotDiscardFrame {
                 investigator: owner,
                 card,
                 ..
-            } if *owner == investigator => card.take().map(|c| (c.code, c.owner)),
+            }) if *owner == investigator => card.take().map(|c| (c.code, c.owner)),
             _ => None,
         }
     }
@@ -2261,6 +2166,138 @@ pub struct TimingPointFrame {
     pub bucket: EventTiming,
     /// The forced-then-reaction sub-cursor.
     pub sub: TimingSub,
+}
+
+// --- Draw, encounter and play frame payloads (#931) ---
+
+/// A skill test paused on its Mind-over-Matter "use X in place of Y?" prompt
+/// at initiation (#322), migrated off the former
+/// `GameState::pending_substitution_prompt` field (#348). Pushed *above* the
+/// `SkillTest` frame, so top-frame dispatch routes it before the commit
+/// window; resumed by [`resume_substitution_choice`](crate::engine).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubstitutionPromptFrame {
+    /// The investigator taking the test.
+    pub investigator: InvestigatorId,
+}
+
+/// The setup mulligan loop (Rules Reference p.27), migrated off the former
+/// `GameState::mulligan_pending` cursor field (#348). `remaining[0]` is the
+/// investigator currently prompted to mulligan; the queue is the Active
+/// investigators in [`turn_order`](crate::state::game_state::GameState::turn_order). Pushed by
+/// `start_scenario`, advanced by `resume_mulligan` as each investigator
+/// submits their `PickMultiple` redraw indices, popped when drained — at
+/// which point setup ends and the Investigation phase begins. While present,
+/// the engine rejects every non-`ResolveInput` action. Read the prompted
+/// investigator via [`GameState::current_mulligan`](crate::state::game_state::GameState::current_mulligan).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MulliganFrame {
+    /// Active investigators yet to mulligan, in player order; front =
+    /// currently prompted.
+    pub remaining: Vec<InvestigatorId>,
+}
+
+/// The Mythos step-1.4 encounter-draw loop (Rules Reference p.24), migrated
+/// off the former `GameState::mythos_draw_pending` cursor field (#348).
+/// `remaining[0]` is the investigator currently prompted to draw; the queue
+/// is the Active investigators in [`turn_order`](crate::state::game_state::GameState::turn_order).
+/// Pushed by `mythos_phase`, advanced by `resume_encounter_draw` as each
+/// investigator confirms (pushing a [`PlayerDraw`](Continuation::PlayerDraw)
+/// frame that owns that drawer's surge chain), popped when drained — at which
+/// point the post-1.4 `MythosAfterDraws` window opens. While present, the
+/// engine rejects every non-`ResolveInput` action. Read the prompted drawer
+/// via [`GameState::current_encounter_drawer`](crate::state::game_state::GameState::current_encounter_drawer).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EncounterDrawFrame {
+    /// Active investigators yet to draw, in player order; front =
+    /// currently prompted.
+    pub remaining: Vec<InvestigatorId>,
+}
+
+/// One drawer's Mythos surge chain (#423 / callsite-migration). Pushed by
+/// [`EncounterDraw`](Continuation::EncounterDraw)'s `Confirm` for the current
+/// drawer (above the loop frame); owns the surge cap budget across input
+/// round-trips. The `drive` loop's `PlayerDraw` arm drives it: on the first
+/// step (`chain_count == 0`) or when `surge_pending`, it draws the next card
+/// — bumping `chain_count`, enforcing [`MAX_SURGE_CHAIN`](crate::engine), and
+/// pushing an [`EncounterCard`](Continuation::EncounterCard) frame whose
+/// disposal exposes this one again; otherwise it pops itself and advances the
+/// loop to the next drawer. A mid-chain spawn-engagement tie pushes a
+/// [`SpawnEngage`](Continuation::SpawnEngage) frame *above* this one. Never
+/// awaits input itself (mirrors `EncounterCard`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlayerDrawFrame {
+    /// Whose surge chain this is (the current `EncounterDraw` drawer).
+    pub investigator: InvestigatorId,
+    /// Cards drawn so far in this chain. `0` means "haven't drawn the first
+    /// card yet"; bumped per draw and capped at
+    /// [`MAX_SURGE_CHAIN`](crate::engine).
+    pub chain_count: usize,
+    /// Whether the last-drawn card carried `surge` — i.e. whether the next
+    /// drive step draws another card. `false` on the first step (no card
+    /// drawn yet; `chain_count == 0` triggers the first draw instead).
+    pub surge_pending: bool,
+}
+
+/// A drawn encounter card whose Revelation is mid-resolution (#380), tagged
+/// with how the framework disposes of it once the Revelation's whole
+/// sub-resolution completes (#423). Pushed by `resolve_encounter_card`
+/// *before* it runs the Revelation; sits beneath any suspension the
+/// Revelation opens (a skill test, a choice, a nested effect). When that
+/// sub-resolution completes and this frame is top again, the **framework**
+/// disposes of the card per its [`EncounterDisposition`] and pops:
+/// a treachery (`Discard`) goes to `encounter_discard` (or — if persistent —
+/// is skipped, having placed itself during its Revelation); an enemy
+/// (`Spawn`) is minted into play. Suspension-reason-agnostic. Never emits
+/// `AwaitingInput`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EncounterCardFrame {
+    /// The drawn card's code, disposed of at teardown.
+    pub card: CardCode,
+    /// How the framework disposes of the card once its Revelation resolves.
+    pub disposition: EncounterDisposition,
+}
+
+/// A card being played from hand, mid-resolution (Slice D #423). Pushed
+/// **below** the card's pushed `OnPlay`/`OnEvent` effect; when that effect
+/// pops, the drive loop's `PlayFromHand` arm runs `dispose_play_from_hand`
+/// (event → discard the held card; asset → enter play, emit `EnteredPlay`).
+/// Single-shot: `dispose_play_from_hand` pops the frame before emitting
+/// `EnteredPlay`, so the loop opens any after-enters-play window itself.
+/// Framework-internal: [Driven](FrameActivity::Driven), so it never awaits
+/// input, as for `EncounterCard`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlayFromHandFrame {
+    /// The playing investigator.
+    pub investigator: InvestigatorId,
+    /// The card mid-play — see [`Continuation::play_in_progress`].
+    pub card: Option<CardCode>,
+}
+
+/// A slot-conflicting asset play paused for the player to choose which
+/// occupying asset to discard to make room (RR p.19, #498). Pushed by
+/// `slots::enter_asset_making_room` when 2+ co-controlled assets occupy a
+/// slot type the new asset needs; the asset stays mid-play, riding this
+/// frame until the deficit is cleared, then enters play. Resumed by
+/// `slots::resume_slot_discard` via a `PickSingle(OptionId)` indexing the
+/// candidate list. A [Prompt](FrameActivity::Prompt); not a phase anchor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlotDiscardFrame {
+    /// The investigator playing the asset, or taking control of it.
+    pub investigator: InvestigatorId,
+    /// The asset mid-entry — see [`Continuation::play_in_progress`].
+    ///
+    /// A whole [`CardInPlay`] rather than a bare code (#772): the frame's
+    /// job is to hold the card that is in no zone (ADR 0002), and the
+    /// instance serves that strictly better than the code once
+    /// [`TakeControl`](card_dsl::dsl::Effect::TakeControl) can be what put it
+    /// there. Lita Chantler 01117 arrives here mid-Parley carrying her
+    /// accumulated damage and horror, her uses and her usage counters, and
+    /// a code would drop all four.
+    pub card: Option<CardInPlay>,
+    /// Why the asset is entering the play area — which decides whether it
+    /// is announced as *entering play* once the deficit clears.
+    pub entry: AssetEntry,
 }
 
 #[cfg(test)]
