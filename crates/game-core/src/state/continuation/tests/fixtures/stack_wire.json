@@ -1,0 +1,364 @@
+[
+  {
+    "TimingPointWindow": {
+      "event": "RoundEnded",
+      "bucket": "After",
+      "mode": "Reaction",
+      "candidates": []
+    }
+  },
+  {
+    "TimingPointWindow": {
+      "event": "RoundEnded",
+      "bucket": "After",
+      "mode": "Reaction",
+      "candidates": [
+        {
+          "code": "01022",
+          "controller": 1,
+          "address": {
+            "Printed": 0
+          },
+          "source": "Hand"
+        }
+      ]
+    }
+  },
+  {
+    "TimingPointWindow": {
+      "event": "RoundEnded",
+      "bucket": "When",
+      "mode": "Forced",
+      "candidates": [
+        {
+          "code": "01022",
+          "controller": 1,
+          "address": {
+            "Printed": 0
+          },
+          "source": "Hand"
+        },
+        {
+          "code": "01022",
+          "controller": 1,
+          "address": {
+            "Printed": 0
+          },
+          "source": "Hand"
+        }
+      ]
+    }
+  },
+  {
+    "FastWindow": {
+      "candidates": [],
+      "fast_actors": "Any",
+      "kind": {
+        "Phase": "MythosAfterDraws"
+      }
+    }
+  },
+  {
+    "FastWindow": {
+      "candidates": [
+        {
+          "code": "01022",
+          "controller": 1,
+          "address": {
+            "Printed": 0
+          },
+          "source": "Hand"
+        }
+      ],
+      "fast_actors": "Any",
+      "kind": {
+        "Phase": "MythosAfterDraws"
+      }
+    }
+  },
+  {
+    "AdvanceReverse": {
+      "deck": "Agenda",
+      "from": 0,
+      "leaving_code": "01105",
+      "step": "AwaitAck",
+      "trigger": "Forced"
+    }
+  },
+  {
+    "AcknowledgeForced": {
+      "candidate": {
+        "code": "01022",
+        "controller": 1,
+        "address": {
+          "Printed": 0
+        },
+        "source": "Hand"
+      }
+    }
+  },
+  {
+    "SkillTest": {
+      "id": 0,
+      "investigator": 1,
+      "skill": "Willpower",
+      "kind": "Plain",
+      "difficulty_basis": {
+        "Fixed": 3
+      },
+      "committed_by_active": [],
+      "tested_location": null,
+      "follow_up": "None",
+      "on_fail": null,
+      "on_success": null,
+      "source": null,
+      "continuation": "AwaitingCommit",
+      "bonus_attack_damage": 0,
+      "bonus_clues_discovered": 0,
+      "resolved": null,
+      "symbol_on_fail": null
+    }
+  },
+  {
+    "SubstitutionPrompt": {
+      "investigator": 1
+    }
+  },
+  {
+    "SlotDiscard": {
+      "investigator": 1,
+      "card": null,
+      "entry": "PlayedFromHand"
+    }
+  },
+  {
+    "Effect": {
+      "Leaf": {
+        "effect": {
+          "Seq": []
+        },
+        "ctx": {
+          "controller": 1,
+          "skill_test": null,
+          "discovery": null,
+          "enemy_attack": null,
+          "choice": null,
+          "ability_source": null
+        }
+      }
+    }
+  },
+  {
+    "Effect": {
+      "Seq": {
+        "effects": [],
+        "next": 0,
+        "ctx": {
+          "controller": 1,
+          "skill_test": null,
+          "discovery": null,
+          "enemy_attack": null,
+          "choice": null,
+          "ability_source": null
+        }
+      }
+    }
+  },
+  {
+    "DealDamage": {
+      "investigator": 1,
+      "source": "Effect",
+      "assignment": {
+        "investigator_damage": 0,
+        "investigator_horror": 0,
+        "asset_damage": {},
+        "asset_horror": {}
+      },
+      "step": {
+        "Distribute": {
+          "remaining_damage": 0,
+          "remaining_horror": 1
+        }
+      }
+    }
+  },
+  {
+    "HunterMove": {
+      "Move": {
+        "enemy": 3,
+        "candidates": [
+          2,
+          3
+        ]
+      }
+    }
+  },
+  {
+    "SpawnEngage": {
+      "enemy": 2,
+      "candidates": [
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "HandSizeDiscard": {
+      "remaining": [
+        1
+      ]
+    }
+  },
+  {
+    "Mulligan": {
+      "remaining": [
+        1
+      ]
+    }
+  },
+  {
+    "EncounterDraw": {
+      "remaining": [
+        1
+      ]
+    }
+  },
+  {
+    "InvestigatorTurn": {
+      "investigator": 1,
+      "ending": false
+    }
+  },
+  {
+    "AttackLoop": {
+      "investigator": 1,
+      "remaining_attackers": [
+        2,
+        3
+      ],
+      "source": "EnemyPhase",
+      "stage": "PickOrder"
+    }
+  },
+  {
+    "InvestigatorTurn": {
+      "investigator": 1,
+      "ending": true
+    }
+  },
+  {
+    "AttackLoop": {
+      "investigator": 1,
+      "remaining_attackers": [
+        2,
+        3
+      ],
+      "source": "EnemyPhase",
+      "stage": "Attacking"
+    }
+  },
+  {
+    "PlayerDraw": {
+      "investigator": 1,
+      "chain_count": 1,
+      "surge_pending": true
+    }
+  },
+  {
+    "EmitEvent": {
+      "event": "RoundEnded",
+      "step": "After"
+    }
+  },
+  {
+    "TimingPoint": {
+      "event": "RoundEnded",
+      "bucket": "After",
+      "sub": "Reaction"
+    }
+  },
+  {
+    "EncounterCard": {
+      "card": "01116",
+      "disposition": {
+        "Spawn": {
+          "investigator": 1
+        }
+      }
+    }
+  },
+  {
+    "PlayFromHand": {
+      "investigator": 1,
+      "card": null
+    }
+  },
+  {
+    "MoveEnter": {
+      "investigator": 1,
+      "destination": 2
+    }
+  },
+  {
+    "ActionResolution": {
+      "investigator": 1,
+      "resume": "Resource"
+    }
+  },
+  {
+    "DealDamage": {
+      "investigator": 1,
+      "source": "Effect",
+      "assignment": {
+        "investigator_damage": 0,
+        "investigator_horror": 0,
+        "asset_damage": {},
+        "asset_horror": {}
+      },
+      "step": "Place"
+    }
+  },
+  {
+    "Elimination": {
+      "investigator": 1,
+      "step": "FireWeaknessGameEnd"
+    }
+  },
+  {
+    "Elimination": {
+      "investigator": 1,
+      "step": "RunSteps"
+    }
+  },
+  {
+    "ScenarioEnd": {
+      "step": "EmitGameEnd"
+    }
+  },
+  {
+    "ScenarioEnd": {
+      "step": "Finalize"
+    }
+  },
+  {
+    "MythosPhase": {
+      "resume": "Entry"
+    }
+  },
+  {
+    "InvestigationPhase": {
+      "resume": "TurnBegins"
+    }
+  },
+  {
+    "EnemyPhase": {
+      "resume": "BeforeInvestigatorAttacked",
+      "attacking": null
+    }
+  },
+  {
+    "UpkeepPhase": {
+      "resume": "Begins"
+    }
+  }
+]

@@ -234,12 +234,14 @@ fn a_reaction_window_cancels_and_its_forced_run_twin_completes() {
 
 /// One row per variant (and per value-level split), so each profile is pinned
 /// here as well as decided by the exhaustive match in `profile`.
+///
+/// Shared with the stack's wire-format test (`stack.rs`), whose fixture is
+/// these frames serialised in the pre-#928 format.
 // One flat table reads better than splitting it by role across functions.
 #[allow(clippy::too_many_lines)]
-#[test]
-fn every_frame_has_the_profile_its_role_requires() {
+pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
     let ctx = EvalContext::for_controller(InvestigatorId(1));
-    let rows: Vec<(Continuation, FrameProfile)> = vec![
+    vec![
         // Windows.
         (timing_point_window(Vec::new()), profile(DRIVEN, CANCEL)),
         (
@@ -474,8 +476,12 @@ fn every_frame_has_the_profile_its_role_requires() {
             },
             profile(INERT, CANCEL),
         ),
-    ];
-    for (frame, expected) in rows {
+    ]
+}
+
+#[test]
+fn every_frame_has_the_profile_its_role_requires() {
+    for (frame, expected) in every_variant_rows() {
         assert_eq!(frame.profile(), expected, "{frame:?}");
     }
 }
