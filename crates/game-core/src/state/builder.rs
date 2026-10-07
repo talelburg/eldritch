@@ -20,6 +20,8 @@
 //! let state = GameStateBuilder::new()
 //!     .with_phase(Phase::Investigation)
 //!     .with_investigator(test_support::test_investigator(1))
+//!     .with_investigator(test_support::test_investigator(2))
+//!     .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
 //!     .with_location(test_support::test_location(10, "Study"))
 //!     .with_active_investigator(InvestigatorId(1))
 //!     // A state constructed mid-phase needs its phase anchor (slice 1a).

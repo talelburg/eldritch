@@ -73,6 +73,7 @@ fn fast_asset_playable_by_owner_during_permissive_window() {
     a.hand.push(CardCode::new("01030")); // Magnifying Glass — Fast.
     let state = GameStateBuilder::new()
         .with_investigator(a)
+        .with_turn_order([InvestigatorId(1)])
         .with_phase(Phase::Mythos)
         .with_active_investigator(InvestigatorId(1))
         .with_phase_anchor(Continuation::MythosPhase {
@@ -233,6 +234,7 @@ fn board_with_beat_cop(open_window: bool) -> GameState {
     let mut builder = GameStateBuilder::new()
         .with_investigator(a)
         .with_investigator(b)
+        .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
         .with_location(test_support::test_location(101, "Study"))
         .with_enemy(enemy)
         .with_phase(Phase::Mythos)
