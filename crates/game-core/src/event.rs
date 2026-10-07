@@ -707,17 +707,18 @@ pub enum FailureReason {
 ///
 /// **Attribution, not adjudication.** The decision to withdraw the option is
 /// made by re-running the reaction scan and seeing that it no longer produces
-/// the candidate; these variants are a second, cheaper pass over the withdrawn
-/// candidate alone, run only to label the event. A mislabel is a cosmetic bug in
-/// the client log, never a rules error — which is why the residual case
-/// ([`NoLongerEligible`](Self::NoLongerEligible)) can be reported without
-/// naming a specific gate.
+/// the candidate. The label is then read from the initiation gate's refusal
+/// for that candidate alone (ADR 0017), so it names the check that failed
+/// rather than guessing at one. A candidate the gate still passes fell out of
+/// the scan's own scoping instead ([`OutOfScope`](Self::OutOfScope)).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum LapseReason {
     /// The card is no longer where the scan found it — played out of hand by a
     /// sibling option, discarded, left play, or (for an act/agenda reaction) no
-    /// longer the current act/agenda.
+    /// longer the current act/agenda. Also the label when the card is still
+    /// there but the ability is not: its side turned over, or the grant it held
+    /// has lapsed.
     SourceGone,
     /// The play cost can no longer be paid in full (Rules Reference p.22): a
     /// sibling option spent the resources. The wallet is shared, so two copies
@@ -733,16 +734,31 @@ pub enum LapseReason {
     /// resolving by a sibling `when`-cell ability, so the rest of its sequence
     /// is suppressed (#714 — Dodge 01023's ruling, quoted at the read site,
     /// `engine::dispatch::coordinator::prevented_in_the_when_cell`). Unlike the
-    /// three probes above, this candidate is not withdrawn by a re-scan — it is
+    /// other reasons, this candidate is not withdrawn by a re-scan — it is
     /// still perfectly initiable; the condition it references is simply no
     /// longer happening.
     ConditionPrevented,
-    /// The residual: the candidate no longer survives the scan, but none of the
-    /// three named probes explains it. Reachable through the window's own
-    /// scoping (a before-attack window admits only reactors co-located with the
-    /// attacked investigator, so a reaction that moved someone can withdraw a
-    /// sibling) or a per-round usage limit reached in the meantime.
+    /// The ability's eligibility condition no longer holds — the condition a
+    /// card prints beside an effect the engine cannot introspect (Cover Up
+    /// 01007's *"if there are any clues on Cover Up"*).
     NoLongerEligible,
+    /// The ability has been initiated as many times as its printed limit allows
+    /// this period (`glossary/Limits_and_Maximums.md`) — Roland Banks 01001's
+    /// *"(Limit once per round.)"* used up in the meantime.
+    UsageLimitReached,
+    /// The option's controller is no longer an Active investigator: they were
+    /// eliminated while the window was open, and an eliminated investigator
+    /// initiates nothing (`glossary/Elimination.md`).
+    NotActive,
+    /// A constant "cannot play" now forbids the controller this card's type —
+    /// Dissonant Voices 01165's *"You cannot play assets or events."* arrived
+    /// after a Fast event was offered.
+    PlayBanned,
+    /// The option could still be initiated, but no longer belongs to this
+    /// window: the scan's own scoping excludes it. A before-attack window
+    /// admits only reactors at the attacked investigator's location, so an
+    /// investigator who has moved away from it falls out of scope.
+    OutOfScope,
 }
 
 #[cfg(test)]

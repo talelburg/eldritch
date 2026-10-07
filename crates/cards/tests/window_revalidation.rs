@@ -29,11 +29,12 @@
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, OptionId};
+use game_core::engine::{self, EngineOutcome, OptionId, TimingEvent};
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, Investigator, InvestigatorId, LocationId, TokenModifiers,
+    GameStateBuilder, Investigator, InvestigatorId, LocationId, ResolutionCandidate, Status,
+    TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -378,4 +379,85 @@ fn a_lone_evidence_still_opens_and_resolves_its_window() {
         Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id
     );
     assert_eq!(result.state.locations[&loc_id].clues, 1);
+}
+
+/// Roland Banks seated, solo, at a 1-clue Study, with the after-defeat window
+/// for an enemy he defeated open and offering his reaction. Returns the
+/// settled state and the offered candidate.
+fn rolands_window_open() -> (GameState, ResolutionCandidate) {
+    let inv_id = InvestigatorId(1);
+    let mut roland = test_support::test_investigator(1);
+    roland.investigator_card.code = CardCode::new(ROLAND);
+    roland.current_location = Some(LocationId(10));
+    let mut study = test_support::test_location(10, "Study");
+    study.clues = 1;
+    let state = GameStateBuilder::new()
+        .with_investigator(roland)
+        .with_location(study)
+        .open_turn(inv_id)
+        .build();
+    let opened = TestSession::new(state).fire_at(TimingEvent::EnemyDefeated {
+        enemy: EnemyId(100),
+        by: Some(inv_id),
+        code: CardCode::new("01160"),
+    });
+    let offered = opened
+        .state()
+        .top_window()
+        .and_then(|w| w.pending_candidates())
+        .cloned()
+        .unwrap_or_default();
+    let [candidate] = offered.as_slice() else {
+        panic!("the window offers Roland's reaction alone: {offered:?}");
+    };
+    (opened.state().clone(), candidate.clone())
+}
+
+/// Roland's reaction is *"(Limit once per round.)"*
+/// (`glossary/Limits_and_Maximums.md`). If the limit is used up between the
+/// offer and the pick, the option lapses, and the log says the limit is why.
+#[test]
+fn rolands_reaction_lapses_as_usage_limit_reached_once_its_limit_is_used() {
+    let (mut state, candidate) = rolands_window_open();
+    let round = state.round;
+    let index = candidate
+        .address
+        .printed_index()
+        .expect("Roland's reaction is printed on his card");
+    state
+        .investigators
+        .get_mut(&candidate.controller)
+        .expect("seated")
+        .investigator_card
+        .bump_ability_usage(index, round);
+
+    let resurfaced = TestSession::new(state);
+
+    assert_event!(
+        resurfaced.events(),
+        Event::ReactionOptionLapsed { code, reason: LapseReason::UsageLimitReached, investigator }
+            if code.as_str() == ROLAND && *investigator == candidate.controller
+    );
+    assert_no_event!(resurfaced.events(), Event::CluePlaced { .. });
+}
+
+/// An investigator eliminated while a window is open initiates nothing
+/// (`glossary/Elimination.md`), so his offered reaction lapses as not Active.
+#[test]
+fn rolands_reaction_lapses_as_not_active_once_he_is_eliminated() {
+    let (mut state, candidate) = rolands_window_open();
+    state
+        .investigators
+        .get_mut(&candidate.controller)
+        .expect("seated")
+        .status = Status::Defeated;
+
+    let resurfaced = TestSession::new(state);
+
+    assert_event!(
+        resurfaced.events(),
+        Event::ReactionOptionLapsed { code, reason: LapseReason::NotActive, investigator }
+            if code.as_str() == ROLAND && *investigator == candidate.controller
+    );
+    assert_no_event!(resurfaced.events(), Event::CluePlaced { .. });
 }

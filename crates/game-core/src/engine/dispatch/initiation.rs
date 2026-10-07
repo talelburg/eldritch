@@ -380,31 +380,6 @@ fn performs_an_action(ability: &Ability) -> bool {
     )
 }
 
-/// Whether `ability` may initiate on its change-state and eligibility checks
-/// alone, for `lapse_reason`, which asks about an ability it already holds
-/// rather than about an address.
-///
-/// Transitional: `TODO(#960)` moves `lapse_reason` onto [`check`], and this
-/// goes with it.
-pub(super) fn ability_can_initiate(
-    state: &GameState,
-    ability: &Ability,
-    source: CandidateSource,
-    controller: InvestigatorId,
-) -> bool {
-    card_registry::current().is_some_and(|reg| {
-        restrictions_met(
-            state,
-            reg,
-            ability,
-            source,
-            controller,
-            InitiationKind::Reaction,
-        )
-        .is_ok()
-    })
-}
-
 /// Whether the ability `candidate` names has used up its printed limit this
 /// period. Only a printed ability on an in-play card instance carries a
 /// counter: a granted ability has no printed index to key one by (#829), and a
@@ -463,9 +438,36 @@ fn cost_payable(
     Ok(())
 }
 
-/// Whether `investigator` can pay `code`'s printed resource cost — the body of
-/// `reaction_windows::check_play_resource_cost_payable`, which documents the
-/// three shapes a printed cost takes. `Ok` for a card with no metadata.
+/// Playing a card is paying its resource cost in full (RR p.22, Initiation
+/// Sequence — the cost must be established as payable before initiation, and is
+/// then paid before attacks of opportunity resolve). Returns the reject reason
+/// when `investigator` cannot pay `code`'s printed cost. A 0-cost card is always
+/// affordable.
+///
+/// The two costs that are not a number reject for **different reasons**, and
+/// [`CardMetadata::play_cost`](card_dsl::card_data::CardMetadata::play_cost) —
+/// which owns the description of how each one is encoded — is what tells them
+/// apart.
+///
+/// - **`None` — a `"–"` cost, which includes every permanent.** Rejected
+///   **permanently**, not pending a model: per the official FAQ, *"Cards with
+///   a cost of '–' have no cost that can be paid, and therefore cannot be
+///   played. … (Cards that put it directly into play bypassing its cost would
+///   be able to put it into play, however.)"*
+///   (`data/official-faq/Frequently_Asked_Questions.md`.) This is live in the
+///   corpus — The Necronomicon 01009 and every Dunwich permanent — and the
+///   rejection is the final behaviour. Putting such a card into play without
+///   playing it is a different path and does not come through here.
+/// - **`Some(n)` with `n < 0` — an X cost.** Genuinely **not yet modeled**
+///   (deferral split from #501): X needs a player-chosen amount the play path
+///   has no channel for. Rejected loudly, because the alternative is worse
+///   than a reject — `u8::try_from(-2).unwrap_or(0)` would make the card
+///   *free*, both here and at `pay_play_cost`. Jenny's Twin .45s 02010 is
+///   in the compiled corpus, so this arm is reachable the moment an X-cost
+///   card gets an implementation.
+///
+/// `Ok` for a card with no metadata — the registry-free validation paths
+/// the engine's own unit tests exercise.
 pub(super) fn play_cost_payable(
     state: &GameState,
     reg: &CardRegistry,

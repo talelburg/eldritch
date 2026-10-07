@@ -619,7 +619,7 @@ impl CardMetadata {
     /// card type that is never played for a cost (Skill, encounter cards, …).
     /// The distinction matters because the rules treat them differently: a
     /// `"–"` card *cannot be played at all*, whereas an X cost is a real cost
-    /// with a player-chosen amount. See `check_play_resource_cost_payable`.
+    /// with a player-chosen amount. See `play_cost_payable` in `game-core`'s initiation gate.
     #[must_use]
     pub fn play_cost(&self) -> Option<i8> {
         match self.kind {

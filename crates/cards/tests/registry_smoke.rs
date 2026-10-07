@@ -33,7 +33,7 @@ fn holy_rosary_is_not_a_weakness() {
 /// snapshot refresh ever collapsed them, an `X`-cost card would silently become
 /// a `"–"` card (unplayable by rule) or vice versa.
 ///
-/// See `check_play_resource_cost_payable` in `game-core`, and
+/// See `play_cost_payable` in `game-core`'s initiation gate, and
 /// `data/official-faq/Frequently_Asked_Questions.md`: *"Cards with a cost of
 /// '–' have no cost that can be paid, and therefore cannot be played."*
 #[test]

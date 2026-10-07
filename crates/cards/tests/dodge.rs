@@ -13,8 +13,8 @@
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, OptionId};
-use game_core::event::Event;
+use game_core::engine::{self, EngineOutcome, OptionId, TimingEvent};
+use game_core::event::{Event, LapseReason};
 use game_core::state::{
     Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
     InvestigatorId, LocationId,
@@ -388,10 +388,9 @@ fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
 
     let resurfaced = TestSession::new(pick.state);
     let events = resurfaced.events();
-    // The lapse reason is #960's to name; here it only has to lapse.
     assert_event!(
         events,
-        Event::ReactionOptionLapsed { investigator, code, .. }
+        Event::ReactionOptionLapsed { investigator, code, reason: LapseReason::PlayBanned }
             if *investigator == inv_id && code.as_str() == DODGE
     );
     assert_no_event!(events, Event::CardPlayed { .. });
@@ -399,4 +398,59 @@ fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
         events,
         Event::DamageTaken { investigator, amount: 2 } if *investigator == inv_id
     );
+}
+
+/// Dodge's *"Play when an enemy attacks an investigator at your location."*
+/// scopes the window, not the play. Seat 2 holds Dodge at the Study where seat
+/// 1 is attacked, and is offered it; then seat 2 is moved to the Hallway before
+/// the pick. Dodge is still playable — the gate passes it — but no longer
+/// belongs to this window, so it lapses as out of scope rather than as an
+/// eligibility failure.
+#[test]
+fn dodge_lapses_as_out_of_scope_once_its_holder_leaves_the_attacked_location() {
+    let attacked = InvestigatorId(1);
+    let dodger = InvestigatorId(2);
+    let mut seat_1 = test_support::test_investigator(1);
+    seat_1.current_location = Some(LocationId(101));
+    let mut seat_2 = test_support::test_investigator(2);
+    seat_2.current_location = Some(LocationId(101));
+    seat_2.hand = vec![CardCode::new(DODGE)];
+    let state = GameStateBuilder::new()
+        .with_location(test_support::test_location(101, "Study"))
+        .with_location(test_support::test_location(102, "Hallway"))
+        .with_investigator(seat_1)
+        .with_investigator(seat_2)
+        .with_turn_order([attacked, dodger])
+        .with_enemy_engaged(ready_attacker(7), attacked)
+        .build();
+
+    let opened = TestSession::new(state).fire_at(TimingEvent::EnemyAttacks {
+        enemy: EnemyId(7),
+        investigator: attacked,
+    });
+    let offered: Vec<_> = opened
+        .state()
+        .top_window()
+        .and_then(|w| w.pending_candidates())
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| (c.code, c.controller))
+        .collect();
+    assert_eq!(offered, vec![(CardCode::new(DODGE), dodger)]);
+
+    let mut state = opened.state().clone();
+    state
+        .investigators
+        .get_mut(&dodger)
+        .expect("seated")
+        .current_location = Some(LocationId(102));
+    let resurfaced = TestSession::new(state);
+
+    assert_event!(
+        resurfaced.events(),
+        Event::ReactionOptionLapsed { investigator, code, reason: LapseReason::OutOfScope }
+            if *investigator == dodger && code.as_str() == DODGE
+    );
+    assert_no_event!(resurfaced.events(), Event::CardPlayed { .. });
 }

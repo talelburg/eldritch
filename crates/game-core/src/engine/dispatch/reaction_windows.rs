@@ -812,34 +812,42 @@ fn open_reaction_cell(state: &GameState) -> Option<(&TimingEvent, EventTiming)> 
     }
 }
 
-/// Best-effort attribution for a withdrawn candidate, for the client log
-/// ([`LapseReason`], #568). The withdrawal has already been decided by the
-/// re-scan in [`withdraw_lapsed_candidates`]; this only names a likely gate, so a
-/// mislabel is cosmetic. Probes run most-specific first, and
-/// [`LapseReason::NoLongerEligible`] is the honest residual when none matches.
+/// Why a withdrawn candidate lapsed, for the client log ([`LapseReason`],
+/// #568). The withdrawal has already been decided by the re-scan in
+/// [`withdraw_lapsed_candidates`]; this names the reason.
+///
+/// A source that is gone is [`LapseReason::SourceGone`]. Otherwise the
+/// initiation gate is asked the question the scan asked of this candidate —
+/// [`InitiationKind::Play`] for a Fast event in hand, which is played, and
+/// [`InitiationKind::Reaction`] for an ability source — and its [`Refusal`] is
+/// the reason. A candidate the gate still passes dropped out of the scan's own
+/// scoping instead, which the gate does not own: [`LapseReason::OutOfScope`].
 fn lapse_reason(state: &GameState, candidate: &ResolutionCandidate) -> LapseReason {
     if !candidate_source_present(state, candidate) {
         return LapseReason::SourceGone;
     }
-    if candidate.source == CandidateSource::Hand
-        && check_play_resource_cost_payable(state, candidate.controller, &candidate.code).is_err()
-    {
-        return LapseReason::CostUnpayable;
+    let kind = match candidate.source {
+        CandidateSource::Hand => InitiationKind::Play,
+        CandidateSource::Ability(_) => InitiationKind::Reaction,
+    };
+    match initiation::check(state, candidate, kind) {
+        Ok(()) => LapseReason::OutOfScope,
+        Err(refusal) => lapse_reason_for(&refusal),
     }
-    let still_eligible =
-        abilities_in_effect::resolve(state, candidate.source, &candidate.code, &candidate.address)
-            .is_some_and(|ability| {
-                initiation::ability_can_initiate(
-                    state,
-                    &ability,
-                    candidate.source,
-                    candidate.controller,
-                )
-            });
-    if still_eligible {
-        LapseReason::NoLongerEligible
-    } else {
-        LapseReason::NoStateChange
+}
+
+/// The [`LapseReason`] a gate [`Refusal`] reports as. A side no longer in
+/// effect is [`LapseReason::SourceGone`]: the card is still there, but the
+/// ability the option named is not.
+fn lapse_reason_for(refusal: &Refusal) -> LapseReason {
+    match refusal {
+        Refusal::NotActive { .. } => LapseReason::NotActive,
+        Refusal::SideNotInEffect => LapseReason::SourceGone,
+        Refusal::NotEligible => LapseReason::NoLongerEligible,
+        Refusal::NoStateChange => LapseReason::NoStateChange,
+        Refusal::UsageLimitReached => LapseReason::UsageLimitReached,
+        Refusal::PlayBanned { .. } => LapseReason::PlayBanned,
+        Refusal::CostUnpayable(_) => LapseReason::CostUnpayable,
     }
 }
 
@@ -1692,55 +1700,9 @@ fn check_play_action_available(
     Ok(())
 }
 
-/// Playing a card is paying its resource cost in full (RR p.22, Initiation
-/// Sequence — the cost must be established as payable before initiation, and is
-/// then paid before attacks of opportunity resolve). Returns the reject reason
-/// when `investigator` cannot pay `code`'s printed cost. A 0-cost card is always
-/// affordable.
-///
-/// The two costs that are not a number reject for **different reasons**, and
-/// [`CardMetadata::play_cost`](card_dsl::card_data::CardMetadata::play_cost) —
-/// which owns the description of how each one is encoded — is what tells them
-/// apart.
-///
-/// - **`None` — a `"–"` cost, which includes every permanent.** Rejected
-///   **permanently**, not pending a model: per the official FAQ, *"Cards with
-///   a cost of '–' have no cost that can be paid, and therefore cannot be
-///   played. … (Cards that put it directly into play bypassing its cost would
-///   be able to put it into play, however.)"*
-///   (`data/official-faq/Frequently_Asked_Questions.md`.) This is live in the
-///   corpus — The Necronomicon 01009 and every Dunwich permanent — and the
-///   rejection is the final behaviour. Putting such a card into play without
-///   playing it is a different path and does not come through here.
-/// - **`Some(n)` with `n < 0` — an X cost.** Genuinely **not yet modeled**
-///   (deferral split from #501): X needs a player-chosen amount the play path
-///   has no channel for. Rejected loudly, because the alternative is worse
-///   than a reject — `u8::try_from(-2).unwrap_or(0)` would make the card
-///   *free*, both here and at `pay_play_cost`. Jenny's Twin .45s 02010 is
-///   in the compiled corpus, so this arm is reachable the moment an X-cost
-///   card gets an implementation.
-///
-/// Short-circuits to `Ok` when the registry isn't installed — the metadata-free
-/// validation paths the engine's own unit tests exercise; the real play path
-/// always has a registry installed by the time it reaches here.
-///
-/// Both play paths now ask the initiation gate, which calls
-/// [`initiation::play_cost_payable`] itself; this wrapper is left only for
-/// [`lapse_reason`], and `TODO(#960)` moves that onto the gate too.
-fn check_play_resource_cost_payable(
-    state: &GameState,
-    investigator: InvestigatorId,
-    code: &CardCode,
-) -> Result<(), Cow<'static, str>> {
-    let Some(reg) = card_registry::current() else {
-        return Ok(());
-    };
-    initiation::play_cost_payable(state, reg, investigator, code)
-}
-
 /// Classify a printed play cost into a payable number of resources, or the
 /// reason it has none. The three shapes and why they differ are spelled out on
-/// [`check_play_resource_cost_payable`]; this is the arm split on its own so it
+/// [`initiation::play_cost_payable`]; this is the arm split on its own so it
 /// can be tested without a registry.
 pub(super) fn payable_play_cost(
     play_cost: Option<i8>,
