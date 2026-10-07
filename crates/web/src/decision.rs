@@ -226,8 +226,9 @@ mod tests {
     use game_core::engine::{InputRequest, OptionId};
     use game_core::event::Event;
     use game_core::state::{
-        Act, AdvanceStep, AdvanceTrigger, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken,
-        Continuation, GameStateBuilder, InvestigatorId, TokenResolution, UseKind,
+        Act, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, Agenda, CardCode, CardInPlay,
+        CardInstanceId, ChaosToken, Continuation, GameStateBuilder, InvestigatorId,
+        TokenResolution, UseKind,
     };
     use game_core::{card_registry, test_support};
 
@@ -243,13 +244,13 @@ mod tests {
     /// The continuation the engine pushes while `deck`'s advance fires its
     /// reverse — the step a decision printed on that reverse arises from.
     fn advancing(deck: AdvanceDeck, code: CardCode) -> Continuation {
-        Continuation::AdvanceReverse {
+        Continuation::AdvanceReverse(AdvanceReverseFrame {
             deck,
             from: 0,
             leaving_code: code,
             step: AdvanceStep::FireReverse,
             trigger: AdvanceTrigger::Forced,
-        }
+        })
     }
 
     fn install_registry() {

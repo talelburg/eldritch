@@ -9,34 +9,11 @@ use crate::engine::outcome::{
 };
 use crate::engine::Cx;
 use crate::event::Event;
-use crate::state::{AdvanceDeck, AdvanceStep, AdvanceTrigger, CardCode, Continuation};
-
-/// Read the top `AdvanceReverse` frame's fields. The frame is the top
-/// continuation whenever the driver / resume runs (the `drive` loop /
-/// `resolve_input` route here only with it on top).
-fn top(cx: &Cx) -> (AdvanceDeck, usize, CardCode, AdvanceStep, AdvanceTrigger) {
-    match cx.state.continuations.last() {
-        Some(Continuation::AdvanceReverse {
-            deck,
-            from,
-            leaving_code,
-            step,
-            trigger,
-        }) => (*deck, *from, leaving_code.clone(), *step, *trigger),
-        other => {
-            unreachable!("advance_reverse: AdvanceReverse frame must be on top, got {other:?}")
-        }
-    }
-}
+use crate::state::{AdvanceDeck, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, CardCode};
 
 /// Set the top `AdvanceReverse` frame's step cursor.
 fn set_step(cx: &mut Cx, next: AdvanceStep) {
-    match cx.state.continuations.last_mut() {
-        Some(Continuation::AdvanceReverse { step, .. }) => *step = next,
-        other => {
-            unreachable!("advance_reverse: AdvanceReverse frame must be on top, got {other:?}")
-        }
-    }
+    cx.state.continuations.top_mut::<AdvanceReverseFrame>().step = next;
 }
 
 fn advanced_event(deck: AdvanceDeck, from: usize) -> Event {
@@ -70,7 +47,17 @@ fn ack_prompt(deck: AdvanceDeck, from: usize) -> String {
 /// fires the leaving card's Forced reverse via `queue_event` (queued; may
 /// suspend). `Finalize` bumps the deck cursor and pops the frame.
 pub(super) fn drive(cx: &mut Cx) -> EngineOutcome {
-    let (deck, from, leaving_code, step, trigger) = top(cx);
+    let AdvanceReverseFrame {
+        deck,
+        from,
+        leaving_code,
+        step,
+        trigger,
+    } = cx
+        .state
+        .continuations
+        .top_mut::<AdvanceReverseFrame>()
+        .clone();
     match step {
         AdvanceStep::AwaitAck => {
             cx.events.push(advanced_event(deck, from));
@@ -142,11 +129,7 @@ fn finalize(cx: &mut Cx, deck: AdvanceDeck, from: usize) {
         "advance_reverse: terminal {label} {from} finished without an ending latched — its \
          reverse reached no resolution point and defeated nobody; malformed scenario data",
     );
-    let popped = cx.state.continuations.pop();
-    debug_assert!(
-        matches!(popped, Some(Continuation::AdvanceReverse { .. })),
-        "advance_reverse: Finalize must pop the AdvanceReverse frame, popped {popped:?}",
-    );
+    cx.state.continuations.pop_expect::<AdvanceReverseFrame>();
 }
 
 /// Resume the acknowledge pause (#558): the single "Advance" pick at `AwaitAck`
@@ -156,7 +139,7 @@ fn finalize(cx: &mut Cx, deck: AdvanceDeck, from: usize) {
 /// Validate-first: any other response, or a frame past `AwaitAck`, rejects
 /// untouched.
 pub(super) fn resume(cx: &mut Cx, response: &InputResponse) -> EngineOutcome {
-    let (_, _, _, step, _) = top(cx);
+    let step = cx.state.continuations.top_mut::<AdvanceReverseFrame>().step;
     if !matches!(step, AdvanceStep::AwaitAck) {
         return EngineOutcome::Rejected {
             reason: format!("advance acknowledge: not at the acknowledge step (step {step:?})")
@@ -202,7 +185,7 @@ mod tests {
         state.interactive_acknowledge = interactive;
         // An AdvanceReverse frame as advance_agenda would push it (leaving = a1).
         // Agenda advances are always Forced.
-        state.continuations.push(Continuation::AdvanceReverse {
+        state.continuations.push(AdvanceReverseFrame {
             deck: AdvanceDeck::Agenda,
             from: 0,
             leaving_code: CardCode("_a1".into()),
@@ -228,7 +211,7 @@ mod tests {
         ];
         state.act_index = 0;
         state.interactive_acknowledge = interactive;
-        state.continuations.push(Continuation::AdvanceReverse {
+        state.continuations.push(AdvanceReverseFrame {
             deck: AdvanceDeck::Act,
             from: 0,
             leaving_code: CardCode("_c1".into()),
@@ -254,10 +237,10 @@ mod tests {
         assert_eq!(out, EngineOutcome::Done);
         assert_eq!(state.agenda_index, 1, "cursor bumped at Finalize");
         assert!(
-            !state
+            state
                 .continuations
-                .iter()
-                .any(|c| matches!(c, Continuation::AdvanceReverse { .. })),
+                .topmost_of::<AdvanceReverseFrame>()
+                .is_none(),
             "frame popped"
         );
         assert!(events
@@ -337,12 +320,10 @@ mod tests {
             .investigators
             .insert(InvestigatorId(1), test_support::test_investigator(1));
         state.turn_order = vec![InvestigatorId(1)];
-        match state.continuations.last_mut() {
-            Some(Continuation::AdvanceReverse { leaving_code, .. }) => {
-                *leaving_code = test_support::terminal_code(1);
-            }
-            other => unreachable!("fixture puts the frame on top, got {other:?}"),
-        }
+        state
+            .continuations
+            .top_mut::<AdvanceReverseFrame>()
+            .leaving_code = test_support::terminal_code(1);
 
         let mut events = Vec::new();
         let out = drive(&mut Cx {
@@ -426,14 +407,14 @@ mod tests {
         assert_eq!(out, EngineOutcome::Done, "deliberate: no pause");
         assert!(
             matches!(
-                state.continuations.last(),
-                Some(Continuation::AdvanceReverse {
+                state.continuations.top(),
+                Some(Continuation::AdvanceReverse(AdvanceReverseFrame {
                     step: AdvanceStep::FireReverse,
                     ..
-                })
+                }))
             ),
             "cursor moved straight past AwaitAck to FireReverse: {:?}",
-            state.continuations.last()
+            state.continuations.top()
         );
         assert_eq!(state.act_index, 0, "cursor not bumped until Finalize");
     }

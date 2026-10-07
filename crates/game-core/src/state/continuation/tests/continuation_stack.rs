@@ -29,12 +29,12 @@ fn awaits_input_gates_suspensions_but_not_anchors() {
     }
     .awaits_input());
     // Suspensions awaiting `ResolveInput`.
-    assert!(Continuation::SubstitutionPrompt {
+    assert!(Continuation::SubstitutionPrompt(SubstitutionPromptFrame {
         investigator: InvestigatorId(1),
-    }
+    })
     .awaits_input());
-    assert!(Continuation::Mulligan { remaining: vec![] }.awaits_input());
-    assert!(Continuation::EncounterDraw { remaining: vec![] }.awaits_input());
+    assert!(Continuation::Mulligan(MulliganFrame { remaining: vec![] }).awaits_input());
+    assert!(Continuation::EncounterDraw(EncounterDrawFrame { remaining: vec![] }).awaits_input());
 }
 
 #[test]
@@ -273,9 +273,9 @@ fn a_reaction_window_is_cancelled_but_its_forced_run_twin_completes() {
 
 #[test]
 fn the_ending_frame_is_inert_and_survives_its_own_cancellation_pass() {
-    let f = Continuation::ScenarioEnd {
+    let f = Continuation::ScenarioEnd(ScenarioEndFrame {
         step: ScenarioEndStep::EmitGameEnd,
-    };
+    });
     assert!(
         !f.cancelled_by_scenario_end(),
         "the ending frame must not cancel itself"

@@ -36,21 +36,21 @@ fn fast_window(candidates: Vec<ResolutionCandidate>) -> Continuation {
 }
 
 fn attack_loop(stage: AttackLoopStage) -> Continuation {
-    Continuation::AttackLoop {
+    Continuation::AttackLoop(AttackLoopFrame {
         investigator: InvestigatorId(1),
         remaining_attackers: vec![EnemyId(2), EnemyId(3)],
         source: EnemyAttackSource::EnemyPhase,
         stage,
-    }
+    })
 }
 
 fn deal_damage(step: DealDamageStep) -> Continuation {
-    Continuation::DealDamage {
+    Continuation::DealDamage(DealDamageFrame {
         investigator: InvestigatorId(1),
         source: DamageSource::Effect,
         assignment: Assignment::default(),
         step,
-    }
+    })
 }
 
 fn investigator_turn(ending: bool) -> Continuation {
@@ -69,19 +69,19 @@ fn investigator_turn(ending: bool) -> Continuation {
 
 #[test]
 fn an_encounter_card_disposal_does_not_await_input() {
-    let f = Continuation::EncounterCard {
+    let f = Continuation::EncounterCard(EncounterCardFrame {
         card: CardCode::new("01163"),
         disposition: EncounterDisposition::Discard,
-    };
+    });
     assert!(!f.awaits_input());
 }
 
 #[test]
 fn a_hand_play_disposal_does_not_await_input() {
-    let f = Continuation::PlayFromHand {
+    let f = Continuation::PlayFromHand(PlayFromHandFrame {
         investigator: InvestigatorId(1),
         card: Some(CardCode::new("01022")),
-    };
+    });
     assert!(!f.awaits_input());
 }
 
@@ -96,11 +96,11 @@ fn the_entered_location_half_of_a_move_does_not_await_input() {
 
 #[test]
 fn a_mythos_surge_chain_does_not_await_input() {
-    let f = Continuation::PlayerDraw {
+    let f = Continuation::PlayerDraw(PlayerDrawFrame {
         investigator: InvestigatorId(1),
         chain_count: 0,
         surge_pending: false,
-    };
+    });
     assert!(!f.awaits_input());
 }
 
@@ -212,7 +212,7 @@ fn an_attack_loop_is_a_prompt_at_its_order_pick_and_driven_while_attacking() {
 /// to finalize — neither the loop nor input routing advances it there.
 #[test]
 fn the_ending_frame_is_driven_until_it_rests_inert_at_finalize() {
-    let ending = |step| Continuation::ScenarioEnd { step };
+    let ending = |step| Continuation::ScenarioEnd(ScenarioEndFrame { step });
     assert_eq!(
         ending(ScenarioEndStep::EmitGameEnd).profile().activity,
         DRIVEN
@@ -265,13 +265,13 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
         (fast_window(vec![candidate()]), profile(PROMPT, CANCEL)),
         // Mandatory resolution that surfaces its own prompt.
         (
-            Continuation::AdvanceReverse {
+            Continuation::AdvanceReverse(AdvanceReverseFrame {
                 deck: AdvanceDeck::Agenda,
                 from: 0,
                 leaving_code: CardCode::new("01105"),
                 step: AdvanceStep::AwaitAck,
                 trigger: AdvanceTrigger::Forced,
-            },
+            }),
             profile(PROMPT, COMPLETE),
         ),
         (
@@ -291,17 +291,17 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(PROMPT, COMPLETE),
         ),
         (
-            Continuation::SubstitutionPrompt {
+            Continuation::SubstitutionPrompt(SubstitutionPromptFrame {
                 investigator: InvestigatorId(1),
-            },
+            }),
             profile(PROMPT, COMPLETE),
         ),
         (
-            Continuation::SlotDiscard {
+            Continuation::SlotDiscard(SlotDiscardFrame {
                 investigator: InvestigatorId(1),
                 card: None,
                 entry: AssetEntry::PlayedFromHand,
-            },
+            }),
             profile(PROMPT, COMPLETE),
         ),
         (
@@ -348,15 +348,15 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(PROMPT, CANCEL),
         ),
         (
-            Continuation::Mulligan {
+            Continuation::Mulligan(MulliganFrame {
                 remaining: vec![InvestigatorId(1)],
-            },
+            }),
             profile(PROMPT, CANCEL),
         ),
         (
-            Continuation::EncounterDraw {
+            Continuation::EncounterDraw(EncounterDrawFrame {
                 remaining: vec![InvestigatorId(1)],
-            },
+            }),
             profile(PROMPT, CANCEL),
         ),
         (investigator_turn(false), profile(PROMPT, CANCEL)),
@@ -371,11 +371,11 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(DRIVEN, CANCEL),
         ),
         (
-            Continuation::PlayerDraw {
+            Continuation::PlayerDraw(PlayerDrawFrame {
                 investigator: InvestigatorId(1),
                 chain_count: 1,
                 surge_pending: true,
-            },
+            }),
             profile(DRIVEN, CANCEL),
         ),
         // Internal sequencing the loop drives, which completes.
@@ -395,19 +395,19 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(DRIVEN, COMPLETE),
         ),
         (
-            Continuation::EncounterCard {
+            Continuation::EncounterCard(EncounterCardFrame {
                 card: CardCode::new("01116"),
                 disposition: EncounterDisposition::Spawn {
                     investigator: InvestigatorId(1),
                 },
-            },
+            }),
             profile(DRIVEN, COMPLETE),
         ),
         (
-            Continuation::PlayFromHand {
+            Continuation::PlayFromHand(PlayFromHandFrame {
                 investigator: InvestigatorId(1),
                 card: None,
-            },
+            }),
             profile(DRIVEN, COMPLETE),
         ),
         (
@@ -429,29 +429,29 @@ pub(super) fn every_variant_rows() -> Vec<(Continuation, FrameProfile)> {
             profile(DRIVEN, COMPLETE),
         ),
         (
-            Continuation::Elimination {
+            Continuation::Elimination(EliminationFrame {
                 investigator: InvestigatorId(1),
                 step: EliminationStep::FireWeaknessGameEnd,
-            },
+            }),
             profile(DRIVEN, COMPLETE),
         ),
         (
-            Continuation::Elimination {
+            Continuation::Elimination(EliminationFrame {
                 investigator: InvestigatorId(1),
                 step: EliminationStep::RunSteps,
-            },
+            }),
             profile(DRIVEN, COMPLETE),
         ),
         (
-            Continuation::ScenarioEnd {
+            Continuation::ScenarioEnd(ScenarioEndFrame {
                 step: ScenarioEndStep::EmitGameEnd,
-            },
+            }),
             profile(DRIVEN, COMPLETE),
         ),
         (
-            Continuation::ScenarioEnd {
+            Continuation::ScenarioEnd(ScenarioEndFrame {
                 step: ScenarioEndStep::Finalize,
-            },
+            }),
             profile(INERT, COMPLETE),
         ),
         // Phase anchors: woken only when a child frame pops.

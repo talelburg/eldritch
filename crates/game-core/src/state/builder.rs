@@ -46,6 +46,7 @@ use crate::state::{
     FastWindowKind, GameState, HandSizeDiscard, Investigator, InvestigatorId,
     InvestigatorTurnFrame, Location, LocationId, Phase, TokenModifiers,
 };
+use crate::state::{EncounterDrawFrame, MulliganFrame};
 
 /// Fluent builder for a [`GameState`].
 ///
@@ -375,12 +376,12 @@ impl GameStateBuilder {
         // upkeep are disjoint phases, so this never coexists with a staged
         // hand-size discard; push order is immaterial.
         if let Some(remaining) = self.mulligan_remaining {
-            continuations.push(Continuation::Mulligan { remaining });
+            continuations.push(MulliganFrame { remaining });
         }
         // A staged Mythos encounter draw becomes an `EncounterDraw` frame
         // (#348). Disjoint from setup/upkeep, so push order is immaterial.
         if let Some(remaining) = self.mythos_draw_remaining {
-            continuations.push(Continuation::EncounterDraw { remaining });
+            continuations.push(EncounterDrawFrame { remaining });
         }
         GameState {
             investigators: self.investigators,

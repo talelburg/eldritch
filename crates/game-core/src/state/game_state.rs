@@ -11,6 +11,7 @@ use crate::scenario::{ScenarioEnding, ScenarioId};
 use crate::state::continuation::{
     Continuation, ContinuationStack, Frame, HandSizeDiscard, InFlightSkillTest,
 };
+use crate::state::continuation::{EncounterDrawFrame, MulliganFrame};
 use crate::state::{
     CardCode, CardInstanceId, ChaosBag, Counter, Enemy, EnemyId, Investigator, InvestigatorId,
     Location, LocationId, Phase, TokenModifiers,
@@ -780,10 +781,10 @@ impl GameState {
     /// the top during setup, so `.last()` (not a topmost search) is correct.
     #[must_use]
     pub fn current_mulligan(&self) -> Option<InvestigatorId> {
-        match self.continuations.last() {
-            Some(Continuation::Mulligan { remaining }) => remaining.first().copied(),
-            _ => None,
-        }
+        self.continuations
+            .top()
+            .and_then(MulliganFrame::downcast_ref)
+            .and_then(|m| m.remaining.first().copied())
     }
 
     /// The investigator currently prompted to discard down to the hand-size
@@ -810,10 +811,9 @@ impl GameState {
     /// spawn-engagement tie is resolved — sit above the loop frame.
     #[must_use]
     pub fn current_encounter_drawer(&self) -> Option<InvestigatorId> {
-        self.continuations.iter().rev().find_map(|c| match c {
-            Continuation::EncounterDraw { remaining, .. } => remaining.first().copied(),
-            _ => None,
-        })
+        self.continuations
+            .topmost_of::<EncounterDrawFrame>()
+            .and_then(|d| d.remaining.first().copied())
     }
 
     /// The **innermost** card currently mid-play, with its controller: one that

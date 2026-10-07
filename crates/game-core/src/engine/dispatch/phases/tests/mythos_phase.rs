@@ -82,7 +82,7 @@ fn mythos_drives_from_entry_via_the_loop() {
     assert!(state
         .continuations
         .iter()
-        .any(|c| matches!(c, Continuation::EncounterDraw { .. })));
+        .any(|c| matches!(c, Continuation::EncounterDraw(_))));
 }
 
 #[test]

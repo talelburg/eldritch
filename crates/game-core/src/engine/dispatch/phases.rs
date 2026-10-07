@@ -16,6 +16,7 @@ use crate::engine::dispatch::{
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::engine::Cx;
 use crate::event::Event;
+use crate::state::EncounterDrawFrame;
 use crate::state::{
     CardCode, CardInPlay, Continuation, EnemyId, EnemyPhaseFrame, EnemyResume, FastWindowKind,
     GameState, HandSizeDiscard, InvestigationPhaseFrame, InvestigationResume, Investigator,
@@ -850,7 +851,7 @@ fn run_mythos_draws(cx: &mut Cx) -> EngineOutcome {
     }
     cx.state
         .continuations
-        .push(Continuation::EncounterDraw { remaining });
+        .push(EncounterDrawFrame { remaining });
     encounter::prompt_encounter_draw(cx)
 }
 

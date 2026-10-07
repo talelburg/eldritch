@@ -20,7 +20,7 @@ use crate::engine::outcome::{
 use crate::engine::{enumerate, evaluator, Cx};
 use crate::state::{
     ActionResolutionFrame, ActionResume, CardCode, CardInstanceId, Continuation, Frame,
-    FrameActivity, GameState, InvestigatorTurnFrame, ScenarioEndStep, Status,
+    FrameActivity, GameState, InvestigatorTurnFrame, ScenarioEndFrame, ScenarioEndStep, Status,
 };
 pub(crate) use control::take_control;
 
@@ -318,11 +318,11 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // sub-resolution completed: dispose of the card (treachery discard
             // / enemy spawn) and pop (#380). An enemy spawn can suspend on an
             // engagement tie.
-            Continuation::EncounterCard { .. } => encounter::dispose_encounter_card_if_top(cx),
+            Continuation::EncounterCard(_) => encounter::dispose_encounter_card_if_top(cx),
             // A hand-play disposal re-exposed after its OnPlay effect resolved:
             // place the card it holds (event → discard; asset → enter play,
             // emit EnteredPlay) and pop (Slice D #423).
-            Continuation::PlayFromHand { .. } => cards::dispose_play_from_hand(cx),
+            Continuation::PlayFromHand(_) => cards::dispose_play_from_hand(cx),
             // The entered-location half of a Move, re-exposed once the left
             // location's queued `LeftLocation` abilities resolved (#569):
             // auto-engage at the destination and emit `EnteredLocation`.
@@ -330,7 +330,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // A per-drawer Mythos surge chain: draw the next card (first step or
             // a pending surge), or — chain over — pop itself and advance the
             // loop to the next drawer / post-1.4 window.
-            Continuation::PlayerDraw { .. } => encounter::drive_player_draw(cx),
+            Continuation::PlayerDraw(_) => encounter::drive_player_draw(cx),
             // The `when → at → after` coordinator frames (#434). `EmitEvent`
             // walks the buckets (pushing a `TimingPoint` per populated cell);
             // `TimingPoint` runs one bucket's forced-then-reaction. Every
@@ -385,22 +385,19 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // Cover Up 01007's trauma (plus its interactive acknowledge) must
             // resolve above this frame, possibly across an `apply` boundary.
             Continuation::ScenarioEnd { .. } => {
-                let Some(Continuation::ScenarioEnd { step }) = cx.state.continuations.last_mut()
-                else {
-                    unreachable!("drive: the ScenarioEnd arm ran without one on top");
-                };
-                *step = ScenarioEndStep::Finalize;
+                cx.state.continuations.top_mut::<ScenarioEndFrame>().step =
+                    ScenarioEndStep::Finalize;
                 emit::queue_event(cx, &TimingEvent::GameEnd)
             }
             // Prompts whose handler surfaced `AwaitingInput` when it pushed
             // them: nothing to drive until `resolve_input` answers.
-            Continuation::SubstitutionPrompt { .. }
+            Continuation::SubstitutionPrompt(_)
             | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
             | Continuation::HandSizeDiscard(_)
-            | Continuation::Mulligan { .. }
-            | Continuation::EncounterDraw { .. }
-            | Continuation::SlotDiscard { .. } => return EngineOutcome::Done,
+            | Continuation::Mulligan(_)
+            | Continuation::EncounterDraw(_)
+            | Continuation::SlotDiscard(_) => return EngineOutcome::Done,
         };
         // A stepped frame: `Done` means it advanced (child pushed, frame
         // popped, cursor moved) and the loop re-dispatches the new top; any
@@ -708,9 +705,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
     // `InvestigatorTurn` that is not ending, a `TimingPointWindow` with
     // candidates. So each kind routes on its variant alone.
     match top {
-        Continuation::SubstitutionPrompt { .. } => {
-            skill_test::resume_substitution_choice(cx, response)
-        }
+        Continuation::SubstitutionPrompt(_) => skill_test::resume_substitution_choice(cx, response),
         // Event reaction windows + the forced run (`TimingPointWindow`) and the
         // framework player windows (`FastWindow`, #433) resolve through the one
         // window driver — it reads candidates/mode through the frame-agnostic
@@ -726,8 +721,8 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         Continuation::HunterMove(_) => hunters::resume_hunter_choice(cx, response),
         Continuation::SpawnEngage(_) => hunters::resume_spawn_engage(cx, response),
         Continuation::HandSizeDiscard(_) => phases::resume_hand_size_discard(cx, response),
-        Continuation::Mulligan { .. } => cards::resume_mulligan(cx, response),
-        Continuation::EncounterDraw { .. } => encounter::resume_encounter_draw(cx, response),
+        Continuation::Mulligan(_) => cards::resume_mulligan(cx, response),
+        Continuation::EncounterDraw(_) => encounter::resume_encounter_draw(cx, response),
         Continuation::SkillTest(_) => resume_skill_test_commit(cx, response),
         // The advance acknowledge pause (#482/#558): the single on-card advance
         // pick (`PickSingle(0)`) resumes the AdvanceReverse frame past its AwaitAck
@@ -746,7 +741,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         // `PickSingle`.
         Continuation::DealDamage { .. } => combat::resume_damage_distribution(cx, response),
         // The interactive slot make-room choice (#498).
-        Continuation::SlotDiscard { .. } => slots::resume_slot_discard(cx, response),
+        Continuation::SlotDiscard(_) => slots::resume_slot_discard(cx, response),
         // Open-turn OptionId dispatch (slice 2b, #447): `ResolveInput(PickSingle(OptionId))`
         // at the open turn re-enumerates `legal_actions`, indexes by the submitted
         // `OptionId`, and forwards to `dispatch_turn_action`.
@@ -771,10 +766,10 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         }
         // Never a prompt, so the gate has already rejected them. Named rather
         // than wildcarded so a new kind must be routed or listed here.
-        Continuation::EncounterCard { .. }
-        | Continuation::PlayFromHand { .. }
+        Continuation::EncounterCard(_)
+        | Continuation::PlayFromHand(_)
         | Continuation::MoveEnter(_)
-        | Continuation::PlayerDraw { .. }
+        | Continuation::PlayerDraw(_)
         | Continuation::EmitEvent { .. }
         | Continuation::TimingPoint { .. }
         | Continuation::ActionResolution(_)

@@ -6,7 +6,9 @@ use std::ops::{Deref, DerefMut};
 use serde::{Deserialize, Serialize};
 
 use crate::state::continuation::Frame;
-use crate::state::{Continuation, FrameActivity, InFlightSkillTest, ScenarioEndStep};
+use crate::state::{
+    Continuation, FrameActivity, InFlightSkillTest, ScenarioEndFrame, ScenarioEndStep,
+};
 
 /// The continuation stack (umbrella §1 / Axis-B): every suspended resolution,
 /// bottom to top, the top being the frame the engine resumes next.
@@ -138,7 +140,7 @@ impl ContinuationStack {
              resolves at a time"
         );
         assert!(
-            !matches!(frame, Continuation::ScenarioEnd { .. }),
+            ScenarioEndFrame::downcast_ref(frame).is_none(),
             "pushing an ending frame: only `insert_ending_at_bottom` may create one, so it \
              always sits at the bottom (ADR 0004)"
         );
@@ -217,14 +219,15 @@ impl ContinuationStack {
             !self
                 .frames
                 .iter()
-                .any(|f| matches!(f, Continuation::ScenarioEnd { .. })),
+                .any(|f| ScenarioEndFrame::downcast_ref(f).is_some()),
             "a second ending frame: the ending latches once per scenario"
         );
         self.frames.insert(
             0,
-            Continuation::ScenarioEnd {
+            ScenarioEndFrame {
                 step: ScenarioEndStep::EmitGameEnd,
-            },
+            }
+            .into(),
         );
     }
 }
