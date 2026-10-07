@@ -47,9 +47,6 @@ use game_core::{assert_event, test_support};
 
 /// The Parlor.
 const PARLOR_CODE: &str = "01115";
-/// Roland Banks — a real investigator code, so `max_health()` and friends read
-/// from the installed corpus registry rather than a fixture default.
-const ROLAND: &str = "01001";
 /// Machete 01020 — an ordinary asset, standing in for "the cards he or she
 /// controls in play".
 const MACHETE: &str = "01020";
@@ -76,7 +73,6 @@ fn install_registry() {
 /// Elimination step 6 reachable.
 fn board(solo: bool) -> GameState {
     let mut resigner = test_support::test_investigator(1);
-    resigner.investigator_card.code = CardCode::new(ROLAND);
     resigner.clues = 2;
     resigner.resources = 3;
     resigner.hand = vec![CardCode::new(ROSARY)];
@@ -102,8 +98,7 @@ fn board(solo: bool) -> GameState {
     builder = if solo {
         builder.with_turn_order([RESIGNER])
     } else {
-        let mut survivor = test_support::test_investigator(2);
-        survivor.investigator_card.code = CardCode::new(ROLAND);
+        let survivor = test_support::test_investigator(2);
         builder
             .with_investigator_at(survivor, HALLWAY)
             .with_location(test_support::test_location(2, "Hallway"))

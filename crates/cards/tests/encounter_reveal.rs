@@ -32,11 +32,6 @@
 //!   draw. Built through the engine from its own corpus metadata rather than
 //!   hand-stamped onto a `test_location`, which is the impersonation ADR 0016
 //!   forbids.
-//! - **Roland Banks 01001** — the seated investigator, so `max_health()` /
-//!   `max_sanity()` resolve against the installed registry. His *"\[reaction\]
-//!   After you defeat an enemy: Discover 1 clue at your location. (Limit once
-//!   per round.)"* has no trigger here — nothing is defeated. Both his rulings
-//!   (<https://arkhamdb.com/card/01001>) scope that same reaction.
 
 use card_dsl::card_data::{CardKind, CardType};
 use cards::REGISTRY;
@@ -52,8 +47,6 @@ const ANCIENT_EVILS: &str = "01166";
 const RISE_OF_THE_GHOULS: &str = "01106";
 /// The Study — the board's sole location.
 const STUDY: &str = "01111";
-/// Roland Banks — the seated investigator.
-const ROLAND: &str = "01001";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
@@ -70,7 +63,7 @@ fn agenda_doom_threshold(code: &str) -> u8 {
     }
 }
 
-/// The board both tests start from: Roland at the Study, one agenda, and one
+/// The board both tests start from: the investigator at the Study, one agenda, and one
 /// Ancient Evils on the encounter deck. The investigator is seated by hand
 /// rather than via `seat_and_open` because these tests drive
 /// [`EngineRecord::EncounterCardRevealed`] directly.
@@ -83,7 +76,6 @@ fn board() -> GameState {
         doom_threshold: agenda_doom_threshold(RISE_OF_THE_GHOULS),
     }];
     let mut inv = test_support::test_investigator(1);
-    inv.investigator_card.code = CardCode::new(ROLAND);
     inv.current_location = Some(study);
     state.investigators.insert(InvestigatorId(1), inv);
     state.turn_order = vec![InvestigatorId(1)];

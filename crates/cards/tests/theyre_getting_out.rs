@@ -91,10 +91,8 @@ fn enemy_phase_end_moves_ghoul_toward_parlor() {
 fn enemy_phase_end_moves_ghoul_before_the_upkeep_transition() {
     let mut state = board_with_agenda();
     {
-        // The cascade runs on into Upkeep, which reads the investigator card's
-        // printed stats: give it a real code (Roland Banks) and a card to draw.
+        // The cascade runs on into Upkeep: give the investigator a card to draw.
         let inv = state.investigators.get_mut(&InvestigatorId(1)).unwrap();
-        inv.investigator_card.code = CardCode::new("01001");
         inv.current_location = Some(LocationId(2));
         inv.deck = vec![CardCode::new("01006")];
     }

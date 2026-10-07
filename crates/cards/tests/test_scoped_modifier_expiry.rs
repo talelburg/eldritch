@@ -36,8 +36,6 @@ use game_core::test_support::{self, ScriptedResolver};
 
 const GRASPING_HANDS: &str = "01162";
 const GUARD_DOG: &str = "01021";
-/// Roland Banks — health 9, sanity 5.
-const ROLAND: &str = "01001";
 
 /// The id the single skill test on either board is minted.
 const THE_TEST: SkillTestId = SkillTestId(0);
@@ -49,14 +47,12 @@ fn install_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Roland at a location with `damage` already on him and `soakers` in play,
+/// The test investigator (8 health) at a location with `damage` already on it
+/// and `soakers` in play,
 /// Grasping Hands on top of the encounter deck and a rigged `Numeric(-2)`
 /// token: agility 3 − 2 = 1 vs difficulty 3 → fail by 2 → 2 damage.
 fn board(damage: u8, soakers: &[&str]) -> GameState {
     let mut inv = test_support::test_investigator(1);
-    // Real investigator code so max_health() reads capacity from the
-    // installed corpus registry (#448).
-    inv.investigator_card.code = CardCode::new(ROLAND);
     inv.investigator_card.accumulated_damage = damage;
     inv.cards_in_play = soakers
         .iter()
@@ -122,10 +118,10 @@ fn surviving_lifetimes(result: &ApplyResult) -> Vec<Lifetime> {
 
 #[test]
 fn a_row_expires_when_its_test_is_abandoned_on_the_testers_elimination() {
-    // Roland at 8/9 damage takes 2 more → killed. The test is abandoned
+    // The investigator at 7/8 damage takes 2 more → killed. The test is abandoned
     // rather than resolved (#564), and its teardown must still expire the
     // rows bought for it. No soaker, so no distribution prompt.
-    let result = reveal(board(8, &[]), &[]);
+    let result = reveal(board(7, &[]), &[]);
 
     assert_eq!(result.outcome, EngineOutcome::Done, "abandoned cleanly");
     assert_eq!(
@@ -147,7 +143,7 @@ fn a_row_expires_when_its_test_is_abandoned_on_the_testers_elimination() {
 
 #[test]
 fn a_row_expires_when_its_test_resolves_across_a_suspension() {
-    // Same failed test, but Roland survives and soaks both points onto Guard
+    // Same failed test, but the investigator survives and soaks both points onto Guard
     // Dog — two per-point prompts, so the test's resolution suspends twice
     // before its teardown runs.
     let result = reveal(board(0, &[GUARD_DOG]), &[1, 1]);
@@ -156,7 +152,7 @@ fn a_row_expires_when_its_test_resolves_across_a_suspension() {
     assert_eq!(
         result.state.investigators[&InvestigatorId(1)].status,
         Status::Active,
-        "2 damage is not lethal at 0/9",
+        "2 damage is not lethal at 0/8",
     );
     assert_eq!(
         result.state.skill_test_ids.peek(),
