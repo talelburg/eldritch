@@ -11,12 +11,13 @@
 //! only way to exercise the full activation flow.
 
 use card_dsl::dsl::{
-    self, Cost, IntExpr, InvestigatorTarget, ModifierScope, Stat, UsageLimit, UsagePeriod,
+    self, Cost, Effect, EventPattern, EventTiming, IntExpr, InvestigatorTarget, LocationTarget,
+    ModifierScope, Stat, UsageLimit, UsagePeriod,
 };
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, EngineOutcome};
+use game_core::engine::{self, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
@@ -60,6 +61,16 @@ const ONCE_PER_ROUND_GAIN: &str = "MOCK6";
 /// ability whose condition lives outside its effect (#958, the #791 class).
 const CLUE_GATED_GAIN: &str = "MOCK7";
 const HAS_A_CLUE_TAG: &str = "_activate:has_a_clue";
+
+/// Mock card code: `[fast] Discover 1 clue at your location. (Limit once per
+/// round.)` — a usage-limited activated ability whose effect a `when`
+/// interrupt can cancel.
+const ONCE_PER_ROUND_DISCOVERY: &str = "MOCK8";
+
+/// Mock card code: `[reaction] When an investigator would discover clues:
+/// Cancel that discovery.` — the cancellation primitive (`Effect::Cancel` in
+/// the `when` cell of a coordinator-owned condition), on no printed card.
+const CANCEL_DISCOVERY: &str = "MOCK9";
 
 fn has_a_clue(state: &GameState, ctx: &EvalContext) -> bool {
     state
@@ -122,6 +133,24 @@ fn install_mock_registry() {
             ]
         })
         .with_native_eligibility(HAS_A_CLUE_TAG, has_a_clue)
+        .with_abilities(ONCE_PER_ROUND_DISCOVERY, || {
+            vec![dsl::activated(
+                0,
+                vec![],
+                dsl::discover_clue(LocationTarget::YourLocation, 1),
+            )
+            .with_usage_limit(UsageLimit {
+                count: 1,
+                period: UsagePeriod::Round,
+            })]
+        })
+        .with_abilities(CANCEL_DISCOVERY, || {
+            vec![dsl::reaction_on_event(
+                EventPattern::DiscoverClues,
+                EventTiming::When,
+                Effect::Cancel,
+            )]
+        })
         .install();
 }
 
@@ -572,5 +601,54 @@ fn a_tagged_activated_ability_is_not_offered_while_its_condition_is_false() {
     assert!(
         enumerate::legal_actions(&with_a_clue).contains(&action),
         "the ability is offered once its condition holds",
+    );
+}
+
+/// A limited ability whose effect is cancelled has still been initiated, so the
+/// use counts: `glossary/Limits_and_Maximums.md`, *"If the effects of a card or
+/// ability with a limit or maximum are canceled, it is still counted against
+/// the limit/maximum, because the ability has been initiated."* The
+/// once-per-round discovery is activated, an interrupt cancels the discovery it
+/// would make, and the ability is not offered again this round.
+#[test]
+fn a_cancelled_use_of_a_limited_activated_ability_still_counts() {
+    let id = InvestigatorId(1);
+    let ability_card = CardInstanceId(0);
+    let interrupt_card = CardInstanceId(1);
+    let location = LocationId(10);
+    let mut inv = test_support::test_investigator(1);
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(ONCE_PER_ROUND_DISCOVERY),
+        ability_card,
+    ));
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode::new(CANCEL_DISCOVERY),
+        interrupt_card,
+    ));
+    let mut loc = test_support::test_location(location.0, "Study");
+    loc.clues = 2;
+    let state = GameStateBuilder::new()
+        .with_investigator_at(inv, location)
+        .with_location(loc)
+        .open_turn(id)
+        .build();
+    let action = TurnAction::ActivateAbility {
+        investigator: id,
+        source: AbilitySource::InPlay(ability_card),
+        address: AbilityAddress::Printed(0),
+    };
+
+    let interrupted = TestSession::new(state).take(&action);
+    let cancelled = interrupted.pick(OptionTarget::CardInstance(interrupt_card));
+
+    assert_eq!(
+        cancelled.state().investigators[&id].clues,
+        0,
+        "the discovery was cancelled",
+    );
+    assert_eq!(cancelled.state().locations[&location].clues, 2);
+    assert!(
+        !enumerate::legal_actions(cancelled.state()).contains(&action),
+        "the cancelled use counts against the once-per-round limit",
     );
 }
