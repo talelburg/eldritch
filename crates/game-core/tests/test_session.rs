@@ -428,7 +428,12 @@ fn skip_passes_a_fast_window_and_pick_plays_from_it() {
 /// back through `expect_rejected`, and the prompt still stands.
 #[test]
 fn a_rejected_step_reads_back_and_leaves_the_prompt_standing() {
-    let session = board().open_turn(INV).session().confirm();
+    let session = board()
+        .open_turn(INV)
+        .session()
+        .apply(Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::Confirm,
+        }));
 
     assert!(!session.expect_rejected().is_empty());
     assert_eq!(resources(&session), 5);
@@ -463,6 +468,14 @@ fn a_rejected_reply_in_the_drain_rests_at_the_prompt_it_answered() {
         session.prompt().target,
         Some(OptionTarget::TurnControl(INV))
     );
+}
+
+/// `confirm` and `skip` answer a prompt, so at the turn menu they panic rather
+/// than be read as a turn action.
+#[test]
+#[should_panic(expected = "at the turn menu")]
+fn confirm_at_the_turn_menu_panics() {
+    let _ = board().open_turn(INV).session().confirm();
 }
 
 /// `expect_rejected` on a step that was accepted panics.
@@ -507,6 +520,26 @@ fn the_reply_policy_set_before_a_step_answers_its_prompts() {
         .take(&activate(DECIDE_INST));
 
     assert_eq!(resources(&session), 7);
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(INV))
+    );
+}
+
+/// A scripted `pick` answers by anchor, like the session step: the second
+/// enemy is damaged whatever its position.
+#[test]
+fn a_scripted_pick_answers_by_anchor() {
+    let session = board()
+        .open_turn(INV)
+        .session()
+        .resolve_choices(|c| {
+            c.pick(OptionTarget::Enemy(SECOND));
+        })
+        .take(&activate(SELECT_INST));
+
+    assert_eq!(session.state().enemies[&SECOND].damage, 1);
+    assert_eq!(session.state().enemies[&FIRST].damage, 0);
     assert_eq!(
         session.prompt().target,
         Some(OptionTarget::TurnControl(INV))
