@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::InvestigationPhaseFrame;
 
 /// Build a Draw scenario: one investigator at A, in Investigation
 /// phase, active, 3 actions. The caller mutates deck/hand/discard
@@ -17,9 +18,9 @@ fn draw_scenario() -> (InvestigatorId, GameState) {
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
         .with_rng_seed(13)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(id)
         .build();
     (id, state)

@@ -13,7 +13,8 @@
 //! use game_core::engine::enumerate::TurnAction;
 //! use game_core::engine::EngineOutcome;
 //! use game_core::state::{
-//!     Continuation, GameStateBuilder, InvestigationResume, InvestigatorId, Phase,
+//!     Continuation, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
+//!     InvestigatorId, Phase,
 //! };
 //! use game_core::test_support;
 //!
@@ -25,9 +26,9 @@
 //!     .with_location(test_support::test_location(10, "Study"))
 //!     .with_active_investigator(InvestigatorId(1))
 //!     // A state constructed mid-phase needs its phase anchor (slice 1a).
-//!     .with_phase_anchor(Continuation::InvestigationPhase {
+//!     .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
 //!         resume: InvestigationResume::TurnBegins,
-//!     })
+//!     }))
 //!     // ...and the open-turn frame above it (slice 2a-i), popped by EndTurn.
 //!     .with_investigator_turn(InvestigatorId(1))
 //!     .build();
@@ -43,8 +44,8 @@ use crate::scenario::ScenarioId;
 use crate::state::FastWindowFrame;
 use crate::state::{
     ChaosBag, Continuation, ContinuationStack, Counter, Enemy, EnemyId, FastActorScope,
-    FastWindowKind, GameState, HandSizeDiscard, Investigator, InvestigatorId, Location, LocationId,
-    Phase, TokenModifiers,
+    FastWindowKind, GameState, HandSizeDiscard, Investigator, InvestigatorId,
+    InvestigatorTurnFrame, Location, LocationId, Phase, TokenModifiers,
 };
 use crate::state::{EncounterDrawFrame, MulliganFrame};
 
@@ -298,10 +299,10 @@ impl GameStateBuilder {
         assert!(
             matches!(
                 c,
-                Continuation::MythosPhase { .. }
-                    | Continuation::InvestigationPhase { .. }
-                    | Continuation::EnemyPhase { .. }
-                    | Continuation::UpkeepPhase { .. }
+                Continuation::MythosPhase(_)
+                    | Continuation::InvestigationPhase(_)
+                    | Continuation::EnemyPhase(_)
+                    | Continuation::UpkeepPhase(_)
             ),
             "with_phase_anchor expects a *Phase anchor variant, got {c:?}",
         );
@@ -364,7 +365,7 @@ impl GameStateBuilder {
         // A staged open turn (slice 2a-i, #393) sits directly above the anchor;
         // any window opened during the turn is a sub-resolution above it.
         if let Some(investigator) = self.investigator_turn {
-            continuations.push(Continuation::InvestigatorTurn {
+            continuations.push(InvestigatorTurnFrame {
                 investigator,
                 ending: false,
             });

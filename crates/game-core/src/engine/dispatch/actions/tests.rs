@@ -4,8 +4,8 @@ use crate::engine::outcome::{EngineOutcome, OptionId};
 use crate::engine::{enumerate, ApplyResult};
 use crate::event::Event;
 use crate::state::{
-    ChaosBag, ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigationResume,
-    InvestigatorId, LocationId, Phase, Status,
+    ChaosBag, ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder,
+    InvestigationPhaseFrame, InvestigationResume, InvestigatorId, LocationId, Phase, Status,
 };
 use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
@@ -67,9 +67,9 @@ fn move_scenario_with_enemy(
         .with_enemy(enemy)
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(inv_id)
         .build();
 
@@ -204,9 +204,9 @@ fn move_into_enemy_scenario() -> (InvestigatorId, LocationId, EnemyId, GameState
         .with_enemy(enemy)
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(inv_id)
         .build();
 
@@ -350,9 +350,9 @@ fn investigate_scenario_with_enemy(
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(inv_id)
         .build();
 
@@ -473,9 +473,9 @@ fn resource_scenario_with_enemy(
         .with_enemy(enemy)
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(inv_id)
         .build();
 
@@ -589,9 +589,9 @@ fn resource_with_no_engaged_enemy_gains_normally() {
         .with_location(loc)
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(inv_id)
         .build();
 
@@ -672,9 +672,9 @@ fn engage_scenario_with_aoo_enemy(
         .with_enemy(aoo_enemy)
         .with_phase(Phase::Investigation)
         .with_active_investigator(inv_id)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(inv_id)
         .build();
 

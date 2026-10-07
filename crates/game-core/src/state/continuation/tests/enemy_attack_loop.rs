@@ -1,10 +1,10 @@
 use super::*;
-use crate::state::GameStateBuilder;
+use crate::state::{EnemyPhaseFrame, GameStateBuilder};
 
 #[test]
 fn enemy_phase_anchor_attacking_round_trips_through_serde() {
     let mut state = GameStateBuilder::new().build();
-    state.continuations.push(Continuation::EnemyPhase {
+    state.continuations.push(EnemyPhaseFrame {
         resume: EnemyResume::BeforeInvestigatorAttacked,
         attacking: Some(InvestigatorId(7)),
     });

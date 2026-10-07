@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::InvestigationPhaseFrame;
 
 /// `apply_resolution` that records it ran by stamping the acting
 /// investigator's resources to a sentinel value, so tests can assert
@@ -47,9 +48,9 @@ fn terminal_act_state(scenario_id: Option<&str>) -> GameState {
         .with_investigator(investigator)
         .with_active_investigator(inv)
         .with_turn_order([inv])
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(inv);
     if let Some(id) = scenario_id {
         builder = builder.with_scenario_id(ScenarioId::new(id));

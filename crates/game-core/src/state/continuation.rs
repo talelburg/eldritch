@@ -255,97 +255,24 @@ pub enum Continuation {
     EncounterCard(EncounterCardFrame),
     /// See [`PlayFromHandFrame`].
     PlayFromHand(PlayFromHandFrame),
-    /// The entered-location half of a Move, parked beneath the whole
-    /// `LeftLocation` sequence (#569). Pushed by `move_primary_effect`
-    /// immediately before it emits `LeftLocation` — and since #721 that emit
-    /// carries the relocation too, which the coordinator performs at the
-    /// condition's own resolve step *above* this frame, so Barricade 01038's
-    /// self-discard resolves before the departure lands. When the loop
-    /// re-exposes this frame it pops, reveals the destination, auto-engages its
-    /// ready enemies, and emits `EnteredLocation` in tail position.
-    ///
-    /// Exists because the emit queues rather than resolves (ADR 0003): running
-    /// the engage + entered-location emit inline after it pushed them *above*
-    /// the left-location abilities, inverting the two. Framework-internal:
-    /// [Driven](FrameActivity::Driven), only ever momentarily on top inside
-    /// `drive`, so it never awaits input and `resolve_input` rejects it.
-    /// Deliberately narrow rather than a resumable `ActionResolution`: no other
-    /// primary needs one today (#612).
-    MoveEnter {
-        /// The investigator who moved.
-        investigator: InvestigatorId,
-        /// The location they entered.
-        destination: LocationId,
-    },
+    /// See [`MoveEnterFrame`].
+    MoveEnter(MoveEnterFrame),
     /// See [`SlotDiscardFrame`].
     SlotDiscard(SlotDiscardFrame),
-    /// The Mythos phase anchor (slice 1a, #393). Pushed at Mythos entry; sits
-    /// beneath the phase's framework windows. On a child window's close the
-    /// framework routes to the anchor's `on_child_pop` (keyed by `resume`).
-    /// Never awaits input; popped when the phase transitions away.
-    MythosPhase {
-        /// Which child-pop boundary the anchor resumes at.
-        resume: MythosResume,
-    },
-    /// The Investigation phase anchor (slice 1a, #393). See
-    /// [`Continuation::MythosPhase`].
-    InvestigationPhase {
-        /// Which child-pop boundary the anchor resumes at.
-        resume: InvestigationResume,
-    },
-    /// The Enemy phase anchor (slice 1a, #393). See [`Continuation::MythosPhase`].
-    EnemyPhase {
-        /// Which child-pop boundary the anchor resumes at.
-        resume: EnemyResume,
-        /// The investigator whose engaged enemies are currently attacking
-        /// (Enemy step 3.3), or `None` before kickoff (the anchor is pushed
-        /// ahead of hunter movement) and after the last investigator. The
-        /// per-investigator cursor, lifted off the former
-        /// `GameState::enemy_attack_pending` (#411, step 3 of #393).
-        attacking: Option<InvestigatorId>,
-    },
-    /// The Upkeep phase anchor (slice 1a, #393). See [`Continuation::MythosPhase`].
-    UpkeepPhase {
-        /// Which child-pop boundary the anchor resumes at.
-        resume: UpkeepResume,
-    },
-    /// The active investigator's open turn — Rules Reference step 2.2.1
-    /// (slice 2a-i, #393). Pushed *above* the [`Continuation::InvestigationPhase`]
-    /// anchor once the `InvestigatorTurnBegins` window closes; the anchor spans the
-    /// whole phase beneath it. The player takes basic actions (each a typed
-    /// `PlayerAction` today; a sub-resolution frame above this one tomorrow) while
-    /// it is on top; `EndTurn` pops it via
-    /// [`resume_end_turn`](crate::engine). Does **not** await `ResolveInput` — like
-    /// the `TurnBegins` anchor it replaced, typed actions run against it (the idle
-    /// outcome stays `Done`; surfacing the legal-action enumeration as
-    /// `AwaitingInput` is slice 2b/#205).
-    InvestigatorTurn {
-        /// Whose turn this is. Mirrors [`GameState::active_investigator`](crate::state::game_state::GameState::active_investigator) while on
-        /// top; the durable source for the end-of-turn rotation.
-        investigator: InvestigatorId,
-        /// `true` once `end_turn`'s `EndOfTurn` forced effect suspended into a
-        /// skill test before rotation (a single Frozen in Fear 01164), stranding
-        /// the turn (slice 2a-i, #393 — absorbs the former
-        /// `GameState::pending_end_turn`). The skill-test commit resume reads this
-        /// to decide the resolved test triggers rotation; an ordinary mid-turn
-        /// test leaves it `false`.
-        ending: bool,
-    },
+    /// See [`MythosPhaseFrame`].
+    MythosPhase(MythosPhaseFrame),
+    /// See [`InvestigationPhaseFrame`].
+    InvestigationPhase(InvestigationPhaseFrame),
+    /// See [`EnemyPhaseFrame`].
+    EnemyPhase(EnemyPhaseFrame),
+    /// See [`UpkeepPhaseFrame`].
+    UpkeepPhase(UpkeepPhaseFrame),
+    /// See [`InvestigatorTurnFrame`].
+    InvestigatorTurn(InvestigatorTurnFrame),
     /// See [`AttackLoopFrame`].
     AttackLoop(AttackLoopFrame),
-    /// An action paused over its attack-of-opportunity loop (#293, keystone of
-    /// #393). Pushed above [`Self::InvestigatorTurn`] when an AoO-provoking action is
-    /// taken; the `AoO` [`Self::AttackLoop`] is its child. On the loop's pop the
-    /// `drive` loop resumes this frame: it re-validates (actor still active +
-    /// the primary's precondition) and runs the primary effect, then pops.
-    /// Transient — it persists across an `apply()` boundary only while a window
-    /// suspends the loop. Never awaits input itself.
-    ActionResolution {
-        /// The acting investigator.
-        investigator: InvestigatorId,
-        /// Which primary effect to run when the `AoO` loop completes.
-        resume: ActionResume,
-    },
+    /// See [`ActionResolutionFrame`].
+    ActionResolution(ActionResolutionFrame),
     /// See [`DealDamageFrame`].
     DealDamage(DealDamageFrame),
     /// A node of an in-progress card-effect walk (#422). The effect evaluator is
@@ -384,6 +311,13 @@ impl_frame!(EmitEvent, EmitEventFrame);
 impl_frame!(TimingPoint, TimingPointFrame);
 
 // Phase, turn and action frames (#930).
+impl_frame!(MoveEnter, MoveEnterFrame);
+impl_frame!(MythosPhase, MythosPhaseFrame);
+impl_frame!(InvestigationPhase, InvestigationPhaseFrame);
+impl_frame!(EnemyPhase, EnemyPhaseFrame);
+impl_frame!(UpkeepPhase, UpkeepPhaseFrame);
+impl_frame!(InvestigatorTurn, InvestigatorTurnFrame);
+impl_frame!(ActionResolution, ActionResolutionFrame);
 
 // Draw, encounter and play frames (#931).
 impl_frame!(SubstitutionPrompt, SubstitutionPromptFrame);
@@ -559,10 +493,10 @@ impl Continuation {
     pub fn is_phase_anchor(&self) -> bool {
         matches!(
             self,
-            Continuation::MythosPhase { .. }
-                | Continuation::InvestigationPhase { .. }
-                | Continuation::EnemyPhase { .. }
-                | Continuation::UpkeepPhase { .. }
+            Continuation::MythosPhase(_)
+                | Continuation::InvestigationPhase(_)
+                | Continuation::EnemyPhase(_)
+                | Continuation::UpkeepPhase(_)
         )
     }
 
@@ -695,7 +629,7 @@ impl Continuation {
             // The open turn surfaces its legal-action menu (2b, #447); once
             // `ending`, it is the rotation tail the loop drives after a
             // suspending `EndOfTurn` forced resolved.
-            Continuation::InvestigatorTurn { ending, .. } => {
+            Continuation::InvestigatorTurn(InvestigatorTurnFrame { ending, .. }) => {
                 (if *ending { Driven } else { Prompt }, Cancel)
             }
             // The attack loop is the attack-order pick at `PickOrder` (#143) and
@@ -720,8 +654,8 @@ impl Continuation {
             | Continuation::TimingPoint(_)
             | Continuation::EncounterCard(_)
             | Continuation::PlayFromHand(_)
-            | Continuation::MoveEnter { .. }
-            | Continuation::ActionResolution { .. }
+            | Continuation::MoveEnter(_)
+            | Continuation::ActionResolution(_)
             // An elimination under way: the acknowledge its step-0 emit queues
             // is the prompt, and steps 1–6 ask nothing. Rules Reference p.10 runs
             // its steps "any time a player is eliminated", and the weaknesses
@@ -740,10 +674,10 @@ impl Continuation {
             ),
             // Phase anchors wake only when a child frame pops; the framework
             // sequence they carry is over once the scenario has ended.
-            Continuation::MythosPhase { .. }
-            | Continuation::InvestigationPhase { .. }
-            | Continuation::EnemyPhase { .. }
-            | Continuation::UpkeepPhase { .. } => (Inert, Cancel),
+            Continuation::MythosPhase(_)
+            | Continuation::InvestigationPhase(_)
+            | Continuation::EnemyPhase(_)
+            | Continuation::UpkeepPhase(_) => (Inert, Cancel),
         };
         FrameProfile {
             activity,
@@ -810,10 +744,10 @@ impl Continuation {
     #[must_use]
     pub fn play_in_progress(&self) -> Option<(InvestigatorId, &CardCode)> {
         match self {
-            Continuation::ActionResolution {
+            Continuation::ActionResolution(ActionResolutionFrame {
                 investigator,
                 resume: ActionResume::PlayCard { card },
-            }
+            })
             | Continuation::PlayFromHand(PlayFromHandFrame { investigator, card }) => {
                 card.as_ref().map(|c| (*investigator, c))
             }
@@ -858,10 +792,10 @@ impl Continuation {
         investigator: InvestigatorId,
     ) -> Option<(CardCode, Option<InvestigatorId>)> {
         match self {
-            Continuation::ActionResolution {
+            Continuation::ActionResolution(ActionResolutionFrame {
                 investigator: owner,
                 resume: ActionResume::PlayCard { card },
-            }
+            })
             | Continuation::PlayFromHand(PlayFromHandFrame {
                 investigator: owner,
                 card,
@@ -1927,6 +1861,109 @@ impl ResolutionCandidate {
             source,
         }
     }
+}
+
+// --- Phase, turn and action frame payloads (#930) ---
+
+/// The entered-location half of a Move, parked beneath the whole
+/// `LeftLocation` sequence (#569). Pushed by `move_primary_effect`
+/// immediately before it emits `LeftLocation` — and since #721 that emit
+/// carries the relocation too, which the coordinator performs at the
+/// condition's own resolve step *above* this frame, so Barricade 01038's
+/// self-discard resolves before the departure lands. When the loop
+/// re-exposes this frame it pops, reveals the destination, auto-engages its
+/// ready enemies, and emits `EnteredLocation` in tail position.
+///
+/// Exists because the emit queues rather than resolves (ADR 0003): running
+/// the engage + entered-location emit inline after it pushed them *above*
+/// the left-location abilities, inverting the two. Framework-internal:
+/// [Driven](FrameActivity::Driven), only ever momentarily on top inside
+/// `drive`, so it never awaits input and `resolve_input` rejects it.
+/// Deliberately narrow rather than a resumable `ActionResolution`: no other
+/// primary needs one today (#612).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MoveEnterFrame {
+    /// The investigator who moved.
+    pub investigator: InvestigatorId,
+    /// The location they entered.
+    pub destination: LocationId,
+}
+
+/// The Mythos phase anchor (slice 1a, #393). Pushed at Mythos entry; sits
+/// beneath the phase's framework windows. On a child window's close the
+/// framework routes to the anchor's `on_child_pop` (keyed by `resume`).
+/// Never awaits input; popped when the phase transitions away.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MythosPhaseFrame {
+    /// Which child-pop boundary the anchor resumes at.
+    pub resume: MythosResume,
+}
+
+/// The Investigation phase anchor (slice 1a, #393). See
+/// [`MythosPhaseFrame`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InvestigationPhaseFrame {
+    /// Which child-pop boundary the anchor resumes at.
+    pub resume: InvestigationResume,
+}
+
+/// The Enemy phase anchor (slice 1a, #393). See [`MythosPhaseFrame`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnemyPhaseFrame {
+    /// Which child-pop boundary the anchor resumes at.
+    pub resume: EnemyResume,
+    /// The investigator whose engaged enemies are currently attacking
+    /// (Enemy step 3.3), or `None` before kickoff (the anchor is pushed
+    /// ahead of hunter movement) and after the last investigator. The
+    /// per-investigator cursor, lifted off the former
+    /// `GameState::enemy_attack_pending` (#411, step 3 of #393).
+    pub attacking: Option<InvestigatorId>,
+}
+
+/// The Upkeep phase anchor (slice 1a, #393). See [`MythosPhaseFrame`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpkeepPhaseFrame {
+    /// Which child-pop boundary the anchor resumes at.
+    pub resume: UpkeepResume,
+}
+
+/// The active investigator's open turn — Rules Reference step 2.2.1
+/// (slice 2a-i, #393). Pushed *above* the [`Continuation::InvestigationPhase`]
+/// anchor once the `InvestigatorTurnBegins` window closes; the anchor spans the
+/// whole phase beneath it. The player takes basic actions (each a typed
+/// `PlayerAction` today; a sub-resolution frame above this one tomorrow) while
+/// it is on top; `EndTurn` pops it via
+/// [`resume_end_turn`](crate::engine). Does **not** await `ResolveInput` — like
+/// the `TurnBegins` anchor it replaced, typed actions run against it (the idle
+/// outcome stays `Done`; surfacing the legal-action enumeration as
+/// `AwaitingInput` is slice 2b/#205).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InvestigatorTurnFrame {
+    /// Whose turn this is. Mirrors [`GameState::active_investigator`](crate::state::game_state::GameState::active_investigator) while on
+    /// top; the durable source for the end-of-turn rotation.
+    pub investigator: InvestigatorId,
+    /// `true` once `end_turn`'s `EndOfTurn` forced effect suspended into a
+    /// skill test before rotation (a single Frozen in Fear 01164), stranding
+    /// the turn (slice 2a-i, #393 — absorbs the former
+    /// `GameState::pending_end_turn`). The skill-test commit resume reads this
+    /// to decide the resolved test triggers rotation; an ordinary mid-turn
+    /// test leaves it `false`.
+    pub ending: bool,
+}
+
+/// An action paused over its attack-of-opportunity loop (#293, keystone of
+/// #393). Pushed above [`Continuation::InvestigatorTurn`] when an AoO-provoking action is
+/// taken; the `AoO` [`Continuation::AttackLoop`] is its child. On the loop's pop the
+/// `drive` loop resumes this frame: it re-validates (actor still active +
+/// the primary's precondition) and runs the primary effect, then pops.
+/// Transient — it persists across an `apply()` boundary only while a window
+/// suspends the loop. Never awaits input itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActionResolutionFrame {
+    /// The acting investigator.
+    pub investigator: InvestigatorId,
+    /// Which primary effect to run when the `AoO` loop completes.
+    pub resume: ActionResume,
 }
 
 // --- Combat, damage and resolution frame payloads (#932) ---

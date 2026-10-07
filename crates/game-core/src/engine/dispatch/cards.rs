@@ -18,8 +18,8 @@ use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    ActionResume, AssetEntry, CardCode, CardInPlay, CardInstanceId, Continuation, InvestigatorId,
-    Zone,
+    ActionResolutionFrame, ActionResume, AssetEntry, CardCode, CardInPlay, CardInstanceId,
+    InvestigatorId, Zone,
 };
 use crate::state::{MulliganFrame, PlayFromHandFrame};
 
@@ -648,7 +648,7 @@ pub(super) fn draw(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
     // Evade, Parley, Resign are), so each ready engaged enemy attacks
     // before the card is drawn (RR p.5).
     actions::spend_one_action(cx, investigator);
-    cx.state.continuations.push(Continuation::ActionResolution {
+    cx.state.continuations.push(ActionResolutionFrame {
         investigator,
         resume: ActionResume::Draw,
     });
@@ -1049,7 +1049,7 @@ pub(super) fn play_card(
     // soak windows); `complete_play` runs on resume. Fast plays are not actions
     // and resolve immediately. (#378.)
     if !is_fast {
-        cx.state.continuations.push(Continuation::ActionResolution {
+        cx.state.continuations.push(ActionResolutionFrame {
             investigator,
             resume: ActionResume::PlayCard { card: Some(card) },
         });

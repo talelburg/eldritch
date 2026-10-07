@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::InvestigationPhaseFrame;
 
 /// Build a Move scenario with one ready engaged enemy at the
 /// origin. The investigator is configured to be defeated by the
@@ -367,9 +368,9 @@ fn all_investigators_eliminated_fires_only_when_last_active_falls() {
         .with_turn_order([inv1, inv2])
         .with_active_investigator(inv1)
         .with_enemy(e)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(inv1)
         .build();
     // First, place inv1 at A so the move scenario validates.

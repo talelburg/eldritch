@@ -17,7 +17,7 @@ use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     Agenda, CardCode, Continuation, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigationResume, InvestigatorId, LocationId, Phase,
+    InvestigationPhaseFrame, InvestigationResume, InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support;
 
@@ -73,9 +73,9 @@ fn dodge_state() -> (GameState, InvestigatorId, EnemyId) {
         .with_enemy(engaged_attacker(7, inv_id, loc_id))
         // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
         // InvestigationPhase anchor at investigation_phase_end.
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
         // EndTurn cascade pops before advancing into the Enemy phase.
         .with_investigator_turn(inv_id)

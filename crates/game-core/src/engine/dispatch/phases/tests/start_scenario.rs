@@ -2,7 +2,7 @@ use card_dsl::card_data::SkillKind;
 
 use super::*;
 use crate::action::RosterEntry;
-use crate::state::{CardCode, GameStateBuilder, SkillSubstitution};
+use crate::state::{CardCode, GameStateBuilder, SkillSubstitution, UpkeepPhaseFrame};
 use crate::test_support::TEST_INV;
 use crate::{engine, test_support};
 
@@ -26,9 +26,9 @@ fn round_end_clears_round_scoped_skill_substitutions() {
         .with_turn_order([id])
         .with_active_investigator(id)
         // upkeep_round_end_teardown pops the UpkeepPhase anchor (slice 1a).
-        .with_phase_anchor(Continuation::UpkeepPhase {
+        .with_phase_anchor(Continuation::UpkeepPhase(UpkeepPhaseFrame {
             resume: UpkeepResume::Begins,
-        })
+        }))
         .build();
     state.round = 1;
     state.skill_substitutions.push(SkillSubstitution {

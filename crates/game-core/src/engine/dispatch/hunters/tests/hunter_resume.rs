@@ -1,6 +1,6 @@
 use super::*;
 use crate::engine::{dispatch, Cx};
-use crate::state::{EnemyId, EnemyResume, InvestigatorId, LocationId, Phase};
+use crate::state::{EnemyId, EnemyPhaseFrame, EnemyResume, InvestigatorId, LocationId, Phase};
 use crate::{assert_event, test_support};
 
 /// Build the `PickSingle` response selecting the offered option whose label
@@ -55,10 +55,10 @@ fn hunter_move_tie_suspends_then_resumes_on_pick_location() {
         .with_enemy(hunter)
         // EnemyPhase anchor (slice 1a): the resume cascade reaches the
         // attack kickoff / enemy_phase_end, which require it.
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: None,
-        })
+        }))
         .build();
     let mut events = Vec::new();
     let outcome = drive_hunter_moves(&mut Cx {
@@ -172,10 +172,10 @@ fn hunter_engage_tie_suspends_then_resumes_on_pick_investigator() {
         .with_enemy(h)
         // EnemyPhase anchor (slice 1a): resume cascades into the attack
         // kickoff / enemy_phase_end.
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: None,
-        })
+        }))
         .build();
     let mut events = Vec::new();
     let outcome = drive_hunter_moves(&mut Cx {
@@ -296,10 +296,10 @@ fn multi_hunter_one_suspends_then_next_processed_on_resume() {
         .with_enemy(clean_hunter)
         // EnemyPhase anchor (slice 1a): resume cascades into the attack
         // kickoff / enemy_phase_end.
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: None,
-        })
+        }))
         .build();
     let mut events = Vec::new();
     let outcome = drive_hunter_moves(&mut Cx {
@@ -361,10 +361,10 @@ fn hunter_move_tie_rejects_wrong_response_kind() {
         .with_enemy(hunter)
         // EnemyPhase anchor (slice 1a): the resume cascade reaches the
         // attack kickoff / enemy_phase_end, which require it.
-        .with_phase_anchor(Continuation::EnemyPhase {
+        .with_phase_anchor(Continuation::EnemyPhase(EnemyPhaseFrame {
             resume: EnemyResume::BeforeInvestigatorAttacked,
             attacking: None,
-        })
+        }))
         .build();
     let mut events = Vec::new();
     let outcome = drive_hunter_moves(&mut Cx {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::InvestigationPhaseFrame;
 
 #[test]
 fn end_turn_drains_actions_and_emits_turn_ended() {
@@ -11,9 +12,9 @@ fn end_turn_drains_actions_and_emits_turn_ended() {
         .with_investigator(test_support::test_investigator(2))
         .with_turn_order([id, InvestigatorId(2)])
         .with_active_investigator(id)
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         .with_investigator_turn(id)
         .build();
 

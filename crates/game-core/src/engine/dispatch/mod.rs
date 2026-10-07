@@ -20,8 +20,8 @@ use crate::engine::outcome::{
 use crate::engine::{enumerate, evaluator, Cx};
 use crate::state::FastWindowFrame;
 use crate::state::{
-    ActionResume, CardCode, CardInstanceId, Continuation, FrameActivity, GameState,
-    ScenarioEndFrame, ScenarioEndStep, Status,
+    ActionResolutionFrame, ActionResume, CardCode, CardInstanceId, Continuation, Frame,
+    FrameActivity, GameState, InvestigatorTurnFrame, ScenarioEndFrame, ScenarioEndStep, Status,
 };
 pub(crate) use control::take_control;
 
@@ -130,11 +130,13 @@ fn turn_menu(state: &GameState) -> InputRequest {
     // The prompt itself is anchored to the acting investigator's turn control, so
     // a host can suppress its "Choose an action" text structurally rather than by
     // matching the string (ADR 0011).
-    match state.continuations.last() {
-        Some(Continuation::InvestigatorTurn { investigator, .. }) => {
-            request.at(OptionTarget::TurnControl(*investigator))
-        }
-        _ => request,
+    match state
+        .continuations
+        .top()
+        .and_then(InvestigatorTurnFrame::downcast_ref)
+    {
+        Some(turn) => request.at(OptionTarget::TurnControl(turn.investigator)),
+        None => request,
     }
 }
 
@@ -264,10 +266,10 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
         };
         let outcome = match &top {
             // Inert phase anchors, woken because the child above them popped.
-            Continuation::MythosPhase { .. }
-            | Continuation::InvestigationPhase { .. }
-            | Continuation::EnemyPhase { .. }
-            | Continuation::UpkeepPhase { .. } => {
+            Continuation::MythosPhase(_)
+            | Continuation::InvestigationPhase(_)
+            | Continuation::EnemyPhase(_)
+            | Continuation::UpkeepPhase(_) => {
                 let outcome = phases::anchor_on_child_pop(cx);
                 // No-progress guard: a parked phase (e.g. Investigation with
                 // no active investigator) leaves the same anchor on top —
@@ -282,7 +284,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // A parked action resumed via [`resume_action_resolution`], which
             // runs the action's primary effect (or suppresses it if the actor
             // was defeated) and pops; the `InvestigatorTurn` beneath is then top.
-            Continuation::ActionResolution { .. } => resume_action_resolution(cx),
+            Continuation::ActionResolution(_) => resume_action_resolution(cx),
             // An effect-walk frame (#422): step it via the shared effect driver
             // — push a child, pop, or suspend in place for a controller pick.
             Continuation::Effect(_) => evaluator::step_effect_frame(cx),
@@ -327,7 +329,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // The entered-location half of a Move, re-exposed once the left
             // location's queued `LeftLocation` abilities resolved (#569):
             // auto-engage at the destination and emit `EnteredLocation`.
-            Continuation::MoveEnter { .. } => actions::resume_move_enter(cx),
+            Continuation::MoveEnter(_) => actions::resume_move_enter(cx),
             // A per-drawer Mythos surge chain: draw the next card (first step or
             // a pending surge), or — chain over — pop itself and advance the
             // loop to the next drawer / post-1.4 window.
@@ -354,14 +356,14 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // The open turn is ending: a suspending `EndOfTurn` forced stranded
             // `end_turn` before rotation and flagged this frame. Re-exposed now
             // that the suspension resolved, drive the rotation tail.
-            Continuation::InvestigatorTurn {
+            Continuation::InvestigatorTurn(InvestigatorTurnFrame {
                 investigator,
                 ending: true,
-            } => phases::resume_end_turn(cx, *investigator),
+            }) => phases::resume_end_turn(cx, *investigator),
             // The open turn surfaces its legal-action enumeration as an
             // `AwaitingInput` menu (2b, #447), re-enumerated at resolve rather
             // than cached — see the open-turn arm of `resolve_input`.
-            Continuation::InvestigatorTurn { ending: false, .. } => {
+            Continuation::InvestigatorTurn(InvestigatorTurnFrame { ending: false, .. }) => {
                 return EngineOutcome::AwaitingInput {
                     request: turn_menu(cx.state),
                     // Deterministic resume-token is #458; placeholder like every
@@ -430,13 +432,10 @@ fn scenario_end_cancels_top(state: &GameState) -> bool {
 /// defeated mid-action; each primary effect additionally re-checks its own
 /// target precondition. Called only by [`drive`] with such a frame on top.
 fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
-    let Some(Continuation::ActionResolution {
+    let ActionResolutionFrame {
         investigator,
         resume,
-    }) = cx.state.continuations.pop()
-    else {
-        unreachable!("resume_action_resolution: top frame is not an ActionResolution");
-    };
+    } = cx.state.continuations.pop_expect();
     // §D re-validation: actor still Active? If not, suppress the primary.
     let active = cx
         .state
@@ -749,7 +748,7 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         // Open-turn OptionId dispatch (slice 2b, #447): `ResolveInput(PickSingle(OptionId))`
         // at the open turn re-enumerates `legal_actions`, indexes by the submitted
         // `OptionId`, and forwards to `dispatch_turn_action`.
-        Continuation::InvestigatorTurn { .. } => {
+        Continuation::InvestigatorTurn(_) => {
             let InputResponse::PickSingle(opt) = response else {
                 return EngineOutcome::Rejected {
                     reason: "ResolveInput: the open turn expects PickSingle(OptionId)".into(),
@@ -772,17 +771,17 @@ pub(crate) fn resolve_input(cx: &mut Cx, response: &InputResponse) -> EngineOutc
         // than wildcarded so a new kind must be routed or listed here.
         Continuation::EncounterCard(_)
         | Continuation::PlayFromHand(_)
-        | Continuation::MoveEnter { .. }
+        | Continuation::MoveEnter(_)
         | Continuation::PlayerDraw(_)
         | Continuation::EmitEvent(_)
         | Continuation::TimingPoint(_)
-        | Continuation::ActionResolution { .. }
+        | Continuation::ActionResolution(_)
         | Continuation::Elimination { .. }
         | Continuation::ScenarioEnd { .. }
-        | Continuation::MythosPhase { .. }
-        | Continuation::InvestigationPhase { .. }
-        | Continuation::EnemyPhase { .. }
-        | Continuation::UpkeepPhase { .. } => {
+        | Continuation::MythosPhase(_)
+        | Continuation::InvestigationPhase(_)
+        | Continuation::EnemyPhase(_)
+        | Continuation::UpkeepPhase(_) => {
             unreachable!("resolve_input: the gate admits only Prompt frames, got {top:?}")
         }
     }
@@ -793,8 +792,8 @@ mod turn_menu_tests {
     use crate::engine::outcome::OptionTarget;
     use crate::engine::{dispatch, enumerate};
     use crate::state::{
-        ChaosBag, ChaosToken, Continuation, GameStateBuilder, InvestigationResume, InvestigatorId,
-        Phase,
+        ChaosBag, ChaosToken, Continuation, GameStateBuilder, InvestigationPhaseFrame,
+        InvestigationResume, InvestigatorId, Phase,
     };
     use crate::test_support;
 
@@ -809,9 +808,9 @@ mod turn_menu_tests {
             .with_active_investigator(InvestigatorId(1))
             .with_turn_order([InvestigatorId(1)])
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-            .with_phase_anchor(Continuation::InvestigationPhase {
+            .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
                 resume: InvestigationResume::TurnBegins,
-            })
+            }))
             .with_investigator_turn(InvestigatorId(1))
             .build();
         let loc = test_support::test_location(10, "Study");

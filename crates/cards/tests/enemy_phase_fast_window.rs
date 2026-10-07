@@ -50,8 +50,8 @@ use game_core::event::Event;
 use game_core::state::FastWindowFrame;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, FastActorScope,
-    FastWindowKind, GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId,
-    Phase, PhaseStep,
+    FastWindowKind, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
+    InvestigatorId, LocationId, Phase, PhaseStep,
 };
 use game_core::test_support;
 
@@ -104,9 +104,9 @@ fn board(beat_cop: bool, enemy_health: u8) -> (GameState, InvestigatorId, EnemyI
         .with_enemy(engaged_attacker(inv_id, loc_id, enemy_health))
         // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
         // InvestigationPhase anchor at investigation_phase_end.
-        .with_phase_anchor(Continuation::InvestigationPhase {
+        .with_phase_anchor(Continuation::InvestigationPhase(InvestigationPhaseFrame {
             resume: InvestigationResume::TurnBegins,
-        })
+        }))
         // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
         // EndTurn cascade pops before advancing into the Enemy phase.
         .with_investigator_turn(inv_id)
