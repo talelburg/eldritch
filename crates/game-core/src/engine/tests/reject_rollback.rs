@@ -96,3 +96,43 @@ fn rejected_resolve_input_rewinds_to_pause_state_not_pre_action() {
     );
     assert!(result.events.is_empty());
 }
+
+#[test]
+fn engine_record_applied_while_a_prompt_is_outstanding_is_rejected() {
+    // In a replay log an engine record only ever sits where the engine was
+    // at rest, never between a prompt and its answer. Applied mid-prompt it
+    // would run beneath the outstanding prompt and strand it, so it is
+    // rejected under the validate-first contract.
+    test_support::install_test_registry();
+    let roster = [RosterEntry {
+        investigator: CardCode::new(test_support::TEST_INV),
+        deck: (0..20).map(|i| CardCode::new(format!("d-{i}"))).collect(),
+    }];
+    let opened = seat_and_open(GameStateBuilder::new().with_rng_seed(7).build(), &roster);
+    assert!(
+        matches!(opened.outcome, EngineOutcome::AwaitingInput { .. }),
+        "seating should pause on the setup mulligan, got {:?}",
+        opened.outcome
+    );
+    let before = opened.state.clone();
+
+    let result = apply(
+        opened.state,
+        Action::Engine(EngineRecord::DeckShuffled {
+            investigator: InvestigatorId(1),
+        }),
+    );
+
+    let EngineOutcome::Rejected { reason } = &result.outcome else {
+        panic!("expected Rejected, got {:?}", result.outcome);
+    };
+    assert!(
+        reason.contains("prompt is outstanding"),
+        "the reason should name the outstanding prompt: {reason}"
+    );
+    assert_eq!(
+        result.state, before,
+        "rejected record must not mutate state"
+    );
+    assert!(result.events.is_empty());
+}

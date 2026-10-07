@@ -12,13 +12,12 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::{OptionId, OptionTarget};
 use game_core::event::Event;
-use game_core::state::{
-    CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
-};
-use game_core::{assert_event, test_support};
+use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{self, TestSession};
 
 const LIBRARIAN: &str = "01032";
 const OLD_BOOK: &str = "01031"; // Item. Tome. asset
@@ -40,53 +39,61 @@ fn board(deck: Vec<CardCode>) -> GameState {
     inv.deck = deck;
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
         .with_location(test_support::test_location(10, "Study"))
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build()
 }
 
-fn play(state: GameState) -> ApplyResult {
-    test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: INV,
-            hand_index: 0,
-        },
-    )
+fn play(state: GameState) -> TestSession {
+    TestSession::new(state).take(&TurnAction::PlayCard {
+        investigator: INV,
+        hand_index: 0,
+    })
 }
 
-fn pick(state: GameState, option: u32) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(option)),
-        }),
-    )
+/// Research Librarian as its own reaction window offers it: the in-play
+/// instance it entered play as.
+fn librarian(session: &TestSession) -> OptionTarget {
+    let instance = session.state().investigators[&INV]
+        .cards_in_play
+        .iter()
+        .find(|c| c.code == CardCode::new(LIBRARIAN))
+        .expect("Research Librarian is in play")
+        .instance_id;
+    OptionTarget::CardInstance(instance)
+}
+
+/// Take the `position`th eligible card from the search. A deck search's
+/// options have no board home (ADR 0015 excludes them), so the pick is
+/// positional.
+fn take_searched(position: u32) -> Action {
+    Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(OptionId(position)),
+    })
+}
+
+fn at_turn_menu(session: &TestSession) -> bool {
+    session.prompt().target == Some(OptionTarget::TurnControl(INV))
 }
 
 #[test]
 fn entering_play_tutors_the_only_tome_asset() {
     // Deck has exactly one Tome asset (Old Book) + non-Tome filler.
-    let r = play(board(vec![
+    let s = play(board(vec![
         CardCode::new(OLD_BOOK),
         CardCode::new(GUTS),
         CardCode::new(GUTS),
     ]));
     // Research Librarian entered play → its EnteredPlay reaction window opened.
-    assert!(
-        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
-        "EnteredPlay reaction window opens",
-    );
+    assert!(s.prompt().skippable, "EnteredPlay reaction window opens");
 
-    // Fire the reaction (option 0 = the sole pending trigger). One eligible
-    // Tome ⇒ the search auto-takes (no second prompt) ⇒ Done.
-    let r = pick(r.state, 0);
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    let inv = &r.state.investigators[&INV];
+    // Fire the reaction. One eligible Tome ⇒ the search auto-takes (no second
+    // prompt) ⇒ back to the turn menu.
+    let target = librarian(&s);
+    let s = s.pick(target);
+    assert!(at_turn_menu(&s));
+    let inv = &s.state().investigators[&INV];
     assert!(
         inv.hand.contains(&CardCode::new(OLD_BOOK)),
         "the Tome asset was added to hand",
@@ -95,8 +102,8 @@ fn entering_play_tutors_the_only_tome_asset() {
         !inv.deck.contains(&CardCode::new(OLD_BOOK)),
         "and removed from the deck",
     );
-    assert_event!(r.events, Event::CardSearchedToHand { .. });
-    assert_event!(r.events, Event::DeckShuffled { .. });
+    assert_event!(s.events(), Event::CardSearchedToHand { .. });
+    assert_event!(s.events(), Event::DeckShuffled { .. });
 }
 
 /// #639: the initiation gate reaches the reaction path too. `Effect::SearchDeck`
@@ -106,22 +113,18 @@ fn entering_play_tutors_the_only_tome_asset() {
 /// no window offers it. Research Librarian still enters play normally.
 #[test]
 fn an_empty_deck_does_not_open_the_tutor_reaction() {
-    let r = play(board(Vec::new()));
+    let s = play(board(Vec::new()));
     assert!(
-        r.state.investigators[&INV]
+        s.state().investigators[&INV]
             .cards_in_play
             .iter()
             .any(|c| c.code == CardCode::new(LIBRARIAN)),
         "Research Librarian still enters play — only its reaction is barred",
     );
     assert!(
-        r.state
-            .continuations
-            .top()
-            .and_then(Continuation::pending_candidates)
-            .is_none_or(Vec::is_empty),
+        at_turn_menu(&s),
         "no reaction offered for a search that cannot change the game state: {:?}",
-        r.state.continuations.top(),
+        s.prompt(),
     );
 }
 
@@ -130,49 +133,47 @@ fn an_empty_deck_does_not_open_the_tutor_reaction() {
 /// offered and simply finds nothing (#639's conservative posture).
 #[test]
 fn a_tomeless_but_non_empty_deck_still_offers_the_reaction() {
-    let r = play(board(vec![CardCode::new(GUTS), CardCode::new(GUTS)]));
+    let s = play(board(vec![CardCode::new(GUTS), CardCode::new(GUTS)]));
     assert!(
-        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
+        s.prompt().skippable,
         "EnteredPlay reaction window opens even with no eligible Tome",
     );
     // Fire it: 0 eligible cards ⇒ find nothing, shuffle anyway.
-    let r = pick(r.state, 0);
+    let target = librarian(&s);
+    let s = s.pick(target);
     assert!(
-        !r.state.investigators[&INV]
+        !s.state().investigators[&INV]
             .hand
             .contains(&CardCode::new(GUTS)),
         "no Tome to find, so nothing was tutored",
     );
-    assert_event!(r.events, Event::DeckShuffled { .. });
+    assert_event!(s.events(), Event::DeckShuffled { .. });
 }
 
 #[test]
 fn two_tome_assets_prompt_a_choice_then_tutor_the_pick() {
     // Two eligible Tome assets (Old Book at eligible index 0, Medical Texts at
     // index 1, deck order preserved) + non-Tome filler between them.
-    let r = play(board(vec![
+    let s = play(board(vec![
         CardCode::new(OLD_BOOK),
         CardCode::new(GUTS),
         CardCode::new(MEDICAL_TEXTS),
     ]));
-    assert!(
-        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
-        "EnteredPlay reaction window opens",
-    );
+    assert!(s.prompt().skippable, "EnteredPlay reaction window opens");
 
     // Fire the reaction → SearchDeck sees 2 eligible Tomes ⇒ suspends for a
     // card pick.
-    let r = pick(r.state, 0);
+    let target = librarian(&s);
+    let s = s.pick(target);
     assert!(
-        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
+        !at_turn_menu(&s) && !s.prompt().skippable,
         "2 eligible Tomes ⇒ the search suspends for a pick",
     );
 
     // Pick the second eligible Tome (Medical Texts). On Done, resume_choice
     // re-drives the still-open reaction window so it closes (Task 4).
-    let r = pick(r.state, 1);
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    let inv = &r.state.investigators[&INV];
+    let s = s.apply(take_searched(1));
+    let inv = &s.state().investigators[&INV];
     assert!(
         inv.hand.contains(&CardCode::new(MEDICAL_TEXTS)),
         "the picked Tome was added to hand",
@@ -185,13 +186,6 @@ fn two_tome_assets_prompt_a_choice_then_tutor_the_pick() {
         inv.deck.contains(&CardCode::new(OLD_BOOK)),
         "the unpicked Tome stays in the deck",
     );
-    assert_event!(r.events, Event::DeckShuffled { .. });
-    assert!(
-        r.state
-            .continuations
-            .top()
-            .and_then(Continuation::pending_candidates)
-            .is_none_or(Vec::is_empty),
-        "the reaction window closed",
-    );
+    assert_event!(s.events(), Event::DeckShuffled { .. });
+    assert!(at_turn_menu(&s), "the reaction window closed");
 }

@@ -57,7 +57,8 @@ use game_core::engine::{ApplyResult, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, Zone,
+    ContinuationStack, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind,
+    Zone,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
 
@@ -117,13 +118,10 @@ fn board(token: ChaosToken) -> GameState {
     inv.skills.intellect = 5;
 
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(inv, PARLOR_ID)
         .with_location(parlor)
         .with_location(hallway)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([token]))
         .build();
     state
@@ -138,11 +136,12 @@ fn board(token: ChaosToken) -> GameState {
 /// Drive the Parley to resolution: the activation opens a commit window
 /// (nothing to commit), then the test resolves.
 fn drive_parley(state: GameState) -> ApplyResult {
-    let mut session = TestSession::new(state).take(&parley());
-    session = session.resolve_choices(|c: &mut ScriptedResolver| {
-        c.commit_cards(&[]);
-    });
-    session.run()
+    TestSession::new(state)
+        .resolve_choices(|c: &mut ScriptedResolver| {
+            c.commit_cards(&[]);
+        })
+        .take(&parley())
+        .finish()
 }
 
 // ---- the offer -------------------------------------------------------
@@ -358,8 +357,11 @@ fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
         // Health 3: one damage already on her, so the two soaked points defeat
         // her.
         inv.cards_in_play[0].accumulated_damage = 1;
-        inv.actions_remaining = 3;
     }
+    // Drop the open-turn prompt and draw straight: an encounter card is
+    // revealed at rest, never beneath an outstanding prompt.
+    state.continuations = ContinuationStack::new();
+    state.phase = Phase::Mythos;
     // Agility 3 against Grasping Hands' printed 3, minus 2 — a failure by 2,
     // so the treachery deals 2 damage.
     state.chaos_bag.tokens = vec![ChaosToken::Numeric(-2)];
@@ -406,10 +408,11 @@ fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
 /// cards, which she explicitly is not.
 #[test]
 fn eliminating_her_controller_removes_her_to_the_scenarios_pile() {
-    let mut state = drive_parley(board(ChaosToken::Numeric(0))).state;
-    let mut events = Vec::new();
     // The test investigator has 8 health; 8 damage defeats it outright.
-    test_support::eliminate_by_damage(&mut state, &mut events, INV, 8);
+    let state = TestSession::new(drive_parley(board(ChaosToken::Numeric(0))).state)
+        .take_damage(INV, 8)
+        .finish()
+        .state;
 
     let inv = &state.investigators[&INV];
     assert!(

@@ -88,11 +88,8 @@ fn solo_investigator_facing(
     enemy.current_location = Some(loc_id); // Fight is location-gated (#401)
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_round(0)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(test_support::test_location(10, "Study"))

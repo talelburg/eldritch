@@ -39,13 +39,13 @@
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, Enemy, EnemyId,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
 };
-use game_core::test_support;
+use game_core::test_support::{self, TestSession};
 
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.
 const DODGE: &str = "01023";
@@ -56,32 +56,6 @@ const GUARD_DOG: &str = "01021";
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
-}
-
-/// Resolve a soak-distribution prompt (#44/K5b — a retaliate attack against an
-/// investigator with a soaker prompts for the damage distribution) by assigning
-/// every point onto the soaker asset. Returns the first result that is no longer
-/// a distribution prompt.
-fn soak_onto_asset(mut result: ApplyResult) -> ApplyResult {
-    while let EngineOutcome::AwaitingInput { request, .. } = &result.outcome {
-        if !request.prompt.contains("to which target") {
-            break;
-        }
-        let id = request
-            .options
-            .iter()
-            .find(|o| o.label.contains("Asset"))
-            .or_else(|| request.options.iter().find(|o| o.label == "Investigator"))
-            .expect("a distribution option")
-            .id;
-        result = engine::apply(
-            result.state,
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickSingle(id),
-            }),
-        );
-    }
-    result
 }
 
 /// Build a ready retaliate enemy at `loc`, engaged with `inv`.
@@ -127,12 +101,9 @@ fn fight_state(
     inv.cards_in_play = cards_in_play;
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(inv)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy(enemy)
         // Single `Numeric(0)` token → total = combat(1) + 0 = 1 < fight(5) → fail.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -202,16 +173,23 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
     // → Guard Dog has no cancel reaction so the attack's `when` cell auto-skips →
     // its damage is assigned to Guard Dog → the `DamageAssigned` window opens →
     // suspend, before anything is placed.
-    let result = submit_empty_commit(state, inv_id, enemy_id);
     // The retaliate's damage prompts the soak distribution (#44/K5b): assign it
     // onto Guard Dog → soak window opens.
-    let result = soak_onto_asset(result);
-    let mut state = result.state;
+    let session = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+            c.pick(OptionTarget::CardInstance(dog));
+        })
+        .take(&TurnAction::Fight {
+            investigator: inv_id,
+            enemy: enemy_id,
+        });
+    let state = session.state();
 
-    assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "Guard Dog soak window must suspend after the failed Fight: {:?}",
-        result.outcome
+    assert_ne!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(inv_id)),
+        "Guard Dog soak window must suspend after the failed Fight"
     );
 
     // The retaliate's 1 damage is assigned to Guard Dog and not yet placed: the
@@ -244,14 +222,9 @@ fn guard_dog_retaliates_against_retaliate_and_skill_test_ends() {
         "SkillTest frame must still be on the stack while the Guard Dog window is open"
     );
 
-    // Fire Guard Dog's reaction (PickSingle(0) = the single offered trigger).
-    let result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    state = result.state;
+    // Fire Guard Dog's reaction, offered on the dog.
+    let result = session.pick(OptionTarget::CardInstance(dog)).finish();
+    let state = result.state;
 
     // Guard Dog dealt 1 damage to the retaliating enemy.
     assert_eq!(

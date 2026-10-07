@@ -7,11 +7,12 @@ use std::collections::BTreeSet;
 
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{self, EngineOutcome, OptionId, TimingEvent};
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, TimingEvent};
 use game_core::state::{
     CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
     TimingMode, TimingPointWindowFrame,
 };
+use game_core::test_support::TestSession;
 use game_core::{scenario_registry, test_support};
 use scenarios::the_gathering;
 
@@ -240,23 +241,21 @@ fn location_id(state: &GameState, code: &str) -> LocationId {
 #[test]
 fn attic_forced_enter_deals_one_horror() {
     // A bare board with the Attic (01113); fire the forced
-    // EnteredLocation trigger directly via the test helper (live entry
+    // EnteredLocation timing point directly (live entry
     // isn't reachable until C1b's Door-on-the-Floor transition).
     let mut attic = test_support::test_location(20, "Attic");
     attic.code = CardCode("01113".into());
     let inv = test_support::test_investigator(1);
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_investigator_at(inv, LocationId(20))
         .with_location(attic)
         .build();
-    let mut events = Vec::new();
-
-    let outcome = test_support::fire_forced_on_enter(
-        &mut state,
-        &mut events,
-        InvestigatorId(1),
-        LocationId(20),
-    );
+    let ApplyResult { state, outcome, .. } = TestSession::new(state)
+        .fire_at(TimingEvent::EnteredLocation {
+            investigator: InvestigatorId(1),
+            location: LocationId(20),
+        })
+        .finish();
     assert!(matches!(outcome, EngineOutcome::Done));
     assert_eq!(
         state
@@ -274,18 +273,16 @@ fn cellar_forced_enter_deals_one_damage() {
     let mut cellar = test_support::test_location(21, "Cellar");
     cellar.code = CardCode("01114".into());
     let inv = test_support::test_investigator(1);
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_investigator_at(inv, LocationId(21))
         .with_location(cellar)
         .build();
-    let mut events = Vec::new();
-
-    let outcome = test_support::fire_forced_on_enter(
-        &mut state,
-        &mut events,
-        InvestigatorId(1),
-        LocationId(21),
-    );
+    let ApplyResult { state, outcome, .. } = TestSession::new(state)
+        .fire_at(TimingEvent::EnteredLocation {
+            investigator: InvestigatorId(1),
+            location: LocationId(21),
+        })
+        .finish();
     assert!(matches!(outcome, EngineOutcome::Done));
     assert_eq!(
         state

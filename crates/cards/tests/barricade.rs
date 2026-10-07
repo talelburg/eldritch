@@ -19,8 +19,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigationPhaseFrame, InvestigationResume, Investigator, InvestigatorId, Location,
-    LocationId, Phase,
+    Investigator, InvestigatorId, Location, LocationId,
 };
 use game_core::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
@@ -66,12 +65,9 @@ fn playing_barricade_attaches_one_card_and_does_not_discard_the_event() {
     inv.current_location = Some(A);
     inv.hand = vec![CardCode::new(BARRICADE)];
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_location(test_support::test_location(1, "Study"))
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build();
 
     let r = test_support::take_turn_action(
@@ -110,21 +106,11 @@ fn map_with_barricade_at_b(inv_at: LocationId, enemy: Enemy) -> GameState {
     let mut b = test_support::test_location(2, "B");
     b.connections = vec![A];
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_location(a)
         .with_location(b)
         .with_enemy(enemy)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
-        // InvestigationPhase anchor at investigation_phase_end.
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
-        // EndTurn cascade pops before rotating / cascading.
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build();
     state
         .locations
@@ -275,13 +261,10 @@ fn leaving_the_barricaded_location_discards_barricade() {
     let mut b = test_support::test_location(2, "B");
     b.connections = vec![A];
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_location(a)
         .with_location(b)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build();
     state
         .locations
@@ -437,13 +420,10 @@ fn map_leaving_barricaded_a(enemy: Option<Enemy>) -> GameState {
     let mut b = test_support::test_location(2, "B");
     b.connections = vec![A];
     let mut builder = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_location(a)
         .with_location(b)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV);
+        .open_turn(INV);
     if let Some(enemy) = enemy {
         builder = builder.with_enemy(enemy);
     }
@@ -507,14 +487,9 @@ fn board(
 ) -> GameState {
     let turn_order: Vec<InvestigatorId> = investigators.iter().map(|i| i.id).collect();
     let mut builder = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_enemy(hunter)
-        .with_active_investigator(turn_order[0])
         .with_turn_order(turn_order.clone())
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(turn_order[0]);
+        .open_turn(turn_order[0]);
     for loc in locations {
         builder = builder.with_location(loc);
     }

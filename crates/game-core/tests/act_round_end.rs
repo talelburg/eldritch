@@ -1,17 +1,15 @@
 //! Round-end `when` act-advance window through the public `apply` entry
 //! (EmitEvent-frame C-coordinators, #434). The Upkeep round-end coordinator
 //! opens act 01109's `When`-`RoundEnded` reaction as a board candidate;
-//! `ResolveInput(PickSingle)` fires the advance / `Skip` declines.
+//! picking it fires the advance / `Skip` declines.
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, Cx, EngineOutcome, OptionId, TimingEvent};
+use game_core::engine::{self, Cx, EngineOutcome, OptionTarget};
 use game_core::state::{
-    Act, CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
-    Phase, TimingMode, TimingPointWindowFrame, UpkeepPhaseFrame, UpkeepResume,
+    Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Location, LocationId,
 };
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, MockRegistry, TestSession};
 
 /// The advance logic lives in the registry (01109's `When`-`RoundEnded` reaction
 /// native), so the coordinator fires it through the effect evaluator when its
@@ -36,18 +34,14 @@ fn install() {
         .install();
 }
 
-/// Act 2 (01109) current, a Hallway investigator with `clues`, phase Upkeep with
-/// its anchor. Act 3 (01110) is the terminal-Won successor.
+/// Act 2 (01109) current, a Hallway investigator with `clues`, at the end of
+/// the Upkeep phase. Act 3 (01110) is the terminal-Won successor.
 fn upkeep_round_end_state(clues: u8) -> GameState {
     let inv = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))
         .with_turn_order([inv])
-        .with_phase(Phase::Upkeep)
-        // UpkeepPhase anchor (slice 1a): the round-end teardown pops it.
-        .with_phase_anchor(UpkeepPhaseFrame {
-            resume: UpkeepResume::Begins,
-        })
+        .ending_upkeep_phase()
         .with_location(Location::new(
             LocationId(2),
             CardCode("01112".into()),
@@ -73,47 +67,33 @@ fn upkeep_round_end_state(clues: u8) -> GameState {
     state
 }
 
-/// Open the round-end `when` window: drive the Upkeep round-end coordinator,
-/// which scans act 01109's `When`-`RoundEnded` reaction and suspends on it.
-fn opened_round_end_window(clues: u8) -> GameState {
-    let mut state = upkeep_round_end_state(clues);
-    let mut events = Vec::new();
-    let out = test_support::run_upkeep_round_end(&mut state, &mut events);
-    assert!(
-        matches!(out, EngineOutcome::AwaitingInput { .. }),
-        "the round-end `when` act-advance window should open: {out:?}"
+/// Open the round-end `when` window: settling runs the Upkeep phase end into
+/// the round-end coordinator, which scans act 01109's `When`-`RoundEnded`
+/// reaction and suspends on it.
+fn opened_round_end_window(clues: u8) -> TestSession {
+    let session = TestSession::new(upkeep_round_end_state(clues));
+    let offered: Vec<_> = session
+        .prompt()
+        .options
+        .iter()
+        .map(|o| o.target.clone())
+        .collect();
+    assert_eq!(
+        offered,
+        vec![Some(OptionTarget::Act)],
+        "the round-end `when` window offers the act-advance reaction alone",
     );
-    assert!(
-        matches!(
-            state.continuations.top(),
-            Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
-                event: TimingEvent::RoundEnded,
-                mode: TimingMode::Reaction,
-                ..
-            }))
-        ),
-        "the open window is the round-end reaction window, got {:?}",
-        state.continuations.top(),
-    );
-    state
+    session
 }
 
 #[test]
 fn resolve_pick_fires_advance() {
-    let state = opened_round_end_window(3);
-    // The act-advance is the window's sole candidate (OptionId(0)).
-    let r = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
     // Picking the advance continues the round-end + upkeep cascade into Mythos,
-    // which pauses at the step-1.4 encounter-draw prompt (AwaitingInput).
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    assert_eq!(r.state.act_index, 1, "advanced act 2 -> act 3");
+    // which pauses at the step-1.4 encounter-draw prompt.
+    let session = opened_round_end_window(3).pick(OptionTarget::Act);
+    assert_eq!(session.state().act_index, 1, "advanced act 2 -> act 3");
     assert_eq!(
-        r.state.investigators[&InvestigatorId(1)].clues,
+        session.state().investigators[&InvestigatorId(1)].clues,
         0,
         "spent 3"
     );
@@ -121,17 +101,10 @@ fn resolve_pick_fires_advance() {
 
 #[test]
 fn resolve_skip_declines_advance() {
-    let state = opened_round_end_window(3);
-    let r = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Skip,
-        }),
-    );
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    assert_eq!(r.state.act_index, 0, "no advance on Skip");
+    let session = opened_round_end_window(3).skip();
+    assert_eq!(session.state().act_index, 0, "no advance on Skip");
     assert_eq!(
-        r.state.investigators[&InvestigatorId(1)].clues,
+        session.state().investigators[&InvestigatorId(1)].clues,
         3,
         "no clues spent on Skip"
     );

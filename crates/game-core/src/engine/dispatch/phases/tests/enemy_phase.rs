@@ -19,21 +19,11 @@ fn enemy_phase_runs_hunters_then_attack_loop_when_no_tie() {
     hunter.hunter = true;
     hunter.current_location = Some(LocationId(1));
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(loc_a)
         .with_location(loc_b)
         .with_investigator(inv)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
         .with_enemy(hunter)
-        // Mid-Investigation invariant: the InvestigationPhase anchor (slice
-        // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
-        // These tests construct the state directly (bypassing
-        // investigation_phase), so stage both explicitly.
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
     let mut events = Vec::new();
     let outcome = {
@@ -75,23 +65,13 @@ fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
     hunter.hunter = true;
     hunter.current_location = Some(LocationId(1));
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(loc_a)
         .with_location(loc_b)
         .with_location(loc_c)
         .with_location(loc_d)
         .with_investigator(inv)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
         .with_enemy(hunter)
-        // Mid-Investigation invariant: the InvestigationPhase anchor (slice
-        // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
-        // These tests construct the state directly (bypassing
-        // investigation_phase), so stage both explicitly.
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
     let mut events = Vec::new();
     let outcome = {

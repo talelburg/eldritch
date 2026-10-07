@@ -21,7 +21,7 @@ use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -71,11 +71,8 @@ fn roland_at_location_with_enemy(
     loc.clues = location_clues;
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_round(round)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -91,14 +88,14 @@ fn reaction_fires_after_roland_defeats_enemy_and_discovers_clue() {
 
     // Empty commit, then PickSingle(OptionId(0)) for the reaction window.
     let result = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]).pick_single(OptionId(0));
+        })
         .take(&TurnAction::Fight {
             investigator: inv_id,
             enemy: enemy_id,
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]).pick_single(OptionId(0));
-        })
-        .run();
+        .finish();
 
     assert!(matches!(
         result.outcome,
@@ -150,14 +147,14 @@ fn once_per_round_limit_blocks_second_reaction_in_same_round() {
     }
 
     let result = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
         .take(&TurnAction::Fight {
             investigator: inv_id,
             enemy: enemy_id,
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .run();
+        .finish();
 
     assert!(matches!(
         result.outcome,
@@ -198,14 +195,14 @@ fn lazy_round_reset_re_enables_reaction_in_a_later_round() {
     }
 
     let result = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]).pick_single(OptionId(0));
+        })
         .take(&TurnAction::Fight {
             investigator: inv_id,
             enemy: enemy_id,
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]).pick_single(OptionId(0));
-        })
-        .run();
+        .finish();
 
     assert!(matches!(
         result.outcome,
@@ -239,14 +236,14 @@ fn skipping_the_reaction_window_does_not_bump_the_counter() {
     let (inv_id, enemy_id, loc_id, state) = roland_at_location_with_enemy(2, 0);
 
     let result = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]).skip();
+        })
         .take(&TurnAction::Fight {
             investigator: inv_id,
             enemy: enemy_id,
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]).skip();
-        })
-        .run();
+        .finish();
 
     assert!(matches!(
         result.outcome,
@@ -282,14 +279,14 @@ fn reaction_not_offered_when_location_has_no_clues() {
     let (inv_id, enemy_id, loc_id, state) = roland_at_location_with_enemy(0, 0);
 
     let result = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
         .take(&TurnAction::Fight {
             investigator: inv_id,
             enemy: enemy_id,
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .run();
+        .finish();
 
     // The defeat still happened.
     assert_event!(

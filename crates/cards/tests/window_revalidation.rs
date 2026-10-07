@@ -26,16 +26,14 @@
 //! Lives at `crates/cards/tests/` so it can install [`cards::REGISTRY`] in its
 //! own integration-test process.
 
-use card_dsl::dsl::EventTiming;
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, OptionId, TimingEvent};
+use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
-    AbilityAddress, CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    Continuation, EnemyId, GameState, GameStateBuilder, Investigator, InvestigatorId, LocationId,
-    Phase, ResolutionCandidate, TimingMode, TimingPointWindowFrame, TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
+    GameStateBuilder, Investigator, InvestigatorId, LocationId, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -78,11 +76,8 @@ fn after_defeat_board(
     loc.clues = location_clues;
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_round(0)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -131,13 +126,13 @@ fn a_second_evidence_is_withdrawn_once_the_first_empties_the_wallet() {
     // withdrawn, and what makes this test fail on the *defect* (a second play, a
     // second `ResourcesPaid`) rather than on a missing scripted response.
     let result = TestSession::new(state)
-        .take(&fight_action(inv_id, enemy_id))
         .resolve_choices(|c| {
             c.commit_cards(&[])
                 .pick_single(OptionId(0))
                 .pick_single(OptionId(0));
         })
-        .run();
+        .take(&fight_action(inv_id, enemy_id))
+        .finish();
 
     // Exactly one play, one payment, one clue — not two of anything.
     assert_eq!(
@@ -218,13 +213,13 @@ fn evidence_is_withdrawn_when_rolands_reaction_takes_the_last_clue() {
     // what makes this test fail on the *defect* (a resource and a card spent for
     // a no-op discovery) rather than on a missing scripted response.
     let result = TestSession::new(state)
-        .take(&fight_action(inv_id, enemy_id))
         .resolve_choices(|c| {
             c.commit_cards(&[])
                 .pick_single(OptionId(0))
                 .pick_single(OptionId(0));
         })
-        .run();
+        .take(&fight_action(inv_id, enemy_id))
+        .finish();
 
     assert_event!(
         result.events,
@@ -268,13 +263,13 @@ fn a_still_payable_second_evidence_is_not_withdrawn() {
     });
 
     let result = TestSession::new(state)
-        .take(&fight_action(inv_id, enemy_id))
         .resolve_choices(|c| {
             c.commit_cards(&[])
                 .pick_single(OptionId(0))
                 .pick_single(OptionId(0));
         })
-        .run();
+        .take(&fight_action(inv_id, enemy_id))
+        .finish();
 
     assert_eq!(lapse_count(&result.events, EVIDENCE), 0);
     assert_eq!(
@@ -296,46 +291,52 @@ fn a_still_payable_second_evidence_is_not_withdrawn() {
 fn firing_a_candidate_whose_card_left_hand_rejects_instead_of_panicking() {
     // #568 acceptance 3. A hand candidate naming a card the investigator no
     // longer holds is the shape a sibling option leaves behind when it removes
-    // that card from hand. The window frame is built directly because the two
-    // prompt sites now withdraw such an option before it can be picked — what is
-    // under test is the fire-time gate itself, reachable by a client replaying a
-    // stale option id.
+    // that card from hand. The two prompt sites now withdraw such an option
+    // before it can be picked, so the window is opened for real with Evidence!
+    // in hand and the card is then taken out of hand behind the prompt's back —
+    // what is under test is the fire-time gate itself, reachable by a client
+    // replaying a stale option id.
     //
     // Pre-fix this path was an `unreachable!` in `play_fast_event`: a reachable
     // panic that would take the session down.
-    let (inv_id, enemy_id, loc_id, mut state) = after_defeat_board(2, |_inv| {
-        // Deliberately no Evidence! in hand.
+    let (inv_id, enemy_id, loc_id, state) = after_defeat_board(2, |inv| {
+        inv.hand.push(CardCode::new(EVIDENCE));
     });
-    state.continuations =
-        test_support::from_frames_unchecked(state.continuations.iter().cloned().chain([
-            Continuation::TimingPointWindow(TimingPointWindowFrame {
-                event: TimingEvent::EnemyDefeated {
-                    enemy: enemy_id,
-                    by: Some(inv_id),
-                    code: CardCode::new("_synth_enemy"),
-                },
-                bucket: EventTiming::After,
-                mode: TimingMode::Reaction,
-                candidates: vec![ResolutionCandidate::new(
-                    CardCode::new(EVIDENCE),
-                    inv_id,
-                    AbilityAddress::Printed(0),
-                    CandidateSource::Hand,
-                )],
-            }),
-        ]));
+    let after_fight = test_support::take_turn_action(state, &fight_action(inv_id, enemy_id));
+    let mut opened = engine::apply(
+        after_fight.state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickMultiple { selected: vec![] },
+        }),
+    );
+    let EngineOutcome::AwaitingInput { request, .. } = &opened.outcome else {
+        panic!("after-defeat window must open; got {:?}", opened.outcome);
+    };
+    assert_eq!(request.options.len(), 1, "Evidence! alone is on offer");
+    opened
+        .state
+        .investigators
+        .get_mut(&inv_id)
+        .expect("seated")
+        .hand
+        .clear();
 
     let result = engine::apply(
-        state,
+        opened.state,
         Action::Player(PlayerAction::ResolveInput {
             response: InputResponse::PickSingle(OptionId(0)),
         }),
     );
 
+    let EngineOutcome::Rejected { reason } = &result.outcome else {
+        panic!(
+            "a candidate that can no longer be initiated must reject, not panic; got {:?}",
+            result.outcome,
+        );
+    };
     assert!(
-        matches!(result.outcome, EngineOutcome::Rejected { .. }),
-        "a candidate that can no longer be initiated must reject, not panic; got {:?}",
-        result.outcome,
+        reason.contains("can no longer be initiated"),
+        "rejected by the initiation gate: {reason}",
     );
     // Rejection leaves state and events untouched (the `apply_via` contract):
     // nothing paid, nothing played, no clue moved.

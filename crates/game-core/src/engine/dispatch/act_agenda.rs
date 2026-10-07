@@ -573,10 +573,7 @@ mod advance_act_tests {
     use crate::engine::outcome::EngineOutcome;
     use crate::event::Event;
     use crate::scenario::ResolutionId;
-    use crate::state::{
-        Act, CardCode, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
-        InvestigatorId, Phase,
-    };
+    use crate::state::{Act, CardCode, GameStateBuilder, InvestigatorId};
     use crate::{assert_event, test_support};
 
     #[test]
@@ -623,14 +620,8 @@ mod advance_act_tests {
         let mut investigator = test_support::test_investigator(1);
         investigator.clues = 1;
         let mut state = GameStateBuilder::new()
-            .with_phase(Phase::Investigation)
             .with_investigator(investigator)
-            .with_active_investigator(inv)
-            .with_turn_order([inv])
-            .with_phase_anchor(InvestigationPhaseFrame {
-                resume: InvestigationResume::TurnBegins,
-            })
-            .with_investigator_turn(inv)
+            .open_turn(inv)
             .build();
         state.act_deck = vec![Act {
             code: CardCode("_test_act".into()),
@@ -658,14 +649,8 @@ mod advance_act_tests {
         let mut investigator = test_support::test_investigator(1);
         investigator.clues = 5; // plenty — reject must be the objective, not affordability
         let mut state = GameStateBuilder::new()
-            .with_phase(Phase::Investigation)
             .with_investigator(investigator)
-            .with_active_investigator(inv)
-            .with_turn_order([inv])
-            .with_phase_anchor(InvestigationPhaseFrame {
-                resume: InvestigationResume::TurnBegins,
-            })
-            .with_investigator_turn(inv)
+            .open_turn(inv)
             .build();
         state.act_deck = vec![Act {
             code: CardCode("01110".into()),
@@ -710,14 +695,8 @@ mod advance_act_tests {
         let mut investigator = test_support::test_investigator(1);
         investigator.clues = 3;
         let mut state = GameStateBuilder::new()
-            .with_phase(Phase::Investigation)
             .with_investigator(investigator)
-            .with_active_investigator(inv)
-            .with_turn_order([inv])
-            .with_phase_anchor(InvestigationPhaseFrame {
-                resume: InvestigationResume::TurnBegins,
-            })
-            .with_investigator_turn(inv)
+            .open_turn(inv)
             .build();
         state.act_deck = vec![
             Act {
@@ -754,14 +733,8 @@ mod advance_act_tests {
         let mut investigator = test_support::test_investigator(1);
         investigator.clues = 2;
         let mut state = GameStateBuilder::new()
-            .with_phase(Phase::Investigation)
             .with_investigator(investigator)
-            .with_active_investigator(inv)
-            .with_turn_order([inv])
-            .with_phase_anchor(InvestigationPhaseFrame {
-                resume: InvestigationResume::TurnBegins,
-            })
-            .with_investigator_turn(inv)
+            .open_turn(inv)
             .build();
         state.act_deck = vec![Act {
             code: test_support::terminal_code(1),
@@ -789,14 +762,8 @@ mod advance_act_tests {
         let mut investigator = test_support::test_investigator(1);
         investigator.clues = 2;
         let mut state = GameStateBuilder::new()
-            .with_phase(Phase::Investigation)
             .with_investigator(investigator)
-            .with_active_investigator(inv)
-            .with_turn_order([inv])
-            .with_phase_anchor(InvestigationPhaseFrame {
-                resume: InvestigationResume::TurnBegins,
-            })
-            .with_investigator_turn(inv)
+            .open_turn(inv)
             .build();
         state.act_deck = vec![
             Act {
@@ -826,15 +793,10 @@ mod advance_act_tests {
         let mut inv2 = test_support::test_investigator(2);
         inv2.clues = 2;
         let mut state = GameStateBuilder::new()
-            .with_phase(Phase::Investigation)
             .with_investigator(inv1)
             .with_investigator(inv2)
-            .with_active_investigator(acting)
             .with_turn_order([acting, other])
-            .with_phase_anchor(InvestigationPhaseFrame {
-                resume: InvestigationResume::TurnBegins,
-            })
-            .with_investigator_turn(acting)
+            .open_turn(acting)
             .build();
         // Two acts so the first is non-terminal and its advance bumps the cursor
         // to 1 (a lone act would be terminal, and would need a reverse that

@@ -16,7 +16,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, LocationId,
     SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
@@ -42,10 +42,8 @@ fn state_with_deduction(initial_clues: u8, shroud: u8) -> (GameState, Investigat
     location.shroud = shroud;
     location.clues = initial_clues;
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
-        .with_active_investigator(id)
-        .with_investigator_turn(id)
+        .open_turn(id)
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
@@ -55,13 +53,13 @@ fn state_with_deduction(initial_clues: u8, shroud: u8) -> (GameState, Investigat
 
 fn drive_committing_deduction(state: GameState) -> ApplyResult {
     TestSession::new(state)
-        .take(&TurnAction::Investigate {
-            investigator: InvestigatorId(1),
-        })
         .resolve_choices(|c| {
             c.commit_cards(&[CardCode::new(DEDUCTION)]);
         })
-        .run()
+        .take(&TurnAction::Investigate {
+            investigator: InvestigatorId(1),
+        })
+        .finish()
 }
 
 #[test]
@@ -189,11 +187,11 @@ fn uncommitted_deduction_does_not_fire_its_bonus() {
     // bonus. 3 + 0 < 4 → fail by 1, hand unchanged.
     let (state, id, loc) = state_with_deduction(1, 4);
     let result = TestSession::new(state)
-        .take(&TurnAction::Investigate { investigator: id })
         .resolve_choices(|c| {
             c.commit_cards(&[]);
         })
-        .run();
+        .take(&TurnAction::Investigate { investigator: id })
+        .finish();
 
     assert!(matches!(
         result.outcome,

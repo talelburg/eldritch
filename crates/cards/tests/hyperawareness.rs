@@ -28,7 +28,7 @@ use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, Phase, SkillKind, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, TakeOneFastPlay};
 use game_core::{assert_event, assert_no_event};
@@ -58,11 +58,8 @@ fn state_with_hyperawareness() -> (GameState, InvestigatorId, CardInstanceId) {
     ));
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
-        .with_active_investigator(id)
-        .with_turn_order([id])
-        .with_investigator_turn(id)
+        .open_turn(id)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build();

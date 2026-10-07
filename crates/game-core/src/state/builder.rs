@@ -12,25 +12,16 @@
 //! ```
 //! use game_core::engine::enumerate::TurnAction;
 //! use game_core::engine::EngineOutcome;
-//! use game_core::state::{
-//!     Continuation, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
-//!     InvestigatorId, Phase,
-//! };
+//! use game_core::state::{GameStateBuilder, InvestigatorId};
 //! use game_core::test_support;
 //!
 //! let state = GameStateBuilder::new()
-//!     .with_phase(Phase::Investigation)
 //!     .with_investigator(test_support::test_investigator(1))
 //!     .with_investigator(test_support::test_investigator(2))
 //!     .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
 //!     .with_location(test_support::test_location(10, "Study"))
-//!     .with_active_investigator(InvestigatorId(1))
-//!     // A state constructed mid-phase needs its phase anchor (slice 1a).
-//!     .with_phase_anchor(InvestigationPhaseFrame {
-//!         resume: InvestigationResume::TurnBegins,
-//!     })
-//!     // ...and the open-turn frame above it (slice 2a-i), popped by EndTurn.
-//!     .with_investigator_turn(InvestigatorId(1))
+//!     // Investigation phase, investigator 1 active, their turn menu up.
+//!     .open_turn(InvestigatorId(1))
 //!     .build();
 //!
 //! let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
@@ -43,9 +34,10 @@ use crate::rng::RngState;
 use crate::scenario::ScenarioId;
 use crate::state::{
     ChaosBag, Continuation, ContinuationStack, Counter, EncounterDrawFrame, Enemy, EnemyId,
-    FastActorScope, FastWindowFrame, FastWindowKind, GameState, HandSizeDiscard, Investigator,
-    InvestigatorId, InvestigatorTurnFrame, Location, LocationId, MulliganFrame, Phase,
-    TokenModifiers,
+    EnemyPhaseFrame, EnemyResume, FastActorScope, FastWindowFrame, FastWindowKind, GameState,
+    HandSizeDiscard, InvestigationPhaseFrame, InvestigationResume, Investigator, InvestigatorId,
+    InvestigatorTurnFrame, Location, LocationId, MulliganFrame, Phase, TokenModifiers,
+    UpkeepPhaseFrame, UpkeepResume,
 };
 
 /// Fluent builder for a [`GameState`].
@@ -53,6 +45,11 @@ use crate::state::{
 /// Construct with [`GameStateBuilder::new`], chain `.with_*` setters and
 /// adders, then call [`build`](GameStateBuilder::build) to get a `GameState`
 /// ready for [`apply`](crate::engine::apply).
+///
+/// To build a state with an investigator's turn open, use
+/// [`open_turn`](GameStateBuilder::open_turn): it stages the Investigation
+/// phase anchor and the turn frame together, so no caller can build a turn
+/// without the anchor beneath it.
 #[derive(Debug, Clone)]
 #[must_use = "GameStateBuilder is a builder; call .build() to produce a GameState"]
 pub struct GameStateBuilder {
@@ -72,6 +69,7 @@ pub struct GameStateBuilder {
     open_windows: Vec<Continuation>,
     phase_anchor: Option<Continuation>,
     investigator_turn: Option<InvestigatorId>,
+    engagements: Vec<(EnemyId, InvestigatorId)>,
     scenario_id: Option<ScenarioId>,
 }
 
@@ -98,6 +96,7 @@ impl GameStateBuilder {
             open_windows: Vec::new(),
             phase_anchor: None,
             investigator_turn: None,
+            engagements: Vec::new(),
             scenario_id: None,
         }
     }
@@ -159,6 +158,22 @@ impl GameStateBuilder {
     pub fn with_enemy(mut self, enemy: Enemy) -> Self {
         self.enemies.insert(enemy.id, enemy);
         self
+    }
+
+    /// Add an enemy engaged with `investigator`, placed at that investigator's
+    /// location. Replaces any existing enemy with the same id.
+    ///
+    /// The location is copied at [`build`](Self::build), so the investigator
+    /// may be added before or after this call — an engaged enemy is always at
+    /// its investigator's location, and this keeps the two from disagreeing.
+    ///
+    /// # Panics
+    ///
+    /// [`build`](Self::build) panics if `investigator` was never added.
+    pub fn with_enemy_engaged(mut self, enemy: Enemy, investigator: InvestigatorId) -> Self {
+        self.engagements.retain(|&(id, _)| id != enemy.id);
+        self.engagements.push((enemy.id, investigator));
+        self.with_enemy(enemy)
     }
 
     /// Set the chaos bag. Replaces any prior bag.
@@ -304,12 +319,81 @@ impl GameStateBuilder {
         self
     }
 
+    /// Open `investigator`'s turn: the state the engine rests in when that
+    /// investigator's turn menu is up.
+    ///
+    /// Sets the Investigation phase, makes `investigator` active, stages the
+    /// Investigation phase anchor at turn-begins and the open turn above it.
+    /// A turn order already set is kept; with none set, it defaults to
+    /// `[investigator]`.
+    pub fn open_turn(mut self, investigator: InvestigatorId) -> Self {
+        if self.turn_order.is_empty() {
+            self.turn_order = vec![investigator];
+        }
+        self.phase = Phase::Investigation;
+        self.active_investigator = Some(investigator);
+        self.phase_anchor = Some(
+            InvestigationPhaseFrame {
+                resume: InvestigationResume::TurnBegins,
+            }
+            .into(),
+        );
+        self.with_investigator_turn(investigator)
+    }
+
+    /// End the Enemy phase: the moment after the last investigator's attacks,
+    /// when step 3.4 runs.
+    ///
+    /// Sets the Enemy phase and stages its anchor at
+    /// [`AfterAllAttacked`](EnemyResume::AfterAllAttacked), so the engine's next
+    /// drive runs the phase end — Rules Reference 3.4, *"This step formalizes the
+    /// end of the enemy phase."* — resolves the `PhaseEnded { Enemy }` forced
+    /// abilities, and transitions to Upkeep.
+    pub fn ending_enemy_phase(mut self) -> Self {
+        self.phase = Phase::Enemy;
+        self.phase_anchor = Some(
+            EnemyPhaseFrame {
+                resume: EnemyResume::AfterAllAttacked,
+                attacking: None,
+            }
+            .into(),
+        );
+        self
+    }
+
+    /// End the Upkeep phase, and with it the round: the moment after step 4.4's
+    /// draw and resource.
+    ///
+    /// Sets the Upkeep phase and stages its anchor at
+    /// [`AfterDraw`](UpkeepResume::AfterDraw), so the engine's next drive runs
+    /// step 4.5 (*"each investigator with more than 8 cards in hand chooses and
+    /// discards cards from his or her hand until he or she has 8 cards remaining
+    /// in hand"* — nothing, unless a hand is over the cap) and then step 4.6:
+    /// *"This step formalizes the end of the upkeep phase. As the upkeep phase is
+    /// the final phase in the round, this step also formalizes the end of the
+    /// round. Any active "until the end of the round" lasting effects expire at
+    /// this time."* The `PhaseEnded { Upkeep }` forced abilities resolve, then
+    /// the round end's, then play proceeds to the next round's Mythos phase.
+    pub fn ending_upkeep_phase(mut self) -> Self {
+        self.phase = Phase::Upkeep;
+        self.phase_anchor = Some(
+            UpkeepPhaseFrame {
+                resume: UpkeepResume::AfterDraw,
+            }
+            .into(),
+        );
+        self
+    }
+
     /// Stage an [`InvestigatorTurn`](Continuation::InvestigatorTurn) frame
     /// (slice 2a-i, #393) on top of the staged `*Phase` anchor — the realistic
     /// invariant for a state constructed mid-turn (the real driver pushes it once
-    /// the `InvestigatorTurnBegins` window closes). Pair with
-    /// `with_phase_anchor(InvestigationPhase { resume: TurnBegins })`.
-    pub fn with_investigator_turn(mut self, investigator: InvestigatorId) -> Self {
+    /// the `InvestigatorTurnBegins` window closes).
+    ///
+    /// Private: a turn frame without its phase anchor is a state the engine
+    /// never rests in, so [`open_turn`](Self::open_turn) is the only public way
+    /// to open a turn — it stages the anchor and the turn together (#942).
+    fn with_investigator_turn(mut self, investigator: InvestigatorId) -> Self {
         self.investigator_turn = Some(investigator);
         self
     }
@@ -327,6 +411,12 @@ impl GameStateBuilder {
     }
 
     /// Materialize the configured [`GameState`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if an enemy was engaged via
+    /// [`with_enemy_engaged`](Self::with_enemy_engaged) with an investigator
+    /// that was never added.
     pub fn build(mut self) -> GameState {
         // **A card in an investigator's play area when the board is built came
         // from that investigator's deck**, so it is theirs to own (#772). There
@@ -345,6 +435,19 @@ impl GameStateBuilder {
             inv.investigator_card.owner.get_or_insert(id);
             for card in &mut inv.cards_in_play {
                 card.owner.get_or_insert(id);
+            }
+        }
+        for (enemy, investigator) in self.engagements {
+            let location = self
+                .investigators
+                .get(&investigator)
+                .unwrap_or_else(|| {
+                    panic!("with_enemy_engaged: {investigator:?} was never added to the builder")
+                })
+                .current_location;
+            if let Some(enemy) = self.enemies.get_mut(&enemy) {
+                enemy.engaged_with = Some(investigator);
+                enemy.current_location = location;
             }
         }
         // Builder-staged windows become `Resolution` frames on the one

@@ -3,14 +3,13 @@
 //! driven through the real `apply` enemy-phase path against the corpus registry.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::OptionTarget;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, GameState, GameStateBuilder,
-    InvestigationPhaseFrame, InvestigationResume, InvestigatorId, LocationId, Phase,
+    CardCode, CardInPlay, CardInstanceId, Enemy, GameState, GameStateBuilder, InvestigatorId,
+    LocationId,
 };
-use game_core::test_support;
+use game_core::test_support::{self, TestSession};
 
 const GUARD_DOG: &str = "01021"; // Ally, 3 health / 1 sanity, retaliate reaction
 
@@ -19,14 +18,12 @@ fn install_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// One engaged ready enemy at the investigator's location dealing `damage` / 0 horror.
-fn engaged_attacker(id: u32, inv: InvestigatorId, loc: LocationId, damage: u8) -> Enemy {
+/// One ready enemy dealing `damage` / 0 horror. `attack_state` engages it.
+fn ready_attacker(id: u32, damage: u8) -> Enemy {
     let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
     e.max_health = 5;
     e.attack_damage = damage;
     e.attack_horror = 0;
-    e.current_location = Some(loc);
-    e.engaged_with = Some(inv);
     e
 }
 
@@ -46,54 +43,19 @@ fn attack_state(assets: Vec<(&str, CardInstanceId)>, enemy: Enemy) -> (GameState
     // and would muddy these damage-only tests).
     inv.deck = vec![CardCode::new(GUARD_DOG); 5];
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(inv)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_enemy(enemy)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(inv_id)
+        .with_enemy_engaged(enemy, inv_id)
+        .open_turn(inv_id)
         .build();
     (state, inv_id)
 }
 
-/// True iff `outcome` is the interactive soak-distribution per-point prompt
-/// (as opposed to a later framework prompt the enemy phase cascades into).
-fn is_distribution_prompt(outcome: &EngineOutcome) -> bool {
-    matches!(
-        outcome,
-        EngineOutcome::AwaitingInput { request, .. } if request.prompt.contains("to which target")
-    )
-}
-
-/// The `PickSingle` `OptionId` for the distribution-prompt option whose label
-/// contains `needle` ("Investigator" for self, "Asset" for a soaker).
-fn pick(outcome: &EngineOutcome, needle: &str) -> OptionId {
-    assert!(
-        is_distribution_prompt(outcome),
-        "expected a distribution prompt, got {outcome:?}"
-    );
-    let EngineOutcome::AwaitingInput { request, .. } = outcome else {
-        unreachable!()
-    };
-    request
-        .options
-        .iter()
-        .find(|o| o.label.contains(needle))
-        .unwrap_or_else(|| panic!("no option matching {needle:?} in {:?}", request.options))
-        .id
-}
-
-fn resolve(state: GameState, id: OptionId) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(id),
-        }),
-    )
+/// True iff the session rests at the interactive soak-distribution per-point
+/// prompt, as opposed to Guard Dog's reaction window, which also offers Guard
+/// Dog: the distribution must be answered, the window may be passed.
+fn at_distribution_prompt(session: &TestSession) -> bool {
+    !session.prompt().skippable
 }
 
 fn guard_dog_damage(state: &GameState, inv: InvestigatorId, inst: CardInstanceId) -> Option<u8> {
@@ -107,47 +69,44 @@ fn guard_dog_damage(state: &GameState, inv: InvestigatorId, inst: CardInstanceId
 #[test]
 fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
     let dog = CardInstanceId(1);
-    let (state, inv) = attack_state(
-        vec![(GUARD_DOG, dog)],
-        engaged_attacker(7, InvestigatorId(1), LocationId(101), 2),
-    );
+    let (state, inv) = attack_state(vec![(GUARD_DOG, dog)], ready_attacker(7, 2));
 
     // EndTurn → enemy phase → distribution prompt (Guard Dog has capacity).
-    let r1 = test_support::take_turn_action(state, &TurnAction::EndTurn);
     // First point → Guard Dog; still contested → second prompt → self.
-    let r2 = resolve(r1.state, pick(&r1.outcome, "Asset"));
-    let r3 = resolve(r2.state, pick(&r2.outcome, "Investigator"));
+    let session = TestSession::new(state)
+        .take(&TurnAction::EndTurn)
+        .pick(OptionTarget::CardInstance(dog))
+        .pick_unanchored();
 
     // The distribution is complete but nothing is placed: Guard Dog is in the
     // assignment, so its `when` cell opens between the two rules steps (#727),
     // and that is the window here rather than a further distribution prompt.
     assert!(
-        matches!(r3.outcome, EngineOutcome::AwaitingInput { .. })
-            && !is_distribution_prompt(&r3.outcome),
+        !at_distribution_prompt(&session),
         "Guard Dog's when-cell window opens once distribution drains: {:?}",
-        r3.outcome
+        session.prompt()
     );
     assert_eq!(
-        guard_dog_damage(&r3.state, inv, dog),
+        guard_dog_damage(session.state(), inv, dog),
         Some(0),
         "assigned to Guard Dog, not yet placed"
     );
     assert_eq!(
-        r3.state.investigators[&inv].damage(),
+        session.state().investigators[&inv].damage(),
         0,
         "and none of it placed on the investigator yet either"
     );
 
     // Firing the retaliate lets the deal reach its placement — and the whole
     // assignment lands at once (RR p.7 "simultaneously").
-    let r4 = resolve(r3.state, OptionId(0));
+    let session = session.pick(OptionTarget::CardInstance(dog));
     assert_eq!(
-        guard_dog_damage(&r4.state, inv, dog),
+        guard_dog_damage(session.state(), inv, dog),
         Some(1),
         "1 damage placed on Guard Dog"
     );
     assert_eq!(
-        r4.state.investigators[&inv].damage(),
+        session.state().investigators[&inv].damage(),
         1,
         "1 damage placed on the investigator, in the same moment"
     );
@@ -156,23 +115,21 @@ fn two_damage_attack_splits_one_to_guard_dog_one_to_self() {
 #[test]
 fn player_may_decline_to_soak_taking_all_damage() {
     let dog = CardInstanceId(1);
-    let (state, inv) = attack_state(
-        vec![(GUARD_DOG, dog)],
-        engaged_attacker(7, InvestigatorId(1), LocationId(101), 2),
-    );
+    let (state, inv) = attack_state(vec![(GUARD_DOG, dog)], ready_attacker(7, 2));
 
-    let r1 = test_support::take_turn_action(state, &TurnAction::EndTurn);
     // Both points to the investigator — decline to soak.
-    let r2 = resolve(r1.state, pick(&r1.outcome, "Investigator"));
-    let r3 = resolve(r2.state, pick(&r2.outcome, "Investigator"));
+    let session = TestSession::new(state)
+        .take(&TurnAction::EndTurn)
+        .pick_unanchored()
+        .pick_unanchored();
 
     assert_eq!(
-        r3.state.investigators[&inv].damage(),
+        session.state().investigators[&inv].damage(),
         2,
         "investigator took all 2 damage"
     );
     assert_eq!(
-        guard_dog_damage(&r3.state, inv, dog),
+        guard_dog_damage(session.state(), inv, dog),
         Some(0),
         "Guard Dog untouched (declined to soak)"
     );
@@ -181,34 +138,32 @@ fn player_may_decline_to_soak_taking_all_damage() {
 #[test]
 fn a_full_soaker_drops_out_of_the_next_prompt() {
     let dog = CardInstanceId(1);
-    let (mut state, inv) = attack_state(
-        vec![(GUARD_DOG, dog)],
-        engaged_attacker(7, InvestigatorId(1), LocationId(101), 2),
-    );
+    let (mut state, inv) = attack_state(vec![(GUARD_DOG, dog)], ready_attacker(7, 2));
     // Pre-damage Guard Dog to 2 (health 3) → 1 remaining capacity.
     state.investigators.get_mut(&inv).unwrap().cards_in_play[0].accumulated_damage = 2;
 
-    let r1 = test_support::take_turn_action(state, &TurnAction::EndTurn);
     // First point → Guard Dog (its last point of capacity).
-    let r2 = resolve(r1.state, pick(&r1.outcome, "Asset"));
+    let session = TestSession::new(state)
+        .take(&TurnAction::EndTurn)
+        .pick(OptionTarget::CardInstance(dog));
 
     // Guard Dog is now full, so the second point is auto-assigned to the
     // investigator with NO further distribution prompt. What is open instead is
     // Guard Dog's `when` cell on the completed assignment (#727) — a lethal one,
     // which it is still entitled to react to (`data/arkhamdb-faq/core/01021.md`).
     assert!(
-        !is_distribution_prompt(&r2.outcome),
+        !at_distribution_prompt(&session),
         "the full soaker drops out — no second distribution prompt: {:?}",
-        r2.outcome
+        session.prompt()
     );
-    let r3 = resolve(r2.state, OptionId(0));
+    let session = session.pick(OptionTarget::CardInstance(dog));
     assert_eq!(
-        r3.state.investigators[&inv].damage(),
+        session.state().investigators[&inv].damage(),
         1,
         "the overflow point went to the investigator"
     );
     assert!(
-        guard_dog_damage(&r3.state, inv, dog).is_none(),
+        guard_dog_damage(session.state(), inv, dog).is_none(),
         "Guard Dog filled to capacity is defeated and discarded",
     );
 }

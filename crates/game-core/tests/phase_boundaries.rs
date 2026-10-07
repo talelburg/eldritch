@@ -28,8 +28,7 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    self, Act, CardCode, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
-    InvestigatorId, LocationId,
+    self, Act, CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -187,13 +186,7 @@ fn mid_investigation() -> GameState {
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_location(test_support::test_location(10, "Study"))
-        .with_phase(state::Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
     state.act_deck = vec![Act {
         code: CardCode::new(ACT),

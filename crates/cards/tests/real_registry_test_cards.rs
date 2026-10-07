@@ -12,7 +12,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use game_core::state::{
-    Act, CardCode, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
+    Act, CardCode, ChaosToken, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
 use game_core::test_support::{self, ScriptedResolver};
 
@@ -69,11 +69,8 @@ fn a_terminal_act_still_ends_the_scenario() {
     let mut investigator = test_support::test_investigator(1);
     investigator.clues = 1;
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(investigator)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .with_scenario_id(ScenarioId::new("unknown"))
         .build();
     state.act_deck = vec![Act {

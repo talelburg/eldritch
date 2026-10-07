@@ -59,15 +59,15 @@
 //! `enemy_attack_cells.rs` (#704's condition), `clue_discovery_cells.rs` (#703's).
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::assert_event_sequence;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Phase,
+    InvestigatorId, LocationId,
 };
-use game_core::{assert_event_sequence, test_support};
+use game_core::test_support::{self, TestSession};
 
 /// Roland Banks (01001) — the example's investigator, and the source of the
 /// nested sequence that hangs off the Goat Spawn's defeat.
@@ -97,41 +97,14 @@ fn goat_spawn(id: u32, inv: InvestigatorId, loc: LocationId) -> Enemy {
     e
 }
 
-/// Resume the top prompt with `PickSingle(id)`.
-fn resolve(state: GameState, id: OptionId) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(id),
-        }),
-    )
-}
-
-/// The soak distribution's per-point prompt (#44/K5b), as opposed to a window.
-fn is_distribution_prompt(outcome: &EngineOutcome) -> bool {
-    matches!(
-        outcome,
-        EngineOutcome::AwaitingInput { request, .. } if request.prompt.contains("to which target")
-    )
-}
-
 /// Assign every contested point to `inst`, reproducing the example's "Roland
-/// assigns this damage to his Guard Dog".
-fn assign_to(mut result: ApplyResult, inst: CardInstanceId) -> ApplyResult {
-    while is_distribution_prompt(&result.outcome) {
-        let EngineOutcome::AwaitingInput { request, .. } = &result.outcome else {
-            unreachable!()
-        };
-        let needle = format!("CardInstanceId({})", inst.0);
-        let id = request
-            .options
-            .iter()
-            .find(|o| o.label.contains(&needle))
-            .expect("the Guard Dog is an eligible target for the point")
-            .id;
-        result = resolve(result.state, id);
+/// assigns this damage to his Guard Dog". The distribution must be answered;
+/// the reaction window it leads to may be passed.
+fn assign_to(mut session: TestSession, inst: CardInstanceId) -> TestSession {
+    while !session.prompt().skippable {
+        session = session.pick(OptionTarget::CardInstance(inst));
     }
-    result
+    session
 }
 
 fn guard_dog_damage(state: &GameState, inv: InvestigatorId, inst: CardInstanceId) -> u8 {
@@ -177,41 +150,32 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     study.clues = 1;
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(study)
         .with_investigator(roland)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_enemy(goat_spawn(7, inv_id, loc))
         .build();
 
     // ── "Roland wishes to play a .45 Automatic, which provokes an attack of
     //    opportunity from the Goat Spawn, dealing 1 damage to Roland. Roland
     //    assigns this damage to his Guard Dog" ────────────────────────────────
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: inv_id,
-            hand_index: 0,
-        },
-    );
-    let result = assign_to(result, dog);
-    // The event log is per-`apply`, and the trace below spans three of them, so
-    // it is accumulated as we go.
-    let mut log: Vec<Event> = result.events.clone();
-    let state = result.state;
+    let session = TestSession::new(state).take(&TurnAction::PlayCard {
+        investigator: inv_id,
+        hand_index: 0,
+    });
+    let session = assign_to(session, dog);
+    let state = session.state();
 
     // The assignment is made and **nothing is placed**: what is open is Guard
     // Dog's `when` cell, the window the Rules Reference puts between assigning
     // and placing.
     assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        session.prompt().skippable,
         "Guard Dog's when cell suspends the AoO: {:?}",
-        result.outcome
+        session.prompt()
     );
     assert_eq!(
-        guard_dog_damage(&state, inv_id, dog),
+        guard_dog_damage(state, inv_id, dog),
         0,
         "the damage is assigned to the Guard Dog, not yet dealt to it"
     );
@@ -220,32 +184,35 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
         "the Goat Spawn is untouched"
     );
     assert!(
-        !in_play(&state, inv_id, AUTOMATIC_45),
+        !in_play(state, inv_id, AUTOMATIC_45),
         "\"Before resolving the playing of Roland's .45 Automatic\""
     );
 
     // ── "Guard Dog's ability resolves, and 1 damage is dealt to the Goat
     //    Spawn, which would defeat it" ─────────────────────────────────────────
-    let result = resolve(state, OptionId(0));
-    log.extend(result.events.iter().cloned());
-    let state = result.state;
+    let session = session.pick(OptionTarget::CardInstance(dog));
+    let state = session.state();
 
     assert!(
         !state.enemies.contains_key(&spawn),
         "the retaliate defeated the Goat Spawn: {:?}",
-        result.events
+        session.events()
     );
     // The defeat opened its own sequence, nested inside the deal of damage that
     // has still not been placed. Roland's after-defeat reaction is the corpus
     // stand-in for the example's Forced horror, and it is what is pending now.
     assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        session
+            .prompt()
+            .options
+            .iter()
+            .any(|o| o.target == Some(OptionTarget::CardInstance(roland_card))),
         "the defeat's own sequence nests inside the unplaced damage: {:?}",
-        result.outcome
+        session.prompt()
     );
     // This is the example's load-bearing sentence.
     assert_eq!(
-        guard_dog_damage(&state, inv_id, dog),
+        guard_dog_damage(state, inv_id, dog),
         0,
         "\"Before resolving the damage dealt to the Guard Dog\" — still unplaced \
          while the nested sequence runs"
@@ -255,7 +222,7 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
         "Roland's reaction has not resolved yet either"
     );
     assert!(
-        !in_play(&state, inv_id, AUTOMATIC_45),
+        !in_play(state, inv_id, AUTOMATIC_45),
         "and the original action is still parked beneath all of it"
     );
 
@@ -263,9 +230,8 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     //    the Goat Spawn's defeat […] Then, the players resolve the damage dealt
     //    to the Guard Dog […] Finally […] Roland is able to put his .45
     //    Automatic into play." ─────────────────────────────────────────────────
-    let result = resolve(state, OptionId(0));
-    log.extend(result.events.iter().cloned());
-    let state = result.state;
+    let session = session.pick(OptionTarget::CardInstance(roland_card));
+    let state = session.state();
 
     // LIFO, innermost first: the nested sequence completed…
     assert_eq!(
@@ -275,7 +241,7 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     assert_eq!(state.investigators[&inv_id].clues, 1, "…onto Roland");
     // …then the damage that spawned it was finally placed…
     assert_eq!(
-        guard_dog_damage(&state, inv_id, dog),
+        guard_dog_damage(state, inv_id, dog),
         1,
         "\"Then, the players resolve the damage dealt to the Guard Dog\""
     );
@@ -286,7 +252,7 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     );
     // …and only then did the action that started everything complete.
     assert!(
-        in_play(&state, inv_id, AUTOMATIC_45),
+        in_play(state, inv_id, AUTOMATIC_45),
         "\"Finally […] Roland is able to put his .45 Automatic into play\""
     );
 
@@ -296,7 +262,7 @@ fn the_damage_dealt_to_the_guard_dog_resolves_last() {
     // into play is a zone move, so both are asserted on state above rather than
     // here.
     assert_event_sequence!(
-        log,
+        session.events(),
         Event::EnemyDamaged { enemy, amount: 1, .. } if *enemy == spawn,
         Event::EnemyDefeated { enemy, .. } if *enemy == spawn,
         Event::CluePlaced { investigator, count: 1 } if *investigator == inv_id,

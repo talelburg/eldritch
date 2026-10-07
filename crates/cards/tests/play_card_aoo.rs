@@ -27,13 +27,12 @@
 #![allow(clippy::too_many_lines)]
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, GameStateBuilder, InvestigatorId, LocationId,
-    Phase, Status,
+    Status,
 };
 use game_core::test_support;
 
@@ -51,46 +50,13 @@ fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Resolve a soak-distribution prompt (#44/K5b — an `AoO` against an investigator
-/// with a soaker prompts for the damage distribution) by assigning every point
-/// onto the soaker asset, then to the investigator once it is full. Returns the
-/// first result that is no longer a distribution prompt.
-fn soak_onto_asset(mut result: ApplyResult) -> ApplyResult {
-    while let EngineOutcome::AwaitingInput { request, .. } = &result.outcome {
-        if !request.prompt.contains("to which target") {
-            break;
-        }
-        let id = request
-            .options
-            .iter()
-            .find(|o| o.label.contains("Asset"))
-            .or_else(|| request.options.iter().find(|o| o.label == "Investigator"))
-            .expect("a distribution option")
-            .id;
-        result = engine::apply(
-            result.state,
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickSingle(id),
-            }),
-        );
-    }
-    result
-}
-
-/// An engaged ready enemy at `loc` dealing `damage` / 0 horror with `max_health`.
-fn engaged_attacker(
-    id: u32,
-    inv: InvestigatorId,
-    loc: LocationId,
-    damage: u8,
-    max_health: u8,
-) -> Enemy {
+/// A ready enemy dealing `damage` / 0 horror, with `max_health`. Engage it
+/// with `with_enemy_engaged`, which places it at the investigator's location.
+fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
     let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
     e.attack_damage = damage;
     e.attack_horror = 0;
     e.max_health = max_health;
-    e.current_location = Some(loc);
-    e.engaged_with = Some(inv);
     e
 }
 
@@ -114,33 +80,30 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
     investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog)];
     let resources_before = investigator.resources;
 
-    let attacker = engaged_attacker(7, inv_id, loc, 2, 5);
+    let attacker = ready_attacker(7, 2, 5);
 
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
+    // The AoO prompts for the soak distribution (#44/K5b), one prompt per point
+    // of damage: assign both onto Guard Dog.
+    let session = GameStateBuilder::new()
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
-        .build();
-
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
+        .open_turn(inv_id)
+        .with_enemy_engaged(attacker, inv_id)
+        .session()
+        .resolve_choices(|c| {
+            c.pick(OptionTarget::CardInstance(dog));
+            c.pick(OptionTarget::CardInstance(dog));
+        })
+        .take(&TurnAction::PlayCard {
             investigator: inv_id,
             hand_index: 0,
-        },
-    );
-    // The AoO prompts for the soak distribution (#44/K5b): assign onto Guard Dog.
-    let result = soak_onto_asset(result);
-    let state = result.state;
+        });
+    let state = session.state();
 
-    assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "the AoO's damage window must suspend the play: {:?}",
-        result.outcome
+    assert_ne!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(inv_id)),
+        "the AoO's damage window must suspend the play"
     );
     let dog_in_play = state.investigators[&inv_id]
         .cards_in_play
@@ -186,12 +149,9 @@ fn playing_a_non_fast_event_spends_one_action() {
     let resources_before = investigator.resources;
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
 
     let result = test_support::take_turn_action(
@@ -230,12 +190,9 @@ fn playing_a_non_fast_card_with_no_actions_is_rejected() {
     investigator.hand = vec![CardCode::new(EMERGENCY_CACHE)];
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
 
     // 0 actions remaining → PlayCard not offered; bypass the gate.
@@ -282,16 +239,13 @@ fn playing_a_fast_event_while_engaged_provokes_no_aoo_and_spends_no_action() {
     let mut location = test_support::test_location(101, "Study");
     location.clues = 1;
 
-    let attacker = engaged_attacker(7, inv_id, loc, 2, 5);
+    let attacker = ready_attacker(7, 2, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(location)
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .open_turn(inv_id)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     let result = test_support::take_turn_action(
@@ -353,16 +307,13 @@ fn aoo_that_defeats_the_player_suppresses_the_event_effect() {
 
     // Lethal AoO, no soaker / no Dodge → the actor is defeated before the
     // "gain 3 resources" effect can resolve.
-    let attacker = engaged_attacker(7, inv_id, loc, 50, 5);
+    let attacker = ready_attacker(7, 50, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .open_turn(inv_id)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     let result = test_support::take_turn_action(
@@ -427,31 +378,27 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
     investigator.hand = vec![CardCode::new(MACHETE)];
     investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog)];
 
-    let attacker = engaged_attacker(7, inv_id, loc, 2, 5);
-
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_location(test_support::test_location(101, "Study"))
-        .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
-        .build();
+    let attacker = ready_attacker(7, 2, 5);
 
     // Step 1: play Machete → AoO soaks onto Guard Dog → soak window; Machete is
     // mid-play — it left hand when the play commenced and enters play only once
-    // the play completes.
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
+    // the play completes. The AoO prompts for the soak distribution (#44/K5b),
+    // one prompt per point of damage: assign both onto Guard Dog.
+    let session = GameStateBuilder::new()
+        .with_location(test_support::test_location(101, "Study"))
+        .with_investigator(investigator)
+        .open_turn(inv_id)
+        .with_enemy_engaged(attacker, inv_id)
+        .session()
+        .resolve_choices(|c| {
+            c.pick(OptionTarget::CardInstance(dog));
+            c.pick(OptionTarget::CardInstance(dog));
+        })
+        .take(&TurnAction::PlayCard {
             investigator: inv_id,
             hand_index: 0,
-        },
-    );
-    // The AoO prompts for the soak distribution (#44/K5b): assign onto Guard Dog.
-    let result = soak_onto_asset(result);
-    let state = result.state;
+        });
+    let state = session.state();
     assert_eq!(
         state.investigators[&inv_id].actions_remaining, 2,
         "playing the asset spent one action before the AoO"
@@ -471,13 +418,8 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
 
     // Step 2: fire Guard Dog's reaction (closes the soak window) → the play
     // resumes → Machete enters play.
-    let result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    let state = result.state;
+    let session = session.pick(OptionTarget::CardInstance(dog));
+    let state = session.state();
     assert!(
         state.investigators[&inv_id]
             .cards_in_play
@@ -508,16 +450,13 @@ fn aoo_that_defeats_the_player_mid_asset_play_leaves_no_asset_in_play() {
     investigator.hand = vec![CardCode::new(MACHETE)];
 
     // Lethal AoO, no soaker / no Dodge → defeated before Machete enters play.
-    let attacker = engaged_attacker(7, inv_id, loc, 50, 5);
+    let attacker = ready_attacker(7, 50, 5);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .open_turn(inv_id)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     let result = test_support::take_turn_action(

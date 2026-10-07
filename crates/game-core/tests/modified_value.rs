@@ -22,7 +22,7 @@ use game_core::engine::modified_value::{
 use game_core::event::Event;
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 use game_core::{assert_event, card_registry};
@@ -131,10 +131,8 @@ fn board(teammate_at: LocationId) -> GameStateBuilder {
     let mut teammate = test_support::test_investigator(2);
     teammate.current_location = Some(teammate_at);
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(ME)
         .with_turn_order([ME, TEAMMATE])
-        .with_investigator_turn(ME)
+        .open_turn(ME)
         .with_investigator(me)
         .with_investigator(teammate)
         .with_location(test_support::test_location(10, "Study"))
@@ -445,14 +443,14 @@ fn a_modifier_on_an_enemys_fight_raises_a_fight_actions_difficulty() {
             state.agenda_index = 0;
         }
         TestSession::new(state)
+            .resolve_choices(|c| {
+                c.commit_cards(&[]);
+            })
             .take(&TurnAction::Fight {
                 investigator: ME,
                 enemy: EnemyId(7),
             })
-            .resolve_choices(|c| {
-                c.commit_cards(&[]);
-            })
-            .run()
+            .finish()
     };
 
     let plain = attack(false);
@@ -486,14 +484,14 @@ fn a_modifier_on_an_enemys_evade_raises_an_evade_actions_difficulty() {
             state.agenda_index = 0;
         }
         TestSession::new(state)
+            .resolve_choices(|c| {
+                c.commit_cards(&[]);
+            })
             .take(&TurnAction::Evade {
                 investigator: ME,
                 enemy: EnemyId(7),
             })
-            .resolve_choices(|c| {
-                c.commit_cards(&[]);
-            })
-            .run()
+            .finish()
     };
 
     let plain = dodge(false);

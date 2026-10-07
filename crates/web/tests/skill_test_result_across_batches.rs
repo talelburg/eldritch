@@ -41,7 +41,7 @@ use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
 };
 use game_core::test_support;
 use protocol::ServerMessage;
@@ -87,14 +87,12 @@ fn board(lita_in_play: bool) -> GameState {
     ghoul.current_location = Some(PARLOR);
 
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(keeper)
         .with_investigator(other)
         .with_location(test_support::test_location(1, "Parlor"))
         .with_enemy(ghoul)
-        .with_active_investigator(OTHER)
         .with_turn_order([KEEPER, OTHER])
-        .with_investigator_turn(OTHER)
+        .open_turn(OTHER)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build();

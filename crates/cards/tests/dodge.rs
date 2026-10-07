@@ -16,8 +16,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, Enemy, EnemyId, GameState, GameStateBuilder, InvestigationPhaseFrame,
-    InvestigationResume, InvestigatorId, LocationId, Phase,
+    Agenda, CardCode, Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::test_support;
 
@@ -29,16 +28,11 @@ fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// An engaged ready enemy at `loc` dealing 2 damage / 1 horror. Both tracks are
-/// non-zero so *"Cancel that attack"* can be proved to stop both — a dodged
-/// attack that dealt 0 horror because the attacker had none to deal would be a
-/// vacuous assertion.
-fn engaged_attacker(id: u32, inv: InvestigatorId, loc: LocationId) -> Enemy {
+/// A ready enemy dealing 2 damage / 1 horror.
+fn ready_attacker(id: u32) -> Enemy {
     let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
     e.attack_damage = 2;
     e.attack_horror = 1;
-    e.current_location = Some(loc);
-    e.engaged_with = Some(inv);
     e
 }
 
@@ -65,20 +59,10 @@ fn dodge_state() -> (GameState, InvestigatorId, EnemyId) {
     inv.deck = vec![CardCode::new("01088")];
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(inv)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_enemy(engaged_attacker(7, inv_id, loc_id))
-        // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
-        // InvestigationPhase anchor at investigation_phase_end.
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
-        // EndTurn cascade pops before advancing into the Enemy phase.
-        .with_investigator_turn(inv_id)
+        .with_enemy_engaged(ready_attacker(7), inv_id)
+        .open_turn(inv_id)
         .build();
     (state, inv_id, enemy_id)
 }
@@ -97,7 +81,7 @@ const ACOLYTE: &str = "01102";
 /// Acolyte and an agenda for it to place doom on. Its **printed** statistics (1
 /// damage, 0 horror — `data/arkhamdb-snapshot/pack/core/core.json`) are set here
 /// rather than read from metadata, matching the rest of this file's fixtures;
-/// the both-tracks-cancelled claim is `engaged_attacker`'s to prove, since this
+/// the both-tracks-cancelled claim is `ready_attacker`'s to prove, since this
 /// enemy prints no horror to cancel.
 fn acolyte_state() -> (GameState, InvestigatorId, EnemyId) {
     let (mut state, inv_id, enemy_id) = dodge_state();

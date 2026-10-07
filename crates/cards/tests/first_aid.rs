@@ -7,17 +7,15 @@
 
 use card_dsl::dsl::HarmKind;
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{
-    self, ApplyResult, ChoiceOption, EngineOutcome, OptionId, OptionTarget, PromptNature,
-};
+use game_core::engine::{ChoiceOption, EngineOutcome, OptionTarget, PromptNature};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, UseKind,
+    GameStateBuilder, InvestigatorId, LocationId, UseKind,
 };
-use game_core::{assert_event, test_support};
+use game_core::test_support::{self, TestSession};
 
 const FIRST_AID: &str = "01019";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -47,12 +45,9 @@ fn board_with_harm(supplies: u8, damage: u8, horror: u8) -> GameState {
     inv.cards_in_play.push(kit);
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
         .with_location(test_support::test_location(10, "Study"))
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build()
 }
 
@@ -64,50 +59,48 @@ fn supplies(state: &GameState) -> Option<u8> {
         .map(|c| c.uses.get(&UseKind::Supplies).copied().unwrap_or(0))
 }
 
-fn activate(state: GameState) -> ApplyResult {
-    test_support::take_turn_action(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: INV,
-            source: AbilitySource::InPlay(KIT_INST),
-            address: AbilityAddress::Printed(0),
-        },
-    )
+fn activate(state: GameState) -> TestSession {
+    TestSession::new(state).take(&TurnAction::ActivateAbility {
+        investigator: INV,
+        source: AbilitySource::InPlay(KIT_INST),
+        address: AbilityAddress::Printed(0),
+    })
 }
 
-/// The offered options of a prompt, or a panic naming the outcome that wasn't
-/// one. `why` says what the caller expected to be asked.
-fn offered<'a>(result: &'a ApplyResult, why: &str) -> &'a [ChoiceOption] {
-    match &result.outcome {
-        EngineOutcome::AwaitingInput { request, .. } => &request.options,
-        other => panic!("{why}: {other:?}"),
-    }
+/// The offered options of the prompt the session rests at, or a panic naming
+/// where it rests instead. `why` says what the caller expected to be asked.
+fn offered<'a>(session: &'a TestSession, why: &str) -> &'a [ChoiceOption] {
+    let request = session.prompt();
+    assert!(
+        request.target != Some(OptionTarget::TurnControl(INV)),
+        "{why}: back at the turn menu",
+    );
+    &request.options
 }
 
-fn pick(state: GameState, branch: u32) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(branch)),
-        }),
-    )
+fn at_turn_menu(session: &TestSession) -> bool {
+    session.prompt().target == Some(OptionTarget::TurnControl(INV))
 }
 
 #[test]
 fn spends_a_supply_and_heals_one_damage_when_the_damage_branch_is_chosen() {
     // Activate → suspends on the damage-or-horror choice.
-    let r = activate(board(3));
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    assert_eq!(supplies(&r.state), Some(2), "1 supply spent on activation");
+    let s = activate(board(3));
+    assert!(!at_turn_menu(&s));
+    assert_eq!(supplies(s.state()), Some(2), "1 supply spent on activation");
 
     // Branch 0 = heal damage; the sole co-located investigator (the controller)
     // auto-binds, so this completes.
-    let r = pick(r.state, 0);
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    assert_eq!(r.state.investigators[&INV].damage(), 1, "1 damage healed");
-    assert_eq!(r.state.investigators[&INV].horror(), 2, "horror untouched");
+    let s = s.pick_nth(0);
+    assert!(at_turn_menu(&s));
+    assert_eq!(s.state().investigators[&INV].damage(), 1, "1 damage healed");
+    assert_eq!(
+        s.state().investigators[&INV].horror(),
+        2,
+        "horror untouched"
+    );
     assert_event!(
-        r.events,
+        s.events(),
         Event::Healed {
             kind: HarmKind::Damage,
             amount: 1,
@@ -118,16 +111,20 @@ fn spends_a_supply_and_heals_one_damage_when_the_damage_branch_is_chosen() {
 
 #[test]
 fn heals_one_horror_when_the_horror_branch_is_chosen() {
-    let r = activate(board(3));
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
+    let s = activate(board(3));
+    assert!(!at_turn_menu(&s));
 
     // Branch 1 = heal horror.
-    let r = pick(r.state, 1);
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    assert_eq!(r.state.investigators[&INV].horror(), 1, "1 horror healed");
-    assert_eq!(r.state.investigators[&INV].damage(), 2, "damage untouched");
+    let s = s.pick_nth(1);
+    assert!(at_turn_menu(&s));
+    assert_eq!(s.state().investigators[&INV].horror(), 1, "1 horror healed");
+    assert_eq!(
+        s.state().investigators[&INV].damage(),
+        2,
+        "damage untouched"
+    );
     assert_event!(
-        r.events,
+        s.events(),
         Event::Healed {
             kind: HarmKind::Horror,
             amount: 1,
@@ -141,23 +138,23 @@ fn spending_the_last_supply_discards_first_aid() {
     // 1 supply: the activation's SpendUses empties the pool, so the
     // depletion-discard (#302) fires during cost payment — First Aid is gone
     // before the heal's choice even suspends.
-    let r = activate(board(1));
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
+    let s = activate(board(1));
+    assert!(!at_turn_menu(&s));
     assert!(
-        r.state.investigators[&INV].cards_in_play.is_empty(),
+        s.state().investigators[&INV].cards_in_play.is_empty(),
         "First Aid discarded when its last supply was spent",
     );
     assert_eq!(
-        r.state.investigators[&INV].discard,
+        s.state().investigators[&INV].discard,
         vec![CardCode::new(FIRST_AID)],
     );
 
     // The heal still resolves (the ability continues even though its source
     // left play).
-    let r = pick(r.state, 0);
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
+    let s = s.pick_nth(0);
+    assert!(at_turn_menu(&s));
     assert_eq!(
-        r.state.investigators[&INV].damage(),
+        s.state().investigators[&INV].damage(),
         1,
         "heal still applied"
     );
@@ -239,13 +236,10 @@ fn two_investigators(healer_damage: u8, patient_damage: u8) -> GameState {
     patient.investigator_card.accumulated_damage = patient_damage;
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(healer, LOC)
         .with_investigator_at(patient, LOC)
         .with_location(test_support::test_location(10, "Study"))
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build()
 }
 
@@ -264,34 +258,34 @@ fn two_investigators(healer_damage: u8, patient_damage: u8) -> GameState {
 fn only_a_damaged_investigator_is_offered_as_a_heal_target() {
     // Control: both damaged ⇒ 2 eligible targets ⇒ the pick suspends, and
     // neither is healed until it is answered.
-    let r = activate(two_investigators(2, 2));
-    let options = offered(&r, "two eligible targets must prompt");
+    let s = activate(two_investigators(2, 2));
+    let options = offered(&s, "two eligible targets must prompt");
     assert_eq!(
         options.len(),
         2,
         "both co-located investigators offered as heal targets: {options:?}",
     );
     assert_eq!(
-        r.state.investigators[&INV].damage(),
+        s.state().investigators[&INV].damage(),
         2,
         "nobody healed until the target pick is answered",
     );
 
     // Only investigator 2 damaged ⇒ 1 eligible target ⇒ auto-binds, no prompt.
-    let r = activate(two_investigators(0, 2));
+    let s = activate(two_investigators(0, 2));
 
     assert_eq!(
-        r.state.investigators[&InvestigatorId(2)].damage(),
+        s.state().investigators[&InvestigatorId(2)].damage(),
         1,
         "the damaged investigator — the only eligible target — was healed",
     );
     assert_eq!(
-        r.state.investigators[&INV].damage(),
+        s.state().investigators[&INV].damage(),
         0,
         "the undamaged investigator was never a candidate",
     );
     assert_event!(
-        r.events,
+        s.events(),
         Event::Healed {
             investigator: InvestigatorId(2),
             kind: HarmKind::Damage,
@@ -313,15 +307,15 @@ fn only_a_damaged_investigator_is_offered_as_a_heal_target() {
 /// a dead mode.
 #[test]
 fn a_dead_mode_is_not_offered() {
-    let r = activate(board_with_harm(3, 2, 0));
-    assert_eq!(supplies(&r.state), Some(2), "1 supply spent on activation");
+    let s = activate(board_with_harm(3, 2, 0));
+    assert_eq!(supplies(s.state()), Some(2), "1 supply spent on activation");
     assert_eq!(
-        r.state.investigators[&INV].damage(),
+        s.state().investigators[&INV].damage(),
         1,
         "the sole live mode auto-resolved and healed 1 damage",
     );
     assert_event!(
-        r.events,
+        s.events(),
         Event::Healed {
             kind: HarmKind::Damage,
             amount: 1,
@@ -338,8 +332,8 @@ fn a_dead_mode_is_not_offered() {
 fn only_the_damage_mode_is_offered_with_no_horror_to_heal() {
     let mut state = board_with_harm(3, 2, 0);
     state.interactive_acknowledge = true;
-    let r = activate(state);
-    let options = offered(&r, "the live mode surfaces as a one-option prompt");
+    let s = activate(state);
+    let options = offered(&s, "the live mode surfaces as a one-option prompt");
     assert_eq!(
         options.len(),
         1,
@@ -348,15 +342,14 @@ fn only_the_damage_mode_is_offered_with_no_horror_to_heal() {
 
     // Option 0 = the damage mode; the heal's target grounding then raises its
     // own one-option prompt (the sole co-located investigator).
-    let r = pick(r.state, 0);
-    let r = pick(r.state, 0);
+    let s = s.pick_nth(0).pick_unanchored();
     assert_eq!(
-        r.state.investigators[&INV].damage(),
+        s.state().investigators[&INV].damage(),
         1,
         "the offered option resolved the damage branch",
     );
     assert_event!(
-        r.events,
+        s.events(),
         Event::Healed {
             kind: HarmKind::Damage,
             amount: 1,
@@ -371,15 +364,15 @@ fn only_the_damage_mode_is_offered_with_no_horror_to_heal() {
 /// would not notice.
 #[test]
 fn both_modes_are_offered_when_both_harms_are_present() {
-    let r = activate(board_with_harm(3, 2, 2));
-    let options = offered(&r, "two live modes must prompt");
+    let s = activate(board_with_harm(3, 2, 2));
+    let options = offered(&s, "two live modes must prompt");
     assert_eq!(
         options.len(),
         2,
         "damage and horror both offered: {options:?}",
     );
     assert_eq!(
-        r.state.investigators[&INV].damage(),
+        s.state().investigators[&INV].damage(),
         2,
         "no branch resolves until the mode is picked",
     );
@@ -394,8 +387,8 @@ fn both_modes_are_offered_when_both_harms_are_present() {
 fn the_offered_index_names_the_live_mode_not_the_printed_one() {
     let mut state = board_with_harm(3, 0, 2);
     state.interactive_acknowledge = true;
-    let r = activate(state);
-    let options = offered(&r, "the live mode surfaces as a one-option prompt");
+    let s = activate(state);
+    let options = offered(&s, "the live mode surfaces as a one-option prompt");
     assert_eq!(
         options.len(),
         1,
@@ -405,15 +398,14 @@ fn the_offered_index_names_the_live_mode_not_the_printed_one() {
     // Option 0 = the horror mode; the heal's target grounding then raises its
     // own one-option prompt (the sole co-located investigator) under
     // `interactive_acknowledge`.
-    let r = pick(r.state, 0);
-    let r = pick(r.state, 0);
+    let s = s.pick_nth(0).pick_unanchored();
     assert_eq!(
-        r.state.investigators[&INV].horror(),
+        s.state().investigators[&INV].horror(),
         1,
         "offered option 0 resolved the horror branch",
     );
     assert_event!(
-        r.events,
+        s.events(),
         Event::Healed {
             kind: HarmKind::Horror,
             amount: 1,
@@ -433,8 +425,8 @@ fn the_offered_index_names_the_live_mode_not_the_printed_one() {
 /// reads the anchor the engine attached"*.
 #[test]
 fn the_damage_or_horror_choice_anchors_to_the_asset_it_is_printed_on() {
-    let r = activate(board(3));
-    let options = offered(&r, "the damage-or-horror choice");
+    let s = activate(board(3));
+    let options = offered(&s, "the damage-or-horror choice");
     assert_eq!(options.len(), 2, "both modes live: {options:?}");
     for option in options {
         assert_eq!(
@@ -460,13 +452,13 @@ fn the_damage_or_horror_choice_anchors_to_the_asset_it_is_printed_on() {
 /// completing if that card leaves play during the sequence."*
 #[test]
 fn the_choice_offered_after_the_last_supply_is_answerable() {
-    let r = activate(board(1));
+    let s = activate(board(1));
     assert!(
-        r.state.investigators[&INV].cards_in_play.is_empty(),
+        s.state().investigators[&INV].cards_in_play.is_empty(),
         "First Aid left play during cost payment",
     );
 
-    let options = offered(&r, "the damage-or-horror choice").to_vec();
+    let options = offered(&s, "the damage-or-horror choice").to_vec();
     assert_eq!(options.len(), 2, "both modes still live: {options:?}");
     for option in &options {
         assert_eq!(
@@ -476,9 +468,9 @@ fn the_choice_offered_after_the_last_supply_is_answerable() {
     }
 
     // Un-anchored is not merely cosmetic here — the pick has to land.
-    let r = pick(r.state, 1);
+    let s = s.pick_nth(1);
     assert_eq!(
-        r.state.investigators[&INV].horror(),
+        s.state().investigators[&INV].horror(),
         1,
         "the horror branch resolved from a source that had left play",
     );
@@ -490,8 +482,8 @@ fn the_choice_offered_after_the_last_supply_is_answerable() {
 /// unconditionally and the sibling test would not notice.
 #[test]
 fn the_choice_keeps_its_anchor_while_first_aid_is_still_in_play() {
-    let r = activate(board(2));
-    let options = offered(&r, "the damage-or-horror choice");
+    let s = activate(board(2));
+    let options = offered(&s, "the damage-or-horror choice");
     for option in options {
         assert_eq!(
             option.target,
@@ -522,10 +514,8 @@ fn the_damage_or_horror_choice_is_a_decision_and_the_heal_target_is_a_selection(
     other.current_location = Some(LOC);
     state.investigators.insert(InvestigatorId(2), other);
 
-    let r = activate(state);
-    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
-        panic!("expected the damage-or-horror choice: {:?}", r.outcome);
-    };
+    let s = activate(state);
+    let request = s.prompt();
     assert_eq!(
         request.nature,
         PromptNature::Decision,
@@ -535,10 +525,8 @@ fn the_damage_or_horror_choice_is_a_decision_and_the_heal_target_is_a_selection(
 
     // Branch 0 = heal damage; grounding its `InvestigatorTarget::Chosen` offers
     // the two co-located investigators — board entities, so a selection.
-    let r = pick(r.state, 0);
-    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
-        panic!("expected the heal-target pick: {:?}", r.outcome);
-    };
+    let s = s.pick_nth(0);
+    let request = s.prompt();
     assert_eq!(
         request.options.len(),
         2,

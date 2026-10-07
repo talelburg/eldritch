@@ -17,8 +17,7 @@ use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
-    UseKind,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers, UseKind,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -48,12 +47,9 @@ fn board(intellect: i8, shroud: u8, revealed: bool) -> GameState {
     location.revealed = revealed;
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(inv, LOC)
         .with_location(location)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build()
@@ -69,15 +65,15 @@ fn supplies(state: &GameState) -> Option<u8> {
 
 fn activate(state: GameState) -> ApplyResult {
     TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(TORCH_INST),
             address: AbilityAddress::Printed(0),
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .run()
+        .finish()
 }
 
 #[test]

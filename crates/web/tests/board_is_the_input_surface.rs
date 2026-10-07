@@ -22,7 +22,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
-    InvestigationPhaseFrame, InvestigationResume, InvestigatorId, LocationId, Phase, UseKind,
+    InvestigatorId, LocationId, Phase, UseKind,
 };
 use game_core::test_support;
 use leptos::prelude::*;
@@ -43,42 +43,6 @@ wasm_bindgen_test_configure!(run_in_browser);
 const INV: InvestigatorId = InvestigatorId(1);
 const ROLAND: &str = "01001";
 const ROTTING_REMAINS: &str = "01163";
-
-/// A single investigator mid-Investigation with the turn open and one action
-/// left. The harness spends that action to reach the open turn menu, after which
-/// End turn is the only thing left — the shortest honest route from an open turn
-/// into the Mythos encounter draw.
-fn open_turn_with_one_action() -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.actions_remaining = 1;
-    // A real investigator card: this test's subject is the rendered board, and
-    // a rendering test's substrate is the real corpus (ADR 0016).
-    inv.investigator_card =
-        CardInPlay::enter_play(CardCode::new(ROLAND), CardInstanceId(u32::MAX - 1));
-    inv.deck = vec![CardCode::new("01020"), CardCode::new("01021")];
-    let mut state = GameStateBuilder::default()
-        .with_investigator(inv)
-        .with_phase(Phase::Investigation)
-        .with_turn_order([INV])
-        .with_active_investigator(INV)
-        .with_round(1)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(INV)
-        // A one-token bag makes the test's outcome deterministic: +1 against
-        // Willpower 3 vs difficulty 3 passes, so the flow is stable run to run.
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(1)]))
-        .build();
-    // Rotting Remains 01163: "Revelation - Test [willpower] (3)." Drawing it is
-    // what carries the flow from the encounter deck into a skill test, and so to
-    // the acknowledge pause — the second of the two identical-on-the-wire
-    // `Confirm`s (ADR 0011).
-    state.encounter_deck = [CardCode::new(ROTTING_REMAINS)].into_iter().collect();
-    // The cosmetic acknowledge pause (#478) is what the result modal renders on.
-    state.interactive_acknowledge = true;
-    state
-}
 
 /// The in-process server: holds the authoritative `GameState`, applies whatever
 /// the UI submits, and folds the result back into the store.
@@ -199,13 +163,37 @@ fn is_disabled(sel: &str) -> bool {
 
 #[wasm_bindgen_test]
 async fn a_whole_turn_is_driven_from_the_board_alone() {
+    // A single investigator with the turn open and one action left. Spending
+    // that action reaches the open turn menu, after which End turn is the only
+    // thing left — the shortest honest route from an open turn into the Mythos
+    // encounter draw.
+    let mut inv = test_support::test_investigator(1);
+    inv.actions_remaining = 1;
+    // A real investigator card: this test's subject is the rendered board, and
+    // a rendering test's substrate is the real corpus (ADR 0016).
+    inv.investigator_card =
+        CardInPlay::enter_play(CardCode::new(ROLAND), CardInstanceId(u32::MAX - 1));
+    inv.deck = vec![CardCode::new("01020"), CardCode::new("01021")];
+    let mut state = GameStateBuilder::default()
+        .with_investigator(inv)
+        .with_round(1)
+        .open_turn(INV)
+        // A one-token bag makes the test's outcome deterministic: +1 against
+        // Willpower 3 vs difficulty 3 passes, so the flow is stable run to run.
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(1)]))
+        .build();
+    // Rotting Remains 01163: "Revelation - Test [willpower] (3)." Drawing it is
+    // what carries the flow from the encounter deck into a skill test, and so to
+    // the acknowledge pause — the second of the two identical-on-the-wire
+    // `Confirm`s (ADR 0011).
+    state.encounter_deck = [CardCode::new(ROTTING_REMAINS)].into_iter().collect();
+    // The cosmetic acknowledge pause (#478) is what the result modal renders on.
+    state.interactive_acknowledge = true;
+
     // Seed by spending the one action through the engine: what comes back is the
     // engine's own open-turn menu, so nothing about the anchors is reconstructed
     // in the test.
-    let seeded = test_support::take_turn_action(
-        open_turn_with_one_action(),
-        &TurnAction::Resource { investigator: INV },
-    );
+    let seeded = test_support::take_turn_action(state, &TurnAction::Resource { investigator: INV });
     let mut h = Harness::mount(seeded.state, seeded.outcome).await;
 
     // 1. The open turn. The banner stays silent — the menu is anchored to the
@@ -265,33 +253,6 @@ async fn a_whole_turn_is_driven_from_the_board_alone() {
 const FIRST_AID: &str = "01019";
 const KIT: CardInstanceId = CardInstanceId(7);
 
-/// An open turn with First Aid 01019 in play and harm to heal, so its `[action]
-/// Spend 1 supply: Heal 1 damage or horror from an investigator at your
-/// location` is offered on the asset.
-fn open_turn_with_first_aid() -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    inv.actions_remaining = 2;
-    inv.investigator_card =
-        CardInPlay::enter_play(CardCode::new(ROLAND), CardInstanceId(u32::MAX - 1));
-    inv.investigator_card.accumulated_damage = 2;
-    inv.investigator_card.accumulated_horror = 2;
-    let mut kit = CardInPlay::enter_play(CardCode::new(FIRST_AID), KIT);
-    kit.uses.insert(UseKind::Supplies, 3);
-    inv.cards_in_play.push(kit);
-    GameStateBuilder::default()
-        .with_phase(Phase::Investigation)
-        .with_investigator_at(inv, LocationId(10))
-        .with_location(test_support::test_location(10, "Study"))
-        .with_turn_order([INV])
-        .with_active_investigator(INV)
-        .with_round(1)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(INV)
-        .build()
-}
-
 /// **A choice printed on one card arrives without a second click** (#856).
 ///
 /// Activating First Aid pays the supply and then asks which mode. Before this,
@@ -301,12 +262,28 @@ fn open_turn_with_first_aid() -> GameState {
 /// them, the card keeps its glow but opens no menu, and the banner stands down.
 #[wasm_bindgen_test]
 async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
+    // An open turn with First Aid 01019 in play and harm to heal, so its
+    // `[action] Spend 1 supply: Heal 1 damage or horror from an investigator at
+    // your location` is offered on the asset.
+    let mut inv = test_support::test_investigator(1);
+    inv.actions_remaining = 2;
+    inv.investigator_card =
+        CardInPlay::enter_play(CardCode::new(ROLAND), CardInstanceId(u32::MAX - 1));
+    inv.investigator_card.accumulated_damage = 2;
+    inv.investigator_card.accumulated_horror = 2;
+    let mut kit = CardInPlay::enter_play(CardCode::new(FIRST_AID), KIT);
+    kit.uses.insert(UseKind::Supplies, 3);
+    inv.cards_in_play.push(kit);
+    let state = GameStateBuilder::default()
+        .with_investigator_at(inv, LocationId(10))
+        .with_location(test_support::test_location(10, "Study"))
+        .with_round(1)
+        .open_turn(INV)
+        .build();
+
     // Spend an action through the engine to reach its own open-turn menu, so
     // nothing about the anchors is reconstructed by the test.
-    let seeded = test_support::take_turn_action(
-        open_turn_with_first_aid(),
-        &TurnAction::Resource { investigator: INV },
-    );
+    let seeded = test_support::take_turn_action(state, &TurnAction::Resource { investigator: INV });
     let mut h = Harness::mount(seeded.state, seeded.outcome).await;
 
     // 1. First Aid glows on the board and opens its Activate menu — a selection,

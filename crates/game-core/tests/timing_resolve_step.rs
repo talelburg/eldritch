@@ -14,7 +14,7 @@
 //! walked and an ability declaring interrupt timing on it is rejected rather
 //! than silently dropped.
 //!
-//! Driven through `test_support::run_timing_sequence` against a mock registry:
+//! Driven through `TestSession::fire_at` against a mock registry:
 //! the point under test is which cells the coordinator walks for a given
 //! classification, so the abilities are mock declarations that mark the cell
 //! they fired in rather than real cards. The corpus-level counterpart for
@@ -23,13 +23,13 @@
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{Cx, EngineOutcome, TimingEvent};
+use game_core::engine::{ApplyResult, Cx, EngineOutcome, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
     self, Act, CardCode, CardInPlay, CardInstanceId, EmitStep, GameState, GameStateBuilder,
     InvestigatorId,
 };
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, MockRegistry, TestSession};
 
 /// Declares a `when`-timed forced on `PhaseEnded { Upkeep }` — a caller-owned
 /// condition, so the coordinator must reject rather than resolve it.
@@ -121,15 +121,12 @@ fn state_with_act(act: &str) -> GameState {
 
 #[test]
 fn caller_owned_condition_rejects_a_declared_interrupt() {
-    let mut state = state_with_act(WHEN_ACT);
-    let mut events = Vec::new();
-    let out = test_support::run_timing_sequence(
-        &mut state,
-        &mut events,
-        TimingEvent::PhaseEnded {
+    let state = state_with_act(WHEN_ACT);
+    let ApplyResult { outcome: out, .. } = TestSession::new(state)
+        .fire_at(TimingEvent::PhaseEnded {
             phase: state::Phase::Upkeep,
-        },
-    );
+        })
+        .finish();
     let EngineOutcome::Rejected { reason } = out else {
         panic!("a `when`-timed ability on a caller-owned condition must reject, got {out:?}");
     };
@@ -153,15 +150,16 @@ fn caller_owned_condition_rejects_a_declared_interrupt() {
 
 #[test]
 fn caller_owned_condition_walks_the_cells_after_its_resolve_step() {
-    let mut state = state_with_act(AT_ACT);
-    let mut events = Vec::new();
-    let out = test_support::run_timing_sequence(
-        &mut state,
-        &mut events,
-        TimingEvent::PhaseEnded {
+    let state = state_with_act(AT_ACT);
+    let ApplyResult {
+        events,
+        outcome: out,
+        ..
+    } = TestSession::new(state)
+        .fire_at(TimingEvent::PhaseEnded {
             phase: state::Phase::Upkeep,
-        },
-    );
+        })
+        .finish();
     assert!(
         matches!(out, EngineOutcome::Done),
         "walk completes: {out:?}"
@@ -177,9 +175,14 @@ fn caller_owned_condition_walks_the_cells_after_its_resolve_step() {
 
 #[test]
 fn coordinator_owned_condition_walks_its_when_cell_before_its_at_cell() {
-    let mut state = state_with_act(ROUND_ACT);
-    let mut events = Vec::new();
-    let out = test_support::run_timing_sequence(&mut state, &mut events, TimingEvent::RoundEnded);
+    let state = state_with_act(ROUND_ACT);
+    let ApplyResult {
+        events,
+        outcome: out,
+        ..
+    } = TestSession::new(state)
+        .fire_at(TimingEvent::RoundEnded)
+        .finish();
     assert!(
         matches!(out, EngineOutcome::Done),
         "walk completes: {out:?}"
@@ -217,13 +220,17 @@ fn the_game_ending_is_a_bare_milestone_that_walks_its_when_cell() {
         CardCode::new(GAME_END_CARD),
         CardInstanceId(1),
     ));
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_investigator(investigator)
         .with_turn_order([inv])
         .build();
-    let mut events = Vec::new();
-
-    let out = test_support::run_timing_sequence(&mut state, &mut events, TimingEvent::GameEnd);
+    let ApplyResult {
+        events,
+        outcome: out,
+        ..
+    } = TestSession::new(state)
+        .fire_at(TimingEvent::GameEnd)
+        .finish();
 
     assert!(
         matches!(out, EngineOutcome::Done),

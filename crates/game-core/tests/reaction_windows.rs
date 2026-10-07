@@ -23,7 +23,7 @@ use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag,
     ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
-    Phase, TokenModifiers,
+    TokenModifiers,
 };
 use game_core::test_support::{self, MockRegistry};
 use game_core::{assert_event, assert_no_event};
@@ -164,10 +164,7 @@ fn fight_to_defeat_scenario(
     let mut loc = test_support::test_location(10, "Mock Location");
     loc.clues = 3;
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -456,10 +453,8 @@ fn by_controller_filter_excludes_unrelated_investigators() {
     let mut loc = test_support::test_location(10, "Mock Location");
     loc.clues = 3;
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(attacker)
         .with_turn_order([attacker, bystander])
-        .with_investigator_turn(attacker)
+        .open_turn(attacker)
         .with_investigator(atk)
         .with_investigator(byst)
         .with_enemy(enemy)
@@ -513,10 +508,8 @@ fn unqualified_pattern_matches_any_defeat() {
     enemy.engaged_with = Some(attacker);
     enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(attacker)
         .with_turn_order([attacker, bystander])
-        .with_investigator_turn(attacker)
+        .open_turn(attacker)
         .with_investigator(atk)
         .with_investigator(byst)
         .with_enemy(enemy)
@@ -795,10 +788,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     let mut loc = test_support::test_location(10, "Mock Location");
     loc.clues = 3;
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -913,10 +903,8 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
     enemy.engaged_with = Some(active);
     enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(active)
         .with_turn_order([active, other])
-        .with_investigator_turn(active)
+        .open_turn(active)
         .with_investigator(atk)
         .with_investigator(byst)
         .with_enemy(enemy)
@@ -1051,10 +1039,7 @@ fn reaction_trigger_in_threat_area_opens_window() {
     let mut loc = test_support::test_location(10, "Mock Location");
     loc.clues = 3;
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -1141,10 +1126,7 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
     let mut loc = test_support::test_location(10, "Mock Location");
     loc.clues = 3;
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -1210,10 +1192,7 @@ fn investigate_to_success_scenario(
     let mut loc_meta = test_support::test_location(10, "Study");
     loc_meta.clues = 1;
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(id)
-        .with_turn_order([id])
-        .with_investigator_turn(id)
+        .open_turn(id)
         .with_investigator(inv)
         .with_location(loc_meta)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
@@ -1251,10 +1230,8 @@ fn investigate_with_a_bystander(
     let mut loc_meta = test_support::test_location(10, "Study");
     loc_meta.clues = 1;
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(tester)
         .with_turn_order([tester, bystander])
-        .with_investigator_turn(tester)
+        .open_turn(tester)
         .with_investigator(inv)
         .with_investigator(other)
         .with_location(loc_meta)

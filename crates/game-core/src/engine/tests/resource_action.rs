@@ -5,7 +5,6 @@ fn resource_action_spends_action_and_gains_one_resource() {
     let inv_id = InvestigatorId(1);
     let loc = LocationId(10);
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(10, "Study"))
         .with_investigator({
             let mut i = test_support::test_investigator(1);
@@ -13,11 +12,7 @@ fn resource_action_spends_action_and_gains_one_resource() {
             i.resources = 5;
             i
         })
-        .with_active_investigator(inv_id)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
 
     let result = test_support::take_turn_action(
@@ -45,19 +40,14 @@ fn resource_action_fires_aoo_from_ready_engaged_enemy() {
     enemy.engaged_with = Some(inv_id);
     enemy.attack_damage = 1;
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(10, "Study"))
         .with_investigator({
             let mut i = test_support::test_investigator(1);
             i.current_location = Some(loc);
             i
         })
-        .with_active_investigator(inv_id)
         .with_enemy(enemy)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
 
     let result = test_support::take_turn_action(
@@ -156,19 +146,14 @@ fn resource_action_aoo_that_eliminates_suppresses_the_gain() {
     enemy.engaged_with = Some(inv_id);
     enemy.attack_damage = 8; // == test_investigator max_health
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(10, "Study"))
         .with_investigator({
             let mut i = test_support::test_investigator(1);
             i.current_location = Some(loc);
             i
         })
-        .with_active_investigator(inv_id)
         .with_enemy(enemy)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
 
     let result = test_support::take_turn_action(

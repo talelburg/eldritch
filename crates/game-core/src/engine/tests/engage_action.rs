@@ -9,19 +9,14 @@ fn engage_action_engages_unengaged_enemy_at_location() {
     enemy.current_location = Some(loc);
     enemy.engaged_with = None;
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(10, "Study"))
         .with_investigator({
             let mut i = test_support::test_investigator(1);
             i.current_location = Some(loc);
             i
         })
-        .with_active_investigator(inv_id)
         .with_enemy(enemy)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
 
     let result = test_support::take_turn_action(
@@ -54,20 +49,15 @@ fn engage_action_provokes_aoo_from_other_engaged_enemy_not_the_target() {
     other.engaged_with = Some(inv_id);
     other.attack_damage = 1;
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(10, "Study"))
         .with_investigator({
             let mut i = test_support::test_investigator(1);
             i.current_location = Some(loc);
             i
         })
-        .with_active_investigator(inv_id)
         .with_enemy(target)
         .with_enemy(other)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
 
     let result = test_support::take_turn_action(

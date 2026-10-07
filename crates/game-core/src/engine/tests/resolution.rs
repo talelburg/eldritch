@@ -43,14 +43,8 @@ fn terminal_act_state(scenario_id: Option<&str>) -> GameState {
     // so `legal_actions` enumerates `AdvanceAct` — the OptionId-routing entry
     // point these tests drive through `apply_with_scenario_registry`.
     let mut builder = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(investigator)
-        .with_active_investigator(inv)
-        .with_turn_order([inv])
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(inv);
+        .open_turn(inv);
     if let Some(id) = scenario_id {
         builder = builder.with_scenario_id(ScenarioId::new(id));
     }

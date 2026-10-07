@@ -45,23 +45,10 @@ pub use outcome::{
 };
 pub use pathfinding::shortest_first_steps;
 
-// Crate-internal re-exports for `test_support::fire_forced_on_enter`.
-// Neither is public API: `ForcedTriggerPoint` stays internal; the
-// integration test constructs it through the primitive-arg helper so
-// it never needs to name the enum. `queue_forced_triggers` is wired into
-// `move_action` (EnteredLocation) and `enemy_phase_end`/`upkeep_phase_end`
-// (PhaseEnded).
-pub(crate) use dispatch::forced_triggers::{queue_forced_triggers, ForcedTriggerPoint};
 // The unified trigger-dispatch chokepoint's key (Axis-B T5a).
 pub use dispatch::emit::TimingEvent;
-// Round-end driver + act-window resume, exposed for `test_support`'s
-// `run_upkeep_round_end` / `resume_round_end_window` (the `when→at` ordering
-// regression in `crates/cards/tests/theyre_getting_out.rs` drives them end-to-end).
-// `enemy_phase_end` likewise backs `run_enemy_phase_end`, which drives step 3.4's
-// queued forced abilities through the real Enemy→Upkeep transition (#569).
-pub(crate) use dispatch::phases::{enemy_phase_end, upkeep_phase_end};
-// `pub(crate)` for `test_support` round-end helpers: drive the coordinator the
-// real loop drives (#434), and resume a window via the player-action entry.
+// `pub(crate)`: `apply` routes player actions through `apply_player_action`, and
+// `test_support`'s session drives turn actions and the loop directly.
 pub(crate) use dispatch::{apply_player_action, dispatch_turn_action, drive};
 // `pub(crate)` so `test_support::perform_skill_test` can start a plain skill test
 // directly (the synthetic entry point that replaced the retired
@@ -222,13 +209,26 @@ pub(crate) fn apply_via(
             // an unrelated suspension can be surfaced by the same apply that
             // finalized nothing, and the check is cheap and self-guarding.
             finalize_scenario_end(&mut cx, registry);
-            // Every Driven frame was drained and the ending, if finished, popped:
-            // whatever remains must be a prompt the next `apply` can answer, or
-            // nothing at all. A stranded non-prompt top would never advance.
+            // The rest invariant (#938): `Done` means the game is over, so the
+            // stack is empty; `AwaitingInput` means a prompt is on top for the
+            // next `apply` to answer. It holds because every prompt frame's push
+            // site returns `AwaitingInput`, and every resume handler pops its
+            // frame before doing more work — so a prompt is never exposed
+            // without being surfaced, and nothing else may rest. A `Done` over a
+            // non-empty stack is a frame nothing will ever advance, or a prompt
+            // nobody was asked.
             debug_assert!(
-                cx.state.continuations.is_at_rest(),
-                "`apply` returned {outcome:?} with a non-prompt frame on top of the \
-                 continuation stack, which nothing will ever advance: {:?}",
+                match outcome {
+                    EngineOutcome::Done => cx.state.continuations.is_empty(),
+                    _ => cx
+                        .state
+                        .continuations
+                        .top()
+                        .is_some_and(Continuation::awaits_input),
+                },
+                "`apply` returned {outcome:?} with {:?} on top of the continuation \
+                 stack: `Done` must leave it empty, `AwaitingInput` must leave a \
+                 prompt on top",
                 cx.state.continuations.top(),
             );
         }

@@ -8,9 +8,9 @@
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::EngineOutcome;
+use game_core::engine::{ApplyResult, EngineOutcome, TimingEvent};
 use game_core::state::{self, Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, MockRegistry, TestSession};
 
 const AGENDA: &str = "TEST-AGENDA";
 const AGENDA_BAD: &str = "TEST-AGENDA-BAD";
@@ -69,30 +69,26 @@ fn resources(state: &GameState) -> u8 {
 
 #[test]
 fn native_condition_holding_takes_the_then_branch() {
-    let mut state = state_with_agenda(AGENDA, 1);
+    let state = state_with_agenda(AGENDA, 1);
     let before = resources(&state);
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_phase_end(
-        &mut state,
-        &mut events,
-        state::Phase::Enemy,
-        EventTiming::After,
-    );
+    let ApplyResult { state, outcome, .. } = TestSession::new(state)
+        .fire_at(TimingEvent::PhaseEnded {
+            phase: state::Phase::Enemy,
+        })
+        .finish();
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(resources(&state), before + 2, "predicate true → `then`");
 }
 
 #[test]
 fn native_condition_failing_takes_the_else_branch() {
-    let mut state = state_with_agenda(AGENDA, 0);
+    let state = state_with_agenda(AGENDA, 0);
     let before = resources(&state);
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_phase_end(
-        &mut state,
-        &mut events,
-        state::Phase::Enemy,
-        EventTiming::After,
-    );
+    let ApplyResult { state, outcome, .. } = TestSession::new(state)
+        .fire_at(TimingEvent::PhaseEnded {
+            phase: state::Phase::Enemy,
+        })
+        .finish();
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(resources(&state), before + 5, "predicate false → `else_`");
 }
@@ -101,15 +97,13 @@ fn native_condition_failing_takes_the_else_branch() {
 /// rejects loudly rather than silently taking the `else_` branch.
 #[test]
 fn native_condition_rejects_unknown_tag() {
-    let mut state = state_with_agenda(AGENDA_BAD, 1);
+    let state = state_with_agenda(AGENDA_BAD, 1);
     let before = resources(&state);
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_phase_end(
-        &mut state,
-        &mut events,
-        state::Phase::Enemy,
-        EventTiming::After,
-    );
+    let ApplyResult { state, outcome, .. } = TestSession::new(state)
+        .fire_at(TimingEvent::PhaseEnded {
+            phase: state::Phase::Enemy,
+        })
+        .finish();
     assert!(
         matches!(outcome, EngineOutcome::Rejected { .. }),
         "unknown tag rejects; got {outcome:?}"

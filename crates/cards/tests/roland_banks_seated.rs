@@ -15,7 +15,7 @@ use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Phase, TokenModifiers,
+    InvestigatorId, LocationId, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -56,11 +56,8 @@ fn seated_roland_with_enemy(round: u32) -> (InvestigatorId, EnemyId, LocationId,
     loc.clues = 2;
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_round(round)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)
@@ -75,14 +72,14 @@ fn seated_roland_reaction_fires_with_no_in_play_injection() {
     let (inv_id, enemy_id, loc_id, state) = seated_roland_with_enemy(0);
 
     let result = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]).pick_single(OptionId(0));
+        })
         .take(&TurnAction::Fight {
             investigator: inv_id,
             enemy: enemy_id,
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]).pick_single(OptionId(0));
-        })
-        .run();
+        .finish();
 
     assert!(matches!(
         result.outcome,
@@ -123,14 +120,14 @@ fn seated_roland_reaction_capped_once_per_round() {
         .bump_ability_usage(0, 0);
 
     let result = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
         .take(&TurnAction::Fight {
             investigator: inv_id,
             enemy: enemy_id,
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .run();
+        .finish();
 
     assert!(matches!(
         result.outcome,

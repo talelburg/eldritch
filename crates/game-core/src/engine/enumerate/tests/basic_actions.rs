@@ -2,7 +2,10 @@ use super::*;
 
 #[test]
 fn end_turn_is_always_offered_at_the_open_turn() {
-    let state = open_turn_state();
+    let state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     assert!(legal_actions(&state).contains(&TurnAction::EndTurn));
 }
 
@@ -19,7 +22,10 @@ fn no_actions_when_not_the_open_turn() {
 
 #[test]
 fn basic_actions_offered_with_a_revealed_location_and_an_action() {
-    let mut state = open_turn_state();
+    let mut state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     // Place the investigator on a revealed location so Investigate is legal.
     let loc = test_support::test_location(10, "Study");
     let loc_id = loc.id;
@@ -50,7 +56,10 @@ fn basic_actions_offered_with_a_revealed_location_and_an_action() {
 
 #[test]
 fn no_action_points_offers_only_end_turn() {
-    let mut state = open_turn_state();
+    let mut state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     state
         .investigators
         .get_mut(&InvestigatorId(1))
@@ -62,7 +71,10 @@ fn no_action_points_offers_only_end_turn() {
 
 #[test]
 fn investigate_absent_on_an_unrevealed_location() {
-    let mut state = open_turn_state();
+    let mut state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     let mut loc = test_support::test_location(10, "Study");
     loc.revealed = false;
     let loc_id = loc.id;
@@ -84,7 +96,10 @@ fn investigate_absent_on_an_unrevealed_location() {
 
 #[test]
 fn move_offers_one_option_per_connected_destination() {
-    let mut state = open_turn_state();
+    let mut state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     let mut a = test_support::test_location(10, "A");
     let b = test_support::test_location(11, "B");
     a.connections = vec![b.id];
@@ -116,7 +131,10 @@ fn move_offers_one_option_per_connected_destination() {
 
 #[test]
 fn move_absent_when_unaffordable() {
-    let mut state = open_turn_state();
+    let mut state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     let mut a = test_support::test_location(10, "A");
     let b = test_support::test_location(11, "B");
     a.connections = vec![b.id];
@@ -150,7 +168,13 @@ fn every_enumerated_action_is_accepted_by_its_handler() {
     // install_test_registry: EndTurn (and other actions) reads max_health /
     // max_sanity on the investigator card; the test registry provides those.
     test_support::install_test_registry();
-    let mut state = open_turn_state();
+    let mut state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        // Investigate is applied below, and a skill test rejects on an empty
+        // bag (a malformed-state guard the enumerator does not replicate).
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .open_turn(InvestigatorId(1))
+        .build();
     let mut a = test_support::test_location(10, "A");
     let b = test_support::test_location(11, "B");
     a.connections = vec![b.id];
@@ -221,7 +245,10 @@ fn resolve_input_optionid_dispatches_enumerated_turn_action() {
     //
     // install_test_registry: EndTurn reads max_health / max_sanity.
     test_support::install_test_registry();
-    let state = open_turn_state();
+    let state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     let actions = legal_actions(&state);
     let idx = actions
         .iter()

@@ -33,14 +33,13 @@
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, TimingEvent};
+use game_core::engine::{OptionId, OptionTarget, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
     AttackLoopFrame, CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, Enemy,
-    EnemyId, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
-    InvestigatorId, LocationId, Phase, Status, Zone,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Status, Zone,
 };
-use game_core::test_support;
+use game_core::test_support::{self, TestSession};
 
 /// Guard Dog (01021): Guardian Ally, health 3 / sanity 1, with the
 /// damage-retaliate reaction.
@@ -56,21 +55,13 @@ fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// An engaged enemy at the investigator's location dealing `attack_damage`
-/// damage / 0 horror, ready (not exhausted), with `max_health`.
-fn engaged_attacker(
-    id: u32,
-    inv: InvestigatorId,
-    loc: LocationId,
-    attack_damage: u8,
-    max_health: u8,
-) -> Enemy {
+/// A ready enemy dealing `damage` / 0 horror, with `max_health`. Engage it
+/// with `with_enemy_engaged`, which places it at the investigator's location.
+fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
     let mut e = test_support::test_enemy(id, format!("Attacker {id}"));
-    e.max_health = max_health;
-    e.attack_damage = attack_damage;
+    e.attack_damage = damage;
     e.attack_horror = 0;
-    e.current_location = Some(loc);
-    e.engaged_with = Some(inv);
+    e.max_health = max_health;
     e
 }
 
@@ -100,22 +91,12 @@ fn soak_state(
     inv.deck = vec![CardCode::new("01087"); 5];
 
     let mut builder = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(inv)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id]);
+        .open_turn(inv_id);
     for enemy in enemies {
-        builder = builder.with_enemy(enemy);
+        builder = builder.with_enemy_engaged(enemy, inv_id);
     }
-    // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
-    // InvestigationPhase anchor at investigation_phase_end.
-    builder = builder.with_phase_anchor(InvestigationPhaseFrame {
-        resume: InvestigationResume::TurnBegins,
-    });
-    // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
-    // EndTurn cascade pops before advancing into the Enemy phase.
-    builder = builder.with_investigator_turn(inv_id);
     (builder.build(), inv_id, loc_id)
 }
 
@@ -128,66 +109,42 @@ fn guard_dog_card(state: &GameState, inv: InvestigatorId, inst: CardInstanceId) 
         .expect("Guard Dog still in play")
 }
 
-/// From a suspended attack-order prompt (#143), the `PickSingle` `OptionId`
-/// whose label matches `enemy`'s debug repr.
-fn order_pick(outcome: &EngineOutcome, enemy: EnemyId) -> OptionId {
-    let EngineOutcome::AwaitingInput { request, .. } = outcome else {
-        panic!("expected an attack-order prompt, got {outcome:?}");
-    };
-    request
-        .options
-        .iter()
-        .find(|o| o.label == format!("{enemy:?}"))
-        .expect("attacker offered in the order pick")
-        .id
-}
-
-/// Resume a suspended prompt/window by selecting option `id`.
-fn resolve_pick(state: GameState, id: OptionId) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(id),
-        }),
-    )
-}
-
-/// True iff the outcome is the interactive soak-distribution per-point prompt
-/// (#44/K5b), as opposed to a soak/retaliate window or a framework prompt.
-fn is_distribution_prompt(outcome: &EngineOutcome) -> bool {
-    matches!(
-        outcome,
-        EngineOutcome::AwaitingInput { request, .. } if request.prompt.contains("to which target")
-    )
+/// Choose which attacker attacks next. The attack-order prompt (#143) offers
+/// the attackers in `EnemyId` order, and its options are un-anchored (#950), so
+/// position is all that tells them apart: option 0 is the lowest `EnemyId`.
+fn attacks_next(position: u32) -> Action {
+    Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(OptionId(position)),
+    })
 }
 
 /// Resolve a soak distribution (#44/K5b) by assigning every point to the soaker
 /// `inst` while it has capacity, then to the investigator once it is full —
-/// reproducing the pre-K5b soak-first default. Returns the first result that is
-/// no longer a distribution prompt.
-fn distribute_onto(mut result: ApplyResult, inst: CardInstanceId) -> ApplyResult {
-    while is_distribution_prompt(&result.outcome) {
-        let EngineOutcome::AwaitingInput { request, .. } = &result.outcome else {
-            unreachable!()
-        };
-        let needle = format!("CardInstanceId({})", inst.0);
-        let id = request
+/// reproducing the pre-K5b soak-first default. Returns the session at the first
+/// prompt that is no longer a distribution prompt: the distribution must be
+/// answered, a reaction window may be passed.
+fn distribute_onto(mut session: TestSession, inst: CardInstanceId) -> TestSession {
+    while !session.prompt().skippable {
+        let soaker = OptionTarget::CardInstance(inst);
+        session = if session
+            .prompt()
             .options
             .iter()
-            .find(|o| o.label.contains(&needle))
-            .or_else(|| request.options.iter().find(|o| o.label == "Investigator"))
-            .expect("a distribution option")
-            .id;
-        result = resolve_pick(result.state, id);
+            .any(|o| o.target.as_ref() == Some(&soaker))
+        {
+            session.pick(soaker)
+        } else {
+            session.pick_unanchored()
+        };
     }
-    result
+    session
 }
 
-/// Fire the single pending trigger of an open reaction window — Guard Dog's
-/// retaliate, in every case here. Since #727 the window is `DamageAssigned`'s
-/// `when` cell, so this is also what lets the deal proceed to its placement.
-fn fire_retaliate(state: GameState) -> ApplyResult {
-    resolve_pick(state, OptionId(0))
+/// Fire Guard Dog's retaliate from its open reaction window. Since #727 the
+/// window is `DamageAssigned`'s `when` cell, so this is also what lets the deal
+/// proceed to its placement.
+fn fire_retaliate(session: TestSession, dog: CardInstanceId) -> TestSession {
+    session.pick(OptionTarget::CardInstance(dog))
 }
 
 // ---------------------------------------------------------------------
@@ -198,31 +155,25 @@ fn fire_retaliate(state: GameState) -> ApplyResult {
 fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
     let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
     // Attack deals 2 damage; Guard Dog (health 3) soaks all of it, the
     // investigator takes none.
-    let (mut state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog)],
-        vec![engaged_attacker(7, inv, loc, 2, 3)],
-    );
+    let (state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 2, 3)]);
 
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
     // Distribute the attack: assign both points onto Guard Dog (#44/K5b).
-    let result = distribute_onto(result, dog);
-    state = result.state;
+    let session = distribute_onto(TestSession::new(state).take(&TurnAction::EndTurn), dog);
+    let state = session.state();
 
     // The attack-loop suspended on Guard Dog's `when`-cell window.
     assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        session.prompt().skippable,
         "the assignment's when-cell window must suspend the attack loop: {:?}",
-        result.outcome
+        session.prompt()
     );
     // Nothing is placed yet: the damage is *assigned* to Guard Dog — tokens
     // "next to" it, in the Rules Reference's words — and the window between the
     // two steps is what is open.
     assert_eq!(
-        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        guard_dog_card(state, inv_id, dog).accumulated_damage,
         0,
         "damage is assigned, not yet placed, while the when cell is open"
     );
@@ -235,8 +186,8 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
     assert_eq!(state.enemies[&enemy_id].damage, 0);
 
     // Fire Guard Dog's reaction (the single pending trigger).
-    let result = fire_retaliate(state);
-    state = result.state;
+    let session = fire_retaliate(session, dog);
+    let state = session.state();
 
     // The attacker took exactly 1 damage.
     assert_eq!(
@@ -245,7 +196,7 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
     );
     // …and only then did the assignment land on Guard Dog.
     assert_eq!(
-        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        guard_dog_card(state, inv_id, dog).accumulated_damage,
         2,
         "Guard Dog takes its assigned 2 damage once the when cell has run"
     );
@@ -255,12 +206,12 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
         "investigator still took none"
     );
     assert!(
-        result.events.iter().any(|e| matches!(
+        session.events().iter().any(|e| matches!(
             e,
             Event::EnemyDamaged { enemy, amount: 1, .. } if *enemy == enemy_id
         )),
         "EnemyDamaged {{ amount: 1 }} emitted: {:?}",
-        result.events
+        session.events()
     );
 }
 
@@ -279,34 +230,28 @@ fn enemy_attack_soaks_onto_guard_dog_then_retaliate_damages_attacker() {
 fn guard_dog_retaliates_on_a_lethal_assignment_then_is_defeated() {
     let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
     // Attack deals 3 damage = Guard Dog's printed health → the assignment is
     // lethal, and the dog is defeated once it is placed.
-    let (mut state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog)],
-        vec![engaged_attacker(7, inv, loc, 3, 3)],
-    );
+    let (state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 3, 3)]);
 
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
-    let result = distribute_onto(result, dog);
-    state = result.state;
+    let session = distribute_onto(TestSession::new(state).take(&TurnAction::EndTurn), dog);
+    let state = session.state();
 
     // The lethal assignment opened Guard Dog's `when` cell, with the dog still
     // in play and undamaged.
     assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        session.prompt().skippable,
         "a lethal assignment still opens the when cell: {:?}",
-        result.outcome
+        session.prompt()
     );
     assert_eq!(
-        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        guard_dog_card(state, inv_id, dog).accumulated_damage,
         0,
         "nothing placed yet — the dog is alive and about to bite"
     );
 
-    let result = fire_retaliate(state);
-    state = result.state;
+    let session = fire_retaliate(session, dog);
+    let state = session.state();
 
     // It bit back, and *then* the damage landed and defeated it.
     assert_eq!(
@@ -322,28 +267,28 @@ fn guard_dog_retaliates_on_a_lethal_assignment_then_is_defeated() {
         "defeated Guard Dog removed from cards_in_play"
     );
     assert!(
-        result.events.iter().any(|e| matches!(
+        session.events().iter().any(|e| matches!(
             e,
             Event::CardDiscarded { code, from, .. }
                 if *code == CardCode::new(GUARD_DOG) && *from == Zone::InPlay
         )),
         "Guard Dog discard emitted: {:?}",
-        result.events
+        session.events()
     );
     // The retaliate preceded the damage it reacted to, in the log as in the
     // rules: `EnemyDamaged` before the dog's `CardDiscarded`.
-    let retaliate_at = result
-        .events
+    let retaliate_at = session
+        .events()
         .iter()
         .position(|e| matches!(e, Event::EnemyDamaged { enemy, .. } if *enemy == enemy_id));
-    let discard_at = result.events.iter().position(|e| {
+    let discard_at = session.events().iter().position(|e| {
         matches!(e, Event::CardDiscarded { code, from, .. }
             if *code == CardCode::new(GUARD_DOG) && *from == Zone::InPlay)
     });
     assert!(
         retaliate_at < discard_at,
         "the when-cell retaliate precedes the placement that defeats the dog: {:?}",
-        result.events
+        session.events()
     );
 }
 
@@ -364,39 +309,35 @@ fn guard_dog_retaliates_on_a_lethal_assignment_then_is_defeated() {
 fn an_attacker_defeated_by_the_retaliate_mid_attack_has_nothing_to_exhaust() {
     let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
     // The attacker has 1 health, so Guard Dog's 1 retaliate damage defeats it
     // in the `when` cell of its own attack's damage. Enemy phase, so it *would*
     // have exhausted had it survived (unlike the AoO/Retaliate cases).
-    let (mut state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog)],
-        vec![engaged_attacker(7, inv, loc, 2, 1)],
-    );
+    let (state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 2, 1)]);
 
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
-    let result = distribute_onto(result, dog);
-    let result = fire_retaliate(result.state);
-    state = result.state;
+    let session = fire_retaliate(
+        distribute_onto(TestSession::new(state).take(&TurnAction::EndTurn), dog),
+        dog,
+    );
+    let state = session.state();
 
     assert!(
         !state.enemies.contains_key(&enemy_id),
         "the retaliate defeated the attacker during its own attack: {:?}",
-        result.events
+        session.events()
     );
     assert!(
-        !result
-            .events
+        !session
+            .events()
             .iter()
             .any(|e| matches!(e, Event::EnemyExhausted { enemy } if *enemy == enemy_id)),
         "a defeated attacker has nothing to exhaust: {:?}",
-        result.events
+        session.events()
     );
     // The rest of the sequence still ran: the damage it had already assigned is
     // placed even though the attacker is gone, because the assignment was
     // settled before the retaliate (RR step 1 precedes step 2).
     assert_eq!(
-        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        guard_dog_card(state, inv_id, dog).accumulated_damage,
         2,
         "the dead attacker's assigned damage still lands on Guard Dog"
     );
@@ -422,21 +363,17 @@ fn guard_dog_defeated_on_overflow_is_discarded_from_play() {
     // survived); a fresh 2-damage attack pushes it to 4 >= 3 → defeated.
     let dog = CardInstanceId(1);
     let enemy_id = EnemyId(7);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
-    let (mut state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog)],
-        vec![engaged_attacker(7, inv, loc, 2, 3)],
-    );
+    let (mut state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 2, 3)]);
     // Survived a prior attack: 2 already accumulated (under health 3).
     state.investigators.get_mut(&inv_id).unwrap().cards_in_play[0].accumulated_damage = 2;
 
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
-    let result = distribute_onto(result, dog);
     // The assignment's `when` cell opens with the dog still in play; firing its
     // retaliate lets the deal proceed to the placement that defeats it.
-    let result = fire_retaliate(result.state);
-    state = result.state;
+    let session = fire_retaliate(
+        distribute_onto(TestSession::new(state).take(&TurnAction::EndTurn), dog),
+        dog,
+    );
+    let state = session.state();
 
     assert!(
         !state.investigators[&inv_id]
@@ -446,13 +383,13 @@ fn guard_dog_defeated_on_overflow_is_discarded_from_play() {
         "Guard Dog at accumulated 4 >= health 3 is discarded"
     );
     assert!(
-        result.events.iter().any(|e| matches!(
+        session.events().iter().any(|e| matches!(
             e,
             Event::CardDiscarded { code, from, .. }
                 if *code == CardCode::new(GUARD_DOG) && *from == Zone::InPlay
         )),
         "Guard Dog discard emitted: {:?}",
-        result.events
+        session.events()
     );
     // The attacker (max_health 3, attack 2) took the retaliate the dog got in
     // before its own defeat.
@@ -488,27 +425,24 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
     let dog = CardInstanceId(1);
     let vest = CardInstanceId(2);
     let enemy_id = EnemyId(7);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
-    let (mut state, inv_id, _) = soak_state(
+    let (state, inv_id, _) = soak_state(
         vec![(GUARD_DOG, dog), (BULLETPROOF_VEST, vest)],
-        vec![engaged_attacker(7, inv, loc, 2, 3)],
+        vec![ready_attacker(7, 2, 3)],
     );
 
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
-    let result = distribute_onto(result, dog);
-    state = result.state;
+    let session = distribute_onto(TestSession::new(state).take(&TurnAction::EndTurn), dog);
+    let state = session.state();
 
     // Guard Dog's reaction window suspended the loop.
     assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        session.prompt().skippable,
         "Guard Dog's reaction window suspends the loop: {:?}",
-        result.outcome
+        session.prompt()
     );
     // The whole assignment went to Guard Dog; nothing is placed yet, and the
     // Vest is in neither the assignment nor the window.
     assert_eq!(
-        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        guard_dog_card(state, inv_id, dog).accumulated_damage,
         0,
         "assigned to Guard Dog, not yet placed"
     );
@@ -543,14 +477,14 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
 
     // Firing the single offered trigger retaliates (it's Guard Dog's, not
     // the Vest's — the Vest contributes no trigger at all).
-    let result = fire_retaliate(state);
-    state = result.state;
+    let session = fire_retaliate(session, dog);
+    let state = session.state();
     assert_eq!(
         state.enemies[&enemy_id].damage, 1,
         "Guard Dog's reaction (not the Vest's) dealt 1 damage"
     );
     assert_eq!(
-        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        guard_dog_card(state, inv_id, dog).accumulated_damage,
         2,
         "and the assigned damage then landed on Guard Dog"
     );
@@ -572,39 +506,32 @@ fn only_guard_dogs_reaction_is_offered_not_another_controlled_soaker() {
 #[test]
 fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     let dog = CardInstanceId(1);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
     let first = EnemyId(7);
     let second = EnemyId(8);
     // Two engaged attackers, each dealing 1 damage; Guard Dog (health 3)
     // soaks both. The first attack opens the soak window and suspends; after
     // resolving the reaction, the loop resumes and the second attacker
     // attacks too. Both end exhausted.
-    let (mut state, inv_id, _) = soak_state(
+    let (state, inv_id, _) = soak_state(
         vec![(GUARD_DOG, dog)],
-        vec![
-            engaged_attacker(7, inv, loc, 1, 3),
-            engaged_attacker(8, inv, loc, 1, 3),
-        ],
+        vec![ready_attacker(7, 1, 3), ready_attacker(8, 1, 3)],
     );
 
     // Two engaged attackers → the enemy phase first asks the player which
     // attacks next (#143). Pick the first attacker (EnemyId 7).
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
-    let pick_first = order_pick(&result.outcome, first);
+    let session = TestSession::new(state).take(&TurnAction::EndTurn);
 
     // The chosen first attacker attacks: its 1 damage prompts the soak
     // distribution (#44/K5b) — assign it to Guard Dog → suspend on the soak window.
-    let result = resolve_pick(result.state, pick_first);
-    let result = distribute_onto(result, dog);
-    state = result.state;
+    let session = distribute_onto(session.apply(attacks_next(0)), dog);
+    let state = session.state();
     assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        session.prompt().skippable,
         "first attack's soak window suspends the loop: {:?}",
-        result.outcome
+        session.prompt()
     );
     assert_eq!(
-        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        guard_dog_card(state, inv_id, dog).accumulated_damage,
         0,
         "first attacker's 1 damage is assigned, not yet placed"
     );
@@ -641,9 +568,8 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     // attack ALSO soaks onto the (surviving) Guard Dog, opening a second
     // soak window and re-suspending — a clean demonstration that the
     // resumed loop suspends again on a later attacker.
-    let result = resolve_pick(state, OptionId(0));
-    let result = distribute_onto(result, dog);
-    state = result.state;
+    let session = distribute_onto(fire_retaliate(session, dog), dog);
+    let state = session.state();
 
     assert_eq!(
         state.enemies[&first].damage, 1,
@@ -652,7 +578,7 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     // The first attack's damage has now landed; the second attack's is assigned
     // but not yet placed, its own `when` cell being the window we are parked on.
     assert_eq!(
-        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        guard_dog_card(state, inv_id, dog).accumulated_damage,
         1,
         "first attacker's damage placed; the second's is only assigned"
     );
@@ -666,9 +592,9 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     );
     // ...and the loop re-suspended on the second attacker's soak window.
     assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        session.prompt().skippable,
         "second attacker's soak window re-suspends the resumed loop: {:?}",
-        result.outcome
+        session.prompt()
     );
     assert!(
         state
@@ -681,15 +607,15 @@ fn two_attackers_suspend_on_first_soak_then_resume_second_attacker() {
     // Resolve the second reaction window → second attacker takes the
     // retaliation, the loop drains with no attackers left, the enemy phase
     // cascades onward, and nothing remains parked.
-    let result = resolve_pick(state, OptionId(0));
-    state = result.state;
+    let session = fire_retaliate(session, dog);
+    let state = session.state();
 
     assert_eq!(
         state.enemies[&second].damage, 1,
         "second attacker took Guard Dog's retaliation on the second window"
     );
     assert_eq!(
-        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        guard_dog_card(state, inv_id, dog).accumulated_damage,
         2,
         "both attacks' damage has landed once both sequences complete"
     );
@@ -753,45 +679,39 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
 
     // Engaged ready attacker dealing 2 damage; Guard Dog (health 3) soaks
     // all of it and survives (2 < 3).
-    let attacker = engaged_attacker(7, inv_id, from, 2, 3);
+    let attacker = ready_attacker(7, 2, 3);
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(study)
         .with_location(hallway)
         .with_investigator(investigator)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
-        .with_enemy(attacker)
+        .open_turn(inv_id)
+        .with_enemy_engaged(attacker, inv_id)
         .build();
 
     // Step 1: take the Move — AoO runs; Guard Dog has no cancel reaction
     // so the before-attack window is skipped; damage soaks onto Guard Dog;
     // the soak window opens and suspends.
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Move {
-            investigator: inv_id,
-            destination: dest,
-        },
-    );
+    let session = TestSession::new(state).take(&TurnAction::Move {
+        investigator: inv_id,
+        destination: dest,
+    });
     // The AoO prompts for the soak distribution (#44/K5b): assign both points
     // onto Guard Dog to reproduce the soak.
-    let result = distribute_onto(result, dog);
-    let mut state = result.state;
+    let session = distribute_onto(session, dog);
+    let state = session.state();
 
     // The AoO's soak window suspended the loop (the ActionResolution
     // frame is parked beneath the AttackLoop beneath the Resolution window).
     assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        session.prompt().skippable,
         "AoO soak window must suspend the loop: {:?}",
-        result.outcome
+        session.prompt()
     );
     // The AoO damage is *assigned* to Guard Dog and not yet placed — the open
     // window is the one between the two steps.
     assert_eq!(
-        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        guard_dog_card(state, inv_id, dog).accumulated_damage,
         0,
         "AoO damage assigned to Guard Dog, not yet placed"
     );
@@ -810,8 +730,8 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
     assert_eq!(state.enemies[&enemy_id].damage, 0);
 
     // Step 2: fire Guard Dog's reaction (the single pending trigger).
-    let result = fire_retaliate(state);
-    state = result.state;
+    let session = fire_retaliate(session, dog);
+    let state = session.state();
 
     // Guard Dog dealt 1 retaliate damage to the attacker.
     assert_eq!(
@@ -820,17 +740,17 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
     );
     // …and the assigned damage then landed on it.
     assert_eq!(
-        guard_dog_card(&state, inv_id, dog).accumulated_damage,
+        guard_dog_card(state, inv_id, dog).accumulated_damage,
         2,
         "AoO damage placed on Guard Dog once the when cell has run"
     );
     assert!(
-        result.events.iter().any(|e| matches!(
+        session.events().iter().any(|e| matches!(
             e,
             Event::EnemyDamaged { enemy, amount: 1, .. } if *enemy == enemy_id
         )),
         "EnemyDamaged {{ amount: 1 }} emitted: {:?}",
-        result.events
+        session.events()
     );
 
     // The attacker did NOT exhaust (RR p.7: AoO attackers never exhaust).
@@ -852,13 +772,13 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
         "engaged enemy moved with the investigator to the destination"
     );
     assert!(
-        result.events.iter().any(|e| matches!(
+        session.events().iter().any(|e| matches!(
             e,
             Event::InvestigatorMoved { investigator, from: f, to } if
                 *investigator == inv_id && *f == from && *to == dest
         )),
         "InvestigatorMoved event emitted after window closed: {:?}",
-        result.events
+        session.events()
     );
 
     // No reaction windows remain after the full cycle.
@@ -881,26 +801,20 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
 #[test]
 fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
     let dog = CardInstanceId(1);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
     // Attack deals 5 damage. Guard Dog (printed health 3) soaks 3 and is
     // defeated by reaching its printed health; the remaining 2 must be
     // assigned to the investigator — landing on the investigator card's
     // `accumulated_damage`. The investigator has 8 health, so 2 < 8 →
     // the investigator survives.
-    let (mut state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog)],
-        vec![engaged_attacker(7, inv, loc, 5, 3)],
-    );
+    let (state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 5, 3)]);
 
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
     // Distribute soak-first: fill Guard Dog to capacity (3), then the rest
     // onto the investigator.
-    let result = distribute_onto(result, dog);
+    let session = distribute_onto(TestSession::new(state).take(&TurnAction::EndTurn), dog);
     // The assignment gives Guard Dog damage, so its `when` cell opens before
     // anything is placed; fire the retaliate to let the deal reach step 2.
-    let result = fire_retaliate(result.state);
-    state = result.state;
+    let session = fire_retaliate(session, dog);
+    let state = session.state();
 
     // Guard Dog reached printed health → defeated and discarded from play.
     assert!(
@@ -911,13 +825,13 @@ fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
         "Guard Dog at accumulated 3 >= health 3 is discarded"
     );
     assert!(
-        result.events.iter().any(|e| matches!(
+        session.events().iter().any(|e| matches!(
             e,
             Event::CardDiscarded { code, from, .. }
                 if *code == CardCode::new(GUARD_DOG) && *from == Zone::InPlay
         )),
         "Guard Dog discard emitted: {:?}",
-        result.events
+        session.events()
     );
     // The mandatory remainder (2) landed on the investigator *card* —
     // `investigator_card.accumulated_damage`, surfaced via `damage()`.
@@ -952,17 +866,12 @@ fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
 #[test]
 fn investigator_card_overflow_eliminates_the_investigator() {
     let dog = CardInstanceId(1);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
     // The investigator has 8 health. Pre-load the investigator card
     // with 7 damage (survived prior harm). A 4-damage attack: Guard Dog
     // soaks 3 (defeated), the remaining 1 lands on the investigator card →
     // 8 >= 8 → the investigator is eliminated (Defeated), not the card
     // discarded to a pile.
-    let (mut state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog)],
-        vec![engaged_attacker(7, inv, loc, 4, 3)],
-    );
+    let (mut state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 4, 3)]);
     state
         .investigators
         .get_mut(&inv_id)
@@ -970,11 +879,10 @@ fn investigator_card_overflow_eliminates_the_investigator() {
         .investigator_card
         .accumulated_damage = 7;
 
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
-    let result = distribute_onto(result, dog);
+    let session = distribute_onto(TestSession::new(state).take(&TurnAction::EndTurn), dog);
     // Guard Dog is in the assignment, so its `when` cell opens first.
-    let result = fire_retaliate(result.state);
-    state = result.state;
+    let session = fire_retaliate(session, dog);
+    let state = session.state();
 
     // The investigator card reached its printed health → elimination, with
     // the damage cause. The InvestigatorEliminated event fired.
@@ -984,13 +892,13 @@ fn investigator_card_overflow_eliminates_the_investigator() {
         "investigator-card overflow eliminates (Defeated), not asset-discards"
     );
     assert!(
-        result.events.iter().any(|e| matches!(
+        session.events().iter().any(|e| matches!(
             e,
             Event::InvestigatorEliminated { investigator, cause }
                 if *investigator == inv_id && *cause == EliminationCause::Damage
         )),
         "InvestigatorEliminated {{ cause: Damage }} emitted: {:?}",
-        result.events
+        session.events()
     );
     // The investigator card was NOT discarded to a pile as if it were an
     // asset: no CardDiscarded for the investigator's own code, and the
@@ -998,12 +906,12 @@ fn investigator_card_overflow_eliminates_the_investigator() {
     // discard (elimination removes the investigator's cards from the game
     // instead).
     assert!(
-        !result.events.iter().any(|e| matches!(
+        !session.events().iter().any(|e| matches!(
             e,
             Event::CardDiscarded { code, .. } if *code == CardCode::new(test_support::TEST_INV)
         )),
         "investigator card is eliminated, not discarded as an asset: {:?}",
-        result.events
+        session.events()
     );
 }
 
@@ -1023,29 +931,23 @@ fn investigator_card_overflow_eliminates_the_investigator() {
 #[test]
 fn co_overflowing_asset_is_removed_from_game_not_discarded_when_investigator_eliminated() {
     let dog = CardInstanceId(1);
-    let inv = InvestigatorId(1);
-    let loc = LocationId(101);
     // The investigator has 8 health. Pre-load 5 onto the investigator card
     // and 2 onto Guard Dog (printed health 3). A 4-damage attack distributed
     // soak-first: Guard Dog takes 1 (→ 3 >= 3, would defeat) and the
     // remaining 3 land on the investigator card (→ 8 >= 8, eliminated). The
     // investigator is eliminated in step 2, draining cards_in_play to
     // removed_from_game before the asset sweep runs.
-    let (mut state, inv_id, _) = soak_state(
-        vec![(GUARD_DOG, dog)],
-        vec![engaged_attacker(7, inv, loc, 4, 3)],
-    );
+    let (mut state, inv_id, _) = soak_state(vec![(GUARD_DOG, dog)], vec![ready_attacker(7, 4, 3)]);
     {
         let inv_mut = state.investigators.get_mut(&inv_id).unwrap();
         inv_mut.investigator_card.accumulated_damage = 5;
         inv_mut.cards_in_play[0].accumulated_damage = 2;
     }
 
-    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
-    let result = distribute_onto(result, dog);
+    let session = distribute_onto(TestSession::new(state).take(&TurnAction::EndTurn), dog);
     // Guard Dog is in the assignment, so its `when` cell opens first.
-    let result = fire_retaliate(result.state);
-    state = result.state;
+    let session = fire_retaliate(session, dog);
+    let state = session.state();
 
     // Investigator eliminated (Defeated).
     assert_eq!(
@@ -1071,12 +973,12 @@ fn co_overflowing_asset_is_removed_from_game_not_discarded_when_investigator_eli
     // Crucially: NO asset-defeat CardDiscarded for the Guard Dog. The asset
     // sweep ran after elimination had already removed it from cards_in_play.
     assert!(
-        !result.events.iter().any(|e| matches!(
+        !session.events().iter().any(|e| matches!(
             e,
             Event::CardDiscarded { code, from, .. }
                 if *code == CardCode::new(GUARD_DOG) && *from == Zone::InPlay
         )),
         "no asset-defeat discard for the co-overflowing Guard Dog: {:?}",
-        result.events
+        session.events()
     );
 }

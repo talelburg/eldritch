@@ -181,10 +181,12 @@ pub fn test_skill_test(
 /// A continuation stack built from raw frames, bottom first, **without**
 /// checking any of the stack's invariants.
 ///
-/// For fixtures that model a state directly rather than reaching it through
-/// `apply`. The name marks the call as one that may build a stack the engine
-/// itself could never produce; step-wise test driving (#921 item 18) replaces
-/// these fixtures.
+/// **Render-only.** A state built with it is for reading — a view, a decision
+/// label, an eligibility predicate — and is never applied. The stack may be one
+/// the engine could never produce, and nothing re-establishes the prompt such a
+/// state is waiting on: a [`TestSession`](crate::test_support::TestSession)
+/// settling it panics if its top frame cannot re-surface its prompt. To drive a
+/// state, reach it through the session instead.
 ///
 /// To stack a frame on a state the builder already staged, rebuild from its
 /// frames: `from_frames_unchecked(state.continuations.iter().cloned().chain([frame]))`.

@@ -12,7 +12,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, Phase, TokenModifiers,
+    LocationId, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -42,13 +42,10 @@ fn board() -> GameState {
     enemy.current_location = Some(loc_id); // co-located: Fight is location-gated (#401)
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
         .with_investigator(inv)
         .with_location(test_support::test_location(10, "Study"))
         .with_enemy(enemy)
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())
         .build()
@@ -65,11 +62,11 @@ fn fight_action() -> TurnAction {
 #[test]
 fn committing_vicious_blow_adds_one_attack_damage() {
     let r = TestSession::new(board())
-        .take(&fight_action())
         .resolve_choices(|c| {
             c.commit_cards(&[CardCode::new(VICIOUS_BLOW)]);
         })
-        .run();
+        .take(&fight_action())
+        .finish();
 
     assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::EnemyDamaged { amount: 2, .. });
@@ -81,11 +78,11 @@ fn committing_vicious_blow_adds_one_attack_damage() {
 #[test]
 fn fight_without_vicious_blow_deals_base_damage() {
     let r = TestSession::new(board())
-        .take(&fight_action())
         .resolve_choices(|c| {
             c.commit_cards(&[]);
         })
-        .run();
+        .take(&fight_action())
+        .finish();
 
     assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::EnemyDamaged { amount: 1, .. });
