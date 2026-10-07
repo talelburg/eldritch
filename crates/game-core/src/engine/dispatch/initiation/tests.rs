@@ -563,14 +563,16 @@ fn forced_ability_is_not_held_back_by_status() {
     );
 }
 
-/// Not yet enforced on reactions — `TODO(#959)` flips this cell to a refusal.
 #[test]
-fn reaction_is_not_yet_held_back_by_status() {
+fn an_eliminated_investigator_cannot_react() {
     let mut state = state();
     eliminate_controller(&mut state);
     assert_eq!(
         gate(&state, &in_play(REACTION_LIVE), InitiationKind::Reaction),
-        Ok(())
+        Err(Refusal::NotActive {
+            investigator: CONTROLLER,
+            status: Some(Status::Defeated),
+        })
     );
 }
 

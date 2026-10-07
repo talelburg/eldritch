@@ -303,10 +303,13 @@ fn scan_pending_triggers(
 /// investigators … may … advance" group window (#434). The act/agenda are not
 /// in any `cards_in_play` zone, so [`scan_pending_triggers`] can't reach them in
 /// its per-investigator loop. Mirrors `collect_forced_hits`'s act/agenda scan:
-/// controller = the lead (board-wide effects ignore it), the act's or the
-/// agenda's own [`AbilitySource`] kind, no per-instance usage cap (acts have
-/// none). Empty when the registry isn't
-/// installed or nothing matches.
+/// controller = the lead proxy, the first Active investigator in `turn_order`
+/// ([`cursor::first_active_investigator`]; GLOSSARY "Lead investigator"), so
+/// the reaction outlives the first seat's elimination and the gate's status
+/// check never refuses it for that; the act's or the agenda's own
+/// [`AbilitySource`] kind; no per-instance usage cap (acts have none). Empty
+/// when the registry isn't installed, no investigator is Active, or nothing
+/// matches.
 fn scan_act_agenda_reactions(
     state: &GameState,
     event: &TimingEvent,
@@ -315,7 +318,7 @@ fn scan_act_agenda_reactions(
     if card_registry::current().is_none() {
         return Vec::new();
     }
-    let Some(lead) = state.turn_order.first().copied() else {
+    let Some(lead) = cursor::first_active_investigator(state) else {
         return Vec::new();
     };
     let mut hits = Vec::new();
