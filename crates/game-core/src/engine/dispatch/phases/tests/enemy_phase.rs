@@ -101,6 +101,8 @@ fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
     let EngineOutcome::AwaitingInput { request, .. } = &outcome else {
         unreachable!("asserted AwaitingInput above");
     };
+    // Hand-built pick: this test drives the dispatch entry points on a `Cx`
+    // directly, below the apply boundary a `TestSession` steps through.
     let pick = request
         .options
         .iter()
@@ -293,6 +295,8 @@ fn resolve_attacks_for_investigator_pick_overrides_enemy_id_order() {
     // Options are the snapshotted attackers in EnemyId order: option 0 =
     // EnemyId(2), option 1 = EnemyId(10). Pick the higher-id enemy (dmg 2) to
     // strike FIRST, proving the player's pick overrides the deterministic order.
+    // Hand-built pick: this test drives the dispatch entry points on a `Cx`
+    // directly, below the apply boundary a `TestSession` steps through.
     let pick = request
         .options
         .iter()
@@ -387,6 +391,8 @@ fn resolve_attacks_for_investigator_early_breaks_when_target_defeated_mid_loop()
     let EngineOutcome::AwaitingInput { request, .. } = outcome else {
         panic!("expected an order pick, got {outcome:?}");
     };
+    // Hand-built pick: this test drives the dispatch entry points on a `Cx`
+    // directly, below the apply boundary a `TestSession` steps through.
     let pick = request
         .options
         .iter()

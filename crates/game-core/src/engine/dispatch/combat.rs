@@ -6,7 +6,7 @@ use card_dsl::dsl::{EntityScope, LocationSet};
 use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{cards, choice, elimination, emit, hunters, reaction_windows};
+use crate::engine::dispatch::{cards, choice, elimination, emit, reaction_windows};
 use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
@@ -832,7 +832,7 @@ fn credit_point(assignment: &mut Assignment, target: DistributionTarget, damage_
 /// Build the per-point soak options, anchoring each to its board home so a host
 /// renders it on the right card (S5, #540): a soaker asset to its card instance,
 /// the defending investigator to their own investigator card (`me`, #950).
-/// Labels match the former `hunters::candidate_options` debug repr, so the flat
+/// Labels match the former `choice::candidate_options` debug repr, so the flat
 /// bar is byte-unchanged.
 fn soak_options(targets: &[DistributionTarget], me: &OptionTarget) -> Vec<ChoiceOption> {
     targets
@@ -1173,7 +1173,7 @@ fn suspend_order_pick(
         attackers.len()
     );
     let options =
-        hunters::candidate_options(&attackers, |e| (format!("{e:?}"), OptionTarget::Enemy(*e)));
+        choice::candidate_options(&attackers, |e| (format!("{e:?}"), OptionTarget::Enemy(*e)));
     cx.state.continuations.push(AttackLoopFrame {
         investigator,
         remaining_attackers: attackers,

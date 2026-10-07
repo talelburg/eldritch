@@ -1,7 +1,5 @@
 use super::*;
-use crate::engine::enumerate::TurnAction;
-use crate::engine::OptionTarget;
-use crate::engine::{dispatch, Cx};
+use crate::engine::{dispatch, enumerate::TurnAction, outcome::OptionTarget, Cx};
 use crate::state::{EnemyId, EnemyPhaseFrame, EnemyResume, InvestigatorId, LocationId, Phase};
 use crate::{assert_event, test_support};
 

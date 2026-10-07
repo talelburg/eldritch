@@ -11,7 +11,7 @@ use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
 use crate::engine::{Cx, EvalContext};
-use crate::state::{Continuation, EffectFrame};
+use crate::state::{Continuation, EffectFrame, GameState, InvestigatorId};
 
 /// Outcome of applying the uniform resolve convention to a count of legal
 /// options (umbrella §3.4 / spec §5). `pub` so card-local natives can apply
@@ -69,6 +69,35 @@ fn choice_options(options: Vec<(String, Option<OptionTarget>)>) -> Vec<ChoiceOpt
             .maybe_at(target)
         })
         .collect()
+}
+
+/// Build the offered options for a candidate list: option `i` is
+/// `candidates[i]`, labelled and anchored by `option` (#205 will make the
+/// labels human). Every candidate here is a board entity, so `option` returns
+/// a bare [`OptionTarget`] rather than an `Option`: a caller cannot leave one
+/// un-anchored and land it in the prompt banner (ADR 0011, #950).
+pub(super) fn candidate_options<T>(
+    candidates: &[T],
+    option: impl Fn(&T) -> (String, OptionTarget),
+) -> Vec<ChoiceOption> {
+    candidates
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let (label, target) = option(c);
+            ChoiceOption::new(
+                OptionId(u32::try_from(i).expect("candidate count fits u32")),
+                label,
+            )
+            .at(target)
+        })
+        .collect()
+}
+
+/// The option for one tied investigator: labelled by id, anchored to their
+/// investigator card.
+pub(super) fn investigator_option(state: &GameState, id: InvestigatorId) -> (String, OptionTarget) {
+    (format!("{id:?}"), state.investigators[&id].card_anchor())
 }
 
 /// Build the `AwaitingInput` for a **decision** — a choice among alternatives

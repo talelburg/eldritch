@@ -12,7 +12,7 @@ use card_dsl::card_data::Slot;
 
 use crate::action::InputResponse;
 use crate::card_registry;
-use crate::engine::dispatch::{cards, hunters};
+use crate::engine::dispatch::{cards, choice};
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken};
 use crate::engine::Cx;
 use crate::state::{
@@ -221,7 +221,7 @@ fn prompt_slot_discard(
     EngineOutcome::AwaitingInput {
         request: InputRequest::pick_single(
             prompt,
-            hunters::candidate_options(&candidates, |(inst, code)| {
+            choice::candidate_options(&candidates, |(inst, code)| {
                 (format!("{code:?}"), OptionTarget::CardInstance(*inst))
             }),
         ),

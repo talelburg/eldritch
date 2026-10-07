@@ -210,11 +210,12 @@ pub(in crate::engine) fn start_skill_test(
         cx.state
             .continuations
             .push(SubstitutionPromptFrame { investigator });
+        // A decision, not a selection (ADR 0015): the two options are the
+        // alternatives Mind over Matter 01036 offers, not board entities. It is
+        // un-anchored because the event has left play by now — the ruling has
+        // it played "before the skill test begins"
+        // (https://arkhamdb.com/card/01036).
         let use_skill = SkillKind::Intellect; // sole substitution in scope
-                                              // A decision, not a selection (ADR 0015): the two options are the
-                                              // alternatives Mind over Matter 01036 offers, not board entities. It is
-                                              // un-anchored because the event has left play by now — the ruling has
-                                              // it played "before the skill test begins".
         return choice::awaiting_decision(
             format!(
                 "{investigator:?}: use {use_skill:?} in place of {skill:?} for this test? \

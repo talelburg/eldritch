@@ -8,7 +8,7 @@ use card_dsl::dsl::{Ability, Effect, Trigger};
 use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::hunters::PreyResolution;
-use crate::engine::dispatch::{cursor, hunters, reaction_windows, skill_test};
+use crate::engine::dispatch::{choice, cursor, hunters, reaction_windows, skill_test};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionTarget, ResumeToken};
 use crate::engine::Cx;
@@ -502,9 +502,7 @@ pub(super) fn spawn_enemy_at(
                         "Enemy {enemy_id:?} spawn engagement: lead investigator picks whom to \
                          engage among {tied:?}"
                     ),
-                    hunters::candidate_options(&tied, |i| {
-                        hunters::investigator_option(cx.state, *i)
-                    }),
+                    choice::candidate_options(&tied, |i| choice::investigator_option(cx.state, *i)),
                 ),
                 resume_token: ResumeToken(0),
             }

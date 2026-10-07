@@ -52,7 +52,7 @@ use game_core::state::{
     FastWindowFrame, FastWindowKind, GameState, GameStateBuilder, InvestigatorId, LocationId,
     Phase, PhaseStep,
 };
-use game_core::test_support;
+use game_core::test_support::{self, TestSession};
 
 /// Beat Cop (01018): Guardian Ally, `[fast]` *"Discard Beat Cop: Deal 1 damage
 /// to an enemy at your location."*
@@ -167,52 +167,29 @@ fn before_investigator_attacked_pauses_when_a_fast_play_is_eligible() {
 #[test]
 fn skipping_the_pause_resumes_into_the_attack() {
     let (state, inv_id, enemy_id) = board(true, 2);
-    let paused = end_turn(state);
-    let resumed = engine::apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Skip,
-        }),
-    );
+    let me = state.investigators[&inv_id].card_anchor();
 
     // Passing the window drops straight into step 3.3's attack, which stops to
     // ask where its damage goes — Beat Cop is a 2-health Ally in play and so a
-    // legal soak target beside the investigator himself.
-    let EngineOutcome::AwaitingInput { ref request, .. } = resumed.outcome else {
-        panic!(
-            "expected the attack's damage-assignment prompt, got {:?}",
-            resumed.outcome
-        );
-    };
-    let me = resumed.state.investigators[&inv_id].card_anchor();
-    let to_investigator = request
-        .options
-        .iter()
-        .find(|o| o.target.as_ref() == Some(&me))
-        .expect("the attacked investigator is always an assignment target")
-        .id;
-
-    let assigned = engine::apply(
-        resumed.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(to_investigator),
-        }),
-    );
+    // legal soak target beside the investigator himself. Assign it to the
+    // investigator, by their investigator card.
+    let assigned = TestSession::new(state)
+        .take(&TurnAction::EndTurn)
+        .skip()
+        .pick(me);
+    let events = assigned.events();
     assert!(
-        assigned.events.iter().any(|e| matches!(
+        events.iter().any(|e| matches!(
             e,
             Event::DamageTaken { investigator, amount: 1 } if *investigator == inv_id
         )),
-        "passing the window resolves step 3.3's attack; events = {:?}",
-        assigned.events
+        "passing the window resolves step 3.3's attack; events = {events:?}",
     );
     assert!(
-        assigned
-            .events
+        events
             .iter()
             .any(|e| matches!(e, Event::EnemyExhausted { enemy } if *enemy == enemy_id)),
-        "the attacker exhausts on completing its attack; events = {:?}",
-        assigned.events
+        "the attacker exhausts on completing its attack; events = {events:?}",
     );
 }
 
