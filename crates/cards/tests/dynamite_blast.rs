@@ -16,11 +16,11 @@
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::{OptionId, OptionTarget};
 use game_core::state::{
     CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::test_support;
+use game_core::test_support::{self, TestSession};
 
 const DYNAMITE: &str = "01024";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -35,23 +35,24 @@ fn install() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-fn play(state: GameState) -> ApplyResult {
-    test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: INV,
-            hand_index: 0,
-        },
-    )
+fn play(state: GameState) -> TestSession {
+    TestSession::new(state).take(&TurnAction::PlayCard {
+        investigator: INV,
+        hand_index: 0,
+    })
 }
 
-fn pick(state: GameState, option: u32) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(option)),
-        }),
-    )
+/// Blast the `position`th candidate location (your location, then its
+/// connections). Dynamite Blast's card-local location choice is un-anchored
+/// (#950), so the pick is positional.
+fn blast(position: u32) -> Action {
+    Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(OptionId(position)),
+    })
+}
+
+fn at_turn_menu(session: &TestSession) -> bool {
+    session.prompt().target == Some(OptionTarget::TurnControl(INV))
 }
 
 /// Two connected locations. The controller (Dynamite in hand) and a 3-health
@@ -92,59 +93,57 @@ fn board() -> GameState {
 #[test]
 fn blasts_only_the_chosen_location_then_discards_the_event() {
     // Two candidates (your location + the connection) → suspend.
-    let r = play(board());
-    assert!(
-        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
-        "2 candidate locations → choice suspends",
-    );
+    let s = play(board());
+    assert!(!at_turn_menu(&s), "2 candidate locations → choice suspends");
     // The event has left hand ("commences being played") but isn't discarded yet.
     assert!(
-        r.state.investigators[&INV].hand.is_empty(),
+        s.state().investigators[&INV].hand.is_empty(),
         "event left hand"
     );
     assert!(
-        r.state.investigators[&INV].discard.is_empty(),
+        s.state().investigators[&INV].discard.is_empty(),
         "not discarded until the effect completes",
     );
     assert_eq!(
-        r.state.play_in_progress().map(|(_, c)| c.clone()),
+        s.state().play_in_progress().map(|(_, c)| c.clone()),
         Some(CardCode::new(DYNAMITE)),
         "the event is mid-play, held by its frame",
     );
 
-    // candidate_locations = [LOC_A, LOC_B] → OptionId(0) blasts LOC_A.
-    let r = pick(r.state, 0);
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
+    // candidate_locations = [LOC_A, LOC_B] → option 0 blasts LOC_A.
+    let s = s.apply(blast(0));
+    assert!(at_turn_menu(&s));
 
     // LOC_A: enemy defeated (3 dmg ≥ 3 health), controller took 3 (self-damage).
     assert!(
-        !r.state.enemies.contains_key(&ENEMY_A),
+        !s.state().enemies.contains_key(&ENEMY_A),
         "enemy at the blasted location was defeated and removed",
     );
     assert_eq!(
-        r.state.investigators[&INV].damage(),
+        s.state().investigators[&INV].damage(),
         3,
         "the controller blasted its own location and took 3",
     );
     // LOC_B (not chosen): untouched.
     assert_eq!(
-        r.state.enemies[&ENEMY_B].damage, 0,
+        s.state().enemies[&ENEMY_B].damage,
+        0,
         "enemy at LOC_B untouched"
     );
     assert_eq!(
-        r.state.investigators[&INV2].damage(),
+        s.state().investigators[&INV2].damage(),
         0,
         "investigator at LOC_B untouched",
     );
 
     // Discard-on-completion (RR Appendix I step 4): the event is now discarded.
     assert_eq!(
-        r.state.investigators[&INV].discard,
+        s.state().investigators[&INV].discard,
         vec![CardCode::new(DYNAMITE)],
         "event discarded when its effect completed",
     );
     assert!(
-        r.state.play_in_progress().is_none(),
+        s.state().play_in_progress().is_none(),
         "no play left in progress once the card is placed",
     );
 }
@@ -168,15 +167,19 @@ fn auto_targets_and_discards_when_your_location_is_the_only_candidate() {
         .open_turn(INV)
         .build();
 
-    let r = play(state);
+    let s = play(state);
     // Returns to the open-turn menu; the damage assertions below prove the
     // blast resolved fully (a single candidate auto-binds — no target-pick
     // suspend).
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    assert_eq!(r.state.enemies[&ENEMY_A].damage, 3, "enemy took 3");
-    assert_eq!(r.state.investigators[&INV].damage(), 3, "controller took 3");
+    assert!(at_turn_menu(&s));
+    assert_eq!(s.state().enemies[&ENEMY_A].damage, 3, "enemy took 3");
     assert_eq!(
-        r.state.investigators[&INV].discard,
+        s.state().investigators[&INV].damage(),
+        3,
+        "controller took 3"
+    );
+    assert_eq!(
+        s.state().investigators[&INV].discard,
         vec![CardCode::new(DYNAMITE)],
         "event discarded",
     );

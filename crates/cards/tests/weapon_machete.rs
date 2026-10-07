@@ -15,10 +15,9 @@
 //! Own process → installs `cards::REGISTRY`.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
@@ -114,28 +113,29 @@ fn two_enemies_engaged_suspends_for_pick_then_attacks_chosen() {
     let state = board(2);
 
     // Step 1: activate → should suspend for enemy target pick (NOT rejected).
-    let r1 = test_support::take_turn_action(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: INV,
-            source: AbilitySource::InPlay(MACHETE_INST),
-            address: AbilityAddress::Printed(0),
-        },
-    );
+    let session = TestSession::new(state).take(&TurnAction::ActivateAbility {
+        investigator: INV,
+        source: AbilitySource::InPlay(MACHETE_INST),
+        address: AbilityAddress::Printed(0),
+    });
     assert!(
-        matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
-        "expected AwaitingInput for target pick; got {:?}",
-        r1.outcome
+        session
+            .prompt()
+            .options
+            .iter()
+            .any(|o| o.target == Some(OptionTarget::Enemy(EnemyId(101)))),
+        "expected the target pick; got {:?}",
+        session.prompt()
     );
 
-    // Step 2: pick enemy 100 (OptionId(0) — enemies in BTreeMap ascending order).
-    // Then drain the commit window (no commits) to Done.
-    let r2 = test_support::apply_no_commits(
-        r1.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
+    // Step 2: pick enemy 100, then drain the commit window (no commits) back to
+    // the open-turn menu.
+    let r2 = session
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .pick(OptionTarget::Enemy(EnemyId(100)))
+        .finish();
     assert!(
         matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }),
         "expected the open-turn menu after pick + commit; got {:?}",
@@ -164,27 +164,19 @@ fn two_enemies_engaged_suspends_for_pick_then_attacks_chosen() {
 }
 
 /// Activate Machete on a board with 2+ candidates: suspend for the target pick,
-/// answer it with `option`, then drain the commit window to the open-turn menu.
-fn activate_and_pick(state: GameState, option: u32) -> ApplyResult {
-    let r1 = test_support::take_turn_action(
-        state,
-        &TurnAction::ActivateAbility {
+/// attack `enemy`, then drain the commit window to the open-turn menu.
+fn activate_and_attack(state: GameState, enemy: EnemyId) -> ApplyResult {
+    TestSession::new(state)
+        .take(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(MACHETE_INST),
             address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(
-        matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }),
-        "expected AwaitingInput for target pick; got {:?}",
-        r1.outcome
-    );
-    test_support::apply_no_commits(
-        r1.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(option)),
-        }),
-    )
+        })
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .pick(OptionTarget::Enemy(enemy))
+        .finish()
 }
 
 /// #592: engaged with exactly one enemy, attacking a *different*, unengaged
@@ -196,8 +188,8 @@ fn activate_and_pick(state: GameState, option: u32) -> ApplyResult {
 /// player. You can spend an action to Engage an enemy to gain the damage bonus."
 #[test]
 fn unengaged_co_located_target_gets_no_bonus() {
-    // Enemy 100 engaged, enemy 200 co-located but unengaged; pick 200 (OptionId(1)).
-    let r = activate_and_pick(board_with(1, 1), 1);
+    // Enemy 100 engaged, enemy 200 co-located but unengaged; attack 200.
+    let r = activate_and_attack(board_with(1, 1), EnemyId(200));
 
     assert_event!(
         r.events,
@@ -267,8 +259,8 @@ fn enemy_engaged_with_another_investigator_gets_no_bonus() {
     state.investigators.insert(OTHER, other);
     state.enemies.get_mut(&EnemyId(200)).unwrap().engaged_with = Some(OTHER);
 
-    // Attack enemy 200 (OptionId(1) — co-located candidates in EnemyId order).
-    let r = activate_and_pick(state, 1);
+    // Attack enemy 200.
+    let r = activate_and_attack(state, EnemyId(200));
 
     assert_event!(
         r.events,

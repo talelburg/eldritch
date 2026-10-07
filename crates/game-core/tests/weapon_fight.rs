@@ -17,13 +17,13 @@ use card_dsl::dsl::{self, Cost, IntExpr};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, MockRegistry, TestSession};
 
 /// Mock firearm: `Uses (4 ammo)`, `[action] Spend 1 ammo: Fight. +1
 /// [combat], +1 damage.`
@@ -475,35 +475,28 @@ fn a_designated_fight_is_a_fight_action() {
         events[start..].iter().map(|e| format!("{e:?}")).collect()
     }
 
-    fn take(state: &GameState, action: &TurnAction) -> Action {
-        let idx = enumerate::legal_actions(state)
-            .iter()
-            .position(|a| a == action)
-            .unwrap_or_else(|| panic!("{action:?} must be legal"));
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
-        })
-    }
-
-    /// The rows recorded while the fight's test is still in flight. Taken with
-    /// `apply` rather than `apply_no_commits` so the walk stops at the commit
-    /// window: a `Lifetime::SkillTest` row is swept when the test resolves, so
-    /// after resolution both paths read empty and the comparison would be
-    /// vacuous.
+    /// The rows recorded while the fight's test is still in flight. The step
+    /// stops at the commit window — no reply policy answers it — because a
+    /// `Lifetime::SkillTest` row is swept when the test resolves, so after
+    /// resolution both paths read empty and the comparison would be vacuous.
     fn rows_mid_test(state: GameState, action: &TurnAction) -> usize {
-        let a = take(&state, action);
-        let r = engine::apply(state, a);
-        assert!(
-            matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
+        let session = TestSession::new(state).take(action);
+        assert_eq!(
+            session.prompt().kind,
+            InputKind::PickMultiple,
             "expected the commit window with the test in flight; got {:?}",
-            r.outcome,
+            session.prompt(),
         );
-        r.state.recorded_modifiers.len()
+        session.state().recorded_modifiers.len()
     }
 
     fn resolve(state: GameState, action: &TurnAction) -> ApplyResult {
-        let a = take(&state, action);
-        test_support::apply_no_commits(state, a)
+        TestSession::new(state)
+            .resolve_choices(|c| {
+                c.commit_cards(&[]);
+            })
+            .take(action)
+            .finish()
     }
 
     let (designated_board, id, asset) = board_with_bare_asset();

@@ -39,11 +39,11 @@
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::{OptionId, OptionTarget};
 use game_core::state::{
     CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
-use game_core::test_support;
+use game_core::test_support::{self, TestSession};
 
 const DYNAMITE: &str = "01024";
 const DODGE: &str = "01023";
@@ -59,13 +59,23 @@ fn install() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-fn pick(state: GameState, option: u32) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(option)),
-        }),
-    )
+fn play(state: GameState, hand_index: u8) -> TestSession {
+    TestSession::new(state).take(&TurnAction::PlayCard {
+        investigator: INV,
+        hand_index,
+    })
+}
+
+/// Dodge as the before-attack cancel window offers it.
+fn dodge() -> OptionTarget {
+    OptionTarget::HandCardByCode {
+        investigator: INV,
+        code: CardCode::new(DODGE),
+    }
+}
+
+fn at_turn_menu(session: &TestSession) -> bool {
+    session.prompt().target == Some(OptionTarget::TurnControl(INV))
 }
 
 /// The controller at `LOC_A` (connected to `LOC_B`) holding `hand`, with
@@ -115,44 +125,41 @@ fn board(hand: &[&str], resources: u8) -> GameState {
 fn dodging_the_aoo_of_a_non_fast_event_does_not_erase_it() {
     // Play Dynamite Blast (hand_index 0). Non-fast → action spent, cost paid,
     // card commences being played (leaves hand), then the AoO resolves.
-    let r = test_support::take_turn_action(
-        board(&[DYNAMITE, DODGE], 6),
-        &TurnAction::PlayCard {
-            investigator: INV,
-            hand_index: 0,
-        },
-    );
+    let s = play(board(&[DYNAMITE, DODGE], 6), 0);
     assert!(
-        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
+        s.prompt().skippable,
         "the AoO's before-attack cancel window suspends, offering Dodge: {:?}",
-        r.outcome
+        s.prompt()
     );
     assert_eq!(
-        r.state.play_in_progress().map(|(_, c)| c.clone()),
+        s.state().play_in_progress().map(|(_, c)| c.clone()),
         Some(CardCode::new(DYNAMITE)),
         "Dynamite Blast is mid-play (commenced, not yet placed)",
     );
 
     // Play Dodge from hand to cancel the attack of opportunity. Its own play
     // nests inside Dynamite Blast's, on a frame above it.
-    let r = pick(r.state, 0);
+    let s = s.pick(dodge());
 
     assert_eq!(
-        r.state.investigators[&INV].damage(),
+        s.state().investigators[&INV].damage(),
         0,
         "the AoO was cancelled by Dodge",
     );
 
     // Drive the rest of the play: Dynamite Blast's location choice, if it
-    // suspended. LOC_A + LOC_B are both candidates.
-    let r = if matches!(r.outcome, EngineOutcome::AwaitingInput { .. }) {
-        pick(r.state, 0)
+    // suspended. LOC_A + LOC_B are both candidates; its options are
+    // un-anchored (#950), so the pick is positional.
+    let s = if at_turn_menu(&s) {
+        s
     } else {
-        r
+        s.apply(Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(0)),
+        }))
     };
 
-    let discard = &r.state.investigators[&INV].discard;
-    let hand = &r.state.investigators[&INV].hand;
+    let discard = &s.state().investigators[&INV].discard;
+    let hand = &s.state().investigators[&INV].hand;
     assert!(
         discard.contains(&CardCode::new(DODGE)),
         "Dodge was played and discarded; discard={discard:?} hand={hand:?}",
@@ -163,7 +170,7 @@ fn dodging_the_aoo_of_a_non_fast_event_does_not_erase_it() {
          discard pile once its effect resolves. discard={discard:?} hand={hand:?}",
     );
     assert!(
-        r.state.play_in_progress().is_none(),
+        s.state().play_in_progress().is_none(),
         "both plays completed — no card left mid-play",
     );
 }
@@ -186,15 +193,9 @@ fn defeated_by_its_own_aoo_the_mid_play_event_is_removed_not_discarded() {
         .expect("attacker present")
         .attack_damage = 8; // the test investigator has 8 health
 
-    let r = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: INV,
-            hand_index: 0,
-        },
-    );
+    let s = play(state, 0);
 
-    let inv = &r.state.investigators[&INV];
+    let inv = &s.state().investigators[&INV];
     assert_ne!(
         inv.status,
         Status::Active,
@@ -221,7 +222,7 @@ fn defeated_by_its_own_aoo_the_mid_play_event_is_removed_not_discarded() {
         "nothing may be placed in the drained discard pile of a dead investigator",
     );
     assert!(
-        r.state.play_in_progress().is_none(),
+        s.state().play_in_progress().is_none(),
         "the sweep took the card off its frame",
     );
 }
@@ -242,33 +243,27 @@ fn defeated_by_its_own_aoo_the_mid_play_event_is_removed_not_discarded() {
 #[test]
 fn a_hand_shifting_reaction_does_not_swap_the_asset_that_enters_play() {
     // Machete 3 + Dodge 1 = 4 resources.
-    let r = test_support::take_turn_action(
-        board(&[DODGE, MACHETE, KNIFE], 4),
-        &TurnAction::PlayCard {
-            investigator: INV,
-            hand_index: 1,
-        },
-    );
+    let s = play(board(&[DODGE, MACHETE, KNIFE], 4), 1);
     assert!(
-        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
+        s.prompt().skippable,
         "the AoO's before-attack cancel window suspends, offering Dodge: {:?}",
-        r.outcome
+        s.prompt()
     );
     assert_eq!(
-        r.state.play_in_progress().map(|(_, c)| c.clone()),
+        s.state().play_in_progress().map(|(_, c)| c.clone()),
         Some(CardCode::new(MACHETE)),
         "the announced asset rides its frame across the suspension",
     );
 
     // Dodge the attack of opportunity — this is what shifts the hand.
-    let r = pick(r.state, 0);
+    let s = s.pick(dodge());
     assert_eq!(
-        r.state.investigators[&INV].damage(),
+        s.state().investigators[&INV].damage(),
         0,
         "the AoO was cancelled by Dodge",
     );
 
-    let inv = &r.state.investigators[&INV];
+    let inv = &s.state().investigators[&INV];
     let in_play: Vec<&str> = inv.cards_in_play.iter().map(|c| c.code.as_str()).collect();
     assert_eq!(
         in_play,
@@ -291,18 +286,12 @@ fn a_hand_shifting_reaction_does_not_swap_the_asset_that_enters_play() {
 /// cover.
 #[test]
 fn a_hand_shifting_reaction_does_not_panic_on_a_short_hand() {
-    let r = test_support::take_turn_action(
-        board(&[DODGE, MACHETE], 4),
-        &TurnAction::PlayCard {
-            investigator: INV,
-            hand_index: 1,
-        },
-    );
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
+    let s = play(board(&[DODGE, MACHETE], 4), 1);
+    assert!(s.prompt().skippable);
 
-    let r = pick(r.state, 0);
+    let s = s.pick(dodge());
 
-    let inv = &r.state.investigators[&INV];
+    let inv = &s.state().investigators[&INV];
     assert!(
         inv.cards_in_play
             .iter()

@@ -8,15 +8,16 @@
 use card_dsl::card_data::UseKind;
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::{EngineOutcome, InputKind, OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     EnemyId, FastActorScope, FastWindowKind, GameState, GameStateBuilder, InvestigatorId,
     LocationId, Phase, PhaseStep,
 };
-use game_core::{assert_event, test_support};
+use game_core::test_support::{self, TestSession};
 
 const MOM: &str = "01036";
 const OVERPOWER: &str = "01091"; // combat skill icons
@@ -57,90 +58,83 @@ fn board(combat: i8, intellect: i8, hand: Vec<CardCode>) -> GameState {
         .build()
 }
 
-fn play_card(state: GameState, hand_index: u8) -> ApplyResult {
-    test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
-            investigator: INV,
-            hand_index,
+fn play_card(session: TestSession, hand_index: u8) -> TestSession {
+    session.take(&TurnAction::PlayCard {
+        investigator: INV,
+        hand_index,
+    })
+}
+
+fn fight(session: TestSession) -> TestSession {
+    session.take(&TurnAction::Fight {
+        investigator: INV,
+        enemy: ENEMY,
+    })
+}
+
+/// Answer the substitution prompt: option 0 uses the substitute skill, 1 keeps
+/// the printed one. Its options are un-anchored (#950), so the answer is
+/// positional.
+fn substitute(use_substitute: bool) -> Action {
+    Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(OptionId(u32::from(!use_substitute))),
+    })
+}
+
+/// Answer the commit window with the hand indices in `indices`.
+fn commit(indices: Vec<u32>) -> Action {
+    Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickMultiple {
+            selected: indices.into_iter().map(OptionId).collect(),
         },
-    )
+    })
 }
 
-fn fight(state: GameState) -> ApplyResult {
-    test_support::take_turn_action(
-        state,
-        &TurnAction::Fight {
-            investigator: INV,
-            enemy: ENEMY,
-        },
-    )
-}
-
-fn pick(state: GameState, opt: u32) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(opt)),
-        }),
-    )
-}
-
-fn commit(state: GameState, indices: Vec<u32>) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple {
-                selected: indices.into_iter().map(OptionId).collect(),
-            },
-        }),
-    )
+fn at_turn_menu(session: &TestSession) -> bool {
+    session.prompt().target == Some(OptionTarget::TurnControl(INV))
 }
 
 #[test]
 fn play_then_fight_substituting_succeeds_via_intellect() {
     // combat 1 fails fight-3; intellect 4 passes.
-    let r = play_card(board(1, 4, vec![CardCode::new(MOM)]), 0);
+    let s = play_card(TestSession::new(board(1, 4, vec![CardCode::new(MOM)])), 0);
     assert!(
-        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
+        at_turn_menu(&s),
         "MoM plays (Fast, your turn) and returns to the open-turn menu"
     );
     assert!(
-        r.state.investigators[&INV]
+        s.state().investigators[&INV]
             .discard
             .contains(&CardCode::new(MOM)),
         "event discarded after play",
     );
 
-    let r = fight(r.state);
+    let s = fight(s);
+    assert!(!at_turn_menu(&s), "substitution prompt");
+    let s = s.apply(substitute(true)); // use Intellect
+    assert_eq!(s.prompt().kind, InputKind::PickMultiple, "commit window");
+    let s = s.apply(commit(vec![]));
+    assert!(at_turn_menu(&s));
+    assert_event!(s.events(), Event::SkillTestSucceeded { .. });
     assert!(
-        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
-        "substitution prompt"
-    );
-    let r = pick(r.state, 0); // use Intellect
-    assert!(
-        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
-        "commit window"
-    );
-    let r = commit(r.state, vec![]);
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    assert_event!(r.events, Event::SkillTestSucceeded { .. });
-    assert!(
-        r.state.enemies[&ENEMY].damage >= 1,
+        s.state().enemies[&ENEMY].damage >= 1,
         "Fight dealt damage on success"
     );
 }
 
 #[test]
 fn fight_declining_substitution_fails_on_combat() {
-    let r = play_card(board(1, 4, vec![CardCode::new(MOM)]), 0);
-    let r = fight(r.state);
-    let r = pick(r.state, 1); // keep Combat
-    let r = commit(r.state, vec![]);
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    assert_event!(r.events, Event::SkillTestFailed { .. });
+    let s = play_card(TestSession::new(board(1, 4, vec![CardCode::new(MOM)])), 0);
+    let s = fight(s)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .apply(substitute(false)); // keep Combat
+    assert!(at_turn_menu(&s));
+    assert_event!(s.events(), Event::SkillTestFailed { .. });
     assert_eq!(
-        r.state.enemies[&ENEMY].damage, 0,
+        s.state().enemies[&ENEMY].damage,
+        0,
         "combat 1 < fight 3 → no damage"
     );
 }
@@ -153,38 +147,39 @@ fn substituted_intellect_test_rejects_a_committed_combat_icon() {
     // the substitution's sharpest observable consequence at the commit window:
     // the same commit is legal on the un-substituted Combat test.
     // Hand: [MoM, Overpower]. Play MoM (idx 0) → hand becomes [Overpower] (idx 0).
-    let r = play_card(
-        board(4, 2, vec![CardCode::new(MOM), CardCode::new(OVERPOWER)]),
+    let s = play_card(
+        TestSession::new(board(
+            4,
+            2,
+            vec![CardCode::new(MOM), CardCode::new(OVERPOWER)],
+        )),
         0,
     );
-    let r = fight(r.state);
-    let r = pick(r.state, 0); // use Intellect → it's now an Intellect test
-    assert!(
-        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
-        "commit window"
-    );
-    let rejected = commit(r.state, vec![0]); // commit Overpower (combat icons)
-    assert!(
-        matches!(rejected.outcome, EngineOutcome::Rejected { .. }),
-        "expected Rejected, got {:?}",
-        rejected.outcome,
-    );
+    let s = fight(s).apply(substitute(true)); // use Intellect → it's now an Intellect test
+    assert_eq!(s.prompt().kind, InputKind::PickMultiple, "commit window");
+    let s = s.apply(commit(vec![0])); // commit Overpower (combat icons)
+    assert!(!s.expect_rejected().is_empty());
     // Validate-first: the card is still in hand and the test still paused.
     assert_eq!(
-        rejected.state.investigators[&INV].hand,
+        s.state().investigators[&INV].hand,
         vec![CardCode::new(OVERPOWER)],
+    );
+    assert_eq!(
+        s.prompt().kind,
+        InputKind::PickMultiple,
+        "still at the commit window"
     );
 
     // Retrying with an empty commit resolves the test: intellect 2 < fight 3.
-    let r = commit(rejected.state, vec![]);
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    assert_event!(r.events, Event::SkillTestFailed { .. });
+    let s = s.apply(commit(vec![]));
+    assert!(at_turn_menu(&s));
+    assert_event!(s.events(), Event::SkillTestFailed { .. });
     assert_eq!(
-        r.state.enemies[&ENEMY].damage, 0,
+        s.state().enemies[&ENEMY].damage,
+        0,
         "intellect 2 < fight 3, and no icons were admitted",
     );
 }
-
 #[test]
 fn mind_over_matter_rejected_outside_your_turn() {
     let mut inv = test_support::test_investigator(1);
@@ -243,25 +238,23 @@ fn weapon_fight_substituting_uses_intellect_and_keeps_weapon_damage() {
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .build();
 
-    let r = play_card(state, 0); // MoM
-    let r = test_support::take_turn_action(
-        r.state,
-        &TurnAction::ActivateAbility {
+    let s = play_card(TestSession::new(state), 0) // MoM
+        .take(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(WEAPON_INST),
             address: AbilityAddress::Printed(0),
-        },
-    );
-    assert!(
-        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
-        "substitution prompt"
-    );
-    let r = pick(r.state, 0); // use Intellect (drops the +combat weapon bonus)
-    let r = commit(r.state, vec![]);
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    assert_event!(r.events, Event::SkillTestSucceeded { .. });
+        });
+    assert!(!at_turn_menu(&s), "substitution prompt");
+    let s = s
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .apply(substitute(true)); // use Intellect (drops the +combat weapon bonus)
+    assert!(at_turn_menu(&s));
+    assert_event!(s.events(), Event::SkillTestSucceeded { .. });
     assert_eq!(
-        r.state.enemies[&ENEMY].damage, 2,
+        s.state().enemies[&ENEMY].damage,
+        2,
         ".38 Special's bonus damage is kept (1 + 1) even when substituting",
     );
 }

@@ -12,14 +12,15 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::{EngineOutcome, OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
     GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::{assert_event, test_support};
+use game_core::test_support::{self, TestSession};
 
 const OLD_BOOK: &str = "01031";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -51,37 +52,35 @@ fn board() -> GameState {
         .build()
 }
 
-fn activate(state: GameState) -> ApplyResult {
-    test_support::take_turn_action(
-        state,
-        &TurnAction::ActivateAbility {
-            investigator: INV,
-            source: AbilitySource::InPlay(BOOK_INST),
-            address: AbilityAddress::Printed(0),
-        },
-    )
+fn activate(state: GameState) -> TestSession {
+    TestSession::new(state).take(&TurnAction::ActivateAbility {
+        investigator: INV,
+        source: AbilitySource::InPlay(BOOK_INST),
+        address: AbilityAddress::Printed(0),
+    })
 }
 
-fn pick(state: GameState, option: u32) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(option)),
-        }),
-    )
+/// Take the `position`th card of the searched top 3. A deck search's options
+/// have no board home (ADR 0015 excludes them), so the pick is positional.
+fn take_searched(position: u32) -> Action {
+    Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(OptionId(position)),
+    })
 }
 
 #[test]
 fn action_searches_top_three_into_hand_then_shuffles() {
     // Activate: exhaust paid, target auto-binds (solo), top 3 give 3 eligible
     // ⇒ the card pick suspends.
-    let r = activate(board());
-    assert!(
-        matches!(r.outcome, EngineOutcome::AwaitingInput { .. }),
-        "top 3 ⇒ a card choice suspends",
+    let s = activate(board());
+    assert_eq!(
+        s.prompt().options.len(),
+        3,
+        "top 3 ⇒ a card choice suspends: {:?}",
+        s.prompt(),
     );
     assert!(
-        r.state.investigators[&INV]
+        s.state().investigators[&INV]
             .cards_in_play
             .iter()
             .any(|c| c.instance_id == BOOK_INST && c.exhausted),
@@ -89,9 +88,13 @@ fn action_searches_top_three_into_hand_then_shuffles() {
     );
 
     // Pick option 1 → the second card of the top 3 ("90002").
-    let r = pick(r.state, 1);
-    assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
-    let inv = &r.state.investigators[&INV];
+    let s = s.apply(take_searched(1));
+    assert_eq!(
+        s.prompt().target,
+        Some(OptionTarget::TurnControl(INV)),
+        "back at the turn menu",
+    );
+    let inv = &s.state().investigators[&INV];
     assert!(
         inv.hand.contains(&CardCode::new("90002")),
         "picked card moved to hand",
@@ -101,8 +104,8 @@ fn action_searches_top_three_into_hand_then_shuffles() {
         "picked card removed from deck",
     );
     assert_eq!(inv.deck.len(), 3, "one card left the deck");
-    assert_event!(r.events, Event::CardSearchedToHand { .. });
-    assert_event!(r.events, Event::DeckShuffled { .. });
+    assert_event!(s.events(), Event::CardSearchedToHand { .. });
+    assert_event!(s.events(), Event::DeckShuffled { .. });
 }
 
 /// #639 — RR "Ability": *"A triggered ability can only be initiated if its

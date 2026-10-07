@@ -39,15 +39,14 @@
 #![allow(clippy::too_many_lines)]
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, OptionId};
+use game_core::engine::{OptionTarget, PromptNature};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     Enemy, EnemyId, GameStateBuilder, Investigator, InvestigatorId, LocationId, Status, UseKind,
 };
-use game_core::test_support;
+use game_core::test_support::{self, TestSession};
 
 /// First Aid (01019): Guardian Item, `[action] Spend 1 supply: Heal …`. A
 /// non-fight action ability → provokes an `AoO`.
@@ -79,21 +78,6 @@ fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
     e.attack_horror = 0;
     e.max_health = max_health;
     e
-}
-
-/// The distribution-prompt `PickSingle` `OptionId` for the soaker asset option
-/// (#44/K5b — an `AoO` against an investigator with a soaker prompts for the
-/// damage distribution before placing it).
-fn pick_soaker(outcome: &EngineOutcome) -> OptionId {
-    let EngineOutcome::AwaitingInput { request, .. } = outcome else {
-        panic!("expected a distribution prompt, got {outcome:?}");
-    };
-    request
-        .options
-        .iter()
-        .find(|o| o.label.contains("Asset"))
-        .unwrap_or_else(|| panic!("no soaker option in {:?}", request.options))
-        .id
 }
 
 /// First Aid in play (with `supplies`) + Guard Dog in play (the soaker). The
@@ -139,34 +123,22 @@ fn activating_a_non_fight_ability_while_engaged_provokes_an_aoo() {
 
     // Activate First Aid (ability 0). Action-cost, non-fight → provokes an AoO
     // after the supply cost is paid and before the heal effect resolves.
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::ActivateAbility {
+    // The AoO provokes a soak distribution prompt (Guard Dog has capacity, #44/
+    // K5b): assign both AoO damage points onto Guard Dog to reproduce the soak.
+    let session = TestSession::new(state)
+        .take(&TurnAction::ActivateAbility {
             investigator: inv_id,
             source: AbilitySource::InPlay(kit),
             address: AbilityAddress::Printed(0),
-        },
-    );
-    // The AoO provokes a soak distribution prompt (Guard Dog has capacity, #44/
-    // K5b): assign both AoO damage points onto Guard Dog to reproduce the soak.
-    let r2 = engine::apply(
-        result.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(pick_soaker(&result.outcome)),
-        }),
-    );
-    let result = engine::apply(
-        r2.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(pick_soaker(&r2.outcome)),
-        }),
-    );
-    let state = result.state;
+        })
+        .pick(OptionTarget::CardInstance(dog))
+        .pick(OptionTarget::CardInstance(dog));
+    let state = session.state();
 
     assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        session.prompt().skippable,
         "the AoO's damage window must suspend the activation: {:?}",
-        result.outcome
+        session.prompt()
     );
     let dog_in_play = state.investigators[&inv_id]
         .cards_in_play
@@ -444,47 +416,36 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
 
     // Activate First Aid → AoO → Dodge is in hand, so the BeforeEnemyAttack
     // cancel window opens.
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::ActivateAbility {
+    // Play Dodge (the single candidate) → cancel the AoO.
+    let session = TestSession::new(state)
+        .take(&TurnAction::ActivateAbility {
             investigator: inv_id,
             source: AbilitySource::InPlay(kit),
             address: AbilityAddress::Printed(0),
-        },
-    );
-    let state = result.state;
-
-    // Play Dodge (the single candidate) → cancel the AoO.
-    let result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    let state = result.state;
+        })
+        .pick(OptionTarget::HandCardByCode {
+            investigator: inv_id,
+            code: CardCode::new(DODGE),
+        });
 
     // The AoO was cancelled — no damage — and the activation resumed into First
     // Aid's heal choice (the effect ran after the window closed).
     assert_eq!(
-        state.investigators[&inv_id].damage(),
+        session.state().investigators[&inv_id].damage(),
         2,
         "the cancelled AoO dealt no damage"
     );
-    assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+    assert_eq!(
+        session.prompt().nature,
+        PromptNature::Decision,
         "First Aid's heal choice opened — the parked effect resumed: {:?}",
-        result.outcome
+        session.prompt()
     );
 
     // Pick the damage branch → 1 damage healed (2 → 1), proving the resumed
     // effect actually resolves.
-    let result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    let state = result.state;
+    let session = session.pick_nth(0);
+    let state = session.state();
     assert_eq!(
         state.investigators[&inv_id].damage(),
         1,

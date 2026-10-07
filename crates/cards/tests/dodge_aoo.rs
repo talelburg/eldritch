@@ -1,5 +1,5 @@
 //! End-to-end Dodge 01023 + Guard Dog 01021 against attacks of opportunity
-//! (`AoO`), driven through the public [`apply`] API with the real card corpus
+//! (`AoO`), driven step by step through a `TestSession` with the real card corpus
 //! installed (#293 acceptance — K1 keystone integration test).
 //!
 //! These are the registry-backed proofs that the mid-action park / resume
@@ -32,15 +32,14 @@
 #![allow(clippy::too_many_lines)]
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, OptionId};
+use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameStateBuilder, InvestigatorId,
     LocationId,
 };
-use game_core::test_support;
+use game_core::test_support::{self, TestSession};
 
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.
 const DODGE: &str = "01023";
@@ -53,19 +52,12 @@ fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// The soak-distribution `PickSingle` `OptionId` for the soaker asset (#44/K5b —
-/// an `AoO` against an investigator with a soaker prompts for the damage
-/// distribution before placing it).
-fn pick_soaker(outcome: &EngineOutcome) -> OptionId {
-    let EngineOutcome::AwaitingInput { request, .. } = outcome else {
-        panic!("expected a distribution prompt, got {outcome:?}");
-    };
-    request
-        .options
-        .iter()
-        .find(|o| o.label.contains("Asset"))
-        .unwrap_or_else(|| panic!("no soaker option in {:?}", request.options))
-        .id
+/// Dodge as the cancel window offers it: a card in hand, by code.
+fn dodge_in_hand(investigator: InvestigatorId) -> OptionTarget {
+    OptionTarget::HandCardByCode {
+        investigator,
+        code: CardCode::new(DODGE),
+    }
 }
 
 /// A ready enemy dealing `damage` / 0 horror, with `max_health`. Engage it
@@ -123,19 +115,16 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
 
     // Step 1: take the Move — AoO fires; Dodge is in hand so the
     // BeforeEnemyAttack cancel window opens and suspends.
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Move {
-            investigator: inv_id,
-            destination: dest,
-        },
-    );
-    let mut state = result.state;
+    let session = TestSession::new(state).take(&TurnAction::Move {
+        investigator: inv_id,
+        destination: dest,
+    });
+    let state = session.state();
 
     assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        session.prompt().skippable,
         "BeforeEnemyAttack window must suspend the AoO loop: {:?}",
-        result.outcome
+        session.prompt()
     );
     // No damage yet; move not yet completed.
     assert_eq!(state.investigators[&inv_id].damage(), 0);
@@ -153,13 +142,8 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
     );
 
     // Step 2: play Dodge (the single offered candidate) — cancel the AoO.
-    let result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    state = result.state;
+    let result = session.pick(dodge_in_hand(inv_id)).finish();
+    let state = result.state;
 
     // The AoO was cancelled: no damage/horror dealt.
     assert_eq!(
@@ -272,27 +256,15 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
         .build();
 
     // Step 1: Move → AoO → BeforeEnemyAttack window.
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Move {
-            investigator: inv_id,
-            destination: dest,
-        },
-    );
-    let mut state = result.state;
-    assert!(matches!(
-        result.outcome,
-        EngineOutcome::AwaitingInput { .. }
-    ));
+    let session = TestSession::new(state).take(&TurnAction::Move {
+        investigator: inv_id,
+        destination: dest,
+    });
+    assert!(session.prompt().skippable, "{:?}", session.prompt());
 
     // Step 2: skip the cancel window → AoO lands → move completes.
-    let result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Skip,
-        }),
-    );
-    state = result.state;
+    let result = session.skip().finish();
+    let state = result.state;
 
     // The AoO landed: investigator took 2 damage.
     assert!(
@@ -375,31 +347,19 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
 
     // Step 1: Move → AoO → distribution prompt (Guard Dog has capacity, #44/K5b).
     // Assign both AoO damage points onto Guard Dog → soak window opens.
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::Move {
+    let session = TestSession::new(state)
+        .take(&TurnAction::Move {
             investigator: inv_id,
             destination: dest,
-        },
-    );
-    let result = engine::apply(
-        result.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(pick_soaker(&result.outcome)),
-        }),
-    );
-    let result = engine::apply(
-        result.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(pick_soaker(&result.outcome)),
-        }),
-    );
-    let mut state = result.state;
+        })
+        .pick(OptionTarget::CardInstance(dog))
+        .pick(OptionTarget::CardInstance(dog));
+    let state = session.state();
 
     assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
+        session.prompt().skippable,
         "Guard Dog's when-cell window must suspend the AoO loop: {:?}",
-        result.outcome
+        session.prompt()
     );
     // The damage is assigned to Guard Dog and not yet placed — the open window
     // is the one the rules put between assigning and placing (#727).
@@ -423,13 +383,8 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
     assert_eq!(state.enemies[&enemy_id].damage, 0);
 
     // Step 2: fire Guard Dog's reaction (the single pending trigger).
-    let result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    state = result.state;
+    let result = session.pick(OptionTarget::CardInstance(dog)).finish();
+    let state = result.state;
 
     // Guard Dog dealt 1 retaliate damage to the AoO attacker.
     assert_eq!(

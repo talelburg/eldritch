@@ -20,7 +20,8 @@ use game_core::state::{
     EliminationCause, EnemyId, GameState, InvestigatorId, Status, TimingMode,
     TimingPointWindowFrame,
 };
-use game_core::{assert_event, scenario_registry, test_support};
+use game_core::test_support::{self, TestSession};
+use game_core::{assert_event, scenario_registry};
 use scenarios::the_gathering;
 
 const ROLAND: &str = "01001";
@@ -346,7 +347,7 @@ fn drive_the_ghoul_priest_defeat_and_pick(pick: u32, expected: u8) {
 /// Acts 1 and 2 run through `advance_to_the_terminal_act` with the flag still
 /// off: their prompts are not what the act-3 click count is about, and leaving
 /// them interactive would put the whole scenario's acknowledges in front of it.
-fn interactive_ghoul_priest_defeat() -> ApplyResult {
+fn interactive_ghoul_priest_defeat() -> TestSession {
     let mut state = seated_roland();
     {
         // Same two seeds as the non-interactive walk, for the same reasons.
@@ -374,27 +375,17 @@ fn interactive_ghoul_priest_defeat() -> ApplyResult {
         .expect("Roland seated")
         .actions_remaining = 3;
 
-    let paused = test_support::take_turn_action(
-        state,
-        &TurnAction::Fight {
+    let s = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
+        .take(&TurnAction::Fight {
             investigator: INV,
             enemy: priest_id,
-        },
-    );
-    let r = engine::apply(
-        paused.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickMultiple { selected: vec![] },
-        }),
-    );
+        });
     // The Fight's own result acknowledge — the skill test's, not the advance's.
-    assert_eq!(prompt_of(&r), "Acknowledge the skill-test result.");
-    engine::apply(
-        r.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Confirm,
-        }),
-    )
+    assert_eq!(s.prompt().prompt, "Acknowledge the skill-test result.");
+    s.confirm()
 }
 
 /// Act 3 (01110) advances in **two** clicks — the flip, then the reverse — and
@@ -413,17 +404,15 @@ fn interactive_ghoul_priest_defeat() -> ApplyResult {
 /// on and counts what the player is asked.
 #[test]
 fn act_3_advances_in_two_clicks_and_its_choice_follows_the_second() {
-    let r = interactive_ghoul_priest_defeat();
+    let s = interactive_ghoul_priest_defeat();
 
     // Click 1 — the flip. The Objective fired and raised nothing of its own, so
     // the first thing the player meets is the advance's own on-card pick, with
     // the act still showing its front (the client reads `AwaitAck`).
-    assert_event!(r.events, Event::EnemyDefeated { .. });
-    assert_event!(r.events, Event::ActAdvanced { from } if *from == 2);
-    assert_eq!(prompt_of(&r), "Act 3 advanced — acknowledge.");
-    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
-        unreachable!("prompt_of would have panicked")
-    };
+    assert_event!(s.events(), Event::EnemyDefeated { .. });
+    assert_event!(s.events(), Event::ActAdvanced { from } if *from == 2);
+    let request = s.prompt();
+    assert_eq!(request.prompt, "Act 3 advanced — acknowledge.");
     assert_eq!(request.options.len(), 1, "one option: {request:?}");
     assert_eq!(
         request.options[0].target,
@@ -432,7 +421,7 @@ fn act_3_advances_in_two_clicks_and_its_choice_follows_the_second() {
     );
     assert!(
         matches!(
-            r.state.continuations.top(),
+            s.state().continuations.top(),
             Some(Continuation::AdvanceReverse(AdvanceReverseFrame {
                 deck: AdvanceDeck::Act,
                 step: AdvanceStep::AwaitAck,
@@ -441,20 +430,25 @@ fn act_3_advances_in_two_clicks_and_its_choice_follows_the_second() {
         ),
         "the Objective's own acknowledge is suppressed, so nothing sits above the \
          advance: {:?}",
-        r.state.continuations,
+        s.state().continuations,
     );
-    assert!(r.state.ending.is_none(), "nothing latched before the flip");
+    assert!(
+        s.state().ending.is_none(),
+        "nothing latched before the flip"
+    );
 
     // Click 2 — the flipped reverse's own acknowledge, on the reverse face.
-    let r = pick_single(r.state);
-    assert_eq!(prompt_of(&r), "Forced — What Have You Done?", "the reverse");
-    assert!(r.state.ending.is_none(), "nor before the reverse runs");
+    let s = s.pick(OptionTarget::Act);
+    assert_eq!(
+        s.prompt().prompt,
+        "Forced — What Have You Done?",
+        "the reverse"
+    );
+    assert!(s.state().ending.is_none(), "nor before the reverse runs");
 
     // …and its ChooseOne follows immediately, with no third click in between.
-    let r = pick_single(r.state);
-    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
-        panic!("expected 01110's R1/R2 choice, got {:?}", r.outcome);
-    };
+    let s = s.pick(OptionTarget::Act);
+    let request = s.prompt();
     assert_eq!(
         request
             .options
@@ -473,34 +467,11 @@ fn act_3_advances_in_two_clicks_and_its_choice_follows_the_second() {
         "and it presents itself as a decision, so the modal is the surface (ADR 0015)",
     );
 
-    let done = engine::apply(
-        r.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
+    let done = s.pick_nth(0);
     assert_eq!(
-        done.state.ending,
+        done.state().ending,
         Some(ScenarioEnding::Resolution(ResolutionId::new(1))),
     );
-}
-
-/// The open prompt's text. Panics with the outcome if nothing is awaiting input.
-fn prompt_of(r: &ApplyResult) -> &str {
-    match &r.outcome {
-        EngineOutcome::AwaitingInput { request, .. } => &request.prompt,
-        other => panic!("expected a prompt, got {other:?}"),
-    }
-}
-
-/// Answer whatever single-option prompt is open with `OptionId(0)`.
-fn pick_single(state: GameState) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    )
 }
 
 /// Agenda 3 turns up on a doom clock that does not read the act deck, so a group
@@ -701,42 +672,43 @@ fn the_terminal_agendas_advance_flip_acknowledge_precedes_the_ending() {
     // Ending the round fires 01107's two Forced *fronts* first — the
     // enemy-phase-end Ghoul move and the round-end doom — each raising its own
     // #466 acknowledge before the Mythos doom tips the threshold.
-    let mut r = test_support::take_turn_action(state, &TurnAction::EndTurn);
+    let mut s = TestSession::new(state).take(&TurnAction::EndTurn);
     for _ in 0..2 {
         assert_eq!(
-            prompt_of(&r),
+            s.prompt().prompt,
             "Forced — They're Getting Out!",
             "01107's own fronts resolve before the agenda advances",
         );
-        r = pick_single(r.state);
+        s = s.pick(OptionTarget::Agenda);
     }
 
     // Then the flip: a single on-card option anchored to the agenda, with the
     // ending still unlatched — the player reads the reverse before the result
     // panel replaces the board (#558).
-    assert_eq!(prompt_of(&r), "Agenda 3 advanced — acknowledge.");
-    let EngineOutcome::AwaitingInput { request, .. } = &r.outcome else {
-        unreachable!("prompt_of would have panicked")
-    };
+    let request = s.prompt();
+    assert_eq!(request.prompt, "Agenda 3 advanced — acknowledge.");
     assert_eq!(request.options.len(), 1, "one option: {request:?}");
     assert_eq!(
         request.options[0].target,
         Some(OptionTarget::Agenda),
         "it anchors to the agenda card the player is being asked to read",
     );
-    assert!(r.state.ending.is_none(), "nothing latched before the flip");
+    assert!(
+        s.state().ending.is_none(),
+        "nothing latched before the flip"
+    );
 
     // Answering the flip fires the reverse, which is a Forced like 01105's and
     // acknowledges the same way — and only running it latches the ending.
-    r = pick_single(r.state);
+    let s = s.pick(OptionTarget::Agenda);
     assert_eq!(
-        prompt_of(&r),
+        s.prompt().prompt,
         "Forced — They're Getting Out!",
         "the reverse"
     );
-    assert!(r.state.ending.is_none(), "nor before the reverse runs");
+    assert!(s.state().ending.is_none(), "nor before the reverse runs");
 
-    let done = pick_single(r.state);
+    let done = s.pick(OptionTarget::Agenda).finish();
     assert_eq!(
         done.outcome,
         EngineOutcome::Done,

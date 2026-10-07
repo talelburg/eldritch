@@ -6,12 +6,10 @@
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::{EngineOutcome, OptionId, OptionTarget};
 use game_core::event::Event;
-use game_core::state::{
-    CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, Zone,
-};
-use game_core::test_support;
+use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Zone};
+use game_core::test_support::{self, TestSession};
 
 const BEAT_COP: &str = "01018"; // Guardian Ally
 const GUARD_DOG: &str = "01021"; // Guardian Ally
@@ -24,9 +22,9 @@ fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// A one-investigator scenario, mid-investigation, with `hand` in hand, plenty
-/// of resources and actions.
-fn play_state(hand: Vec<&str>) -> (GameState, InvestigatorId) {
+/// A one-investigator open turn with `hand` in hand, plenty of resources and
+/// actions.
+fn play_state(hand: Vec<&str>) -> (TestSession, InvestigatorId) {
     let id = InvestigatorId(1);
     let loc_id = LocationId(101);
     let mut inv = test_support::test_investigator(1);
@@ -35,64 +33,52 @@ fn play_state(hand: Vec<&str>) -> (GameState, InvestigatorId) {
     inv.actions_remaining = 6;
     inv.hand = hand.into_iter().map(CardCode::new).collect();
 
-    let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
+    let session = GameStateBuilder::new()
         .with_investigator(inv)
-        .with_active_investigator(id)
         .with_location(test_support::test_location(101, "Study"))
-        .build();
-    (state, id)
+        .open_turn(id)
+        .session();
+    (session, id)
 }
 
-fn play(state: GameState, id: InvestigatorId) -> ApplyResult {
-    test_support::dispatch_turn_action_unchecked(
-        state,
-        &TurnAction::PlayCard {
-            investigator: id,
-            hand_index: 0,
-        },
-    )
+/// Play the first card in hand from the turn menu.
+fn play(session: TestSession, id: InvestigatorId) -> TestSession {
+    session.take(&TurnAction::PlayCard {
+        investigator: id,
+        hand_index: 0,
+    })
 }
 
-fn resolve(state: GameState, id: OptionId) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(id),
-        }),
-    )
+/// Discard the `position`th occupier to make room. The make-room prompt's
+/// options are un-anchored (#950), so nothing but their position tells them
+/// apart: they are offered in play order.
+fn discard_to_make_room(position: u32) -> Action {
+    Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(OptionId(position)),
+    })
 }
 
-/// Find the option whose label contains `needle` in an `AwaitingInput` outcome.
-fn pick(outcome: &EngineOutcome, needle: &str) -> OptionId {
-    let EngineOutcome::AwaitingInput { request, .. } = outcome else {
-        panic!("expected AwaitingInput, got {outcome:?}");
-    };
-    request
-        .options
-        .iter()
-        .find(|o| o.label.contains(needle))
-        .unwrap_or_else(|| panic!("no option matching {needle:?} in {:?}", request.options))
-        .id
+fn at_turn_menu(session: &TestSession, id: InvestigatorId) -> bool {
+    session.prompt().target == Some(OptionTarget::TurnControl(id))
 }
 
 #[test]
 fn playing_a_second_ally_auto_discards_the_first() {
-    let (state, id) = play_state(vec![BEAT_COP, GUARD_DOG]);
+    let (session, id) = play_state(vec![BEAT_COP, GUARD_DOG]);
 
     // Beat Cop enters (Ally slot now full).
-    let r1 = play(state, id);
-    assert_eq!(r1.outcome, EngineOutcome::Done);
-    assert_eq!(r1.state.investigators[&id].cards_in_play.len(), 1);
+    let session = play(session, id);
+    assert!(at_turn_menu(&session, id));
+    assert_eq!(session.state().investigators[&id].cards_in_play.len(), 1);
     assert_eq!(
-        r1.state.investigators[&id].cards_in_play[0].code,
+        session.state().investigators[&id].cards_in_play[0].code,
         CardCode::new(BEAT_COP)
     );
 
     // Guard Dog (the only card left in hand, index 0) — Ally slot full, single
     // candidate (Beat Cop) → auto-discard Beat Cop, Guard Dog enters.
-    let r2 = play(r1.state, id);
-    assert_eq!(r2.outcome, EngineOutcome::Done);
+    let r2 = play(session, id).finish();
+    assert!(matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }));
     let inv = &r2.state.investigators[&id];
     assert_eq!(
         inv.cards_in_play.len(),
@@ -150,23 +136,23 @@ fn playing_a_second_ally_auto_discards_the_first() {
 fn third_hand_asset_prompts_to_choose_which_to_discard() {
     // Two distinct single-Hand assets fill both Hand slots; playing a third
     // single-Hand asset must free 1 — a genuine 2-candidate choice.
-    let (state, id) = play_state(vec![MACHETE, KNIFE, FLASHLIGHT]);
-    let r1 = play(state, id); // Machete enters (Hand 1/2)
-    let r2 = play(r1.state, id); // Knife enters (Hand 2/2)
-    assert_eq!(r2.state.investigators[&id].cards_in_play.len(), 2);
+    let (session, id) = play_state(vec![MACHETE, KNIFE, FLASHLIGHT]);
+    let session = play(session, id); // Machete enters (Hand 1/2)
+    let session = play(session, id); // Knife enters (Hand 2/2)
+    assert_eq!(session.state().investigators[&id].cards_in_play.len(), 2);
 
     // Flashlight (index 0) — Hand full, 2 candidates → suspend for a choice.
-    let r3 = play(r2.state, id);
+    let session = play(session, id);
     assert!(
-        matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }),
+        !at_turn_menu(&session, id),
         "expected a make-room prompt, got {:?}",
-        r3.outcome
+        session.prompt()
     );
 
-    // Discard Machete to make room.
-    let r4 = resolve(r3.state, pick(&r3.outcome, MACHETE));
-    assert_eq!(r4.outcome, EngineOutcome::Done);
-    let inv = &r4.state.investigators[&id];
+    // Discard Machete (played first) to make room.
+    let session = session.apply(discard_to_make_room(0));
+    assert!(at_turn_menu(&session, id));
+    let inv = &session.state().investigators[&id];
     let codes: Vec<&str> = inv.cards_in_play.iter().map(|c| c.code.as_str()).collect();
     assert_eq!(
         codes,
@@ -178,34 +164,27 @@ fn third_hand_asset_prompts_to_choose_which_to_discard() {
 
 #[test]
 fn out_of_range_make_room_pick_is_rejected_and_keeps_the_prompt() {
-    let (state, id) = play_state(vec![MACHETE, KNIFE, FLASHLIGHT]);
-    let r1 = play(state, id);
-    let r2 = play(r1.state, id);
-    let r3 = play(r2.state, id);
-    assert!(matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }));
+    let (session, id) = play_state(vec![MACHETE, KNIFE, FLASHLIGHT]);
+    let session = play(play(play(session, id), id), id);
+    let prompt = session.prompt().clone();
+    assert!(!at_turn_menu(&session, id));
 
     // Option 99 is out of range → Rejected, the prompt persists.
-    let r4 = resolve(r3.state, OptionId(99));
-    assert!(
-        matches!(r4.outcome, EngineOutcome::Rejected { .. }),
-        "out-of-range pick rejects: {:?}",
-        r4.outcome
+    let session = session.apply(discard_to_make_room(99));
+    assert!(!session.expect_rejected().is_empty());
+    assert_eq!(
+        session.prompt(),
+        &prompt,
+        "the make-room prompt still stands after a rejected pick"
     );
-    // Still mid-investigation with both Hand assets in play and Flashlight still
-    // mid-play, held by its frame — nothing was discarded.
-    let inv = &r4.state.investigators[&id];
+    // Both Hand assets in play and Flashlight still mid-play — nothing was
+    // discarded.
+    let inv = &session.state().investigators[&id];
     assert_eq!(inv.cards_in_play.len(), 2);
     assert!(inv.discard.is_empty());
     assert_eq!(
-        r4.state.play_in_progress().map(|(_, c)| c.clone()),
+        session.state().play_in_progress().map(|(_, c)| c.clone()),
         Some(CardCode::new(FLASHLIGHT)),
-        "the mid-play asset rides the parked SlotDiscard frame across the prompt",
-    );
-    assert!(
-        r4.state
-            .continuations
-            .iter()
-            .any(|c| matches!(c, Continuation::SlotDiscard(_))),
-        "the SlotDiscard prompt frame must persist after a rejected pick"
+        "the mid-play asset rides the make-room prompt",
     );
 }

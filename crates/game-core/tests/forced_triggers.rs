@@ -18,14 +18,14 @@ use card_dsl::dsl::{
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
     EnemyId, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
     InvestigatorId, LocationId, TokenModifiers, UpkeepPhaseFrame, UpkeepResume,
 };
-use game_core::test_support::{self, MockRegistry};
+use game_core::test_support::{self, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
 
 /// Mock location code: one `EventPattern::EnteredLocation` forced ability
@@ -897,48 +897,54 @@ fn two_forced_at_enemy_phase_end_resolve_and_the_phase_still_transitions() {
 
     // EndTurn cascades Investigation → Enemy → step 3.4 (no enemies, so the
     // attack loop drains and the final window auto-skips into `enemy_phase_end`).
-    let paused = end_turn(state);
+    let paused = TestSession::new(state).take(&TurnAction::EndTurn);
 
-    assert!(
-        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
-        "2+ forced at the enemy phase end must present the lead a choice; got {:?}",
-        paused.outcome,
+    let offered: Vec<_> = paused
+        .prompt()
+        .options
+        .iter()
+        .map(|o| o.target.clone())
+        .collect();
+    assert_eq!(
+        offered,
+        vec![Some(OptionTarget::Act), Some(OptionTarget::Agenda)],
+        "2+ forced at the enemy phase end must present the lead a choice",
     );
     assert_eq!(
-        paused.state.investigators[&InvestigatorId(1)].horror(),
+        paused.state().investigators[&InvestigatorId(1)].horror(),
         0,
         "no forced effect resolves until the lead orders them",
     );
     // The load-bearing bit: the phase's own frame is still there to resume onto.
     assert!(
         paused
-            .state
+            .state()
             .continuations
             .iter()
             .any(|c| matches!(c, Continuation::EnemyPhase(_))),
         "the Enemy anchor must survive beneath the ordering run; stack = {:?}",
-        paused.state.continuations,
+        paused.state().continuations,
     );
 
     // Order them: each pick resolves one, and the second closes the run.
-    let first = resolve_pick(paused.state, 0);
-    assert_eq!(first.state.investigators[&InvestigatorId(1)].horror(), 1);
-    let second = resolve_pick(first.state, 0);
+    let first = paused.pick(OptionTarget::Act);
+    assert_eq!(first.state().investigators[&InvestigatorId(1)].horror(), 1);
+    let second = first.pick(OptionTarget::Agenda);
 
     assert_eq!(
-        second.state.investigators[&InvestigatorId(1)].horror(),
+        second.state().investigators[&InvestigatorId(1)].horror(),
         2,
         "both forced abilities resolve once ordered",
     );
     assert_ne!(
-        second.state.phase,
+        second.state().phase,
         state::Phase::Enemy,
         "the Enemy → Upkeep transition must run once the forced run closes, \
          not stall the phase; stack = {:?}",
-        second.state.continuations,
+        second.state().continuations,
     );
     assert!(
-        !second.state.continuations.is_empty(),
+        !second.state().continuations.is_empty(),
         "the game must never be left with an empty continuation stack",
     );
 }
@@ -981,19 +987,22 @@ fn suspending_left_location_forced_still_engages_and_fires_entered_location() {
         .build();
     state.enemies.insert(EnemyId(1), enemy);
 
-    let paused = move_action(state, InvestigatorId(1), LocationId(11));
-    assert!(
-        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
+    let paused = TestSession::new(state).take(&TurnAction::Move {
+        investigator: InvestigatorId(1),
+        destination: LocationId(11),
+    });
+    assert_eq!(
+        paused.prompt().options.len(),
+        2,
         "the two LeftLocation forced abilities must open an ordering run",
     );
     assert_eq!(
-        paused.state.investigators[&InvestigatorId(1)].horror(),
+        paused.state().investigators[&InvestigatorId(1)].horror(),
         0,
         "leaving resolves nothing until the lead orders the two abilities",
     );
 
-    let first = resolve_pick(paused.state, 0);
-    let done = resolve_pick(first.state, 0);
+    let done = paused.apply(order_first()).apply(order_first()).finish();
 
     assert_eq!(
         done.state.investigators[&InvestigatorId(1)].horror(),
@@ -1196,24 +1205,28 @@ fn a_suspended_when_cell_sees_the_investigator_still_at_the_location_they_are_le
         .build();
     state.enemies.insert(EnemyId(1), enemy);
 
-    let paused = move_action(state, InvestigatorId(1), LocationId(11));
-    assert!(
-        matches!(paused.outcome, EngineOutcome::AwaitingInput { .. }),
+    let paused = TestSession::new(state).take(&TurnAction::Move {
+        investigator: InvestigatorId(1),
+        destination: LocationId(11),
+    });
+    assert_eq!(
+        paused.prompt().options.len(),
+        2,
         "the two `when`-cell abilities must open an ordering run",
     );
     assert_eq!(
-        paused.state.investigators[&InvestigatorId(1)].current_location,
+        paused.state().investigators[&InvestigatorId(1)].current_location,
         Some(LocationId(10)),
         "the `when` cell interrupts the departure: it has not landed yet",
     );
     assert_eq!(
-        paused.state.enemies[&EnemyId(1)].current_location,
+        paused.state().enemies[&EnemyId(1)].current_location,
         Some(LocationId(10)),
         "nor has the engaged enemy been dragged along yet",
     );
-    assert_no_event!(paused.events, Event::InvestigatorMoved { .. });
+    assert_no_event!(paused.events(), Event::InvestigatorMoved { .. });
 
-    let done = resolve_pick(resolve_pick(paused.state, 0).state, 0);
+    let done = paused.apply(order_first()).apply(order_first()).finish();
     assert_eq!(
         done.state.investigators[&InvestigatorId(1)].current_location,
         Some(LocationId(11)),
@@ -1312,28 +1325,13 @@ fn board_with_two_phase_end_forced() -> GameState {
     state
 }
 
-/// Submit the open-turn `EndTurn` action through the enumeration round-trip.
-fn end_turn(state: GameState) -> ApplyResult {
-    let idx = enumerate::legal_actions(&state)
-        .iter()
-        .position(|a| a == &TurnAction::EndTurn)
-        .expect("EndTurn must be a legal open-turn action");
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(u32::try_from(idx).unwrap())),
-        }),
-    )
-}
-
-/// Resolve an open prompt by picking `option`.
-fn resolve_pick(state: GameState, option: u32) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(option)),
-        }),
-    )
+/// Resolve the first ability of an ordering run whose abilities are printed on
+/// one card. They share that card's anchor, so nothing but position tells them
+/// apart; each ability here is interchangeable with its sibling.
+fn order_first() -> Action {
+    Action::Player(PlayerAction::ResolveInput {
+        response: InputResponse::PickSingle(OptionId(0)),
+    })
 }
 
 // (Removed `two_simultaneous_forced_triggers_resolve_in_order`, Slice D #423: it
