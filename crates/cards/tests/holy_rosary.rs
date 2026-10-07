@@ -13,7 +13,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, Phase, SkillKind,
+    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, SkillKind,
     TokenModifiers,
 };
 use game_core::{assert_event, test_support};
@@ -36,10 +36,8 @@ fn state_with_rosary_in_hand() -> (GameState, InvestigatorId) {
     inv.hand = vec![CardCode::new(HOLY_ROSARY)];
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
-        .with_active_investigator(id)
-        .with_investigator_turn(id)
+        .open_turn(id)
         // Single-token bag → token-modifier is always 0; the skill
         // test outcome is decided entirely by the base + constant
         // contribution vs. difficulty.

@@ -118,13 +118,10 @@ fn board(token: ChaosToken) -> GameState {
     inv.skills.intellect = 5;
 
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator_at(inv, PARLOR_ID)
         .with_location(parlor)
         .with_location(hallway)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .with_chaos_bag(ChaosBag::new([token]))
         .build();
     state

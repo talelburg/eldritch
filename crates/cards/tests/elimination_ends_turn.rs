@@ -31,8 +31,8 @@ use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
 use game_core::state::{
-    CardCode, Continuation, Enemy, GameState, GameStateBuilder, InvestigationPhaseFrame,
-    InvestigationResume, InvestigatorId, InvestigatorTurnFrame, LocationId, Phase, Status,
+    CardCode, Continuation, Enemy, GameState, GameStateBuilder, InvestigatorId,
+    InvestigatorTurnFrame, LocationId, Phase, Status,
 };
 use game_core::test_support;
 
@@ -68,15 +68,10 @@ fn board(turn_order: &[InvestigatorId]) -> GameState {
     dying.hand = vec![CardCode::new(EMERGENCY_CACHE)];
 
     let mut state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(HERE.0, "Study"))
         .with_location(test_support::test_location(ELSEWHERE.0, "Hallway"))
         .with_investigator(dying)
-        .with_active_investigator(DYING)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(DYING)
+        .open_turn(DYING)
         .with_enemy_engaged(ready_attacker(), DYING)
         .build();
 

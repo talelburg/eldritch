@@ -10,8 +10,7 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::state::{
     AbilityAddress, AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
-    ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
-    InvestigatorId, LocationId, Phase, UseKind,
+    ChaosToken, EnemyId, GameStateBuilder, Investigator, InvestigatorId, LocationId, UseKind,
 };
 use game_core::test_support;
 
@@ -25,33 +24,26 @@ fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// A single-investigator open-turn state (`InvestigatorTurn` frame on top of the
-/// `InvestigationPhase` anchor) with `hand` in hand and `in_play` in play, 3
-/// actions, 9 resources, on a revealed location, non-empty chaos bag.
-fn open_turn_state(hand: &[&str], in_play: Vec<CardInPlay>) -> GameState {
+/// Investigator 1 at the Study (`LOC`) with `hand` in hand and `in_play` in
+/// play, 3 actions, 9 resources.
+fn investigator(hand: &[&str], in_play: Vec<CardInPlay>) -> Investigator {
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LOC);
     inv.actions_remaining = 3;
     inv.resources = 9;
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
     inv.cards_in_play = in_play;
-    GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_investigator(inv)
-        .with_location(test_support::test_location(LOC.0, "Study"))
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(INV)
-        .build()
+    inv
 }
 
 #[test]
 fn play_card_offered_for_a_playable_hand_card() {
-    let state = open_turn_state(&[HOLY_ROSARY], Vec::new());
+    let state = GameStateBuilder::new()
+        .with_investigator(investigator(&[HOLY_ROSARY], Vec::new()))
+        .with_location(test_support::test_location(LOC.0, "Study"))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .open_turn(INV)
+        .build();
     assert!(
         enumerate::legal_actions(&state).contains(&TurnAction::PlayCard {
             investigator: INV,
@@ -71,7 +63,12 @@ fn flashlight_in_play(instance: CardInstanceId) -> CardInPlay {
 #[test]
 fn activate_offered_for_an_in_play_activated_ability() {
     let inst = CardInstanceId(0);
-    let state = open_turn_state(&[], vec![flashlight_in_play(inst)]);
+    let state = GameStateBuilder::new()
+        .with_investigator(investigator(&[], vec![flashlight_in_play(inst)]))
+        .with_location(test_support::test_location(LOC.0, "Study"))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .open_turn(INV)
+        .build();
     assert!(
         enumerate::legal_actions(&state).contains(&TurnAction::ActivateAbility {
             investigator: INV,
@@ -87,7 +84,15 @@ fn every_enumerated_action_applies_without_rejection_with_registry() {
     // includes PlayCard (Holy Rosary) and ActivateAbility (Flashlight) alongside
     // the basic actions; each applies without Rejected (Done or AwaitingInput
     // are both acceptance).
-    let state = open_turn_state(&[HOLY_ROSARY], vec![flashlight_in_play(CardInstanceId(0))]);
+    let state = GameStateBuilder::new()
+        .with_investigator(investigator(
+            &[HOLY_ROSARY],
+            vec![flashlight_in_play(CardInstanceId(0))],
+        ))
+        .with_location(test_support::test_location(LOC.0, "Study"))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .open_turn(INV)
+        .build();
     // OptionId round-trip: each enumerated action dispatches via
     // `ResolveInput(PickSingle(OptionId))` at the open turn (#447). None reject.
     let actions = enumerate::legal_actions(&state);
@@ -111,7 +116,12 @@ fn every_enumerated_action_applies_without_rejection_with_registry() {
 #[test]
 fn full_enumeration_covers_every_action_category_and_all_apply() {
     let inst = CardInstanceId(0);
-    let mut state = open_turn_state(&[HOLY_ROSARY], vec![flashlight_in_play(inst)]);
+    let mut state = GameStateBuilder::new()
+        .with_investigator(investigator(&[HOLY_ROSARY], vec![flashlight_in_play(inst)]))
+        .with_location(test_support::test_location(LOC.0, "Study"))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .open_turn(INV)
+        .build();
     // A connected destination (Move), an engaged enemy (Fight/Evade), a
     // co-located unengaged enemy (Engage), and an advanceable act (AdvanceAct).
     let mut other = test_support::test_location(11, "Hall");
@@ -214,7 +224,12 @@ const WHATS_GOING_ON: &str = "01105";
 /// reason.
 #[test]
 fn the_corpus_act_and_agenda_are_reachable_but_offer_no_activation() {
-    let mut state = open_turn_state(&[], Vec::new());
+    let mut state = GameStateBuilder::new()
+        .with_investigator(investigator(&[], Vec::new()))
+        .with_location(test_support::test_location(LOC.0, "Study"))
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .open_turn(INV)
+        .build();
     state.act_deck = vec![Act {
         code: CardCode::new(TRAPPED),
         clue_threshold: 2,

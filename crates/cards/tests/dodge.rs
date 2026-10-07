@@ -16,8 +16,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, Enemy, EnemyId, GameState, GameStateBuilder, InvestigationPhaseFrame,
-    InvestigationResume, InvestigatorId, LocationId, Phase,
+    Agenda, CardCode, Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::test_support;
 
@@ -60,20 +59,10 @@ fn dodge_state() -> (GameState, InvestigatorId, EnemyId) {
     inv.deck = vec![CardCode::new("01088")];
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(inv)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
         .with_enemy_engaged(ready_attacker(7), inv_id)
-        // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
-        // InvestigationPhase anchor at investigation_phase_end.
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
-        // EndTurn cascade pops before advancing into the Enemy phase.
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
     (state, inv_id, enemy_id)
 }

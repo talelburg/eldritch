@@ -40,8 +40,7 @@ use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EliminationCause,
-    GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume, InvestigatorId,
-    LocationId, Phase, Status,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
 use game_core::{assert_event, test_support};
 
@@ -86,14 +85,9 @@ fn board(solo: bool) -> GameState {
     parlor.clues = 1;
 
     let mut builder = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
         .with_investigator_at(resigner, PARLOR)
         .with_location(parlor)
-        .with_active_investigator(RESIGNER)
-        .with_investigator_turn(RESIGNER);
+        .open_turn(RESIGNER);
 
     builder = if solo {
         builder.with_turn_order([RESIGNER])

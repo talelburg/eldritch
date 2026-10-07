@@ -18,7 +18,7 @@ use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
-    CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
 use game_core::test_support;
 
@@ -79,16 +79,13 @@ fn board() -> GameState {
     enemy_b.max_health = 5; // survives, to assert it's untouched
 
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_investigator(inv2)
         .with_location(loc_a)
         .with_location(loc_b)
         .with_enemy(enemy_a)
         .with_enemy(enemy_b)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build()
 }
 
@@ -165,13 +162,10 @@ fn auto_targets_and_discards_when_your_location_is_the_only_candidate() {
     enemy_a.max_health = 5; // survives, to assert the 3-damage amount
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
         .with_location(loc_a)
         .with_enemy(enemy_a)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build();
 
     let r = play(state);

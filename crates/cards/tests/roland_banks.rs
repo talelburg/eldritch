@@ -21,7 +21,7 @@ use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -71,11 +71,8 @@ fn roland_at_location_with_enemy(
     loc.clues = location_clues;
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_round(round)
-        .with_active_investigator(inv_id)
-        .with_turn_order([inv_id])
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .with_investigator(inv)
         .with_enemy(enemy)
         .with_location(loc)

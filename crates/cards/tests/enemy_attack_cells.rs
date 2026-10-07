@@ -33,7 +33,7 @@ use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigationPhaseFrame, InvestigationResume, InvestigatorId, LocationId, Phase,
+    InvestigatorId, LocationId, Phase,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -142,16 +142,10 @@ fn board_with(codes: &[&str], enemy_code: &str) -> GameState {
         ));
     }
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_location(test_support::test_location(10, "Study"))
         .with_investigator_at(inv, LOC)
-        .with_active_investigator(INV)
-        .with_turn_order([INV])
         .with_enemy(attacker(enemy_code))
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(INV)
+        .open_turn(INV)
         .build()
 }
 
