@@ -9,6 +9,7 @@ pub mod ability_source;
 pub mod builder;
 pub mod card;
 pub mod chaos_bag;
+pub mod continuation;
 pub mod counter;
 pub mod enemy;
 pub mod game_state;
@@ -23,17 +24,20 @@ pub use card_dsl::card_data::{SkillKind, Skills};
 pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
 pub use counter::Counter;
 // `define_id!` is used by the id submodules; kept crate-internal.
+pub use continuation::{
+    ActionResume, AdvanceDeck, AdvanceStep, AdvanceTrigger, AssetEntry, Assignment,
+    AttackLoopStage, CandidateSource, Continuation, DamageSource, DealDamageStep, EffectFrame,
+    EliminationStep, EmitStep, EncounterDisposition, EnemyAttackSource, EnemyResume,
+    FastActorScope, FastWindowKind, HandSizeDiscard, HunterChoice, InFlightSkillTest,
+    InvestigationResume, MythosResume, PhaseStep, ResolutionCandidate, ResolvedTest,
+    ScenarioEndStep, SkillTestFollowUp, SkillTestStep, SpawnEngagePending, TimingMode, TimingSub,
+    UpkeepResume,
+};
 pub(crate) use counter::define_id;
 pub use enemy::{Enemy, EnemyId};
 pub use game_state::{
-    Act, ActionResume, AdvanceDeck, AdvanceStep, AdvanceTrigger, Agenda, AssetEntry, Assignment,
-    AttackLoopStage, CandidateSource, Continuation, DamageSource, DealDamageStep, DifficultyBasis,
-    EffectFrame, EliminationStep, EmitStep, EncounterDisposition, EnemyAttackSource, EnemyResume,
-    FastActorScope, FastWindowKind, GameState, HandSizeDiscard, HunterChoice, InFlightSkillTest,
-    InvestigationResume, Lifetime, ModifierTarget, MythosResume, PhaseStep, RecordedModifier,
-    RecordedModifierKind, ResolutionCandidate, ResolvedTest, ScenarioEndStep, SkillSubstitution,
-    SkillTestFollowUp, SkillTestId, SkillTestStep, SpawnEngagePending, TimingMode, TimingSub,
-    UpkeepResume,
+    Act, Agenda, DifficultyBasis, GameState, Lifetime, ModifierTarget, RecordedModifier,
+    RecordedModifierKind, SkillSubstitution, SkillTestId,
 };
 pub use investigator::{EliminationCause, Investigator, InvestigatorId, Status};
 pub use location::{Location, LocationId};
