@@ -1,17 +1,17 @@
 //! Act-3 objective: defeating the Ghoul Priest (01116) advances Act 3
 //! (01110), whose reverse asks the lead investigator which of the two printed
 //! resolution points to reach (#775). The Ghoul Priest enemy + its spawn land
-//! in C3 (#231); here we drive the forced dispatch directly with the real
-//! registry. End-to-end defeat->ending via a real Fight is C7b (#245).
+//! in C3 (#231); here we fire the `EnemyDefeated` timing point directly with the
+//! real registry. End-to-end defeat->ending via a real Fight is C7b (#245).
 
-use card_dsl::dsl::EventTiming;
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, EngineOutcome, InputRequest, OptionId, OptionTarget};
+use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget, TimingEvent};
 use game_core::scenario::{ResolutionId, ScenarioEnding};
-use game_core::state::{Act, CardCode, GameState, GameStateBuilder, InvestigatorId, Phase};
-use game_core::test_support;
+use game_core::state::{
+    Act, CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, Phase,
+};
+use game_core::test_support::{self, TestSession};
 
 #[ctor::ctor(unsafe)]
 fn install() {
@@ -29,22 +29,19 @@ fn act3_state() -> GameState {
     state
 }
 
-/// Fire 01110's objective and return the prompt its reverse suspends on,
-/// together with the state carrying the suspended choice.
-fn defeat_the_ghoul_priest() -> (GameState, InputRequest) {
-    let mut state = act3_state();
-    let mut events = Vec::new();
-    let out = test_support::fire_forced_on_enemy_defeat(
-        &mut state,
-        &mut events,
-        CardCode("01116".into()), // the Ghoul Priest
-        // The `at` cell — 01110 prints *"If the Ghoul Priest is Defeated"*.
-        EventTiming::At,
-    );
-    let EngineOutcome::AwaitingInput { request, .. } = out else {
-        panic!("expected 01110's reverse to ask for the resolution point, got {out:?}");
-    };
-    (state, request)
+/// Fire the defeat of an enemy printed as `code`, with no investigator credited.
+fn defeat(code: &str) -> TestSession {
+    TestSession::new(act3_state()).fire_at(TimingEvent::EnemyDefeated {
+        enemy: EnemyId(1),
+        by: None,
+        code: CardCode(code.into()),
+    })
+}
+
+/// Fire 01110's objective; the session rests on the prompt its reverse
+/// suspends on.
+fn defeat_the_ghoul_priest() -> TestSession {
+    defeat("01116") // the Ghoul Priest
 }
 
 /// The printed reverse offers both resolution points, verbatim, and anchors
@@ -53,8 +50,12 @@ fn defeat_the_ghoul_priest() -> (GameState, InputRequest) {
 /// without asking.
 #[test]
 fn defeating_ghoul_priest_offers_the_lead_both_printed_resolution_points() {
-    let (state, request) = defeat_the_ghoul_priest();
-    assert!(state.ending.is_none(), "nothing latches before the pick");
+    let session = defeat_the_ghoul_priest();
+    assert!(
+        session.state().ending.is_none(),
+        "nothing latches before the pick"
+    );
+    let request = session.prompt();
     let labels: Vec<&str> = request.options.iter().map(|o| o.label.as_str()).collect();
     assert_eq!(
         labels,
@@ -78,34 +79,22 @@ fn defeating_ghoul_priest_offers_the_lead_both_printed_resolution_points() {
 /// (ADR 0012).
 #[test]
 fn each_printed_bullet_reaches_its_own_resolution() {
-    for (pick, expected) in [(0u32, 1u8), (1, 2)] {
-        let (state, _) = defeat_the_ghoul_priest();
-        let result = engine::apply(
-            state,
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickSingle(OptionId(pick)),
-            }),
-        );
+    for (pick, expected) in [(0, 1u8), (1, 2)] {
+        let result = defeat_the_ghoul_priest().pick_nth(pick);
         assert_eq!(
-            result.state.ending,
+            result.state().ending,
             Some(ScenarioEnding::Resolution(ResolutionId::new(expected))),
             "pick {pick} should reach Resolution {expected}, got {:?}",
-            result.state.ending,
+            result.state().ending,
         );
     }
 }
 
 #[test]
 fn defeating_other_enemy_does_not_advance_act_3() {
-    let mut state = act3_state();
-    let mut events = Vec::new();
-    let out = test_support::fire_forced_on_enemy_defeat(
-        &mut state,
-        &mut events,
-        CardCode("01103".into()), // some other enemy, not the Ghoul Priest
-        EventTiming::At,
-    );
-    assert_eq!(out, EngineOutcome::Done);
+    // Some other enemy, not the Ghoul Priest.
+    let ApplyResult { state, outcome, .. } = defeat("01103").finish();
+    assert_eq!(outcome, EngineOutcome::Done);
     assert!(
         state.ending.is_none(),
         "only the Ghoul Priest's defeat advances Act 3"

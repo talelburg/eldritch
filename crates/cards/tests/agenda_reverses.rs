@@ -2,16 +2,15 @@
 //! the real card registry (#281). Own process so it can install the
 //! process-global registry against the real `cards` corpus.
 //!
-//! Drives the reverses via `fire_forced_on_agenda_advance` (the
-//! `ForcedTriggerPoint::AgendaAdvanced` path) rather than a full Mythos
+//! Drives the reverses by firing the `AgendaAdvanced` timing point
+//! (`TestSession::fire_at`) rather than a full Mythos
 //! doom-to-threshold cascade — the firing wiring lives in `advance_agenda`
 //! and is unit-tested there; here we prove the *card effects* resolve.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::engine::{self, EngineOutcome, OptionId};
+use game_core::engine::{ApplyResult, EngineOutcome, PromptNature, TimingEvent};
 use game_core::state::{CardCode, EnemyId, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::test_support;
+use game_core::test_support::{self, TestSession};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
@@ -20,45 +19,34 @@ fn install_registry() {
 
 /// 01105's reverse is the lead's interactive `ChooseOne` (Axis A #334): it
 /// suspends with a two-option prompt, and picking branch 1 (the printed
-/// "lead takes 2 horror") resolves through `apply` + `ResolveInput`.
+/// "lead takes 2 horror") resolves it.
 #[test]
 fn agenda_01105_reverse_choice_lead_takes_two_horror() {
     let lead = InvestigatorId(1);
     let inv = test_support::test_investigator(1);
-    let mut state = GameStateBuilder::new()
+    let state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_turn_order([lead])
         .build();
     assert_eq!(state.investigators[&lead].horror(), 0);
 
-    // Firing the reverse suspends on the lead's choice (Choice frame pushed).
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_agenda_advance(
-        &mut state,
-        &mut events,
-        CardCode::new("01105"),
-    );
-    assert!(
-        matches!(outcome, EngineOutcome::AwaitingInput { .. }),
-        "01105's reverse is a lead choice, not a deterministic effect: {outcome:?}",
+    // Firing the reverse suspends on the lead's choice.
+    let session = TestSession::new(state).fire_at(TimingEvent::AgendaAdvanced {
+        code: CardCode::new("01105"),
+    });
+    assert_eq!(
+        session.prompt().nature,
+        PromptNature::Decision,
+        "01105's reverse is a lead choice, not a deterministic effect",
     );
 
-    // Pick branch 1 (option id 1): the lead takes 2 horror.
-    let result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(1)),
-        }),
-    );
+    // Pick branch 1: the lead takes 2 horror, and nothing is left pending.
+    let result = session.pick_nth(1).finish();
     assert_eq!(result.outcome, EngineOutcome::Done);
     assert_eq!(
         result.state.investigators[&lead].horror(),
         2,
         "branch 1 deals 2 horror to the lead investigator",
-    );
-    assert!(
-        result.state.continuations.is_empty(),
-        "the choice frame is consumed",
     );
 }
 
@@ -80,20 +68,12 @@ fn agenda_01105_reverse_choice_random_discard_each() {
         .hand
         .push(CardCode::new("01088")); // Emergency Cache (any hand-legal card)
 
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_agenda_advance(
-        &mut state,
-        &mut events,
-        CardCode::new("01105"),
-    );
-    assert!(matches!(outcome, EngineOutcome::AwaitingInput { .. }));
-
-    let result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
+    let result = TestSession::new(state)
+        .fire_at(TimingEvent::AgendaAdvanced {
+            code: CardCode::new("01105"),
+        })
+        .pick_nth(0)
+        .finish();
     assert_eq!(result.outcome, EngineOutcome::Done);
     let lead_inv = &result.state.investigators[&lead];
     assert!(lead_inv.hand.is_empty(), "the one hand card was discarded");
@@ -128,12 +108,11 @@ fn agenda_01106_reverse_digs_until_a_ghoul_and_the_lead_draws_it() {
     state.encounter_deck.push_back(CardCode::new("01135")); // treachery (non-Ghoul)
     state.encounter_deck.push_back(CardCode::new("01160")); // Ghoul Minion
 
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_agenda_advance(
-        &mut state,
-        &mut events,
-        CardCode::new("01106"),
-    );
+    let ApplyResult { state, outcome, .. } = TestSession::new(state)
+        .fire_at(TimingEvent::AgendaAdvanced {
+            code: CardCode::new("01106"),
+        })
+        .finish();
     assert_eq!(outcome, EngineOutcome::Done);
 
     // The Ghoul Minion was drawn → spawned into play (always reached,
@@ -178,12 +157,11 @@ fn agenda_01106_reverse_discards_non_ghoul_cards() {
         .build();
     state.encounter_deck.push_back(CardCode::new("01135")); // treachery, no Ghoul
 
-    let mut events = Vec::new();
-    let outcome = test_support::fire_forced_on_agenda_advance(
-        &mut state,
-        &mut events,
-        CardCode::new("01106"),
-    );
+    let ApplyResult { state, outcome, .. } = TestSession::new(state)
+        .fire_at(TimingEvent::AgendaAdvanced {
+            code: CardCode::new("01106"),
+        })
+        .finish();
     assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
         state.encounter_discard,

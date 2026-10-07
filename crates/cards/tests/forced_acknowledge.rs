@@ -3,17 +3,14 @@
 //! `interactive_acknowledge` is on, and resolves synchronously when it is off.
 //!
 //! Own process → installs `cards::REGISTRY`. The forced effect is driven through
-//! the real `EnteredLocation` dispatch via `fire_forced_on_enter`; the
-//! interactive pause is then resumed through the public `apply(ResolveInput)`
-//! path (the same way a host resumes an `AwaitingInput`).
+//! the real `EnteredLocation` timing point via `TestSession::fire_at`; the
+//! interactive pause is then resumed by picking the acknowledge (the same way a
+//! host resumes an `AwaitingInput`).
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, OptionTarget};
-use game_core::state::{
-    CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId,
-};
-use game_core::test_support;
+use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget, TimingEvent};
+use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId};
+use game_core::test_support::{self, TestSession};
 
 const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(1);
@@ -39,62 +36,55 @@ fn state_on_location(code: &str, interactive: bool) -> GameState {
     state
 }
 
-fn resume_single_option(state: GameState) -> ApplyResult {
-    engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    )
+/// Fire `INV` entering `LOC` on the location `code`.
+fn enter(code: &str, interactive: bool) -> TestSession {
+    TestSession::new(state_on_location(code, interactive)).fire_at(TimingEvent::EnteredLocation {
+        investigator: INV,
+        location: LOC,
+    })
+}
+
+/// The acknowledge is a one-option pick anchored to the location on the map
+/// (#553), not the flat bar.
+fn assert_acknowledge_at_the_location(session: &TestSession) {
+    let request = session.prompt();
+    assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
+    assert_eq!(
+        request.options[0].target,
+        Some(OptionTarget::Location(LOC)),
+        "the forced-on-enter option anchors to the location on the map (#553), not the flat bar"
+    );
 }
 
 #[test]
 fn attic_forced_acknowledges_before_horror_when_interactive() {
-    let mut state = state_on_location("01113", true); // the Attic — 1 horror
-    let mut events = Vec::new();
-    let out = test_support::fire_forced_on_enter(&mut state, &mut events, INV, LOC);
-    match out {
-        EngineOutcome::AwaitingInput { request, .. } => {
-            assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
-            assert_eq!(
-                request.options[0].target,
-                Some(OptionTarget::Location(LOC)),
-                "the forced-on-enter option anchors to the location on the map (#553), not the flat bar"
-            );
-        }
-        other => panic!("expected a one-option acknowledge, got {other:?}"),
-    }
+    let paused = enter("01113", true); // the Attic — 1 horror
+    assert_acknowledge_at_the_location(&paused);
     assert_eq!(
-        state.investigators[&INV].horror(),
+        paused.state().investigators[&INV].horror(),
         0,
         "horror must not be applied before the player acknowledges"
     );
 
-    let result = resume_single_option(state);
-    assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    let ApplyResult { state, outcome, .. } = paused.pick(OptionTarget::Location(LOC)).finish();
     assert_eq!(
-        result.state.investigators[&INV].horror(),
+        outcome,
+        EngineOutcome::Done,
+        "nothing is left pending after the acknowledge"
+    );
+    assert_eq!(
+        state.investigators[&INV].horror(),
         1,
         "horror applied after the acknowledge"
-    );
-    assert!(
-        !result
-            .state
-            .continuations
-            .iter()
-            .any(|c| matches!(c, Continuation::AcknowledgeForced(_))),
-        "the acknowledge frame must be gone after resume"
     );
 }
 
 #[test]
 fn attic_forced_resolves_synchronously_when_not_interactive() {
-    let mut state = state_on_location("01113", false);
-    let mut events = Vec::new();
-    let out = test_support::fire_forced_on_enter(&mut state, &mut events, INV, LOC);
+    let ApplyResult { state, outcome, .. } = enter("01113", false).finish();
     assert!(
-        matches!(out, EngineOutcome::Done),
-        "flag off: no suspend, got {out:?}"
+        matches!(outcome, EngineOutcome::Done),
+        "flag off: no suspend, got {outcome:?}"
     );
     assert_eq!(
         state.investigators[&INV].horror(),
@@ -105,30 +95,18 @@ fn attic_forced_resolves_synchronously_when_not_interactive() {
 
 #[test]
 fn cellar_forced_acknowledges_before_damage_when_interactive() {
-    let mut state = state_on_location("01114", true); // the Cellar — 1 damage
-    let mut events = Vec::new();
-    let out = test_support::fire_forced_on_enter(&mut state, &mut events, INV, LOC);
-    match out {
-        EngineOutcome::AwaitingInput { request, .. } => {
-            assert_eq!(request.options.len(), 1, "forced ack is a one-option pick");
-            assert_eq!(
-                request.options[0].target,
-                Some(OptionTarget::Location(LOC)),
-                "the forced-on-enter option anchors to the location on the map (#553)"
-            );
-        }
-        other => panic!("expected a one-option acknowledge, got {other:?}"),
-    }
+    let paused = enter("01114", true); // the Cellar — 1 damage
+    assert_acknowledge_at_the_location(&paused);
     assert_eq!(
-        state.investigators[&INV].damage(),
+        paused.state().investigators[&INV].damage(),
         0,
         "damage must not be applied before the player acknowledges"
     );
 
-    let result = resume_single_option(state);
-    assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
+    let ApplyResult { state, outcome, .. } = paused.pick(OptionTarget::Location(LOC)).finish();
+    assert_eq!(outcome, EngineOutcome::Done);
     assert_eq!(
-        result.state.investigators[&INV].damage(),
+        state.investigators[&INV].damage(),
         1,
         "damage applied after the acknowledge"
     );
@@ -136,12 +114,10 @@ fn cellar_forced_acknowledges_before_damage_when_interactive() {
 
 #[test]
 fn cellar_forced_resolves_synchronously_when_not_interactive() {
-    let mut state = state_on_location("01114", false);
-    let mut events = Vec::new();
-    let out = test_support::fire_forced_on_enter(&mut state, &mut events, INV, LOC);
+    let ApplyResult { state, outcome, .. } = enter("01114", false).finish();
     assert!(
-        matches!(out, EngineOutcome::Done),
-        "flag off: no suspend, got {out:?}"
+        matches!(outcome, EngineOutcome::Done),
+        "flag off: no suspend, got {outcome:?}"
     );
     assert_eq!(
         state.investigators[&INV].damage(),

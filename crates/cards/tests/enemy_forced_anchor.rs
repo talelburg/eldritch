@@ -18,14 +18,14 @@
 //!
 //! Driven with `interactive_acknowledge` on, so the one-option "Resolve"
 //! acknowledge surfaces *before* the effect (the #466 confirm-before-effect
-//! pause), which is where the anchor is readable. The `after` cell is the one
-//! the card prints, and the module's own header quotes it.
+//! pause), which is where the anchor is readable. Firing the `EnemyAttacks`
+//! timing point deals the attack at its resolve step, and the `after` cell the
+//! card prints then offers the acknowledge.
 
-use card_dsl::dsl::EventTiming;
 use cards::REGISTRY;
-use game_core::engine::{EngineOutcome, OptionTarget};
+use game_core::engine::{OptionTarget, TimingEvent};
 use game_core::state::{Agenda, CardCode, EnemyId, GameStateBuilder, InvestigatorId};
-use game_core::test_support;
+use game_core::test_support::{self, TestSession};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
@@ -53,29 +53,26 @@ fn enemy_01102_forced_ack_anchors_to_the_attacking_enemy() {
     state.agenda_index = 0;
     state.interactive_acknowledge = true;
 
-    let mut events = Vec::new();
-    let out = test_support::fire_forced_on_enemy_attack(
-        &mut state,
-        &mut events,
-        attacker_id,
-        lead,
-        EventTiming::After,
+    let session = TestSession::new(state).fire_at(TimingEvent::EnemyAttacks {
+        enemy: attacker_id,
+        investigator: lead,
+    });
+    let request = session.prompt();
+    assert_eq!(
+        request.options.len(),
+        1,
+        "the interactive forced-acknowledge is a one-option 'Resolve' pick \
+         before the effect resolves",
     );
-    match out {
-        EngineOutcome::AwaitingInput { request, .. } => {
-            assert_eq!(
-                request.options.len(),
-                1,
-                "the interactive forced-acknowledge is a one-option 'Resolve' pick \
-                 before the effect resolves",
-            );
-            assert_eq!(
-                request.options[0].target,
-                Some(OptionTarget::Enemy(attacker_id)),
-                "an attacking enemy's own forced ability anchors to that enemy, where \
-                 it used to anchor to nothing (#735)",
-            );
-        }
-        other => panic!("expected the forced-acknowledge suspend, got {other:?}"),
-    }
+    assert_eq!(
+        request.options[0].target,
+        Some(OptionTarget::Enemy(attacker_id)),
+        "an attacking enemy's own forced ability anchors to that enemy, where \
+         it used to anchor to nothing (#735)",
+    );
+    assert_eq!(
+        session.state().agenda_doom,
+        0,
+        "the doom is not placed before the acknowledge"
+    );
 }

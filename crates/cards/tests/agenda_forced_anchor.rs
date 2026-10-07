@@ -11,10 +11,9 @@
 //! un-anchored option is silently rendered in the banner instead.
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
-use game_core::engine::{self, EngineOutcome, OptionId, OptionTarget, PromptNature};
+use game_core::engine::{OptionTarget, PromptNature, TimingEvent};
 use game_core::state::{Agenda, CardCode, GameState, GameStateBuilder, InvestigatorId};
-use game_core::test_support;
+use game_core::test_support::{self, TestSession};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
@@ -40,31 +39,28 @@ fn state_on_agenda_01105() -> GameState {
     state
 }
 
+/// Fire 01105's `AgendaAdvanced` forced, which pauses on the acknowledge.
+fn advance_01105() -> TestSession {
+    TestSession::new(state_on_agenda_01105()).fire_at(TimingEvent::AgendaAdvanced {
+        code: CardCode::new("01105"),
+    })
+}
+
 #[test]
 fn agenda_01105_forced_ack_anchors_to_the_agenda_card() {
-    let mut state = state_on_agenda_01105();
-    let mut events = Vec::new();
-    let out = test_support::fire_forced_on_agenda_advance(
-        &mut state,
-        &mut events,
-        CardCode::new("01105"),
+    let session = advance_01105();
+    let request = session.prompt();
+    assert_eq!(
+        request.options.len(),
+        1,
+        "the interactive forced-acknowledge is a one-option 'Resolve' pick \
+         before the effect resolves",
     );
-    match out {
-        EngineOutcome::AwaitingInput { request, .. } => {
-            assert_eq!(
-                request.options.len(),
-                1,
-                "the interactive forced-acknowledge is a one-option 'Resolve' pick \
-                 before the effect resolves",
-            );
-            assert_eq!(
-                request.options[0].target,
-                Some(OptionTarget::Agenda),
-                "an agenda forced-on-advance ack anchors to the agenda card (#556)",
-            );
-        }
-        other => panic!("expected the forced-acknowledge suspend, got {other:?}"),
-    }
+    assert_eq!(
+        request.options[0].target,
+        Some(OptionTarget::Agenda),
+        "an agenda forced-on-advance ack anchors to the agenda card (#556)",
+    );
 }
 
 /// 01105's printed *"choose one"* renders on the agenda card, under the two
@@ -72,27 +68,9 @@ fn agenda_01105_forced_ack_anchors_to_the_agenda_card() {
 /// branches' `Debug` form, which is what shipped until #775.
 #[test]
 fn agenda_01105_choose_one_anchors_to_the_agenda_card_under_its_printed_labels() {
-    let mut state = state_on_agenda_01105();
-    let mut events = Vec::new();
-    let out = test_support::fire_forced_on_agenda_advance(
-        &mut state,
-        &mut events,
-        CardCode::new("01105"),
-    );
-    assert!(
-        matches!(out, EngineOutcome::AwaitingInput { .. }),
-        "the interactive forced-ack comes first: {out:?}",
-    );
     // Acknowledge, so the effect — and its ChooseOne — resolves.
-    let resumed = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    let EngineOutcome::AwaitingInput { request, .. } = &resumed.outcome else {
-        panic!("expected 01105's ChooseOne, got {:?}", resumed.outcome);
-    };
+    let session = advance_01105().pick(OptionTarget::Agenda);
+    let request = session.prompt();
     assert_eq!(
         request
             .options
@@ -115,31 +93,16 @@ fn agenda_01105_choose_one_anchors_to_the_agenda_card_under_its_printed_labels()
 /// for another click on the agenda card.
 #[test]
 fn agenda_01105_choose_one_is_a_decision_prompt() {
-    let mut state = state_on_agenda_01105();
-    let mut events = Vec::new();
-    let out = test_support::fire_forced_on_agenda_advance(
-        &mut state,
-        &mut events,
-        CardCode::new("01105"),
-    );
-    let EngineOutcome::AwaitingInput { request, .. } = &out else {
-        panic!("expected the forced-acknowledge suspend, got {out:?}");
-    };
+    let session = advance_01105();
+    let request = session.prompt();
     assert_eq!(
         request.nature,
         PromptNature::Selection,
         "the forced acknowledge offers the agenda's ability, a board entity: {request:?}",
     );
 
-    let resumed = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    let EngineOutcome::AwaitingInput { request, .. } = &resumed.outcome else {
-        panic!("expected 01105's ChooseOne, got {:?}", resumed.outcome);
-    };
+    let session = session.pick(OptionTarget::Agenda);
+    let request = session.prompt();
     assert_eq!(
         request.nature,
         PromptNature::Decision,

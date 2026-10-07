@@ -408,10 +408,11 @@ fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
 /// cards, which she explicitly is not.
 #[test]
 fn eliminating_her_controller_removes_her_to_the_scenarios_pile() {
-    let mut state = drive_parley(board(ChaosToken::Numeric(0))).state;
-    let mut events = Vec::new();
     // The test investigator has 8 health; 8 damage defeats it outright.
-    test_support::eliminate_by_damage(&mut state, &mut events, INV, 8);
+    let state = TestSession::new(drive_parley(board(ChaosToken::Numeric(0))).state)
+        .take_damage(INV, 8)
+        .finish()
+        .state;
 
     let inv = &state.investigators[&INV];
     assert!(

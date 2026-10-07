@@ -33,13 +33,15 @@ use std::rc::Rc;
 
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord, InputResponse};
-use game_core::engine::{ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId};
+use game_core::engine::{
+    ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId, TimingEvent,
+};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
     LocationId, Status, Zone,
 };
-use game_core::test_support::{self, ChoiceResolver, ScriptedResolver};
+use game_core::test_support::{self, ChoiceResolver, ScriptedResolver, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 const GRASPING_HANDS: &str = "01162";
@@ -409,18 +411,19 @@ fn eliminated_investigator_fires_no_further_round_end_forced() {
     // #567's acceptance: Dissonant Voices' Forced ("At the end of the round:
     // Discard Dissonant Voices") must not fire again for a dead investigator —
     // step 4 already discarded it.
-    let mut r = reveal_committing(board_at_lethal_range(7, &[], &[(DISSONANT_VOICES, 0)]), &[]);
+    let r = reveal_committing(board_at_lethal_range(7, &[], &[(DISSONANT_VOICES, 0)]), &[]);
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].status,
         Status::Defeated
     );
     let before = r.state.encounter_discard.len();
 
-    let mut events = Vec::new();
-    let _ = test_support::fire_forced_on_round_end(&mut r.state, &mut events);
+    let ApplyResult { state, events, .. } = TestSession::new(r.state)
+        .fire_at(TimingEvent::RoundEnded)
+        .finish();
 
     assert_eq!(
-        r.state.encounter_discard.len(),
+        state.encounter_discard.len(),
         before,
         "no further round-end forced for a dead investigator"
     );
