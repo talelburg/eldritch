@@ -39,7 +39,7 @@ fn rejects_non_confirm_response_and_preserves_frame() {
     assert!(
         matches!(
             state.continuations.last(),
-            Some(Continuation::EncounterDraw { remaining, .. }) if remaining == &[InvestigatorId(1)]
+            Some(Continuation::EncounterDraw(EncounterDrawFrame { remaining, .. })) if remaining == &[InvestigatorId(1)]
         ),
         "the EncounterDraw frame must survive a rejected response for retry",
     );

@@ -38,6 +38,11 @@ pub use continuation::{
 pub use continuation::{
     AdvanceReverseFrame, AttackLoopFrame, DealDamageFrame, EliminationFrame, ScenarioEndFrame,
 };
+// Draw, encounter and play frame payloads (#931).
+pub use continuation::{
+    EncounterCardFrame, EncounterDrawFrame, MulliganFrame, PlayFromHandFrame, PlayerDrawFrame,
+    SlotDiscardFrame, SubstitutionPromptFrame,
+};
 pub(crate) use counter::define_id;
 pub use enemy::{Enemy, EnemyId};
 pub use game_state::{

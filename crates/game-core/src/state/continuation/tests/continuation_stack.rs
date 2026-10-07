@@ -25,12 +25,12 @@ fn awaits_input_gates_suspensions_but_not_anchors() {
     }
     .awaits_input());
     // Suspensions awaiting `ResolveInput`.
-    assert!(Continuation::SubstitutionPrompt {
+    assert!(Continuation::SubstitutionPrompt(SubstitutionPromptFrame {
         investigator: InvestigatorId(1),
-    }
+    })
     .awaits_input());
-    assert!(Continuation::Mulligan { remaining: vec![] }.awaits_input());
-    assert!(Continuation::EncounterDraw { remaining: vec![] }.awaits_input());
+    assert!(Continuation::Mulligan(MulliganFrame { remaining: vec![] }).awaits_input());
+    assert!(Continuation::EncounterDraw(EncounterDrawFrame { remaining: vec![] }).awaits_input());
 }
 
 #[test]
