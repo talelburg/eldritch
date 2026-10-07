@@ -19,7 +19,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::{assert_event, card_registry, test_support};
+use game_core::{assert_event, test_support};
 
 const OLD_BOOK: &str = "01031";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -28,7 +28,7 @@ const BOOK_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Board: Old Book of Lore in play, the active investigator alone at `LOC` with

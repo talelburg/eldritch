@@ -19,14 +19,14 @@ use game_core::state::{
     Agenda, CardCode, Continuation, Enemy, EnemyId, GameState, GameStateBuilder,
     InvestigationResume, InvestigatorId, LocationId, Phase,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 /// Dodge (01023): Neutral Tactic, Fast, the before-attack cancel reaction.
 const DODGE: &str = "01023";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// An engaged ready enemy at `loc` dealing 2 damage / 1 horror. Both tracks are
@@ -55,10 +55,6 @@ fn dodge_state() -> (GameState, InvestigatorId, EnemyId) {
 
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
-    // Use a real investigator code so max_health()/max_sanity() can read from
-    // the installed cards registry; TEST_INV is only in the game-core test
-    // registry (#448 cp2a). Skids O'Toole (01003, 8/6) — no implemented abilities.
-    inv.investigator_card.code = CardCode::new("01003");
     inv.hand = vec![CardCode::new(DODGE)];
     // A spare deck card so the round-ending cascade's upkeep step-4.4 draw has
     // something to draw. Without it, the empty deck reshuffles the discard —

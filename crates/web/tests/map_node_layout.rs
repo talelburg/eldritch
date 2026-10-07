@@ -18,7 +18,7 @@ use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, LocationId,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
 use protocol::ServerMessage;
@@ -87,7 +87,7 @@ async fn mount(state: GameState) -> Element {
 
 /// As [`mount`], but with a live `outcome` so the board has options to anchor.
 async fn mount_with(state: GameState, outcome: EngineOutcome) -> Element {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
     inject_style();
     let store = RwSignal::new(ClientState::default());
     mount_to_body(move || {

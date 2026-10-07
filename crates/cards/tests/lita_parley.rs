@@ -51,6 +51,7 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
+use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{ApplyResult, OptionId};
 use game_core::event::Event;
@@ -59,7 +60,6 @@ use game_core::state::{
     GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, Zone,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
-use game_core::{assert_event, card_registry};
 
 /// Lita Chantler — the `Ally` the Parlor grants to.
 const LITA: &str = "01117";
@@ -67,9 +67,6 @@ const LITA: &str = "01117";
 const PARLOR: &str = "01115";
 /// Beat Cop 01018 — a second `Ally`, for the slot cases. Costs 4.
 const BEAT_COP: &str = "01018";
-/// Daisy Walker 01002 — intellect 5, so a `[intellect]` (4) test turns on the
-/// chaos token rather than on the investigator.
-const DAISY: &str = "01002";
 /// Grasping Hands 01162 — *"**Revelation** - Test \[agility\] (3). For each
 /// point you fail by, take 1 damage."* The soak-defeat exit's driver.
 const GRASPING_HANDS: &str = "01162";
@@ -82,7 +79,7 @@ const COP_INST: CardInstanceId = CardInstanceId(51);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// The address the Parley lands at: the Parlor's ability 1 (its grant), first
@@ -104,7 +101,7 @@ fn parley() -> TurnAction {
     }
 }
 
-/// The board: Daisy in the revealed Parlor, Lita in play *at* the Parlor under
+/// The board: the investigator in the revealed Parlor, Lita in play *at* the Parlor under
 /// nobody's control, and a Hallway to stand in instead. `token` is the only
 /// chaos token in the bag, so the test's outcome is fixed.
 fn board(token: ChaosToken) -> GameState {
@@ -115,7 +112,8 @@ fn board(token: ChaosToken) -> GameState {
     hallway.code = CardCode::new("01112");
 
     let mut inv = test_support::test_investigator(1);
-    inv.investigator_card.code = CardCode::new(DAISY);
+    // Intellect 5, so a `[intellect]` (4) test turns on the chaos token rather
+    // than on the investigator.
     inv.skills.intellect = 5;
 
     let mut state = GameStateBuilder::new()
@@ -196,8 +194,8 @@ fn the_parley_is_no_longer_offered_once_she_is_controlled() {
 // ---- the test and its consequence ------------------------------------
 
 /// *"Test \[intellect\] (4). If you succeed, take control of Lita Chantler."*
-/// Daisy's 5 against difficulty 4 with a `0` token succeeds, and she moves out
-/// of the Parlor's `cards_at_location` and into Daisy's play area — *"it enters
+/// Intellect 5 against difficulty 4 with a `0` token succeeds, and she moves out
+/// of the Parlor's `cards_at_location` and into the investigator's play area — *"it enters
 /// your play area (not your hand)"*.
 #[test]
 fn a_successful_parley_takes_control_of_lita() {
@@ -222,11 +220,15 @@ fn a_successful_parley_takes_control_of_lita() {
         "she left the location's zone",
     );
     let in_play = &result.state.investigators[&INV].cards_in_play;
-    assert_eq!(in_play.len(), 1, "she is the one card in Daisy's play area");
+    assert_eq!(
+        in_play.len(),
+        1,
+        "she is the one card in the investigator's play area"
+    );
     assert_eq!(in_play[0].code.as_str(), LITA);
 }
 
-/// A failed Parley costs the action and nothing else: Daisy's 5 minus the
+/// A failed Parley costs the action and nothing else: intellect 5 minus the
 /// `[-2]` token is 3 against difficulty 4, and the take-control is on the
 /// **success** side alone.
 #[test]
@@ -308,10 +310,10 @@ fn taking_control_preserves_her_instance() {
 }
 
 /// **Gaining control contests the ally slot.** With Beat Cop already filling
-/// Daisy's one ally slot, the make-room machinery runs on the way in — and with
+/// the investigator's one ally slot, the make-room machinery runs on the way in — and with
 /// exactly one occupier there is no choice to offer, so it is discarded
 /// outright (the RR's *"must choose and discard"* has a single answer). Beat
-/// Cop is Daisy's own card, so it lands in her discard pile.
+/// Cop is the investigator's own card, so it lands in their discard pile.
 #[test]
 fn taking_control_makes_room_in_the_ally_slot() {
     let mut state = board(ChaosToken::Numeric(0));
@@ -333,7 +335,7 @@ fn taking_control_makes_room_in_the_ally_slot() {
     assert_eq!(inv.cards_in_play[0].code.as_str(), LITA);
     assert!(
         inv.discard.contains(&CardCode::new(BEAT_COP)),
-        "Beat Cop is Daisy's own card, so it goes to her discard; got {:?}",
+        "Beat Cop is the investigator's own card, so it goes to their discard; got {:?}",
         inv.discard,
     );
 }
@@ -406,8 +408,8 @@ fn lita_defeated_by_soaked_damage_is_removed_from_the_game() {
 fn eliminating_her_controller_removes_her_to_the_scenarios_pile() {
     let mut state = drive_parley(board(ChaosToken::Numeric(0))).state;
     let mut events = Vec::new();
-    // Daisy Walker 01002 has 5 health; 5 damage defeats her outright.
-    test_support::eliminate_by_damage(&mut state, &mut events, INV, 5);
+    // The test investigator has 8 health; 8 damage defeats it outright.
+    test_support::eliminate_by_damage(&mut state, &mut events, INV, 8);
 
     let inv = &state.investigators[&INV];
     assert!(

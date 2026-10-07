@@ -7,7 +7,7 @@
 
 use cards::REGISTRY;
 use game_core::state::{CardCode, GameStateBuilder};
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 use leptos::prelude::document;
 use leptos::{mount, task};
 use wasm_bindgen::JsCast as _;
@@ -32,7 +32,7 @@ fn node_text(name: &str) -> String {
 
 #[wasm_bindgen_test]
 async fn revealed_location_shows_metadata_text_and_victory() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
     // Attic 01113: victory 1, Forced text "After you enter the Attic: Take 1 horror."
     let mut attic = test_support::test_location(1, "Attic");
     attic.code = CardCode::new("01113");
@@ -48,7 +48,7 @@ async fn revealed_location_shows_metadata_text_and_victory() {
 
 #[wasm_bindgen_test]
 async fn revealed_location_shows_metadata_traits() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
     // Miskatonic University 01129: traits "Arkham."
     let mut misk = test_support::test_location(2, "Miskatonic University");
     misk.code = CardCode::new("01129");
@@ -63,7 +63,7 @@ async fn revealed_location_shows_metadata_traits() {
 
 #[wasm_bindgen_test]
 async fn unrevealed_location_withholds_metadata() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
     // Attic 01113 has victory 1 + Forced text ("...Take 1 horror."); unrevealed
     // must withhold all of it (hidden info).
     let mut attic = test_support::test_location(3, "Hidden Attic");

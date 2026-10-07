@@ -52,7 +52,7 @@ use game_core::state::{
     FastWindowKind, GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId,
     Phase, PhaseStep,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 /// Beat Cop (01018): Guardian Ally, `[fast]` *"Discard Beat Cop: Deal 1 damage
 /// to an enemy at your location."*
@@ -61,7 +61,7 @@ const BEAT_COP_INSTANCE: CardInstanceId = CardInstanceId(1);
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// A ready enemy engaged with `inv` at `loc`, dealing 1 damage. `max_health` is
@@ -85,10 +85,6 @@ fn board(beat_cop: bool, enemy_health: u8) -> (GameState, InvestigatorId, EnemyI
 
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc_id);
-    // A real investigator code so max_health()/max_sanity() resolve against the
-    // installed corpus; TEST_INV lives only in game-core's test registry.
-    // Skids O'Toole (01003, 8/6) — no implemented abilities of his own.
-    inv.investigator_card.code = CardCode::new("01003");
     if beat_cop {
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new(BEAT_COP),

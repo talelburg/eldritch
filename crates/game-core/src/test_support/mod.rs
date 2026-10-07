@@ -120,26 +120,32 @@ pub fn abilities_for_terminal(code: &CardCode) -> Option<Vec<Ability>> {
     ])
 }
 
-/// Install `base` with the synthetic terminal cards ([`terminal_code`]) composed
-/// into its `abilities_for`, so a fixture whose act/agenda deck ends in one gets
-/// its reverse served alongside whatever `base` already knows.
+/// Install `base` with the synthetic test cards composed in: `TEST_INV` into its
+/// `metadata_for`, and the terminal cards ([`terminal_code`]) into its
+/// `abilities_for`. Whatever `base` already knows is served unchanged.
 ///
 /// For **integration tests in other crates**, which install a real registry
-/// (`cards::REGISTRY`, or one built locally in the test binary) into the process-global
-/// `OnceLock` and so cannot compose at the definition site the way
-/// [`install_test_registry`] does. Call it exactly where the plain install went:
+/// (`cards::REGISTRY`, or one built locally in the test binary) into the
+/// process-global `OnceLock` and so cannot compose at the definition site the
+/// way [`install_test_registry`] does. Every real-registry binary installs
+/// through here, so [`test_investigator`] resolves in all of them and no test
+/// borrows a real investigator's code as a placeholder (#934):
 ///
 /// ```ignore
 /// #[ctor::ctor(unsafe)]
 /// fn install() {
-///     game_core::test_support::install_registry_with_terminal_cards(cards::REGISTRY);
+///     game_core::test_support::install_registry_with_test_cards(cards::REGISTRY);
 /// }
 /// ```
 ///
 /// Idempotent, and — like [`card_registry::install`]
 /// — first-install-wins.
-pub fn install_registry_with_terminal_cards(base: CardRegistry) {
+pub fn install_registry_with_test_cards(base: CardRegistry) {
     static BASE: OnceLock<CardRegistry> = OnceLock::new();
+    fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
+        metadata_for_test_inv(code)
+            .or_else(|| BASE.get().and_then(|base| (base.metadata_for)(code)))
+    }
     fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
         abilities_for_terminal(code)
             .or_else(|| BASE.get().and_then(|base| (base.abilities_for)(code)))
@@ -150,6 +156,7 @@ pub fn install_registry_with_terminal_cards(base: CardRegistry) {
     // compose in, and overriding the slot would switch the *real* registry's
     // back sides off for every test that installs through here (#774).
     let _ = card_registry::install(CardRegistry {
+        metadata_for,
         abilities_for,
         ..base
     });

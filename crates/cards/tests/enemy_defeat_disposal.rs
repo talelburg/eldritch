@@ -49,7 +49,7 @@ use game_core::state::{
     CardCode, ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId,
     LocationId, Phase, TokenModifiers,
 };
-use game_core::{assert_event, card_registry, test_support};
+use game_core::{assert_event, test_support};
 
 const GHOUL_MINION: &str = "01160";
 const MOB_ENFORCER: &str = "01101";
@@ -57,7 +57,7 @@ const GHOUL_PRIEST: &str = "01116";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// A solo investigator engaged with `code`, one point of damage short of

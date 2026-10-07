@@ -41,13 +41,6 @@
 //!   `EnteredLocation`, and these tests place their investigators. Its ruling —
 //!   *"The **Forced** ability triggers each time an investigator enters this
 //!   location"* (<https://arkhamdb.com/card/01113>) — scopes that same entry.
-//! - **Roland Banks 01001 / Daisy Walker 01002** — the seated investigators, so
-//!   `max_health()` / `max_sanity()` resolve against the installed registry.
-//!   Neither's printed ability has a trigger here — no turn is taken and no
-//!   enemy is defeated. Roland's two rulings
-//!   (<https://arkhamdb.com/card/01001>) scope his reaction; Daisy's single one
-//!   (<https://arkhamdb.com/card/01002>) is about which action a lose-actions
-//!   effect takes first, and no turn runs here.
 
 use card_dsl::card_data::CardType;
 use cards::REGISTRY;
@@ -57,19 +50,16 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::{assert_event_sequence, card_registry, test_support};
+use game_core::{assert_event_sequence, test_support};
 
 /// Flesh-Eater — *"**Spawn** - Attic."*
 const FLESH_EATER: &str = "01118";
 /// The Attic — Flesh-Eater's spawn location, and where the board seats everyone.
 const ATTIC: &str = "01113";
-/// Roland Banks / Daisy Walker — two distinct seated investigators.
-const ROLAND: &str = "01001";
-const DAISY: &str = "01002";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// The board both tests start from: the Attic in play with one Flesh-Eater on
@@ -87,9 +77,8 @@ fn board() -> (GameState, LocationId) {
 }
 
 /// Seat `investigator_code` as `id` at `at`, appending to the turn order.
-fn seat(state: &mut GameState, id: InvestigatorId, investigator_code: &str, at: LocationId) {
+fn seat(state: &mut GameState, id: InvestigatorId, at: LocationId) {
     let mut inv = test_support::test_investigator(id.0);
-    inv.investigator_card.code = CardCode::new(investigator_code);
     inv.current_location = Some(at);
     state.investigators.insert(id, inv);
     state.turn_order.push(id);
@@ -99,7 +88,7 @@ fn seat(state: &mut GameState, id: InvestigatorId, investigator_code: &str, at: 
 fn revealing_flesh_eater_spawns_at_the_attic_engaged_with_drawer() {
     let inv1 = InvestigatorId(1);
     let (mut state, attic) = board();
-    seat(&mut state, inv1, ROLAND, attic);
+    seat(&mut state, inv1, attic);
     state.active_investigator = Some(inv1);
 
     let result = engine::apply(
@@ -152,10 +141,10 @@ fn revealing_flesh_eater_spawns_at_the_attic_engaged_with_drawer() {
 fn revealing_flesh_eater_with_two_investigators_at_the_attic_suspends_for_lead_pick() {
     let inv1 = InvestigatorId(1);
     let (mut state, attic) = board();
-    seat(&mut state, inv1, ROLAND, attic);
+    seat(&mut state, inv1, attic);
     state.active_investigator = Some(inv1);
     // Second investigator co-located at the spawn location.
-    seat(&mut state, InvestigatorId(2), DAISY, attic);
+    seat(&mut state, InvestigatorId(2), attic);
 
     let result = engine::apply(
         state,

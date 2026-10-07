@@ -16,11 +16,11 @@ use game_core::state::{
     InvestigatorId, LocationId, Zone,
 };
 use game_core::test_support::{self, ScriptedResolver};
-use game_core::{assert_event, assert_event_count, card_registry};
+use game_core::{assert_event, assert_event_count};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Reveal the top encounter card for investigator 1, auto-committing no
@@ -40,10 +40,7 @@ fn reveal_top(state: GameState) -> ApplyResult {
 /// Common board: one investigator at a location, the named treachery on
 /// top of the encounter deck, and a single rigged chaos token.
 fn board_with(treachery: &str, token: ChaosToken) -> GameState {
-    let mut inv = test_support::test_investigator(1);
-    // Real investigator code so max_health()/max_sanity() reads from the
-    // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
-    inv.investigator_card.code = CardCode::new("01003");
+    let inv = test_support::test_investigator(1);
     let mut state = GameStateBuilder::new()
         .with_investigator_at(inv, LocationId(20))
         .with_location(test_support::test_location(20, "Here"))

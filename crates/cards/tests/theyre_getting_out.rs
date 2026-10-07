@@ -26,11 +26,11 @@ use game_core::state::{
     GameStateBuilder, InvestigationResume, InvestigatorId, Location, LocationId, Phase, Status,
     TimingMode, UpkeepResume,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 fn ghoul(id: u32, at: LocationId) -> Enemy {
@@ -91,10 +91,8 @@ fn enemy_phase_end_moves_ghoul_toward_parlor() {
 fn enemy_phase_end_moves_ghoul_before_the_upkeep_transition() {
     let mut state = board_with_agenda();
     {
-        // The cascade runs on into Upkeep, which reads the investigator card's
-        // printed stats: give it a real code (Roland Banks) and a card to draw.
+        // The cascade runs on into Upkeep: give the investigator a card to draw.
         let inv = state.investigators.get_mut(&InvestigatorId(1)).unwrap();
-        inv.investigator_card.code = CardCode::new("01001");
         inv.current_location = Some(LocationId(2));
         inv.deck = vec![CardCode::new("01006")];
     }
@@ -162,9 +160,6 @@ fn ghoul_moved_into_the_investigator_engages_then_attacks_next_enemy_phase() {
         let inv = state.investigators.get_mut(&InvestigatorId(1)).unwrap();
         // Hallway.
         inv.current_location = Some(LocationId(2));
-        // A real investigator code so the Upkeep cascade can read printed
-        // health/sanity from the installed corpus (Skids O'Toole, 01003).
-        inv.investigator_card.code = CardCode::new("01003");
         inv.deck = vec![CardCode::new("01088")];
     }
     let mut walker = ghoul(1, LocationId(3)); // Attic, one step from the Hallway
@@ -308,19 +303,12 @@ fn round_end_act_when_window_opens_before_agenda_at_doom() {
 // The reverse's branch (#809)
 // ---------------------------------------------------------------------------
 
-/// Real investigator codes, so `max_health()` / `max_sanity()` resolve against
-/// the installed `cards` registry (`TEST_INV` is only known to game-core's own
-/// test registry). Roland Banks, Daisy Walker, "Skids" O'Toole — none of whose
-/// implemented abilities reach the defeat path.
-const SEATS: [&str; 3] = ["01001", "01002", "01003"];
-
 /// A table of `n` seated investigators in turn order, with The Gathering's
 /// three-card act deck and 01107 as the sole (and therefore terminal) agenda.
 fn table_at_act(n: usize, act_index: usize) -> GameState {
     let mut builder = GameStateBuilder::new();
-    for (i, code) in SEATS.iter().enumerate().take(n) {
-        let mut inv = test_support::test_investigator(u32::try_from(i).expect("small") + 1);
-        inv.investigator_card.code = CardCode::new(*code);
+    for i in 1..=n {
+        let inv = test_support::test_investigator(u32::try_from(i).expect("small"));
         builder = builder.with_investigator(inv);
     }
     let order: Vec<InvestigatorId> = (1..=n)

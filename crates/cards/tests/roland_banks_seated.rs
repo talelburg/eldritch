@@ -18,13 +18,13 @@ use game_core::state::{
     InvestigatorId, LocationId, Phase, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
-use game_core::{assert_event, assert_no_event, card_registry};
+use game_core::{assert_event, assert_no_event};
 
 const ROLAND: &str = "01001";
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Roland engaged with a 1-HP enemy, his investigator card represented ONLY by

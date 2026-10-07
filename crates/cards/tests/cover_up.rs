@@ -28,11 +28,10 @@ const LOC: LocationId = LocationId(10);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    // The real registry plus `test_support`'s synthetic terminal card: the
-    // game-end fixtures below end their act deck in one, because a terminal card
-    // reaches its resolution point by running an effect on its reverse (ADR
-    // 0013) and so needs the registry to serve it.
-    test_support::install_registry_with_terminal_cards(REGISTRY);
+    // The game-end fixtures below end their act deck in a synthetic terminal
+    // card, which reaches its resolution point by running an effect on its
+    // reverse (ADR 0013) and so needs the registry to serve it.
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// A Cover-Up instance carrying `clues`, pre-placed in the threat area.

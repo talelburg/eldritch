@@ -12,13 +12,13 @@ use game_core::state::{
     CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
     TimingMode,
 };
-use game_core::{card_registry, scenario_registry, test_support};
+use game_core::{scenario_registry, test_support};
 use scenarios::the_gathering;
 
 #[ctor::ctor(unsafe)]
 fn install_registries() {
     let _ = scenario_registry::install(scenarios::REGISTRY);
-    let _ = card_registry::install(cards::REGISTRY);
+    test_support::install_registry_with_test_cards(cards::REGISTRY);
 }
 
 /// Apply one action, asserting it is not `Rejected`.
@@ -244,10 +244,7 @@ fn attic_forced_enter_deals_one_horror() {
     // isn't reachable until C1b's Door-on-the-Floor transition).
     let mut attic = test_support::test_location(20, "Attic");
     attic.code = CardCode("01113".into());
-    // Use Skids O'Toole (01003) as the investigator card code: a real corpus
-    // code known to cards::REGISTRY (installed here) with capacity data.
-    let mut inv = test_support::test_investigator(1);
-    inv.investigator_card.code = CardCode::new("01003");
+    let inv = test_support::test_investigator(1);
     let mut state = GameStateBuilder::new()
         .with_investigator_at(inv, LocationId(20))
         .with_location(attic)
@@ -276,10 +273,7 @@ fn attic_forced_enter_deals_one_horror() {
 fn cellar_forced_enter_deals_one_damage() {
     let mut cellar = test_support::test_location(21, "Cellar");
     cellar.code = CardCode("01114".into());
-    // Use Skids O'Toole (01003) as the investigator card code: a real corpus
-    // code known to cards::REGISTRY (installed here) with capacity data.
-    let mut inv = test_support::test_investigator(1);
-    inv.investigator_card.code = CardCode::new("01003");
+    let inv = test_support::test_investigator(1);
     let mut state = GameStateBuilder::new()
         .with_investigator_at(inv, LocationId(21))
         .with_location(cellar)

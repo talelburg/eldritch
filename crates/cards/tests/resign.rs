@@ -43,13 +43,10 @@ use game_core::state::{
     EliminationCause, GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId,
     Phase, Status,
 };
-use game_core::{assert_event, card_registry, test_support};
+use game_core::{assert_event, test_support};
 
 /// The Parlor.
 const PARLOR_CODE: &str = "01115";
-/// Roland Banks — a real investigator code, so `max_health()` and friends read
-/// from the installed corpus registry rather than a fixture default.
-const ROLAND: &str = "01001";
 /// Machete 01020 — an ordinary asset, standing in for "the cards he or she
 /// controls in play".
 const MACHETE: &str = "01020";
@@ -67,7 +64,7 @@ const RESIGN: u8 = 0;
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// The resigner stands at the Parlor holding 2 clues and 3 resources, with a
@@ -76,7 +73,6 @@ fn install_registry() {
 /// Elimination step 6 reachable.
 fn board(solo: bool) -> GameState {
     let mut resigner = test_support::test_investigator(1);
-    resigner.investigator_card.code = CardCode::new(ROLAND);
     resigner.clues = 2;
     resigner.resources = 3;
     resigner.hand = vec![CardCode::new(ROSARY)];
@@ -102,8 +98,7 @@ fn board(solo: bool) -> GameState {
     builder = if solo {
         builder.with_turn_order([RESIGNER])
     } else {
-        let mut survivor = test_support::test_investigator(2);
-        survivor.investigator_card.code = CardCode::new(ROLAND);
+        let survivor = test_support::test_investigator(2);
         builder
             .with_investigator_at(survivor, HALLWAY)
             .with_location(test_support::test_location(2, "Hallway"))

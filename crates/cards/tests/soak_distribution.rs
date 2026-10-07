@@ -10,13 +10,13 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, GameState, GameStateBuilder,
     InvestigationResume, InvestigatorId, LocationId, Phase,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 const GUARD_DOG: &str = "01021"; // Ally, 3 health / 1 sanity, retaliate reaction
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// One engaged ready enemy at the investigator's location dealing `damage` / 0 horror.
@@ -36,9 +36,6 @@ fn attack_state(assets: Vec<(&str, CardInstanceId)>, enemy: Enemy) -> (GameState
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(101);
     let mut inv = test_support::test_investigator(1);
-    // Real investigator code so max_health()/max_sanity() reads from the
-    // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
-    inv.investigator_card.code = CardCode::new("01003");
     inv.current_location = Some(loc_id);
     inv.cards_in_play = assets
         .into_iter()

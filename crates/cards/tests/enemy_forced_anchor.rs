@@ -25,21 +25,18 @@ use card_dsl::dsl::EventTiming;
 use cards::REGISTRY;
 use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::state::{Agenda, CardCode, EnemyId, GameStateBuilder, InvestigatorId};
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 #[test]
 fn enemy_01102_forced_ack_anchors_to_the_attacking_enemy() {
     let lead = InvestigatorId(1);
     let attacker_id = EnemyId(7);
-    // Skids O'Toole (01003) has no implemented abilities — a real code so any
-    // registry-backed lookup resolves (mirrors `agenda_forced_anchor.rs`).
-    let mut inv = test_support::test_investigator(1);
-    inv.investigator_card.code = CardCode::new("01003");
+    let inv = test_support::test_investigator(1);
     let mut attacker = test_support::test_enemy(7, "Silver Twilight Acolyte");
     attacker.code = CardCode::new("01102");
     let mut state = GameStateBuilder::new()

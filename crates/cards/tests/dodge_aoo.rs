@@ -40,7 +40,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameStateBuilder, InvestigatorId,
     LocationId, Phase,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.
 const DODGE: &str = "01023";
@@ -50,7 +50,7 @@ const GUARD_DOG: &str = "01021";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// The soak-distribution `PickSingle` `OptionId` for the soaker asset (#44/K5b —
@@ -118,9 +118,6 @@ fn dodge_cancels_attack_of_opportunity_no_damage_move_completes_attacker_not_exh
 
     let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(from);
-    // Use a real investigator code so max_health()/max_sanity() can read from
-    // the installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
-    investigator.investigator_card.code = CardCode::new("01003");
     investigator.hand = vec![CardCode::new(DODGE)];
 
     let attacker = engaged_attacker(7, inv_id, from, 2, 3);
@@ -274,9 +271,6 @@ fn skipping_before_attack_window_lets_aoo_land_and_move_still_completes() {
 
     let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(from);
-    // Use a real investigator code so max_health()/max_sanity() can read from
-    // the installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
-    investigator.investigator_card.code = CardCode::new("01003");
     investigator.hand = vec![CardCode::new(DODGE)];
 
     let attacker = engaged_attacker(7, inv_id, from, 2, 5);

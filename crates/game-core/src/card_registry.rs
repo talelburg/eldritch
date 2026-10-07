@@ -149,8 +149,8 @@ impl CardRegistry {
     /// **Spread `EMPTY` only over a registry you are building from nothing.**
     /// A helper wrapping a *real* registry must spread that registry instead —
     /// naming a slot it doesn't override silently switches the real lookup off,
-    /// which is exactly the bug #774's review caught in
-    /// [`install_registry_with_terminal_cards`](crate::test_support::install_registry_with_terminal_cards).
+    /// which is exactly the bug #774's review caught in what is now
+    /// [`install_registry_with_test_cards`](crate::test_support::install_registry_with_test_cards).
     pub const EMPTY: Self = Self {
         metadata_for: |_| None,
         abilities_for: |_| None,

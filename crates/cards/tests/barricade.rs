@@ -22,9 +22,7 @@ use game_core::state::{
     GameStateBuilder, InvestigationResume, Investigator, InvestigatorId, Location, LocationId,
     Phase,
 };
-use game_core::{
-    assert_event, assert_event_sequence, assert_no_event, card_registry, test_support,
-};
+use game_core::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
 const BARRICADE: &str = "01038";
 const GHOUL_PRIEST: &str = "01116"; // Humanoid. Monster. Ghoul. Elite. + Hunter
@@ -36,7 +34,7 @@ const ATT_INST: CardInstanceId = CardInstanceId(900);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// A ready, unengaged ghoul (code `code`) at location `at`, with the printed
@@ -106,10 +104,6 @@ fn playing_barricade_attaches_one_card_and_does_not_discard_the_event() {
 /// and `enemy` on the board.
 fn map_with_barricade_at_b(inv_at: LocationId, enemy: Enemy) -> GameState {
     let mut inv = test_support::test_investigator(1);
-    // Use a real investigator code so max_health()/max_sanity() can read from
-    // the installed cards registry; TEST_INV is only in the game-core test
-    // registry (#448 cp2a). Skids O'Toole (01003, 8/6) — no implemented abilities.
-    inv.investigator_card.code = CardCode::new("01003");
     inv.current_location = Some(inv_at);
     let mut a = test_support::test_location(1, "A");
     a.connections = vec![B];
@@ -437,9 +431,6 @@ fn an_engaged_enemy_still_disengages_on_the_move_that_discards_barricade() {
 /// card's own forced self-discard.
 fn map_leaving_barricaded_a(enemy: Option<Enemy>) -> GameState {
     let mut inv = test_support::test_investigator(1);
-    // A real investigator code, so max_health()/max_sanity() read from the
-    // installed cards registry (see `map_with_barricade_at_b`).
-    inv.investigator_card.code = CardCode::new("01003");
     inv.current_location = Some(A);
     let mut a = test_support::test_location(1, "A");
     a.connections = vec![B];
@@ -483,12 +474,9 @@ fn map_leaving_barricaded_a(enemy: Option<Enemy>) -> GameState {
 
 const INV2: InvestigatorId = InvestigatorId(2);
 
-/// An investigator at `at` with a real card code, so `max_health()` /
-/// `max_sanity()` read from the installed registry (see
-/// `map_with_barricade_at_b`).
+/// An investigator at `at`.
 fn inv_at(id: u32, at: LocationId) -> Investigator {
     let mut inv = test_support::test_investigator(id);
-    inv.investigator_card.code = CardCode::new("01003");
     inv.current_location = Some(at);
     inv
 }

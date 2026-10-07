@@ -8,6 +8,7 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, InputResponse, PlayerAction};
+use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
@@ -16,13 +17,12 @@ use game_core::state::{
     SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
-use game_core::{assert_event, card_registry};
 
 const MAGNIFYING_GLASS: &str = "01030";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Build a state with Magnifying Glass in hand, the controller in the

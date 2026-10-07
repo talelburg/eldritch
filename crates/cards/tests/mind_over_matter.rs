@@ -16,7 +16,7 @@ use game_core::state::{
     EnemyId, FastActorScope, FastWindowKind, GameState, GameStateBuilder, InvestigatorId,
     LocationId, Phase, PhaseStep,
 };
-use game_core::{assert_event, card_registry, test_support};
+use game_core::{assert_event, test_support};
 
 const MOM: &str = "01036";
 const OVERPOWER: &str = "01091"; // combat skill icons
@@ -28,7 +28,7 @@ const WEAPON_INST: CardInstanceId = CardInstanceId(900);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Active investigator at `LOC` engaged with a fight-3 enemy. `combat` /

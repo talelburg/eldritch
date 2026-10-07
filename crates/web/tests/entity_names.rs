@@ -6,7 +6,7 @@
 use cards::REGISTRY;
 use game_core::engine::EngineOutcome;
 use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId};
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 use leptos::prelude::{provide_context, RwSignal, Update};
 use leptos::{mount, prelude, task};
 use protocol::ServerMessage;
@@ -20,13 +20,10 @@ wasm_bindgen_test_configure!(run_in_browser);
 async fn board_renders_card_and_location_names() {
     // Install the real corpus registry (the code→name source). Idempotent
     // (OnceLock, first-wins); `web` has no `ctor` dev-dep, so install in-test.
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 
     let inv_id = InvestigatorId(1);
     let mut inv = test_support::test_investigator(1);
-    // Use a real investigator code so the board's max-health/sanity reads resolve
-    // against cards::REGISTRY (the synthetic TEST_INV code is absent from it).
-    inv.investigator_card.code = CardCode::new("01001"); // Roland Banks
     inv.current_location = Some(LocationId(10));
     inv.hand.push(CardCode::new("01030")); // Magnifying Glass
 

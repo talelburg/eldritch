@@ -9,7 +9,6 @@
 //! Roland's `Trigger::ElderSign` ability) in its own process.
 
 use cards::REGISTRY;
-use game_core::card_registry;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
@@ -23,7 +22,7 @@ const COVER_UP: &str = "01007";
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Drive a Willpower-3 test at difficulty 3 with the `ElderSign` token, Roland

@@ -10,13 +10,13 @@ use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
 use game_core::state::{CardCode, ChaosToken, GameState, InvestigatorId, Phase};
-use game_core::{card_registry, scenario_registry, test_support};
+use game_core::{scenario_registry, test_support};
 use scenarios::the_gathering;
 
 #[ctor::ctor(unsafe)]
 fn install_registries() {
     let _ = scenario_registry::install(scenarios::REGISTRY);
-    let _ = card_registry::install(cards::REGISTRY);
+    test_support::install_registry_with_test_cards(cards::REGISTRY);
 }
 
 /// Drive to the post-Mythos-draw fast window: Roland holds Magnifying Glass,

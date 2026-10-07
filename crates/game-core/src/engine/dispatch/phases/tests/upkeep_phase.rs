@@ -51,7 +51,7 @@ fn upkeep_phase_emits_phase_started_and_auto_skips_to_mythos() {
     // `draw_one_with_deckout`, an empty deck applies the deckout horror
     // penalty, whose capacity read requires a CardRegistry this registry-free
     // unit test cannot install.
-    state.investigators.get_mut(&id).unwrap().deck = vec![CardCode("01000".into())];
+    state.investigators.get_mut(&id).unwrap().deck = vec![CardCode("filler0".into())];
 
     let mut events = Vec::new();
     step_phase(&mut Cx {
@@ -104,7 +104,7 @@ fn ready_exhausted_cards_readies_investigator_cards_and_enemies() {
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(1);
     let mut inv = test_support::test_investigator(1);
-    let mut card = CardInPlay::enter_play(CardCode("01000".into()), CardInstanceId(1));
+    let mut card = CardInPlay::enter_play(CardCode("filler0".into()), CardInstanceId(1));
     card.exhausted = true;
     inv.cards_in_play = vec![card];
     let mut enemy = test_support::test_enemy(1, "Test Enemy");
@@ -249,12 +249,12 @@ fn ready_exhausted_cards_keeps_existing_engagement_no_duplicate() {
 fn upkeep_draw_and_resource_draws_and_grants_per_active_investigator() {
     let (a, b, c) = (InvestigatorId(1), InvestigatorId(2), InvestigatorId(3));
     let mut inv_a = test_support::test_investigator(1);
-    inv_a.deck = vec![CardCode::new("01000")];
+    inv_a.deck = vec![CardCode::new("filler0")];
     let mut inv_b = test_support::test_investigator(2);
-    inv_b.deck = vec![CardCode::new("01001")];
+    inv_b.deck = vec![CardCode::new("filler1")];
     let mut inv_c = test_support::test_investigator(3);
     inv_c.status = Status::Resigned; // eliminated → skipped
-    inv_c.deck = vec![CardCode::new("01002")];
+    inv_c.deck = vec![CardCode::new("filler2")];
     let res_a = inv_a.resources;
     let res_b = inv_b.resources;
     let res_c = inv_c.resources;
@@ -291,9 +291,9 @@ fn upkeep_draw_and_resource_two_pass_ordering() {
     // All CardsDrawn events precede all ResourcesGained events.
     let (a, b) = (InvestigatorId(1), InvestigatorId(2));
     let mut inv_a = test_support::test_investigator(1);
-    inv_a.deck = vec![CardCode::new("01000")];
+    inv_a.deck = vec![CardCode::new("filler0")];
     let mut inv_b = test_support::test_investigator(2);
-    inv_b.deck = vec![CardCode::new("01001")];
+    inv_b.deck = vec![CardCode::new("filler1")];
     let mut state = GameStateBuilder::default()
         .with_investigator(inv_a)
         .with_investigator(inv_b)
@@ -432,8 +432,8 @@ fn end_turn_cascades_through_upkeep_to_mythos_draw_prompt() {
     let id = InvestigatorId(1);
     let mut inv = test_support::test_investigator(1);
     inv.actions_remaining = 0;
-    inv.deck = vec![CardCode::new("01000"), CardCode::new("01001")];
-    let mut card = CardInPlay::enter_play(CardCode::new("01002"), CardInstanceId(1));
+    inv.deck = vec![CardCode::new("filler0"), CardCode::new("filler1")];
+    let mut card = CardInPlay::enter_play(CardCode::new("filler2"), CardInstanceId(1));
     card.exhausted = true;
     inv.cards_in_play = vec![card];
     let res_before = inv.resources;

@@ -30,7 +30,7 @@ use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, Investigator,
     InvestigatorId, Skills,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 use leptos::prelude::{document, provide_context, RwSignal, Update};
 use leptos::{mount, task};
 use protocol::ServerMessage;
@@ -120,7 +120,7 @@ async fn render_state(state: GameState) -> String {
     // The real corpus registry: the code→name/kind source, and the source of
     // the investigator capacity the panel reads (#448). Idempotent (OnceLock,
     // first-wins); `web` has no `ctor` dev-dep, so install in-test.
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
     let store = RwSignal::new(ClientState::default());
     mount::mount_to_body(move || {
         provide_context(store);

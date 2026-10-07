@@ -13,14 +13,14 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, OptionTarget
 use game_core::state::{
     CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 const INV: InvestigatorId = InvestigatorId(1);
 const LOC: LocationId = LocationId(1);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// One investigator standing on a location whose card `code` carries a forced
@@ -28,10 +28,6 @@ fn install() {
 fn state_on_location(code: &str, interactive: bool) -> GameState {
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LOC);
-    // Back the investigator with a real corpus card so the harm path's defeat
-    // check (max_health/max_sanity, read from the registry) resolves — Roland
-    // Banks (01001), 9 health / 5 sanity, so 1 harm never defeats.
-    inv.investigator_card.code = CardCode::new("01001");
     let mut loc = test_support::test_location(1, "Forced Location");
     loc.code = CardCode::new(code);
     let mut state = GameStateBuilder::new()

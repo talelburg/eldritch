@@ -58,7 +58,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, GameState, GameStateBuilder, InvestigatorId,
     Location, LocationId, Phase,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 /// The Parlor.
 const PARLOR_CODE: &str = "01115";
@@ -79,7 +79,7 @@ const ATT_INST: CardInstanceId = CardInstanceId(900);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// The Parlor as the board actually holds it: the real card code (so the

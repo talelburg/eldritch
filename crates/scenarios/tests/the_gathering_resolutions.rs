@@ -19,7 +19,7 @@ use game_core::state::{
     AdvanceDeck, AdvanceStep, CardCode, ChaosBag, ChaosToken, Continuation, EliminationCause,
     EnemyId, GameState, InvestigatorId, Status, TimingMode,
 };
-use game_core::{assert_event, card_registry, scenario_registry, test_support};
+use game_core::{assert_event, scenario_registry, test_support};
 use scenarios::the_gathering;
 
 const ROLAND: &str = "01001";
@@ -30,7 +30,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 #[ctor::ctor(unsafe)]
 fn install() {
     let _ = scenario_registry::install(scenarios::REGISTRY);
-    let _ = card_registry::install(cards::REGISTRY);
+    test_support::install_registry_with_test_cards(cards::REGISTRY);
 }
 
 /// The Gathering set up + solo Roland seated and past the mulligan, ready

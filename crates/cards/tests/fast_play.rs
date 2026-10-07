@@ -46,7 +46,7 @@ use game_core::state::{
     Continuation, EnemyId, FastActorScope, FastWindowKind, GameState, GameStateBuilder,
     InvestigatorId, LocationId, MythosResume, Phase, PhaseStep, SkillKind,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 /// Beat Cop 01018: *"You get +1 \[combat\]."* / *"\[fast\] Discard Beat Cop:
 /// Deal 1 damage to an enemy at your location."*
@@ -54,7 +54,7 @@ const BEAT_COP: &str = "01018";
 
 #[ctor::ctor(unsafe)]
 fn install_cards_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 #[test]

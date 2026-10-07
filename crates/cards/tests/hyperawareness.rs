@@ -31,7 +31,7 @@ use game_core::state::{
     GameState, GameStateBuilder, InvestigatorId, Phase, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, TakeOneFastPlay};
-use game_core::{assert_event, assert_no_event, card_registry};
+use game_core::{assert_event, assert_no_event};
 
 const HYPERAWARENESS: &str = "01034";
 
@@ -40,7 +40,7 @@ const AGILITY_ABILITY: usize = 1;
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Build a state with one Hyperawareness already in play (instance

@@ -11,6 +11,7 @@
 //! Own process → installs `cards::REGISTRY`.
 
 use cards::REGISTRY;
+use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
@@ -20,7 +21,6 @@ use game_core::state::{
     UseKind,
 };
 use game_core::test_support::{self, TestSession};
-use game_core::{assert_event, card_registry};
 
 const FLASHLIGHT: &str = "01087";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -29,7 +29,7 @@ const TORCH_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Board: Flashlight in play with 3 supplies; the active investigator at a

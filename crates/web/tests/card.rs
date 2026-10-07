@@ -8,7 +8,7 @@ use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId};
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
 use protocol::ClientMessage;
@@ -37,7 +37,7 @@ fn last_card_html() -> String {
 }
 
 async fn mount_card(code: &str) -> String {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
     let code = CardCode::new(code);
     mount_to_body(move || view! { <Card code=code.clone()/> });
     task::tick().await;
@@ -118,7 +118,7 @@ fn last_card_classes() -> String {
 
 #[wasm_bindgen_test]
 async fn in_play_exhausted_asset_dims_badges_and_shows_soak() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
     // Beat Cop 01018: ally asset, health 2 / sanity 2.
     let mut inst = CardInPlay::enter_play(CardCode::new("01018"), CardInstanceId(0));
     inst.exhausted = true;
@@ -144,7 +144,7 @@ async fn in_play_exhausted_asset_dims_badges_and_shows_soak() {
 
 #[wasm_bindgen_test]
 async fn treachery_renders_generic_face_with_clues() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
     // Cover Up 01007: treachery/weakness, traits "Task.", Revelation text;
     // enters the threat area with clues on the card.
     let mut inst = CardInPlay::enter_play(CardCode::new("01007"), CardInstanceId(0));
@@ -167,7 +167,7 @@ async fn treachery_renders_generic_face_with_clues() {
 
 #[wasm_bindgen_test]
 async fn in_play_ready_asset_is_not_dimmed() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
     let inst = CardInPlay::enter_play(CardCode::new("01018"), CardInstanceId(0));
     mount_to_body(move || view! { <Card code=CardCode::new("01018") in_play=inst.clone()/> });
     task::tick().await;
@@ -196,7 +196,7 @@ fn last_slot() -> Element {
 async fn mount_hand(
     outcome: EngineOutcome,
 ) -> (RwSignal<BTreeSet<u32>>, UnboundedReceiver<ClientMessage>) {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
     let store = RwSignal::new(ClientState::default());
     store.update(|s| s.outcome = Some(outcome));
     let selected = RwSignal::new(BTreeSet::<u32>::new());

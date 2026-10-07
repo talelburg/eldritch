@@ -17,20 +17,16 @@ use scenarios::the_gathering;
 #[ctor::ctor(unsafe)]
 fn install_registries() {
     let _ = scenario_registry::install(scenarios::REGISTRY);
-    // The real registry plus `test_support`'s synthetic terminal card: the
-    // victory-display fixtures below end their act deck in one, because a
-    // terminal card reaches its resolution point by running an effect on its
-    // reverse (ADR 0013) and so needs the registry to serve it.
-    test_support::install_registry_with_terminal_cards(cards::REGISTRY);
+    // The victory-display fixtures below end their act deck in a synthetic
+    // terminal card, which reaches its resolution point by running an effect on
+    // its reverse (ADR 0013) and so needs the registry to serve it.
+    test_support::install_registry_with_test_cards(cards::REGISTRY);
 }
 
 fn gathering_state(token: ChaosToken, ghouls: u8) -> GameState {
     let inv = InvestigatorId(1);
     let loc = LocationId(1);
     let mut investigator = test_support::test_investigator(1);
-    // Use Skids O'Toole (01003): a real corpus code known to cards::REGISTRY
-    // (installed here) with capacity data, so max_health()/max_sanity() work.
-    investigator.investigator_card.code = CardCode::new("01003");
     investigator.current_location = Some(loc);
     let mut state = GameStateBuilder::new()
         .with_investigator(investigator)

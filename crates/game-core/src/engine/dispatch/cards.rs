@@ -1341,7 +1341,7 @@ mod draw_with_deckout_tests {
         let id = InvestigatorId(1);
         let mut inv = test_support::test_investigator(1);
         inv.deck.clear();
-        inv.discard = vec![CardCode::new("01000"), CardCode::new("01001")];
+        inv.discard = vec![CardCode::new("filler0"), CardCode::new("filler1")];
         // After #448 cp2a: horror accumulates on investigator_card, accessor reads it.
         let hand_before = inv.hand.len();
         let mut state = GameStateBuilder::default().with_investigator(inv).build();
@@ -1379,11 +1379,11 @@ mod draw_with_deckout_tests {
         test_support::install_test_registry();
         let id = InvestigatorId(1);
         let mut inv = test_support::test_investigator(1);
-        inv.deck = vec![CardCode::new("01000")];
+        inv.deck = vec![CardCode::new("filler0")];
         inv.discard = vec![
-            CardCode::new("01001"),
-            CardCode::new("01002"),
-            CardCode::new("01003"),
+            CardCode::new("filler1"),
+            CardCode::new("filler2"),
+            CardCode::new("filler3"),
         ];
         let hand_before = inv.hand.len();
         let mut state = GameStateBuilder::default().with_investigator(inv).build();
@@ -1419,11 +1419,11 @@ mod draw_with_deckout_tests {
         let id = InvestigatorId(1);
         let mut inv = test_support::test_investigator(1);
         inv.deck = vec![
-            CardCode::new("01000"),
-            CardCode::new("01001"),
-            CardCode::new("01002"),
+            CardCode::new("filler0"),
+            CardCode::new("filler1"),
+            CardCode::new("filler2"),
         ];
-        inv.discard = vec![CardCode::new("01003")];
+        inv.discard = vec![CardCode::new("filler3")];
         let hand_before = inv.hand.len();
         let mut state = GameStateBuilder::default().with_investigator(inv).build();
         let mut events = Vec::new();

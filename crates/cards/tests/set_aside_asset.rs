@@ -75,7 +75,7 @@ const INV: InvestigatorId = InvestigatorId(1);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// The act-2 board: an investigator in the Hallway, the Parlor in play but
@@ -89,9 +89,6 @@ fn board() -> GameState {
     parlor.revealed = false;
 
     let mut inv = test_support::test_investigator(1);
-    // A real investigator code, so `max_health()` reads from the installed
-    // corpus. Skids O'Toole (01003, 8/6).
-    inv.investigator_card.code = CardCode::new("01003");
     inv.current_location = Some(HALLWAY_ID);
 
     let mut state = GameStateBuilder::new()

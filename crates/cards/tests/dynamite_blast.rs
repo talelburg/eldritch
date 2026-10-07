@@ -20,7 +20,7 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
     CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 const DYNAMITE: &str = "01024";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -32,7 +32,7 @@ const ENEMY_B: EnemyId = EnemyId(101);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 fn play(state: GameState) -> ApplyResult {
@@ -61,15 +61,10 @@ fn board() -> GameState {
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LOC_A);
     inv.hand = vec![CardCode::new(DYNAMITE)];
-    // Use Skids O'Toole (01003, 8 health / 6 sanity) — real code so
-    // max_health()/max_sanity() can read from the installed cards registry
-    // (#448 cp2a), no implemented abilities so no reaction windows fire.
-    inv.investigator_card.code = CardCode::new("01003");
 
     let mut inv2 = test_support::test_investigator(2);
     inv2.current_location = Some(LOC_B);
     // Same reason as inv above.
-    inv2.investigator_card.code = CardCode::new("01003");
 
     let mut loc_a = test_support::test_location(10, "Cellar");
     loc_a.connections = vec![LOC_B];
@@ -163,8 +158,6 @@ fn auto_targets_and_discards_when_your_location_is_the_only_candidate() {
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LOC_A);
     inv.hand = vec![CardCode::new(DYNAMITE)];
-    // Real investigator code so max_health() reads from the cards registry (#448 cp2a).
-    inv.investigator_card.code = CardCode::new("01003"); // Skids O'Toole: 8/6
 
     let loc_a = test_support::test_location(10, "Cellar"); // no connections
     let mut enemy_a = test_support::test_enemy(100, "Ghoul A");

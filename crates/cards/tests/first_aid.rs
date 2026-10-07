@@ -17,7 +17,7 @@ use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Phase, UseKind,
 };
-use game_core::{assert_event, card_registry, test_support};
+use game_core::{assert_event, test_support};
 
 const FIRST_AID: &str = "01019";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -26,7 +26,7 @@ const KIT_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Board: First Aid in play with `supplies` supplies; the active investigator

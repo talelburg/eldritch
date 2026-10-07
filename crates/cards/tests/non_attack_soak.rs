@@ -9,7 +9,6 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
-use game_core::card_registry;
 use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
@@ -19,16 +18,13 @@ use game_core::test_support::{self, ScriptedResolver};
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Investigator 1 at a location, controlling `soaker` (instance 1), with
 /// `treachery` on top of the encounter deck and one rigged chaos token.
 fn board_with_soaker(treachery: &str, soaker: &str, token: ChaosToken) -> GameState {
     let mut inv = test_support::test_investigator(1);
-    // Real investigator code so max_health()/max_sanity() reads from the
-    // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
-    inv.investigator_card.code = CardCode::new("01003");
     inv.cards_in_play = vec![CardInPlay::enter_play(
         CardCode::new(soaker),
         CardInstanceId(1),

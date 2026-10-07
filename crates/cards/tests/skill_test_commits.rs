@@ -21,7 +21,7 @@ use game_core::state::{
     TokenModifiers, Zone,
 };
 use game_core::test_support::{self, ScriptedResolver};
-use game_core::{assert_event, assert_event_count, assert_no_event, card_registry};
+use game_core::{assert_event, assert_event_count, assert_no_event};
 
 const PERCEPTION: &str = "01090";
 const UNEXPECTED_COURAGE: &str = "01093";
@@ -32,7 +32,7 @@ const OVERPOWER: &str = "01091";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Hand contents for the test. Builds a state with the named cards in

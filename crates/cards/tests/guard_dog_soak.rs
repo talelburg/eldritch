@@ -40,7 +40,7 @@ use game_core::state::{
     GameState, GameStateBuilder, InvestigationResume, InvestigatorId, LocationId, Phase, Status,
     Zone,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 /// Guard Dog (01021): Guardian Ally, health 3 / sanity 1, with the
 /// damage-retaliate reaction.
@@ -53,7 +53,7 @@ const BULLETPROOF_VEST: &str = "01094";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// An engaged enemy at the investigator's location dealing `attack_damage`
@@ -88,9 +88,6 @@ fn soak_state(
     let loc_id = LocationId(101);
 
     let mut inv = test_support::test_investigator(1);
-    // Real investigator code so max_health()/max_sanity() reads from the
-    // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
-    inv.investigator_card.code = CardCode::new("01003");
     inv.current_location = Some(loc_id);
     inv.cards_in_play = assets
         .into_iter()
@@ -889,7 +886,7 @@ fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
     // Attack deals 5 damage. Guard Dog (printed health 3) soaks 3 and is
     // defeated by reaching its printed health; the remaining 2 must be
     // assigned to the investigator — landing on the investigator card's
-    // `accumulated_damage`. Skids O'Toole (01003) has 8 health, so 2 < 8 →
+    // `accumulated_damage`. The investigator has 8 health, so 2 < 8 →
     // the investigator survives.
     let (mut state, inv_id, _) = soak_state(
         vec![(GUARD_DOG, dog)],
@@ -957,7 +954,7 @@ fn investigator_card_overflow_eliminates_the_investigator() {
     let dog = CardInstanceId(1);
     let inv = InvestigatorId(1);
     let loc = LocationId(101);
-    // Skids O'Toole (01003) has 8 health. Pre-load the investigator card
+    // The investigator has 8 health. Pre-load the investigator card
     // with 7 damage (survived prior harm). A 4-damage attack: Guard Dog
     // soaks 3 (defeated), the remaining 1 lands on the investigator card →
     // 8 >= 8 → the investigator is eliminated (Defeated), not the card
@@ -1003,7 +1000,7 @@ fn investigator_card_overflow_eliminates_the_investigator() {
     assert!(
         !result.events.iter().any(|e| matches!(
             e,
-            Event::CardDiscarded { code, .. } if *code == CardCode::new("01003")
+            Event::CardDiscarded { code, .. } if *code == CardCode::new(test_support::TEST_INV)
         )),
         "investigator card is eliminated, not discarded as an asset: {:?}",
         result.events
@@ -1028,7 +1025,7 @@ fn co_overflowing_asset_is_removed_from_game_not_discarded_when_investigator_eli
     let dog = CardInstanceId(1);
     let inv = InvestigatorId(1);
     let loc = LocationId(101);
-    // Skids O'Toole (01003): 8 health. Pre-load 5 onto the investigator card
+    // The investigator has 8 health. Pre-load 5 onto the investigator card
     // and 2 onto Guard Dog (printed health 3). A 4-damage attack distributed
     // soak-first: Guard Dog takes 1 (→ 3 >= 3, would defeat) and the
     // remaining 3 land on the investigator card (→ 8 >= 8, eliminated). The

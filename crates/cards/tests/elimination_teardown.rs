@@ -40,10 +40,8 @@ use game_core::state::{
     LocationId, Status, Zone,
 };
 use game_core::test_support::{self, ChoiceResolver, ScriptedResolver};
-use game_core::{assert_event, assert_event_count, assert_no_event, card_registry};
+use game_core::{assert_event, assert_event_count, assert_no_event};
 
-/// Roland Banks — health 9, sanity 5.
-const ROLAND: &str = "01001";
 const GRASPING_HANDS: &str = "01162";
 const SURVIVAL_INSTINCT: &str = "01081";
 const COVER_UP: &str = "01007";
@@ -51,19 +49,17 @@ const DISSONANT_VOICES: &str = "01165";
 
 #[ctor::ctor(unsafe)]
 fn install_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
-/// Roland at a location with `damage` already on him, `hand` in hand, and
-/// `threat` (code, clues) in his threat area (instance ids 1, 2, …). Grasping
-/// Hands sits on top of the encounter deck with a rigged `Numeric(-2)` token, so
-/// `reveal_committing` puts him through an Agility(3) test he fails by 2 — or by
-/// 1 when Survival Instinct's single [agility] icon is committed.
+/// The test investigator (8 health) at a location with `damage` already on it,
+/// `hand` in hand, and `threat` (code, clues) in its threat area (instance ids
+/// 1, 2, …). Grasping Hands sits on top of the encounter deck with a rigged
+/// `Numeric(-2)` token, so `reveal_committing` puts it through an Agility(3)
+/// test it fails by 2 — or by 1 when Survival Instinct's single [agility] icon
+/// is committed.
 fn board_at_lethal_range(damage: u8, hand: &[&str], threat: &[(&str, u8)]) -> GameState {
     let mut inv = test_support::test_investigator(1);
-    // Real investigator code so max_health() reads from the installed cards
-    // registry (#448 cp2a). Roland Banks (01001, 9/5).
-    inv.investigator_card.code = CardCode::new(ROLAND);
     inv.investigator_card.accumulated_damage = damage;
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
     inv.threat_area = threat
@@ -92,13 +88,10 @@ fn board_at_lethal_range(damage: u8, hand: &[&str], threat: &[(&str, u8)]) -> Ga
 
 /// [`board_at_lethal_range`] plus a second, healthy investigator at another
 /// location — so investigator 1's death eliminates *him* without ending the
-/// scenario. The survivor carries a real investigator code because
-/// `max_health()` reads capacity from the installed corpus registry (#448); he
-/// is a stand-in whose only job is to keep the game running.
+/// scenario. The survivor's only job is to keep the game running.
 fn board_with_survivor(damage: u8, threat: &[(&str, u8)]) -> GameState {
     let mut state = board_at_lethal_range(damage, &[], threat);
     let mut survivor = test_support::test_investigator(2);
-    survivor.investigator_card.code = CardCode::new(ROLAND);
     survivor.current_location = Some(LocationId(21));
     state
         .locations
@@ -125,10 +118,10 @@ fn reveal_committing(state: GameState, commit: &[&str]) -> ApplyResult {
 #[test]
 fn tester_eliminated_mid_test_abandons_the_test_without_panicking() {
     // Agility 3 + Numeric(-2) + 1 committed [agility] icon = 2 vs difficulty 3 →
-    // fail by 1 → 1 damage. Roland at 8/9 damage → lethal → elimination drains the hand while the
+    // fail by 1 → 1 damage. 7/8 damage → lethal → elimination drains the hand while the
     // SkillTest frame is still live at FireOnResolution / the teardown discard.
     let r = reveal_committing(
-        board_at_lethal_range(8, &[SURVIVAL_INSTINCT], &[]),
+        board_at_lethal_range(7, &[SURVIVAL_INSTINCT], &[]),
         &[SURVIVAL_INSTINCT],
     );
 
@@ -138,7 +131,7 @@ fn tester_eliminated_mid_test_abandons_the_test_without_panicking() {
     assert_eq!(
         inv.status,
         Status::Defeated,
-        "lethal damage eliminated Roland"
+        "lethal damage eliminated the investigator"
     );
 
     // RR p.10 step 1: the committed card is in limbo on the SkillTest frame
@@ -177,7 +170,7 @@ fn surviving_tester_still_discards_committed_cards() {
     );
 
     let inv = &r.state.investigators[&InvestigatorId(1)];
-    assert_eq!(inv.status, Status::Active, "1 damage is not lethal at 0/9");
+    assert_eq!(inv.status, Status::Active, "1 damage is not lethal at 0/8");
     assert!(
         inv.discard.iter().any(|c| c.as_str() == SURVIVAL_INSTINCT),
         "surviving tester discards committed cards; discard = {:?}",
@@ -188,10 +181,10 @@ fn surviving_tester_still_discards_committed_cards() {
 
 #[test]
 fn elimination_removes_a_player_owned_weakness_from_the_game() {
-    // RR p.10 step 1 + the design's reading: Cover Up is owned by Roland, whose
+    // RR p.10 step 1 + the design's reading: Cover Up is owned by the eliminated investigator, whose
     // discard pile step 1 just removed from the game — so "the appropriate
     // discard pile" no longer exists and the card is removed.
-    let r = reveal_committing(board_at_lethal_range(8, &[], &[(COVER_UP, 3)]), &[]);
+    let r = reveal_committing(board_at_lethal_range(7, &[], &[(COVER_UP, 3)]), &[]);
 
     let inv = &r.state.investigators[&InvestigatorId(1)];
     assert_eq!(inv.status, Status::Defeated);
@@ -212,9 +205,9 @@ fn elimination_removes_a_player_owned_weakness_from_the_game() {
 
 #[test]
 fn elimination_discards_an_encounter_treachery_to_the_encounter_discard() {
-    // RR p.10 step 4: Dissonant Voices is owned by the scenario, so Roland's
+    // RR p.10 step 4: Dissonant Voices is owned by the scenario, so the investigator's
     // elimination must not remove it from the game.
-    let r = reveal_committing(board_at_lethal_range(8, &[], &[(DISSONANT_VOICES, 0)]), &[]);
+    let r = reveal_committing(board_at_lethal_range(7, &[], &[(DISSONANT_VOICES, 0)]), &[]);
 
     let inv = &r.state.investigators[&InvestigatorId(1)];
     assert_eq!(inv.status, Status::Defeated);
@@ -241,7 +234,7 @@ fn elimination_discards_an_encounter_treachery_to_the_encounter_discard() {
 #[test]
 fn elimination_routes_a_mixed_threat_area_both_ways() {
     let r = reveal_committing(
-        board_at_lethal_range(8, &[], &[(COVER_UP, 3), (DISSONANT_VOICES, 0)]),
+        board_at_lethal_range(7, &[], &[(COVER_UP, 3), (DISSONANT_VOICES, 0)]),
         &[],
     );
 
@@ -280,7 +273,7 @@ fn eliminated_investigator_fires_cover_ups_game_end_trauma() {
     // nothing, routes elimination down its inline path, and lets steps 1–6
     // remove Cover Up without ever firing it — a silent drop with no reject to
     // show for it. This test and the multiplayer one below are what caught it.
-    let r = reveal_committing(board_at_lethal_range(8, &[], &[(COVER_UP, 3)]), &[]);
+    let r = reveal_committing(board_at_lethal_range(7, &[], &[(COVER_UP, 3)]), &[]);
 
     assert_event!(r.events, Event::TraumaSuffered {
         investigator, kind: TraumaKind::Mental, amount: 1
@@ -311,7 +304,7 @@ fn cover_ups_trauma_fires_on_elimination_while_the_scenario_continues() {
     // the ordinary `GameEnd` path never runs at all — the trauma can only come
     // from Elimination step 0. RR p.10: "For the purpose of resolving weakness
     // cards, the game has ended for the eliminated investigator."
-    let r = reveal_committing(board_with_survivor(8, &[(COVER_UP, 3)]), &[]);
+    let r = reveal_committing(board_with_survivor(7, &[(COVER_UP, 3)]), &[]);
 
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].status,
@@ -338,7 +331,7 @@ fn eliminated_investigator_with_a_clueless_cover_up_suffers_no_trauma() {
     // the game state, the ability does not initiate."* Step 0 scans it and
     // collects nothing. The control that keeps the test above honest about
     // *why* the trauma landed.
-    let r = reveal_committing(board_at_lethal_range(8, &[], &[(COVER_UP, 0)]), &[]);
+    let r = reveal_committing(board_at_lethal_range(7, &[], &[(COVER_UP, 0)]), &[]);
 
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].status,
@@ -383,7 +376,7 @@ fn interactive_elimination_with_a_clueless_cover_up_raises_no_acknowledge() {
     // `EventPattern::GameEnd` declaration, so the initiation gate must hold
     // there too: with no clues the Forced does not initiate, and the #466
     // acknowledge `interactive_acknowledge` would otherwise raise never appears.
-    let mut state = board_at_lethal_range(8, &[], &[(COVER_UP, 0)]);
+    let mut state = board_at_lethal_range(7, &[], &[(COVER_UP, 0)]);
     state.interactive_acknowledge = true;
 
     let prompts = Rc::new(RefCell::new(Vec::new()));
@@ -416,7 +409,7 @@ fn eliminated_investigator_fires_no_further_round_end_forced() {
     // #567's acceptance: Dissonant Voices' Forced ("At the end of the round:
     // Discard Dissonant Voices") must not fire again for a dead investigator —
     // step 4 already discarded it.
-    let mut r = reveal_committing(board_at_lethal_range(8, &[], &[(DISSONANT_VOICES, 0)]), &[]);
+    let mut r = reveal_committing(board_at_lethal_range(7, &[], &[(DISSONANT_VOICES, 0)]), &[]);
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].status,
         Status::Defeated
@@ -443,13 +436,13 @@ fn elimination_does_not_drain_the_investigator_card() {
     // investigator. No in-scope investigator card carries such a forced
     // (Roland's is a reaction), so the filter has no observable test today —
     // this pins the premise that makes it necessary.
-    let r = reveal_committing(board_at_lethal_range(8, &[], &[]), &[]);
+    let r = reveal_committing(board_at_lethal_range(7, &[], &[]), &[]);
 
     let inv = &r.state.investigators[&InvestigatorId(1)];
     assert_eq!(inv.status, Status::Defeated);
     assert_eq!(
         inv.investigator_card.code.as_str(),
-        ROLAND,
+        test_support::TEST_INV,
         "the investigator card survives elimination — the premise of the \
          Status filter on the RoundEnded/GameEnd scans",
     );
@@ -465,11 +458,11 @@ fn the_elimination_interleaving_replays_bit_for_bit() {
     // runs compared — rather than re-applying a recorded `Vec<Action>`; with the
     // single rigged chaos token no RNG divergence is possible either way.)
     let first = reveal_committing(
-        board_at_lethal_range(8, &[SURVIVAL_INSTINCT], &[(COVER_UP, 3)]),
+        board_at_lethal_range(7, &[SURVIVAL_INSTINCT], &[(COVER_UP, 3)]),
         &[SURVIVAL_INSTINCT],
     );
     let second = reveal_committing(
-        board_at_lethal_range(8, &[SURVIVAL_INSTINCT], &[(COVER_UP, 3)]),
+        board_at_lethal_range(7, &[SURVIVAL_INSTINCT], &[(COVER_UP, 3)]),
         &[SURVIVAL_INSTINCT],
     );
 

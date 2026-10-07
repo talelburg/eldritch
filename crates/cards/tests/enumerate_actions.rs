@@ -13,7 +13,7 @@ use game_core::state::{
     ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigationResume,
     InvestigatorId, LocationId, Phase, UseKind,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 const HOLY_ROSARY: &str = "01059"; // Mystic asset, cost 2, constant +1 willpower.
 const FLASHLIGHT: &str = "01087"; // Asset with an activated ability (uses: Supplies).
@@ -22,7 +22,7 @@ const LOC: LocationId = LocationId(10);
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// A single-investigator open-turn state (`InvestigatorTurn` frame on top of the
@@ -31,9 +31,6 @@ fn install_real_registry() {
 fn open_turn_state(hand: &[&str], in_play: Vec<CardInPlay>) -> GameState {
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LOC);
-    // Real investigator code so max_health()/max_sanity() reads from the
-    // installed cards registry (#448 cp2a). Skids O'Toole (01003, 8/6).
-    inv.investigator_card.code = CardCode::new("01003");
     inv.actions_remaining = 3;
     inv.resources = 9;
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();

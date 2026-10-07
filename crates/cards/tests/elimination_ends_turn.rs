@@ -17,8 +17,7 @@
 //! taken a turn this round, proceed to 2.3."*
 //!
 //! Lives in `crates/cards/tests/` because the defeat is reached the real way —
-//! an attack of opportunity provoked by a non-fast play — and `max_health()`
-//! reads the investigator's capacity from the installed corpus registry (#448).
+//! an attack of opportunity provoked by a non-fast play.
 //!
 //! ## Verified card text (`data/arkhamdb-snapshot`, 2026-08-24)
 //!
@@ -35,12 +34,10 @@ use game_core::state::{
     CardCode, Continuation, Enemy, GameState, GameStateBuilder, InvestigationResume,
     InvestigatorId, LocationId, Phase, Status,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 /// Emergency Cache (01088): non-fast event → playing it provokes.
 const EMERGENCY_CACHE: &str = "01088";
-/// Skids O'Toole (01003): health 8 / sanity 6.
-const SKIDS: &str = "01003";
 
 const DYING: InvestigatorId = InvestigatorId(1);
 const SURVIVOR: InvestigatorId = InvestigatorId(2);
@@ -49,7 +46,7 @@ const ELSEWHERE: LocationId = LocationId(102);
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// An enemy engaged with `inv`, ready, hitting for 3 damage.
@@ -68,7 +65,6 @@ fn engaged_attacker(inv: InvestigatorId) -> Enemy {
 /// rotation has anyone left to hand the turn to.
 fn board(turn_order: &[InvestigatorId]) -> GameState {
     let mut dying = test_support::test_investigator(1);
-    dying.investigator_card.code = CardCode::new(SKIDS);
     dying.investigator_card.accumulated_damage = 7; // 7 + 3 ≥ 8 = max_health
     dying.current_location = Some(HERE);
     dying.hand = vec![CardCode::new(EMERGENCY_CACHE)];
@@ -88,7 +84,6 @@ fn board(turn_order: &[InvestigatorId]) -> GameState {
 
     if turn_order.contains(&SURVIVOR) {
         let mut survivor = test_support::test_investigator(2);
-        survivor.investigator_card.code = CardCode::new(SKIDS);
         survivor.current_location = Some(ELSEWHERE);
         state.investigators.insert(SURVIVOR, survivor);
     }

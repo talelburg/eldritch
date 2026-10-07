@@ -79,9 +79,6 @@ const MACHETE: &str = "01020";
 const DYNAMITE: &str = "01024";
 /// Silver Twilight Acolyte — `Humanoid. Cultist. Silver Twilight.`
 const ACOLYTE: &str = "01102";
-/// "Skids" O'Toole — 8 health / 6 sanity, so Dynamite Blast's 3 to each
-/// investigator at the chosen location neither defeats nor needs soaking away.
-const SKIDS: &str = "01003";
 
 /// Lita's controller.
 const KEEPER: InvestigatorId = InvestigatorId(1);
@@ -100,7 +97,7 @@ const MACHETE_INST: CardInstanceId = CardInstanceId(51);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// How the board is arranged for one case.
@@ -133,16 +130,13 @@ impl Board {
     }
 
     fn build(self) -> GameState {
-        // Skids O'Toole 01003 (8 health / 6 sanity), for both: the fixture's
-        // own code is not in the real registry, and Dynamite Blast's damage
-        // reads an investigator's printed health off it.
+        // Both at 8 health, so Dynamite Blast's 3 to each investigator at the
+        // chosen location neither defeats nor needs soaking away.
         let mut keeper = test_support::test_investigator(1);
-        keeper.investigator_card.code = CardCode::new(SKIDS);
         keeper.current_location = Some(PARLOR);
         keeper.skills.combat = 3;
 
         let mut other = test_support::test_investigator(2);
-        other.investigator_card.code = CardCode::new(SKIDS);
         other.current_location = Some(self.other_at);
         other.skills.combat = 3;
 

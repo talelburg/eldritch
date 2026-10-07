@@ -45,7 +45,7 @@ use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, Enemy, EnemyId,
     GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 /// Dodge (01023): Neutral Tactic, Fast, before-attack cancel reaction.
 const DODGE: &str = "01023";
@@ -55,7 +55,7 @@ const GUARD_DOG: &str = "01021";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Resolve a soak-distribution prompt (#44/K5b — a retaliate attack against an

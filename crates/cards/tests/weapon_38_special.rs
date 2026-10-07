@@ -14,7 +14,7 @@ use game_core::state::{
     UseKind,
 };
 use game_core::test_support::{self, TestSession};
-use game_core::{assert_event, assert_no_event, card_registry};
+use game_core::{assert_event, assert_no_event};
 
 const SPECIAL: &str = "01006";
 const INV: InvestigatorId = InvestigatorId(1);
@@ -24,7 +24,7 @@ const WEAPON_INST: CardInstanceId = CardInstanceId(0);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Board: .38 Special in play with 4 ammo, the active investigator (combat

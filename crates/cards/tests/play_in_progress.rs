@@ -43,7 +43,7 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
     CardCode, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
 };
-use game_core::{card_registry, test_support};
+use game_core::test_support;
 
 const DYNAMITE: &str = "01024";
 const DODGE: &str = "01023";
@@ -56,7 +56,7 @@ const LOC_B: LocationId = LocationId(11);
 
 #[ctor::ctor(unsafe)]
 fn install() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 fn pick(state: GameState, option: u32) -> ApplyResult {
@@ -77,9 +77,6 @@ fn board(hand: &[&str], resources: u8) -> GameState {
     inv.current_location = Some(LOC_A);
     inv.hand = hand.iter().map(|c| CardCode::new(*c)).collect();
     inv.resources = resources;
-    // "Skids" O'Toole (01003, 8 health / 6 sanity): a real code so `max_health()`
-    // reads from the installed registry.
-    inv.investigator_card.code = CardCode::new("01003");
 
     let mut loc_a = test_support::test_location(10, "Cellar");
     loc_a.connections = vec![LOC_B];
@@ -190,7 +187,7 @@ fn defeated_by_its_own_aoo_the_mid_play_event_is_removed_not_discarded() {
         .enemies
         .get_mut(&ATTACKER)
         .expect("attacker present")
-        .attack_damage = 8; // Skids O'Toole is 8 health
+        .attack_damage = 8; // the test investigator has 8 health
 
     let r = test_support::take_turn_action(
         state,

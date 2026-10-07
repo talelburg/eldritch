@@ -21,9 +21,7 @@ use game_core::state::{
     CardCode, CardInstanceId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
     Status, Zone,
 };
-use game_core::{
-    assert_event_count, assert_event_sequence, assert_no_event, card_registry, test_support,
-};
+use game_core::{assert_event_count, assert_event_sequence, assert_no_event, test_support};
 
 /// Holy Rosary (01059) — Mystic asset, +1 willpower constant.
 const HOLY_ROSARY: &str = "01059";
@@ -59,7 +57,7 @@ fn install_real_registry() {
     // It's fine if this is `Err` — another test in this binary
     // already installed. The function-pointer struct is `Copy`
     // and stateless, so re-install attempts are harmless.
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Build a one-investigator scenario state at the controller's

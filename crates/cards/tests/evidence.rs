@@ -19,14 +19,14 @@ use game_core::state::{
     GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers, Zone,
 };
 use game_core::test_support::{self, TestSession};
-use game_core::{assert_event, assert_no_event, card_registry};
+use game_core::{assert_event, assert_no_event};
 
 /// `ArkhamDB` code for original-Core Evidence!.
 const EVIDENCE: &str = "01022";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
-    let _ = card_registry::install(REGISTRY);
+    test_support::install_registry_with_test_cards(REGISTRY);
 }
 
 /// Solo investigator (NOT Roland — no in-play reaction) engaged with a 1-HP
