@@ -12,7 +12,8 @@
 //! `AwaitingInput` outcomes through the resolver until the engine
 //! returns [`Done`](crate::engine::EngineOutcome::Done) or
 //! [`Rejected`](crate::engine::EngineOutcome::Rejected). [`TestSession`] is the
-//! fluent wrapper that pairs a [`GameState`] with a resolver script.
+//! step-wise driver new tests use: it settles a built state, then applies one
+//! step at a time and drains to the next rest through a resolver script.
 //!
 //! # Engine consumers
 //!
@@ -35,13 +36,12 @@
 //! // A `ResolveInput` against a bare state with no outstanding prompt
 //! // rejects — a tiny smoke test for the fluent API without needing a
 //! // real chaos bag or any setup.
-//! let result = GameStateBuilder::new()
+//! let session = GameStateBuilder::new()
 //!     .session()
 //!     .apply(Action::Player(PlayerAction::ResolveInput {
 //!         response: InputResponse::Skip,
-//!     }))
-//!     .run();
-//! assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
+//!     }));
+//! assert!(!session.expect_rejected().is_empty());
 //! ```
 
 use std::collections::VecDeque;
@@ -49,13 +49,12 @@ use std::collections::VecDeque;
 use crate::action::{Action, InputResponse, PlayerAction};
 use crate::engine::enumerate::TurnAction;
 use crate::engine::{
-    self, enumerate, ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId,
+    self, enumerate, ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId, OptionTarget,
+    PromptNature,
 };
+use crate::event::Event;
 use crate::scenario_registry;
-use crate::state::{
-    CardCode, GameState, GameStateBuilder, InvestigatorId, InvestigatorTurnFrame, LocationId,
-    SkillKind,
-};
+use crate::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind};
 
 /// Provide a response for an `AwaitingInput` prompt during a
 /// [`drive`]-style session.
@@ -351,20 +350,22 @@ impl ChoiceResolver for NoCommits {
 /// a *non-skippable* `PickSingle` answered must script it via [`drive`] instead
 /// — here it would be fed an empty `PickMultiple` and rejected.
 pub fn apply_no_commits(state: GameState, action: Action) -> ApplyResult {
-    drain_with_applier(engine::apply(state, action), &mut NoCommits, engine::apply)
+    drain_with_applier(
+        engine::apply(state, action),
+        answering(&mut NoCommits),
+        engine::apply,
+    )
 }
 
-/// Whether `state` is paused at the open-turn action menu (2b, #447): an
-/// [`InvestigatorTurn { ending: false }`](crate::state::Continuation::InvestigatorTurn)
-/// frame on top, which the engine surfaces as the `AwaitingInput` action menu.
-/// Test drivers treat it as a terminal stopping point — it is the *next*
-/// action's prompt, not a window to resolve, so driving past it would silently
-/// consume another turn action.
-fn at_open_turn_menu(state: &GameState) -> bool {
-    state
-        .continuations
-        .top_of::<InvestigatorTurnFrame>()
-        .is_some_and(|turn| !turn.ending)
+/// Whether `request` is the open-turn action menu (2b, #447): the prompt the
+/// engine anchors to the acting investigator's
+/// [`TurnControl`](OptionTarget::TurnControl). Read off the outcome alone — the
+/// menu is the only prompt anchored there (ADR 0011) — so no driver needs to
+/// look at the continuation stack to know where the engine stopped. Drivers
+/// treat it as a rest: it is the *next* action's prompt, not a window to
+/// resolve, so driving past it would silently consume another turn action.
+fn is_turn_menu(request: &InputRequest) -> bool {
+    matches!(request.target, Some(OptionTarget::TurnControl(_)))
 }
 
 /// Start a plain skill test (the [`perform_skill_test`] synthetic entry point)
@@ -381,7 +382,7 @@ pub fn perform_skill_test_no_commits(
 ) -> ApplyResult {
     drain_with_applier(
         perform_skill_test(state, investigator, skill, difficulty),
-        &mut NoCommits,
+        answering(&mut NoCommits),
         engine::apply,
     )
 }
@@ -423,7 +424,7 @@ where
     F: FnMut(GameState, Action) -> ApplyResult,
 {
     let first = applier(state, action);
-    drain_with_applier(first, resolver, applier)
+    drain_with_applier(first, answering(resolver), applier)
 }
 
 /// Start a plain skill test (the [`perform_skill_test`] synthetic entry point)
@@ -440,26 +441,35 @@ pub fn drive_skill_test<R: ChoiceResolver>(
 ) -> ApplyResult {
     drain_with_applier(
         perform_skill_test(state, investigator, skill, difficulty),
-        &mut resolver,
+        answering(&mut resolver),
         engine::apply,
     )
 }
 
+/// A reply policy that answers every prompt through `resolver` — the policy
+/// [`drive`] and its siblings run the drain loop under.
+fn answering<R: ChoiceResolver + ?Sized>(
+    resolver: &mut R,
+) -> impl FnMut(&InputRequest, &GameState) -> Option<InputResponse> + '_ {
+    |request, state| Some(resolver.next(request, state))
+}
+
 /// The harness's one drain loop. Continues from an already-applied
 /// [`ApplyResult`], answering every [`AwaitingInput`](EngineOutcome::AwaitingInput)
-/// through `resolver` (re-applying its `ResolveInput` responses via `applier`)
-/// until the engine returns Done/Rejected or surfaces the open-turn menu.
+/// through `policy` (re-applying its `ResolveInput` responses via `applier`)
+/// until the engine comes to rest: `Done`, `Rejected`, the open-turn menu, or a
+/// prompt the policy declines to answer (`None`).
 ///
 /// Every driver ([`drive`], [`drive_skill_test`], [`apply_no_commits`],
-/// [`perform_skill_test_no_commits`]) is this loop under a different reply
-/// policy; none re-implements it.
-pub(crate) fn drain_with_applier<R, F>(
+/// [`perform_skill_test_no_commits`], and each [`TestSession`] step) is this
+/// loop under a different reply policy; none re-implements it.
+pub(crate) fn drain_with_applier<P, F>(
     first: ApplyResult,
-    resolver: &mut R,
+    mut policy: P,
     mut applier: F,
 ) -> ApplyResult
 where
-    R: ChoiceResolver + ?Sized,
+    P: FnMut(&InputRequest, &GameState) -> Option<InputResponse>,
     F: FnMut(GameState, Action) -> ApplyResult,
 {
     const MAX_ITERATIONS: u32 = 1024;
@@ -472,38 +482,19 @@ where
     let mut iterations = 0u32;
 
     loop {
-        // The open-turn action menu (2b, #447) is terminal for a resolver-driven
-        // drive: it is the next action's prompt, not something the resolver
-        // scripts, so stop and return it (the post-flip equivalent of the old
-        // idle-`Done` open turn).
-        if matches!(outcome, EngineOutcome::AwaitingInput { .. }) && at_open_turn_menu(&state) {
+        let response = match &outcome {
+            EngineOutcome::AwaitingInput { request, .. } if !is_turn_menu(request) => {
+                policy(request, &state)
+            }
+            _ => None,
+        };
+        let Some(response) = response else {
             return ApplyResult {
                 state,
                 events,
                 outcome,
             };
-        }
-        let request = match outcome {
-            EngineOutcome::Done => {
-                return ApplyResult {
-                    state,
-                    events,
-                    outcome: EngineOutcome::Done,
-                };
-            }
-            EngineOutcome::Rejected { reason } => {
-                return ApplyResult {
-                    state,
-                    events,
-                    outcome: EngineOutcome::Rejected { reason },
-                };
-            }
-            EngineOutcome::AwaitingInput {
-                request,
-                resume_token: _,
-            } => request,
         };
-        let response = resolver.next(&request, &state);
         iterations += 1;
         assert!(
             iterations <= MAX_ITERATIONS,
@@ -593,100 +584,345 @@ pub fn perform_skill_test(
     })
 }
 
-/// Fluent test driver: pair a [`GameState`] with an initial action and
-/// a scripted resolver, then [`run`](Self::run) the engine through to a
-/// terminal outcome.
+/// Step-wise test driver: drive the real engine one step at a time, reading the
+/// prompt, state and events between steps.
+///
+/// One model, eager throughout (#938):
+///
+/// - **Construction settles** the built state through the production `apply`
+///   scaffolding, so the session starts where the engine would rest. An open
+///   turn yields the turn menu; an open Fast window re-surfaces its prompt. A
+///   fixture whose top frame cannot re-surface its prompt is a stack the engine
+///   never rests at, and construction panics.
+/// - **Every step applies once, then drains to the next rest.** The steps are
+///   [`take`](Self::take), [`pick`](Self::pick), [`pick_nth`](Self::pick_nth),
+///   [`confirm`](Self::confirm), [`skip`](Self::skip) and the raw
+///   [`apply`](Self::apply). The drain answers prompts through the session's
+///   reply policy and stops at the turn menu, at `Done` (the game is over), at
+///   `Rejected`, or at the first prompt the policy has no answer for — which is
+///   where the next step picks up.
+/// - **The reply policy is a script set before the step it answers**, through
+///   [`resolve_choices`](Self::resolve_choices). Its answers are consumed in
+///   order across steps; once it runs out, the session stops at every prompt.
+/// - **Readers** — [`prompt`](Self::prompt), [`expect_rejected`](Self::expect_rejected),
+///   [`state`](Self::state), [`events`](Self::events) — look at the session
+///   without moving it, and [`finish`](Self::finish) hands back the last step's
+///   [`ApplyResult`].
+///
+/// Where the session stopped is read off the engine's outcome alone, never off
+/// the continuation stack: the turn menu is the prompt anchored to
+/// [`TurnControl`](OptionTarget::TurnControl), any other `AwaitingInput` is a
+/// prompt, and `Done` is game over. No step matches on option labels — an
+/// option is chosen by the board entity it anchors to, or by printed position
+/// for a [`Decision`](PromptNature::Decision) alone (ADR 0011, ADR 0015).
+///
+/// ```
+/// # use game_core::engine::{enumerate::TurnAction, OptionTarget};
+/// # use game_core::state::{GameStateBuilder, InvestigatorId};
+/// # use game_core::test_support;
+/// # test_support::install_test_registry();
+/// let me = InvestigatorId(1);
+/// let session = GameStateBuilder::new()
+///     .with_investigator(test_support::test_investigator(1))
+///     .open_turn(me)
+///     .session()
+///     .take(&TurnAction::Resource { investigator: me });
+/// assert_eq!(session.state().investigators[&me].resources, 6);
+/// assert_eq!(session.prompt().target, Some(OptionTarget::TurnControl(me)));
+/// ```
 ///
 /// Construct via [`GameStateBuilder::session`](crate::state::GameStateBuilder::session) or
 /// [`TestSession::new`].
 #[derive(Debug)]
-#[must_use = "TestSession does nothing until you call .run()"]
+#[must_use = "a TestSession step returns the advanced session"]
 pub struct TestSession {
     state: GameState,
-    action: Option<Action>,
-    resolver: ScriptedResolver,
+    /// Where the session rests: the outcome of the last step the engine
+    /// accepted (or of settling). A rejected step leaves it standing.
+    rest: EngineOutcome,
+    /// The last step's own outcome and events, rejection included.
+    last_outcome: EngineOutcome,
+    last_events: Vec<Event>,
+    /// Every event since construction, settling included.
+    events: Vec<Event>,
+    script: ScriptedResolver,
 }
 
 impl GameStateBuilder {
-    /// Build into a [`TestSession`] for driving the engine with a
-    /// scripted [`ChoiceResolver`].
-    ///
-    /// Equivalent to `TestSession::new(self.build())`; sugar so
-    /// resolver-driven tests can write
-    /// `GameStateBuilder::new()...session().apply(...).resolve_choices(...).run()`.
-    /// Lives here (test-only) rather than on the builder itself so the
-    /// production builder in [`crate::state`] carries no test dependency.
+    /// Build and settle into a [`TestSession`]. Equivalent to
+    /// `TestSession::new(self.build())`. Lives here (test-only) rather than on
+    /// the builder itself so the production builder in [`crate::state`] carries
+    /// no test dependency.
     pub fn session(self) -> TestSession {
         TestSession::new(self.build())
     }
 }
 
 impl TestSession {
-    /// Wrap a built state.
-    pub fn new(state: GameState) -> Self {
-        Self {
-            state,
-            action: None,
-            resolver: ScriptedResolver::new(),
-        }
-    }
-
-    /// Record the initial action to apply. Replaces any previous
-    /// recorded action — `apply` is the single entry point per session,
-    /// not a queue.
-    pub fn apply(mut self, action: Action) -> Self {
-        self.action = Some(action);
-        self
-    }
-
-    /// Fluent open-turn action: see [`take_turn_action`]. Threads the resulting
-    /// state; drains any `AwaitingInput` the action itself opens via the session's
-    /// resolver script, exactly like [`TestSession::apply`].
+    /// Settle `state` to where the engine would rest, through the production
+    /// `apply` scaffolding.
     ///
     /// # Panics
     ///
-    /// Panics if `action` is not currently legal (a test-authoring bug).
-    pub fn take(self, action: &TurnAction) -> Self {
-        let idx = enumerate::legal_actions(&self.state)
-            .iter()
-            .position(|a| a == action)
-            .unwrap_or_else(|| panic!("TestSession::take: {action:?} not legal"));
-        self.apply(Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(
-                u32::try_from(idx).expect("action index fits u32"),
-            )),
-        }))
+    /// Panics if the top frame cannot re-surface its prompt — a stack the
+    /// engine never rests at. Build the state before the prompt and drive into
+    /// it instead.
+    pub fn new(state: GameState) -> Self {
+        let settled = engine::apply_via(state, scenario_registry::current(), |cx| {
+            let outcome = engine::drive(cx, EngineOutcome::Done);
+            if matches!(outcome, EngineOutcome::Done) {
+                if let Some(top) = cx.state.continuations.top() {
+                    panic!(
+                        "TestSession::new: the fixture's top frame cannot re-surface its \
+                         prompt ({top:?}). The engine never rests at this stack; build the \
+                         state before the prompt and drive into it instead",
+                    );
+                }
+            }
+            outcome
+        });
+        if let EngineOutcome::Rejected { reason } = &settled.outcome {
+            panic!("TestSession::new: settling the fixture was rejected: {reason}");
+        }
+        let ApplyResult {
+            state,
+            events,
+            outcome,
+        } = settled;
+        Self {
+            state,
+            rest: outcome.clone(),
+            last_outcome: outcome,
+            last_events: events.clone(),
+            events,
+            script: ScriptedResolver::new(),
+        }
     }
 
-    /// Record the resolver script. The closure receives `&mut
-    /// ScriptedResolver`; chain calls inside to build up the response
-    /// sequence:
+    /// Extend the reply policy: the closure appends answers to the session's
+    /// script, which the drain consumes in order across this and later steps.
+    /// Call it **before** the step whose prompts it answers.
     ///
     /// ```
     /// # use game_core::state::GameStateBuilder;
-    /// # use game_core::action::{Action, PlayerAction};
     /// let _session = GameStateBuilder::new()
     ///     .session()
     ///     .resolve_choices(|c| {
-    ///         c.confirm();
+    ///         c.commit_cards(&[]);
     ///         c.skip();
     ///     });
     /// ```
     pub fn resolve_choices(mut self, f: impl FnOnce(&mut ScriptedResolver)) -> Self {
-        f(&mut self.resolver);
+        f(&mut self.script);
         self
     }
 
-    /// Execute the recorded action through the resolver script.
+    /// Step: apply a raw `action`, then drain. The escape hatch for engine
+    /// records and hand-built responses; prefer the named steps.
+    pub fn apply(self, action: Action) -> Self {
+        let Self {
+            state,
+            rest,
+            last_outcome: _,
+            last_events: _,
+            mut events,
+            mut script,
+        } = self;
+        let result = drain_with_applier(
+            engine::apply(state, action),
+            |request, state| (script.remaining() > 0).then(|| script.next(request, state)),
+            engine::apply,
+        );
+        let ApplyResult {
+            state,
+            events: step_events,
+            outcome,
+        } = result;
+        events.extend(step_events.iter().cloned());
+        Self {
+            state,
+            rest: match outcome {
+                EngineOutcome::Rejected { .. } => rest,
+                _ => outcome.clone(),
+            },
+            last_outcome: outcome,
+            last_events: step_events,
+            events,
+            script,
+        }
+    }
+
+    /// Step: take the open-turn action `action` from the turn menu, then drain.
     ///
     /// # Panics
     ///
-    /// Panics if [`apply`](Self::apply) was not called to record an action first.
-    pub fn run(self) -> ApplyResult {
-        let action = self
-            .action
-            .expect("TestSession::run: call .apply(action) before .run()");
-        drive(self.state, action, self.resolver)
+    /// Panics if the session is not at the turn menu, or `action` is not on it.
+    pub fn take(self, action: &TurnAction) -> Self {
+        assert!(
+            self.at_turn_menu(),
+            "TestSession::take: the session is not at the turn menu; it rests at {:?}",
+            self.rest,
+        );
+        let actions = enumerate::legal_actions(&self.state);
+        let idx = actions.iter().position(|a| a == action).unwrap_or_else(|| {
+            panic!("TestSession::take: {action:?} is not on the turn menu; offered: {actions:?}")
+        });
+        self.respond(InputResponse::PickSingle(OptionId(
+            u32::try_from(idx).expect("action index fits u32"),
+        )))
+    }
+
+    /// Step: choose the option of the current prompt anchored to `target`,
+    /// whatever its position, then drain.
+    ///
+    /// # Panics
+    ///
+    /// Panics at the turn menu (take a turn action with [`take`](Self::take)),
+    /// or unless exactly one option is anchored to `target`.
+    pub fn pick(self, target: OptionTarget) -> Self {
+        assert!(
+            !self.at_turn_menu(),
+            "TestSession::pick: the session is at the turn menu; take a turn action \
+             with `take(&TurnAction)`",
+        );
+        let request = self.prompt();
+        let mut anchored = request
+            .options
+            .iter()
+            .filter(|o| o.target.as_ref() == Some(&target));
+        let Some(option) = anchored.next() else {
+            panic!(
+                "TestSession::pick: no option anchored to {target:?}; prompt {:?} offers {:?}",
+                request.prompt, request.options,
+            );
+        };
+        assert!(
+            anchored.next().is_none(),
+            "TestSession::pick: several options are anchored to {target:?}, so the anchor \
+             does not say which; prompt {:?} offers {:?}",
+            request.prompt,
+            request.options,
+        );
+        let id = option.id;
+        self.respond(InputResponse::PickSingle(id))
+    }
+
+    /// Step: choose the `n`th option (0-based) of the current prompt, then
+    /// drain. Only for a [`Decision`](PromptNature::Decision), whose options are
+    /// alternatives printed on one card, so printed order is the meaning
+    /// (ADR 0015).
+    ///
+    /// # Panics
+    ///
+    /// Panics on a [`Selection`](PromptNature::Selection) — pick by target with
+    /// [`pick`](Self::pick) — or if there is no `n`th option.
+    pub fn pick_nth(self, n: usize) -> Self {
+        let request = self.prompt();
+        assert!(
+            request.nature == PromptNature::Decision,
+            "TestSession::pick_nth: prompt {:?} is a {:?}, not a Decision; pick by target \
+             with `pick(OptionTarget)`",
+            request.prompt,
+            request.nature,
+        );
+        let id = request
+            .options
+            .get(n)
+            .unwrap_or_else(|| {
+                panic!(
+                    "TestSession::pick_nth: no option {n}; prompt {:?} offers {:?}",
+                    request.prompt, request.options,
+                )
+            })
+            .id;
+        self.respond(InputResponse::PickSingle(id))
+    }
+
+    /// Step: answer the current prompt with [`InputResponse::Confirm`], then
+    /// drain.
+    pub fn confirm(self) -> Self {
+        self.respond(InputResponse::Confirm)
+    }
+
+    /// Step: answer the current prompt with [`InputResponse::Skip`], then drain.
+    pub fn skip(self) -> Self {
+        self.respond(InputResponse::Skip)
+    }
+
+    /// The prompt the session rests at.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the session rests at `Done` — the game is over.
+    pub fn prompt(&self) -> &InputRequest {
+        match &self.rest {
+            EngineOutcome::AwaitingInput { request, .. } => request,
+            other => panic!(
+                "TestSession::prompt: no prompt is outstanding; the session rests at {other:?}"
+            ),
+        }
+    }
+
+    /// The reason the last step was rejected. A rejected step leaves the state
+    /// and the prompt as they were.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the last step was not rejected.
+    pub fn expect_rejected(&self) -> &str {
+        match &self.last_outcome {
+            EngineOutcome::Rejected { reason } => reason,
+            other => panic!(
+                "TestSession::expect_rejected: the last step was not rejected; it returned \
+                 {other:?}"
+            ),
+        }
+    }
+
+    /// The current state.
+    pub fn state(&self) -> &GameState {
+        &self.state
+    }
+
+    /// Every event since construction, in order, across all steps (settling
+    /// included).
+    pub fn events(&self) -> &[Event] {
+        &self.events
+    }
+
+    /// End the session, returning the last step's [`ApplyResult`]: the current
+    /// state, the events of that step and its drain, and its outcome — the shape
+    /// a one-shot test asserts on.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the last step stopped at a prompt other than the turn menu: the
+    /// script ran short of the prompts the step opened. Script the answers with
+    /// [`resolve_choices`](Self::resolve_choices) before the step, or read the
+    /// session with [`prompt`](Self::prompt) and [`state`](Self::state) instead.
+    pub fn finish(self) -> ApplyResult {
+        if let EngineOutcome::AwaitingInput { request, .. } = &self.last_outcome {
+            assert!(
+                is_turn_menu(request),
+                "TestSession::finish: the last step stopped at an unanswered prompt {:?} \
+                 (options {:?}); script its answer with `resolve_choices` before the step",
+                request.prompt,
+                request.options,
+            );
+        }
+        ApplyResult {
+            state: self.state,
+            events: self.last_events,
+            outcome: self.last_outcome,
+        }
+    }
+
+    fn at_turn_menu(&self) -> bool {
+        matches!(&self.rest, EngineOutcome::AwaitingInput { request, .. } if is_turn_menu(request))
+    }
+
+    fn respond(self, response: InputResponse) -> Self {
+        self.apply(Action::Player(PlayerAction::ResolveInput { response }))
     }
 }
 
@@ -1047,33 +1283,22 @@ mod tests {
     fn test_session_fluent_round_trip() {
         let id = InvestigatorId(1);
         // Two investigators so the first EndTurn is a mid-round rotation
-        // (reaches Done immediately) rather than a round-ending cascade — the
-        // latter would now pause at the Mythos encounter-draw prompt (#348).
+        // (back to the next investigator's turn menu) rather than a
+        // round-ending cascade.
         let result = GameStateBuilder::new()
-            .with_phase(Phase::Investigation)
             .with_investigator(test_support::test_investigator(1))
             .with_investigator(test_support::test_investigator(2))
             .with_location(test_support::test_location(10, "Study"))
-            .with_active_investigator(id)
             .with_turn_order([id, InvestigatorId(2)])
-            .with_phase_anchor(InvestigationPhaseFrame {
-                resume: InvestigationResume::TurnBegins,
-            })
-            .with_investigator_turn(id)
+            .open_turn(id)
             .session()
-            .take(&TurnAction::EndTurn)
             .resolve_choices(|c| {
-                // Stale script: engine reaches Done without prompting.
+                // Stale script: the engine reaches the next menu without prompting.
                 c.confirm();
             })
-            .run();
+            .take(&TurnAction::EndTurn)
+            .finish();
         assert!(!matches!(result.outcome, EngineOutcome::Rejected { .. }));
-    }
-
-    #[test]
-    #[should_panic(expected = "call .apply(action) before .run()")]
-    fn test_session_run_without_apply_panics() {
-        let _ = GameStateBuilder::new().session().run();
     }
 
     /// Flag on: a no-commits drive auto-answers the acknowledge `Confirm` and

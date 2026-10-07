@@ -74,11 +74,11 @@ fn investigate_succeeds_at_shroud_4_after_playing_magnifying_glass() {
     );
 
     let result = TestSession::new(after_play.state)
-        .take(&TurnAction::Investigate { investigator: id })
         .resolve_choices(|c| {
             c.commit_cards(&[]);
         })
-        .run();
+        .take(&TurnAction::Investigate { investigator: id })
+        .finish();
     assert!(matches!(
         result.outcome,
         EngineOutcome::AwaitingInput { .. }

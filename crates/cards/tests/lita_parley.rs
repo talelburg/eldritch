@@ -136,11 +136,12 @@ fn board(token: ChaosToken) -> GameState {
 /// Drive the Parley to resolution: the activation opens a commit window
 /// (nothing to commit), then the test resolves.
 fn drive_parley(state: GameState) -> ApplyResult {
-    let mut session = TestSession::new(state).take(&parley());
-    session = session.resolve_choices(|c: &mut ScriptedResolver| {
-        c.commit_cards(&[]);
-    });
-    session.run()
+    TestSession::new(state)
+        .resolve_choices(|c: &mut ScriptedResolver| {
+            c.commit_cards(&[]);
+        })
+        .take(&parley())
+        .finish()
 }
 
 // ---- the offer -------------------------------------------------------

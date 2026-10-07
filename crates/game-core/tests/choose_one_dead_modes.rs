@@ -91,15 +91,15 @@ fn board(damage: u8, horror: u8) -> GameState {
 
 fn activate(state: GameState) -> ApplyResult {
     TestSession::new(state)
+        .resolve_choices(|r| {
+            r.commit_cards(&[]);
+        })
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(INST),
             address: AbilityAddress::Printed(0),
         })
-        .resolve_choices(|r| {
-            r.commit_cards(&[]);
-        })
-        .run()
+        .finish()
 }
 
 /// The control: with damage to heal the modal `on_success` has a live mode, so

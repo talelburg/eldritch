@@ -202,11 +202,11 @@ fn picking_evidence_plays_it_and_discovers_a_clue() {
     // Commit nothing, then pick the single offered option (OptionId(0) = the
     // hand Evidence! play; there is no in-play trigger).
     let result = TestSession::new(state)
-        .take(&fight_action(inv_id, enemy_id))
         .resolve_choices(|c| {
             c.commit_cards(&[]).pick_single(OptionId(0));
         })
-        .run();
+        .take(&fight_action(inv_id, enemy_id))
+        .finish();
 
     assert!(matches!(
         result.outcome,
@@ -242,11 +242,11 @@ fn evidence_fast_event_discards_exactly_once() {
     let (inv_id, enemy_id, _loc_id, state) = investigator_with_evidence_and_enemy(2);
 
     let result = TestSession::new(state)
-        .take(&fight_action(inv_id, enemy_id))
         .resolve_choices(|c| {
             c.commit_cards(&[]).pick_single(OptionId(0));
         })
-        .run();
+        .take(&fight_action(inv_id, enemy_id))
+        .finish();
 
     assert_eq!(
         result
@@ -279,11 +279,11 @@ fn playing_evidence_from_hand_pays_its_resource_cost() {
     );
 
     let result = TestSession::new(state)
-        .take(&fight_action(inv_id, enemy_id))
         .resolve_choices(|c| {
             c.commit_cards(&[]).pick_single(OptionId(0));
         })
-        .run();
+        .take(&fight_action(inv_id, enemy_id))
+        .finish();
 
     assert_event!(
         result.events,
@@ -368,11 +368,11 @@ fn window_offers_both_in_play_reaction_and_hand_evidence() {
     // Two options: OptionId(0) = Roland's in-play reaction, OptionId(1) = hand
     // Evidence!. Pick the hand play, then skip the remaining reaction.
     let result = TestSession::new(state)
-        .take(&fight_action(inv_id, enemy_id))
         .resolve_choices(|c| {
             c.commit_cards(&[]).pick_single(OptionId(1)).skip();
         })
-        .run();
+        .take(&fight_action(inv_id, enemy_id))
+        .finish();
 
     assert!(matches!(
         result.outcome,

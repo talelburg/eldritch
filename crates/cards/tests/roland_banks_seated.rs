@@ -72,14 +72,14 @@ fn seated_roland_reaction_fires_with_no_in_play_injection() {
     let (inv_id, enemy_id, loc_id, state) = seated_roland_with_enemy(0);
 
     let result = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]).pick_single(OptionId(0));
+        })
         .take(&TurnAction::Fight {
             investigator: inv_id,
             enemy: enemy_id,
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]).pick_single(OptionId(0));
-        })
-        .run();
+        .finish();
 
     assert!(matches!(
         result.outcome,
@@ -120,14 +120,14 @@ fn seated_roland_reaction_capped_once_per_round() {
         .bump_ability_usage(0, 0);
 
     let result = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
         .take(&TurnAction::Fight {
             investigator: inv_id,
             enemy: enemy_id,
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .run();
+        .finish();
 
     assert!(matches!(
         result.outcome,

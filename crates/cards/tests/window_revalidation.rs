@@ -128,13 +128,13 @@ fn a_second_evidence_is_withdrawn_once_the_first_empties_the_wallet() {
     // withdrawn, and what makes this test fail on the *defect* (a second play, a
     // second `ResourcesPaid`) rather than on a missing scripted response.
     let result = TestSession::new(state)
-        .take(&fight_action(inv_id, enemy_id))
         .resolve_choices(|c| {
             c.commit_cards(&[])
                 .pick_single(OptionId(0))
                 .pick_single(OptionId(0));
         })
-        .run();
+        .take(&fight_action(inv_id, enemy_id))
+        .finish();
 
     // Exactly one play, one payment, one clue — not two of anything.
     assert_eq!(
@@ -215,13 +215,13 @@ fn evidence_is_withdrawn_when_rolands_reaction_takes_the_last_clue() {
     // what makes this test fail on the *defect* (a resource and a card spent for
     // a no-op discovery) rather than on a missing scripted response.
     let result = TestSession::new(state)
-        .take(&fight_action(inv_id, enemy_id))
         .resolve_choices(|c| {
             c.commit_cards(&[])
                 .pick_single(OptionId(0))
                 .pick_single(OptionId(0));
         })
-        .run();
+        .take(&fight_action(inv_id, enemy_id))
+        .finish();
 
     assert_event!(
         result.events,
@@ -265,13 +265,13 @@ fn a_still_payable_second_evidence_is_not_withdrawn() {
     });
 
     let result = TestSession::new(state)
-        .take(&fight_action(inv_id, enemy_id))
         .resolve_choices(|c| {
             c.commit_cards(&[])
                 .pick_single(OptionId(0))
                 .pick_single(OptionId(0));
         })
-        .run();
+        .take(&fight_action(inv_id, enemy_id))
+        .finish();
 
     assert_eq!(lapse_count(&result.events, EVIDENCE), 0);
     assert_eq!(

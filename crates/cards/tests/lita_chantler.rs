@@ -276,9 +276,9 @@ fn drive(
     script: impl FnOnce(&mut ScriptedResolver),
 ) -> ApplyResult {
     TestSession::new(state)
-        .take(action)
         .resolve_choices(script)
-        .run()
+        .take(action)
+        .finish()
 }
 
 /// The script for a Fight that **does** open Lita's reaction window: commit

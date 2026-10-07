@@ -53,13 +53,13 @@ fn state_with_deduction(initial_clues: u8, shroud: u8) -> (GameState, Investigat
 
 fn drive_committing_deduction(state: GameState) -> ApplyResult {
     TestSession::new(state)
-        .take(&TurnAction::Investigate {
-            investigator: InvestigatorId(1),
-        })
         .resolve_choices(|c| {
             c.commit_cards(&[CardCode::new(DEDUCTION)]);
         })
-        .run()
+        .take(&TurnAction::Investigate {
+            investigator: InvestigatorId(1),
+        })
+        .finish()
 }
 
 #[test]
@@ -187,11 +187,11 @@ fn uncommitted_deduction_does_not_fire_its_bonus() {
     // bonus. 3 + 0 < 4 → fail by 1, hand unchanged.
     let (state, id, loc) = state_with_deduction(1, 4);
     let result = TestSession::new(state)
-        .take(&TurnAction::Investigate { investigator: id })
         .resolve_choices(|c| {
             c.commit_cards(&[]);
         })
-        .run();
+        .take(&TurnAction::Investigate { investigator: id })
+        .finish();
 
     assert!(matches!(
         result.outcome,

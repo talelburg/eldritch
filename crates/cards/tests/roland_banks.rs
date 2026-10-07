@@ -88,14 +88,14 @@ fn reaction_fires_after_roland_defeats_enemy_and_discovers_clue() {
 
     // Empty commit, then PickSingle(OptionId(0)) for the reaction window.
     let result = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]).pick_single(OptionId(0));
+        })
         .take(&TurnAction::Fight {
             investigator: inv_id,
             enemy: enemy_id,
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]).pick_single(OptionId(0));
-        })
-        .run();
+        .finish();
 
     assert!(matches!(
         result.outcome,
@@ -147,14 +147,14 @@ fn once_per_round_limit_blocks_second_reaction_in_same_round() {
     }
 
     let result = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
         .take(&TurnAction::Fight {
             investigator: inv_id,
             enemy: enemy_id,
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .run();
+        .finish();
 
     assert!(matches!(
         result.outcome,
@@ -195,14 +195,14 @@ fn lazy_round_reset_re_enables_reaction_in_a_later_round() {
     }
 
     let result = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]).pick_single(OptionId(0));
+        })
         .take(&TurnAction::Fight {
             investigator: inv_id,
             enemy: enemy_id,
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]).pick_single(OptionId(0));
-        })
-        .run();
+        .finish();
 
     assert!(matches!(
         result.outcome,
@@ -236,14 +236,14 @@ fn skipping_the_reaction_window_does_not_bump_the_counter() {
     let (inv_id, enemy_id, loc_id, state) = roland_at_location_with_enemy(2, 0);
 
     let result = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]).skip();
+        })
         .take(&TurnAction::Fight {
             investigator: inv_id,
             enemy: enemy_id,
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]).skip();
-        })
-        .run();
+        .finish();
 
     assert!(matches!(
         result.outcome,
@@ -279,14 +279,14 @@ fn reaction_not_offered_when_location_has_no_clues() {
     let (inv_id, enemy_id, loc_id, state) = roland_at_location_with_enemy(0, 0);
 
     let result = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
         .take(&TurnAction::Fight {
             investigator: inv_id,
             enemy: enemy_id,
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .run();
+        .finish();
 
     // The defeat still happened.
     assert_event!(

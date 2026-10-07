@@ -183,12 +183,12 @@ fn investigate_state_with_deduction(location_clues: u8, held_clues: u8) -> GameS
 /// before-discover window it should open.
 fn investigate_with_deduction_and_play_cover_up(state: GameState) -> ApplyResult {
     TestSession::new(state)
-        .take(&TurnAction::Investigate { investigator: INV })
         .resolve_choices(|c| {
             c.commit_cards(&[CardCode::new(DEDUCTION)]);
             c.pick_single(OptionId(0));
         })
-        .run()
+        .take(&TurnAction::Investigate { investigator: INV })
+        .finish()
 }
 
 /// The #471 bug, end-to-end through both real cards: Deduction used to spawn a

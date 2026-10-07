@@ -84,15 +84,15 @@ fn board_with(engaged: u32, unengaged: u32) -> GameState {
 
 fn activate_machete(state: GameState) -> ApplyResult {
     TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(MACHETE_INST),
             address: AbilityAddress::Printed(0),
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .run()
+        .finish()
 }
 
 /// With exactly one enemy engaged, a successful Machete Fight deals

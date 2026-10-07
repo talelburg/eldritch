@@ -65,15 +65,15 @@ fn supplies(state: &GameState) -> Option<u8> {
 
 fn activate(state: GameState) -> ApplyResult {
     TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(TORCH_INST),
             address: AbilityAddress::Printed(0),
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .run()
+        .finish()
 }
 
 #[test]

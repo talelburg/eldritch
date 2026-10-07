@@ -67,15 +67,15 @@ fn ammo(state: &GameState) -> u8 {
 
 fn fire(state: GameState) -> ApplyResult {
     TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(WEAPON_INST),
             address: AbilityAddress::Printed(0),
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .run()
+        .finish()
 }
 
 #[test]

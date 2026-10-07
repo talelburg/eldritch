@@ -445,14 +445,14 @@ fn a_modifier_on_an_enemys_fight_raises_a_fight_actions_difficulty() {
             state.agenda_index = 0;
         }
         TestSession::new(state)
+            .resolve_choices(|c| {
+                c.commit_cards(&[]);
+            })
             .take(&TurnAction::Fight {
                 investigator: ME,
                 enemy: EnemyId(7),
             })
-            .resolve_choices(|c| {
-                c.commit_cards(&[]);
-            })
-            .run()
+            .finish()
     };
 
     let plain = attack(false);
@@ -486,14 +486,14 @@ fn a_modifier_on_an_enemys_evade_raises_an_evade_actions_difficulty() {
             state.agenda_index = 0;
         }
         TestSession::new(state)
+            .resolve_choices(|c| {
+                c.commit_cards(&[]);
+            })
             .take(&TurnAction::Evade {
                 investigator: ME,
                 enemy: EnemyId(7),
             })
-            .resolve_choices(|c| {
-                c.commit_cards(&[]);
-            })
-            .run()
+            .finish()
     };
 
     let plain = dodge(false);

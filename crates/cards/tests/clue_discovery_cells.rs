@@ -107,14 +107,14 @@ fn board_with(codes: &[&str], location_clues: u8) -> GameState {
 /// were populated (`ScriptedResolver` panics on an unscripted prompt).
 fn investigate_firing(state: GameState, windows: usize) -> ApplyResult {
     TestSession::new(state)
-        .take(&TurnAction::Investigate { investigator: INV })
         .resolve_choices(|c| {
             c.commit_cards(&[]);
             for _ in 0..windows {
                 c.pick_single(OptionId(0));
             }
         })
-        .run()
+        .take(&TurnAction::Investigate { investigator: INV })
+        .finish()
 }
 
 /// Every `ResourcesGained` amount and every `CluePlaced`, in emission order —

@@ -62,11 +62,11 @@ fn fight_action() -> TurnAction {
 #[test]
 fn committing_vicious_blow_adds_one_attack_damage() {
     let r = TestSession::new(board())
-        .take(&fight_action())
         .resolve_choices(|c| {
             c.commit_cards(&[CardCode::new(VICIOUS_BLOW)]);
         })
-        .run();
+        .take(&fight_action())
+        .finish();
 
     assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::EnemyDamaged { amount: 2, .. });
@@ -78,11 +78,11 @@ fn committing_vicious_blow_adds_one_attack_damage() {
 #[test]
 fn fight_without_vicious_blow_deals_base_damage() {
     let r = TestSession::new(board())
-        .take(&fight_action())
         .resolve_choices(|c| {
             c.commit_cards(&[]);
         })
-        .run();
+        .take(&fight_action())
+        .finish();
 
     assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert_event!(r.events, Event::EnemyDamaged { amount: 1, .. });

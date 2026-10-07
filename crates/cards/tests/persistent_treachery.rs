@@ -102,13 +102,13 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
         .build();
 
     let result = TestSession::new(state)
-        .take(&TurnAction::Investigate {
-            investigator: InvestigatorId(1),
-        })
         .resolve_choices(|c| {
             c.commit_cards(&[]);
         })
-        .run();
+        .take(&TurnAction::Investigate {
+            investigator: InvestigatorId(1),
+        })
+        .finish();
     assert!(matches!(
         result.outcome,
         EngineOutcome::AwaitingInput { .. }
@@ -341,11 +341,11 @@ fn frozen_in_fear_board(token: ChaosToken) -> GameState {
 
 fn end_turn_committing_nothing(state: GameState) -> ApplyResult {
     TestSession::new(state)
-        .take(&TurnAction::EndTurn)
         .resolve_choices(|c| {
             c.commit_cards(&[]);
         })
-        .run()
+        .take(&TurnAction::EndTurn)
+        .finish()
 }
 
 #[test]
@@ -425,14 +425,14 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
     // Order the first forced, commit nothing to its test; order the second,
     // commit nothing to its test.
     let r = TestSession::new(state)
-        .take(&TurnAction::EndTurn)
         .resolve_choices(|c| {
             c.pick_single(OptionId(0))
                 .commit_cards(&[])
                 .pick_single(OptionId(0))
                 .commit_cards(&[]);
         })
-        .run();
+        .take(&TurnAction::EndTurn)
+        .finish();
 
     assert!(matches!(r.outcome, EngineOutcome::AwaitingInput { .. }));
     assert!(
@@ -529,15 +529,15 @@ fn frozen_in_fear_with_weapon_board() -> GameState {
 /// Fire the .45 Automatic, committing nothing to the attack's skill test.
 fn fire_weapon(state: GameState) -> ApplyResult {
     TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
         .take(&TurnAction::ActivateAbility {
             investigator: InvestigatorId(1),
             source: AbilitySource::InPlay(CardInstanceId(1)),
             address: AbilityAddress::Printed(0),
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .run()
+        .finish()
 }
 
 /// Official FAQ, `Frequently_Asked_Questions.md`:
@@ -584,14 +584,14 @@ fn a_designated_fight_consumes_the_once_each_round_surcharge() {
 
     // The follow-up basic Fight pays the plain 1: 1 → 0.
     let r = TestSession::new(r.state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
         .take(&TurnAction::Fight {
             investigator: InvestigatorId(1),
             enemy: EnemyId(100),
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .run();
+        .finish();
     assert_eq!(
         r.state.investigators[&InvestigatorId(1)].actions_remaining,
         0,

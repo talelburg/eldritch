@@ -59,15 +59,15 @@ fn board(intellect: i8, damage: u8) -> GameState {
 
 fn activate(state: GameState) -> ApplyResult {
     TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+        })
         .take(&TurnAction::ActivateAbility {
             investigator: INV,
             source: AbilitySource::InPlay(BOOK_INST),
             address: AbilityAddress::Printed(0),
         })
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .run()
+        .finish()
 }
 
 #[test]
