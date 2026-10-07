@@ -301,7 +301,7 @@ fn every_frame_has_the_profile_its_role_requires() {
         (
             Continuation::Effect(EffectFrame::Leaf {
                 effect: Box::new(Effect::Seq(vec![])),
-                ctx: ctx.clone(),
+                ctx,
             }),
             profile(PROMPT, COMPLETE),
         ),

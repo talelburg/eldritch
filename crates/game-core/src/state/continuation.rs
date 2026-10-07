@@ -926,10 +926,6 @@ impl Continuation {
                     TimingMode::Forced => Complete,
                 },
             ),
-            // A framework Fast window is a prompt with or without candidates:
-            // `ResolveInput::Skip` closes it (#476), and the loop surfaces its
-            // eligible plays as a skippable choice. An opportunity, so cancelled.
-            Continuation::FastWindow { .. } => (Prompt, Cancel),
             // Mandatory resolution that surfaces its own prompt (the `drive`
             // loop steps it until it does): the advance's flip acknowledge, the
             // forced acknowledge, the skill test's commit window and result
@@ -939,10 +935,10 @@ impl Continuation {
             | Continuation::AcknowledgeForced { .. }
             | Continuation::SkillTest(_)
             | Continuation::SubstitutionPrompt { .. }
-            | Continuation::Effect(_) => (Prompt, Complete),
+            | Continuation::Effect(_)
             // Holds the asset mid-entry, in no zone (ADR 0002): discarding the
             // frame would leak the card out of every zone.
-            Continuation::SlotDiscard { .. } => (Prompt, Complete),
+            | Continuation::SlotDiscard { .. } => (Prompt, Complete),
             // A deal of damage is the per-point prompt while distributing a
             // contested point (#44/K5b); its other steps are sequencing the loop
             // dispatches on sight. Under way either way: half of it is the
@@ -962,7 +958,12 @@ impl Continuation {
             // the game is over, and whose outcome no longer reaches state anyone
             // reads; the rest are the framework sequence, in which nothing
             // further in the round happens.
-            Continuation::HunterMove(_)
+            //
+            // A framework Fast window is a prompt with or without candidates:
+            // `ResolveInput::Skip` closes it (#476), and the loop surfaces its
+            // eligible plays as a skippable choice. An opportunity, so cancelled.
+            Continuation::FastWindow { .. }
+            | Continuation::HunterMove(_)
             | Continuation::SpawnEngage(_)
             | Continuation::HandSizeDiscard(_)
             | Continuation::Mulligan { .. }
@@ -996,13 +997,13 @@ impl Continuation {
             | Continuation::EncounterCard { .. }
             | Continuation::PlayFromHand { .. }
             | Continuation::MoveEnter { .. }
-            | Continuation::ActionResolution { .. } => (Driven, Complete),
+            | Continuation::ActionResolution { .. }
             // An elimination under way: the acknowledge its step-0 emit queues
             // is the prompt, and steps 1–6 ask nothing. Rules Reference p.10 runs
             // its steps "any time a player is eliminated", and the weaknesses
             // whose game-end abilities drain above it are still in play until it
             // resumes (#638).
-            Continuation::Elimination { .. } => (Driven, Complete),
+            | Continuation::Elimination { .. } => (Driven, Complete),
             // The ending emits `GameEnd` when driven, then rests at `Finalize`
             // for the apply boundary — the only place holding the scenario
             // registry — to pop (#566). It is the ending itself, so it completes.
