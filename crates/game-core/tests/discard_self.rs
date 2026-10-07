@@ -132,9 +132,7 @@ fn discard_self_removes_source_from_play_and_runs_the_effect() {
     inv.cards_in_play
         .push(CardInPlay::enter_play(CardCode::new(TRINKET), inst));
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(id)
-        .with_investigator_turn(id)
+        .open_turn(id)
         .with_investigator(inv)
         .build();
 
@@ -180,9 +178,7 @@ fn board_with_cop(enemy_at_loc: bool) -> (GameState, InvestigatorId, CardInstanc
     inv.cards_in_play
         .push(CardInPlay::enter_play(CardCode::new(COP), inst));
     let mut builder = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(id)
-        .with_investigator_turn(id)
+        .open_turn(id)
         .with_location(test_support::test_location(1, "A"));
     if enemy_at_loc {
         let mut e = test_support::test_enemy(100, "Ghoul");
@@ -281,9 +277,7 @@ fn board_with_kit(code: &str) -> (GameState, InvestigatorId, CardInstanceId) {
     kit.uses.insert(UseKind::Supplies, 1);
     inv.cards_in_play.push(kit);
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(id)
-        .with_investigator_turn(id)
+        .open_turn(id)
         .with_investigator(inv)
         .build();
     (state, id, inst)

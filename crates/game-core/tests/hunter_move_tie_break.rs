@@ -16,10 +16,7 @@
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, OptionId};
-use game_core::state::{
-    EnemyId, GameState, GameStateBuilder, InvestigationPhaseFrame, InvestigationResume,
-    InvestigatorId, LocationId, Phase,
-};
+use game_core::state::{EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId};
 use game_core::test_support::{self, MockRegistry};
 
 #[ctor::ctor(unsafe)]
@@ -46,23 +43,13 @@ fn hunter_move_tie_break_replays_identically() {
         hunter.hunter = true;
         hunter.current_location = Some(LocationId(1));
         GameStateBuilder::new()
-            .with_phase(Phase::Investigation)
             .with_location(loc_a)
             .with_location(loc_b)
             .with_location(loc_c)
             .with_location(loc_d)
             .with_investigator(inv)
-            .with_active_investigator(InvestigatorId(1))
-            .with_turn_order([InvestigatorId(1)])
             .with_enemy(hunter)
-            // Mid-Investigation invariant (slice 1a): the end_turn cascade pops
-            // the InvestigationPhase anchor at investigation_phase_end.
-            .with_phase_anchor(InvestigationPhaseFrame {
-                resume: InvestigationResume::TurnBegins,
-            })
-            // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame
-            // the end_turn cascade pops before advancing into the Enemy phase.
-            .with_investigator_turn(InvestigatorId(1))
+            .open_turn(InvestigatorId(1))
             .build()
     }
 

@@ -22,7 +22,7 @@ use game_core::engine::modified_value::{
 use game_core::event::Event;
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 use game_core::{assert_event, card_registry};
@@ -131,10 +131,8 @@ fn board(teammate_at: LocationId) -> GameStateBuilder {
     let mut teammate = test_support::test_investigator(2);
     teammate.current_location = Some(teammate_at);
     GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(ME)
         .with_turn_order([ME, TEAMMATE])
-        .with_investigator_turn(ME)
+        .open_turn(ME)
         .with_investigator(me)
         .with_investigator(teammate)
         .with_location(test_support::test_location(10, "Study"))

@@ -53,7 +53,7 @@ use game_core::scenario::{
 };
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
     TokenResolution, Zone,
 };
 use game_core::test_support::{self, ChoiceResolver, MockRegistry, TakeOneFastPlay};
@@ -238,10 +238,8 @@ fn board_with(in_play: &[&str], hand: &[&str], bag: ChaosBag) -> (GameState, Inv
     }
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
-        .with_active_investigator(id)
-        .with_investigator_turn(id)
+        .open_turn(id)
         .with_chaos_bag(bag)
         .with_token_modifiers(TokenModifiers::default())
         // Named so the mock module's symbol hook is reachable; only a
@@ -264,11 +262,8 @@ fn investigate_board(hand: &[&str], shroud: u8) -> (GameState, InvestigatorId, L
     location.clues = 1;
     location.shroud = shroud;
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
-        .with_active_investigator(id)
-        .with_turn_order([id])
-        .with_investigator_turn(id)
+        .open_turn(id)
         .with_location(location)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())

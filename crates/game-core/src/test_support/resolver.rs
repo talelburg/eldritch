@@ -751,10 +751,7 @@ mod tests {
     use super::*;
     use crate::engine::ResumeToken;
     use crate::event::Event;
-    use crate::state::{
-        ChaosBag, ChaosToken, Continuation, InvestigationPhaseFrame, InvestigationResume, Phase,
-        SkillTestId,
-    };
+    use crate::state::{ChaosBag, ChaosToken, Continuation, SkillTestId};
     use crate::test_support;
 
     #[test]
@@ -763,14 +760,8 @@ mod tests {
         test_support::install_test_registry();
         let state = GameStateBuilder::default()
             .with_investigator(test_support::test_investigator(1))
-            .with_phase(Phase::Investigation)
-            .with_active_investigator(InvestigatorId(1))
-            .with_turn_order([InvestigatorId(1)])
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-            .with_phase_anchor(InvestigationPhaseFrame {
-                resume: InvestigationResume::TurnBegins,
-            })
-            .with_investigator_turn(InvestigatorId(1))
+            .open_turn(InvestigatorId(1))
             .build();
         let result = take_turn_action(state, &TurnAction::EndTurn);
         assert!(
@@ -1104,16 +1095,11 @@ mod tests {
         // (reaches Done immediately) rather than a round-ending cascade — the
         // latter would now pause at the Mythos encounter-draw prompt (#348).
         let result = GameStateBuilder::new()
-            .with_phase(Phase::Investigation)
             .with_investigator(test_support::test_investigator(1))
             .with_investigator(test_support::test_investigator(2))
             .with_location(test_support::test_location(10, "Study"))
-            .with_active_investigator(id)
             .with_turn_order([id, InvestigatorId(2)])
-            .with_phase_anchor(InvestigationPhaseFrame {
-                resume: InvestigationResume::TurnBegins,
-            })
-            .with_investigator_turn(id)
+            .open_turn(id)
             .session()
             .take(&TurnAction::EndTurn)
             .resolve_choices(|c| {

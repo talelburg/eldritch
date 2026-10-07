@@ -10,7 +10,10 @@ fn engaged_enemy(id: u32, loc: LocationId) -> Enemy {
 
 #[test]
 fn fight_and_evade_offered_for_each_engaged_enemy() {
-    let mut state = open_turn_state();
+    let mut state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     let loc = test_support::test_location(10, "Study");
     let loc_id = loc.id;
     state.locations.insert(loc_id, loc);
@@ -43,7 +46,10 @@ fn fight_but_not_evade_for_an_unengaged_co_located_enemy() {
     // #401: Fight targets any co-located enemy (RR p.12); Evade is
     // engagement-only (RR p.11). An unengaged enemy at the investigator's
     // location is a Fight target but not an Evade target.
-    let mut state = open_turn_state();
+    let mut state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     let loc = test_support::test_location(10, "Study");
     let loc_id = loc.id;
     state.locations.insert(loc_id, loc);
@@ -76,7 +82,10 @@ fn fight_but_not_evade_for_an_unengaged_co_located_enemy() {
 fn no_combat_for_an_enemy_at_a_different_location() {
     // An enemy elsewhere (and unengaged) is neither a Fight nor an Evade
     // target (#401: Fight needs co-location).
-    let mut state = open_turn_state();
+    let mut state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     let here = test_support::test_location(10, "Study");
     let there = test_support::test_location(11, "Attic");
     let (here_id, there_id) = (here.id, there.id);
@@ -102,7 +111,10 @@ fn no_combat_for_an_enemy_at_a_different_location() {
 
 #[test]
 fn negative_fight_value_offers_evade_only() {
-    let mut state = open_turn_state();
+    let mut state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     let loc = test_support::test_location(10, "Study");
     let loc_id = loc.id;
     state.locations.insert(loc_id, loc);
@@ -133,7 +145,10 @@ fn negative_fight_value_offers_evade_only() {
 
 #[test]
 fn engage_offered_for_co_located_enemy_engaged_with_another() {
-    let mut state = open_turn_state();
+    let mut state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     // Two investigators so an enemy can be engaged with the *other* one.
     state
         .investigators
@@ -165,7 +180,10 @@ fn engage_offered_for_co_located_enemy_engaged_with_another() {
 
 #[test]
 fn no_engage_for_an_enemy_already_engaged_with_me_or_elsewhere() {
-    let mut state = open_turn_state();
+    let mut state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     let loc = test_support::test_location(10, "Study");
     let other = test_support::test_location(11, "Hall");
     let (loc_id, other_id) = (loc.id, other.id);

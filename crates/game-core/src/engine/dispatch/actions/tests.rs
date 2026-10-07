@@ -4,8 +4,7 @@ use crate::engine::outcome::{EngineOutcome, OptionId};
 use crate::engine::{enumerate, ApplyResult};
 use crate::event::Event;
 use crate::state::{
-    ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigationPhaseFrame,
-    InvestigationResume, InvestigatorId, LocationId, Phase, Status,
+    ChaosBag, ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
 };
 use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
@@ -65,12 +64,7 @@ fn move_scenario_with_enemy(
         .with_location(loc1)
         .with_location(loc2)
         .with_enemy(enemy)
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(inv_id)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
 
     (inv_id, l1, l2, enemy_id, state)
@@ -202,12 +196,7 @@ fn move_into_enemy_scenario() -> (InvestigatorId, LocationId, EnemyId, GameState
         .with_location(loc1)
         .with_location(loc2)
         .with_enemy(enemy)
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(inv_id)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
 
     (inv_id, l2, enemy_id, state)
@@ -348,12 +337,7 @@ fn investigate_scenario_with_enemy(
         .with_location(loc)
         .with_enemy(enemy)
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(inv_id)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
 
     (inv_id, loc_id, enemy_id, state)
@@ -471,12 +455,7 @@ fn resource_scenario_with_enemy(
         .with_investigator(inv)
         .with_location(loc)
         .with_enemy(enemy)
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(inv_id)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
 
     (inv_id, enemy_id, state)
@@ -587,12 +566,7 @@ fn resource_with_no_engaged_enemy_gains_normally() {
     let state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_location(loc)
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(inv_id)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
 
     let result = test_support::take_turn_action(
@@ -670,12 +644,7 @@ fn engage_scenario_with_aoo_enemy(
         .with_location(loc)
         .with_enemy(target)
         .with_enemy(aoo_enemy)
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(inv_id)
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(inv_id)
+        .open_turn(inv_id)
         .build();
 
     (inv_id, target_id, aoo_enemy_id, state)

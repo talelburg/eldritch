@@ -4,7 +4,10 @@ use super::*;
 fn target_maps_each_variant() {
     // A state where investigator 1 stands on a location, so Investigate's
     // implicit anchor resolves to that location.
-    let mut state = open_turn_state();
+    let mut state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     let loc = test_support::test_location(10, "Study");
     let loc_id = loc.id;
     state.locations.insert(loc_id, loc);
@@ -95,14 +98,20 @@ fn target_maps_each_variant() {
 fn end_turn_target_is_none_without_an_open_turn() {
     // `EndTurn` carries no investigator field, so its anchor comes from the
     // turn frame; off-turn there is nothing to anchor to.
-    let mut state = open_turn_state();
+    let mut state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     state.continuations = crate::state::ContinuationStack::new();
     assert_eq!(TurnAction::EndTurn.target(&state), None);
 }
 
 #[test]
 fn investigate_target_is_none_without_a_location() {
-    let mut state = open_turn_state();
+    let mut state = GameStateBuilder::default()
+        .with_investigator(test_support::test_investigator(1))
+        .open_turn(InvestigatorId(1))
+        .build();
     state
         .investigators
         .get_mut(&InvestigatorId(1))

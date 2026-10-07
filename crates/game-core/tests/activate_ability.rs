@@ -99,10 +99,8 @@ fn state_with_in_play(code: &str) -> (GameState, InvestigatorId, CardInstanceId)
         .push(CardInPlay::enter_play(CardCode::new(code), instance_id));
 
     let state = GameStateBuilder::new()
-        .with_phase(Phase::Investigation)
         .with_investigator(inv)
-        .with_active_investigator(id)
-        .with_investigator_turn(id)
+        .open_turn(id)
         // Chaos bag content doesn't matter here — no skill test fires.
         .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
         .with_token_modifiers(TokenModifiers::default())

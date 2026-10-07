@@ -7,8 +7,8 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome, OptionId};
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigationPhaseFrame,
-    InvestigationResume, InvestigatorId, LocationId, Phase,
+    Agenda, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, LocationId,
+    Phase,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -88,17 +88,7 @@ fn two_round_end_forced_suspend_then_resume_the_upkeep_tail() {
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
         .with_location(test_support::test_location(10, "Study"))
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        // Mid-Investigation invariant (slice 1a): the EndTurn cascade pops the
-        // InvestigationPhase anchor at investigation_phase_end.
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        // Open-turn invariant (slice 2a-i, #393): the InvestigatorTurn frame the
-        // EndTurn cascade pops before advancing past Investigation.
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
     state.agenda_deck = vec![Agenda {
         code: CardCode::new(AGENDA),

@@ -440,16 +440,8 @@ fn end_turn_cascades_through_upkeep_to_mythos_draw_prompt() {
     let hand_before = inv.hand.len();
     let state = GameStateBuilder::default()
         .with_investigator(inv)
-        .with_phase(Phase::Investigation)
-        .with_turn_order([id])
-        .with_active_investigator(id)
         .with_round(1)
-        // Mid-Investigation invariant: the InvestigationPhase anchor (slice
-        // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(id)
+        .open_turn(id)
         .build();
 
     let result = test_support::take_turn_action(state, &TurnAction::EndTurn);

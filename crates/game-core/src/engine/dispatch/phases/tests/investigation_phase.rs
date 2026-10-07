@@ -10,13 +10,7 @@ fn investigator_turn_defaults_to_not_ending() {
     // The builder-staged open-turn frame is not mid-end-turn.
     let state = GameStateBuilder::default()
         .with_investigator(test_support::test_investigator(1))
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
     assert_eq!(
         state.continuations.top(),
@@ -265,15 +259,7 @@ fn end_turn_for_last_investigator_ends_phase_and_steps_to_enemy() {
     // then the cascade enters the Enemy phase.
     let mut state = GameStateBuilder::default()
         .with_investigator(test_support::test_investigator(1))
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
-        .with_turn_order([InvestigatorId(1)])
-        // Mid-Investigation invariant: the InvestigationPhase anchor (slice
-        // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
 
     let mut events = Vec::new();
@@ -334,15 +320,8 @@ fn end_turn_rotates_to_next_active_and_opens_turn_window() {
     let mut state = GameStateBuilder::default()
         .with_investigator(test_support::test_investigator(1))
         .with_investigator(test_support::test_investigator(2))
-        .with_phase(Phase::Investigation)
-        .with_active_investigator(InvestigatorId(1))
         .with_turn_order([InvestigatorId(1), InvestigatorId(2)])
-        // Mid-Investigation invariant: the InvestigationPhase anchor (slice
-        // 1a) + the open-turn frame (slice 2a-i) the driver leaves mid-turn.
-        .with_phase_anchor(InvestigationPhaseFrame {
-            resume: InvestigationResume::TurnBegins,
-        })
-        .with_investigator_turn(InvestigatorId(1))
+        .open_turn(InvestigatorId(1))
         .build();
 
     let mut events = Vec::new();
