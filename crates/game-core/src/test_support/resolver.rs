@@ -743,7 +743,7 @@ impl TestSession {
     /// a caller-owned condition with a `when` ability declared on it rejects.
     /// Each cell resolves its forced abilities before it offers reactions
     /// (`glossary/Ability.md`: *"all forced abilities initiated in reference to
-    /// that timing point must resolve before any [reaction] abilities …
+    /// that timing point must resolve before any \[reaction\] abilities …
     /// referencing the same timing point in the same manner may be
     /// initiated"*), and two or more simultaneous forced abilities become the
     /// lead's ordering prompt (`glossary/Priority_of_Simultaneous_Resolution.md`:
