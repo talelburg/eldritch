@@ -41,8 +41,8 @@
 //! a player choosing an ending should see which ending it is — and the two
 //! branches are `reach_resolution(1)` and `reach_resolution(2)` (#775).
 //!
-//! The controller of a Forced ability declared on the act is
-//! `turn_order.first()`, which stands in for the printed *"lead investigator"*;
+//! The controller of a Forced ability declared on the act is the first Active
+//! investigator in `turn_order`, which stands in for the printed *"lead investigator"*;
 //! the two coincide in solo. See **Lead investigator** in `GLOSSARY.md` for
 //! where the proxy diverges in multiplayer.
 //!

@@ -9,7 +9,7 @@
 //! ones.
 
 use card_dsl::card_data::CardType;
-use card_dsl::dsl::{Ability, ActionDesignator, Cost, Effect};
+use card_dsl::dsl::{Ability, ActionDesignator, Cost, Effect, UsageLimit};
 
 use crate::action::{EngineRecord, InputResponse, PlayerAction, RosterEntry};
 use crate::engine::dispatch::emit::TimingEvent;
@@ -19,8 +19,9 @@ use crate::engine::outcome::{
 };
 use crate::engine::{enumerate, evaluator, Cx};
 use crate::state::{
-    ActionResolutionFrame, ActionResume, CardCode, CardInstanceId, Continuation, FastWindowFrame,
-    FrameActivity, GameState, InvestigatorTurnFrame, ScenarioEndFrame, ScenarioEndStep, Status,
+    ActionResolutionFrame, ActionResume, CardInstanceId, Continuation, FastWindowFrame,
+    FrameActivity, GameState, InvestigatorTurnFrame, ResolutionCandidate, ScenarioEndFrame,
+    ScenarioEndStep, Status,
 };
 pub(crate) use control::take_control;
 
@@ -51,6 +52,8 @@ pub(super) mod elimination;
 pub(super) mod encounter;
 pub(super) mod forced_triggers;
 pub(crate) mod hunters;
+// The initiation gate (ADR 0017): every play and ability path asks it whether.
+mod initiation;
 pub(crate) mod movement;
 pub(super) mod phases;
 // pub(crate): engine/mod.rs re-exports `put_set_aside_card_into_play` for the
@@ -572,8 +575,11 @@ pub(crate) struct PlayCheckResult {
 #[derive(Debug)]
 #[allow(dead_code)] // Fields consumed by any_fast_play_eligible in T05.
 pub(super) struct ActivateCheckResult {
-    /// The card code of the source card.
-    pub source_code: CardCode,
+    /// The activation as the initiation gate checked it — the source card's
+    /// code, the activating investigator, the ability's address and its source.
+    /// What `initiation::record_initiation` counts the use against, so the
+    /// handler records the very candidate the gate approved.
+    pub candidate: ResolutionCandidate,
     /// Action points this activation costs: the ability's
     /// `Trigger::Activated` cost **plus** any `ExtraActionCost` surcharge on
     /// the action class its designator names (#754). What the affordability
@@ -593,6 +599,9 @@ pub(super) struct ActivateCheckResult {
     pub costs: Vec<Cost>,
     /// The effect to dispatch after paying costs.
     pub effect: Effect,
+    /// The *"Limit X per \[period\]"* cap, if the ability prints one — what
+    /// `initiation::record_initiation` counts the activation against.
+    pub usage_limit: Option<UsageLimit>,
     /// Whether the source card was exhausted at validation time —
     /// load-bearing for activated abilities whose payment includes
     /// `Cost::Exhaust`.

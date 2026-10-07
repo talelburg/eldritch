@@ -189,11 +189,21 @@ pub(crate) fn for_candidate_source(
     source: CandidateSource,
     code: &CardCode,
 ) -> Option<Vec<(AbilityAddress, Ability)>> {
+    for_candidate_source_with(state, card_registry::current()?, source, code)
+}
+
+/// [`for_candidate_source`] against an explicitly supplied registry — see
+/// [`location_abilities_with`] for why the funnel has this shape.
+#[must_use]
+pub(crate) fn for_candidate_source_with(
+    state: &GameState,
+    reg: &CardRegistry,
+    source: CandidateSource,
+    code: &CardCode,
+) -> Option<Vec<(AbilityAddress, Ability)>> {
     match source {
-        CandidateSource::Ability(source) => for_source(state, source, code),
-        CandidateSource::Hand => Some(addressed_as_printed(
-            (card_registry::current()?.abilities_for)(code)?
-        )),
+        CandidateSource::Ability(source) => for_source_with(state, reg, source, code),
+        CandidateSource::Hand => Some(addressed_as_printed((reg.abilities_for)(code)?)),
     }
 }
 
@@ -227,7 +237,20 @@ pub(crate) fn resolve(
     code: &CardCode,
     address: &AbilityAddress,
 ) -> Option<Ability> {
-    for_candidate_source(state, source, code)?
+    resolve_with(state, card_registry::current()?, source, code, address)
+}
+
+/// [`resolve`] against an explicitly supplied registry — see
+/// [`location_abilities_with`] for why the funnel has this shape.
+#[must_use]
+pub(crate) fn resolve_with(
+    state: &GameState,
+    reg: &CardRegistry,
+    source: CandidateSource,
+    code: &CardCode,
+    address: &AbilityAddress,
+) -> Option<Ability> {
+    for_candidate_source_with(state, reg, source, code)?
         .into_iter()
         .find(|(candidate, _)| candidate == address)
         .map(|(_, ability)| ability)

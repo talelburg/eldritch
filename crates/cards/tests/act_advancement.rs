@@ -20,7 +20,10 @@ fn install() {
 
 fn act3_state() -> GameState {
     let inv = InvestigatorId(1);
-    let mut state = GameStateBuilder::new().with_turn_order([inv]).build();
+    let mut state = GameStateBuilder::new()
+        .with_investigator(test_support::test_investigator(1))
+        .with_turn_order([inv])
+        .build();
     // Act 3 is current and terminal-Won (mirrors the_gathering setup()).
     state.act_deck = vec![Act {
         code: CardCode("01110".into()),

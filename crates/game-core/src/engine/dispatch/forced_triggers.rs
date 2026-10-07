@@ -11,6 +11,8 @@ use card_dsl::dsl::{
 
 use crate::action::InputResponse;
 use crate::card_registry;
+use crate::engine::dispatch::cursor;
+use crate::engine::dispatch::initiation::{self, InitiationKind};
 use crate::engine::dispatch::reaction_windows;
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
@@ -269,7 +271,7 @@ pub(super) fn collect_forced_hits(
             );
         }
         ForcedTriggerPoint::ActAdvanced { code } => {
-            let Some(lead) = state.turn_order.first().copied() else {
+            let Some(lead) = cursor::first_active_investigator(state) else {
                 return hits;
             };
             push_matching(
@@ -283,7 +285,7 @@ pub(super) fn collect_forced_hits(
             );
         }
         ForcedTriggerPoint::AgendaAdvanced { code } => {
-            let Some(lead) = state.turn_order.first().copied() else {
+            let Some(lead) = cursor::first_active_investigator(state) else {
                 return hits;
             };
             push_matching(
@@ -297,7 +299,7 @@ pub(super) fn collect_forced_hits(
             );
         }
         ForcedTriggerPoint::EnemyDefeated { code } => {
-            let Some(lead) = state.turn_order.first().copied() else {
+            let Some(lead) = cursor::first_active_investigator(state) else {
                 return hits;
             };
             if let Some(act) = state.act_deck.get(state.act_index) {
@@ -338,7 +340,7 @@ pub(super) fn collect_forced_hits(
             );
         }
         ForcedTriggerPoint::RoundEnded => {
-            let Some(lead) = state.turn_order.first().copied() else {
+            let Some(lead) = cursor::first_active_investigator(state) else {
                 return hits;
             };
             if let Some(act) = state.act_deck.get(state.act_index) {
@@ -573,28 +575,15 @@ pub(super) fn collect_forced_hits(
             }
         }
     }
-    // RR p.2: a forced ability that lacks the potential to change the game state
-    // does not initiate. Drop such hits here — the single chokepoint feeding both
-    // the lone-hit path (`queue_forced_triggers`) and the 2+ ordered run
-    // (`open_forced_resolution`) — so a no-op forced neither resolves nor (post-
-    // #466) prompts. Conservative: only provable no-ops are dropped (#495).
-    //
-    // The gate is the same predicate the reaction side offers on, so a forced
-    // ability's `eligibility` tag counts here too (#786): Cover Up 01007's
-    // "if there are any clues on Cover Up" lives in an opaque native effect the
-    // generic check can't introspect, and without the tag layer a clueless Cover
-    // Up initiated — and prompted — at game end.
-    hits.retain(|hit| {
-        let Some(abilities) =
-            abilities_in_effect::for_candidate_source(state, hit.source, &hit.code)
-        else {
-            return false;
-        };
-        let Some((_, ability)) = abilities.iter().find(|(addr, _)| *addr == hit.address) else {
-            return false;
-        };
-        evaluator::ability_can_initiate(state, ability, hit.source, hit.controller)
-    });
+    // The initiation gate (ADR 0017), asked once at the single chokepoint feeding
+    // both the lone-hit path (`queue_forced_triggers`) and the 2+ ordered run
+    // (`open_forced_resolution`), so a forced ability that cannot initiate neither
+    // resolves nor (post-#466) prompts. As `Forced` it gets the change-state and
+    // eligibility checks: Cover Up 01007's "if there are any clues on Cover Up"
+    // lives in an opaque native effect the generic change-state check can't
+    // introspect, and without its eligibility tag a clueless Cover Up initiated —
+    // and prompted — at game end (#786).
+    hits.retain(|hit| initiation::check(state, hit, InitiationKind::Forced).is_ok());
     hits
 }
 
@@ -602,10 +591,11 @@ pub(super) fn collect_forced_hits(
 /// `want`, binding controller = the lead investigator.
 ///
 /// The scan both phase-boundary points share: the milestone is board-wide, so
-/// the controller it binds is the lead (first of `turn_order`) and the
-/// board-wide effects that key off a phase boundary ignore it. An empty
-/// `turn_order` finds nothing rather than panicking — a scenario with no seated
-/// investigator has no lead to bind.
+/// the controller it binds is the lead proxy, the first Active investigator in
+/// `turn_order` ([`cursor::first_active_investigator`]; GLOSSARY "Lead
+/// investigator"), and the board-wide effects that key off a phase boundary
+/// ignore it. With no Active investigator it finds nothing rather than
+/// panicking — there is no lead to bind.
 ///
 /// **Act and agenda only.** An enemy or asset in play printing a phase-boundary
 /// Forced — Wizard of the Order 01170, Hunting Horror 02141, Peter Clover
@@ -619,7 +609,7 @@ fn push_scenario_structure_matching(
     bucket: EventTiming,
     want: impl Fn(&EventPattern) -> bool + Copy,
 ) {
-    let Some(lead) = state.turn_order.first().copied() else {
+    let Some(lead) = cursor::first_active_investigator(state) else {
         return;
     };
     if let Some(act) = state.act_deck.get(state.act_index) {

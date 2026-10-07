@@ -69,10 +69,10 @@
 
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{
-    Ability, ActionClass, ActionDesignator, CardFilter, ChoiceBranch, CmpOp, Condition,
-    ControlStatus, Determination, Effect, EnemyTarget, EntityScope, HarmKind, IntExpr,
-    InvestigatorTarget, LocationSet, LocationTarget, ModifierAudience, ModifierScope, Quantity,
-    Restriction, SearchScope, SkillTestKind, Stat, Trigger,
+    ActionClass, ActionDesignator, CardFilter, ChoiceBranch, CmpOp, Condition, ControlStatus,
+    Determination, Effect, EnemyTarget, EntityScope, HarmKind, IntExpr, InvestigatorTarget,
+    LocationSet, LocationTarget, ModifierAudience, ModifierScope, Quantity, Restriction,
+    SearchScope, SkillTestKind, Stat, Trigger,
 };
 use serde::{Deserialize, Serialize};
 
@@ -87,9 +87,9 @@ use crate::engine::{designator, Cx};
 use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
-    AbilitySource, AdvanceTrigger, CandidateSource, CardCode, CardInstanceId, Continuation,
-    DamageSource, DifficultyBasis, EffectFrame, EnemyId, GameState, Investigator, InvestigatorId,
-    Lifetime, LocationId, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp, Zone,
+    AbilitySource, AdvanceTrigger, CardCode, CardInstanceId, Continuation, DamageSource,
+    DifficultyBasis, EffectFrame, EnemyId, GameState, Investigator, InvestigatorId, Lifetime,
+    LocationId, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp, Zone,
 };
 
 /// Failure margin of the just-resolved skill test (bound only while running an
@@ -2237,53 +2237,6 @@ fn resolve_investigator_target(
              (ground_chosen_targets should run first)",
         ),
     }
-}
-
-/// Whether `ability` may initiate, per the Rules Reference initiation gate —
-/// the generic [`effect_can_change_state`] check, refined by the ability's
-/// optional [`Ability::eligibility`] tag.
-///
-/// RR p.2 ("Ability" → "Forced Abilities"): *"If a forced ability does not have
-/// the potential to change the game state, the ability does not initiate."* RR
-/// p.3 states the analogous gate for triggered abilities, so this one predicate
-/// serves both the reaction/fast-window offer scan and the forced-trigger scan
-/// (#786) — a forced ability whose condition is false must neither resolve nor
-/// raise the #466 acknowledge prompt.
-///
-/// The triggered-ability clause is strictly the stronger of the two — *"and its
-/// cost (if any) has the potential to be paid in full, taking active cost
-/// modifiers into account"* — and that cost half is **not** modelled here;
-/// affordability is checked where a cost is paid, not by this predicate.
-///
-/// Pure over `&GameState`, which is what lets the reaction side's
-/// `withdraw_lapsed_candidates` re-ask it once a sibling option has resolved
-/// (#568).
-///
-/// The tag layer refines opaque [`Effect::Native`] effects the generic gate
-/// can't introspect (#368: Cover Up 01007's "if there are any clues on Cover
-/// Up", act 01109). No tag → eligible. A tag with no resolvable predicate
-/// (registry absent / unknown tag) → suppressed, so a half-installed host never
-/// surfaces a gated ability it can't evaluate.
-pub(crate) fn ability_can_initiate(
-    state: &GameState,
-    ability: &Ability,
-    source: CandidateSource,
-    controller: InvestigatorId,
-) -> bool {
-    let ctx = EvalContext::for_controller_with_optional_source(controller, source.ability());
-    if !effect_can_change_state(state, ctx, &ability.effect) {
-        return false;
-    }
-    let Some(tag) = ability.eligibility.as_deref() else {
-        return true;
-    };
-    let Some(reg) = card_registry::current() else {
-        return false;
-    };
-    let Some(pred) = (reg.native_eligibility_for)(tag) else {
-        return false;
-    };
-    pred(state, &ctx)
 }
 
 /// Whether `effect`, resolved against the current `state` and binding `ctx`, has

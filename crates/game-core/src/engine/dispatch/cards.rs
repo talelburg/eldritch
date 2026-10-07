@@ -481,7 +481,7 @@ pub(crate) fn grant_resources(cx: &mut Cx, investigator: InvestigatorId, amount:
 /// pays nothing.
 ///
 /// The caller has already validated affordability
-/// (`check_play_resource_cost_payable`), so the `saturating_sub` never silently
+/// (`initiation::play_cost_payable`), so the `saturating_sub` never silently
 /// underflows a real shortfall — it's belt-and-suspenders. That check is also
 /// what keeps the `u8::try_from(...).unwrap_or(0)` below honest: the two
 /// non-numeric costs — a `"–"` (`None`) and an X (`Some(-2)`) — are both

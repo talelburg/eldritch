@@ -10,17 +10,21 @@
 //! Hyperawareness will be the first. Until then, mock cards are the
 //! only way to exercise the full activation flow.
 
-use card_dsl::dsl::{self, Cost, IntExpr, InvestigatorTarget, ModifierScope, Stat};
+use card_dsl::dsl::{
+    self, Cost, Effect, EventPattern, EventTiming, IntExpr, InvestigatorTarget, LocationTarget,
+    ModifierScope, Stat, UsageLimit, UsagePeriod,
+};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
-use game_core::engine::{self, EngineOutcome};
+use game_core::engine::evaluator::EvalContext;
+use game_core::engine::{self, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, Lifetime, Phase, RecordedModifierKind, SkillKind,
-    Status, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, Lifetime, LocationId, Phase, RecordedModifierKind,
+    SkillKind, Status, TokenModifiers,
 };
-use game_core::test_support::{self, MockRegistry, TakeOneFastPlay};
+use game_core::test_support::{self, MockRegistry, TakeOneFastPlay, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
 
 /// Mock card code: `[fast] Spend 1 resource: gain 1 resource.` —
@@ -46,6 +50,34 @@ const DISCARD_COST_ABILITY: &str = "MOCK4";
 /// you get +1 intellect for this skill test.` Exercises the
 /// `ThisSkillTest` push path + accumulator drain across resolution.
 const SKILL_BOOST: &str = "MOCK5";
+
+/// Mock card code: `[fast] Gain 1 resource. (Limit once per round.)` — a
+/// usage-limited activated ability, a primitive no corpus card prints yet
+/// (#958).
+const ONCE_PER_ROUND_GAIN: &str = "MOCK6";
+
+/// Mock card code: `[fast] Gain 1 resource.`, gated by an eligibility tag
+/// whose predicate holds only while the controller has a clue — an activated
+/// ability whose condition lives outside its effect (#958, the #791 class).
+const CLUE_GATED_GAIN: &str = "MOCK7";
+const HAS_A_CLUE_TAG: &str = "_activate:has_a_clue";
+
+/// Mock card code: `[fast] Discover 1 clue at your location. (Limit once per
+/// round.)` — a usage-limited activated ability whose effect a `when`
+/// interrupt can cancel.
+const ONCE_PER_ROUND_DISCOVERY: &str = "MOCK8";
+
+/// Mock card code: `[reaction] When an investigator would discover clues:
+/// Cancel that discovery.` — the cancellation primitive (`Effect::Cancel` in
+/// the `when` cell of a coordinator-owned condition), on no printed card.
+const CANCEL_DISCOVERY: &str = "MOCK9";
+
+fn has_a_clue(state: &GameState, ctx: &EvalContext) -> bool {
+    state
+        .investigators
+        .get(&ctx.controller)
+        .is_some_and(|inv| inv.clues > 0)
+}
 
 #[ctor::ctor(unsafe)]
 fn install_mock_registry() {
@@ -83,6 +115,40 @@ fn install_mock_registry() {
                 0,
                 vec![Cost::Resources(1)],
                 dsl::modify(Stat::Intellect, 1, ModifierScope::ThisSkillTest),
+            )]
+        })
+        .with_abilities(ONCE_PER_ROUND_GAIN, || {
+            vec![
+                dsl::activated(0, vec![], dsl::gain_resources(InvestigatorTarget::You, 1))
+                    .with_usage_limit(UsageLimit {
+                        count: 1,
+                        period: UsagePeriod::Round,
+                    }),
+            ]
+        })
+        .with_abilities(CLUE_GATED_GAIN, || {
+            vec![
+                dsl::activated(0, vec![], dsl::gain_resources(InvestigatorTarget::You, 1))
+                    .with_eligibility(HAS_A_CLUE_TAG),
+            ]
+        })
+        .with_native_eligibility(HAS_A_CLUE_TAG, has_a_clue)
+        .with_abilities(ONCE_PER_ROUND_DISCOVERY, || {
+            vec![dsl::activated(
+                0,
+                vec![],
+                dsl::discover_clue(LocationTarget::YourLocation, 1),
+            )
+            .with_usage_limit(UsageLimit {
+                count: 1,
+                period: UsagePeriod::Round,
+            })]
+        })
+        .with_abilities(CANCEL_DISCOVERY, || {
+            vec![dsl::reaction_on_event(
+                EventPattern::DiscoverClues,
+                EventTiming::When,
+                Effect::Cancel,
             )]
         })
         .install();
@@ -439,4 +505,150 @@ fn activating_a_test_scoped_modifier_outside_a_test_is_rejected() {
     // State unchanged by the rejection: no resource spent, nothing recorded.
     assert_eq!(result.state.investigators[&id].resources, resources_before);
     assert!(result.state.recorded_modifiers.is_empty());
+}
+
+/// A "Limit once per round" activated ability is offered once, refused once it
+/// has been used, and offered again the next round (#958).
+/// `glossary/Limits_and_Maximums.md`: *"Each instance of an ability with such a
+/// limit may be initiated X times during the designated period."*
+#[test]
+fn a_once_per_round_activated_ability_is_offered_once_per_round() {
+    let (state, id, instance_id) = state_with_in_play(ONCE_PER_ROUND_GAIN);
+    let action = TurnAction::ActivateAbility {
+        investigator: id,
+        source: AbilitySource::InPlay(instance_id),
+        address: AbilityAddress::Printed(0),
+    };
+    assert!(
+        enumerate::legal_actions(&state).contains(&action),
+        "an unused limited ability is offered",
+    );
+
+    let after_first = TestSession::new(state).take(&action);
+    assert_eq!(after_first.state().investigators[&id].resources, 5 + 1);
+    assert!(
+        !enumerate::legal_actions(after_first.state()).contains(&action),
+        "a once-per-round ability used this round is not offered again",
+    );
+    let refused =
+        test_support::dispatch_turn_action_unchecked(after_first.state().clone(), &action);
+    assert!(matches!(refused.outcome, EngineOutcome::Rejected { .. }));
+    assert!(refused.events.is_empty());
+
+    let mut next_round = after_first.state().clone();
+    next_round.round += 1;
+    assert!(
+        enumerate::legal_actions(&next_round).contains(&action),
+        "the limit resets when the round advances",
+    );
+}
+
+/// A limited ability on a source the activator reaches without controlling it —
+/// here a card attached to their location (#708) — records its use on that
+/// card, wherever it sits, and is refused for the rest of the round.
+#[test]
+fn a_limited_ability_on_a_card_the_activator_does_not_control_counts_its_use() {
+    let id = InvestigatorId(1);
+    let instance_id = CardInstanceId(0);
+    let location = LocationId(10);
+    let mut loc = test_support::test_location(location.0, "Somewhere");
+    loc.attachments.push(CardInPlay::enter_play(
+        CardCode::new(ONCE_PER_ROUND_GAIN),
+        instance_id,
+    ));
+    let state = GameStateBuilder::new()
+        .with_investigator_at(test_support::test_investigator(1), location)
+        .with_location(loc)
+        .open_turn(id)
+        .build();
+    let action = TurnAction::ActivateAbility {
+        investigator: id,
+        source: AbilitySource::InPlay(instance_id),
+        address: AbilityAddress::Printed(0),
+    };
+
+    let after_first = TestSession::new(state).take(&action);
+    assert_eq!(after_first.state().investigators[&id].resources, 5 + 1);
+    assert!(
+        !enumerate::legal_actions(after_first.state()).contains(&action),
+        "the use is counted against the attached card",
+    );
+}
+
+/// An activated ability whose eligibility tag is false is not offered, and a
+/// submission that skips the menu is refused; once the condition holds it is
+/// offered (#958). The activation side of the bug class #791 closed for forced
+/// abilities.
+#[test]
+fn a_tagged_activated_ability_is_not_offered_while_its_condition_is_false() {
+    let (state, id, instance_id) = state_with_in_play(CLUE_GATED_GAIN);
+    assert_eq!(state.investigators[&id].clues, 0);
+    let action = TurnAction::ActivateAbility {
+        investigator: id,
+        source: AbilitySource::InPlay(instance_id),
+        address: AbilityAddress::Printed(0),
+    };
+    assert!(
+        !enumerate::legal_actions(&state).contains(&action),
+        "a false eligibility condition keeps the ability off the menu",
+    );
+    let refused = test_support::dispatch_turn_action_unchecked(state.clone(), &action);
+    assert!(matches!(refused.outcome, EngineOutcome::Rejected { .. }));
+    assert!(refused.events.is_empty());
+
+    let mut with_a_clue = state;
+    with_a_clue.investigators.get_mut(&id).unwrap().clues = 1;
+    assert!(
+        enumerate::legal_actions(&with_a_clue).contains(&action),
+        "the ability is offered once its condition holds",
+    );
+}
+
+/// A limited ability whose effect is cancelled has still been initiated, so the
+/// use counts: `glossary/Limits_and_Maximums.md`, *"If the effects of a card or
+/// ability with a limit or maximum are canceled, it is still counted against
+/// the limit/maximum, because the ability has been initiated."* The
+/// once-per-round discovery is activated, an interrupt cancels the discovery it
+/// would make, and the ability is not offered again this round.
+#[test]
+fn a_cancelled_use_of_a_limited_activated_ability_still_counts() {
+    let id = InvestigatorId(1);
+    let ability_card = CardInstanceId(0);
+    let interrupt_card = CardInstanceId(1);
+    let location = LocationId(10);
+    let mut inv = test_support::test_investigator(1);
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(ONCE_PER_ROUND_DISCOVERY),
+        ability_card,
+    ));
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode::new(CANCEL_DISCOVERY),
+        interrupt_card,
+    ));
+    let mut loc = test_support::test_location(location.0, "Study");
+    loc.clues = 2;
+    let state = GameStateBuilder::new()
+        .with_investigator_at(inv, location)
+        .with_location(loc)
+        .open_turn(id)
+        .build();
+    let action = TurnAction::ActivateAbility {
+        investigator: id,
+        source: AbilitySource::InPlay(ability_card),
+        address: AbilityAddress::Printed(0),
+    };
+
+    let interrupted = TestSession::new(state).take(&action);
+    let cancelled = interrupted.pick(OptionTarget::CardInstance(interrupt_card));
+
+    assert_eq!(
+        cancelled.state().investigators[&id].clues,
+        0,
+        "the discovery was cancelled",
+    );
+    assert_eq!(cancelled.state().locations[&location].clues, 2);
+    assert!(
+        !enumerate::legal_actions(cancelled.state()).contains(&action),
+        "the cancelled use counts against the once-per-round limit",
+    );
 }

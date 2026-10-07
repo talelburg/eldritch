@@ -4,24 +4,24 @@
 //! windows ([`scan_pending_triggers`],
 //! [`trigger_matches`], [`open_queued_reaction_window`],
 //! [`resume_reaction_window`], [`fire_pending_trigger`],
-//! [`bump_usage_counter`], [`close_reaction_window`]) and the fast-window
+//! [`close_reaction_window`]) and the fast-window
 //! eligibility checks
 //! ([`check_play_card`], [`check_activate_ability`],
 //! [`any_fast_play_eligible`], [`open_fast_window`]).
 
 use std::borrow::Cow;
-use std::iter;
 
 use card_dsl::card_data::{CardMetadata, CardType};
 use card_dsl::dsl::{
-    Ability, ActionDesignator, Cost, Effect, EnemyTarget, EventPattern, EventTiming, Trigger,
-    TriggerKind, UsageLimit,
+    ActionDesignator, Cost, Effect, EnemyTarget, EventPattern, EventTiming, Trigger, TriggerKind,
+    UsageLimit,
 };
 
 use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::abilities::ActivatedAbility;
 use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
+use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
 use crate::engine::dispatch::{
     abilities, actions, cards, combat, cursor, phases, skill_test, slots, ActivateCheckResult,
     PlayCheckResult,
@@ -36,7 +36,7 @@ use crate::event::{Event, LapseReason};
 use crate::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, Continuation,
     DamageSource, FastActorScope, FastWindowFrame, FastWindowKind, GameState, InvestigatorId,
-    Phase, PlayFromHandFrame, ResolutionCandidate, Status, TimingMode, TimingPointWindowFrame,
+    Phase, PlayFromHandFrame, ResolutionCandidate, TimingMode, TimingPointWindowFrame,
 };
 
 /// Push a reaction window frame for `candidates` at `bucket`. The shared push
@@ -276,38 +276,21 @@ fn scan_pending_triggers(
                 if !trigger_matches(event, pattern, id) {
                     continue;
                 }
-                // "Limit X per [period]" — skip triggers whose per-
-                // instance counter has already reached the cap this
-                // round. Rules Reference page 14. A **granted** ability has no
-                // printed index to key the counter by, so it is never counted
-                // out here; `reject_untrackable_usage_limit` refuses one that
-                // prints a cap rather than silently ignoring it.
-                if address.printed_index().is_some_and(|idx| {
-                    card.is_usage_exhausted(idx, ability.usage_limit, state.round)
-                }) {
-                    continue;
-                }
-                // Eligibility gate (RR p.2): suppress a reaction whose effect
-                // can't change state (e.g. an emptied Cover Up 01007).
-                if !evaluator::ability_can_initiate(
-                    state,
-                    ability,
-                    CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
-                    id,
-                ) {
-                    continue;
-                }
                 // Reaction candidates always have a source instance — an
                 // in-play / threat-area card, or the investigator card itself
                 // (#448 cp3a, now folded into `controlled_card_instances()`);
-                // abilities resolve by `code`. `bump_usage_counter` resolves
-                // the instance against all three zones.
-                pending.push(ResolutionCandidate {
+                // abilities resolve by `code`.
+                let candidate = ResolutionCandidate {
                     code: card.code.clone(),
                     controller: id,
                     address: address.clone(),
                     source: CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
-                });
+                };
+                // The initiation gate (ADR 0017): change-state, eligibility, the
+                // "Limit X per [period]" counter, and cost.
+                if initiation::check(state, &candidate, InitiationKind::Reaction).is_ok() {
+                    pending.push(candidate);
+                }
             }
         }
     }
@@ -320,10 +303,13 @@ fn scan_pending_triggers(
 /// investigators … may … advance" group window (#434). The act/agenda are not
 /// in any `cards_in_play` zone, so [`scan_pending_triggers`] can't reach them in
 /// its per-investigator loop. Mirrors `collect_forced_hits`'s act/agenda scan:
-/// controller = the lead (board-wide effects ignore it), the act's or the
-/// agenda's own [`AbilitySource`] kind, no per-instance usage cap (acts have
-/// none). Empty when the registry isn't
-/// installed or nothing matches.
+/// controller = the lead proxy, the first Active investigator in `turn_order`
+/// ([`cursor::first_active_investigator`]; GLOSSARY "Lead investigator"), so
+/// the reaction outlives the first seat's elimination and the gate's status
+/// check never refuses it for that; the act's or the agenda's own
+/// [`AbilitySource`] kind; no per-instance usage cap (acts have none). Empty
+/// when the registry isn't installed, no investigator is Active, or nothing
+/// matches.
 fn scan_act_agenda_reactions(
     state: &GameState,
     event: &TimingEvent,
@@ -332,7 +318,7 @@ fn scan_act_agenda_reactions(
     if card_registry::current().is_none() {
         return Vec::new();
     }
-    let Some(lead) = state.turn_order.first().copied() else {
+    let Some(lead) = cursor::first_active_investigator(state) else {
         return Vec::new();
     };
     let mut hits = Vec::new();
@@ -369,23 +355,18 @@ fn scan_act_agenda_reactions(
             {
                 continue;
             }
-            // Eligibility gate (RR p.2): suppress an act/agenda reaction whose
-            // effect can't change state (e.g. The Barrier 01109's round-end
-            // advance when the Hallway group can't afford the clue threshold).
-            if !evaluator::ability_can_initiate(
-                state,
-                ability,
-                CandidateSource::Ability(source),
-                lead,
-            ) {
-                continue;
-            }
-            hits.push(ResolutionCandidate {
+            let candidate = ResolutionCandidate {
                 code: code.clone(),
                 controller: lead,
                 address: address.clone(),
                 source: CandidateSource::Ability(source),
-            });
+            };
+            // The initiation gate (ADR 0017): suppress an act/agenda reaction
+            // that cannot initiate (e.g. The Barrier 01109's round-end advance
+            // when the Hallway group can't afford the clue threshold).
+            if initiation::check(state, &candidate, InitiationKind::Reaction).is_ok() {
+                hits.push(candidate);
+            }
         }
     }
     hits
@@ -461,31 +442,27 @@ fn scan_hand_fast_events(
                 if !trigger_matches(event, pattern, id) {
                     continue;
                 }
-                // RR initiation gate: a Fast event can't be played if its effect
-                // can't change game state — same rule as the in-play reaction scan
-                // (#495). Covers Evidence! 01022 (Roland's reaction sourced from
-                // hand: discover 1 clue at your location) at a 0-clue location.
-                if !evaluator::ability_can_initiate(state, ability, CandidateSource::Hand, id) {
-                    continue;
-                }
-                // RR p.22 affordability: don't offer a Fast event whose resource
-                // cost can't be paid (Evidence! 01022 costs 1; not offered at 0
-                // resources). The play path (play_fast_event) pays it (#501).
-                // Filtering here keeps the offer honest; it is not the binding
-                // check — the wallet is shared, so a sibling option can empty it
-                // after this ran, and initiation re-asks (#568).
-                if check_play_resource_cost_payable(state, id, code).is_err() {
-                    continue;
-                }
                 let ability_index = u8::try_from(idx)
                     .expect("abilities vec exceeds u8::MAX — card-impl bug, abilities are tiny");
-                plays.push(ResolutionCandidate {
+                let candidate = ResolutionCandidate {
                     code: code.clone(),
                     controller: id,
                     // A card in hand is not in play, so nothing grants to it.
                     address: AbilityAddress::Printed(ability_index),
                     source: CandidateSource::Hand,
-                });
+                };
+                // The initiation gate, as a *play* (ADR 0017): a Fast event is
+                // played, so it is checked like any other play — its effect must
+                // be able to change the game state (Evidence! 01022 at a 0-clue
+                // location, #495), no "cannot play" may forbid it (Dissonant
+                // Voices 01165, #917), and its resource cost must be payable
+                // (#501). Filtering here keeps the offer honest; it is not the
+                // binding check — the wallet is shared, so a sibling option can
+                // empty it after this ran, and initiation re-asks (#568).
+                if initiation::check(state, &candidate, InitiationKind::Play).is_err() {
+                    continue;
+                }
+                plays.push(candidate);
                 // One option per card: a card with two matching abilities is
                 // still offered once. No in-scope card has two.
                 break;
@@ -835,34 +812,42 @@ fn open_reaction_cell(state: &GameState) -> Option<(&TimingEvent, EventTiming)> 
     }
 }
 
-/// Best-effort attribution for a withdrawn candidate, for the client log
-/// ([`LapseReason`], #568). The withdrawal has already been decided by the
-/// re-scan in [`withdraw_lapsed_candidates`]; this only names a likely gate, so a
-/// mislabel is cosmetic. Probes run most-specific first, and
-/// [`LapseReason::NoLongerEligible`] is the honest residual when none matches.
+/// Why a withdrawn candidate lapsed, for the client log ([`LapseReason`],
+/// #568). The withdrawal has already been decided by the re-scan in
+/// [`withdraw_lapsed_candidates`]; this names the reason.
+///
+/// A source that is gone is [`LapseReason::SourceGone`]. Otherwise the
+/// initiation gate is asked the question the scan asked of this candidate —
+/// [`InitiationKind::Play`] for a Fast event in hand, which is played, and
+/// [`InitiationKind::Reaction`] for an ability source — and its [`Refusal`] is
+/// the reason. A candidate the gate still passes dropped out of the scan's own
+/// scoping instead, which the gate does not own: [`LapseReason::OutOfScope`].
 fn lapse_reason(state: &GameState, candidate: &ResolutionCandidate) -> LapseReason {
     if !candidate_source_present(state, candidate) {
         return LapseReason::SourceGone;
     }
-    if candidate.source == CandidateSource::Hand
-        && check_play_resource_cost_payable(state, candidate.controller, &candidate.code).is_err()
-    {
-        return LapseReason::CostUnpayable;
+    let kind = match candidate.source {
+        CandidateSource::Hand => InitiationKind::Play,
+        CandidateSource::Ability(_) => InitiationKind::Reaction,
+    };
+    match initiation::check(state, candidate, kind) {
+        Ok(()) => LapseReason::OutOfScope,
+        Err(refusal) => lapse_reason_for(&refusal),
     }
-    let still_eligible =
-        abilities_in_effect::resolve(state, candidate.source, &candidate.code, &candidate.address)
-            .is_some_and(|ability| {
-                evaluator::ability_can_initiate(
-                    state,
-                    &ability,
-                    candidate.source,
-                    candidate.controller,
-                )
-            });
-    if still_eligible {
-        LapseReason::NoLongerEligible
-    } else {
-        LapseReason::NoStateChange
+}
+
+/// The [`LapseReason`] a gate [`Refusal`] reports as. A side no longer in
+/// effect is [`LapseReason::SourceGone`]: the card is still there, but the
+/// ability the option named is not.
+fn lapse_reason_for(refusal: &Refusal) -> LapseReason {
+    match refusal {
+        Refusal::NotActive { .. } => LapseReason::NotActive,
+        Refusal::SideNotInEffect => LapseReason::SourceGone,
+        Refusal::NotEligible => LapseReason::NoLongerEligible,
+        Refusal::NoStateChange => LapseReason::NoStateChange,
+        Refusal::UsageLimitReached => LapseReason::UsageLimitReached,
+        Refusal::PlayBanned { .. } => LapseReason::PlayBanned,
+        Refusal::CostUnpayable(_) => LapseReason::CostUnpayable,
     }
 }
 
@@ -1160,16 +1145,13 @@ fn fire_pending_trigger(cx: &mut Cx, i: u32) -> EngineOutcome {
         .expect("fire_pending_trigger: top frame is an open window/run")
         .remove(pending_idx);
 
-    // Usage is consumed when the ability fires — the former "bump only on
-    // `Done`" was purely defensive against an `unreachable!` `Rejected`. Bump
-    // now, then push the effect for the drive loop; the window frame beneath
-    // stays on top with its remaining candidates and `advance_resolution`
-    // re-dispatches it once the effect (and any nested skill test) pops. In-scope
-    // suspending forced effects (Frozen in Fear 01164) carry no usage limit, so
-    // the early bump is a no-op for them. Slice D, #423.
-    if usage_limit.is_some() {
-        bump_usage_counter(cx.state, &trigger);
-    }
+    // Appendix I step 3: the ability attempts to initiate, so its use counts
+    // now, before its effect is pushed — a use whose effects are cancelled still
+    // counts. The window frame beneath stays on top with its remaining
+    // candidates and `advance_resolution` re-dispatches it once the effect (and
+    // any nested skill test) pops. In-scope suspending forced effects (Frozen in
+    // Fear 01164) carry no usage limit, so recording is a no-op for them.
+    initiation::record_initiation(cx.state, &trigger, usage_limit);
     evaluator::push_effect(cx, &ability.effect, eval_ctx);
     EngineOutcome::Done
 }
@@ -1322,91 +1304,6 @@ pub(super) fn advance_resolution(cx: &mut Cx) -> EngineOutcome {
     EngineOutcome::AwaitingInput {
         request,
         resume_token: ResumeToken(0),
-    }
-}
-
-/// Bump the per-instance ability-usage counter for the just-fired
-/// trigger. Called by [`fire_pending_trigger`] only for abilities
-/// whose `usage_limit` is `Some(_)`; for abilities with no limit
-/// nothing tracks them.
-///
-/// Routes on [`CandidateSource`]: `InPlay` bumps the `CardInPlay` instance —
-/// the investigator card, a card in play, or a threat-area card, resolved by
-/// instance id over all three zones (#448 cp3a folded the investigator card,
-/// e.g. Roland Banks's seated `[reaction]`, onto this path; its usage now lives
-/// on `investigator_card.ability_usage`). `Board`, `Hand`, and `Location`
-/// candidates carry no per-instance usage limits and are `unreachable!` here.
-///
-/// **A limit on a source with no card instance is refused before it can reach
-/// here.** Usage state is `CardInPlay::ability_usage`, per-instance, so a
-/// location / enemy / act / agenda source has nowhere to record a use;
-/// `reject_untrackable_usage_limit` rejects the activation-side case at
-/// validation, and no corpus card prints such a forced or reaction ability.
-/// **#699** builds the state-level counter the Dunwich locations will need,
-/// and is what lifts both.
-///
-/// **TODO (cancellation-counts-against-limit).** Rules Reference
-/// page 14: *"If the effects of a card or ability with a limit or
-/// maximum are canceled, it is still counted against the
-/// limit/maximum, because the ability has been initiated."* Phase-3
-/// has no cancellation primitive, so today we only bump on successful
-/// resolution. When cancellation lands, the bump call must move
-/// before the effect resolves (or fork into both paths) so canceled
-/// fires still count.
-fn bump_usage_counter(state: &mut GameState, trigger: &ResolutionCandidate) {
-    let current_round = state.round;
-    match trigger.source {
-        CandidateSource::Ability(AbilitySource::InPlay(instance_id)) => {
-            let inv = state
-                .investigators
-                .get_mut(&trigger.controller)
-                .unwrap_or_else(|| {
-                    unreachable!(
-                        "bump_usage_counter: controller {ctl:?} vanished while reaction window \
-                         was open; state-corruption invariant violation",
-                        ctl = trigger.controller,
-                    )
-                });
-            // Search the investigator card first, then cards in play, then the
-            // threat area — the same zones `controlled_card_instances()` scans,
-            // so an investigator-card reaction (Roland Banks) resolves here.
-            let card = iter::once(&mut inv.investigator_card)
-                .chain(inv.cards_in_play.iter_mut())
-                .chain(inv.threat_area.iter_mut())
-                .find(|c| c.instance_id == instance_id)
-                .unwrap_or_else(|| {
-                    unreachable!(
-                        "bump_usage_counter: instance {instance_id:?} vanished from controller \
-                         {ctl:?}'s investigator card / cards_in_play / threat area while reaction \
-                         window was open; state-corruption invariant violation",
-                        ctl = trigger.controller,
-                    )
-                });
-            // A granted ability has no printed index to key the counter by, so
-            // there is nothing to bump — `reject_untrackable_usage_limit`
-            // refuses one that prints a *"Limit X per \[period\]"* cap before
-            // any cost is paid, so nothing is silently uncapped here.
-            if let Some(index) = trigger.address.printed_index() {
-                card.bump_ability_usage(index, current_round);
-            }
-        }
-        // Listed kind by kind rather than wildcarded: a sixth `AbilitySource`
-        // kind *that carries an instance* must break this build rather than
-        // reach a panic at runtime.
-        CandidateSource::Ability(
-            AbilitySource::Location(_)
-            | AbilitySource::Enemy(_)
-            | AbilitySource::Act
-            | AbilitySource::Agenda,
-        )
-        | CandidateSource::Hand => {
-            unreachable!(
-                "bump_usage_counter: a usage-limited candidate must be an in-play instance \
-                 (a hand candidate, and an ability source with no card instance behind it — a \
-                 location, an enemy, the act, the agenda — have nowhere to record uses); \
-                 candidate {trigger:?}"
-            )
-        }
     }
 }
 
@@ -1577,46 +1474,6 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutco
     EngineOutcome::Done
 }
 
-/// Pure-validation peer to [`play_card`]. Returns `Ok` if the named
-/// card is currently playable by `investigator`, `Err(reason)` if
-/// not. The check is the existing `play_card` validation block lifted
-/// verbatim — no behavior change at `play_card`'s call site.
-///
-/// Used by [`play_card`] (which then runs the mutation block on the
-/// `Ok` payload) and by `any_fast_play_eligible` (which only
-/// inspects `Ok` vs `Err`).
-/// RR p.11 (#495): an event card may be played only if its `OnPlay` effect has
-/// the potential to change the game state right now (Working a Hunch 01037 at a
-/// 0-clue location is unplayable). Events only — assets and other card types
-/// always change state by entering play. Uses the same conservative
-/// `effect_can_change_state` evaluator as the reaction/forced initiation gates,
-/// so only provable no-ops are blocked. `Ok(())` when playable.
-fn check_event_play_changes_state(
-    state: &GameState,
-    investigator: InvestigatorId,
-    code: &CardCode,
-    card_type: CardType,
-    abilities: &[Ability],
-) -> Result<(), Cow<'static, str>> {
-    if card_type != CardType::Event {
-        return Ok(());
-    }
-    let ctx = EvalContext::for_controller_with_optional_source(investigator, None);
-    let changes_state = abilities.iter().any(|a| {
-        matches!(a.trigger, Trigger::OnPlay)
-            && evaluator::effect_can_change_state(state, ctx, &a.effect)
-    });
-    if changes_state {
-        Ok(())
-    } else {
-        Err(format!(
-            "PlayCard: {code}'s effect cannot change the game state right now, so it \
-             cannot be played (RR p.11)."
-        )
-        .into())
-    }
-}
-
 /// Gates RR p.19 slot capacity: Assets only; the only hard slot reject — a merely-full
 /// slot is not rejected here, make-room at enter-play handles it.
 fn check_play_slot_satisfiable(
@@ -1636,33 +1493,19 @@ fn check_play_slot_satisfiable(
     Ok(())
 }
 
-/// A constant restriction may forbid playing this card type outright
-/// (Dissonant Voices 01165: *"You cannot play assets or events"*). Asked from
-/// [`check_play_card`] rather than from the `play_card` handler so every
-/// consumer of the validator agrees with it: the open-turn menu
-/// (`push_card_actions`), the fast-window enumerator ([`enumerate_fast_plays`])
-/// and the handler all read one predicate, and a forbidden card is never
-/// *offered* — not merely refused on submission. (The defect this closes:
-/// Working a Hunch 01037 was offered by a player window with Dissonant Voices
-/// in the threat area, because only the handler carried the guard.)
-fn check_play_not_prohibited(
-    state: &GameState,
-    investigator: InvestigatorId,
-    card_type: CardType,
-) -> Result<(), Cow<'static, str>> {
-    let Some(reg) = card_registry::current() else {
-        return Ok(());
-    };
-    if evaluator::play_is_prohibited(state, reg, investigator, card_type) {
-        return Err(format!(
-            "PlayCard: {investigator:?} cannot play a {card_type:?} \
-             (a constant restriction forbids it)"
-        )
-        .into());
-    }
-    Ok(())
-}
-
+/// Pure-validation peer to [`play_card`]. Returns `Ok` if the named
+/// card is currently playable by `investigator`, `Err(reason)` if
+/// not.
+///
+/// *Whether* the card may be played is the initiation gate's answer, asked as
+/// a play ([`initiation::check_play`]); this validator owns only the *when* and
+/// the rest of what a play from the turn menu or a player window needs — the
+/// hand index, reaction events, slots, the turn/Fast timing matrix and the
+/// action point (ADR 0017).
+///
+/// Used by [`play_card`] (which then runs the mutation block on the
+/// `Ok` payload) and by `any_fast_play_eligible` (which only
+/// inspects `Ok` vs `Err`).
 pub(crate) fn check_play_card(
     state: &GameState,
     investigator: InvestigatorId,
@@ -1671,13 +1514,6 @@ pub(crate) fn check_play_card(
     let Some(inv) = state.investigators.get(&investigator) else {
         return Err(format!("PlayCard: investigator {investigator:?} is not in state").into());
     };
-    if inv.status != Status::Active {
-        return Err(format!(
-            "PlayCard: {investigator:?} is not Active (status {:?})",
-            inv.status,
-        )
-        .into());
-    }
     let idx = usize::from(hand_index);
     if idx >= inv.hand.len() {
         return Err(format!(
@@ -1742,10 +1578,14 @@ pub(crate) fn check_play_card(
         )
         .into());
     }
-    // RR p.11 initiation gate (#495): an event can't be played if its OnPlay
-    // effect can't change game state — open-turn menu OR Fast window route here.
-    check_event_play_changes_state(state, investigator, &code, card_type, &abilities)?;
-    check_play_not_prohibited(state, investigator, card_type)?;
+    // The initiation gate, as a play (ADR 0017): the investigator is Active, an
+    // event's effect can change the game state (#495), no "cannot play" forbids
+    // the card's type (Dissonant Voices 01165, #852), and its resource cost can
+    // be paid — Fast only skips the *action* cost (#501). Asked here rather than
+    // in the `play_card` handler so every consumer of this validator — the
+    // open-turn menu, `enumerate_fast_plays` and the handler — agrees, and a card
+    // that can't be played is never *offered*.
+    initiation::check_play(state, investigator, &code)?;
     // RR p.19 slots (#498): reject only when the card needs more of a slot type
     // than the investigator has capacity for — unsatisfiable even after discarding
     // every occupying asset. A merely-full slot is NOT rejected here; the play
@@ -1827,10 +1667,6 @@ pub(crate) fn check_play_card(
     // Playing a card is an action (RR p.5), so a non-fast play needs an action
     // point (validate-first; `play_card` spends it). Fast plays are not actions.
     check_play_action_available(state, investigator, is_fast, &code)?;
-    // Playing a card is paying its cost (RR p.22, Initiation Sequence): the
-    // resource cost must be established as payable before initiation. Both Fast
-    // and non-Fast plays pay it — Fast only skips the *action* cost (#501).
-    check_play_resource_cost_payable(state, investigator, &code)?;
     Ok(PlayCheckResult {
         abilities,
         is_fast,
@@ -1862,82 +1698,6 @@ fn check_play_action_available(
         .into());
     }
     Ok(())
-}
-
-/// Playing a card is paying its resource cost in full (RR p.22, Initiation
-/// Sequence — the cost must be established as payable before initiation, and is
-/// then paid before attacks of opportunity resolve). Returns the reject reason
-/// when `investigator` cannot pay `code`'s printed cost. A 0-cost card is always
-/// affordable.
-///
-/// The two costs that are not a number reject for **different reasons**, and
-/// [`CardMetadata::play_cost`](card_dsl::card_data::CardMetadata::play_cost) —
-/// which owns the description of how each one is encoded — is what tells them
-/// apart.
-///
-/// - **`None` — a `"–"` cost, which includes every permanent.** Rejected
-///   **permanently**, not pending a model: per the official FAQ, *"Cards with
-///   a cost of '–' have no cost that can be paid, and therefore cannot be
-///   played. … (Cards that put it directly into play bypassing its cost would
-///   be able to put it into play, however.)"*
-///   (`data/official-faq/Frequently_Asked_Questions.md`.) This is live in the
-///   corpus — The Necronomicon 01009 and every Dunwich permanent — and the
-///   rejection is the final behaviour. Putting such a card into play without
-///   playing it is a different path and does not come through here.
-/// - **`Some(n)` with `n < 0` — an X cost.** Genuinely **not yet modeled**
-///   (deferral split from #501): X needs a player-chosen amount the play path
-///   has no channel for. Rejected loudly, because the alternative is worse
-///   than a reject — `u8::try_from(-2).unwrap_or(0)` would make the card
-///   *free*, both here and at `pay_play_cost`. Jenny's Twin .45s 02010 is
-///   in the compiled corpus, so this arm is reachable the moment an X-cost
-///   card gets an implementation.
-///
-/// Short-circuits to `Ok` when the registry isn't installed — the metadata-free
-/// validation paths the engine's own unit tests exercise; the real play path
-/// always has a registry installed by the time it reaches here.
-fn check_play_resource_cost_payable(
-    state: &GameState,
-    investigator: InvestigatorId,
-    code: &CardCode,
-) -> Result<(), Cow<'static, str>> {
-    let Some(meta) = card_registry::current().and_then(|reg| (reg.metadata_for)(code)) else {
-        return Ok(());
-    };
-    let resources = state
-        .investigators
-        .get(&investigator)
-        .map_or(0, |inv| inv.resources);
-    let cost = payable_play_cost(meta.play_cost(), code)?;
-    if resources < cost {
-        return Err(format!(
-            "PlayCard: playing {code} costs {cost} resource(s); \
-             {investigator:?} has {resources}"
-        )
-        .into());
-    }
-    Ok(())
-}
-
-/// Classify a printed play cost into a payable number of resources, or the
-/// reason it has none. The three shapes and why they differ are spelled out on
-/// [`check_play_resource_cost_payable`]; this is the arm split on its own so it
-/// can be tested without a registry.
-fn payable_play_cost(play_cost: Option<i8>, code: &CardCode) -> Result<u8, Cow<'static, str>> {
-    match play_cost {
-        // A negative cost is ArkhamDB's X sentinel, never a real price;
-        // `u8::try_from` would silently make it free, so it rejects here.
-        Some(cost) => u8::try_from(cost).map_err(|_| {
-            Cow::from(format!(
-                "PlayCard: {code} has an X cost, which is not yet modeled \
-                 (TODO(#577): X needs a player-chosen amount)."
-            ))
-        }),
-        None => Err(format!(
-            "PlayCard: {code} has a printed cost of \"–\", so it has no cost \
-             that can be paid and cannot be played."
-        )
-        .into()),
-    }
 }
 
 /// Reject an activation that cannot get what it needs, at the check layer —
@@ -2017,62 +1777,26 @@ fn designated_action_surcharge(
     }
 }
 
-/// The RR initiation gate on the activation path (#639).
+/// Render the initiation gate's [`Refusal`] in the activation validator's
+/// voice, so its rejection reasons read as they did before the gate (#958).
 ///
-/// `data/rules-reference/rules/glossary/Ability.md`, "Triggered Abilities":
-///
-/// > A triggered ability can only be initiated if its effect has the potential
-/// > to change the game state, and its cost (if any) has the potential to be
-/// > paid in full, taking active cost modifiers into account.
-///
-/// and `glossary/Costs.md`: *"An ability cannot initiate – and therefore its
-/// costs cannot be paid – if the resolution of its effect will not change the
-/// game state."* Rejecting here rather than during resolution is what keeps the
-/// action point and the ability's costs unspent.
-///
-/// Uses the same conservative
-/// [`effect_can_change_state`](crate::engine::evaluator::effect_can_change_state)
-/// evaluator as the play, reaction, and forced-trigger gates, so only provable
-/// no-ops are blocked. Being part of [`check_activate_ability`] rather than
-/// [`activate_ability`] is what keeps the turn menu and the fast-window
-/// enumerator — both of which filter on this validator — from offering an
-/// activation that would reject.
-fn check_activation_changes_state(
-    state: &GameState,
-    investigator: InvestigatorId,
-    source: AbilitySource,
-    code: &CardCode,
-    designator: Option<&ActionDesignator>,
-    effect: &Effect,
-) -> Result<(), Cow<'static, str>> {
-    // A designated ability's substance is the action it performs, not the
-    // residual effect beside it (#805) — and every implemented one's residual
-    // is empty, which the generic gate proves inert, so asking the gate of the
-    // *effect* here would refuse every weapon in the corpus.
-    //
-    // This is not a hole in the RR gate but a redirection of it: the same
-    // question, *"has this the potential to change the game state"*, is asked
-    // of the **action** by `can_perform` — no co-located enemy, no Fight; no
-    // revealed location, no Investigate — and `check_activate_ability` calls
-    // that immediately before this, so an ability reaching here has already
-    // answered it. The ordering is what makes the early return sound.
-    //
-    // **Parley** is the one designator that performs nothing, so it falls
-    // through to the generic gate on its residual, which is exactly right: a
-    // Parley ability whose effect is a no-op has nothing to change the game
-    // state with.
-    if designator.is_some_and(|d| !matches!(d, ActionDesignator::Parley)) {
-        return Ok(());
+/// The cost check already speaks it (`abilities::check_cost_payable`), and the
+/// change-state refusal keeps its #639 wording, which cites the rule it
+/// enforces — `glossary/Ability.md`, "Triggered Abilities": *"A triggered
+/// ability can only be initiated if its effect has the potential to change the
+/// game state, and its cost (if any) has the potential to be paid in full,
+/// taking active cost modifiers into account."* Every other refusal takes the
+/// validator's `ActivateAbility:` prefix.
+fn activation_refusal(refusal: Refusal, code: &CardCode) -> Cow<'static, str> {
+    match refusal {
+        Refusal::CostUnpayable(reason) => reason,
+        Refusal::NoStateChange => format!(
+            "ActivateAbility: {code}'s effect cannot change the game state right now, so the \
+             ability cannot be initiated (RR \"Ability\"/\"Costs\")."
+        )
+        .into(),
+        other => format!("ActivateAbility: {}", Cow::from(other)).into(),
     }
-    let ctx = EvalContext::for_controller_with_source(investigator, source);
-    if evaluator::effect_can_change_state(state, ctx, effect) {
-        return Ok(());
-    }
-    Err(format!(
-        "ActivateAbility: {code}'s effect cannot change the game state right now, so the \
-         ability cannot be initiated (RR \"Ability\"/\"Costs\")."
-    )
-    .into())
 }
 
 /// Reject an ability mixing [`Cost::DiscardSelf`](card_dsl::dsl::Cost::DiscardSelf)
@@ -2100,8 +1824,8 @@ fn reject_incompatible_costs(costs: &[Cost]) -> Result<(), Cow<'static, str>> {
 /// the agenda.
 ///
 /// Usage state is `CardInPlay::ability_usage`, a per-instance map, and a
-/// location has no instance (`bump_usage_counter`'s `unreachable!` says so for
-/// the reaction path). Making these sources activatable is what first puts that
+/// location has no instance (`initiation::record_initiation`'s `unreachable!`
+/// says so for the reaction path). Making these sources activatable is what first puts that
 /// branch behind player input, and **a panic reachable from player input must
 /// not ship** — so the limit is refused, loudly, rather than silently ignored
 /// or crashed into.
@@ -2195,17 +1919,12 @@ pub(crate) fn check_activate_ability(
     source: AbilitySource,
     address: &AbilityAddress,
 ) -> Result<ActivateCheckResult, Cow<'static, str>> {
-    let Some(inv) = state.investigators.get(&investigator) else {
+    // Whether the investigator is Active is the gate's question, asked last;
+    // this lookup only lets the action-economy check below read their actions.
+    if !state.investigators.contains_key(&investigator) {
         return Err(
             format!("ActivateAbility: investigator {investigator:?} is not in state").into(),
         );
-    };
-    if inv.status != Status::Active {
-        return Err(format!(
-            "ActivateAbility: {investigator:?} is not Active (status {:?})",
-            inv.status,
-        )
-        .into());
     }
     // Which sources exist is the reachability predicate's answer, and it is the
     // same one the turn-menu enumerator lists from (#707). Addressed by
@@ -2214,7 +1933,6 @@ pub(crate) fn check_activate_ability(
     let source_card = ability_source::resolve(state, investigator, source)?;
     let source_code = source_card.code().clone();
     let source_exhausted = source_card.exhausted();
-    let source_uses = source_card.uses();
 
     // Invariant: `resolve_activated_ability` currently returns only `Ok(...)`
     // (success) or `Err(EngineOutcome::Rejected { ... })` (validation failure).
@@ -2272,7 +1990,6 @@ pub(crate) fn check_activate_ability(
         designated_action_surcharge(state, investigator, action_cost, designator.as_ref());
     let action_cost = action_cost.saturating_add(surcharge);
 
-    // Re-borrow inv after state borrows above.
     let inv = state.investigators.get(&investigator).expect("checked");
 
     // Action-economy check.
@@ -2284,36 +2001,28 @@ pub(crate) fn check_activate_ability(
         .into());
     }
 
-    // Validate every payment cost is payable. Done as a pure read
-    // before any mutation so an all-or-nothing reject leaves state
-    // untouched.
-    for cost in &costs {
-        if let Err(reason) =
-            abilities::check_cost_payable(cost, inv, source_exhausted, &source_uses)
-        {
-            return Err(reason.into());
-        }
-    }
-
     reject_incompatible_costs(&costs)?;
     reject_source_costs_without_an_instance(source, &source_code, &costs)?;
+    // Before the gate: a designated ability's change-state question is this
+    // check's (`initiation::performs_an_action`).
     check_activation_target_available(state, investigator, designator.as_ref(), &effect)?;
-    check_activation_changes_state(
-        state,
+    let candidate = ResolutionCandidate::new(
+        source_code,
         investigator,
-        source,
-        &source_code,
-        designator.as_ref(),
-        &effect,
-    )?;
+        address.clone(),
+        CandidateSource::Ability(source),
+    );
+    initiation::check(state, &candidate, InitiationKind::Activated)
+        .map_err(|refusal| activation_refusal(refusal, &candidate.code))?;
 
     Ok(ActivateCheckResult {
-        source_code,
+        candidate,
         action_cost,
         surcharge_sources,
         designator,
         costs,
         effect,
+        usage_limit,
         source_exhausted,
     })
 }
