@@ -15,12 +15,12 @@ use card_dsl::dsl::{
 
 use crate::action::InputResponse;
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{combat, emit, reaction_windows};
+use crate::engine::dispatch::{choice, combat, emit, reaction_windows};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::modified_value::{
     self, ContributionSource, ModifiedQuantity, ModifierBreakdown, ModifierTarget, ReadContext,
 };
-use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, ResumeToken};
 use crate::engine::Cx;
 use crate::event::{Event, FailureReason};
 use crate::scenario::TokenEffect;
@@ -211,19 +211,18 @@ pub(in crate::engine) fn start_skill_test(
             .continuations
             .push(SubstitutionPromptFrame { investigator });
         let use_skill = SkillKind::Intellect; // sole substitution in scope
-        return EngineOutcome::AwaitingInput {
-            request: InputRequest::pick_single(
-                format!(
-                    "{investigator:?}: use {use_skill:?} in place of {skill:?} for this test? \
-                     (PickSingle(0) = use {use_skill:?}, PickSingle(1) = keep {skill:?})",
-                ),
-                vec![
-                    ChoiceOption::new(OptionId(0), format!("Use {use_skill:?}")),
-                    ChoiceOption::new(OptionId(1), format!("Keep {skill:?}")),
-                ],
+                                              // A decision, not a selection (ADR 0015): the two options are the
+                                              // alternatives Mind over Matter 01036 offers, not board entities. It is
+                                              // un-anchored because the event has left play by now — the ruling has
+                                              // it played "before the skill test begins".
+        return choice::awaiting_decision(
+            format!(
+                "{investigator:?}: use {use_skill:?} in place of {skill:?} for this test? \
+                 (PickSingle(0) = use {use_skill:?}, PickSingle(1) = keep {skill:?})",
             ),
-            resume_token: ResumeToken(0),
-        };
+            vec![format!("Use {use_skill:?}"), format!("Keep {skill:?}")],
+            None,
+        );
     }
     // No substitution: drive the test. `advance` parks at `AwaitingCommit`,
     // emitting the commit prompt (which propagates up to here).

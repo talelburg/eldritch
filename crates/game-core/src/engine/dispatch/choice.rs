@@ -82,8 +82,10 @@ fn choice_options(options: Vec<(String, Option<OptionTarget>)>) -> Vec<ChoiceOpt
 /// the source left play during cost payment, and the prompt falls back to the
 /// banner like any un-anchored one.
 ///
-/// The sole caller is the evaluator's `Effect::ChooseOne` step. Every other
-/// suspend goes through [`awaiting_choice_anchored`] and keeps the
+/// Two callers: the evaluator's `Effect::ChooseOne` step, and the skill-test
+/// substitution offer (Mind over Matter 01036), whose source has left play and
+/// so passes no anchor. Every other suspend goes through
+/// [`awaiting_choice_anchored`] and keeps the
 /// [`Selection`](crate::engine::PromptNature::Selection) default.
 pub(crate) fn awaiting_decision(
     prompt: impl Into<String>,

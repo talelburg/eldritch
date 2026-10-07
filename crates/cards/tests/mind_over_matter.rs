@@ -72,13 +72,10 @@ fn fight(session: TestSession) -> TestSession {
     })
 }
 
-/// Answer the substitution prompt: option 0 uses the substitute skill, 1 keeps
-/// the printed one. Its options are un-anchored (#950), so the answer is
-/// positional.
-fn substitute(use_substitute: bool) -> Action {
-    Action::Player(PlayerAction::ResolveInput {
-        response: InputResponse::PickSingle(OptionId(u32::from(!use_substitute))),
-    })
+/// Answer the substitution prompt, a Decision (ADR 0015): printed option 0
+/// uses the substitute skill, 1 keeps the printed one.
+fn substitute(session: TestSession, use_substitute: bool) -> TestSession {
+    session.pick_nth(usize::from(!use_substitute))
 }
 
 /// Answer the commit window with the hand indices in `indices`.
@@ -111,7 +108,7 @@ fn play_then_fight_substituting_succeeds_via_intellect() {
 
     let s = fight(s);
     assert!(!at_turn_menu(&s), "substitution prompt");
-    let s = s.apply(substitute(true)); // use Intellect
+    let s = substitute(s, true); // use Intellect
     assert_eq!(s.prompt().kind, InputKind::PickMultiple, "commit window");
     let s = s.apply(commit(vec![]));
     assert!(at_turn_menu(&s));
@@ -125,11 +122,10 @@ fn play_then_fight_substituting_succeeds_via_intellect() {
 #[test]
 fn fight_declining_substitution_fails_on_combat() {
     let s = play_card(TestSession::new(board(1, 4, vec![CardCode::new(MOM)])), 0);
-    let s = fight(s)
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .apply(substitute(false)); // keep Combat
+    let s = fight(s).resolve_choices(|c| {
+        c.commit_cards(&[]);
+    });
+    let s = substitute(s, false); // keep Combat
     assert!(at_turn_menu(&s));
     assert_event!(s.events(), Event::SkillTestFailed { .. });
     assert_eq!(
@@ -155,7 +151,7 @@ fn substituted_intellect_test_rejects_a_committed_combat_icon() {
         )),
         0,
     );
-    let s = fight(s).apply(substitute(true)); // use Intellect → it's now an Intellect test
+    let s = substitute(fight(s), true); // use Intellect → it's now an Intellect test
     assert_eq!(s.prompt().kind, InputKind::PickMultiple, "commit window");
     let s = s.apply(commit(vec![0])); // commit Overpower (combat icons)
     assert!(!s.expect_rejected().is_empty());
@@ -245,11 +241,10 @@ fn weapon_fight_substituting_uses_intellect_and_keeps_weapon_damage() {
             address: AbilityAddress::Printed(0),
         });
     assert!(!at_turn_menu(&s), "substitution prompt");
-    let s = s
-        .resolve_choices(|c| {
-            c.commit_cards(&[]);
-        })
-        .apply(substitute(true)); // use Intellect (drops the +combat weapon bonus)
+    let s = s.resolve_choices(|c| {
+        c.commit_cards(&[]);
+    });
+    let s = substitute(s, true); // use Intellect (drops the +combat weapon bonus)
     assert!(at_turn_menu(&s));
     assert_event!(s.events(), Event::SkillTestSucceeded { .. });
     assert_eq!(
