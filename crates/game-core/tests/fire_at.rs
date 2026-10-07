@@ -250,6 +250,8 @@ fn a_forced_ability_that_reaches_a_resolution_point_ends_the_game_there() {
         session.state().ending,
         Some(ScenarioEnding::Resolution(ResolutionId::new(1)))
     );
+    // The one stack assertion here: #946's acceptance criteria name it, an
+    // exception to standards.md § Test layering.
     assert!(
         session.state().continuations.is_empty(),
         "nothing is left to resolve"

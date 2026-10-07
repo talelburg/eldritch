@@ -27,9 +27,8 @@
 #![allow(clippy::too_many_lines)]
 
 use cards::REGISTRY;
-use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
-use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId};
+use game_core::engine::{EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, GameStateBuilder, InvestigatorId, LocationId,
@@ -49,32 +48,6 @@ const MACHETE: &str = "01020";
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
     test_support::install_registry_with_test_cards(REGISTRY);
-}
-
-/// Resolve a soak-distribution prompt (#44/K5b — an `AoO` against an investigator
-/// with a soaker prompts for the damage distribution) by assigning every point
-/// onto the soaker asset, then to the investigator once it is full. Returns the
-/// first result that is no longer a distribution prompt.
-fn soak_onto_asset(mut result: ApplyResult) -> ApplyResult {
-    while let EngineOutcome::AwaitingInput { request, .. } = &result.outcome {
-        if !request.prompt.contains("to which target") {
-            break;
-        }
-        let id = request
-            .options
-            .iter()
-            .find(|o| o.label.contains("Asset"))
-            .or_else(|| request.options.iter().find(|o| o.label == "Investigator"))
-            .expect("a distribution option")
-            .id;
-        result = engine::apply(
-            result.state,
-            Action::Player(PlayerAction::ResolveInput {
-                response: InputResponse::PickSingle(id),
-            }),
-        );
-    }
-    result
 }
 
 /// A ready enemy dealing `damage` / 0 horror, with `max_health`. Engage it
@@ -109,28 +82,28 @@ fn playing_a_non_fast_event_while_engaged_provokes_an_aoo() {
 
     let attacker = ready_attacker(7, 2, 5);
 
-    let state = GameStateBuilder::new()
+    // The AoO prompts for the soak distribution (#44/K5b), one prompt per point
+    // of damage: assign both onto Guard Dog.
+    let session = GameStateBuilder::new()
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
         .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
-        .build();
-
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
+        .session()
+        .resolve_choices(|c| {
+            c.pick(OptionTarget::CardInstance(dog));
+            c.pick(OptionTarget::CardInstance(dog));
+        })
+        .take(&TurnAction::PlayCard {
             investigator: inv_id,
             hand_index: 0,
-        },
-    );
-    // The AoO prompts for the soak distribution (#44/K5b): assign onto Guard Dog.
-    let result = soak_onto_asset(result);
-    let state = result.state;
+        });
+    let state = session.state();
 
-    assert!(
-        matches!(result.outcome, EngineOutcome::AwaitingInput { .. }),
-        "the AoO's damage window must suspend the play: {:?}",
-        result.outcome
+    assert_ne!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(inv_id)),
+        "the AoO's damage window must suspend the play"
     );
     let dog_in_play = state.investigators[&inv_id]
         .cards_in_play
@@ -407,26 +380,25 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
 
     let attacker = ready_attacker(7, 2, 5);
 
-    let state = GameStateBuilder::new()
+    // Step 1: play Machete → AoO soaks onto Guard Dog → soak window; Machete is
+    // mid-play — it left hand when the play commenced and enters play only once
+    // the play completes. The AoO prompts for the soak distribution (#44/K5b),
+    // one prompt per point of damage: assign both onto Guard Dog.
+    let session = GameStateBuilder::new()
         .with_location(test_support::test_location(101, "Study"))
         .with_investigator(investigator)
         .open_turn(inv_id)
         .with_enemy_engaged(attacker, inv_id)
-        .build();
-
-    // Step 1: play Machete → AoO soaks onto Guard Dog → soak window; Machete is
-    // mid-play — it left hand when the play commenced and enters play only once
-    // the play completes.
-    let result = test_support::take_turn_action(
-        state,
-        &TurnAction::PlayCard {
+        .session()
+        .resolve_choices(|c| {
+            c.pick(OptionTarget::CardInstance(dog));
+            c.pick(OptionTarget::CardInstance(dog));
+        })
+        .take(&TurnAction::PlayCard {
             investigator: inv_id,
             hand_index: 0,
-        },
-    );
-    // The AoO prompts for the soak distribution (#44/K5b): assign onto Guard Dog.
-    let result = soak_onto_asset(result);
-    let state = result.state;
+        });
+    let state = session.state();
     assert_eq!(
         state.investigators[&inv_id].actions_remaining, 2,
         "playing the asset spent one action before the AoO"
@@ -446,13 +418,8 @@ fn playing_a_non_fast_asset_provokes_an_aoo_then_enters_play() {
 
     // Step 2: fire Guard Dog's reaction (closes the soak window) → the play
     // resumes → Machete enters play.
-    let result = engine::apply(
-        state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(OptionId(0)),
-        }),
-    );
-    let state = result.state;
+    let session = session.pick(OptionTarget::CardInstance(dog));
+    let state = session.state();
     assert!(
         state.investigators[&inv_id]
             .cards_in_play

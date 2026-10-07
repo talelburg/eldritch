@@ -428,12 +428,13 @@ fn skip_passes_a_fast_window_and_pick_plays_from_it() {
 /// back through `expect_rejected`, and the prompt still stands.
 #[test]
 fn a_rejected_step_reads_back_and_leaves_the_prompt_standing() {
-    let session = board()
-        .open_turn(INV)
-        .session()
-        .apply(Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::Confirm,
-        }));
+    let session =
+        board()
+            .open_turn(INV)
+            .session()
+            .apply(Action::Player(PlayerAction::ResolveInput {
+                response: InputResponse::Confirm,
+            }));
 
     assert!(!session.expect_rejected().is_empty());
     assert_eq!(resources(&session), 5);
