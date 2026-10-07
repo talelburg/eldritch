@@ -152,26 +152,18 @@ fn defeated_investigator_does_not_take_further_damage() {
     e2.engaged_with = Some(inv_id);
     e2.attack_damage = 5;
     state.enemies.insert(EnemyId(201), e2);
-    let r1 = test_support::take_turn_action(
-        state,
-        &TurnAction::Move {
+    let r2 = TestSession::new(state)
+        .take(&TurnAction::Move {
             investigator: inv_id,
             destination: b,
-        },
-    );
-    assert!(matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }));
-    let pick = attack_order_pick(&r1.outcome, EnemyId(200));
-    let r2 = apply(
-        r1.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(pick),
-        }),
-    );
+        })
+        .pick(OptionTarget::Enemy(EnemyId(200)))
+        .finish();
     // The sole investigator was defeated, so Rules Reference p.10 step 6
     // applies — "If there are no remaining players, the scenario ends" —
     // and the engine's latch for it is `Lost`. The attack loop and the open
     // turn are therefore cancelled and the ending finalizes in this same
-    // apply, rather than the engine re-offering a turn menu to a table with
+    // step, rather than the engine re-offering a turn menu to a table with
     // no remaining players (#566).
     assert_eq!(r2.outcome, EngineOutcome::Done, "the scenario has ended");
     assert_event!(r2.events, Event::ScenarioResolved { .. });

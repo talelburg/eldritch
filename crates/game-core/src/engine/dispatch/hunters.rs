@@ -8,7 +8,9 @@ use crate::action::InputResponse;
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::dispatch::{cursor, movement, phases};
 use crate::engine::modified_value::{self, ModifiedQuantity, ModifierTarget, ReadContext};
-use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::engine::outcome::{
+    ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
+};
 use crate::engine::{pathfinding, Cx};
 use crate::event::Event;
 use crate::state::{
@@ -421,18 +423,32 @@ pub(crate) fn drive_hunter_moves(cx: &mut Cx) -> EngineOutcome {
 }
 
 /// Build the offered options for a candidate list: option `i` is
-/// `candidates[i]`, label = its debug repr (#205 will make these human).
-pub(super) fn candidate_options<T: Debug>(candidates: &[T]) -> Vec<ChoiceOption> {
+/// `candidates[i]`, labelled and anchored by `option` (#205 will make the
+/// labels human). Every candidate here is a board entity, so `option` returns
+/// a bare [`OptionTarget`] rather than an `Option`: a caller cannot leave one
+/// un-anchored and land it in the prompt banner (ADR 0011, #950).
+pub(super) fn candidate_options<T>(
+    candidates: &[T],
+    option: impl Fn(&T) -> (String, OptionTarget),
+) -> Vec<ChoiceOption> {
     candidates
         .iter()
         .enumerate()
         .map(|(i, c)| {
+            let (label, target) = option(c);
             ChoiceOption::new(
                 OptionId(u32::try_from(i).expect("candidate count fits u32")),
-                format!("{c:?}"),
+                label,
             )
+            .at(target)
         })
         .collect()
+}
+
+/// The option for one tied investigator: labelled by id, anchored to their
+/// investigator card.
+pub(super) fn investigator_option(state: &GameState, id: InvestigatorId) -> (String, OptionTarget) {
+    (format!("{id:?}"), state.investigators[&id].card_anchor())
 }
 
 /// Store the pending hunter choice and return `AwaitingInput` for the lead
@@ -445,14 +461,16 @@ fn suspend_hunter_choice(cx: &mut Cx, choice: HunterChoice) -> EngineOutcome {
                 "Hunter {enemy:?} movement: lead investigator picks a destination among \
                  {candidates:?}"
             ),
-            candidate_options(candidates),
+            candidate_options(candidates, |l| {
+                (format!("{l:?}"), OptionTarget::Location(*l))
+            }),
         ),
         HunterChoice::Engage { enemy, candidates } => (
             format!(
                 "Hunter {enemy:?} engagement: lead investigator picks whom to engage among \
                  {candidates:?}"
             ),
-            candidate_options(candidates),
+            candidate_options(candidates, |i| investigator_option(cx.state, *i)),
         ),
     };
     cx.state

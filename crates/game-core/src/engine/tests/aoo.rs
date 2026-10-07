@@ -337,42 +337,26 @@ fn aoo_order_pick_resolves_attacks_in_chosen_order_for_multiple_attackers() {
         state.enemies.insert(EnemyId(id), e);
     }
     // Move provokes the AoO; 3 engaged → order pick (no attack dealt yet).
-    let r1 = test_support::take_turn_action(
-        state,
-        &TurnAction::Move {
+    // Pick EnemyId(302) (dmg 4) first → resolves it, then re-prompts over the
+    // remaining [300, 301]; pick EnemyId(301) (dmg 2), and EnemyId(300)
+    // (dmg 1) is then forced. The AoO loop drains and the parked Move
+    // completes.
+    let session = TestSession::new(state)
+        .take(&TurnAction::Move {
             investigator: inv_id,
             destination: b,
-        },
+        })
+        .pick(OptionTarget::Enemy(EnemyId(302)))
+        .pick(OptionTarget::Enemy(EnemyId(301)));
+    assert_eq!(
+        session.prompt().target,
+        Some(OptionTarget::TurnControl(inv_id)),
+        "back at the turn menu once the AoO loop drains",
     );
-    assert!(matches!(r1.outcome, EngineOutcome::AwaitingInput { .. }));
-    let pick_302 = attack_order_pick(&r1.outcome, EnemyId(302));
 
-    // Pick EnemyId(302) (dmg 4) first → resolves it, then re-prompts over the
-    // remaining [300, 301].
-    let r2 = apply(
-        r1.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(pick_302),
-        }),
-    );
-    assert!(matches!(r2.outcome, EngineOutcome::AwaitingInput { .. }));
-    let pick_301 = attack_order_pick(&r2.outcome, EnemyId(301));
-
-    // Pick EnemyId(301) (dmg 2); EnemyId(300) (dmg 1) is then forced. The AoO
-    // loop drains and the parked Move completes.
-    let r3 = apply(
-        r2.state,
-        Action::Player(PlayerAction::ResolveInput {
-            response: InputResponse::PickSingle(pick_301),
-        }),
-    );
-    assert!(matches!(r3.outcome, EngineOutcome::AwaitingInput { .. }));
-
-    let damages: Vec<u8> = r1
-        .events
+    let damages: Vec<u8> = session
+        .events()
         .iter()
-        .chain(&r2.events)
-        .chain(&r3.events)
         .filter_map(|e| match e {
             Event::DamageTaken { amount, .. } => Some(*amount),
             _ => None,
@@ -383,9 +367,9 @@ fn aoo_order_pick_resolves_attacks_in_chosen_order_for_multiple_attackers() {
         vec![4, 2, 1],
         "chosen order: 302 (dmg4), 301 (dmg2), 300 (dmg1)"
     );
-    assert_eq!(r3.state.investigators[&inv_id].damage(), 7);
+    assert_eq!(session.state().investigators[&inv_id].damage(), 7);
     // The Move completed once the AoO loop drained.
-    assert_event!(r3.events, Event::InvestigatorMoved { .. });
+    assert_event!(session.events(), Event::InvestigatorMoved { .. });
 }
 
 #[test]

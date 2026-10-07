@@ -1172,7 +1172,8 @@ fn suspend_order_pick(
          next (RR p.25 step 3.3)",
         attackers.len()
     );
-    let options = hunters::candidate_options(&attackers);
+    let options =
+        hunters::candidate_options(&attackers, |e| (format!("{e:?}"), OptionTarget::Enemy(*e)));
     cx.state.continuations.push(AttackLoopFrame {
         investigator,
         remaining_attackers: attackers,

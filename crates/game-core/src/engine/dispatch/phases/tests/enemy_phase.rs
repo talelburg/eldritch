@@ -1,6 +1,6 @@
 use super::*;
 use crate::action::{Action, InputResponse, PlayerAction};
-use crate::engine::outcome::{EngineOutcome, OptionId};
+use crate::engine::outcome::{EngineOutcome, OptionId, OptionTarget};
 use crate::engine::{self, dispatch};
 use crate::state::{
     EnemyId, FastActorScope, GameStateBuilder, InvestigatorId, LocationId, Phase, Status,
@@ -97,14 +97,14 @@ fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
         state.continuations,
     );
     let mut ev2 = Vec::new();
-    // Pick LocationId(2) by its offered option id (candidates ride the request).
+    // Pick LocationId(2) by the anchor its option carries.
     let EngineOutcome::AwaitingInput { request, .. } = &outcome else {
         unreachable!("asserted AwaitingInput above");
     };
     let pick = request
         .options
         .iter()
-        .find(|o| o.label == format!("{:?}", LocationId(2)))
+        .find(|o| o.target == Some(OptionTarget::Location(LocationId(2))))
         .expect("LocationId(2) among offered options")
         .id;
     let resumed = {
@@ -296,7 +296,7 @@ fn resolve_attacks_for_investigator_pick_overrides_enemy_id_order() {
     let pick = request
         .options
         .iter()
-        .find(|o| o.label == format!("{:?}", EnemyId(10)))
+        .find(|o| o.target == Some(OptionTarget::Enemy(EnemyId(10))))
         .expect("EnemyId(10) offered")
         .id;
     assert_eq!(
@@ -390,7 +390,7 @@ fn resolve_attacks_for_investigator_early_breaks_when_target_defeated_mid_loop()
     let pick = request
         .options
         .iter()
-        .find(|o| o.label == format!("{:?}", EnemyId(1)))
+        .find(|o| o.target == Some(OptionTarget::Enemy(EnemyId(1))))
         .expect("EnemyId(1) offered")
         .id;
     let mut cx = Cx {

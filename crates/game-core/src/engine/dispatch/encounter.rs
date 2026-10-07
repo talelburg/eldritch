@@ -502,7 +502,9 @@ pub(super) fn spawn_enemy_at(
                         "Enemy {enemy_id:?} spawn engagement: lead investigator picks whom to \
                          engage among {tied:?}"
                     ),
-                    hunters::candidate_options(&tied),
+                    hunters::candidate_options(&tied, |i| {
+                        hunters::investigator_option(cx.state, *i)
+                    }),
                 ),
                 resume_token: ResumeToken(0),
             }

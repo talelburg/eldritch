@@ -13,7 +13,7 @@ use card_dsl::card_data::Slot;
 use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::{cards, hunters};
-use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, ResumeToken};
+use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken};
 use crate::engine::Cx;
 use crate::state::{
     AssetEntry, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId, SlotDiscardFrame,
@@ -214,13 +214,17 @@ fn prompt_slot_discard(
     deficit: &SlotCounts,
 ) -> EngineOutcome {
     let candidates = make_room_candidates(cx.state, investigator, deficit);
-    let codes: Vec<CardCode> = candidates.into_iter().map(|(_, code)| code).collect();
     let prompt = format!(
         "Investigator {investigator:?}: choose an asset to discard to make room \
          (slots needed: {deficit:?})."
     );
     EngineOutcome::AwaitingInput {
-        request: InputRequest::pick_single(prompt, hunters::candidate_options(&codes)),
+        request: InputRequest::pick_single(
+            prompt,
+            hunters::candidate_options(&candidates, |(inst, code)| {
+                (format!("{code:?}"), OptionTarget::CardInstance(*inst))
+            }),
+        ),
         resume_token: ResumeToken(0),
     }
 }

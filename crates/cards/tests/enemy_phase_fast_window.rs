@@ -184,10 +184,11 @@ fn skipping_the_pause_resumes_into_the_attack() {
             resumed.outcome
         );
     };
+    let me = resumed.state.investigators[&inv_id].card_anchor();
     let to_investigator = request
         .options
         .iter()
-        .find(|o| o.label == "Investigator")
+        .find(|o| o.target.as_ref() == Some(&me))
         .expect("the attacked investigator is always an assignment target")
         .id;
 
