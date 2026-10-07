@@ -208,17 +208,7 @@ pub(super) fn check_with(
     kind: InitiationKind,
 ) -> Result<(), Refusal> {
     let controller = candidate.controller;
-    if applies(Check::Status, kind) {
-        match state.investigators.get(&controller).map(|inv| inv.status) {
-            Some(Status::Active) => {}
-            status => {
-                return Err(Refusal::NotActive {
-                    investigator: controller,
-                    status,
-                })
-            }
-        }
-    }
+    status_ok(state, controller, kind)?;
     let ability = abilities_in_effect::resolve_with(
         state,
         reg,
@@ -231,20 +221,114 @@ pub(super) fn check_with(
     if applies(Check::UsageLimit, kind) && usage_exhausted(state, candidate, ability.usage_limit) {
         return Err(Refusal::UsageLimitReached);
     }
-    if applies(Check::PlayBan, kind) {
-        if let Some(card_type) = (reg.metadata_for)(&candidate.code).map(CardMetadata::card_type) {
-            if evaluator::play_is_prohibited(state, reg, controller, card_type) {
-                return Err(Refusal::PlayBanned {
-                    investigator: controller,
-                    card_type,
-                });
-            }
-        }
-    }
+    play_not_banned(state, reg, controller, &candidate.code, kind)?;
     if applies(Check::Cost, kind) {
         cost_payable(state, reg, &ability, candidate, kind).map_err(Refusal::CostUnpayable)?;
     }
     Ok(())
+}
+
+/// Whether `controller` may play `code` from hand — [`check`] as
+/// [`InitiationKind::Play`] for the play validator, which names a card rather
+/// than one of its abilities.
+///
+/// A Fast event offered in a reaction window names the `[reaction]` ability
+/// whose timing it plays at, so it asks [`check`] with that address. A card
+/// played from the turn menu or a player window has no such ability: what it
+/// initiates is the card itself, so there is no address to resolve. The
+/// change-state and eligibility checks read the effect the play resolves
+/// instead — an event's `OnPlay` abilities, of which at least one must pass
+/// (Working a Hunch 01037 at a 0-clue location is unplayable). An asset
+/// changes the game state by entering play, so it passes them unasked. Every
+/// other Play check — status, play-ban, cost — is the same code [`check`]
+/// runs.
+///
+/// Refuses with [`Refusal::SideNotInEffect`] when no registry is installed or
+/// it does not know `code`, as [`check`] does for an address it cannot
+/// resolve.
+pub(super) fn check_play(
+    state: &GameState,
+    controller: InvestigatorId,
+    code: &CardCode,
+) -> Result<(), Refusal> {
+    let reg = card_registry::current().ok_or(Refusal::SideNotInEffect)?;
+    check_play_with(state, reg, controller, code)
+}
+
+/// [`check_play`] against an explicitly supplied registry, for the gate seam's
+/// tests.
+pub(super) fn check_play_with(
+    state: &GameState,
+    reg: &CardRegistry,
+    controller: InvestigatorId,
+    code: &CardCode,
+) -> Result<(), Refusal> {
+    let kind = InitiationKind::Play;
+    status_ok(state, controller, kind)?;
+    let card_type = (reg.metadata_for)(code)
+        .map(CardMetadata::card_type)
+        .ok_or(Refusal::SideNotInEffect)?;
+    if card_type == CardType::Event {
+        // The first refusal when no `OnPlay` effect passes; `NoStateChange`
+        // when the event has none at all, since nothing would resolve.
+        let mut refusal = None;
+        let playable = (reg.abilities_for)(code)
+            .unwrap_or_default()
+            .iter()
+            .filter(|ability| matches!(ability.trigger, Trigger::OnPlay))
+            .any(|ability| {
+                restrictions_met(state, reg, ability, CandidateSource::Hand, controller, kind)
+                    .map_err(|r| refusal.get_or_insert(r))
+                    .is_ok()
+            });
+        if !playable {
+            return Err(refusal.unwrap_or(Refusal::NoStateChange));
+        }
+    }
+    play_not_banned(state, reg, controller, code, kind)?;
+    play_cost_payable(state, reg, controller, code).map_err(Refusal::CostUnpayable)
+}
+
+/// The status check: `controller` is [`Status::Active`], when it applies to
+/// `kind`.
+fn status_ok(
+    state: &GameState,
+    controller: InvestigatorId,
+    kind: InitiationKind,
+) -> Result<(), Refusal> {
+    if !applies(Check::Status, kind) {
+        return Ok(());
+    }
+    match state.investigators.get(&controller).map(|inv| inv.status) {
+        Some(Status::Active) => Ok(()),
+        status => Err(Refusal::NotActive {
+            investigator: controller,
+            status,
+        }),
+    }
+}
+
+/// The play-ban check: no constant "cannot play" forbids `controller` the
+/// card type of `code`, when it applies to `kind`.
+fn play_not_banned(
+    state: &GameState,
+    reg: &CardRegistry,
+    controller: InvestigatorId,
+    code: &CardCode,
+    kind: InitiationKind,
+) -> Result<(), Refusal> {
+    if !applies(Check::PlayBan, kind) {
+        return Ok(());
+    }
+    match (reg.metadata_for)(code).map(CardMetadata::card_type) {
+        Some(card_type) if evaluator::play_is_prohibited(state, reg, controller, card_type) => {
+            Err(Refusal::PlayBanned {
+                investigator: controller,
+                card_type,
+            })
+        }
+        _ => Ok(()),
+    }
 }
 
 /// The change-state and eligibility checks on an already-resolved `ability`.
@@ -297,12 +381,11 @@ fn performs_an_action(ability: &Ability) -> bool {
 }
 
 /// Whether `ability` may initiate on its change-state and eligibility checks
-/// alone, for the two callers that ask about an ability they already hold
+/// alone, for `lapse_reason`, which asks about an ability it already holds
 /// rather than about an address.
 ///
-/// Transitional: `TODO(#957)` moves the hand Fast-event scan onto [`check`] as
-/// [`InitiationKind::Play`], and `TODO(#960)` moves `lapse_reason` onto it;
-/// this goes once both have.
+/// Transitional: `TODO(#960)` moves `lapse_reason` onto [`check`], and this
+/// goes with it.
 pub(super) fn ability_can_initiate(
     state: &GameState,
     ability: &Ability,

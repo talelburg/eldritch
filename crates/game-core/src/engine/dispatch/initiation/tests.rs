@@ -28,6 +28,12 @@ const PRIMITIVES: &str = "_gate_primitives";
 const COSTED_EVENT: &str = "_gate_costed_event";
 /// A constant "cannot play events".
 const EVENT_BAN: &str = "_gate_event_ban";
+/// Events played from hand, each resolving one `OnPlay` effect: one that can
+/// change the game state (and costs `EVENT_COST`), and two free ones — one that
+/// provably cannot, and one gated by an eligibility predicate that is false.
+const PLAYED_LIVE: &str = "_gate_played_live";
+const PLAYED_INERT: &str = "_gate_played_inert";
+const PLAYED_SHUT_TAG: &str = "_gate_played_shut_tag";
 
 const OPEN_TAG: &str = "_gate:open";
 const SHUT_TAG: &str = "_gate:shut";
@@ -116,6 +122,9 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             dsl::activated_as(ActionDesignator::Parley, 1, vec![], inert()),
         ]),
         COSTED_EVENT => Some(vec![reaction(live())]),
+        PLAYED_LIVE => Some(vec![dsl::on_play(live())]),
+        PLAYED_INERT => Some(vec![dsl::on_play(inert())]),
+        PLAYED_SHUT_TAG => Some(vec![dsl::on_play(live()).with_eligibility(SHUT_TAG)]),
         EVENT_BAN => Some(vec![dsl::constant(dsl::restrict(Restriction::CannotPlay(
             CardType::Event,
         )))]),
@@ -123,11 +132,15 @@ fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
     }
 }
 
-fn costed_event_metadata() -> &'static CardMetadata {
-    static M: OnceLock<CardMetadata> = OnceLock::new();
-    M.get_or_init(|| CardMetadata {
-        code: COSTED_EVENT.to_owned(),
-        name: "Gate Costed Event".to_owned(),
+/// Event metadata for `code` at printed `cost`, built once into `cell`.
+fn event_metadata(
+    cell: &'static OnceLock<CardMetadata>,
+    code: &str,
+    cost: i8,
+) -> &'static CardMetadata {
+    cell.get_or_init(|| CardMetadata {
+        code: code.to_owned(),
+        name: code.to_owned(),
         traits: vec![],
         text: None,
         back_name: None,
@@ -136,7 +149,7 @@ fn costed_event_metadata() -> &'static CardMetadata {
         weakness: false,
         kind: CardKind::Event {
             class: Class::Neutral,
-            cost: Some(EVENT_COST),
+            cost: Some(cost),
             xp: Some(0),
             skill_icons: SkillIcons::default(),
             is_fast: true,
@@ -147,7 +160,17 @@ fn costed_event_metadata() -> &'static CardMetadata {
 }
 
 fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-    (code.as_str() == COSTED_EVENT).then(costed_event_metadata)
+    static COSTED: OnceLock<CardMetadata> = OnceLock::new();
+    static LIVE: OnceLock<CardMetadata> = OnceLock::new();
+    static INERT: OnceLock<CardMetadata> = OnceLock::new();
+    static SHUT: OnceLock<CardMetadata> = OnceLock::new();
+    match code.as_str() {
+        COSTED_EVENT => Some(event_metadata(&COSTED, COSTED_EVENT, EVENT_COST)),
+        PLAYED_LIVE => Some(event_metadata(&LIVE, PLAYED_LIVE, EVENT_COST)),
+        PLAYED_INERT => Some(event_metadata(&INERT, PLAYED_INERT, 0)),
+        PLAYED_SHUT_TAG => Some(event_metadata(&SHUT, PLAYED_SHUT_TAG, 0)),
+        _ => None,
+    }
 }
 
 fn always(_: &GameState, _: &EvalContext) -> bool {
@@ -216,6 +239,12 @@ fn gate(
     check_with(state, &registry(), candidate, kind)
 }
 
+/// The gate asked as a Play of `code` from hand, with no ability address — the
+/// play validator's question.
+fn play(state: &GameState, code: &str) -> Result<(), Refusal> {
+    check_play_with(state, &registry(), CONTROLLER, &CardCode::new(code))
+}
+
 // ---- potential to change the game state ---------------------------------
 
 #[test]
@@ -282,7 +311,48 @@ fn a_designated_activated_ability_is_judged_by_its_action_not_its_residual() {
     );
 }
 
+/// A Fast event offered from hand is asked about the `[reaction]` ability it
+/// plays at; its effect must be able to change the game state too.
+#[test]
+fn a_fast_event_whose_reaction_effect_cannot_change_state_is_not_played() {
+    let state = state();
+    let inert_reaction = ResolutionCandidate::new(
+        CardCode::new(PRIMITIVES),
+        CONTROLLER,
+        AbilityAddress::Printed(REACTION_INERT),
+        CandidateSource::Hand,
+    );
+    assert_eq!(
+        gate(&state, &inert_reaction, InitiationKind::Play),
+        Err(Refusal::NoStateChange)
+    );
+}
+
+/// A card played from hand names no ability; its `OnPlay` effect is what must
+/// be able to change the game state.
+#[test]
+fn an_event_whose_play_effect_cannot_change_state_is_not_played() {
+    let state = state();
+    assert_eq!(play(&state, PLAYED_INERT), Err(Refusal::NoStateChange));
+    assert_eq!(play(&state, PLAYED_LIVE), Ok(()));
+}
+
+/// A card played from hand is gated by its `OnPlay` effect's eligibility tag.
+#[test]
+fn an_event_whose_play_effect_is_ineligible_is_not_played() {
+    assert_eq!(play(&state(), PLAYED_SHUT_TAG), Err(Refusal::NotEligible));
+}
+
 // ---- side in effect -------------------------------------------------------
+
+/// A code the registry does not know resolves to nothing to play.
+#[test]
+fn a_card_the_registry_does_not_know_is_not_played() {
+    assert_eq!(
+        play(&state(), "_gate_unknown"),
+        Err(Refusal::SideNotInEffect)
+    );
+}
 
 #[test]
 fn an_address_nothing_resolves_to_is_refused_on_every_kind() {
@@ -517,6 +587,20 @@ fn play_needs_the_cards_resource_cost() {
     assert_eq!(gate(&state, &from_hand(), InitiationKind::Play), Ok(()));
 }
 
+/// The play validator's form of the same cell: a card played from hand with no
+/// ability address still needs its resource cost.
+#[test]
+fn play_from_the_turn_menu_needs_the_cards_resource_cost() {
+    let mut state = state();
+    set_resources(&mut state, u8::try_from(EVENT_COST - 1).expect("positive"));
+    assert!(matches!(
+        play(&state, PLAYED_LIVE),
+        Err(Refusal::CostUnpayable(_))
+    ));
+    set_resources(&mut state, u8::try_from(EVENT_COST).expect("positive"));
+    assert_eq!(play(&state, PLAYED_LIVE), Ok(()));
+}
+
 // ---- play-ban -------------------------------------------------------------
 
 fn ban_events(state: &mut GameState) {
@@ -537,6 +621,13 @@ fn play_is_refused_under_a_ban_on_its_card_type() {
     ban_events(&mut state);
     assert_eq!(
         gate(&state, &from_hand(), InitiationKind::Play),
+        Err(Refusal::PlayBanned {
+            investigator: CONTROLLER,
+            card_type: CardType::Event,
+        }),
+    );
+    assert_eq!(
+        play(&state, PLAYED_LIVE),
         Err(Refusal::PlayBanned {
             investigator: CONTROLLER,
             card_type: CardType::Event,
@@ -578,6 +669,7 @@ fn an_eliminated_investigator_cannot_activate_or_play() {
         refused
     );
     assert_eq!(gate(&state, &from_hand(), InitiationKind::Play), refused);
+    assert_eq!(play(&state, PLAYED_LIVE), refused);
 }
 
 /// The forced arms decide status themselves: a game-end forced ability still

@@ -13,8 +13,8 @@ use std::borrow::Cow;
 
 use card_dsl::card_data::{CardMetadata, CardType};
 use card_dsl::dsl::{
-    Ability, ActionDesignator, Cost, Effect, EnemyTarget, EventPattern, EventTiming, Trigger,
-    TriggerKind, UsageLimit,
+    ActionDesignator, Cost, Effect, EnemyTarget, EventPattern, EventTiming, Trigger, TriggerKind,
+    UsageLimit,
 };
 
 use crate::action::InputResponse;
@@ -442,31 +442,27 @@ fn scan_hand_fast_events(
                 if !trigger_matches(event, pattern, id) {
                     continue;
                 }
-                // RR initiation gate: a Fast event can't be played if its effect
-                // can't change game state — same rule as the in-play reaction scan
-                // (#495). Covers Evidence! 01022 (Roland's reaction sourced from
-                // hand: discover 1 clue at your location) at a 0-clue location.
-                if !initiation::ability_can_initiate(state, ability, CandidateSource::Hand, id) {
-                    continue;
-                }
-                // RR p.22 affordability: don't offer a Fast event whose resource
-                // cost can't be paid (Evidence! 01022 costs 1; not offered at 0
-                // resources). The play path (play_fast_event) pays it (#501).
-                // Filtering here keeps the offer honest; it is not the binding
-                // check — the wallet is shared, so a sibling option can empty it
-                // after this ran, and initiation re-asks (#568).
-                if check_play_resource_cost_payable(state, id, code).is_err() {
-                    continue;
-                }
                 let ability_index = u8::try_from(idx)
                     .expect("abilities vec exceeds u8::MAX — card-impl bug, abilities are tiny");
-                plays.push(ResolutionCandidate {
+                let candidate = ResolutionCandidate {
                     code: code.clone(),
                     controller: id,
                     // A card in hand is not in play, so nothing grants to it.
                     address: AbilityAddress::Printed(ability_index),
                     source: CandidateSource::Hand,
-                });
+                };
+                // The initiation gate, as a *play* (ADR 0017): a Fast event is
+                // played, so it is checked like any other play — its effect must
+                // be able to change the game state (Evidence! 01022 at a 0-clue
+                // location, #495), no "cannot play" may forbid it (Dissonant
+                // Voices 01165, #917), and its resource cost must be payable
+                // (#501). Filtering here keeps the offer honest; it is not the
+                // binding check — the wallet is shared, so a sibling option can
+                // empty it after this ran, and initiation re-asks (#568).
+                if initiation::check(state, &candidate, InitiationKind::Play).is_err() {
+                    continue;
+                }
+                plays.push(candidate);
                 // One option per card: a card with two matching abilities is
                 // still offered once. No in-scope card has two.
                 break;
@@ -1470,46 +1466,6 @@ pub(super) fn open_fast_window(cx: &mut Cx, kind: FastWindowKind) -> EngineOutco
     EngineOutcome::Done
 }
 
-/// Pure-validation peer to [`play_card`]. Returns `Ok` if the named
-/// card is currently playable by `investigator`, `Err(reason)` if
-/// not. The check is the existing `play_card` validation block lifted
-/// verbatim — no behavior change at `play_card`'s call site.
-///
-/// Used by [`play_card`] (which then runs the mutation block on the
-/// `Ok` payload) and by `any_fast_play_eligible` (which only
-/// inspects `Ok` vs `Err`).
-/// RR p.11 (#495): an event card may be played only if its `OnPlay` effect has
-/// the potential to change the game state right now (Working a Hunch 01037 at a
-/// 0-clue location is unplayable). Events only — assets and other card types
-/// always change state by entering play. Uses the same conservative
-/// `effect_can_change_state` evaluator as the reaction/forced initiation gates,
-/// so only provable no-ops are blocked. `Ok(())` when playable.
-fn check_event_play_changes_state(
-    state: &GameState,
-    investigator: InvestigatorId,
-    code: &CardCode,
-    card_type: CardType,
-    abilities: &[Ability],
-) -> Result<(), Cow<'static, str>> {
-    if card_type != CardType::Event {
-        return Ok(());
-    }
-    let ctx = EvalContext::for_controller_with_optional_source(investigator, None);
-    let changes_state = abilities.iter().any(|a| {
-        matches!(a.trigger, Trigger::OnPlay)
-            && evaluator::effect_can_change_state(state, ctx, &a.effect)
-    });
-    if changes_state {
-        Ok(())
-    } else {
-        Err(format!(
-            "PlayCard: {code}'s effect cannot change the game state right now, so it \
-             cannot be played (RR p.11)."
-        )
-        .into())
-    }
-}
-
 /// Gates RR p.19 slot capacity: Assets only; the only hard slot reject — a merely-full
 /// slot is not rejected here, make-room at enter-play handles it.
 fn check_play_slot_satisfiable(
@@ -1529,33 +1485,19 @@ fn check_play_slot_satisfiable(
     Ok(())
 }
 
-/// A constant restriction may forbid playing this card type outright
-/// (Dissonant Voices 01165: *"You cannot play assets or events"*). Asked from
-/// [`check_play_card`] rather than from the `play_card` handler so every
-/// consumer of the validator agrees with it: the open-turn menu
-/// (`push_card_actions`), the fast-window enumerator ([`enumerate_fast_plays`])
-/// and the handler all read one predicate, and a forbidden card is never
-/// *offered* — not merely refused on submission. (The defect this closes:
-/// Working a Hunch 01037 was offered by a player window with Dissonant Voices
-/// in the threat area, because only the handler carried the guard.)
-fn check_play_not_prohibited(
-    state: &GameState,
-    investigator: InvestigatorId,
-    card_type: CardType,
-) -> Result<(), Cow<'static, str>> {
-    let Some(reg) = card_registry::current() else {
-        return Ok(());
-    };
-    if evaluator::play_is_prohibited(state, reg, investigator, card_type) {
-        return Err(format!(
-            "PlayCard: {investigator:?} cannot play a {card_type:?} \
-             (a constant restriction forbids it)"
-        )
-        .into());
-    }
-    Ok(())
-}
-
+/// Pure-validation peer to [`play_card`]. Returns `Ok` if the named
+/// card is currently playable by `investigator`, `Err(reason)` if
+/// not.
+///
+/// *Whether* the card may be played is the initiation gate's answer, asked as
+/// a play ([`initiation::check_play`]); this validator owns only the *when* and
+/// the rest of what a play from the turn menu or a player window needs — the
+/// hand index, reaction events, slots, the turn/Fast timing matrix and the
+/// action point (ADR 0017).
+///
+/// Used by [`play_card`] (which then runs the mutation block on the
+/// `Ok` payload) and by `any_fast_play_eligible` (which only
+/// inspects `Ok` vs `Err`).
 pub(crate) fn check_play_card(
     state: &GameState,
     investigator: InvestigatorId,
@@ -1564,13 +1506,6 @@ pub(crate) fn check_play_card(
     let Some(inv) = state.investigators.get(&investigator) else {
         return Err(format!("PlayCard: investigator {investigator:?} is not in state").into());
     };
-    if inv.status != Status::Active {
-        return Err(format!(
-            "PlayCard: {investigator:?} is not Active (status {:?})",
-            inv.status,
-        )
-        .into());
-    }
     let idx = usize::from(hand_index);
     if idx >= inv.hand.len() {
         return Err(format!(
@@ -1635,10 +1570,14 @@ pub(crate) fn check_play_card(
         )
         .into());
     }
-    // RR p.11 initiation gate (#495): an event can't be played if its OnPlay
-    // effect can't change game state — open-turn menu OR Fast window route here.
-    check_event_play_changes_state(state, investigator, &code, card_type, &abilities)?;
-    check_play_not_prohibited(state, investigator, card_type)?;
+    // The initiation gate, as a play (ADR 0017): the investigator is Active, an
+    // event's effect can change the game state (#495), no "cannot play" forbids
+    // the card's type (Dissonant Voices 01165, #852), and its resource cost can
+    // be paid — Fast only skips the *action* cost (#501). Asked here rather than
+    // in the `play_card` handler so every consumer of this validator — the
+    // open-turn menu, `enumerate_fast_plays` and the handler — agrees, and a card
+    // that can't be played is never *offered*.
+    initiation::check_play(state, investigator, &code)?;
     // RR p.19 slots (#498): reject only when the card needs more of a slot type
     // than the investigator has capacity for — unsatisfiable even after discarding
     // every occupying asset. A merely-full slot is NOT rejected here; the play
@@ -1720,10 +1659,6 @@ pub(crate) fn check_play_card(
     // Playing a card is an action (RR p.5), so a non-fast play needs an action
     // point (validate-first; `play_card` spends it). Fast plays are not actions.
     check_play_action_available(state, investigator, is_fast, &code)?;
-    // Playing a card is paying its cost (RR p.22, Initiation Sequence): the
-    // resource cost must be established as payable before initiation. Both Fast
-    // and non-Fast plays pay it — Fast only skips the *action* cost (#501).
-    check_play_resource_cost_payable(state, investigator, &code)?;
     Ok(PlayCheckResult {
         abilities,
         is_fast,
@@ -1788,6 +1723,10 @@ fn check_play_action_available(
 /// Short-circuits to `Ok` when the registry isn't installed — the metadata-free
 /// validation paths the engine's own unit tests exercise; the real play path
 /// always has a registry installed by the time it reaches here.
+///
+/// Both play paths now ask the initiation gate, which calls
+/// [`initiation::play_cost_payable`] itself; this wrapper is left only for
+/// [`lapse_reason`], and `TODO(#960)` moves that onto the gate too.
 fn check_play_resource_cost_payable(
     state: &GameState,
     investigator: InvestigatorId,

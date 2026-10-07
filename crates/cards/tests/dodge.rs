@@ -16,9 +16,11 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
+    InvestigatorId, LocationId,
 };
-use game_core::test_support;
+use game_core::test_support::{self, TestSession};
+use game_core::{assert_event, assert_no_event};
 
 /// Dodge (01023): Neutral Tactic, Fast, the before-attack cancel reaction.
 const DODGE: &str = "01023";
@@ -299,5 +301,102 @@ fn declining_the_before_attack_window_lets_the_attack_land() {
             .hand
             .contains(&CardCode::new(DODGE)),
         "Dodge stays in hand when the window is declined"
+    );
+}
+
+/// Dissonant Voices (01165), verbatim from the pinned snapshot
+/// (`data/arkhamdb-snapshot/pack/core/core_encounter.json`; no rulings —
+/// `data/arkhamdb-faq/no-rulings.txt`):
+///
+/// ```text
+/// Revelation - Put Dissonant Voices into play in your threat area.
+/// You cannot play assets or events.
+/// Forced - At the end of the round: Discard Dissonant Voices.
+/// ```
+const DISSONANT_VOICES: &str = "01165";
+
+/// Put Dissonant Voices into `inv_id`'s threat area.
+fn ban_plays(state: &mut GameState, inv_id: InvestigatorId) {
+    state
+        .investigators
+        .get_mut(&inv_id)
+        .expect("the investigator is seated")
+        .threat_area
+        .push(CardInPlay::enter_play(
+            CardCode::new(DISSONANT_VOICES),
+            CardInstanceId(90),
+        ));
+}
+
+/// #917, at the offer. A Fast event is still *played* — `glossary/Fast.md`:
+/// *"A fast card does not cost an action to be played and is not played using
+/// the "Play" action."* — so Dissonant Voices' ban on playing events keeps
+/// Dodge out of the before-attack window, and the attack lands.
+#[test]
+fn dissonant_voices_keeps_dodge_out_of_the_attack_window() {
+    let (mut state, inv_id, _) = dodge_state();
+    ban_plays(&mut state, inv_id);
+
+    let result = test_support::take_turn_action(state, &TurnAction::EndTurn);
+
+    assert_event!(
+        result.events,
+        Event::DamageTaken { investigator, amount: 2 } if *investigator == inv_id
+    );
+    assert_no_event!(result.events, Event::CardPlayed { .. });
+    assert!(
+        result.state.investigators[&inv_id]
+            .hand
+            .contains(&CardCode::new(DODGE)),
+        "Dodge was never offered, so it stays in hand",
+    );
+}
+
+/// #917, at the pick. Dodge is offered, then the ban arrives before the player
+/// picks it. The ban binds at initiation, not at the scan: the stale pick is
+/// refused, and when the window next surfaces Dodge has lapsed and the attack
+/// lands.
+#[test]
+fn dodge_lapses_when_dissonant_voices_arrives_before_the_pick() {
+    let (state, inv_id, _) = dodge_state();
+    let offered = test_support::take_turn_action(state, &TurnAction::EndTurn);
+    assert!(
+        matches!(offered.outcome, EngineOutcome::AwaitingInput { .. }),
+        "without the ban the window offers Dodge: {:?}",
+        offered.outcome,
+    );
+    let mut state = offered.state;
+    ban_plays(&mut state, inv_id);
+
+    let pick = engine::apply(
+        state,
+        Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(0)),
+        }),
+    );
+    assert!(
+        matches!(pick.outcome, EngineOutcome::Rejected { .. }),
+        "Dodge can no longer be played, so picking it is refused: {:?}",
+        pick.outcome,
+    );
+    assert!(
+        pick.state.investigators[&inv_id]
+            .hand
+            .contains(&CardCode::new(DODGE)),
+        "the refused pick left Dodge in hand",
+    );
+
+    let resurfaced = TestSession::new(pick.state);
+    let events = resurfaced.events();
+    // The lapse reason is #960's to name; here it only has to lapse.
+    assert_event!(
+        events,
+        Event::ReactionOptionLapsed { investigator, code, .. }
+            if *investigator == inv_id && code.as_str() == DODGE
+    );
+    assert_no_event!(events, Event::CardPlayed { .. });
+    assert_event!(
+        events,
+        Event::DamageTaken { investigator, amount: 2 } if *investigator == inv_id
     );
 }
