@@ -467,15 +467,16 @@ fn activated_ability_at_its_limit_is_refused() {
     );
 }
 
-/// The gate gives a forced ability only the change-state and eligibility
-/// halves (`glossary/Ability.md`), so a recorded use does not hold it back.
+/// A limit counts every initiation, forced ones included
+/// (`glossary/Limits_and_Maximums.md`), so a forced ability at its limit is
+/// refused like any other.
 #[test]
-fn forced_ability_is_not_held_back_by_its_usage_limit() {
+fn forced_ability_at_its_limit_is_refused() {
     let mut state = state();
     record(&mut state, FORCED_LIMITED);
     assert_eq!(
         gate(&state, &in_play(FORCED_LIMITED), InitiationKind::Forced),
-        Ok(())
+        Err(Refusal::UsageLimitReached),
     );
 }
 
