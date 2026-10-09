@@ -523,7 +523,11 @@ mod tests {
     fn colocation_reaches_only_encounter_cards_in_another_investigators_threat_area() {
         let mut a = test_support::test_investigator(1);
         a.investigator_card.instance_id = CardInstanceId(10);
-        a.threat_area.push(card(test_support::TEST_ASSET, 11));
+        a.threat_area.push(card(
+            test_support::TEST_ASSET,
+            11,
+            Owner::Investigator(InvestigatorId(1)),
+        ));
         a.threat_area
             .push(card(test_support::TEST_TREACHERY, 12, Owner::EncounterDeck));
         let mut b = test_support::test_investigator(2);

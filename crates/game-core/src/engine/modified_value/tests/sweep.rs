@@ -213,6 +213,7 @@ fn neighbours_combat_with_buffer(status: Status) -> i32 {
     buffer.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new("combat-plus-1-here"),
         CardInstanceId(0),
+        Owner::Investigator(InvestigatorId(1)),
     ));
     let state = GameStateBuilder::new()
         .with_investigator_at(buffer, study)
@@ -248,11 +249,13 @@ fn combat_granted_by_neighbour_with(status: Status) -> i32 {
     granter.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new("grants-combat-to-recipient"),
         CardInstanceId(0),
+        Owner::Investigator(InvestigatorId(1)),
     ));
     let mut recipient = test_support::test_investigator(2);
     recipient.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new("grant-recipient"),
         CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(2)),
     ));
     let state = GameStateBuilder::new()
         .with_investigator(granter)
