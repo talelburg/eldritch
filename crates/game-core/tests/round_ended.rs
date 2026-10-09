@@ -1,4 +1,4 @@
-//! `ForcedTriggerPoint::RoundEnded`: an agenda's `OnEvent(RoundEnded)`
+//! The `RoundEnded` condition: an agenda's `OnEvent(RoundEnded)`
 //! Forced ability fires at the end of the round (step 4.6).
 
 use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget};

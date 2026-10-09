@@ -233,7 +233,7 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
         .collect();
     assert_eq!(
         offered,
-        vec![Some(OptionTarget::Agenda), Some(dissonant_voices.clone())],
+        vec![Some(dissonant_voices.clone()), Some(OptionTarget::Agenda)],
         "two simultaneous RoundEnded forced present the lead an ordering choice",
     );
     // Resolve the forced run in the lead's chosen order: the agenda first, then

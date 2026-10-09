@@ -8,7 +8,7 @@
 //! ```
 //!
 //! The reverse side is a Forced on-advance ability: it fires via
-//! `ForcedTriggerPoint::ActAdvanced` when the act advances, before the
+//! the act's own `ActAdvanced` condition when the act advances, before the
 //! next act becomes current. "Discard each enemy in the Study" is a
 //! faithful **no-op** — nothing can spawn into the isolated Act-1 Study
 //! in Slice-1 scope (no encounter path targets the Study). The four rooms are

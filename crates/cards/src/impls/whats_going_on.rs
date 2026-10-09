@@ -7,7 +7,7 @@
 //!   lead investigator takes 2 horror.
 //! ```
 //!
-//! Forced on-advance reverse, fired via `ForcedTriggerPoint::AgendaAdvanced`
+//! Forced on-advance reverse, fired at the agenda's own `AgendaAdvanced` condition
 //! from `advance_agenda` (the mirror of the act path).
 //!
 //! **Interactive choice (Axis A, #334).** The lead-investigator "choose one"

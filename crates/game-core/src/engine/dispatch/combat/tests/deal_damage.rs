@@ -259,10 +259,6 @@ fn the_two_damage_conditions_are_classified_as_the_adr_says() {
     assert_eq!(resolve(&mut cx, &assigned), EngineOutcome::Done);
     assert_eq!(*cx.state, before, "a bare milestone resolves to nothing");
     assert!(events.is_empty());
-    // Neither fires forced abilities: every forced taker in the sweep is
-    // outside the corpus (ADR 0009).
-    assert!(assigned.forced_point().is_none());
-    assert!(placed.forced_point().is_none());
 }
 
 #[test]

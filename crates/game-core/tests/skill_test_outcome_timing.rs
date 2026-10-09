@@ -34,6 +34,7 @@ fn install_mock_registry() {
                     outcome: TestOutcome::Success,
                     kind: None,
                     by_controller: true,
+                    tested_location: dsl::TestedLocationScope::Any,
                 },
                 EventTiming::After,
                 dsl::deal_horror(InvestigatorTarget::You, 1u8),

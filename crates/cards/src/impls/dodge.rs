@@ -40,7 +40,10 @@ pub const CODE: &str = "01023";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::reaction_on_event(
-        EventPattern::EnemyAttacks,
+        EventPattern::EnemyAttacks {
+            attacker: dsl::AttackerScope::Any,
+            target: dsl::TargetScope::AtYourLocation,
+        },
         EventTiming::When,
         Effect::Cancel,
     )]
@@ -57,7 +60,10 @@ mod tests {
         assert_eq!(
             abilities[0].trigger,
             Trigger::OnEvent {
-                pattern: EventPattern::EnemyAttacks,
+                pattern: EventPattern::EnemyAttacks {
+                    attacker: card_dsl::dsl::AttackerScope::Any,
+                    target: card_dsl::dsl::TargetScope::AtYourLocation,
+                },
                 timing: EventTiming::When,
                 kind: TriggerKind::Reaction,
             },

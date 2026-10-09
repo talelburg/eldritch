@@ -34,10 +34,16 @@ fn cancel_effect_and_enemy_attacks_pattern_round_trip() {
         serde_json::from_str(&json).expect("deserialize")
     );
 
-    let p = EventPattern::EnemyAttacks;
+    let p = EventPattern::EnemyAttacks {
+        attacker: AttackerScope::Any,
+        target: TargetScope::Any,
+    };
     let json = serde_json::to_string(&p).expect("serialize");
     assert_eq!(
-        EventPattern::EnemyAttacks,
+        EventPattern::EnemyAttacks {
+            attacker: AttackerScope::Any,
+            target: TargetScope::Any,
+        },
         serde_json::from_str(&json).expect("deserialize")
     );
 }
@@ -48,6 +54,7 @@ fn skill_test_resolved_round_trips() {
         outcome: TestOutcome::Success,
         kind: Some(SkillTestKind::Investigate),
         by_controller: true,
+        tested_location: TestedLocationScope::Any,
     };
     let json = serde_json::to_string(&p).expect("serialize");
     let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
@@ -64,6 +71,7 @@ fn skill_test_resolved_unqualified_round_trips() {
         outcome: TestOutcome::Success,
         kind: Some(SkillTestKind::Fight),
         by_controller: false,
+        tested_location: TestedLocationScope::Any,
     };
     let json = serde_json::to_string(&p).expect("serialize");
     let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
@@ -74,6 +82,7 @@ fn skill_test_resolved_unqualified_round_trips() {
             outcome: TestOutcome::Success,
             kind: Some(SkillTestKind::Fight),
             by_controller: true,
+            tested_location: TestedLocationScope::Any,
         }
     );
 }

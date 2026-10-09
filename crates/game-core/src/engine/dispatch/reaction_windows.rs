@@ -1,20 +1,20 @@
 //! Reaction-window and fast-window helpers.
 //!
 //! Contains the open/scan/fire/close pipeline for after-event reaction
-//! windows ([`scan_pending_triggers`],
-//! [`trigger_matches`], [`open_queued_reaction_window`],
+//! windows ([`scan_pending_triggers`], [`open_queued_reaction_window`],
 //! [`resume_reaction_window`], [`fire_pending_trigger`],
 //! [`close_reaction_window`]) and the fast-window
 //! eligibility checks
 //! ([`check_play_card`], [`check_activate_ability`],
-//! [`any_fast_play_eligible`], [`open_fast_window`]).
+//! [`any_fast_play_eligible`], [`open_fast_window`]). Whether a pattern hears
+//! an event is the trigger scan's one matcher,
+//! [`trigger_scan::pattern_matches`].
 
 use std::borrow::Cow;
 
 use card_dsl::card_data::{CardMetadata, CardType};
 use card_dsl::dsl::{
-    ActionDesignator, Cost, Effect, EnemyTarget, EventPattern, EventTiming, Trigger, TriggerKind,
-    UsageLimit,
+    ActionDesignator, Cost, Effect, EnemyTarget, EventTiming, Trigger, TriggerKind, UsageLimit,
 };
 
 use crate::action::InputResponse;
@@ -23,8 +23,8 @@ use crate::engine::dispatch::abilities::ActivatedAbility;
 use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
 use crate::engine::dispatch::{
-    abilities, actions, cards, combat, cursor, phases, skill_test, slots, ActivateCheckResult,
-    PlayCheckResult,
+    abilities, actions, cards, combat, cursor, phases, skill_test, slots, trigger_scan,
+    ActivateCheckResult, PlayCheckResult,
 };
 use crate::engine::enumerate::TurnAction;
 use crate::engine::evaluator::EvalContext;
@@ -35,8 +35,8 @@ use crate::engine::{abilities_in_effect, ability_source, designator, Cx};
 use crate::event::{Event, LapseReason};
 use crate::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, Continuation,
-    DamageSource, FastActorScope, FastWindowFrame, FastWindowKind, GameState, InvestigatorId,
-    Phase, PlayFromHandFrame, ResolutionCandidate, TimingMode, TimingPointWindowFrame,
+    FastActorScope, FastWindowFrame, FastWindowKind, GameState, InvestigatorId, Phase,
+    PlayFromHandFrame, ResolutionCandidate, TimingMode, TimingPointWindowFrame,
 };
 
 /// Push a reaction window frame for `candidates` at `bucket`. The shared push
@@ -139,19 +139,6 @@ pub(super) fn open_forced_resolution(
     open_queued_reaction_window(cx)
 }
 
-/// Whether investigators `a` and `b` share a (revealed) current location.
-/// Used by the before-attack cancel window's "at your location" scoping
-/// (Axis D #336); two investigators between locations (`None`) never match.
-fn same_location(state: &GameState, a: InvestigatorId, b: InvestigatorId) -> bool {
-    let loc = |id| {
-        state
-            .investigators
-            .get(&id)
-            .and_then(|i| i.current_location)
-    };
-    loc(a).is_some_and(|la| loc(b) == Some(la))
-}
-
 /// Scan every investigator's `cards_in_play` **and the current act/agenda** for
 /// `Trigger::OnEvent` reaction abilities matching `event` whose `EventTiming`
 /// equals `bucket`, building a pending-trigger list in active-investigator-first
@@ -194,59 +181,7 @@ fn scan_pending_triggers(
         let Some(inv) = state.investigators.get(&id) else {
             continue;
         };
-        // "at your location" scoping for the before-attack cancel window
-        // (Dodge 01023, Axis D #336): a candidate's controller must be
-        // co-located with the attacked investigator. Other events pass all
-        // controllers through.
-        if let TimingEvent::EnemyAttacks { investigator, .. } = event {
-            if !same_location(state, id, *investigator) {
-                continue;
-            }
-        }
-        // "…YOU … at YOUR location" (Cover Up 01007, Axis D #336): a candidate's
-        // controller is the discoverer and must be at the discovery location.
-        // Applies in every cell — the scoping is the condition's, not the
-        // interrupt's. (The per-card `clues > 0` potential gate is in the card
-        // loop below.)
-        if let TimingEvent::DiscoverClues {
-            investigator,
-            location,
-            ..
-        } = event
-        {
-            if id != *investigator
-                || state
-                    .investigators
-                    .get(&id)
-                    .and_then(|i| i.current_location)
-                    != Some(*location)
-            {
-                continue;
-            }
-        }
         for card in inv.controlled_card_instances() {
-            // Self-binding: for `DamageAssigned` only an asset the assignment
-            // gives damage to may trigger. All other instances are skipped here
-            // — the pattern match in `trigger_matches` handles the pattern
-            // pairing and the "an enemy attack" narrowing; this filter enforces
-            // the "self = a card being dealt damage" scoping (Guard Dog 01021).
-            // It reads the *event's* assignment, not the frame's, which is what
-            // makes an edit in a `when` cell visible to the cells after it
-            // without a write-back protocol (ADR 0009). Other events pass all
-            // instances through.
-            if let TimingEvent::DamageAssigned { assignment, .. } = event {
-                if !assignment.asset_damage.contains_key(&card.instance_id) {
-                    continue;
-                }
-            }
-            // Self-binding: `EnteredPlay` fires only for the instance that
-            // entered play (Research Librarian 01032). Mirrors the soaked-asset
-            // filter above.
-            if let TimingEvent::EnteredPlay { instance, .. } = event {
-                if card.instance_id != *instance {
-                    continue;
-                }
-            }
             // The funnel (#774/#772): the side in effect, plus whatever the
             // board grants this instance.
             let Some(abilities) = abilities_in_effect::for_source(
@@ -268,12 +203,17 @@ fn scan_pending_triggers(
                 // Reaction abilities only, at the cell being scanned (#434): the
                 // coordinator scans the same (event, bucket) for both forced and
                 // reaction, so kind filtering keeps a Forced ability out of the
-                // reaction window (symmetric to push_matching). For single-bucket
+                // reaction window (symmetric to `trigger_scan::collect_forced`). For single-bucket
                 // events `bucket` is the event's natural timing — behaviour-preserving.
                 if *kind != TriggerKind::Reaction || *timing != bucket {
                     continue;
                 }
-                if !trigger_matches(event, pattern, id) {
+                // The one matcher (#965): every narrowing — Dodge 01023's "at
+                // your location", Cover Up 01007's discoverer, Guard Dog 01021's
+                // and Research Librarian 01032's self-binding — is the pattern's
+                // and the event's, read against this card's source.
+                let source = CandidateSource::Ability(AbilitySource::InPlay(card.instance_id));
+                if !trigger_scan::pattern_matches(state, event, pattern, source, &card.code, id) {
                     continue;
                 }
                 // Reaction candidates always have a source instance — an
@@ -284,7 +224,7 @@ fn scan_pending_triggers(
                     code: card.code.clone(),
                     controller: id,
                     address: address.clone(),
-                    source: CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
+                    source,
                 };
                 // The initiation gate (ADR 0017): change-state, eligibility, the
                 // "Limit X per [period]" counter, and cost.
@@ -302,8 +242,8 @@ fn scan_pending_triggers(
 /// matching `event` at `bucket` — act 01109's "When the round ends,
 /// investigators … may … advance" group window (#434). The act/agenda are not
 /// in any `cards_in_play` zone, so [`scan_pending_triggers`] can't reach them in
-/// its per-investigator loop. Mirrors `collect_forced_hits`'s act/agenda scan:
-/// controller = the lead proxy, the first Active investigator in `turn_order`
+/// its per-investigator loop. Binds as the forced scan binds the act and
+/// agenda (`trigger_scan::collect_forced`): controller = the lead proxy, the first Active investigator in `turn_order`
 /// ([`cursor::first_active_investigator`]; GLOSSARY "Lead investigator"), so
 /// the reaction outlives the first seat's elimination and the gate's status
 /// check never refuses it for that; the act's or the agenda's own
@@ -351,7 +291,14 @@ fn scan_act_agenda_reactions(
             };
             if *kind != TriggerKind::Reaction
                 || *timing != bucket
-                || !trigger_matches(event, pattern, lead)
+                || !trigger_scan::pattern_matches(
+                    state,
+                    event,
+                    pattern,
+                    CandidateSource::Ability(source),
+                    code,
+                    lead,
+                )
             {
                 continue;
             }
@@ -374,7 +321,7 @@ fn scan_act_agenda_reactions(
 
 /// Scan every window-eligible investigator's hand for Fast **events** whose
 /// `Trigger::OnEvent` ability matches `kind` (Axis C, #335). The play-timing
-/// predicate is the same [`trigger_matches`] used for in-play reactions — per
+/// predicate is the same [`trigger_scan::pattern_matches`] used for in-play reactions — per
 /// Rules Reference p.11 a Fast reaction event plays "as if the described
 /// timing point were a triggering condition", so a hand Fast event is its
 /// in-play twin sourced from hand.
@@ -405,13 +352,6 @@ fn scan_hand_fast_events(
         let Some(inv) = state.investigators.get(&id) else {
             continue;
         };
-        // "at your location" scoping for the before-attack cancel window —
-        // mirrors `scan_pending_triggers` (Dodge 01023, Axis D #336).
-        if let TimingEvent::EnemyAttacks { investigator, .. } = event {
-            if !same_location(state, id, *investigator) {
-                continue;
-            }
-        }
         for code in &inv.hand {
             let Some(meta) = (reg.metadata_for)(code) else {
                 continue;
@@ -434,12 +374,19 @@ fn scan_hand_fast_events(
                 // Reaction abilities only, at the cell being scanned (#434): the
                 // coordinator scans the same (event, bucket) for both forced and
                 // reaction, so kind filtering keeps a Forced ability out of the
-                // reaction window (symmetric to push_matching). For single-bucket
+                // reaction window (symmetric to `trigger_scan::collect_forced`). For single-bucket
                 // events `bucket` is the event's natural timing — behaviour-preserving.
                 if *kind != TriggerKind::Reaction || *timing != bucket {
                     continue;
                 }
-                if !trigger_matches(event, pattern, id) {
+                if !trigger_scan::pattern_matches(
+                    state,
+                    event,
+                    pattern,
+                    CandidateSource::Hand,
+                    code,
+                    id,
+                ) {
                     continue;
                 }
                 let ability_index = u8::try_from(idx)
@@ -470,123 +417,6 @@ fn scan_hand_fast_events(
         }
     }
     plays
-}
-
-/// Returns whether a reaction [`Trigger::OnEvent`] ability declaring `pattern`,
-/// owned by `controller`, matches `event`.
-///
-/// Two steps, both exhaustive (#963):
-///
-/// 1. **The condition.** The pattern's [`EventPattern::condition`] must equal
-///    the event's [`TimingEvent::condition`]. Both maps are exhaustive, so a new
-///    pattern or a new event cannot compile without naming its condition, and
-///    no pairing is left to a wildcard.
-/// 2. **The narrowing.** A `match` on the event, one arm per variant, applies
-///    what that condition's pattern and the event say beyond the condition
-///    itself: Roland Banks 01001's *"you defeat"*, a test's outcome and kind.
-///
-/// **Timing is not consulted here** (#704). Which cell an ability resolves in is
-/// the coordinator's business — it scans one cell at a time and `push_matching` /
-/// the scans filter on `timing == bucket` — so a pattern pairs with its condition
-/// identically in all three cells. The former `When` whitelist of
-/// condition/pattern pairs permitted to carry interrupt timing is gone with the
-/// last single-cell condition; an interrupt declared on a condition that cannot
-/// honour it is rejected loudly by the coordinator's caller-owned `when` arm
-/// rather than silently failing to match here.
-fn trigger_matches(
-    event: &TimingEvent,
-    pattern: &EventPattern,
-    controller: InvestigatorId,
-) -> bool {
-    if pattern.condition() != event.condition() {
-        return false;
-    }
-    match event {
-        TimingEvent::EnemyDefeated { by, .. } => {
-            // Same condition, so this is the one pattern that has it.
-            let EventPattern::EnemyDefeated { by_controller, .. } = pattern else {
-                return false;
-            };
-            !*by_controller || *by == Some(controller)
-        }
-        // Two conditions whose narrowing is entirely someone else's: the
-        // pattern matching its condition is the whole answer here.
-        //
-        // - "an enemy attacks an investigator at your location" — Dodge 01023 in
-        //   the `when` cell, Silver Twilight Acolyte 01102 in the `after` one.
-        //   The co-location narrowing lives in the scans, which have the board.
-        // - "When the round ends, investigators … may … advance" — act 01109's
-        //   group advance (#434). Board-scoped; the contributor scoping lives in
-        //   the native and in the round-end coordinator's `when` cell.
-        TimingEvent::EnemyAttacks { .. } | TimingEvent::RoundEnded => true,
-        // "**When an enemy attack** deals damage to Guard Dog" (01021). The
-        // self-binding half — that this card is one the assignment gives damage
-        // to — is the instance filter in `scan_pending_triggers`, so only such
-        // an instance reaches here; what is left is the card's own narrowing of
-        // the condition to an enemy attack, which `Effect::Deal` harm (Dynamite
-        // Blast, a treachery) does not satisfy.
-        TimingEvent::DamageAssigned { source, .. } => {
-            matches!(source, DamageSource::EnemyAttack { .. })
-        }
-        // "after you succeed/fail a skill test" — narrowed by outcome,
-        // (optionally) test kind, and whether the card says *"**you**"*. Dr.
-        // Milan 01033 is `{ Success, Some(Investigate), by_controller: true }`.
-        //
-        // `by_controller` is checked **here** rather than in an eligibility
-        // predicate because this matcher runs before a candidate is minted: a
-        // hard `*investigator == controller` would have made a reaction on
-        // somebody else's test unreachable, whatever the card said afterwards.
-        // With it `false` the pattern is unqualified and the card owns the
-        // narrowing — Lita Chantler 01117's *"an investigator at your
-        // location"* is her own native eligibility tag, since it is about the
-        // board rather than about the event.
-        TimingEvent::SkillTestResolved {
-            investigator,
-            kind,
-            outcome,
-        } => {
-            // Same condition, so this is the one pattern that has it.
-            let EventPattern::SkillTestResolved {
-                outcome: p_out,
-                kind: p_kind,
-                by_controller,
-            } = pattern
-            else {
-                return false;
-            };
-            (!*by_controller || *investigator == controller)
-                && outcome == p_out
-                && (p_kind.is_none() || *p_kind == Some(*kind))
-        }
-        // "…you discover clues": scoped to the discovering investigator. The
-        // "at your location" narrowing lives in the scan, which has the board
-        // (#703).
-        TimingEvent::DiscoverClues { investigator, .. } => *investigator == controller,
-        // Scoped to the entered card's owner; the self-instance scoping is in
-        // the scan (Research Librarian 01032).
-        TimingEvent::EnteredPlay {
-            controller: window_controller,
-            ..
-        } => *window_controller == controller,
-        // No reaction is matched on these.
-        //
-        // - The forced-only conditions, first nine: each has a pattern, but only
-        //   the forced dispatch path reads it, scanning the zones its
-        //   `ForcedTriggerPoint` names.
-        // - `DamagePlaced`: no pattern has this condition yet (Mark Harrigan
-        //   03001 and Baron Samedi 05019 are outside the corpus), so the
-        //   condition check above has already refused every pattern.
-        TimingEvent::EnteredLocation { .. }
-        | TimingEvent::PhaseStarted { .. }
-        | TimingEvent::PhaseEnded { .. }
-        | TimingEvent::ActAdvanced { .. }
-        | TimingEvent::AgendaAdvanced { .. }
-        | TimingEvent::EndOfTurn { .. }
-        | TimingEvent::GameEnd
-        | TimingEvent::EliminationGameEnd { .. }
-        | TimingEvent::LeftLocation { .. }
-        | TimingEvent::DamagePlaced { .. } => false,
-    }
 }
 
 /// The board anchor for a resolution candidate's source: a Fast hand event by
@@ -680,8 +510,8 @@ fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOpt
 /// does not: *"If a forced ability does not have the potential to change the game
 /// state, the ability does not initiate"*, and *"The initiation of a forced
 /// ability **that has the potential to change the game state** is mandatory each
-/// time its specified timing point is met."* `collect_forced_hits` applies that
-/// gate at collect time, so a 2+ lead-ordered run (#213) carries the same stale
+/// time its specified timing point is met."* `trigger_scan::collect_forced`
+/// applies that gate at collect time, so a 2+ lead-ordered run (#213) carries the same stale
 /// verdict this function fixes for reactions. It is left alone here because
 /// withdrawing from a *mandatory* run is a different shape — the run rejects
 /// `Skip`, so an emptied one has to close itself rather than re-prompt — and
@@ -758,13 +588,10 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
 ///
 /// Both window modes are covered — a forced run empties the same way and closes
 /// itself, rather than demanding a pick for a condition that is no longer
-/// happening. Reachable since #704 gave the enemy attack a
-/// [`ForcedTriggerPoint`] of its own — Dodge 01023's ruling is stated about a
-/// **Forced** ability, and `crates/cards/tests/dodge.rs` proves it against
-/// Silver Twilight Acolyte 01102. `0` for any other top frame, so the callers
-/// need no guard.
-///
-/// [`ForcedTriggerPoint`]: super::forced_triggers::ForcedTriggerPoint
+/// happening. Reachable since #704 gave the enemy attack forced abilities of
+/// its own — Dodge 01023's ruling is stated about a **Forced** ability, and
+/// `crates/cards/tests/dodge.rs` proves it against Silver Twilight Acolyte
+/// 01102. `0` for any other top frame, so the callers need no guard.
 fn withdraw_suppressed_candidates(cx: &mut Cx) -> usize {
     if !cx.state.pending_cancellation {
         return 0;

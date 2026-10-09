@@ -5,8 +5,8 @@
 //! Forced - After you enter the Attic: Take 1 horror.
 //! ```
 //!
-//! Forced-on-enter via the `EnteredLocation` dispatch path
-//! (`engine::dispatch::forced_triggers`); the controller binding is the
+//! Forced-on-enter at the `EnteredLocation` condition, heard only on the
+//! entered location's own card; the controller binding is the
 //! entering investigator ("you"). The Victory 1 and Clues 2 are location
 //! *state* set by the scenario's `setup()`, not ability data — only the
 //! Forced horror lives here.

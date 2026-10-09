@@ -59,7 +59,10 @@ pub const CODE: &str = "01102";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::forced_on_event(
-        EventPattern::EnemyAttacks,
+        EventPattern::EnemyAttacks {
+            attacker: dsl::AttackerScope::This,
+            target: dsl::TargetScope::Any,
+        },
         EventTiming::After,
         dsl::place_doom_on_current_agenda(1u8),
     )]
@@ -78,7 +81,10 @@ mod tests {
         assert_eq!(
             abilities[0].trigger,
             Trigger::OnEvent {
-                pattern: EventPattern::EnemyAttacks,
+                pattern: EventPattern::EnemyAttacks {
+                    attacker: dsl::AttackerScope::This,
+                    target: dsl::TargetScope::Any,
+                },
                 timing: EventTiming::After,
                 kind: TriggerKind::Forced,
             },

@@ -75,6 +75,7 @@ fn succeeded() -> EventPattern {
         outcome: TestOutcome::Success,
         kind: None,
         by_controller: true,
+        tested_location: dsl::TestedLocationScope::Any,
     }
 }
 

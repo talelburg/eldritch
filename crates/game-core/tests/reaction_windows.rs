@@ -70,6 +70,7 @@ fn investigated(by_controller: bool) -> EventPattern {
         outcome: TestOutcome::Success,
         kind: Some(SkillTestKind::Investigate),
         by_controller,
+        tested_location: dsl::TestedLocationScope::Any,
     }
 }
 
