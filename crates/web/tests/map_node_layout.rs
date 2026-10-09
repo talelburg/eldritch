@@ -17,6 +17,7 @@ use cards::REGISTRY;
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, LocationId,
+    Owner as CardOwner,
 };
 use game_core::test_support;
 use leptos::prelude::*;
@@ -65,7 +66,7 @@ fn parlor_state(investigators: usize) -> GameState {
     parlor.cards_at_location.push(CardInPlay::enter_play(
         CardCode::new("01117"),
         LITA,
-        Owner::Scenario,
+        CardOwner::Scenario,
     ));
     let mut builder = GameStateBuilder::new().with_location(parlor);
     for (i, (name, code)) in [("Roland Banks", "01001"), ("Daisy Walker", "01002")]

@@ -7,7 +7,7 @@ use cards::REGISTRY;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
-use game_core::state::{CardCode, CardInPlay, CardInstanceId};
+use game_core::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, Owner as CardOwner};
 use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
@@ -41,7 +41,7 @@ async fn mount(outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
     let inst = CardInPlay::enter_play(
         CardCode::new("01020"),
         CardInstanceId(3),
-        Owner::Investigator(InvestigatorId(1)),
+        CardOwner::Investigator(InvestigatorId(1)),
     );
     mount_to_body(move || {
         provide_context(store);

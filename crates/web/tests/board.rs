@@ -28,7 +28,7 @@ use game_core::engine::EngineOutcome;
 use game_core::scenario::{ResolutionId, ScenarioEnding};
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, Investigator,
-    InvestigatorId, Skills,
+    InvestigatorId, Owner as CardOwner, Skills,
 };
 use game_core::test_support;
 use leptos::prelude::{document, provide_context, RwSignal, Update};
@@ -233,7 +233,7 @@ async fn investigators_panel_renders_stats_and_hand() {
     inv.cards_in_play = vec![CardInPlay::enter_play(
         CardCode::new(MAGNIFYING_GLASS),
         CardInstanceId(0),
-        Owner::Investigator(InvestigatorId(id)),
+        CardOwner::Investigator(inv.id),
     )];
     let state = GameStateBuilder::new().with_investigator(inv).build();
 
@@ -445,7 +445,7 @@ async fn threat_area_treachery_renders_as_card() {
     let mut cover_up = CardInPlay::enter_play(
         CardCode::new(COVER_UP),
         CardInstanceId(0),
-        Owner::Investigator(InvestigatorId(1)),
+        CardOwner::Investigator(InvestigatorId(1)),
     );
     cover_up.clues = 3;
     inv.threat_area = vec![cover_up];

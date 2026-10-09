@@ -7,7 +7,7 @@ use cards::REGISTRY;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use game_core::action::{InputResponse, PlayerAction};
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
-use game_core::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId};
+use game_core::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, Owner as CardOwner};
 use game_core::test_support;
 use leptos::prelude::*;
 use leptos::task;
@@ -123,7 +123,7 @@ async fn in_play_exhausted_asset_dims_badges_and_shows_soak() {
     let mut inst = CardInPlay::enter_play(
         CardCode::new("01018"),
         CardInstanceId(0),
-        Owner::Investigator(InvestigatorId(1)),
+        CardOwner::Investigator(InvestigatorId(1)),
     );
     inst.exhausted = true;
     inst.accumulated_damage = 1;
@@ -154,7 +154,7 @@ async fn treachery_renders_generic_face_with_clues() {
     let mut inst = CardInPlay::enter_play(
         CardCode::new("01007"),
         CardInstanceId(0),
-        Owner::Investigator(InvestigatorId(1)),
+        CardOwner::Investigator(InvestigatorId(1)),
     );
     inst.clues = 3;
     mount_to_body(move || view! { <Card code=CardCode::new("01007") in_play=inst.clone()/> });
@@ -179,7 +179,7 @@ async fn in_play_ready_asset_is_not_dimmed() {
     let inst = CardInPlay::enter_play(
         CardCode::new("01018"),
         CardInstanceId(0),
-        Owner::Investigator(InvestigatorId(1)),
+        CardOwner::Investigator(InvestigatorId(1)),
     );
     mount_to_body(move || view! { <Card code=CardCode::new("01018") in_play=inst.clone()/> });
     task::tick().await;
