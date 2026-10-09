@@ -49,8 +49,7 @@ fn upkeep_phase_emits_phase_started_and_auto_skips_to_mythos() {
     // Give the investigator a card so the step-4.4 draw pulls it normally
     // rather than decking out: since #509 routed 4.4 through
     // `draw_one_with_deckout`, an empty deck applies the deckout horror
-    // penalty, whose capacity read requires a CardRegistry this registry-free
-    // unit test cannot install.
+    // penalty, which this test isn't about.
     state.investigators.get_mut(&id).unwrap().deck = vec![CardCode("filler0".into())];
 
     let mut events = Vec::new();

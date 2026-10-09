@@ -1590,8 +1590,7 @@ pub(crate) fn check_activate_ability(
 /// existing `PlayCard` / `ActivateAbility` gate — no parallel
 /// implementation, no drift.
 ///
-/// Returns `false` when the card registry isn't installed (tests
-/// that don't touch card data) — same fallback as
+/// Returns `false` when the card registry isn't installed — same fallback as
 /// [`trigger_scan::collect_reactions`].
 pub(super) fn any_fast_play_eligible(state: &GameState) -> bool {
     !enumerate_fast_plays(state).is_empty()

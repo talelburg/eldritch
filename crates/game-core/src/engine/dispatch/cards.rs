@@ -27,8 +27,9 @@ use crate::state::{
 pub(super) const INITIAL_HAND_SIZE: u8 = 5;
 
 /// Whether `code` is a weakness per the installed registry. Returns `false`
-/// when no registry is installed or the card code has no metadata —
-/// the engine's registry-free unit tests behave as if no card is a weakness.
+/// when no registry is installed or the card code has no metadata — so the
+/// engine's unit tests, whose test registry knows no real card, behave as if no
+/// card is a weakness.
 ///
 /// Two consumers: the opening-hand set-aside below, and the defeated-enemy
 /// disposal in [`combat`](super::combat) (a defeated weakness enemy goes to its
@@ -54,9 +55,9 @@ pub(super) fn is_weakness_code(code: &CardCode) -> bool {
 ///   by drawing another card" has no card left to draw). That needs a deck of
 ///   almost entirely weaknesses, which a legal deck never is; the guard exists
 ///   only so a pathological deck can't spin the loop forever.
-/// - Registry-free (no registry installed): `is_weakness_code` always returns
-///   `false`, so this function is a no-op, preserving the engine's
-///   registry-free unit test behavior.
+/// - No metadata (no registry installed, or a code it doesn't know):
+///   `is_weakness_code` returns `false`, so this function is a no-op, which
+///   is what the engine's unit tests rely on.
 pub(super) fn replace_opening_hand_weaknesses(cx: &mut Cx, investigator: InvestigatorId) {
     loop {
         // Scan the hand for weakness indices. Collect before mutating.
@@ -139,7 +140,8 @@ pub(super) fn replace_opening_hand_weaknesses(cx: &mut Cx, investigator: Investi
 ///
 /// Non-persistent treachery weaknesses and weakness enemies/assets are **left in
 /// hand untouched** — deferred to #514 (none reachable in the corpus draw path).
-/// No-op without an installed registry (registry-free engine unit tests).
+/// No-op without metadata for the hand's codes (no registry installed, or
+/// codes it doesn't know).
 ///
 /// **The shape — draw everything, then resolve every Revelation — is the rule,
 /// not a convenience.** This function is called once the whole draw has landed
@@ -477,7 +479,7 @@ pub(crate) fn grant_resources(cx: &mut Cx, investigator: InvestigatorId, amount:
 /// Sequence): saturating-subtract the cost from the wallet and emit
 /// [`Event::ResourcesPaid`]. A 0-cost card is a no-op (no event), mirroring
 /// [`grant_resources`]'s zero-amount behavior. The cost is read from the
-/// registry by `code`; absent metadata (registry-free unit tests) or a 0 cost
+/// registry by `code`; absent metadata or a 0 cost
 /// pays nothing.
 ///
 /// The caller has already validated affordability

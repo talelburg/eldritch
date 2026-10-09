@@ -187,7 +187,8 @@ pub fn metadata_for_test_inv(code: &CardCode) -> Option<&'static CardMetadata> {
 /// reverse never fires and the advance finds no ending latched.
 ///
 /// game-core's own unit tests never call it: a `#[ctor]` installs it before
-/// that binary's harness runs. The callers are other crates' test binaries.
+/// that binary's harness runs. The callers are the other test binaries:
+/// game-core's integration tests and doctests, and other crates' tests.
 ///
 /// One registry for the whole crate because `OnceLock<CardRegistry>` is
 /// process-global: a second per-test install would collide.

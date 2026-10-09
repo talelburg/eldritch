@@ -140,7 +140,7 @@ fn investigation_anchor_pushed_and_persists_through_turn() {
 fn investigation_phase_emits_phase_started_and_rotates_to_lead() {
     // Two investigators; investigation_phase should emit
     // PhaseStarted(Investigation), open the post-2.1 InvestigationBegins
-    // window (which auto-skips in tests — no card registry installed),
+    // window (which auto-skips in tests — the test registry serves no ability),
     // and then rotate to the first investigator in turn_order
     // (Rules Reference p.24 step 2.1 → window → step 2.2 lead-first).
     let mut state = GameStateBuilder::default()
@@ -390,7 +390,7 @@ fn step_phase_emits_no_phase_ended() {
 #[test]
 fn investigation_entry_emits_phase_started_then_windows_then_lead_active() {
     // Round ≥2 entry via step_phase (Mythos→Investigation) auto-skips
-    // both windows (no registry → nothing Fast-eligible) and lands
+    // both windows (test registry → nothing Fast-eligible) and lands
     // the lead active, with no PhaseEnded yet.
     let mut state = GameStateBuilder::default()
         .with_investigator(test_support::test_investigator(1))

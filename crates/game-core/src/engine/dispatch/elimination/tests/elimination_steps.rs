@@ -343,10 +343,9 @@ fn elimination_without_location_skips_clue_placement_and_does_not_panic() {
 #[test]
 fn elimination_without_card_metadata_treats_threat_area_as_scenario_owned() {
     // The test registry knows no 01165 ⇒ metadata_for is None ⇒ not a
-    // weakness ⇒ step 4. The
-    // weakness→removed_from_game routing needs real metadata and is covered
-    // by `crates/cards/tests/elimination_teardown.rs` (install_test_registry
-    // resolves TEST_INV only).
+    // weakness ⇒ step 4. The weakness→removed_from_game routing needs real
+    // metadata and is covered by `crates/cards/tests/elimination_teardown.rs`
+    // (the test registry resolves TEST_INV only).
     let id = InvestigatorId(1);
     let mut inv = test_support::test_investigator(1);
     inv.threat_area = vec![CardInPlay::enter_play(
@@ -373,7 +372,7 @@ fn elimination_without_card_metadata_treats_threat_area_as_scenario_owned() {
     assert_eq!(
         state.encounter_discard.len(),
         1,
-        "no registry ⇒ routed to the encounter discard"
+        "no metadata ⇒ routed to the encounter discard"
     );
     assert!(state.investigators[&id].removed_from_game.is_empty());
 }

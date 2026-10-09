@@ -37,7 +37,7 @@ fn hunter_move_tie_suspends_then_resumes_on_pick_location() {
         .take(&TurnAction::EndTurn);
     assert_eq!(session.state().phase, Phase::Enemy);
 
-    // Pick C. Resolving the tie continues the Enemy phase; with no registry
+    // Pick C. Resolving the tie continues the Enemy phase; with no ability
     // the attack windows auto-skip and the cascade runs to Mythos, pausing at
     // the step-1.4 encounter-draw prompt.
     let session = session.pick(OptionTarget::Location(LocationId(3)));

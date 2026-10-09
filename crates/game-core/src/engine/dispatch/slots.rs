@@ -73,8 +73,8 @@ pub(super) fn slot_need_exceeds_capacity(need: &SlotCounts) -> Option<Slot> {
 }
 
 /// The slot multiset `code` needs to enter play, read from the installed
-/// registry. Empty when no registry is installed (registry-free engine unit
-/// tests), the code is unknown, or it is a non-asset / slot-less asset.
+/// registry. Empty when no registry is installed, the code is unknown, or it
+/// is a non-asset / slot-less asset.
 pub(super) fn card_slot_need(code: &CardCode) -> SlotCounts {
     card_registry::current()
         .and_then(|reg| (reg.metadata_for)(code))

@@ -57,7 +57,7 @@ fn place_doom_on_current_agenda_advances_at_threshold() {
     );
     assert_eq!(out, EngineOutcome::Done);
     // The advance is deferred to an AdvanceReverse frame (#482); drive it
-    // (no registry ⇒ the reverse fires nothing ⇒ it drives straight through).
+    // (the test registry serves no reverse for it ⇒ it drives straight through).
     dispatch::drive(&mut cx, EngineOutcome::Done);
     assert_eq!(
         state.agenda_index, 1,

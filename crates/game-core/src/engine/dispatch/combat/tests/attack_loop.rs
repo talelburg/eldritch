@@ -53,7 +53,7 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
     assert_event!(events, Event::EnemyExhausted { enemy } if *enemy == attacker);
     // Loop finished → `after_enemy_phase_attacks` advanced the cursor past
     // the only investigator and opened the all-attacked window (auto-skips
-    // inline with no registry ability), cascading the EnemyPhase anchor off
+    // inline with no ability to offer), cascading the EnemyPhase anchor off
     // the stack — so no anchor is left still attacking anyone.
     assert!(
         !state.continuations.iter().any(|c| matches!(
@@ -233,8 +233,8 @@ fn drive_aoo_offers_order_pick_for_two_engaged_enemies() {
     // order pick, parking the AttackLoop frame as the top frame with the AoO
     // source + PickOrder stage (so it spans the whole AoO, #143). Picking the
     // higher-id enemy first proves the pick overrides EnemyId order; neither
-    // AoO attacker exhausts (RR p.7). Registry installed so max_health() /
-    // max_sanity() resolve (#448 cp2a); total AoO damage = 3 < 8 = TEST_INV.
+    // AoO attacker exhausts (RR p.7). Total AoO damage = 3 < 8 = TEST_INV's
+    // max_health() (#448 cp2a).
     let inv_id = InvestigatorId(1);
     let mut e_a = test_support::test_enemy(5, "A"); // EnemyId(5), dmg 1
     e_a.engaged_with = Some(inv_id);

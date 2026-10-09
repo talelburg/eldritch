@@ -36,7 +36,7 @@ fn enemy_phase_runs_hunters_then_attack_loop_when_no_tie() {
         let o = end_turn(&mut cx);
         dispatch::drive(&mut cx, o)
     };
-    // No registry installed → the attack window auto-skips inline and the
+    // No ability in the test registry → the attack window auto-skips inline and the
     // cascade runs Enemy→Upkeep→Mythos within this same call, pausing at the
     // step-1.4 encounter-draw prompt (AwaitingInput). The hunter still moved
     // + engaged during step 3.2 — asserted via the event stream below.
@@ -117,7 +117,7 @@ fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
         let o = dispatch::resolve_input(&mut cx, &InputResponse::PickSingle(pick));
         dispatch::drive(&mut cx, o) // slice 1b: complete the cascade
     };
-    // With no registry the attack window auto-skips and the cascade runs
+    // With no ability to offer the attack window auto-skips and the cascade runs
     // Enemy->Upkeep->Mythos within the same resume call, pausing at the
     // step-1.4 encounter-draw prompt (AwaitingInput).
     assert!(matches!(resumed, EngineOutcome::AwaitingInput { .. }));

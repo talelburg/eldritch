@@ -938,7 +938,7 @@ pub(crate) fn action_cost(
 /// actions are spent and the surcharge sources are marked spent for the
 /// round. **Mutates on success**, so call it after every other precondition
 /// for the action has passed. Falls back to cost 1 with no surcharge when
-/// no registry is installed (bare unit tests). Shared by move/fight/evade.
+/// no registry is installed. Shared by move/fight/evade.
 fn charge_action(
     cx: &mut Cx,
     investigator: InvestigatorId,

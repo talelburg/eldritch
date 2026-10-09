@@ -1354,8 +1354,8 @@ fn validate_commit_indices(
         // the test an Intellect test) is what the icons are matched against.
         //
         // A card with no registry entry is unconstrained, matching the cap
-        // check below and `push_committed_icons`: engine-only tests that
-        // install no registry never commit real cards.
+        // check below and `push_committed_icons`: engine-only tests run
+        // against a registry that knows no real cards.
         for &i in &indices_u8 {
             let code = &inv.hand[usize::from(i)];
             let Some(meta) = (reg.metadata_for)(code) else {
@@ -1712,9 +1712,10 @@ fn fire_retaliate_if_any(
 /// still holds the tested location, so [`LocationTarget::TestedLocation`]
 /// resolves cleanly.
 ///
-/// No registry installed → empty list: engine-only tests that don't touch card
-/// data never reach `OnSkillTestResolution`. Silent skip mirrors
-/// `constant_skill_modifier`'s behavior.
+/// No registry installed, or no abilities for the codes → empty list:
+/// engine-only tests that don't touch card data never reach
+/// `OnSkillTestResolution`. Silent skip mirrors `constant_skill_modifier`'s
+/// behavior.
 fn collect_on_skill_test_resolution(committed: &[CardCode], succeeded: bool) -> Vec<Effect> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();
@@ -1757,9 +1758,9 @@ fn collect_on_skill_test_resolution(committed: &[CardCode], succeeded: bool) -> 
 /// are in limbo on the in-flight record at this point (discard happens at
 /// teardown).
 ///
-/// No registry installed → empty list: engine-only tests that don't touch card
-/// data never commit real cards. Silent skip mirrors
-/// `constant_skill_modifier`'s behavior.
+/// No registry installed, or no abilities for the codes → empty list:
+/// engine-only tests that don't touch card data never commit real cards. Silent
+/// skip mirrors `constant_skill_modifier`'s behavior.
 fn collect_on_commit(committed: &[CardCode]) -> Vec<Effect> {
     let Some(reg) = card_registry::current() else {
         return Vec::new();

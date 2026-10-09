@@ -120,7 +120,7 @@ fn move_with_lethal_aoo_suppresses_relocation_but_keeps_spent_action() {
 fn move_with_nonlethal_aoo_relocates_after_the_attack() {
     // Engaged enemy, 1 damage, investigator survives (8 health):
     // AoO deals damage, then the move resolves.
-    // No registry installed → no cancel/soak windows → no suspension.
+    // No ability in the test registry → no cancel/soak windows → no suspension.
     let (inv_id, _l1, l2, enemy_id, state) = move_scenario_with_enemy(1, 8);
 
     let result = test_support::take_turn_action(

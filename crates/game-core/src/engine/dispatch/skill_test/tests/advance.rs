@@ -70,7 +70,7 @@ fn skill_test_runs_on_success_effect_on_a_passing_draw() {
     );
 }
 
-/// Both ST.1/ST.2 player windows open and auto-skip (no registry / nothing
+/// Both ST.1/ST.2 player windows open and auto-skip (no ability served / nothing
 /// Fast-eligible), bracketing the commit, and the test still resolves. (#374.)
 #[test]
 fn skill_test_opens_and_auto_skips_both_player_windows() {
