@@ -51,6 +51,15 @@
 #   scripts/ci-local.sh --list       # print the plan, run nothing
 #   scripts/ci-local.sh --all        # full seven-job gauntlet, CI-only jobs included
 #   scripts/ci-local.sh --base <ref> # diff against <ref> instead of origin/main
+#   scripts/ci-local.sh --only doc,test  # run exactly these jobs, ignoring the diff
+#   scripts/ci-local.sh --fail-fast  # stop at the first failing job
+#
+# Each job's full output goes to target/ci-local/logs/<job>.log. On a terminal
+# it is streamed as well; when stdout is not a terminal (piped, or run by an
+# agent) only the `==> job` / `ok` / `FAILED` lines are printed, followed for a
+# failing job by its errors excerpted from the log. Either way the last line is
+# the verdict (`passed. ...` or `failed: ...`), so a run never needs repeating
+# just to read how it ended.
 #
 set -uo pipefail
 
@@ -62,8 +71,16 @@ ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
 }
 cd "$ROOT" || exit 2
 
-# CI sets these workflow-wide, so every job below sees them.
-export CARGO_TERM_COLOR=always
+# CI sets these workflow-wide, so every job below sees them — except colour,
+# which changes nothing a job checks and only gets in the way off a terminal:
+# escape codes in a piped log are what made `grep '^error'` miss real errors.
+if [ -t 1 ]; then
+  export CARGO_TERM_COLOR=always
+  STREAM=1
+else
+  export CARGO_TERM_COLOR=never
+  STREAM=0
+fi
 export RUSTFLAGS="-D warnings"
 # Set in every CI job by actions-rust-lang/setup-rust-toolchain. Without it a
 # debug test .wasm is ~20x larger and wasm-bindgen spends ~11s on each one.
@@ -83,18 +100,27 @@ CI_ONLY_JOBS=(wasm-build wasm-test)
 BASE=""
 LIST_ONLY=0
 FORCE_ALL=0
+FAIL_FAST=0
+ONLY=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --all)   FORCE_ALL=1; shift ;;
     --list)  LIST_ONLY=1; shift ;;
     --base)  BASE="${2:?--base needs a ref}"; shift 2 ;;
+    --only)  ONLY="${2:?--only needs a comma-separated job list}"; shift 2 ;;
+    --fail-fast) FAIL_FAST=1; shift ;;
     -h|--help)
       sed -n '2,/^set -/p' "$0" | sed 's/^#\{0,1\} \{0,1\}//;$d'
       exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+
+if [ -n "$ONLY" ] && [ "$FORCE_ALL" -eq 1 ]; then
+  echo "--only and --all are mutually exclusive" >&2
+  exit 2
+fi
 
 # ---------------------------------------------------------------- changed files
 
@@ -122,7 +148,7 @@ CHANGED=$(
   } | sort -u
 )
 
-if [ -z "$CHANGED" ] && [ "$FORCE_ALL" -eq 0 ]; then
+if [ -z "$CHANGED" ] && [ "$FORCE_ALL" -eq 0 ] && [ -z "$ONLY" ]; then
   echo "no changes against $BASE ($MERGE_BASE) — nothing to check"
   exit 0
 fi
@@ -140,13 +166,24 @@ planned() { [[ " ${PLAN[*]} " == *" $1 "* ]]; }
 # A change to the CI definition, the cargo config, or the toolchain invalidates
 # the mapping's assumptions wholesale — there is nothing to reason about, so
 # run everything.
-if [ "$FORCE_ALL" -eq 0 ] &&
+if [ "$FORCE_ALL" -eq 0 ] && [ -z "$ONLY" ] &&
    diff_touches '^\.github/workflows/|^\.cargo/|(^|/)rust-toolchain\.toml$'; then
   echo "CI config, cargo config, or toolchain changed — running the full gauntlet."
   FORCE_ALL=1
 fi
 
-if [ "$FORCE_ALL" -eq 1 ]; then
+if [ -n "$ONLY" ]; then
+  # Re-running the one job that failed is the common case; the diff mapping is
+  # bypassed entirely, CI-only jobs included when named.
+  IFS=, read -ra ONLY_JOBS <<<"$ONLY"
+  for j in "${ONLY_JOBS[@]}"; do
+    if [[ " ${ALL_JOBS[*]} classify " != *" $j "* ]]; then
+      echo "unknown job: $j (jobs: ${ALL_JOBS[*]} classify)" >&2
+      exit 2
+    fi
+    select_job "$j" "--only"
+  done
+elif [ "$FORCE_ALL" -eq 1 ]; then
   for j in "${ALL_JOBS[@]}"; do select_job "$j" "--all"; done
 else
   # fmt is ~1s. Gating it would cost more thought than running it.
@@ -241,21 +278,54 @@ run_job() {
   esac
 }
 
+LOG_DIR="$CARGO_TARGET_DIR/logs"
+mkdir -p "$LOG_DIR"
+
+# The parts of a failing job's log worth reading: compiler and lint
+# diagnostics, test failure sections, panics, and rustfmt diffs. Falls back to
+# the log's tail when none of those patterns match.
+excerpt() {
+  local out
+  out=$(awk '
+    /^(error|warning)(\[|:)/                 { blk = 1 }
+    /^---- .* stdout ----$/ || /^failures:$/ { blk = 1 }
+    /^Diff in /                              { blk = 1 }
+    /panicked at/                            { print; next }
+    blk                                      { print }
+    blk && /^$/                              { blk = 0 }
+  ' "$1" | head -n 150)
+  # rustfmt colours its diff regardless of CARGO_TERM_COLOR; strip the escapes.
+  out=$(sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' <<<"$out")
+  if [ -n "$out" ]; then printf '%s\n' "$out"; else tail -n 40 "$1"; fi
+}
+
 declare -a FAILED=()
 for j in "${PLAN[@]}"; do
   echo "==> $j"
+  log="$LOG_DIR/$j.log"
   start=$(date +%s)
-  if run_job "$j"; then
+  # run_job stays in this shell (no pipe) so wasm-build can record DEGRADED.
+  if [ "$STREAM" -eq 1 ]; then
+    run_job "$j" > >(tee "$log") 2>&1
+    status=$?
+    wait $!
+  else
+    run_job "$j" >"$log" 2>&1
+    status=$?
+  fi
+  if [ "$status" -eq 0 ]; then
     echo "    ok ($(( $(date +%s) - start ))s)"
   else
-    echo "    FAILED ($(( $(date +%s) - start ))s)"
+    echo "    FAILED ($(( $(date +%s) - start ))s) — full log: $log"
+    [ "$STREAM" -eq 0 ] && excerpt "$log" | sed 's/^/    | /'
     FAILED+=("$j")
+    [ "$FAIL_FAST" -eq 1 ] && break
   fi
 done
 
 echo
 if [ ${#FAILED[@]} -gt 0 ]; then
-  echo "failed: ${FAILED[*]}"
+  echo "failed: ${FAILED[*]} (rerun just these: scripts/ci-local.sh --only $(IFS=,; echo "${FAILED[*]}"))"
   exit 1
 fi
 
@@ -264,11 +334,11 @@ for j in "${ALL_JOBS[@]}"; do
   planned "$j" || SKIPPED+=" $j"
 done
 
+if [ ${#DEGRADED[@]} -gt 0 ]; then
+  printf 'ran degraded: %s\n' "${DEGRADED[@]}"
+fi
 if [ -n "$SKIPPED" ]; then
   echo "passed. not run locally (CI will):${SKIPPED}"
 else
   echo "passed. full gauntlet."
-fi
-if [ ${#DEGRADED[@]} -gt 0 ]; then
-  printf 'ran degraded: %s\n' "${DEGRADED[@]}"
 fi
