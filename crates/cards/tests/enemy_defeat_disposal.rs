@@ -1,6 +1,7 @@
 //! Where a defeated enemy's card goes (#632), against the real
-//! `cards::REGISTRY` — the routing needs `weakness: true` from real corpus
-//! metadata, which `game-core` cannot reach by crate direction.
+//! `cards::REGISTRY`. A defeated enemy leaves play through the leave-play exit,
+//! filed by its owner (#982): the encounter deck's enemy to the encounter
+//! discard, a weakness enemy to its bearer's discard.
 //!
 //! `data/rules-reference/rules/glossary/Defeat.md`:
 //!
@@ -35,10 +36,10 @@
 //!   solo, so the spawned health the engine would compute is 5 — the number the
 //!   fixture uses.
 //!
-//! The enemies are built as fixtures rather than spawned from the corpus: what
-//! the real registry is needed for here is the `weakness` flag the routing reads
-//! (`weakness: true` on 01101, per `crates/cards/src/generated/cards.rs`), which
-//! `game-core`'s own tests cannot see.
+//! The enemies are built as fixtures rather than spawned from the corpus, each
+//! with the owner it would enter play with: the encounter deck for Ghoul Minion
+//! and Ghoul Priest, and its bearer for Mob Enforcer (`glossary/Weakness.md`). No
+//! engine path spawns a weakness enemy from a draw yet (#514).
 
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord, InputResponse, PlayerAction};

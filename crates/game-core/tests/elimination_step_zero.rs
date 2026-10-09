@@ -124,8 +124,16 @@ fn install() {
 fn board(code: &str, clues: u8, in_threat_area: bool) -> GameState {
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(10));
-    let mut card =
-        CardInPlay::enter_play(CardCode::new(code), CardInstanceId(1), Owner::EncounterDeck);
+    // A weakness is its bearer's (`glossary/Weakness.md`: *"The bearer of a
+    // weakness is the investigator who started the game with the weakness in
+    // his or her deck or play area."*); every other card here is the encounter
+    // deck's.
+    let owner = if [WEAKNESS, WEAKNESS_WHEN_CELL].contains(&code) {
+        Owner::Investigator(InvestigatorId(1))
+    } else {
+        Owner::EncounterDeck
+    };
+    let mut card = CardInPlay::enter_play(CardCode::new(code), CardInstanceId(1), owner);
     card.clues = clues;
     if in_threat_area {
         inv.threat_area.push(card);
@@ -275,7 +283,7 @@ fn elimination_without_a_step_zero_ability_still_runs_its_steps() {
         "elimination stays synchronous with no step-0 ability; stack = {:?}",
         state.continuations,
     );
-    // `plain-card` has no metadata → not a weakness → step 4's encounter discard.
+    // `plain-card` is the encounter deck's → step 4's encounter discard.
     assert_eq!(state.encounter_discard.len(), 1);
 }
 
