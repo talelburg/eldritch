@@ -49,7 +49,7 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{ApplyResult, EngineOutcome, InputKind, InputRequest, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, TokenModifiers, Zone,
 };
 use game_core::test_support::{self, ChoiceResolver};
@@ -305,6 +305,7 @@ fn a_card_committed_to_the_abandoned_test_is_discarded_not_deleted() {
         result.events,
         Event::CardDiscarded {
             from: Zone::Hand,
+            to: DiscardPile::Investigator(INV),
             ..
         }
     );

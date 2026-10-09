@@ -10,8 +10,8 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, Zone,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, DiscardPile, EnemyId,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, Zone,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -165,8 +165,9 @@ fn discard_self_removes_source_from_play_and_runs_the_effect() {
         result.events,
         Event::CardDiscarded {
             from: Zone::InPlay,
+            to: DiscardPile::Investigator(investigator),
             ..
-        }
+        } if *investigator == id
     );
 }
 

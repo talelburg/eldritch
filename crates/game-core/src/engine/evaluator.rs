@@ -88,8 +88,8 @@ use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
     AbilitySource, AdvanceTrigger, CardCode, CardInstanceId, Continuation, DamageSource,
-    DifficultyBasis, EffectFrame, EnemyId, GameState, Investigator, InvestigatorId, Lifetime,
-    LocationId, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp, Zone,
+    DifficultyBasis, DiscardPile, EffectFrame, EnemyId, GameState, Investigator, InvestigatorId,
+    Lifetime, LocationId, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp, Zone,
 };
 
 /// Failure margin of the just-resolved skill test (bound only while running an
@@ -1124,9 +1124,9 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
             .remove(pos);
         cx.state.encounter_discard.push(card.code.clone());
         cx.events.push(Event::CardDiscarded {
-            investigator: inv_id,
             code: card.code,
             from: Zone::ThreatArea,
+            to: DiscardPile::Encounter,
         });
         return EngineOutcome::Done;
     }
@@ -1158,22 +1158,22 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
                     CardType::Asset | CardType::Event | CardType::Skill
                 )
             });
-        if is_player_card {
+        let to = if is_player_card {
             // Solo: the firing controller is the owner. TODO(#371): track the
             // attachment's owner for multiplayer (owner may differ from the
             // leaving investigator).
             if let Some(inv) = cx.state.investigators.get_mut(&eval_ctx.controller) {
                 inv.discard.push(card.code.clone());
             }
+            DiscardPile::Investigator(eval_ctx.controller)
         } else {
             cx.state.encounter_discard.push(card.code.clone());
-        }
-        // `CardDiscarded` carries an `investigator`; for a location
-        // attachment, use the controller as the bookkeeping owner.
+            DiscardPile::Encounter
+        };
         cx.events.push(Event::CardDiscarded {
-            investigator: eval_ctx.controller,
             code: card.code,
             from: Zone::LocationAttachment,
+            to,
         });
         return EngineOutcome::Done;
     }

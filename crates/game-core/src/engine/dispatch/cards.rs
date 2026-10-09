@@ -19,7 +19,7 @@ use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     ActionResolutionFrame, ActionResume, AssetEntry, CardCode, CardInPlay, CardInstanceId,
-    InvestigatorId, MulliganFrame, PlayFromHandFrame, Zone,
+    DiscardPile, InvestigatorId, MulliganFrame, PlayFromHandFrame, Zone,
 };
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
@@ -366,9 +366,9 @@ pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Op
     let card = inv.hand.remove(idx);
     inv.discard.push(card.clone());
     cx.events.push(Event::CardDiscarded {
-        investigator,
         code: card.clone(),
         from: Zone::Hand,
+        to: DiscardPile::Investigator(investigator),
     });
     Some(card)
 }
@@ -419,16 +419,16 @@ pub(in crate::engine) fn discard_card_from_play(
             unreachable!("discard_card_from_play: instance {instance_id:?} not in cards_in_play")
         });
     let card = inv.cards_in_play.remove(pos);
-    place_card_leaving_play(cx, investigator, card);
+    place_card_leaving_play(cx, card);
 }
 
-/// File `card`, just taken out of play under `controller`, by its **owner** —
+/// File `card`, just taken out of play, by its **owner** —
 /// the routing [`discard_card_from_play`]'s docs describe.
 ///
 /// Separated so the owner lookup can borrow `cx.state` fresh: the owner may be
 /// somebody other than the controller whose collection the card was removed
 /// from, and an owner who has left the game has no pile either.
-fn place_card_leaving_play(cx: &mut Cx, controller: InvestigatorId, card: CardInPlay) {
+fn place_card_leaving_play(cx: &mut Cx, card: CardInPlay) {
     let owners_pile = card.owner.and_then(|owner| {
         cx.state
             .investigators
@@ -438,14 +438,13 @@ fn place_card_leaving_play(cx: &mut Cx, controller: InvestigatorId, card: CardIn
     if let Some((owner, inv)) = owners_pile {
         inv.discard.push(card.code.clone());
         cx.events.push(Event::CardDiscarded {
-            investigator: owner,
             code: card.code,
             from: Zone::InPlay,
+            to: DiscardPile::Investigator(owner),
         });
     } else {
         cx.state.removed_from_game.push(card.code.clone());
         cx.events.push(Event::CardRemovedFromGame {
-            investigator: controller,
             code: card.code,
             from: Zone::InPlay,
         });
@@ -1269,9 +1268,9 @@ fn discard_played_card(cx: &mut Cx, investigator: InvestigatorId, card: CardCode
         inv.discard.push(card.clone());
     }
     cx.events.push(Event::CardDiscarded {
-        investigator,
         code: card,
         from: Zone::Hand,
+        to: DiscardPile::Investigator(investigator),
     });
 }
 

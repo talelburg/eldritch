@@ -17,10 +17,10 @@ use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    CardCode, CardInPlay, Continuation, EncounterDrawFrame, EnemyId, EnemyPhaseFrame, EnemyResume,
-    FastWindowKind, GameState, HandSizeDiscard, InvestigationPhaseFrame, InvestigationResume,
-    Investigator, InvestigatorId, InvestigatorTurnFrame, MythosPhaseFrame, MythosResume, Phase,
-    PhaseStep, Skills, Status, UpkeepPhaseFrame, UpkeepResume, Zone,
+    CardCode, CardInPlay, Continuation, DiscardPile, EncounterDrawFrame, EnemyId, EnemyPhaseFrame,
+    EnemyResume, FastWindowKind, GameState, HandSizeDiscard, InvestigationPhaseFrame,
+    InvestigationResume, Investigator, InvestigatorId, InvestigatorTurnFrame, MythosPhaseFrame,
+    MythosResume, Phase, PhaseStep, Skills, Status, UpkeepPhaseFrame, UpkeepResume, Zone,
 };
 
 /// Action points granted to an investigator at the start of their
@@ -1388,9 +1388,9 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
     };
     for code in discarded {
         cx.events.push(Event::CardDiscarded {
-            investigator: current,
             code,
             from: Zone::Hand,
+            to: DiscardPile::Investigator(current),
         });
     }
 
