@@ -17,7 +17,9 @@
 //! [`put_set_aside_card_into_play`](engine::put_set_aside_card_into_play),
 //! which mints its `LocationId` and wires its printed connections from the
 //! scenario's layout table, then relocates investigators to the Hallway
-//! (01112) and removes the Study (01111).
+//! (01112) and removes the Study (01111) through
+//! [`remove_location_from_game`](board::remove_location_from_game), which
+//! discards whatever is attached to it by owner.
 //!
 //! The board build is board-dependent, single-use scenario logic, so it
 //! lives card-locally as a [`card_dsl::dsl::Effect::Native`] handler
@@ -39,7 +41,7 @@
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::{self, EvalContext};
-use game_core::engine::{self, Cx, EngineOutcome};
+use game_core::engine::{self, board, Cx, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::Owner;
 
@@ -132,11 +134,16 @@ fn board_build(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
         }
     }
     engine::reveal_location(cx, dest);
-    // Remove the Study (01111) from the game.
+    // Remove the Study (01111) from the game. Its attachments go with it, each
+    // discarded by its owner (`glossary/Leaves_Play.md`).
     let Some(study) = evaluator::location_id_by_code(cx.state, STUDY) else {
         unreachable!("01108 board-build: the Study was validated in play above");
     };
-    cx.state.locations.remove(&study);
+    let removed = board::remove_location_from_game(cx, study);
+    debug_assert!(
+        removed,
+        "01108 board-build: the Study was just found in play"
+    );
     EngineOutcome::Done
 }
 

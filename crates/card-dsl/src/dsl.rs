@@ -928,10 +928,10 @@ pub enum Cost {
         /// How many to spend.
         count: u8,
     },
-    /// Discard the source asset *in play* to pay for its own ability
-    /// (Beat Cop 01018, Knife 01086). Distinct from
-    /// [`Effect::DiscardSelf`], which removes a treachery from a threat
-    /// area / location. Must be the only source-referencing cost on an
+    /// Discard the source card from play to pay for its own ability
+    /// (Beat Cop 01018, Knife 01086), wherever it sits, to its owner's pile.
+    /// Distinct from [`Effect::DiscardSelf`], which discards the source as
+    /// the ability's effect. Must be the only source-referencing cost on an
     /// ability (it removes the source); paid last.
     DiscardSelf,
 }
@@ -1317,11 +1317,11 @@ pub enum Effect {
         on_fail: Option<Box<Effect>>,
     },
     /// Discard the firing card instance (the evaluator context's
-    /// `source`). Locates the instance in a threat area or location
-    /// attachment, removes it, and discards it to the encounter discard.
-    /// Used by persistent treacheries' `Forced` self-discard abilities
-    /// (Frozen in Fear 01164, Dissonant Voices 01165, Obscuring Fog
-    /// 01168). Rejects if there is no source or the instance isn't found.
+    /// `source`) from play, wherever it sits, to its owner's pile: a
+    /// treachery to the encounter discard, a played Barricade 01038 to its
+    /// player's. Used by persistent treacheries' `Forced` self-discard
+    /// abilities (Frozen in Fear 01164, Dissonant Voices 01165, Obscuring Fog
+    /// 01168). Rejects if there is no source or the instance isn't in play.
     DiscardSelf,
     /// Cancel the current cancellable game impact — the subject of the
     /// Before-timing window this effect resolves inside. Sets the engine's

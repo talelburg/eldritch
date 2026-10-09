@@ -34,7 +34,7 @@ A new `Effect` (or `EventPattern`) variant waits until **two or more hand-writte
 
 ### A native moves a card between zones only through an engine exit
 
-A native in `cards` that takes a card out of play calls the engine's exit for it, `game_core::engine::board::discard_from_play` or `remove_from_game`. It never removes the card from a zone and pushes it onto a pile itself. A native that needs a new way out of play — the victory display, say — gets a sibling verb on the same router in `board::leave_play`, not a copy in the card module.
+A native in `cards` that takes a card out of play calls the engine's exit for it, `game_core::engine::board::discard_from_play`, `remove_from_game` or, for a location, `remove_location_from_game`. It never removes the card from a zone and pushes it onto a pile itself. A native that needs a new way out of play — the victory display, say — gets a sibling verb on the same router in `board::leave_play`, not a copy in the card module.
 
 **Why:** where a leaving card goes is decided by its **owner**, and the exit also discards its attachments and emits the one event per card. A hand-rolled copy gets one of the three wrong. Crypt Chill 01167 routed its discarded asset by **controller**, so a Parleyed Lita Chantler 01117 landed in the investigator's discard instead of leaving the game, as her ruling requires (#918).
 

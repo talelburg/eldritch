@@ -90,6 +90,9 @@ pub enum Zone {
     EnemyAttachment,
     /// An enemy itself, leaving play.
     Enemy,
+    /// A location itself, leaving play — the Study 01111, which Trapped 01108
+    /// removes from the game.
+    Location,
     /// Out of the game entirely.
     /// `glossary/Removed_from_Game.md`: *"A card that has been removed from the
     /// game is placed away from the game area and has no further interaction

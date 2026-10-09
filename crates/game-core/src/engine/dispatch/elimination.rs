@@ -4,10 +4,9 @@
 use std::mem;
 
 use crate::card_registry;
+use crate::engine::board;
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{
-    act_agenda, combat, cursor, emit, hunters, threat_area, trigger_scan,
-};
+use crate::engine::dispatch::{act_agenda, combat, cursor, emit, hunters, trigger_scan};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::Event;
@@ -409,12 +408,13 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     }
 
     // Step 4: "All other cards in the eliminated investigator's threat area are
-    // placed in the appropriate discard pile" (Rules Reference p.10). What
-    // survives step 1's partition is scenario-owned (Frozen in Fear 01164,
-    // Dissonant Voices 01165), so the appropriate pile is the encounter discard
-    // — an investigator's elimination must not remove the *scenario's* cards
-    // from the game. Engaged enemies are step 3's business, not this drain:
-    // they live in `enemies` keyed by `engaged_with`, not in `threat_area`.
+    // placed in the appropriate discard pile" (Rules Reference p.10). The
+    // leave-play exit files each by its owner, so the appropriate pile is the
+    // owner's: the encounter discard for Frozen in Fear 01164 or Dissonant
+    // Voices 01165 — an investigator's elimination must not remove the
+    // *scenario's* cards from the game. Engaged enemies are step 3's business,
+    // not this drain: they live in `enemies` keyed by `engaged_with`, not in
+    // `threat_area`.
     let remaining: Vec<CardInstanceId> = cx
         .state
         .investigators
@@ -422,7 +422,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
         .map(|inv| inv.threat_area.iter().map(|c| c.instance_id).collect())
         .unwrap_or_default();
     for instance_id in remaining {
-        let removed = threat_area::discard_from_threat_area(cx, investigator, instance_id);
+        let removed = board::discard_from_play(cx, instance_id).is_some();
         debug_assert!(
             removed,
             "elimination step 4: threat-area instance {instance_id:?} vanished mid-drain",
