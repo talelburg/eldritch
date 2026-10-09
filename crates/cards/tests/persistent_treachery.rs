@@ -6,14 +6,16 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
+use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
 use game_core::engine::{ApplyResult, EngineOutcome, OptionId, OptionTarget, TimingEvent};
+use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
-    ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigatorId,
+    ChaosToken, Continuation, DiscardPile, EnemyId, GameState, GameStateBuilder, InvestigatorId,
     InvestigatorTurnFrame, Location, LocationId, ModifierTarget, Owner, Phase, SkillKind,
-    TokenModifiers, UseKind,
+    TokenModifiers, UseKind, Zone,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
 
@@ -505,6 +507,16 @@ fn obscuring_fog_limit_one_per_location_discards_the_second_copy() {
             .encounter_discard
             .contains(&CardCode::new("01168")),
         "the over-limit copy is discarded",
+    );
+    // An encounter card's discard names the encounter pile, not a stand-in
+    // investigator.
+    assert_event!(
+        result.events,
+        Event::CardDiscarded {
+            code,
+            from: Zone::LocationAttachment,
+            to: DiscardPile::Encounter,
+        } if code.as_str() == "01168"
     );
 }
 

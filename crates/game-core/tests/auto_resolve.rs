@@ -53,8 +53,8 @@ use game_core::scenario::{
 };
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers,
-    TokenResolution, Zone,
+    DiscardPile, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind,
+    TokenModifiers, TokenResolution, Zone,
 };
 use game_core::test_support::{self, ChoiceResolver, MockRegistry, TakeOneFastPlay};
 use game_core::{assert_event, assert_event_count, assert_no_event, scenario_registry};
@@ -697,7 +697,7 @@ fn committed_cards_are_still_discarded_when_the_draw_is_skipped() {
     assert_no_event!(result.events, Event::ChaosTokenRevealed { .. });
     assert_event!(
         result.events,
-        Event::CardDiscarded { investigator, code, from: Zone::Hand }
+        Event::CardDiscarded { code, from: Zone::Hand, to: DiscardPile::Investigator(investigator) }
             if *investigator == id && code.as_str() == FILLER
     );
     assert!(

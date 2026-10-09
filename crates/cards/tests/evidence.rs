@@ -15,7 +15,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState,
     GameStateBuilder, InvestigatorId, LocationId, Owner, TokenModifiers, Zone,
 };
 use game_core::test_support::{self, TestSession};
@@ -222,7 +222,7 @@ fn picking_evidence_plays_it_and_discovers_a_clue() {
     );
     assert_event!(
         result.events,
-        Event::CardDiscarded { investigator, code, from: Zone::Hand }
+        Event::CardDiscarded { code, from: Zone::Hand, to: DiscardPile::Investigator(investigator) }
             if *investigator == inv_id && code.as_str() == EVIDENCE
     );
 

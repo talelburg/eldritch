@@ -57,9 +57,10 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use crate::engine::board;
 use crate::state::{
-    AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, GameState,
-    Investigator, InvestigatorId, Location, UseKind,
+    AbilitySource, Act, Agenda, CardCode, CardInPlay, Enemy, GameState, Investigator,
+    InvestigatorId, Location, UseKind,
 };
 
 /// What a reachable [`AbilitySource`] points at: the record carrying the
@@ -217,16 +218,17 @@ pub(crate) fn reachable_sources(
 /// [`SourceCard::code`] against the candidate's code answers that without any
 /// caller re-deriving which board card the source is.
 ///
-/// [`InPlay`](AbilitySource::InPlay) is answered board-wide — any investigator's
-/// controlled collections, a location's attachments or the cards put into play
-/// at it, or an enemy's attachments — matching
+/// [`InPlay`](AbilitySource::InPlay) is answered board-wide by
+/// [`board::find_instance`] — any investigator's controlled collections, a
+/// location's attachments or the cards put into play at it, or an enemy's
+/// attachments — matching
 /// the collections [`reachable_sources`] reads, so a co-located threat-area card
 /// (#708) is not reported gone just because its controller is not the
 /// candidate's.
 pub(crate) fn source_card(state: &GameState, source: AbilitySource) -> Option<SourceCard<'_>> {
     match source {
         AbilitySource::InPlay(instance_id) => {
-            instance_in_play(state, instance_id).map(SourceCard::Instance)
+            board::find_instance(state, instance_id).map(|(card, _)| SourceCard::Instance(card))
         }
         AbilitySource::Location(location_id) => {
             state.locations.get(&location_id).map(SourceCard::Location)
@@ -377,68 +379,7 @@ pub(crate) fn resolve_mut(
         .ok()?
         .instance()?
         .instance_id;
-    instance_in_play_mut(state, instance)
-}
-
-/// The in-play instance `instance_id` names, wherever on the board it sits:
-/// any investigator's controlled collections, a location's attachments or the
-/// cards put into play at it, or an enemy's attachments. The read side of
-/// [`instance_in_play_mut`], which walks the same collections — one walk each
-/// way, so the pair cannot drift into disagreeing about where a card can be.
-fn instance_in_play(state: &GameState, instance_id: CardInstanceId) -> Option<&CardInPlay> {
-    state
-        .investigators
-        .values()
-        .flat_map(Investigator::controlled_card_instances)
-        .chain(state.locations.values().flat_map(|location| {
-            location
-                .attachments
-                .iter()
-                .chain(location.cards_at_location.iter())
-        }))
-        .chain(
-            state
-                .enemies
-                .values()
-                .flat_map(|enemy| enemy.attachments.iter()),
-        )
-        .find(|card| card.instance_id == instance_id)
-}
-
-/// The in-play instance `instance_id` names, wherever on the board it sits:
-/// any investigator's controlled collections, a location's attachments or the
-/// cards put into play at it, or an enemy's attachments.
-///
-/// The write-side mirror of the collections [`reachable_sources`] reads, kept as
-/// one walk so a source that became reachable through somebody else's
-/// collection is still payable against. [`instance_in_play`] is its read twin.
-pub(crate) fn instance_in_play_mut(
-    state: &mut GameState,
-    instance_id: CardInstanceId,
-) -> Option<&mut CardInPlay> {
-    if let Some(card) = state
-        .investigators
-        .values_mut()
-        .find_map(|inv| inv.controlled_card_instance_mut(instance_id))
-    {
-        return Some(card);
-    }
-    state
-        .locations
-        .values_mut()
-        .flat_map(|location| {
-            location
-                .attachments
-                .iter_mut()
-                .chain(location.cards_at_location.iter_mut())
-        })
-        .chain(
-            state
-                .enemies
-                .values_mut()
-                .flat_map(|enemy| enemy.attachments.iter_mut()),
-        )
-        .find(|card| card.instance_id == instance_id)
+    board::find_instance_mut(state, instance).map(|(card, _)| card)
 }
 
 /// Rejection reason for a source `investigator` cannot reach. Reasons reach the
@@ -455,7 +396,7 @@ fn unreachable_reason(investigator: InvestigatorId, source: AbilitySource) -> Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{EnemyId, GameStateBuilder, LocationId, Owner};
+    use crate::state::{CardInstanceId, EnemyId, GameStateBuilder, LocationId, Owner};
     use crate::test_support;
 
     const STUDY: LocationId = LocationId(1);
@@ -636,17 +577,6 @@ mod tests {
         let found = source_card(&state, AbilitySource::InPlay(CardInstanceId(60)))
             .expect("a card at a location is on the board");
         assert_eq!(found.code().as_str(), "01117");
-    }
-
-    /// The write side walks the same collections as the read side, so an
-    /// ability on an uncontrolled card can still be paid for by exhausting it.
-    #[test]
-    fn instance_in_play_mut_reaches_a_card_put_into_play_at_a_location() {
-        let mut state = board();
-        instance_in_play_mut(&mut state, CardInstanceId(60))
-            .expect("a card at a location is writable")
-            .exhausted = true;
-        assert!(state.locations[&STUDY].cards_at_location[0].exhausted);
     }
 
     /// Co-location is not control: a co-located investigator's *assets* are

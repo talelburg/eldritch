@@ -8,7 +8,7 @@ use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{EngineOutcome, OptionId, OptionTarget};
 use game_core::event::Event;
-use game_core::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Zone};
+use game_core::state::{CardCode, DiscardPile, GameStateBuilder, InvestigatorId, LocationId, Zone};
 use game_core::test_support::{self, TestSession};
 
 const BEAT_COP: &str = "01018"; // Guardian Ally
@@ -89,7 +89,7 @@ fn playing_a_second_ally_auto_discards_the_first() {
     assert!(
         r2.events.iter().any(|e| matches!(
             e,
-            Event::CardDiscarded { code, from: Zone::InPlay, investigator }
+            Event::CardDiscarded { code, from: Zone::InPlay, to: DiscardPile::Investigator(investigator) }
                 if *investigator == id && code.as_str() == BEAT_COP
         )),
         "Beat Cop discarded from play: {:?}",

@@ -22,7 +22,7 @@ use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, ChoiceResolution, Cx, EngineOutcome, OptionTarget};
 use game_core::event::Event;
-use game_core::state::{CardInstanceId, InvestigatorId, Zone};
+use game_core::state::{CardInstanceId, DiscardPile, InvestigatorId, Zone};
 
 /// `ArkhamDB` code for Crypt Chill.
 pub const CODE: &str = "01167";
@@ -127,9 +127,9 @@ fn discard_asset_instance(
     let code = inv.cards_in_play.remove(pos).code;
     inv.discard.push(code.clone());
     cx.events.push(Event::CardDiscarded {
-        investigator: controller,
         code,
         from: Zone::InPlay,
+        to: DiscardPile::Investigator(controller),
     });
     EngineOutcome::Done
 }

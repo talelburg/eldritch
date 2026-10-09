@@ -35,8 +35,9 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{OptionTarget, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
-    AttackLoopFrame, CardCode, CardInPlay, CardInstanceId, Continuation, EliminationCause, Enemy,
-    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Status, Zone,
+    AttackLoopFrame, CardCode, CardInPlay, CardInstanceId, Continuation, DiscardPile,
+    EliminationCause, Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    Owner, Status, Zone,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -267,8 +268,10 @@ fn guard_dog_retaliates_on_a_lethal_assignment_then_is_defeated() {
     assert!(
         session.events().iter().any(|e| matches!(
             e,
-            Event::CardDiscarded { code, from, .. }
-                if *code == CardCode::new(GUARD_DOG) && *from == Zone::InPlay
+            Event::CardDiscarded { code, from, to }
+                if *code == CardCode::new(GUARD_DOG)
+                    && *from == Zone::InPlay
+                    && *to == DiscardPile::Investigator(InvestigatorId(1))
         )),
         "Guard Dog discard emitted: {:?}",
         session.events()
@@ -383,8 +386,10 @@ fn guard_dog_defeated_on_overflow_is_discarded_from_play() {
     assert!(
         session.events().iter().any(|e| matches!(
             e,
-            Event::CardDiscarded { code, from, .. }
-                if *code == CardCode::new(GUARD_DOG) && *from == Zone::InPlay
+            Event::CardDiscarded { code, from, to }
+                if *code == CardCode::new(GUARD_DOG)
+                    && *from == Zone::InPlay
+                    && *to == DiscardPile::Investigator(InvestigatorId(1))
         )),
         "Guard Dog discard emitted: {:?}",
         session.events()
@@ -829,8 +834,10 @@ fn an_asset_soaks_first_then_the_investigator_card_takes_the_remainder() {
     assert!(
         session.events().iter().any(|e| matches!(
             e,
-            Event::CardDiscarded { code, from, .. }
-                if *code == CardCode::new(GUARD_DOG) && *from == Zone::InPlay
+            Event::CardDiscarded { code, from, to }
+                if *code == CardCode::new(GUARD_DOG)
+                    && *from == Zone::InPlay
+                    && *to == DiscardPile::Investigator(InvestigatorId(1))
         )),
         "Guard Dog discard emitted: {:?}",
         session.events()

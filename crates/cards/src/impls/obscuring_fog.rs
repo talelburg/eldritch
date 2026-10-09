@@ -37,7 +37,7 @@ use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::{CardCode, Owner, Zone};
+use game_core::state::{CardCode, DiscardPile, Owner, Zone};
 
 /// `ArkhamDB` code for Obscuring Fog.
 pub const CODE: &str = "01168";
@@ -100,9 +100,9 @@ fn limit1_attach(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         // Limit 1 per location: this copy can't enter play, so discard it.
         cx.state.encounter_discard.push(CardCode::new(CODE));
         cx.events.push(Event::CardDiscarded {
-            investigator: ctx.controller,
             code: CardCode::new(CODE),
             from: Zone::LocationAttachment,
+            to: DiscardPile::Encounter,
         });
         return EngineOutcome::Done;
     }
