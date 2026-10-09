@@ -3,7 +3,8 @@ use card_dsl::dsl::{self, Ability, ControlStatus, GrantTarget, Quantity};
 
 use super::*;
 use crate::state::{
-    Continuation, GameStateBuilder, InFlightSkillTest, Lifetime, RecordedModifier, SkillTestId,
+    Continuation, EnemyId, GameStateBuilder, InFlightSkillTest, Lifetime, LocationId,
+    RecordedModifier, SkillTestId,
 };
 use crate::test_support;
 
@@ -73,6 +74,25 @@ fn mock_abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
             Stat::Shroud,
             2,
             ModifierScope::WhileInPlay,
+        ))]),
+        // Lita Chantler 01117's buff, printed: "Each investigator at your
+        // location gets +1 [combat]."
+        "combat-plus-1-here" => Some(vec![dsl::constant(dsl::modify_for(
+            ModifierAudience::EachInvestigatorAtSourceLocation,
+            Stat::Combat,
+            1,
+            ModifierScope::WhileInPlay,
+        ))]),
+        // Grants a card it does not sit on — `grant-recipient` — a modifier
+        // for that card's controller.
+        "grants-combat-to-recipient" => Some(vec![dsl::constant(dsl::grant(
+            GrantTarget::Card("grant-recipient".to_owned()),
+            None,
+            vec![dsl::constant(dsl::modify(
+                Stat::Combat,
+                1,
+                ModifierScope::WhileInPlay,
+            ))],
         ))]),
         "elder-sign-clues-here" => Some(vec![dsl::elder_sign(IntExpr::Count(
             Quantity::CluesAtControllerLocation,

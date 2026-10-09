@@ -78,10 +78,9 @@
 //! card."*
 //!
 //! So [`for_source`] returns the side-in-effect **printed** abilities plus
-//! whatever the board **grants**, and the grant sweep ([`granted_to`]) is the
-//! walk `modified_value::sweep` already does over the seven in-play
-//! collections, matching `Effect::Grant` where that one matches
-//! `Effect::Modify`. The sweep itself reads [`printed_in_effect`], not
+//! whatever the board **grants**, and the grant sweep ([`granted_to`]) reads
+//! the same [board walk](board::walk) `modified_value::sweep` does, matching
+//! `Effect::Grant` where that one matches `Effect::Modify`. The sweep itself reads [`printed_in_effect`], not
 //! [`for_source`] — a grant cannot be granted, which is what leaves the
 //! addressing with a fixed vector to index. `docs/adr/0014-a-granted-ability-is-a-constant-effect-swept-off-the-board.md`
 //! has the argument.
@@ -273,18 +272,16 @@ fn printed_in_effect(
 /// **The grant sweep**: every ability the board currently grants the card
 /// behind `source`.
 ///
-/// Walks the same seven in-play collections `modified_value::sweep` does,
-/// matching a **bare** `Effect::Grant` under [`Trigger::Constant`] where that
-/// one matches a bare `Effect::Modify`. A grant wrapped in an `Effect::If` is
-/// invisible here, deliberately and for the reason the variant's own
-/// doc-comment gives.
+/// Reads the same [board walk](board::walk) `modified_value::sweep` does, less
+/// the cards in an eliminated investigator's area, matching a **bare**
+/// `Effect::Grant` under [`Trigger::Constant`] where that one matches a bare
+/// `Effect::Modify`. A grant wrapped in an `Effect::If` is invisible here,
+/// deliberately and for the reason the variant's own doc-comment gives.
 ///
-/// The walk order — investigators, then locations with their attachments and
-/// their at-location cards, then enemies with their attachments, then the
-/// current act and agenda — is the sweep's order, and both maps are ordered, so
-/// the granted abilities land in a deterministic order. Nothing depends on that
-/// order for identity (an address names the granter, not a position), but a
-/// stable enumeration keeps the turn menu stable between reads.
+/// The granted abilities land in the walk's order (ADR 0018), which is
+/// deterministic. Nothing depends on that order for identity (an address names
+/// the granter, not a position), but a stable enumeration keeps the turn menu
+/// stable between reads.
 #[must_use]
 fn granted_to(
     state: &GameState,
@@ -339,32 +336,11 @@ fn granted_to(
         }
     };
 
-    for inv in state.investigators.values() {
-        for card in inv.controlled_card_instances() {
-            visit(AbilitySource::InPlay(card.instance_id), &card.code);
+    for granter in board::walk(state) {
+        if granter.placement.in_eliminated_area(state) {
+            continue;
         }
-    }
-    for (id, location) in &state.locations {
-        visit(AbilitySource::Location(*id), &location.code);
-        for card in location
-            .attachments
-            .iter()
-            .chain(location.cards_at_location.iter())
-        {
-            visit(AbilitySource::InPlay(card.instance_id), &card.code);
-        }
-    }
-    for (id, enemy) in &state.enemies {
-        visit(AbilitySource::Enemy(*id), &enemy.code);
-        for att in &enemy.attachments {
-            visit(AbilitySource::InPlay(att.instance_id), &att.code);
-        }
-    }
-    if let Some(act) = state.act_deck.get(state.act_index) {
-        visit(AbilitySource::Act, &act.code);
-    }
-    if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
-        visit(AbilitySource::Agenda, &agenda.code);
+        visit(granter.source, granter.code());
     }
     out
 }

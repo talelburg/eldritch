@@ -77,13 +77,14 @@ use card_dsl::dsl::{
 use serde::{Deserialize, Serialize};
 
 use crate::card_registry::{self, CardRegistry};
+use crate::engine::board::{self, Placement};
 use crate::engine::dispatch::choice::ChoiceResolution;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
     self, act_agenda, actions, cards, choice, combat, elimination, emit, skill_test, threat_area,
 };
 use crate::engine::outcome::{EngineOutcome, OptionId, OptionTarget};
-use crate::engine::{board, designator, Cx};
+use crate::engine::{designator, Cx};
 use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
@@ -1214,11 +1215,9 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
 /// moves her into a player's `cards_in_play`.
 #[must_use]
 pub(crate) fn card_control_status(state: &GameState, code: &str) -> ControlStatus {
-    let controlled = state
-        .investigators
-        .values()
-        .flat_map(|inv| inv.cards_in_play.iter())
-        .any(|card| card.code.as_str() == code);
+    let controlled = board::walk(state).iter().any(|card| {
+        matches!(card.placement, Placement::PlayArea(_)) && card.code().as_str() == code
+    });
     if controlled {
         ControlStatus::ByAPlayer
     } else {

@@ -44,8 +44,8 @@
 //! > activate the ability of this act card.
 //!
 //! An investigator therefore reaches the current act and the current agenda from
-//! wherever they stand, which is why [`reachable_sources`] appends them after
-//! the co-location pass has had its chance to bail out.
+//! wherever they stand, which is why [`reachable_sources`] gates them on
+//! nothing while every co-location arm is gated on standing somewhere.
 //!
 //! Reachability says only *which sources are addressable*. It never widens what
 //! is **legal**: everything `Appendix_I_Initiation_Sequence.md` requires still
@@ -55,105 +55,43 @@
 //! game state.)"*, and that the cost can be paid.
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 
-use crate::engine::board;
-use crate::state::{
-    AbilitySource, Act, Agenda, CardCode, CardInPlay, Enemy, GameState, Investigator,
-    InvestigatorId, Location, UseKind,
-};
+use card_dsl::card_data::CardType;
 
-/// What a reachable [`AbilitySource`] points at: the record carrying the
-/// abilities, whichever kind of thing it is.
-///
-/// The activation path needs four things from a source — its card code, whether
-/// it is exhausted, its remaining uses, and its card instance (if it has one) —
-/// and only the first is available uniformly. A location is a
-/// [`Location`](crate::state::Location) keyed by `LocationId`, an enemy is an
-/// [`Enemy`](crate::state::Enemy) keyed by `EnemyId`, and neither carries the
-/// per-instance state a [`CardInPlay`] does. Answering all four here is what
-/// keeps every caller from re-deriving "does this kind of source have an
-/// instance behind it".
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum SourceCard<'a> {
-    /// A card instance in play — an investigator card, a card in play, a
-    /// threat-area card, or an attachment on a location or an enemy.
-    Instance(&'a CardInPlay),
-    /// A location card itself.
-    Location(&'a Location),
-    /// An enemy in play.
-    Enemy(&'a Enemy),
-    /// The current act card.
-    Act(&'a Act),
-    /// The current agenda card.
-    Agenda(&'a Agenda),
-}
-
-impl SourceCard<'_> {
-    /// The printed code the ability is looked up by in the card registry.
-    pub(crate) fn code(&self) -> &CardCode {
-        match self {
-            SourceCard::Instance(card) => &card.code,
-            SourceCard::Location(location) => &location.code,
-            SourceCard::Enemy(enemy) => &enemy.code,
-            SourceCard::Act(act) => &act.code,
-            SourceCard::Agenda(agenda) => &agenda.code,
-        }
-    }
-
-    /// The card instance behind this source, if it has one. `None` for a
-    /// location (locations do not exhaust and carry no uses); for an enemy — an
-    /// enemy readies and exhausts through its own `exhausted` field, which is
-    /// not the card-instance state an `Exhaust` cost pays against; and for the
-    /// act and the agenda, which are `Act` / `Agenda` records in the scenario
-    /// decks and carry no per-instance state at all.
-    pub(crate) fn instance(&self) -> Option<&CardInPlay> {
-        match self {
-            SourceCard::Instance(card) => Some(card),
-            SourceCard::Location(_)
-            | SourceCard::Enemy(_)
-            | SourceCard::Act(_)
-            | SourceCard::Agenda(_) => None,
-        }
-    }
-
-    /// Whether an `Exhaust` cost is already spent on this source. Only a card
-    /// instance can carry one; see [`instance`](Self::instance).
-    pub(crate) fn exhausted(&self) -> bool {
-        self.instance().is_some_and(|card| card.exhausted)
-    }
-
-    /// Remaining uses by kind — empty for a source with no card instance.
-    pub(crate) fn uses(&self) -> BTreeMap<UseKind, u8> {
-        self.instance()
-            .map(|card| card.uses.clone())
-            .unwrap_or_default()
-    }
-}
+use crate::card_registry;
+use crate::engine::board::{self, BoardCard, Placement, SourceCard};
+use crate::state::{AbilitySource, CardCode, CardInPlay, GameState, InvestigatorId, LocationId};
 
 /// Every ability source `investigator` can reach, paired with the record that
-/// carries the abilities, in a stable order.
+/// carries the abilities.
 ///
-/// The order is the three bullets in the order the Rules Reference prints them:
-/// the control bullet first (`Investigator::controlled_card_instances`': the
-/// investigator card, then cards in play, then the threat area), then the
-/// co-location bullet (the location itself, its attachments, the cards put into
-/// play at it, each enemy at it with its attachments, then the threat areas of
-/// the *other* investigators there), then the current act and the current
-/// agenda. It is what the turn menu is listed in, so it must stay
-/// deterministic — `investigators`, `locations` and `enemies` are all
-/// `BTreeMap`s, so iteration is by id.
+/// It is the [board walk](board::walk) filtered by the three bullets, so it is
+/// in the walk's order (ADR 0018) — every investigator's cards first, the
+/// active investigator's leading, then each location with its cards, each enemy
+/// with its attachments, the act and the agenda. The order is what the turn menu
+/// and the player window list options in, so it must stay deterministic, which
+/// the walk is. Options are routed per board card, so the order *across* cards
+/// is presentation only; the order of one card's abilities is the card's own.
+///
+/// - **Control:** the investigator's own investigator card, play area and
+///   threat area.
+/// - **Co-location**, for an investigator standing at a location on the map:
+///   the location itself, its attachments, the cards put into play at it, each
+///   enemy at it with its attachments, and the **encounter** cards in the
+///   threat areas of the other investigators there.
+/// - **The current act and agenda**, from anywhere.
 ///
 /// The acting investigator's own threat area is yielded once, under the control
-/// bullet: the co-location pass skips them, since a card cannot be in two
-/// collections.
+/// bullet.
 ///
 /// Empty for an investigator who is not in `state`. An investigator who is not
 /// at a location (one in the setup phase, or one who has left the board) skips
 /// the co-location bullet and **keeps** the act and the agenda: that bullet is
 /// gated on nothing.
 ///
-/// [`Investigator::controlled_card_instances`]: crate::state::Investigator::controlled_card_instances
+/// Not filtered by elimination: an investigator who has left the board is at no
+/// location, so co-location already reaches nothing of theirs, and their own
+/// control bullet answers an activation they cannot take anyway.
 pub(crate) fn reachable_sources(
     state: &GameState,
     investigator: InvestigatorId,
@@ -161,36 +99,91 @@ pub(crate) fn reachable_sources(
     let Some(inv) = state.investigators.get(&investigator) else {
         return Vec::new();
     };
+    // Co-location is gated on standing at a location that is on the map.
+    let here = inv
+        .current_location
+        .filter(|id| state.locations.contains_key(id));
+    board::walk(state)
+        .into_iter()
+        .filter(|card| reaches(state, investigator, here, card))
+        .map(|card| (card.source, card.card))
+        .collect()
+}
 
-    // The control bullet: `controlled_card_instances` is what the trigger
-    // scan's board walk visits for each investigator, and using it here is what
-    // makes the activation path agree with it (#707).
-    //
-    // It is a slightly *wider* set than "a card in play and under his or her
-    // control", and deliberately so for this use: the threat area also holds
-    // **encounter** cards, which the scenario owns and controls. Frozen in Fear
-    // 01164 is not one of your cards — per the official FAQ, *"In general, 'your cards'
-    // are the cards you currently control. If you own a card but do not control it,
-    // it is not 'yours' for the purposes of abilities."*
-    // (`data/official-faq/Frequently_Asked_Questions.md`.) Reaching such a
-    // card's ability from this seat is still right, because a threat-area
-    // encounter card's Forced abilities are the acting investigator's to
-    // resolve; what the widening rules out is reusing this iterator as the
-    // answer to "which cards do you control?". See its doc-comment.
-    let mut sources: Vec<_> = inv.controlled_card_instances().map(as_instance).collect();
-    sources.extend(colocated_sources(state, inv));
-    // *"The current act or current agenda card."* (#709) — appended after the
-    // co-location pass rather than inside it, because this bullet has no gate:
-    // an investigator between locations still reaches both. A deck that is empty
-    // or whose cursor has run off the end (a fixture with no acts, a scenario
-    // past its last agenda) simply yields nothing.
-    if let Some(act) = state.act_deck.get(state.act_index) {
-        sources.push((AbilitySource::Act, SourceCard::Act(act)));
+/// Whether `investigator`, standing at `here`, reaches the walked `card` under
+/// one of the three bullets.
+fn reaches(
+    state: &GameState,
+    investigator: InvestigatorId,
+    here: Option<LocationId>,
+    card: &BoardCard<'_>,
+) -> bool {
+    match card.placement {
+        // The control bullet: *"A card in play and under his or her control.
+        // This includes his or her investigator card."*
+        //
+        // It is a slightly *wider* set than "a card in play and under his or
+        // her control", and deliberately so for this use: the threat area also
+        // holds **encounter** cards, which the scenario owns and controls.
+        // Frozen in Fear 01164 is not one of your cards — per the official FAQ,
+        // *"In general, 'your cards' are the cards you currently control. If you
+        // own a card but do not control it, it is not 'yours' for the purposes
+        // of abilities."* (`data/official-faq/Frequently_Asked_Questions.md`.)
+        // Reaching such a card's ability from this seat is still right, because
+        // a threat-area encounter card's Forced abilities are the acting
+        // investigator's to resolve.
+        Placement::InvestigatorCard(id) | Placement::PlayArea(id) | Placement::ThreatArea(id)
+            if id == investigator =>
+        {
+            true
+        }
+        // "all encounter cards in the threat area of any investigator at that
+        // location" — *any*, so this is other people's threat areas too
+        // (Haunted 01098's ruling), but only their **encounter** cards (#975):
+        // a player card there is its bearer's alone.
+        Placement::ThreatArea(_) => {
+            here.is_some() && card.placement.location(state) == here && is_encounter_card(card)
+        }
+        // Co-location is not control: a co-located investigator's own
+        // investigator card and assets are theirs alone.
+        Placement::InvestigatorCard(_) | Placement::PlayArea(_) => false,
+        // *"The current act or current agenda card."* (#709) — the one bullet
+        // with no gate at all, so an investigator between locations still
+        // reaches both.
+        Placement::Act | Placement::Agenda => true,
+        // "the location itself", and "encounter cards placed at that location":
+        // its attachments (Obscuring Fog 01168), the cards put into play at it
+        // (Lita Chantler 01117, whom nobody controls, so this is the only way
+        // she is reached at all, #771), and the enemies standing on it with
+        // their attachments — the Parley abilities are printed on enemies
+        // (Herman Collins 01138, Mob Enforcer 01101).
+        //
+        // The bullet says *scenario* card, and attachments are taken
+        // unfiltered: `Effect::AttachSelfToLocation` has one caller in the
+        // corpus and it is an encounter card, so no player card can sit in
+        // either collection today. The day one can — an attaching player asset
+        // — this is where the encounter / player distinction goes, the way the
+        // threat-area arm above already draws it.
+        Placement::Location(_)
+        | Placement::LocationAttachment(_)
+        | Placement::AtLocation(_)
+        | Placement::Enemy(_)
+        | Placement::EnemyAttachment(_) => here.is_some() && card.placement.location(state) == here,
     }
-    if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
-        sources.push((AbilitySource::Agenda, SourceCard::Agenda(agenda)));
-    }
-    sources
+}
+
+/// Whether the card has an encounter cardtype, read through the registry. A
+/// card the registry has no metadata for counts as one, matching the other
+/// metadata fallbacks: it is excluded only when it is known to be a player card.
+fn is_encounter_card(card: &BoardCard<'_>) -> bool {
+    let Some(meta) = card_registry::current().and_then(|reg| (reg.metadata_for)(card.code()))
+    else {
+        return true;
+    };
+    !matches!(
+        meta.card_type(),
+        CardType::Investigator | CardType::Asset | CardType::Event | CardType::Skill
+    )
 }
 
 /// The card `source` names right now, wherever it sits — **existence, not
@@ -240,82 +233,6 @@ pub(crate) fn source_card(state: &GameState, source: AbilitySource) -> Option<So
             .get(state.agenda_index)
             .map(SourceCard::Agenda),
     }
-}
-
-/// The co-location bullet's sources for `inv` (#708) — empty for an
-/// investigator who is not standing at a location on the map.
-///
-/// Split out of [`reachable_sources`] so that bailing out of *this* bullet
-/// cannot skip the act and agenda bullet that follows it: the two are
-/// independent, and an early `return` in one function body made them look
-/// sequential.
-fn colocated_sources<'a>(
-    state: &'a GameState,
-    inv: &Investigator,
-) -> Vec<(AbilitySource, SourceCard<'a>)> {
-    let mut sources = Vec::new();
-    // Everything below is gated on standing in the same place, never on
-    // controlling it.
-    let Some(location_id) = inv.current_location else {
-        return sources;
-    };
-    let Some(location) = state.locations.get(&location_id) else {
-        return sources;
-    };
-
-    // "the location itself"
-    sources.push((
-        AbilitySource::Location(location_id),
-        SourceCard::Location(location),
-    ));
-    // "encounter cards placed at that location" — attachments on the location
-    // (Obscuring Fog 01168), and the enemies standing on it, which are exactly
-    // the encounter cards the Parley abilities are printed on (Herman Collins
-    // 01138, Mob Enforcer 01101). An enemy's own attachments ride with it.
-    //
-    // The bullet says *scenario* card, and attachments are taken unfiltered:
-    // `Effect::AttachSelfToLocation` has one caller in the corpus and it is an
-    // encounter card, so no player card can sit in either collection today. The
-    // day one can — an attaching player asset — this is where the encounter /
-    // player distinction goes, and it wants the card's own metadata rather than
-    // the collection it landed in.
-    sources.extend(location.attachments.iter().map(as_instance));
-    // Cards *put into play at* the location (Lita Chantler 01117, whom act
-    // 01109's reverse puts into play in the Parlor). She is the sixth arm of
-    // this bullet and the only way she is reached at all: nobody controls her,
-    // so the control bullet above never yields her (#771).
-    sources.extend(location.cards_at_location.iter().map(as_instance));
-    for enemy in state
-        .enemies
-        .values()
-        .filter(|enemy| enemy.current_location == Some(location_id))
-    {
-        sources.push((AbilitySource::Enemy(enemy.id), SourceCard::Enemy(enemy)));
-        sources.extend(enemy.attachments.iter().map(as_instance));
-    }
-    // "all encounter cards in the threat area of any investigator at that
-    // location" — *any*, so this is other people's threat areas too (Haunted
-    // 01098's ruling). The acting investigator's own came with the control
-    // bullet above.
-    for other in state
-        .investigators
-        .values()
-        .filter(|other| other.id != inv.id && other.current_location == Some(location_id))
-    {
-        sources.extend(other.threat_area.iter().map(as_instance));
-    }
-
-    sources
-}
-
-/// One in-play card instance, as a reachable source. A free function rather
-/// than a closure so the borrow it returns lives as long as the state it came
-/// from.
-fn as_instance(card: &CardInPlay) -> (AbilitySource, SourceCard<'_>) {
-    (
-        AbilitySource::InPlay(card.instance_id),
-        SourceCard::Instance(card),
-    )
 }
 
 /// Every reachable source paired with its card code, materialized so the caller
@@ -396,7 +313,7 @@ fn unreachable_reason(investigator: InvestigatorId, source: AbilitySource) -> Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{CardInstanceId, EnemyId, GameStateBuilder, LocationId};
+    use crate::state::{Act, Agenda, CardInstanceId, EnemyId, GameStateBuilder};
     use crate::test_support;
 
     const STUDY: LocationId = LocationId(1);
@@ -580,6 +497,43 @@ mod tests {
         assert!(
             !sources.contains(&AbilitySource::InPlay(CardInstanceId(22))),
             "sources were {sources:?}",
+        );
+    }
+
+    /// *"all **encounter** cards in the threat area of any investigator at
+    /// that location"* (#975): co-location reaches another investigator's
+    /// threat-area treachery, not a player card sitting beside it. The bearer
+    /// reaches both, through control.
+    #[test]
+    fn colocation_reaches_only_encounter_cards_in_another_investigators_threat_area() {
+        let mut a = test_support::test_investigator(1);
+        a.investigator_card.instance_id = CardInstanceId(10);
+        a.threat_area.push(card(test_support::TEST_ASSET, 11));
+        a.threat_area.push(card(test_support::TEST_TREACHERY, 12));
+        let mut b = test_support::test_investigator(2);
+        b.investigator_card.instance_id = CardInstanceId(20);
+        let state = GameStateBuilder::new()
+            .with_investigator_at(a, STUDY)
+            .with_investigator_at(b, STUDY)
+            .with_location(test_support::test_location(1, "Study"))
+            .build();
+
+        let player_card = AbilitySource::InPlay(CardInstanceId(11));
+        let treachery = AbilitySource::InPlay(CardInstanceId(12));
+        let a_reaches = sources_for(&state, InvestigatorId(1));
+        assert!(
+            a_reaches.contains(&player_card) && a_reaches.contains(&treachery),
+            "the bearer reaches both through control; sources were {a_reaches:?}",
+        );
+        let b_reaches = sources_for(&state, InvestigatorId(2));
+        assert!(
+            b_reaches.contains(&treachery),
+            "a co-located investigator reaches the encounter card; sources were {b_reaches:?}",
+        );
+        assert!(
+            !b_reaches.contains(&player_card),
+            "a co-located investigator must not reach a player card in another's threat area; \
+             sources were {b_reaches:?}",
         );
     }
 

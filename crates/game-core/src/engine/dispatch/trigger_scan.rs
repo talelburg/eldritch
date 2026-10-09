@@ -3,8 +3,9 @@
 //! Four pieces, each written once so the forced and reaction paths cannot
 //! disagree about them:
 //!
-//! - [`board_walk`] — **every** card an ability could be printed on, in one
-//!   fixed order, at every condition. A condition never picks zones.
+//! - [`board_walk`] — **every** card an ability could be printed on, in the
+//!   [board walk](board::walk)'s order, at every condition. A condition never
+//!   picks zones.
 //! - [`pattern_matches`] — whether a pattern hears an event, from the card's
 //!   own scoping words and the condition's own data. Exhaustive in both
 //!   directions: [`EventPattern::condition`] and [`TimingEvent::condition`]
@@ -32,8 +33,8 @@ use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::initiation::{self, InitiationKind};
 use crate::engine::{abilities_in_effect, ability_source};
 use crate::state::{
-    self, AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInPlay, CardInstanceId,
-    DamageSource, GameState, InvestigatorId, LocationId, ResolutionCandidate, Status,
+    self, AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, DamageSource,
+    GameState, InvestigatorId, LocationId, ResolutionCandidate,
 };
 
 /// One card the walk visits: where its abilities are, its code, and the
@@ -52,18 +53,17 @@ pub(super) struct BoardSource<'a> {
     pub(super) controller: Option<InvestigatorId>,
 }
 
-/// Every card an ability reachable by `event` could be printed on, in this
-/// order:
+/// Every card an ability reachable by `event` could be printed on: the
+/// [board walk](board::walk), in its order (ADR 0018), with two changes the scan
+/// alone makes.
 ///
-/// 1. for each investigator — the active investigator first, then the rest of
-///    `turn_order`, then anyone else by id — their controlled card instances
-///    ([`Investigator::controlled_card_instances`]: the investigator card,
-///    cards in play, the threat area), then the Fast events in their hand;
-/// 2. each location by [`LocationId`] — the location, its attachments, the
-///    cards put into play at it;
-/// 3. each enemy by its id, then its attachments;
-/// 4. the current act, then the current agenda — or, at an advance, the
-///    advancing card the event names in that slot.
+/// - **Fast events in hand are added**, after each investigator's cards — they
+///   are not on the board, but a Fast event's reaction is played from there.
+/// - **At an advance, the act or agenda slot holds the card the event names.**
+///   It is still the current one while its reverse resolves (the cursor moves
+///   on at the advance's finalize step), and the event's code is the authority
+///   for which card that is, so the scan fills those two slots — the walk's
+///   last — itself.
 ///
 /// **Eliminated investigators are skipped** — Rules Reference p.10 removes
 /// their cards from play, all but the investigator card, which only this
@@ -74,69 +74,59 @@ pub(super) struct BoardSource<'a> {
 /// The walk does not filter by kind, timing or pattern. The forced collector
 /// ignores the hand slot (no corpus card prints a forced ability that works
 /// from hand); [`collect_reactions`] uses it for Fast events.
-///
-/// [`Investigator::controlled_card_instances`]: crate::state::Investigator::controlled_card_instances
 pub(super) fn board_walk<'a>(state: &'a GameState, event: &'a TimingEvent) -> Vec<BoardSource<'a>> {
     let exempt = match event {
         TimingEvent::EliminationGameEnd { investigator } => Some(*investigator),
         _ => None,
     };
     let reg = card_registry::current();
+    // The Fast events in `id`'s hand, which follow their cards on the board.
+    let hand = |id: InvestigatorId| {
+        let held = reg
+            .zip(state.investigators.get(&id))
+            .map(|(reg, inv)| {
+                inv.hand
+                    .iter()
+                    .filter(|code| {
+                        (reg.metadata_for)(code).is_some_and(|meta| {
+                            meta.is_fast() && meta.card_type() == CardType::Event
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        held.into_iter().map(move |code| BoardSource {
+            source: CandidateSource::Hand,
+            code,
+            controller: Some(id),
+        })
+    };
     let mut walked = Vec::new();
-    for id in investigator_order(state) {
-        let Some(inv) = state.investigators.get(&id) else {
-            continue;
-        };
-        if inv.status != Status::Active && Some(id) != exempt {
+    // Whose cards the walk is in, so their hand is added when it leaves them.
+    let mut holder: Option<InvestigatorId> = None;
+    for card in board::walk(state) {
+        let controller = card.placement.investigator();
+        if card.placement.in_eliminated_area(state) && controller != exempt {
             continue;
         }
-        walked.extend(
-            inv.controlled_card_instances()
-                .map(|card| in_play(card, Some(id))),
-        );
-        let Some(reg) = reg else {
+        if controller != holder {
+            walked.extend(holder.into_iter().flat_map(&hand));
+            holder = controller;
+        }
+        // The act and agenda slots, the walk's last two, are filled below.
+        if matches!(card.placement, Placement::Act | Placement::Agenda) {
             continue;
-        };
-        walked.extend(
-            inv.hand
-                .iter()
-                .filter(|code| {
-                    (reg.metadata_for)(code)
-                        .is_some_and(|meta| meta.is_fast() && meta.card_type() == CardType::Event)
-                })
-                .map(|code| BoardSource {
-                    source: CandidateSource::Hand,
-                    code,
-                    controller: Some(id),
-                }),
-        );
-    }
-    for (id, location) in &state.locations {
+        }
         walked.push(BoardSource {
-            source: CandidateSource::Ability(AbilitySource::Location(*id)),
-            code: &location.code,
-            controller: None,
+            source: CandidateSource::Ability(card.source),
+            code: card.code(),
+            controller,
         });
-        walked.extend(location.attachments.iter().map(|card| in_play(card, None)));
-        walked.extend(
-            location
-                .cards_at_location
-                .iter()
-                .map(|card| in_play(card, None)),
-        );
     }
-    for (id, enemy) in &state.enemies {
-        walked.push(BoardSource {
-            source: CandidateSource::Ability(AbilitySource::Enemy(*id)),
-            code: &enemy.code,
-            controller: None,
-        });
-        walked.extend(enemy.attachments.iter().map(|card| in_play(card, None)));
-    }
-    // An advance names the card whose reverse is resolving. It is still the
-    // current one while its reverse resolves (the cursor moves on at the
-    // advance's finalize step), and the event's code is the authority for
-    // which card that is.
+    walked.extend(holder.into_iter().flat_map(&hand));
+    // The event's code fills an advancing slot even when the deck's cursor
+    // names no card there, as on a board that fires an advance without loading
+    // the deck (`cards/tests/agenda_reverses.rs`): the reverse is still scanned.
     let act = match event {
         TimingEvent::ActAdvanced { code } => Some(code),
         _ => state.act_deck.get(state.act_index).map(|act| &act.code),
@@ -159,27 +149,6 @@ pub(super) fn board_walk<'a>(state: &'a GameState, event: &'a TimingEvent) -> Ve
         controller: None,
     }));
     walked
-}
-
-/// The active investigator, then the rest of `turn_order`, then every other
-/// investigator by id — so an investigator a fixture never seated in
-/// `turn_order` is still walked, last.
-fn investigator_order(state: &GameState) -> Vec<InvestigatorId> {
-    let mut order: Vec<InvestigatorId> = state.active_investigator.into_iter().collect();
-    for id in state.turn_order.iter().chain(state.investigators.keys()) {
-        if !order.contains(id) {
-            order.push(*id);
-        }
-    }
-    order
-}
-
-fn in_play(card: &CardInPlay, controller: Option<InvestigatorId>) -> BoardSource<'_> {
-    BoardSource {
-        source: CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
-        code: &card.code,
-        controller,
-    }
 }
 
 /// Every forced ability `event` reaches in the `bucket` cell, as candidates
@@ -320,7 +289,7 @@ pub(super) fn collect_reactions(
             }
             CandidateSource::Ability(source) => {
                 let reach = reach.get_or_insert_with(|| {
-                    investigator_order(state)
+                    board::investigator_order(state)
                         .into_iter()
                         .map(|id| {
                             let sources = ability_source::reachable_sources(state, id)
