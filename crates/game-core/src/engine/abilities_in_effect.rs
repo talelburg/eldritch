@@ -91,6 +91,7 @@
 use card_dsl::dsl::{Ability, Condition, Effect, GrantTarget, Trigger};
 
 use crate::card_registry::{self, CardRegistry};
+use crate::engine::board;
 use crate::engine::evaluator::{self, EvalContext};
 use crate::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, GameState, InvestigatorId, LocationId,
@@ -377,15 +378,8 @@ fn granted_to(
 /// by a player.
 #[must_use]
 fn controller_of(state: &GameState, source: AbilitySource) -> Option<InvestigatorId> {
-    let instance = source.instance()?;
-    state
-        .investigators
-        .values()
-        .find(|inv| {
-            inv.controlled_card_instances()
-                .any(|card| card.instance_id == instance)
-        })
-        .map(|inv| inv.id)
+    let (_, placement) = board::find_instance(state, source.instance()?)?;
+    placement.investigator()
 }
 
 /// Whether `condition` holds for a grant whose recipient's controller is `you`.

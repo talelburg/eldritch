@@ -83,7 +83,7 @@ use crate::engine::dispatch::{
     self, act_agenda, actions, cards, choice, combat, elimination, emit, skill_test, threat_area,
 };
 use crate::engine::outcome::{EngineOutcome, OptionId, OptionTarget};
-use crate::engine::{designator, Cx};
+use crate::engine::{board, designator, Cx};
 use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
@@ -686,13 +686,7 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
                 eval_ctx.controller,
                 CardCode::new(code.clone()),
             );
-            let placed = inst.and_then(|id| {
-                cx.state
-                    .investigators
-                    .get_mut(&eval_ctx.controller)
-                    .and_then(|inv| inv.threat_area.iter_mut().find(|c| c.instance_id == id))
-            });
-            if let Some(card) = placed {
+            if let Some((card, _)) = inst.and_then(|id| board::find_instance_mut(cx.state, id)) {
                 card.clues = *clues;
             }
             EngineOutcome::Done
