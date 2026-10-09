@@ -13,7 +13,6 @@ use super::*;
 /// reads the recorded totals.
 #[test]
 fn damage_and_horror_defeats_both_land_on_defeated() {
-    test_support::install_test_registry();
     for cause in [EliminationCause::Damage, EliminationCause::Horror] {
         let a = InvestigatorId(1);
         let mut state = two_investigator_open_turn(a);
@@ -43,7 +42,6 @@ fn damage_and_horror_defeats_both_land_on_defeated() {
 /// the event is what distinguishes it from a damage or horror defeat.
 #[test]
 fn a_card_ability_defeat_lands_on_defeated_and_carries_its_cause() {
-    test_support::install_test_registry();
     let (a, b) = (InvestigatorId(1), InvestigatorId(2));
     let mut state = two_investigator_open_turn(a);
     let mut events = Vec::new();
@@ -80,7 +78,6 @@ fn a_card_ability_defeat_lands_on_defeated_and_carries_its_cause() {
 /// point without latching one itself.
 #[test]
 fn a_card_ability_defeating_the_last_investigator_latches_no_resolution() {
-    test_support::install_test_registry();
     let (a, b) = (InvestigatorId(1), InvestigatorId(2));
     let mut state = two_investigator_open_turn(a);
     let mut events = Vec::new();
@@ -105,7 +102,6 @@ fn a_card_ability_defeating_the_last_investigator_latches_no_resolution() {
 /// filter entirely.
 #[test]
 fn a_card_ability_defeat_no_ops_on_an_already_eliminated_investigator() {
-    test_support::install_test_registry();
     let (a, b) = (InvestigatorId(1), InvestigatorId(2));
     let mut state = two_investigator_open_turn(b);
     state.investigators.get_mut(&a).expect("seated").status = Status::Resigned;

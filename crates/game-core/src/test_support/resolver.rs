@@ -607,8 +607,6 @@ mod tests {
 
     #[test]
     fn take_turn_action_resolves_end_turn_via_optionid() {
-        // EndTurn reads max_health / max_sanity on the investigator card.
-        test_support::install_test_registry();
         let state = GameStateBuilder::default()
             .with_investigator(test_support::test_investigator(1))
             .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))

@@ -11,8 +11,6 @@ use crate::state::EnemyPhaseFrame;
 /// resolve (#448 cp2a).
 #[test]
 fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
-    test_support::install_test_registry();
-
     let inv_id = InvestigatorId(1);
     let attacker = EnemyId(2);
     let mut enemy = test_support::test_enemy(2, "Attacker");
@@ -79,8 +77,6 @@ fn drive_parked_attack_loop_exhausts_the_head_then_advances_the_cursor() {
 /// end-to-end cancel is `crates/cards/tests/dodge.rs`.
 #[test]
 fn a_head_attacker_that_dealt_nothing_still_exhausts() {
-    test_support::install_test_registry();
-
     let inv_id = InvestigatorId(1);
     let attacker = EnemyId(2);
     let mut enemy = test_support::test_enemy(2, "Attacker");
@@ -125,8 +121,6 @@ fn a_head_attacker_that_dealt_nothing_still_exhausts() {
 /// retaliate attacker never exhausts (RR p.7 / p.18), cancelled or not.
 #[test]
 fn an_attack_of_opportunity_attacker_never_exhausts() {
-    test_support::install_test_registry();
-
     let inv_id = InvestigatorId(1);
     let attacker = EnemyId(2);
     let mut enemy = test_support::test_enemy(2, "Attacker");
@@ -161,7 +155,6 @@ fn an_attack_of_opportunity_attacker_never_exhausts() {
 #[test]
 fn drive_retaliate_deals_damage_but_does_not_exhaust_the_attacker() {
     // RR p.18: a retaliate attack does not exhaust the attacker.
-    test_support::install_test_registry();
     let inv_id = InvestigatorId(1);
     let mut enemy = test_support::test_enemy(100, "Retaliator");
     enemy.retaliate = true;
@@ -200,7 +193,6 @@ fn drive_retaliate_deals_damage_but_does_not_exhaust_the_attacker() {
 #[test]
 fn drive_aoo_deals_damage_but_does_not_exhaust_the_attacker() {
     // RR p.7: an enemy does not exhaust while making an attack of opportunity.
-    test_support::install_test_registry();
     let inv_id = InvestigatorId(1);
     let mut enemy = test_support::test_enemy(100, "Ghoul");
     enemy.engaged_with = Some(inv_id);
@@ -243,7 +235,6 @@ fn drive_aoo_offers_order_pick_for_two_engaged_enemies() {
     // higher-id enemy first proves the pick overrides EnemyId order; neither
     // AoO attacker exhausts (RR p.7). Registry installed so max_health() /
     // max_sanity() resolve (#448 cp2a); total AoO damage = 3 < 8 = TEST_INV.
-    test_support::install_test_registry();
     let inv_id = InvestigatorId(1);
     let mut e_a = test_support::test_enemy(5, "A"); // EnemyId(5), dmg 1
     e_a.engaged_with = Some(inv_id);

@@ -299,22 +299,12 @@ mod tests {
         assert!((reg.abilities_for)(&code).is_none());
     }
 
-    /// Process-global install — must run in isolation from other
-    /// global-touching tests; we serialize via a single test that
-    /// owns the global. Subsequent calls to `install` should fail
+    /// Process-global install. The unit-test binary installs the standard
+    /// test registry (which knows `TEST_INV`) before any test runs (#971), so
+    /// the slot is already occupied here and a further `install` must fail
     /// (idempotent-by-error semantics of `OnceLock::set`).
-    ///
-    /// NOTE (#448 cp2a): this test uses `install_test_registry()` to
-    /// ensure the process-global slot is always occupied by the
-    /// standard test registry (which knows `TEST_INV`). Using a
-    /// bespoke `fake_registry()` here would race with other tests that
-    /// depend on `install_test_registry()` — whichever wins the
-    /// `OnceLock` would silently starve the other.
     #[test]
     fn install_is_idempotent_and_current_reflects_installed_value() {
-        // The test registry is the canonical game-core test registry.
-        // Install it (idempotent) to ensure `current()` returns Some.
-        test_support::install_test_registry();
         let installed = current().expect("registry should be present after install");
         // A second install attempt must return Err (already set).
         assert!(install(fake_registry()).is_err());

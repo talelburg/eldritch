@@ -183,7 +183,6 @@ fn elimination_step3_solo_defeat_leaves_enemy_unengaged() {
 fn last_investigator_defeated_latches_lost_resolution() {
     // Single investigator; defeat them and assert the no-remaining-players
     // scenario-ending latch is set (Rules Reference p.10 step 6).
-    test_support::install_test_registry();
     let inv = InvestigatorId(1);
     let mut investigator = test_support::test_investigator(1);
     // After #448 cp2a: max_sanity() reads from the registry (TEST_INV = 8).
@@ -342,8 +341,9 @@ fn elimination_without_location_skips_clue_placement_and_does_not_panic() {
 }
 
 #[test]
-fn elimination_without_registry_treats_threat_area_as_scenario_owned() {
-    // No registry ⇒ metadata_for is None ⇒ not a weakness ⇒ step 4. The
+fn elimination_without_card_metadata_treats_threat_area_as_scenario_owned() {
+    // The test registry knows no 01165 ⇒ metadata_for is None ⇒ not a
+    // weakness ⇒ step 4. The
     // weakness→removed_from_game routing needs real metadata and is covered
     // by `crates/cards/tests/elimination_teardown.rs` (install_test_registry
     // resolves TEST_INV only).

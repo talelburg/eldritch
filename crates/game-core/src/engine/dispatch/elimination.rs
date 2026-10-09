@@ -344,8 +344,8 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
         .partition(|card| card.owner == Some(investigator));
     removed.extend(owned.into_iter().map(|c| c.code));
     // Partition the threat area: owned weaknesses leave with their owner here;
-    // the rest stay for step 4. No registry installed (engine-only tests with
-    // synthetic threat-area cards) ⇒ not a weakness ⇒ step 4.
+    // the rest stay for step 4. No metadata (no registry, or engine-only tests
+    // with synthetic threat-area cards) ⇒ not a weakness ⇒ step 4.
     let (owned, scenario_owned): (Vec<CardInPlay>, Vec<CardInPlay>) =
         mem::take(&mut inv.threat_area)
             .into_iter()

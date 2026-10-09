@@ -5,7 +5,7 @@ use crate::state::{
 use crate::test_support;
 
 const INV: InvestigatorId = InvestigatorId(1);
-/// Deliberately resolved by no registry — these tests install none.
+/// Deliberately resolved by no registry — the test registry knows none.
 /// `candidate_source_present` only compares this code for *identity*
 /// against what the board holds; it never looks it up. The prefix is this
 /// module's, per ADR 0016.

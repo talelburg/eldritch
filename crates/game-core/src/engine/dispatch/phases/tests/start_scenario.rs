@@ -49,7 +49,6 @@ fn round_end_clears_round_scoped_skill_substitutions() {
 
 #[test]
 fn seat_and_open_rejects_an_empty_roster() {
-    test_support::install_test_registry();
     let state = GameStateBuilder::new().build();
     let result = engine::seat_and_open(state, &[]);
     assert!(
@@ -73,7 +72,6 @@ fn seat_and_open_rejects_an_empty_roster() {
 /// and `EncounterDeckShuffled` fires.
 #[test]
 fn start_scenario_shuffles_the_encounter_deck() {
-    test_support::install_test_registry();
     let mut state = GameStateBuilder::new().build();
     let codes = ["e1", "e2", "e3", "e4", "e5"];
     state.encounter_deck = codes.iter().map(|c| CardCode::new(*c)).collect();

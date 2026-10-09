@@ -100,8 +100,6 @@ fn hunter_move_tie_rejects_invalid_pick() {
 fn hunter_engage_tie_suspends_then_resumes_on_pick_investigator() {
     // Two investigators at B; ending both turns runs the Enemy phase, where
     // the hunter moves A->B and default prey ties -> PickSingle.
-    // Default prey reads remaining health, which comes from the registry.
-    test_support::install_test_registry();
     let mut a = test_support::test_location(1, "A");
     let mut b = test_support::test_location(2, "B");
     a.connections = vec![LocationId(2)];

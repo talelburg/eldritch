@@ -316,7 +316,6 @@ fn mulligan_with_duplicate_indices_is_rejected() {
 
 #[test]
 fn start_scenario_seeds_mulligan_loop() {
-    test_support::install_test_registry();
     let state = GameStateBuilder::new().build();
     let roster = vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),

@@ -59,7 +59,7 @@ fn defeating_non_victory_enemy_places_its_card_in_the_encounter_discard() {
 }
 
 #[test]
-fn defeating_enemy_without_registry_still_removes_it() {
+fn defeating_enemy_with_no_card_metadata_still_removes_it() {
     let eid = EnemyId(1);
     let mut enemy = test_support::test_enemy(1, "Ghoul");
     enemy.max_health = 1;

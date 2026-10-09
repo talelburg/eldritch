@@ -81,7 +81,6 @@ fn resolve_prey_lowest_remaining_health_picks_min() {
     // max_health() = 8 (TEST_INV registry, #448 cp2a).
     // hurt: accumulated_damage 6 → remaining 2.
     // healthy: accumulated_damage 0 → remaining 8. hurt is lowest.
-    test_support::install_test_registry();
     let mut hurt = test_support::test_investigator(1);
     hurt.investigator_card.accumulated_damage = 6;
     let healthy = test_support::test_investigator(2);
@@ -105,7 +104,6 @@ fn resolve_prey_lowest_remaining_health_tie_is_tie() {
     // max_health() = 8 (TEST_INV registry, #448 cp2a).
     // a: accumulated_damage 3 → remaining 5.
     // b: accumulated_damage 3 → remaining 5. Tie.
-    test_support::install_test_registry();
     let mut a = test_support::test_investigator(1);
     a.investigator_card.accumulated_damage = 3;
     let mut b = test_support::test_investigator(2);

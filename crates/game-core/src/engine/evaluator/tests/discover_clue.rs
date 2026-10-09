@@ -38,9 +38,9 @@ fn discover_clue_moves_one_clue_from_location_to_controller() {
 }
 
 #[test]
-fn discover_clue_without_registry_discovers_normally() {
-    // No registry installed (game-core unit context) → the interrupt
-    // scan finds nothing → discovery proceeds exactly as before.
+fn discover_clue_with_no_interrupt_discovers_normally() {
+    // The game-core test registry serves no abilities for the board → the
+    // interrupt scan finds nothing → discovery proceeds exactly as before.
     // Regression guard for the seam's "fall through" path (C5a #236).
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(10);

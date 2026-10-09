@@ -35,7 +35,6 @@ fn stamp_module_for(id: &ScenarioId) -> Option<&'static ScenarioModule> {
 /// why the test registry has to be installed: the reverse is an ability the
 /// registry serves, not a field on the deck entry.
 fn terminal_act_state(scenario_id: Option<&str>) -> GameState {
-    test_support::install_test_registry();
     let inv = InvestigatorId(1);
     let mut investigator = test_support::test_investigator(1);
     investigator.clues = 1;

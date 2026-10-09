@@ -71,21 +71,15 @@ fn the_draw_prompt_is_anchored_to_the_encounter_deck() {
     assert_eq!(request.target, Some(OptionTarget::EncounterDeck));
 }
 
-/// Exercises the early-reject guard for the registry / unknown-card
-/// checks. Depending on which tests have run in this process:
+/// Exercises the early-reject guard for the unknown-card check: the
+/// installed test registry doesn't know the synthetic code
+/// `"__no_such_card"`, so the draw rejects with `"unknown card code: ..."`.
 ///
-/// - `"no card registry installed"` — if no registry has been
-///   installed yet in this process.
-/// - `"unknown card code: ..."` — if another test has installed a
-///   registry that doesn't know the synthetic code `"__no_such_card"`.
-///
-/// In both cases the invariant is identical: state is not further
-/// mutated, the card remains in the encounter deck (the draw was
-/// either blocked before or after the draw). The deck-length
-/// assertion allows for the draw-then-reject case (deck shrinks by
-/// at most one) matching the `encounter_card_revealed_tests` pattern.
+/// State is not further mutated. The deck-length assertion allows for the
+/// draw-then-reject case (deck shrinks by at most one) matching the
+/// `encounter_card_revealed_tests` pattern.
 #[test]
-fn rejects_when_registry_not_installed_or_unknown_code() {
+fn rejects_an_unknown_encounter_code() {
     let mut state = GameStateBuilder::default()
         .with_investigator(test_support::test_investigator(1))
         .with_phase(Phase::Mythos)
@@ -93,7 +87,7 @@ fn rejects_when_registry_not_installed_or_unknown_code() {
         .with_mythos_draw_remaining([InvestigatorId(1)])
         .build();
     // Seed the encounter deck with an unknown code so we prove the
-    // reject fires at the registry or unknown-code check, not at the
+    // reject fires at the unknown-code check, not at the
     // empty-deck check.
     state
         .encounter_deck
@@ -101,7 +95,7 @@ fn rejects_when_registry_not_installed_or_unknown_code() {
     let pre_deck_len = state.encounter_deck.len();
     let mut events = Vec::new();
     // `resume_encounter_draw` now only pushes the per-drawer `PlayerDraw`
-    // chain frame; the actual draw (and its registry/unknown-code reject)
+    // chain frame; the actual draw (and its unknown-code reject)
     // happens in the `drive` loop's `PlayerDraw` arm (callsite-migration).
     // Run it through `drive` so the reject surfaces as the engine produces it.
     let outcome = {
@@ -115,8 +109,7 @@ fn rejects_when_registry_not_installed_or_unknown_code() {
     match outcome {
         EngineOutcome::Rejected { reason } => {
             assert!(
-                reason.contains("no card registry installed")
-                    || reason.contains("unknown card code"),
+                reason.contains("unknown card code"),
                 "unexpected reject reason: {reason:?}",
             );
         }

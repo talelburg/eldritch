@@ -103,7 +103,6 @@ fn engine_record_applied_while_a_prompt_is_outstanding_is_rejected() {
     // at rest, never between a prompt and its answer. Applied mid-prompt it
     // would run beneath the outstanding prompt and strand it, so it is
     // rejected under the validate-first contract.
-    test_support::install_test_registry();
     let roster = [RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
         deck: (0..20).map(|i| CardCode::new(format!("d-{i}"))).collect(),

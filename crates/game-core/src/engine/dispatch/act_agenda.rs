@@ -442,7 +442,7 @@ mod doom_agenda_tests {
             events: &mut events,
         });
         // The advance is deferred to an AdvanceReverse frame (#482); drive it
-        // (no registry ⇒ the reverse fires nothing ⇒ it drives straight through).
+        // (the test registry serves no reverse for it ⇒ it drives straight through).
         dispatch::drive(
             &mut Cx {
                 state: &mut state,
@@ -501,7 +501,6 @@ mod doom_agenda_tests {
     fn terminal_agenda_advances_and_its_reverse_latches_the_ending() {
         // The synthetic terminal card's reverse comes from the registry, and a
         // forced on-advance ability binds the lead — so both are needed.
-        test_support::install_test_registry();
         let inv = InvestigatorId(1);
         let mut state = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
@@ -643,8 +642,8 @@ mod advance_act_tests {
         // Act 3 01110, which advances when the Ghoul Priest is defeated). The
         // deliberate clue-spend AdvanceAct action is nonsensical here ("spend 0
         // clues to advance" / "spend 0 clues to instantly win"), so it must be
-        // neither offered nor accepted — even with no registry installed (this
-        // is a pure game-core unit test, so none is).
+        // neither offered nor accepted — even with no forced ability served for
+        // it (the game-core test registry knows nothing of 01110).
         let inv = InvestigatorId(1);
         let mut investigator = test_support::test_investigator(1);
         investigator.clues = 5; // plenty — reject must be the objective, not affordability
@@ -728,7 +727,6 @@ mod advance_act_tests {
     /// 0013). The clues are still spent, as before.
     #[test]
     fn terminal_act_advances_and_its_reverse_latches_the_ending() {
-        test_support::install_test_registry();
         let inv = InvestigatorId(1);
         let mut investigator = test_support::test_investigator(1);
         investigator.clues = 2;
@@ -757,7 +755,7 @@ mod advance_act_tests {
     }
 
     #[test]
-    fn advance_act_without_registry_still_advances() {
+    fn advance_act_with_no_forced_ability_still_advances() {
         let inv = InvestigatorId(1);
         let mut investigator = test_support::test_investigator(1);
         investigator.clues = 2;

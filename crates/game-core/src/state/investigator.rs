@@ -454,7 +454,6 @@ mod harm_accessor_tests {
     // cp2a: the accessors now read the investigator_card directly.
     #[test]
     fn harm_accessors_read_from_investigator_card() {
-        test_support::install_test_registry();
         let mut inv = test_support::test_investigator(1);
         // Set accumulated harm directly on the card.
         inv.investigator_card.accumulated_damage = 2;
@@ -485,7 +484,6 @@ mod investigator_card_tests {
 
     #[test]
     fn defeat_reads_capacity_from_the_card_not_a_field() {
-        test_support::install_test_registry();
         let mut inv = test_support::test_investigator(1);
         inv.investigator_card.accumulated_damage = 8; // == TEST_INV health
         assert!(

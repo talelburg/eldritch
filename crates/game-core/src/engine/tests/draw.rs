@@ -4,8 +4,6 @@ use super::*;
 /// phase, active, 3 actions. The caller mutates deck/hand/discard
 /// before the test.
 fn draw_scenario() -> (InvestigatorId, GameState) {
-    // Registry needed for max_health()/max_sanity() after cp2a.
-    test_support::install_test_registry();
     let id = InvestigatorId(1);
     let a = LocationId(10);
     let mut inv = test_support::test_investigator(1);

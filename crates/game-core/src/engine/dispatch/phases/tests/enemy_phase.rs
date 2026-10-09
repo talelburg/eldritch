@@ -258,8 +258,6 @@ fn resolve_attacks_for_investigator_excludes_exhausted_and_unengaged_enemies() {
 
 #[test]
 fn resolve_attacks_for_investigator_pick_overrides_enemy_id_order() {
-    test_support::install_test_registry();
-
     let inv_id = InvestigatorId(1);
 
     let mut e_lower = test_support::test_enemy(2, "Lower id"); // EnemyId(2), dmg 1
@@ -347,8 +345,6 @@ fn resolve_attacks_for_investigator_pick_overrides_enemy_id_order() {
 
 #[test]
 fn resolve_attacks_for_investigator_early_breaks_when_target_defeated_mid_loop() {
-    // Registry needed for max_health()/max_sanity() after cp2a.
-    test_support::install_test_registry();
     let inv_id = InvestigatorId(1);
 
     // EnemyId(1) deals the killing blow on its attack.

@@ -331,8 +331,6 @@ fn aoo_with_both_lethal_defeats_once_with_damage_cause() {
 fn all_investigators_eliminated_fires_only_when_last_active_falls() {
     // Two investigators, one defeated, then the second defeated.
     // AllInvestigatorsEliminated should fire only on the second.
-    // Registry needed for max_health()/max_sanity() after cp2a.
-    test_support::install_test_registry();
     let inv1 = InvestigatorId(1);
     let inv2 = InvestigatorId(2);
     let mut i1 = test_support::test_investigator(1);

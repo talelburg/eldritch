@@ -1335,7 +1335,6 @@ mod draw_with_deckout_tests {
 
     #[test]
     fn draw_one_with_deckout_empty_deck_reshuffles_and_takes_horror() {
-        test_support::install_test_registry();
         let id = InvestigatorId(1);
         let mut inv = test_support::test_investigator(1);
         inv.deck.clear();
@@ -1374,7 +1373,6 @@ mod draw_with_deckout_tests {
     /// entire draw, not once per emptied deck (#636).
     #[test]
     fn draw_with_deckout_completes_the_count_across_a_midway_reshuffle() {
-        test_support::install_test_registry();
         let id = InvestigatorId(1);
         let mut inv = test_support::test_investigator(1);
         inv.deck = vec![CardCode::new("filler0")];
@@ -1413,7 +1411,6 @@ mod draw_with_deckout_tests {
     /// reshuffle and no horror.
     #[test]
     fn draw_with_deckout_on_a_stocked_deck_neither_reshuffles_nor_takes_horror() {
-        test_support::install_test_registry();
         let id = InvestigatorId(1);
         let mut inv = test_support::test_investigator(1);
         inv.deck = vec![

@@ -326,7 +326,6 @@ fn deal_damage_to_chosen_enemy_rejects_when_none_co_located() {
 
 #[test]
 fn heal_target_chosen_at_your_location_auto_binds() {
-    test_support::install_test_registry();
     let mut state = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))
         .with_investigator(test_support::test_investigator(2))
