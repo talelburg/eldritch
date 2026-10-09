@@ -8,8 +8,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Zone,
+    AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, DiscardPile, EnemyId,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Zone,
 };
 use game_core::{assert_event, assert_no_event, test_support};
 
@@ -60,6 +60,7 @@ fn discards_self_and_deals_one_damage_to_the_co_located_enemy() {
         r.events,
         Event::CardDiscarded {
             from: Zone::InPlay,
+            to: DiscardPile::Investigator(INV),
             ..
         }
     );

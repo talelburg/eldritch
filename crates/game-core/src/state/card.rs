@@ -56,8 +56,8 @@ impl fmt::Display for CardCode {
 /// A card-bearing zone, used as the `from` field on movement events
 /// (e.g. [`Event::CardDiscarded`](crate::event::Event::CardDiscarded)).
 ///
-/// Phase-3 minimal set. Discard is a destination but never a `from`
-/// in the current event set; encounter / weakness / out-of-game zones
+/// Discard is a destination but never a `from` in the current event set — a
+/// discard event names its destination as a [`DiscardPile`]. Further zones
 /// land when they're needed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -78,6 +78,15 @@ pub enum Zone {
     /// location (Obscuring Fog 01168). Used as the `from` zone when an
     /// attachment is discarded.
     LocationAttachment,
+    /// A card **put into play at** a location, under no investigator's
+    /// control — act 01109b's *"Put the set-aside Lita Chantler into play in
+    /// the Parlor"*. Not an attachment: see
+    /// [`Event::CardPutIntoPlayAtLocation`](crate::event::Event::CardPutIntoPlayAtLocation).
+    AtLocation,
+    /// A card attached to an enemy.
+    EnemyAttachment,
+    /// An enemy itself, leaving play.
+    Enemy,
     /// Out of the game entirely.
     /// `glossary/Removed_from_Game.md`: *"A card that has been removed from the
     /// game is placed away from the game area and has no further interaction
@@ -87,6 +96,22 @@ pub enum Zone {
     /// zone the field docs above already anticipated (*"out-of-game zones land
     /// when they're needed"*).
     RemovedFromGame,
+}
+
+/// The discard pile a discarded card landed in — the `to` field of
+/// [`Event::CardDiscarded`](crate::event::Event::CardDiscarded).
+///
+/// `glossary/Discard_Piles.md`: *"Any time a card is discarded, it is placed
+/// faceup on top of its owner's discard pile. Encounter cards are owned by the
+/// encounter deck."* So a pile is either an investigator's or the encounter
+/// deck's; a scenario-owned card has no pile and is removed from the game
+/// instead ([`Event::CardRemovedFromGame`](crate::event::Event::CardRemovedFromGame)).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum DiscardPile {
+    /// That investigator's discard pile.
+    Investigator(InvestigatorId),
+    /// The encounter discard pile.
+    Encounter,
 }
 
 crate::state::define_id! {

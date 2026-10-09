@@ -484,9 +484,8 @@ fn lita_leaving_play_while_controlled_is_removed_from_the_game() {
     assert_event!(
         result.events,
         Event::CardRemovedFromGame {
-            investigator,
             code,
             from: Zone::InPlay,
-        } if *investigator == INV && code.as_str() == LITA
+        } if code.as_str() == LITA
     );
 }

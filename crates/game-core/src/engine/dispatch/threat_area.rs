@@ -9,7 +9,9 @@ use card_dsl::card_data::CardKind;
 use crate::card_registry;
 use crate::engine::Cx;
 use crate::event::Event;
-use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Zone};
+use crate::state::{
+    CardCode, CardInPlay, CardInstanceId, DiscardPile, InvestigatorId, LocationId, Zone,
+};
 
 /// Mint a fresh in-play instance of `code`: allocate its id, build the
 /// `CardInPlay`, and seed the named-uses pool ("ammo") from the asset's
@@ -200,9 +202,9 @@ pub(super) fn discard_from_threat_area(
     let card = inv.threat_area.remove(pos);
     cx.state.encounter_discard.push(card.code.clone());
     cx.events.push(Event::CardDiscarded {
-        investigator,
         code: card.code,
         from: Zone::ThreatArea,
+        to: DiscardPile::Encounter,
     });
     true
 }
@@ -289,7 +291,7 @@ mod tests {
         assert_eq!(state.encounter_discard, vec![CardCode::new("01164")]);
         assert!(events.iter().any(|e| matches!(
             e,
-            Event::CardDiscarded { from: Zone::ThreatArea, code, .. } if code.as_str() == "01164"
+            Event::CardDiscarded { from: Zone::ThreatArea, to: DiscardPile::Encounter, code } if code.as_str() == "01164"
         )));
     }
 

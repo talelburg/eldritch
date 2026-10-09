@@ -17,8 +17,8 @@ use cards::REGISTRY;
 use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, GameState, GameStateBuilder, InvestigatorId, SkillKind,
-    TokenModifiers, Zone,
+    CardCode, ChaosBag, ChaosToken, DiscardPile, GameState, GameStateBuilder, InvestigatorId,
+    SkillKind, TokenModifiers, Zone,
 };
 use game_core::test_support::{self, ScriptedResolver};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -106,7 +106,7 @@ fn committing_perception_contributes_two_intellect_icons() {
     assert_eq!(inv.discard, vec![CardCode::new(PERCEPTION)]);
     assert_event!(
         result.events,
-        Event::CardDiscarded { investigator, code, from: Zone::Hand }
+        Event::CardDiscarded { code, from: Zone::Hand, to: DiscardPile::Investigator(investigator) }
             if *investigator == id && *code == CardCode::new(PERCEPTION)
     );
 }
