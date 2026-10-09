@@ -25,7 +25,7 @@ Each implementer's prompt carries:
 - the "does all the work itself and delegates to no subagent of its own" line, and the worktree shell rules, both from `CLAUDE.md` → Agent skills;
 - an instruction to reset onto the integration branch first. Worktree isolation bases on `main`, and 10 of 10 #938 implementers started there;
 - context pointers to the spec, its ticket, and the notes directory, rather than restated content;
-- the gate rule. An implementer stops and reports at a gate rather than deciding it, with one exception: a test that pins exactly the behaviour an approved decision changes is pre-approved for editing. The #962 implementer that edited such a test "instead of stopping" was right to, and the prompt should have said so.
+- the gate rule. An implementer stops and reports at a gate rather than deciding it, with one exception: a test that pins exactly the behaviour an approved decision changes is pre-approved for editing. In #962 an implementer had to choose between stopping on such a test and editing it unapproved.
 
 ## Merging
 

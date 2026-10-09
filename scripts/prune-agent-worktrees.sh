@@ -12,13 +12,16 @@
 #
 # What is removed, and why each is safe:
 #
-#   * an agent worktree that is clean and either unlocked or locked by a dead
-#     pid. A dirty one, or one whose lock names a live process or no pid at
+#   * an agent worktree that is clean, whose HEAD is on some branch or remote,
+#     and that is either unlocked or locked by a dead pid. A dirty one, or one whose lock names a live process or no pid at
 #     all, is reported and left alone.
 #   * a `worktree-agent-*` branch that no worktree has checked out and whose
 #     tip is already on a remote, so nothing unpushed is lost.
-#   * a branch whose upstream is gone after `git fetch --prune`. That is what
-#     `gh pr merge --delete-branch` leaves locally.
+#   * a branch whose upstream is gone after `git fetch --prune` and whose PR
+#     merged. That is what `gh pr merge --delete-branch` leaves locally. A
+#     branch with a gone upstream and no merged PR (a PR closed unmerged, or a
+#     remote deleted by hand) may hold the only copy of its work, so it is
+#     reported and kept.
 #
 # Every other branch is listed with its reason for being kept. Ticket branches
 # from an /implement-spec run whose remote copies were never deleted show up
@@ -26,6 +29,8 @@
 #
 # Usage:
 #   scripts/prune-agent-worktrees.sh          # dry run: print what would go
+#                                             # (it still runs `git fetch --prune`,
+#                                             # which only syncs remote-tracking refs)
 #   scripts/prune-agent-worktrees.sh --apply  # remove it
 #
 set -uo pipefail
@@ -38,8 +43,15 @@ case "${1:-}" in
   *) echo "unknown argument: $1" >&2; exit 2 ;;
 esac
 
-ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
+# The main checkout, even when run from inside a worktree: the common git dir
+# is the main checkout's .git.
+COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || {
   echo "not inside a git repository" >&2
+  exit 2
+}
+ROOT=$(dirname "$COMMON")
+[ -d "$ROOT/.git" ] || {
+  echo "cannot locate the main checkout from $COMMON" >&2
   exit 2
 }
 cd "$ROOT" || exit 2
@@ -64,6 +76,9 @@ while IFS= read -r line; do
       name=${wt#"$ROOT"/}
       if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
         echo "  keep    $name — uncommitted changes"; continue
+      fi
+      if [ -z "$(git for-each-ref --contains "$(git -C "$wt" rev-parse HEAD)" refs/heads refs/remotes)" ]; then
+        echo "  keep    $name — HEAD is on no branch or remote"; continue
       fi
       if [ "$locked" -eq 1 ]; then
         pid=$(grep -oE 'pid[^0-9]*[0-9]+' <<<"$lock" | grep -oE '[0-9]+$')
@@ -97,8 +112,12 @@ while IFS=$'\t' read -r b up track; do
     echo "  keep    $b — checked out"; continue
   fi
   if [ "$track" = "[gone]" ]; then
-    echo "  delete  $b — upstream gone (merged PR)"
-    act git branch -D "$b"
+    if [ -n "$(gh pr list --head "$b" --state merged --limit 1 --json number --jq '.[].number' 2>/dev/null)" ]; then
+      echo "  delete  $b — upstream gone, PR merged"
+      act git branch -D "$b"
+    else
+      echo "  keep    $b — upstream gone but no merged PR"
+    fi
   elif [[ "$b" == worktree-agent-* ]]; then
     if [ -n "$(git branch -r --contains "$b" 2>/dev/null)" ]; then
       echo "  delete  $b — agent branch, tip already on a remote"

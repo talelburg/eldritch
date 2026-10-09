@@ -12,7 +12,7 @@ Work runs on the `mattpocock-skills` suite. `/ask-matt` maps the flows when it's
 
 **Running `/implement-spec`.** Read [`docs/agents/implement-spec.md`](docs/agents/implement-spec.md) before the first dispatch. It explains how to finish exploring and put every open question to the user before dispatching any implementer, so none surfaces after the user has left. It also gives the merge recipe that keeps mergers from moving the integration branch under your checkout. The upstream skill does neither.
 
-**Gates.** Two kinds of interruption, treated differently. **Permission questions** — "want me to push?", "shall I open the PR?" — are already answered: branching, the local gauntlet, pushing, and `gh pr create --draft` proceed uninterrupted. The two exceptions are `gh pr ready`, which waits for the user to approve the surfaced review (step 3), and merging (step 6). **Decision questions** are the gates, and they belong *during* the work rather than after it. Stop and put the decision to the user when:
+**Gates.** Two kinds of interruption, treated differently. **Permission questions** — "want me to push?", "shall I open the PR?" — are already answered: branching, the local gauntlet, pushing, and `gh pr create --draft` proceed uninterrupted. The two exceptions are `gh pr ready` after a pre-ready review, which waits for the user to approve the surfaced review (step 3), and merging (step 6). **Decision questions** are the gates, and they belong *during* the work rather than after it. Stop and put the decision to the user when:
 
 1. **A seam is unconfirmed.** No test is written at a seam the user hasn't agreed to (the `tdd` skill's rule).
 2. **A card's text or a rules question is ambiguous** — the sources disagree, or a ruling doesn't settle the case.
@@ -94,7 +94,7 @@ When implementing or citing **rules behavior** — ability timing, trigger windo
 
 ## Phase plan, milestones, and PR procedure
 
-Work is tracked against GitHub milestones (`phase-0-foundations` → `phase-10-dunwich-and-iteration`). Each phase has a plan doc at **`docs/phases/phase-N-<slug>.md`** (ordered work, status, open questions) — read the relevant one when picking up an issue; `docs/phases/README.md` indexes the arc and unmilestoned work. Design decisions live in `docs/adr/`, not in the phase docs. PRs squash-merge; commit subjects follow `scope: description` (e.g. `engine: cards-registry binding via static OnceLock`); the PR template's `Closes #` line auto-closes the issue. **Every PR closes at least one issue** — file it first, including for infrastructure and bootstrap work, so the tracker stays a trustworthy record of what's been done.
+Work is tracked against GitHub milestones (`phase-0-foundations` → `phase-10-dunwich-and-iteration`). Each phase has a plan doc at **`docs/phases/phase-N-<slug>.md`** (ordered work, status, open questions) — read the relevant one when picking up an issue; `docs/phases/README.md` indexes the arc and unmilestoned work. Design decisions live in `docs/adr/`, not in the phase docs. PRs squash-merge; commit subjects follow `scope: description` (e.g. `engine: cards-registry binding via static OnceLock`); the body's `Closes #NN` line auto-closes the issue. **Every PR closes at least one issue** — file it first, including for infrastructure and bootstrap work, so the tracker stays a trustworthy record of what's been done.
 
 Follow this order for every non-trivial PR — skipping steps has cost real iterations. The **gates** under Workflow interrupt this order wherever they fire: resolve the gate, then resume.
 

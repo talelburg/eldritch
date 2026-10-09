@@ -234,7 +234,7 @@ else
 fi
 
 echo "base:    $BASE ($(git rev-parse --short "$MERGE_BASE"))"
-echo "changed: $(wc -l <<<"$CHANGED") file(s)"
+echo "changed: $(grep -c . <<<"$CHANGED") file(s)"
 echo "plan:"
 for j in "${PLAN[@]}"; do printf '  %-12s %s\n' "$j" "${WHY[$j]}"; done
 for j in "${DEFERRED[@]}"; do
@@ -337,7 +337,9 @@ done
 if [ ${#DEGRADED[@]} -gt 0 ]; then
   printf 'ran degraded: %s\n' "${DEGRADED[@]}"
 fi
-if [ -n "$SKIPPED" ]; then
+if [ -n "$ONLY" ]; then
+  echo "passed: ${PLAN[*]}"
+elif [ -n "$SKIPPED" ]; then
   echo "passed. not run locally (CI will):${SKIPPED}"
 else
   echo "passed. full gauntlet."
