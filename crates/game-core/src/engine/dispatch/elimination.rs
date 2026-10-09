@@ -263,6 +263,38 @@ fn take_limbo_cards(cx: &mut Cx, investigator: InvestigatorId) -> (Vec<CardCode>
     (theirs, scenarios)
 }
 
+/// Step 1's in-play half: remove from the game, through the leave-play exit,
+/// every card in `investigator`'s play area and every card they own in their
+/// threat area — each filed by its owner, with its one removal event.
+///
+/// Split out of [`run_elimination_steps`] to keep it under the function-size
+/// lint; the *why* is at the call site.
+fn remove_cards_in_play(cx: &mut Cx, investigator: InvestigatorId) {
+    let leaving: Vec<CardInstanceId> = cx
+        .state
+        .investigators
+        .get(&investigator)
+        .map(|inv| {
+            inv.cards_in_play
+                .iter()
+                .chain(
+                    inv.threat_area
+                        .iter()
+                        .filter(|card| card.owner == Owner::Investigator(investigator)),
+                )
+                .map(|card| card.instance_id)
+                .collect()
+        })
+        .unwrap_or_default();
+    for instance_id in leaving {
+        let left = board::remove_from_game(cx, instance_id);
+        debug_assert!(
+            left.is_some(),
+            "elimination step 1: instance {instance_id:?} vanished mid-drain",
+        );
+    }
+}
+
 fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     // The location the investigator was at "when eliminated" — read once
     // before any mutations; step 2 deposits clues here.
@@ -325,23 +357,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
             )
         });
     inv.removed_from_game.extend(in_limbo);
-    let leaving: Vec<CardInstanceId> = inv
-        .cards_in_play
-        .iter()
-        .chain(
-            inv.threat_area
-                .iter()
-                .filter(|card| card.owner == Owner::Investigator(investigator)),
-        )
-        .map(|card| card.instance_id)
-        .collect();
-    for instance_id in leaving {
-        let left = board::remove_from_game(cx, instance_id);
-        debug_assert!(
-            left.is_some(),
-            "elimination step 1: instance {instance_id:?} vanished mid-drain",
-        );
-    }
+    remove_cards_in_play(cx, investigator);
     cx.state.removed_from_game.extend(scenario_owned_limbo);
     let inv = cx
         .state
