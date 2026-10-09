@@ -33,7 +33,7 @@ use std::mem;
 use card_dsl::dsl::EventTiming;
 
 use crate::engine::dispatch::emit::ConditionResolution;
-use crate::engine::dispatch::{forced_triggers, reaction_windows};
+use crate::engine::dispatch::{forced_triggers, reaction_windows, trigger_scan};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::state::{EmitEventFrame, EmitStep, TimingPointFrame, TimingSub};
@@ -101,9 +101,7 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
     };
     let caller_owned = matches!(resolution, ConditionResolution::Caller);
     // Per-cell re-scan (#434): the prior cell may have changed board state.
-    let has_forced = event.forced_point().is_some_and(|point| {
-        !forced_triggers::collect_forced_hits(cx.state, &point, bucket).is_empty()
-    });
+    let has_forced = !trigger_scan::collect_forced(cx.state, &event, bucket).is_empty();
     let has_reaction = !reaction_windows::scan_reactions_at(cx.state, &event, bucket).is_empty();
     if caller_owned && step == EmitStep::When {
         if has_forced || has_reaction {
@@ -179,17 +177,14 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
             // Advance our own cursor first (see the `Reaction`-resumes-correctly
             // note above), then fire forced.
             set_timing_sub(cx, TimingSub::Reaction);
-            let Some(point) = event.forced_point() else {
-                return EngineOutcome::Done;
-            };
-            let candidates = forced_triggers::collect_forced_hits(cx.state, &point, bucket);
+            let candidates = trigger_scan::collect_forced(cx.state, &event, bucket);
             if candidates.len() >= 2 {
                 // 2+ forced: the lead orders them (#213). The run carries no
                 // continuation (#434) — when it closes the loop re-dispatches the
                 // parent `TimingPoint` (now at `Reaction`).
                 reaction_windows::open_forced_resolution(cx, &event, bucket, candidates)
             } else {
-                forced_triggers::queue_forced_triggers(cx, &event, &point, bucket)
+                forced_triggers::queue_forced_triggers(cx, &event, bucket)
             }
         }
         TimingSub::Reaction => {

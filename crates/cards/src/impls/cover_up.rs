@@ -61,7 +61,7 @@ const TRAUMA_TAG: &str = "01007:trauma";
 /// the discover-replacement reaction is offered only while Cover Up still holds
 /// clues to discard, and the game-end Forced only initiates while it does
 /// (RR p.2 potential gate, #786). Replaces the former hardcoded
-/// `card.clues == 0` stand-in in `scan_pending_triggers`.
+/// `card.clues == 0` stand-in in the reaction scan.
 const HAS_CLUES_TAG: &str = "01007:has_clues";
 
 #[must_use]

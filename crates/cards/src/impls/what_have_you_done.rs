@@ -8,7 +8,7 @@
 //! Forced (no "may" — Rules Reference p.3; the bare "advance" with no
 //! clue threshold cannot be the optional clue-spend ability): the act
 //! advances when the Ghoul Priest (01116) is defeated, flipping it to the
-//! terminal reverse below. Wired via `ForcedTriggerPoint::EnemyDefeated` from the
+//! terminal reverse below. Fired at the `EnemyDefeated` condition from the
 //! defeat path; narrowed to 01116 so other ghouls' defeats don't advance it.
 //!
 //! **Cell: the `at` cell of the `EnemyDefeated` condition.** The printed word

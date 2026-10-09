@@ -25,7 +25,10 @@ fn a_pattern_pairs_with_its_condition_in_every_cell() {
     // `at`/`after` ability on the same condition.
     assert!(trigger_matches(
         &enemy_attacks(inv),
-        &EventPattern::EnemyAttacks,
+        &EventPattern::EnemyAttacks {
+            attacker: AttackerScope::Any,
+            target: TargetScope::Any,
+        },
         inv,
     ));
     // DiscoverClues ↔ DiscoverClues — Cover Up 01007.
@@ -60,7 +63,10 @@ fn round_ended_matches_its_own_pattern_board_scoped() {
     // Another condition's pattern still does not match it.
     assert!(!trigger_matches(
         &TimingEvent::RoundEnded,
-        &EventPattern::EnemyAttacks,
+        &EventPattern::EnemyAttacks {
+            attacker: AttackerScope::Any,
+            target: TargetScope::Any,
+        },
         lead,
     ));
 }
@@ -75,8 +81,8 @@ fn assignment_damaging(inst: CardInstanceId) -> Assignment {
 
 /// Direct `trigger_matches` coverage for the `EnemyAttackDamagedSelf` soak
 /// pairing (Guard Dog 01021, C5b #237). The instance-level scoping (only an
-/// asset the assignment gives damage to fires) is enforced one layer up in
-/// `scan_pending_triggers` and exercised end-to-end in
+/// asset the assignment gives damage to fires) is the source's half of the
+/// matcher, `scope_matches`, and is exercised end-to-end in
 /// `crates/cards/tests/guard_dog_soak.rs` (which installs the real registry);
 /// what *this* layer owns since #727 is the card's narrowing to an enemy
 /// **attack**.

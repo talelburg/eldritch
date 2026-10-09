@@ -62,7 +62,10 @@ const ENEMY_FORCED_WHEN: &str = "_ea_enemy_forced_when";
 /// `amount` resources — the marker these tests read cell order off.
 fn on_attack(timing: EventTiming, amount: u8) -> Ability {
     dsl::reaction_on_event(
-        EventPattern::EnemyAttacks,
+        EventPattern::EnemyAttacks {
+            attacker: dsl::AttackerScope::Any,
+            target: dsl::TargetScope::AtYourLocation,
+        },
         timing,
         dsl::gain_resources(InvestigatorTarget::You, amount),
     )
@@ -77,7 +80,10 @@ const PLAIN_ENEMY: &str = "_ea_plain";
 /// **enemy's** own card, gaining `amount` resources.
 fn enemy_forced(timing: EventTiming, amount: u8) -> Ability {
     dsl::forced_on_event(
-        EventPattern::EnemyAttacks,
+        EventPattern::EnemyAttacks {
+            attacker: dsl::AttackerScope::This,
+            target: dsl::TargetScope::Any,
+        },
         timing,
         dsl::gain_resources(InvestigatorTarget::You, amount),
     )
@@ -92,7 +98,10 @@ fn install() {
         .with_abilities(AFTER, || vec![on_attack(EventTiming::After, 2)])
         .with_abilities(CANCEL, || {
             vec![dsl::reaction_on_event(
-                EventPattern::EnemyAttacks,
+                EventPattern::EnemyAttacks {
+                    attacker: dsl::AttackerScope::Any,
+                    target: dsl::TargetScope::AtYourLocation,
+                },
                 EventTiming::When,
                 Effect::Cancel,
             )]

@@ -479,12 +479,10 @@ pub enum EventPattern {
     /// (Forced "after you enter \<location\>" effects: Attic `01113`
     /// takes 1 horror, Cellar `01114` takes 1 damage).
     ///
-    /// Intentionally bare: the engine binds *you* = the entering
-    /// investigator and *this location* = the ability's own location
-    /// from the trigger context — no narrowing fields needed.
-    ///
-    /// The forced dispatch path matches this pattern and fires it from
-    /// `move_action` on entry (`engine::dispatch::forced_triggers`).
+    /// Intentionally bare: *this location* is part of the pattern's
+    /// definition, so the engine's matcher hears it only on the entered
+    /// location's own card, and binds *you* = the entering investigator — no
+    /// narrowing fields needed.
     EnteredLocation,
     /// A game phase began — `Appendix_II_Timing_and_Gameplay.md` steps 1.1,
     /// 2.1, 3.1 and 4.1, each of which is *"an important game milestone that
@@ -496,10 +494,6 @@ pub enum EventPattern {
     /// starts (#697). Dunwich supplies the first consumers — Hunting Horror
     /// 02141 and Peter Clover 02079 print *"**Forced** - At the start of the
     /// enemy phase: …"*, as does agenda 02065.
-    ///
-    /// Matched only by the forced dispatch path
-    /// (`engine::dispatch::forced_triggers`), never by player reaction
-    /// windows — `trigger_matches` returns `false` for it.
     PhaseStarted { phase: Phase },
     /// A game phase ended. Forced agenda/act effects keyed to a phase
     /// boundary listen here: agenda `01107` moves Ghouls at
@@ -509,37 +503,31 @@ pub enum EventPattern {
     /// Wired at all four phase-ends (#697); `Appendix_II_Timing_and_Gameplay.md`
     /// step 1.5 gives the end of a phase the same milestone sentence its step
     /// 1.1 gives the beginning.
-    ///
-    /// Matched only by the forced dispatch path
-    /// (`engine::dispatch::forced_triggers`), never by player reaction
-    /// windows — `trigger_matches` returns `false` for it.
     PhaseEnded { phase: Phase },
     /// The act this ability is printed on advanced (its reverse side
-    /// resolves). Fired forced via `ForcedTriggerPoint::ActAdvanced`;
-    /// binds controller = the lead investigator (board-wide reverse
-    /// effects ignore it).
+    /// resolves). *This act* is part of the definition: the engine's matcher
+    /// hears it only on the advancing act, and binds controller = the lead
+    /// investigator (board-wide reverse effects ignore it).
     ActAdvanced,
     /// The agenda this ability is printed on advanced (its reverse side
-    /// resolves on doom). Fired forced via
-    /// `ForcedTriggerPoint::AgendaAdvanced` from `advance_agenda` (the
-    /// mirror of the act path — `advance_act` fires `ActAdvanced`); binds
-    /// controller = the lead investigator. The Gathering's agenda reverses
+    /// resolves on doom) — the mirror of [`ActAdvanced`](Self::ActAdvanced),
+    /// heard only on the advancing agenda and bound to the lead
+    /// investigator. The Gathering's agenda reverses
     /// listen here: 01105 (lead's discard/horror choice) and 01106
     /// (dig the encounter deck until a `Ghoul` enemy, lead draws it).
     AgendaAdvanced,
     /// The round ended (Rules Reference p.24: the round ends at the close
     /// of the upkeep phase). Forced agenda/act effects keyed to "at the
-    /// end of the round" listen here — agenda `01107` places doom. Fired
-    /// forced via `ForcedTriggerPoint::RoundEnded`; binds controller =
-    /// the lead investigator (board-wide effects ignore it). Distinct
+    /// end of the round" listen here — agenda `01107` places doom, Dissonant
+    /// Voices 01165 discards itself. Board-wide: heard on every card in play.
+    /// Distinct
     /// from `PhaseEnded { Upkeep }` so an "end of upkeep phase" and an
     /// "end of round" card can coexist.
     RoundEnded,
     /// The investigator's turn ended (Rules Reference p.24 step 2.2.2,
-    /// "Forced – At the end of your turn"). Fired forced via
-    /// `ForcedTriggerPoint::EndOfTurn` from `end_turn`, scanning the
-    /// ending investigator's controlled card instances (threat area +
-    /// in play); binds controller = that investigator. First consumer:
+    /// "Forced – At the end of your turn"). *Your* is part of the
+    /// definition: the engine's matcher hears it only when the ability's
+    /// controller is the investigator whose turn ended. First consumer:
     /// Frozen in Fear (01164), C4c (#235).
     EndOfTurn,
     /// A skill test resolved with the given `outcome` (RR ST.6). The
@@ -549,11 +537,12 @@ pub enum EventPattern {
     /// Investigate }` case. `kind: None` matches any test type; `Some(k)`
     /// narrows to that type. Forced vs reaction is the `OnEvent { kind }`
     /// distinction (Obscuring Fog `Forced`, Dr. Milan `Reaction`), not a
-    /// pattern distinction — both share this pattern. The engine binds *you* =
-    /// the testing investigator; a forced ability on a location attachment is
-    /// scanned via the investigated location (the forced collector reads it
-    /// from the in-flight test frame). (Slice D #423; collapses the #212/#213
-    /// forced/reaction pattern split for this timing point.)
+    /// pattern distinction — both share this pattern. A forced ability on a
+    /// location attachment binds *you* = the testing investigator, and
+    /// [`tested_location`](Self::SkillTestResolved::tested_location) says
+    /// whether it hears only its own location's tests. (Slice D #423;
+    /// collapses the #212/#213 forced/reaction pattern split for this timing
+    /// point.)
     SkillTestResolved {
         /// Whether the listener fires on a passed or failed test.
         outcome: TestOutcome,
@@ -583,15 +572,24 @@ pub enum EventPattern {
         /// resolution trigger wants that: the variation the corpus does print
         /// is entirely in **location scope** (Analytical Mind 03010's *"at
         /// another location"*, Bestow Resolve 09032's *"or a connecting
-        /// location"*), which is deliberately not in the pattern — location
-        /// scoping is the card's own, whether in a scan filter or a native
-        /// eligibility predicate.
+        /// location"*). The one location scope that is part of a declaration
+        /// is [`tested_location`](Self::SkillTestResolved::tested_location);
+        /// the rest stays the card's own, in a native eligibility predicate.
         by_controller: bool,
+        /// Which tested location the ability listens to — Obscuring Fog
+        /// 01168's *"After **attached location** is successfully
+        /// investigated"* is [`TestedLocationScope::Attached`]; every other
+        /// corpus consumer is [`TestedLocationScope::Any`].
+        ///
+        /// A field rather than a matcher rule because the pattern has both
+        /// scoped and unscoped consumers: the trigger scan walks the whole
+        /// board (ADR 0018), so the word *"attached"* has to be on the
+        /// declaration for the scan to read it.
+        tested_location: TestedLocationScope,
     },
     /// An investigator discovers one or more clues — the **one** triggering
-    /// condition for clue discovery, reaction-only in all three cells (#703; a
-    /// *forced* ability on it is not collected in any cell, since the condition
-    /// has no forced dispatch point yet). Which cell an ability lands in is its
+    /// condition for clue discovery, in all three cells (#703). Which cell an
+    /// ability lands in is its
     /// [`EventTiming`], not a second pattern:
     /// [`When`](EventTiming::When) interrupts the discovery (a replacement
     /// effect, before the clues move), [`At`](EventTiming::At) and
@@ -604,15 +602,16 @@ pub enum EventPattern {
     /// instead." — `When` + [`Effect::Cancel`], which prevents the discovery
     /// from resolving at all (`glossary/Instead.md`).
     ///
-    /// The engine binds *you* = the discovering investigator and, for a `when`
-    /// ability, the would-be discovery's count (Cover Up's "that many"). That
+    /// *You* and *at your location* are part of the definition: the engine's
+    /// matcher hears it only when the ability's controller is the discoverer,
+    /// standing at the discovery location. It binds, for a `when` ability, the
+    /// would-be discovery's count (Cover Up's "that many"). That
     /// count is what would **actually** be discovered — capped at the clues
     /// present, per the **Discovery** entry in `GLOSSARY.md` (#471).
     DiscoverClues,
-    /// The game ended (a scenario resolution latched). Fired forced via
-    /// `ForcedTriggerPoint::GameEnd` from `fire_scenario_resolution`,
-    /// scanning every investigator's controlled card instances; binds
-    /// controller = each instance's controller. First consumer: Cover Up
+    /// The game ended (a scenario resolution latched) — or, at Elimination step
+    /// 0, ended for one eliminated investigator's weaknesses only. Heard on
+    /// every card in play. First consumer: Cover Up
     /// 01007's "Forced - When the game ends, if there are any clues on
     /// Cover Up: You suffer 1 mental trauma." (C5a #236.)
     GameEnd,
@@ -653,30 +652,34 @@ pub enum EventPattern {
     ///   Silver Twilight Acolyte 01102: *"**Forced** - After Silver Twilight
     ///   Acolyte attacks: Place 1 doom on the current agenda."*
     ///
-    /// Bare — the "at your location" spatial scoping lives in the
-    /// reaction-window scan (which has board state), mirroring the damaged-asset
-    /// filter for [`EnemyAttackDamagedSelf`]; the forced scan reads the
-    /// **attacking enemy's** own card.
+    /// Two independent scopes, because the corpus varies both: which enemy is
+    /// attacking (*"Silver Twilight Acolyte attacks"* is
+    /// [`AttackerScope::This`]) and which investigator is attacked (*"an
+    /// investigator at your location"* is [`TargetScope::AtYourLocation`]).
+    /// Dodge is `{ Any, AtYourLocation }`; the Acolyte is `{ This, Any }`. The
+    /// trigger scan walks the whole board (ADR 0018), so neither scope can be
+    /// left to where the scan looks.
     ///
     /// A cancel in the `when` cell suppresses the rest of the sequence, so an
     /// `at`/`after` ability on a dodged attack does not fire (#714;
     /// `data/arkhamdb-faq/core/01023.md`).
-    ///
-    /// [`EnemyAttackDamagedSelf`]: Self::EnemyAttackDamagedSelf
-    EnemyAttacks,
+    EnemyAttacks {
+        /// Which attacking enemy the ability listens to.
+        attacker: AttackerScope,
+        /// Which attacked investigator the ability listens to.
+        target: TargetScope,
+    },
     /// The card this ability is printed on entered play (Research Librarian
     /// 01032: "`[reaction]` After Research Librarian enters play: …"). Bare and
-    /// **self-referential** — the engine fires it only for the just-entered
-    /// instance (the reaction-window scan filters to that instance), binding
-    /// *you* = the controller. A general "after any card enters play" reaction
-    /// is out of scope; the pattern is reaction-only ([`EventTiming::After`]).
+    /// **self-referential** — the engine's matcher hears it only on the
+    /// just-entered instance, binding *you* = the controller. A general "after
+    /// any card enters play" reaction is out of scope.
     EnteredPlay,
     /// An investigator left the location this ability's source is attached to
     /// (Barricade 01038's "Forced — When an investigator leaves attached
-    /// location"). Bare and forced-only: the engine binds the leaving
-    /// investigator (controller) and scans the *left* location's attachment
-    /// zone. Matched only by the forced dispatch path
-    /// (`ForcedTriggerPoint::LeftLocation`), never a reaction window.
+    /// location"). Bare: *attached location* is part of the definition, so the
+    /// engine's matcher hears it only on an attachment of the *left* location,
+    /// and binds the leaving investigator.
     LeftLocation,
 }
 
@@ -708,11 +711,49 @@ impl EventPattern {
             // card's narrowing of the damage *assignment*, not a condition of
             // its own (ADR 0009).
             EventPattern::EnemyAttackDamagedSelf => TriggeringCondition::DamageAssigned,
-            EventPattern::EnemyAttacks => TriggeringCondition::EnemyAttacks,
+            EventPattern::EnemyAttacks { .. } => TriggeringCondition::EnemyAttacks,
             EventPattern::EnteredPlay => TriggeringCondition::EnteredPlay,
             EventPattern::LeftLocation => TriggeringCondition::LeftLocation,
         }
     }
+}
+
+/// Which attacking enemy an [`EventPattern::EnemyAttacks`] ability listens
+/// to. Only the scopes a corpus card prints; *"a \[\[Trait\]\] enemy"* arrives with
+/// the first card that needs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AttackerScope {
+    /// The enemy the ability is printed on — Silver Twilight Acolyte 01102's
+    /// *"After Silver Twilight Acolyte attacks"*.
+    This,
+    /// Any enemy — Dodge 01023's *"when an enemy attacks"*.
+    Any,
+}
+
+/// Which attacked investigator an [`EventPattern::EnemyAttacks`] ability
+/// listens to. Only the scopes a corpus card prints; *"attacks you"* arrives
+/// with the first card that needs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TargetScope {
+    /// An investigator at the controller's location — Dodge 01023's *"an
+    /// investigator at your location"*. An investigator at no location is at
+    /// nobody's location, so never matches.
+    AtYourLocation,
+    /// Any investigator — Silver Twilight Acolyte 01102's unqualified
+    /// *"attacks"*.
+    Any,
+}
+
+/// Which tested location an [`EventPattern::SkillTestResolved`] ability
+/// listens to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TestedLocationScope {
+    /// Any test, at any location or none.
+    Any,
+    /// A test whose tested location is the one the ability's card is attached
+    /// to — Obscuring Fog 01168's *"After attached location is successfully
+    /// investigated"*.
+    Attached,
 }
 
 /// A **triggering condition**: the one game occurrence an [`EventPattern`]
@@ -768,7 +809,7 @@ pub enum TriggeringCondition {
 /// The four game phases, mirrored in `card-dsl` so [`EventPattern`] can
 /// name a phase without `card-dsl` depending on `game-core` (layering).
 /// `game-core` maps this to its own `state::Phase` at the dispatch
-/// boundary (see `engine::dispatch::forced_triggers`).
+/// boundary (see `engine::dispatch::trigger_scan`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Phase {
     Mythos,

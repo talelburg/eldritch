@@ -205,6 +205,7 @@ fn install_mock_registry() {
                     outcome: TestOutcome::Success,
                     kind: Some(SkillTestKind::Investigate),
                     by_controller: true,
+                    tested_location: dsl::TestedLocationScope::Any,
                 },
                 EventTiming::After,
                 1,

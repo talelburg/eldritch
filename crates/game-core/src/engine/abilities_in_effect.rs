@@ -179,21 +179,10 @@ pub(crate) fn for_source_with(
     Some(out)
 }
 
-/// [`for_source`] for a [`CandidateSource`]. A [`Hand`](CandidateSource::Hand)
+/// [`for_source_with`] for a [`CandidateSource`]. A [`Hand`](CandidateSource::Hand)
 /// candidate is a card being *played*, never a board card with two faces, so
 /// it reads the front — and nothing grants to a card in hand, which is not in
 /// play, so every address it yields is [`AbilityAddress::Printed`].
-#[must_use]
-pub(crate) fn for_candidate_source(
-    state: &GameState,
-    source: CandidateSource,
-    code: &CardCode,
-) -> Option<Vec<(AbilityAddress, Ability)>> {
-    for_candidate_source_with(state, card_registry::current()?, source, code)
-}
-
-/// [`for_candidate_source`] against an explicitly supplied registry — see
-/// [`location_abilities_with`] for why the funnel has this shape.
 #[must_use]
 pub(crate) fn for_candidate_source_with(
     state: &GameState,

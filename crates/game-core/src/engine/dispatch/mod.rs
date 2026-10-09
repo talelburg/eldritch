@@ -52,6 +52,7 @@ pub(super) mod elimination;
 pub(super) mod encounter;
 pub(super) mod forced_triggers;
 pub(crate) mod hunters;
+mod trigger_scan;
 // The initiation gate (ADR 0017): every play and ability path asks it whether.
 mod initiation;
 pub(crate) mod movement;

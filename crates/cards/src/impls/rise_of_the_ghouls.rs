@@ -7,7 +7,7 @@
 //!   enemy is discarded. The lead investigator draws that enemy.
 //! ```
 //!
-//! Forced on-advance reverse, fired via `ForcedTriggerPoint::AgendaAdvanced`
+//! Forced on-advance reverse, fired at the agenda's own `AgendaAdvanced` condition
 //! from `advance_agenda` (the mirror of the act path). Board-dependent,
 //! single-use scenario logic, so it lives card-locally as an `Effect::Native`
 //! handler (#276), orchestrating engine primitives

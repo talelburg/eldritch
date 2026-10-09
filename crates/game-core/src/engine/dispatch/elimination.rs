@@ -5,9 +5,8 @@ use std::mem;
 
 use crate::card_registry;
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::forced_triggers::ForcedTriggerPoint;
 use crate::engine::dispatch::{
-    act_agenda, combat, cursor, emit, forced_triggers, hunters, threat_area,
+    act_agenda, combat, cursor, emit, hunters, threat_area, trigger_scan,
 };
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
@@ -208,9 +207,9 @@ fn end_turn_on_elimination(cx: &mut Cx, investigator: InvestigatorId) {
 /// coordinator's own cursor, so a fourth cell cannot be forgotten here.
 fn has_weakness_game_end_ability(state: &GameState, investigator: InvestigatorId) -> bool {
     EmitStep::cells().any(|cell| {
-        !forced_triggers::collect_forced_hits(
+        !trigger_scan::collect_forced(
             state,
-            &ForcedTriggerPoint::EliminationGameEnd { investigator },
+            &TimingEvent::EliminationGameEnd { investigator },
             cell,
         )
         .is_empty()

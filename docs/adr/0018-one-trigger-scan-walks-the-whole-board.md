@@ -1,0 +1,39 @@
+# One trigger scan walks the whole board; a condition narrows, it never picks zones
+
+"Which triggered abilities does this timing event reach?" was answered once per ability kind, and the answers had drifted apart. The forced side was a private `ForcedTriggerPoint` enum with one hand-written zone table per variant: `EnteredLocation` looked at the entered location's card, `RoundEnded` at the act, the agenda and every Active investigator's controlled cards, `EnemyDefeated` at the current act only. So *"Forced - After an enemy is defeated"* printed on an agenda, an asset or a location was never collected, never rejected and never logged (#698). Each table was a guess about where a card listening to that condition could sit, and every guess was right only until the next card arrived.
+
+**So the scan walks the whole board at every condition, and a condition never chooses where to look.** `engine::dispatch::trigger_scan::board_walk` visits, in one fixed order:
+
+1. each investigator — the active one first, then the rest of `turn_order`, then anyone else by id — their controlled card instances, then the Fast events in their hand;
+2. each location by `LocationId`, its attachments, and the cards put into play at it;
+3. each enemy by id, then its attachments;
+4. the current act, then the current agenda.
+
+Eliminated investigators are skipped, since Rules Reference p.10 removes their cards and only this filter keeps their investigator card out (#567). The one exception is the investigator `EliminationGameEnd` names, who is already off `Active` when step 0 fires for their weaknesses. At an advance, the act or agenda slot holds the card the event names: during its reverse it is still the current one, and the event's code is the authority for which card that is.
+
+## What narrows a condition is on the card
+
+The zone tables carried narrowings that no pattern stated. Walk the whole board without them and the Attic's horror fires when you enter the Cellar. The narrowings now live in the matcher, `trigger_scan::pattern_matches`, in one of two forms:
+
+- **A matcher arm, when the narrowing is the pattern's own definition.** `EnteredLocation` is heard only on the entered location's card. The Attic 01113's ruling (<https://arkhamdb.com/card/01113>) is the shape: *"The **Forced** ability triggers each time an investigator enters this location."* Likewise `LeftLocation` on an attachment of the left location (Barricade 01038's *"attached location"*), `EndOfTurn` only for the ending investigator's controller (Frozen in Fear 01164's *"your turn"*), an advance only on the advancing act or agenda, and elimination's game end only on a weakness the eliminated investigator controls (Rules Reference p.10 step 0: *"Trigger any 'when the game ends' abilities on each weakness the eliminated investigator owns that is in play."*).
+- **A field on the pattern, when one pattern has both scoped and unscoped consumers.** `EnemyAttacks { attacker, target }`: Silver Twilight Acolyte 01102 (*"After Silver Twilight Acolyte attacks"*) is `{ This, Any }` and Dodge 01023 (*"when an enemy attacks an investigator at your location"*) is `{ Any, AtYourLocation }`. These are two fields rather than variants because the corpus varies the attacker and the target independently. `SkillTestResolved { tested_location }` is `Attached` for Obscuring Fog 01168 (*"After attached location is successfully investigated"*) and `Any` for Dr. Milan 01033 and Lita Chantler 01117. Only the values a corpus card prints exist; *"attacks you"* or a trait filter arrives with the card that needs it.
+
+The matcher is split by what it reads. `trigger_matches` reads only the event, the pattern and the controller. `scope_matches` reads the card's source and the board around it. **Both are exhaustive on the event, and the pattern ↔ condition pairing before them is exhaustive in both directions.** `EventPattern::condition` (in `card-dsl`) and `TimingEvent::condition` (in `game-core`) meet at `TriggeringCondition`, so a new pattern or a new event cannot compile until it names its condition, its narrowing and its scope. This is ADR 0008's classification discipline, extended from who resolves a condition to which patterns it matches, and `card-dsl` still sits below `game-core`. The `_ => false` arm the reaction pairing used to end with is gone, and with it the two ways a pairing went silently missing.
+
+## The forced-binding rule
+
+A forced hit is one candidate, and it is not filtered by reachability. ADR 0010: *"a forced ability is not restricted to the sources its controller could legally use"*. Its controller is:
+
+- a **controlled** card → its controller;
+- the current **act** or **agenda** → the lead proxy, the first Active investigator in `turn_order` (GLOSSARY "Lead investigator");
+- any other **uncontrolled** card — a location, an enemy, an attachment on either → the condition's **subject**, falling back to the lead proxy when there is none.
+
+The subject is `TimingEvent::subject`, another exhaustive match: the investigator who entered, left, was attacked, tested, discovered, was dealt harm, ended their turn or was eliminated, and `by` for an enemy defeat. Phase boundaries, advances and the round's and game's end have none. The rule reproduces every binding the per-point arms made. It also reaches cards they never did: a location's *"after an enemy is defeated"* binds the investigator who defeated it.
+
+## Considered options
+
+**One shared per-condition zone table**, used by both kinds: `ForcedTriggerPoint`'s tables, lifted out so reactions read them too. It fixes the forced/reaction drift and keeps today's scan cost. It was rejected because it keeps the failure that produced #698. The table is still a prediction of where a listening card can sit, made before the card exists, so it stays wrong until someone hand-edits the arm. A missing zone is also silent, because a card the table never visits is neither collected nor rejected. With the whole-board walk, a new kind of source is added once, in the walk, and both kinds see it. A wrong narrowing becomes a failing assertion about a card's printed word. The cost is a walk over every card at every cell, and the board is small. #117's event-keyed index is the remedy if it stops being small, and the walk is the shape such an index would index.
+
+## Consequences
+
+**Forced order follows the walk.** A 2+ forced run is ordered by the lead, so the order its options are listed in is presentation only. That order moved: at round end, Dissonant Voices 01165 in a threat area is now listed before agenda 01107, where the old `RoundEnded` arm listed the act and agenda first.
