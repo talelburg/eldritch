@@ -57,7 +57,7 @@
 pub mod leave_play;
 
 pub use leave_play::place_in_victory_display;
-pub use leave_play::{discard_from_play, remove_from_game, LeavingCard};
+pub use leave_play::{discard_from_play, remove_from_game, remove_location_from_game, LeavingCard};
 
 use std::collections::BTreeMap;
 

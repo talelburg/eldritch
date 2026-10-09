@@ -44,7 +44,8 @@
 //!   pile holds only the card's code.
 //! - **Attachments** are discarded through the same router, each by its own
 //!   owner, whichever exit the card they were attached to took. Of the cards an
-//!   exit takes, only an enemy has attachments.
+//!   exit takes, only an enemy and a location have attachments, and a location
+//!   takes the cards put into play at it the same way.
 //!
 //! The third consequence, lasting-effect expiry, is not applied here.
 //!
@@ -53,21 +54,25 @@
 //! Every card that leaves emits exactly one event: [`Event::CardDiscarded`]
 //! naming the pile it landed in, [`Event::CardRemovedFromGame`], or
 //! [`Event::EnteredVictoryDisplay`]. The leaving card's event comes first, then
-//! one per attachment in attachment order. A discard or a removal names the
-//! [`Zone`] the card left.
+//! one per attachment in attachment order (for a location, then one per card
+//! put into play at it). A discard or a removal names the [`Zone`] the card
+//! left.
 //!
 //! # Adding an exit
 //!
 //! A verb is added only when a card prints a new way out of play. A new exit is
 //! a sibling verb over the same router, so the owner rule and the cascade stay
-//! in one place: the victory display is one more `Exit` arm, and a location
-//! leaving play takes its attachments and the cards put into play at it through
+//! in one place: the victory display is one more `Exit` arm, and
+//! [`remove_location_from_game`] files the location through the same router and
+//! takes its attachments and the cards put into play at it through
 //! `discard_attachments`. There is deliberately no public destination enum: a
 //! caller always knows which exit it means.
 
 use crate::engine::Cx;
 use crate::event::Event;
-use crate::state::{CardCode, CardInPlay, CardInstanceId, DiscardPile, EnemyId, Owner, Zone};
+use crate::state::{
+    CardCode, CardInPlay, CardInstanceId, DiscardPile, EnemyId, LocationId, Owner, Zone,
+};
 
 use super::{take_instance, Placement};
 
@@ -143,6 +148,39 @@ pub fn place_in_victory_display(
     victory: u8,
 ) -> Option<Placement> {
     leave_play(cx, card.into(), Exit::VictoryDisplay { victory })
+}
+
+/// **Remove `location` from the game**: its card to the game's removed-from-game
+/// pile, then its attachments and the cards put into play at it each
+/// *discarded* by its own owner, as for [`remove_from_game`] (see the
+/// [module docs](self)). Trapped 01108's *"Remove the Study from the game."* is
+/// the corpus case.
+///
+/// A location is not a card instance and records no owner, so it has its own
+/// verb rather than a [`LeavingCard`] arm. Its removal lands in the game's pile
+/// whichever non-investigator owner it has.
+///
+/// The location only: an investigator or enemy standing there is the caller's
+/// to move first, as Trapped places each investigator in the Hallway before
+/// removing the Study.
+///
+/// Returns whether `location` was in play; `false`, with nothing changed and no
+/// event, when it was not.
+#[must_use = "false means the location was not in play and nothing left"]
+pub fn remove_location_from_game(cx: &mut Cx, location: LocationId) -> bool {
+    let Some(location) = cx.state.locations.remove(&location) else {
+        return false;
+    };
+    file(
+        cx,
+        location.code,
+        Owner::Scenario,
+        Zone::Location,
+        Exit::RemoveFromGame,
+    );
+    discard_attachments(cx, location.attachments, Zone::LocationAttachment);
+    discard_attachments(cx, location.cards_at_location, Zone::AtLocation);
+    true
 }
 
 /// Which exit a card takes. Private: each variant has its own public verb.
@@ -643,5 +681,82 @@ mod tests {
                 assert_eq!(piles(&state), before, "{card:?}");
             }
         }
+    }
+
+    /// **A location removed from the game takes its cards with it.** The
+    /// location goes to the game's removed-from-game pile; its attachments, and
+    /// then the cards put into play at it, are discarded each by its own owner
+    /// (`glossary/Leaves_Play.md`: *"All attachments on the card are
+    /// discarded."*).
+    #[test]
+    fn a_removed_location_discards_its_attachments_and_cards_at_it_by_owner() {
+        let mut state = empty_board();
+        let study = state.locations.get_mut(&STUDY).unwrap();
+        study.code = CardCode::new("STUDY");
+        study.attachments = vec![
+            instance("MINE", 71, Owner::Investigator(OWNER)),
+            instance("ENCOUNTER", 72, Owner::EncounterDeck),
+        ];
+        study.cards_at_location = vec![instance("STORY", 73, Owner::Scenario)];
+        let mut events = Vec::new();
+        let removed = remove_location_from_game(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            STUDY,
+        );
+
+        assert!(removed);
+        assert!(!state.locations.contains_key(&STUDY));
+        let piles = piles(&state);
+        assert_eq!(piles[0], vec![CardCode::new("MINE")]);
+        assert_eq!(piles[2], vec![CardCode::new("ENCOUNTER")]);
+        assert_eq!(
+            piles[4],
+            vec![CardCode::new("STUDY"), CardCode::new("STORY")],
+            "the location and the scenario's card are removed from the game",
+        );
+        assert_eq!(
+            events,
+            vec![
+                Event::CardRemovedFromGame {
+                    code: CardCode::new("STUDY"),
+                    from: Zone::Location,
+                },
+                Event::CardDiscarded {
+                    code: CardCode::new("MINE"),
+                    from: Zone::LocationAttachment,
+                    to: DiscardPile::Investigator(OWNER),
+                },
+                Event::CardDiscarded {
+                    code: CardCode::new("ENCOUNTER"),
+                    from: Zone::LocationAttachment,
+                    to: DiscardPile::Encounter,
+                },
+                Event::CardRemovedFromGame {
+                    code: CardCode::new("STORY"),
+                    from: Zone::AtLocation,
+                },
+            ],
+            "the location's own event, its attachments, then the cards at it",
+        );
+    }
+
+    #[test]
+    fn removing_a_location_not_in_play_leaves_nothing() {
+        let mut state = empty_board();
+        let before = state.clone();
+        let mut events = Vec::new();
+        let removed = remove_location_from_game(
+            &mut Cx {
+                state: &mut state,
+                events: &mut events,
+            },
+            LocationId(99),
+        );
+        assert!(!removed);
+        assert!(events.is_empty());
+        assert_eq!(state, before);
     }
 }

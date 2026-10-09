@@ -694,3 +694,53 @@ fn one_blocked_shortest_step_of_two_leaves_the_other_open() {
         "the blocked step is dropped from the destination set, not the graph",
     );
 }
+
+/// **#371: Barricade goes to the player who played it**, not to whoever left.
+/// Investigator 1 played it at A; investigator 2 leaves A, which fires its
+/// *"**Forced** - When an investigator leaves attached location: Discard
+/// Barricade."* `glossary/Discard_Piles.md`: *"Any time a card is discarded, it
+/// is placed faceup on top of its owner's discard pile."*
+#[test]
+fn another_investigator_leaving_discards_barricade_to_the_player_who_played_it() {
+    let mut state = GameStateBuilder::new()
+        .with_investigator(inv_at(1, A))
+        .with_investigator(inv_at(2, A))
+        .with_location(linked(1, "A", &[B]))
+        .with_location(linked(2, "B", &[A]))
+        .open_turn(INV2)
+        .build();
+    state
+        .locations
+        .get_mut(&A)
+        .unwrap()
+        .attachments
+        .push(CardInPlay::enter_play(
+            CardCode::new(BARRICADE),
+            ATT_INST,
+            Owner::Investigator(INV),
+        ));
+
+    let r = test_support::take_turn_action(
+        state,
+        &TurnAction::Move {
+            investigator: INV2,
+            destination: B,
+        },
+    );
+    assert!(!matches!(r.outcome, EngineOutcome::Rejected { .. }));
+    assert!(r.state.locations[&A].attachments.is_empty(), "discarded");
+    assert_eq!(
+        r.state.investigators[&INV].discard,
+        vec![CardCode::new(BARRICADE)],
+        "in the discard of the player who played it",
+    );
+    assert!(
+        r.state.investigators[&INV2].discard.is_empty(),
+        "not in the leaver's discard",
+    );
+    assert_event!(
+        r.events,
+        Event::CardDiscarded { code, from: Zone::LocationAttachment, to: DiscardPile::Investigator(INV) }
+            if code.as_str() == BARRICADE
+    );
+}

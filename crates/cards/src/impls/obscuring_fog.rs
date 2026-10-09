@@ -97,7 +97,12 @@ fn limit1_attach(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         .get(&loc_id)
         .is_some_and(|loc| loc.attachments.iter().any(|c| c.code.as_str() == CODE));
     if already {
-        // Limit 1 per location: this copy can't enter play, so discard it.
+        // Limit 1 per location: this copy can't enter play, so discard it. It is
+        // never in play, so it does not take a leave-play exit: it goes straight
+        // from being revealed to its owner's pile, the encounter discard, which
+        // the event names (`glossary/Attach_To.md`: *"If the initial "attach
+        // to" check does not pass, … If such a card cannot remain in its prior
+        // state or game area, discard it."*).
         cx.state.encounter_discard.push(CardCode::new(CODE));
         cx.events.push(Event::CardDiscarded {
             code: CardCode::new(CODE),

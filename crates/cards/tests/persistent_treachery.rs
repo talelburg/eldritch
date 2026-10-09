@@ -143,10 +143,19 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
             .is_empty(),
         "Obscuring Fog discards after its location is successfully investigated",
     );
-    assert!(result
-        .state
-        .encounter_discard
-        .contains(&CardCode::new("01168")));
+    // Through the leave-play exit, filed by its owner: the encounter deck.
+    assert_eq!(result.state.encounter_discard, vec![CardCode::new("01168")]);
+    assert!(result.state.investigators[&InvestigatorId(1)]
+        .discard
+        .is_empty());
+    assert_event!(
+        result.events,
+        Event::CardDiscarded {
+            code,
+            from: Zone::LocationAttachment,
+            to: DiscardPile::Encounter,
+        } if code.as_str() == "01168"
+    );
 }
 
 // ---- Dissonant Voices (01165) --------------------------------------

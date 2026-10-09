@@ -8,9 +8,10 @@ use std::collections::BTreeSet;
 use game_core::action::{Action, InputResponse, PlayerAction, RosterEntry};
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, TimingEvent};
+use game_core::event::Event;
 use game_core::state::{
-    CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
-    TimingMode, TimingPointWindowFrame,
+    CardCode, CardInPlay, CardInstanceId, Continuation, DiscardPile, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Owner, Phase, TimingMode, TimingPointWindowFrame, Zone,
 };
 use game_core::test_support::TestSession;
 use game_core::{scenario_registry, test_support};
@@ -379,5 +380,87 @@ fn advancing_act_1_rebuilds_the_board() {
     assert!(
         result.state.locations[&hallway_id].revealed,
         "relocate-to-Hallway reveals it",
+    );
+}
+
+/// **Removing the Study discards what is attached to it, each by its owner**
+/// (#981). Trapped 01108's reverse prints *"Remove the Study from the game."*,
+/// and `glossary/Leaves_Play.md` makes a card's attachments go with it: *"All
+/// attachments on the card are discarded."* Obscuring Fog 01168 drawn in Act 1
+/// attaches to the Study; it is the encounter deck's, so it lands in the
+/// encounter discard, while a Barricade 01038 its player put there lands in that
+/// player's discard (`glossary/Discard_Piles.md`: *"Any time a card is
+/// discarded, it is placed faceup on top of its owner's discard pile. Encounter
+/// cards are owned by the encounter deck."*).
+#[test]
+fn removing_the_study_discards_its_attachments_by_owner() {
+    let mut state = the_gathering::setup();
+    let inv = InvestigatorId(1);
+    let mut investigator = test_support::test_investigator(1);
+    investigator.current_location = state.starting_location;
+    investigator.clues = 2;
+    state.investigators.insert(inv, investigator);
+    state.turn_order = vec![inv];
+    state.active_investigator = Some(inv);
+    state.phase = Phase::Investigation;
+    let study = state.starting_location.expect("the Study is in play");
+    let attachments = &mut state.locations.get_mut(&study).unwrap().attachments;
+    attachments.push(CardInPlay::enter_play(
+        CardCode::new("01168"),
+        CardInstanceId(900),
+        Owner::EncounterDeck,
+    ));
+    attachments.push(CardInPlay::enter_play(
+        CardCode::new("01038"),
+        CardInstanceId(901),
+        Owner::Investigator(inv),
+    ));
+
+    let result = test_support::dispatch_turn_action_unchecked(
+        state,
+        &TurnAction::AdvanceAct { investigator: inv },
+    );
+    assert_eq!(result.outcome, EngineOutcome::Done);
+
+    assert!(!result.state.locations.contains_key(&study), "Study gone");
+    assert_eq!(result.state.encounter_discard, vec![CardCode::new("01168")]);
+    assert_eq!(
+        result.state.investigators[&inv].discard,
+        vec![CardCode::new("01038")],
+    );
+    assert_eq!(
+        result.state.removed_from_game,
+        vec![CardCode::new("01111")],
+        "the Study itself is removed from the game",
+    );
+    let leaving: Vec<&Event> = result
+        .events
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                Event::CardDiscarded { .. } | Event::CardRemovedFromGame { .. }
+            )
+        })
+        .collect();
+    assert_eq!(
+        leaving,
+        [
+            &Event::CardRemovedFromGame {
+                code: CardCode::new("01111"),
+                from: Zone::Location,
+            },
+            &Event::CardDiscarded {
+                code: CardCode::new("01168"),
+                from: Zone::LocationAttachment,
+                to: DiscardPile::Encounter,
+            },
+            &Event::CardDiscarded {
+                code: CardCode::new("01038"),
+                from: Zone::LocationAttachment,
+                to: DiscardPile::Investigator(inv),
+            },
+        ],
+        "the Study's own event, then one per attachment, in order",
     );
 }

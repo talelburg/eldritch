@@ -1,5 +1,5 @@
 use super::*;
-use crate::state::DiscardPile;
+use crate::state::{DiscardPile, Zone};
 
 #[test]
 fn discard_self_removes_threat_area_instance_to_encounter_discard() {

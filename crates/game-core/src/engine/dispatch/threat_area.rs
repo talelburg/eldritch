@@ -1,17 +1,16 @@
-//! Threat-area zone helpers: placing an encounter card into an
-//! investigator's threat area and discarding it back to the encounter
-//! discard pile. C4a (#233) ships the mechanism; which treacheries
-//! persist here (and the Revelation routing that places them) is C4c
-//! (#235).
+//! Threat-area and location zone helpers: placing a card into an
+//! investigator's threat area, attaching it to a location, or putting it into
+//! play at one. C4a (#233) ships the mechanism; which treacheries persist here
+//! (and the Revelation routing that places them) is C4c (#235). A card leaves
+//! these zones through the leave-play exits in
+//! [`board::leave_play`](crate::engine::board::leave_play), never by hand.
 
 use card_dsl::card_data::CardKind;
 
 use crate::card_registry;
 use crate::engine::Cx;
 use crate::event::Event;
-use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, DiscardPile, InvestigatorId, LocationId, Owner, Zone,
-};
+use crate::state::{CardCode, CardInPlay, CardInstanceId, InvestigatorId, LocationId, Owner};
 
 /// Mint a fresh in-play instance of `code`: allocate its id, build the
 /// `CardInPlay`, and seed the named-uses pool ("ammo") from the asset's
@@ -172,42 +171,6 @@ pub(super) fn put_into_play_at_location(
     Some(instance_id)
 }
 
-/// Remove the threat-area instance `instance_id` from `investigator`,
-/// push its code onto the encounter discard pile, and emit
-/// [`Event::CardDiscarded`] with `from: Zone::ThreatArea`. Returns
-/// `true` if an instance was removed, `false` if none matched.
-///
-/// The encounter discard is unconditionally correct here: the only cards that
-/// reach this helper are scenario-owned. A card's own Revelation-placed
-/// self-discard (Frozen in Fear 01164, Dissonant Voices 01165) routes through
-/// `Effect::DiscardSelf`, and Rules Reference p.10 Elimination step 4 sends an
-/// eliminated investigator's *scenario-owned* threat-area cards here — their
-/// **owned** weaknesses leave at step 1 instead, so they never arrive (#567).
-pub(super) fn discard_from_threat_area(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    instance_id: CardInstanceId,
-) -> bool {
-    let Some(inv) = cx.state.investigators.get_mut(&investigator) else {
-        return false;
-    };
-    let Some(pos) = inv
-        .threat_area
-        .iter()
-        .position(|c| c.instance_id == instance_id)
-    else {
-        return false;
-    };
-    let card = inv.threat_area.remove(pos);
-    cx.state.encounter_discard.push(card.code.clone());
-    cx.events.push(Event::CardDiscarded {
-        code: card.code,
-        from: Zone::ThreatArea,
-        to: DiscardPile::Encounter,
-    });
-    true
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,61 +232,5 @@ mod tests {
             e,
             Event::CardEnteredThreatArea { code, .. } if code.as_str() == "01164"
         )));
-    }
-
-    #[test]
-    fn discard_removes_instance_pushes_to_encounter_discard_and_emits() {
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .build();
-        let mut events = Vec::new();
-        let id = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            place_in_threat_area(
-                &mut cx,
-                InvestigatorId(1),
-                CardCode::new("01164"),
-                Owner::EncounterDeck,
-            )
-            .expect("placed")
-        };
-        events.clear();
-        let removed = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            discard_from_threat_area(&mut cx, InvestigatorId(1), id)
-        };
-        assert!(removed);
-        assert!(state.investigators[&InvestigatorId(1)]
-            .threat_area
-            .is_empty());
-        assert_eq!(state.encounter_discard, vec![CardCode::new("01164")]);
-        assert!(events.iter().any(|e| matches!(
-            e,
-            Event::CardDiscarded { from: Zone::ThreatArea, to: DiscardPile::Encounter, code } if code.as_str() == "01164"
-        )));
-    }
-
-    #[test]
-    fn discard_of_unknown_instance_is_a_no_op() {
-        let mut state = GameStateBuilder::new()
-            .with_investigator(test_support::test_investigator(1))
-            .build();
-        let mut events = Vec::new();
-        let removed = {
-            let mut cx = Cx {
-                state: &mut state,
-                events: &mut events,
-            };
-            discard_from_threat_area(&mut cx, InvestigatorId(1), CardInstanceId(999))
-        };
-        assert!(!removed);
-        assert!(events.is_empty());
-        assert!(state.encounter_discard.is_empty());
     }
 }
