@@ -12,8 +12,8 @@ use game_core::action::{Action, EngineRecord};
 use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
-    Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Zone,
+    Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken, DiscardPile, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Zone,
 };
 use game_core::test_support::{self, ScriptedResolver};
 use game_core::{assert_event, assert_event_count};
@@ -151,7 +151,7 @@ fn crypt_chill_with_an_asset_discards_the_asset_not_damage() {
     assert!(inv.discard.contains(&CardCode::new("01059")));
     assert_event!(
         result.events,
-        Event::CardDiscarded { investigator, code, from }
+        Event::CardDiscarded { code, from, to: DiscardPile::Investigator(investigator) }
             if *investigator == InvestigatorId(1)
                 && *code == CardCode::new("01059")
                 && *from == Zone::InPlay

@@ -38,8 +38,8 @@ use game_core::engine::{
 };
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, Status, Zone,
+    CardCode, CardInPlay, CardInstanceId, ChaosToken, DiscardPile, GameState, GameStateBuilder,
+    InvestigatorId, LocationId, Status, Zone,
 };
 use game_core::test_support::{self, ChoiceResolver, ScriptedResolver, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -229,7 +229,7 @@ fn elimination_discards_an_encounter_treachery_to_the_encounter_discard() {
         "a scenario-owned card must NOT be removed from the game by an \
          investigator's elimination"
     );
-    assert_event!(r.events, Event::CardDiscarded { code, from: Zone::ThreatArea, .. }
+    assert_event!(r.events, Event::CardDiscarded { code, from: Zone::ThreatArea, to: DiscardPile::Encounter }
         if code.as_str() == DISSONANT_VOICES);
 }
 

@@ -17,8 +17,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::scenario::ScenarioEnding;
 use crate::state::{
-    AbilityAddress, AbilitySource, CardCode, CardInstanceId, ChaosToken, EliminationCause, EnemyId,
-    InvestigatorId, LocationId, Phase, SkillKind, TokenResolution, UseKind, Zone,
+    AbilityAddress, AbilitySource, CardCode, CardInstanceId, ChaosToken, DiscardPile,
+    EliminationCause, EnemyId, InvestigatorId, LocationId, Phase, SkillKind, TokenResolution,
+    UseKind, Zone,
 };
 
 /// One state-change record emitted by the engine.
@@ -465,18 +466,21 @@ pub enum Event {
         /// The minted in-play instance id.
         instance_id: CardInstanceId,
     },
-    /// A card was discarded — moved from `from` to the investigator's
-    /// discard pile. Fires for played events after their on-play
-    /// effects resolve; future card effects ("discard a card from
-    /// your hand", "discard top of deck") emit this with the
-    /// matching `from` zone.
+    /// A card was discarded — moved from `from` to the discard pile `to`.
+    /// Fires for played events after their on-play effects resolve, for
+    /// discards from hand, from play, from a threat area and from a location
+    /// attachment, each with the matching `from` zone.
+    ///
+    /// Names the pile the card **landed in**, not a controller: an encounter
+    /// card has no investigator to name, and the pile is what a reader of the
+    /// log wants to follow.
     CardDiscarded {
-        /// The card's controller.
-        investigator: InvestigatorId,
         /// The discarded card code.
         code: CardCode,
         /// Where the card came from before landing in discard.
         from: Zone,
+        /// The discard pile the card landed in.
+        to: DiscardPile,
     },
     /// A card left play and was **removed from the game** rather than discarded
     /// (#772) — `glossary/Removed_from_Game.md`: *"A card that has been removed
@@ -491,11 +495,9 @@ pub enum Event {
     /// not place her into any discard pile)"*
     /// (<https://arkhamdb.com/card/01117>).
     ///
-    /// Names the *controller* the card left, not an owner: the owner is by
-    /// construction not a player here.
+    /// Names no investigator: the owner is by construction not a player here,
+    /// and a removed card need not have had a controller at all.
     CardRemovedFromGame {
-        /// The investigator who controlled the card as it left play.
-        investigator: InvestigatorId,
         /// The removed card code.
         code: CardCode,
         /// Where the card came from before leaving the game.

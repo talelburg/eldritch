@@ -7,8 +7,8 @@ use crate::event::FailureReason;
 use crate::scenario::{ResolutionId, ScenarioEnding, ScenarioId, ScenarioModule};
 use crate::state::{
     AbilityAddress, AbilitySource, Act, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EliminationCause, EnemyId, GameStateBuilder, InvestigatorId, Lifetime, LocationId, Phase,
-    RecordedModifier, SkillKind, SkillTestId, Status, TokenModifiers, TokenResolution, Zone,
+    DiscardPile, EliminationCause, EnemyId, GameStateBuilder, InvestigatorId, Lifetime, LocationId,
+    Phase, RecordedModifier, SkillKind, SkillTestId, Status, TokenModifiers, TokenResolution, Zone,
 };
 use crate::test_support::{self, ScriptedResolver, TestSession};
 use crate::{assert_event, assert_event_count, assert_event_sequence, assert_no_event};

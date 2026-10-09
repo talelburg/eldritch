@@ -18,8 +18,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
-    Investigator, InvestigatorId, Location, LocationId,
+    CardCode, CardInPlay, CardInstanceId, DiscardPile, Enemy, EnemyId, GameState, GameStateBuilder,
+    Investigator, InvestigatorId, Location, LocationId, Zone,
 };
 use game_core::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
@@ -315,6 +315,13 @@ fn barricade_discards_before_the_departure_lands() {
         r.events,
         Event::CardDiscarded { .. },
         Event::InvestigatorMoved { .. },
+    );
+    // A player card attached to a location goes to its player's discard, not
+    // the encounter discard.
+    assert_event!(
+        r.events,
+        Event::CardDiscarded { code, from: Zone::LocationAttachment, to: DiscardPile::Investigator(INV) }
+            if code.as_str() == BARRICADE
     );
     assert!(
         r.state.locations[&A].attachments.is_empty(),

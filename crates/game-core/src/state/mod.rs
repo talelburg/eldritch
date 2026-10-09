@@ -19,7 +19,9 @@ pub mod phase;
 
 pub use ability_source::{AbilityAddress, AbilitySource};
 pub use builder::GameStateBuilder;
-pub use card::{AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, UseKind, Zone};
+pub use card::{
+    AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, DiscardPile, UseKind, Zone,
+};
 pub use card_dsl::card_data::{SkillKind, Skills};
 pub use chaos_bag::{resolve_token, ChaosBag, ChaosToken, TokenModifiers, TokenResolution};
 pub use continuation::{
