@@ -11,7 +11,6 @@ fn start_scenario_advances_to_investigation_with_round_one() {
     // The full round-1 kickoff (active investigator set, PhaseStarted
     // fired) is covered by
     // `investigation_phase_tests::mulligan_completion_kicks_off_investigation_phase`.
-    test_support::install_test_registry();
     let state = GameStateBuilder::new().build();
     let roster = vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
@@ -109,7 +108,6 @@ fn start_scenario_on_already_started_state_is_rejected() {
 
 #[test]
 fn start_scenario_shuffles_each_deck_and_deals_initial_hand() {
-    test_support::install_test_registry();
     let state = GameStateBuilder::new().with_rng_seed(42).build();
     let roster = vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
@@ -149,7 +147,6 @@ fn start_scenario_shuffles_each_deck_and_deals_initial_hand() {
 
 #[test]
 fn start_scenario_with_empty_deck_yields_empty_hand_and_no_events() {
-    test_support::install_test_registry();
     let state = GameStateBuilder::new().build();
     let roster = vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
@@ -178,7 +175,6 @@ fn start_scenario_with_empty_deck_yields_empty_hand_and_no_events() {
 fn start_scenario_with_short_deck_draws_only_what_remains() {
     // Deck of 3, INITIAL_HAND_SIZE is 5: draw 3, deck empties, no
     // panic.
-    test_support::install_test_registry();
     let state = GameStateBuilder::new().with_rng_seed(7).build();
     let roster = vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
@@ -205,7 +201,6 @@ fn start_scenario_handles_multiple_investigators_deterministically() {
     // id assignment (1, 2, 3 sequentially); each gets their own deck +
     // hand independently. BTreeMap iteration is sorted so shuffle order
     // is deterministic.
-    test_support::install_test_registry();
     let state = GameStateBuilder::new().with_rng_seed(2026).build();
     let roster: Vec<RosterEntry> = (0..3)
         .map(|_| RosterEntry {
@@ -232,8 +227,6 @@ fn start_scenario_handles_multiple_investigators_deterministically() {
 
 #[test]
 fn seat_and_open_opens_mulligan_for_a_synthetic_roster() {
-    test_support::install_test_registry();
-
     let setup = GameStateBuilder::new().build(); // round 0, no investigators
     let roster = vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),
@@ -253,8 +246,6 @@ fn seat_and_open_opens_mulligan_for_a_synthetic_roster() {
 
 #[test]
 fn seat_and_open_rejects_an_unknown_investigator_code() {
-    test_support::install_test_registry();
-
     let setup = GameStateBuilder::new().build();
     let roster = vec![RosterEntry {
         investigator: CardCode::new("99999"),

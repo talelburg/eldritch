@@ -2,7 +2,6 @@ use super::*;
 
 #[test]
 fn heal_reduces_horror_saturating_and_emits_event() {
-    test_support::install_test_registry();
     let mut state = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))
         .build();
@@ -88,7 +87,6 @@ fn deal_damage_at_max_health_defeats_investigator() {
     // Effect::Deal and assert the investigator is Defeated and
     // InvestigatorEliminated is emitted. Pre-load 5 accumulated_damage so
     // 5 + 3 = 8 = defeated with a 3-damage deal.
-    test_support::install_test_registry();
     let id = InvestigatorId(1);
     let mut inv = test_support::test_investigator(1);
     inv.investigator_card.accumulated_damage = 5;

@@ -15,7 +15,6 @@ fn deck_shuffled_engine_record_with_unknown_investigator_is_rejected() {
 
 #[test]
 fn deck_shuffle_is_deterministic_across_replay() {
-    test_support::install_test_registry();
     let deck = make_test_deck(20);
     let state_a = GameStateBuilder::new().with_rng_seed(123).build();
     let state_b = GameStateBuilder::new().with_rng_seed(123).build();

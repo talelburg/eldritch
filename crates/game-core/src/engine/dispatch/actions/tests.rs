@@ -38,7 +38,6 @@ fn move_scenario_with_enemy(
     let l2 = LocationId(11);
     let enemy_id = EnemyId(100);
 
-    test_support::install_test_registry();
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(l1);
     inv.actions_remaining = 3;
@@ -121,7 +120,7 @@ fn move_with_lethal_aoo_suppresses_relocation_but_keeps_spent_action() {
 fn move_with_nonlethal_aoo_relocates_after_the_attack() {
     // Engaged enemy, 1 damage, investigator survives (8 health):
     // AoO deals damage, then the move resolves.
-    // No registry installed → no cancel/soak windows → no suspension.
+    // No ability in the test registry → no cancel/soak windows → no suspension.
     let (inv_id, _l1, l2, enemy_id, state) = move_scenario_with_enemy(1, 8);
 
     let result = test_support::take_turn_action(
@@ -176,7 +175,6 @@ fn move_into_enemy_scenario() -> (InvestigatorId, LocationId, EnemyId, GameState
     let l2 = LocationId(11);
     let enemy_id = EnemyId(100);
 
-    test_support::install_test_registry();
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(l1);
     inv.actions_remaining = 3;
@@ -308,8 +306,6 @@ fn investigate_scenario_with_enemy(
     inv_health: u8,
     attack_damage: u8,
 ) -> (InvestigatorId, LocationId, EnemyId, GameState) {
-    // Registry needed for max_health()/max_sanity() after cp2a.
-    test_support::install_test_registry();
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(10);
     let enemy_id = EnemyId(200);
@@ -428,8 +424,6 @@ fn resource_scenario_with_enemy(
     attack_damage: u8,
     inv_health: u8,
 ) -> (InvestigatorId, EnemyId, GameState) {
-    // Registry needed for max_health()/max_sanity() after cp2a.
-    test_support::install_test_registry();
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(10);
     let enemy_id = EnemyId(300);
@@ -607,8 +601,6 @@ fn engage_scenario_with_aoo_enemy(
     inv_health: u8,
     aoo_damage: u8,
 ) -> (InvestigatorId, EnemyId, EnemyId, GameState) {
-    // Registry needed for max_health()/max_sanity() after cp2a.
-    test_support::install_test_registry();
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(10);
     let target_id = EnemyId(400);

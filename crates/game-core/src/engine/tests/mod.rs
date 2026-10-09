@@ -67,8 +67,6 @@ fn bag_only_zero() -> ChaosBag {
 /// Bag is `Numeric(0)` so the test outcome depends purely on
 /// (intellect vs shroud).
 fn investigate_scenario(clues: u8, shroud: u8) -> (InvestigatorId, LocationId, GameState) {
-    // Registry needed for max_health()/max_sanity() after cp2a.
-    test_support::install_test_registry();
     let inv_id = InvestigatorId(1);
     let loc_id = LocationId(10);
     let mut inv = test_support::test_investigator(1);
@@ -97,8 +95,6 @@ fn make_test_deck(n: usize) -> Vec<CardCode> {
 /// connections back). Investigation phase, active investigator,
 /// 3 actions. Returns (investigator id, A id, B id, state).
 fn move_scenario() -> (InvestigatorId, LocationId, LocationId, GameState) {
-    // Registry needed for max_health()/max_sanity() after cp2a.
-    test_support::install_test_registry();
     let inv_id = InvestigatorId(1);
     let a = LocationId(10);
     let b = LocationId(11);

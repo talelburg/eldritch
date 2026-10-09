@@ -49,7 +49,6 @@ fn round_end_clears_round_scoped_skill_substitutions() {
 
 #[test]
 fn seat_and_open_rejects_an_empty_roster() {
-    test_support::install_test_registry();
     let state = GameStateBuilder::new().build();
     let result = engine::seat_and_open(state, &[]);
     assert!(
@@ -60,20 +59,16 @@ fn seat_and_open_rejects_an_empty_roster() {
 }
 
 // A non-empty roster whose entry cannot be resolved to investigator
-// stats rejects with state unchanged. game-core unit tests install no
-// real `CardRegistry`, so resolution fails — via the "no registry"
-// path, or (if another test in this binary already installed a fake
-// registry, since `card_registry::current()` is a process-global
-// `OnceLock`) via the "unknown code" path, as "01001" is not in the
-// fake. Either way it rejects; the registry-backed happy and
-// unknown-code paths are pinned deterministically by the
-// `crates/cards` integration test, which installs `cards::REGISTRY`.
+// stats rejects with state unchanged. game-core unit tests run against
+// the synthetic test registry, which knows no "01001", so resolution
+// fails on the unknown-code path. The registry-backed happy path is
+// pinned by the `crates/cards` integration test, which installs
+// `cards::REGISTRY`.
 /// `seat_and_open` shuffles the shared encounter deck (like the player
 /// decks) with the scenario-start RNG: the deck's multiset is preserved
 /// and `EncounterDeckShuffled` fires.
 #[test]
 fn start_scenario_shuffles_the_encounter_deck() {
-    test_support::install_test_registry();
     let mut state = GameStateBuilder::new().build();
     let codes = ["e1", "e2", "e3", "e4", "e5"];
     state.encounter_deck = codes.iter().map(|c| CardCode::new(*c)).collect();

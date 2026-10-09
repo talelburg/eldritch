@@ -72,7 +72,6 @@ fn end_turn_outside_investigation_phase_is_rejected() {
 fn last_end_turn_advances_to_mythos_and_pauses_for_draw_two_investigators() {
     let inv1 = InvestigatorId(1);
     let inv2 = InvestigatorId(2);
-    test_support::install_test_registry();
     let state = GameStateBuilder::new().build();
     let roster = vec![
         RosterEntry {
@@ -198,7 +197,6 @@ fn last_end_turn_advances_to_mythos_and_pauses_for_draw_solo() {
     // PAUSE. It does NOT complete the full cycle — that requires the
     // subsequent ResolveInput(Confirm) (needs registry, covered by
     // crates/cards/tests/mythos_phase.rs).
-    test_support::install_test_registry();
     let state = GameStateBuilder::new().build();
     let roster = vec![RosterEntry {
         investigator: CardCode::new(test_support::TEST_INV),

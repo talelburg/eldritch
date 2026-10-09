@@ -36,7 +36,7 @@ fn enemy_phase_runs_hunters_then_attack_loop_when_no_tie() {
         let o = end_turn(&mut cx);
         dispatch::drive(&mut cx, o)
     };
-    // No registry installed → the attack window auto-skips inline and the
+    // No ability in the test registry → the attack window auto-skips inline and the
     // cascade runs Enemy→Upkeep→Mythos within this same call, pausing at the
     // step-1.4 encounter-draw prompt (AwaitingInput). The hunter still moved
     // + engaged during step 3.2 — asserted via the event stream below.
@@ -117,7 +117,7 @@ fn enemy_phase_suspends_on_hunter_tie_then_resumes_into_attack_loop() {
         let o = dispatch::resolve_input(&mut cx, &InputResponse::PickSingle(pick));
         dispatch::drive(&mut cx, o) // slice 1b: complete the cascade
     };
-    // With no registry the attack window auto-skips and the cascade runs
+    // With no ability to offer the attack window auto-skips and the cascade runs
     // Enemy->Upkeep->Mythos within the same resume call, pausing at the
     // step-1.4 encounter-draw prompt (AwaitingInput).
     assert!(matches!(resumed, EngineOutcome::AwaitingInput { .. }));
@@ -258,8 +258,6 @@ fn resolve_attacks_for_investigator_excludes_exhausted_and_unengaged_enemies() {
 
 #[test]
 fn resolve_attacks_for_investigator_pick_overrides_enemy_id_order() {
-    test_support::install_test_registry();
-
     let inv_id = InvestigatorId(1);
 
     let mut e_lower = test_support::test_enemy(2, "Lower id"); // EnemyId(2), dmg 1
@@ -347,8 +345,6 @@ fn resolve_attacks_for_investigator_pick_overrides_enemy_id_order() {
 
 #[test]
 fn resolve_attacks_for_investigator_early_breaks_when_target_defeated_mid_loop() {
-    // Registry needed for max_health()/max_sanity() after cp2a.
-    test_support::install_test_registry();
     let inv_id = InvestigatorId(1);
 
     // EnemyId(1) deals the killing blow on its attack.

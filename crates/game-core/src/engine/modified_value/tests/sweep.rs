@@ -66,7 +66,6 @@ fn a_capacity_modifier_never_lands_on_a_skill() {
 /// and folds the same sweep over it.
 #[test]
 fn a_capacity_modifier_lands_on_max_health() {
-    test_support::install_test_registry();
     let (state, id) = state_with_cards_in_play(&["max-health-plus-1", "willpower-plus-1"]);
     let health = modified_value(
         &state,

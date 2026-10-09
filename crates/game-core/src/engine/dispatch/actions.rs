@@ -895,7 +895,7 @@ const BASIC_ACTION_COST: u8 = 1;
 ///
 /// The registry-optional wrapper around
 /// [`pending_action_surcharge`](crate::engine::evaluator::pending_action_surcharge):
-/// no registry (bare unit tests) means no card data, so no surcharge. Pure, so
+/// no registry, or no card data for a code, means no surcharge. Pure, so
 /// a caller can peek at the cost before deciding to pay it — which is what
 /// validate-first requires of both consumers.
 ///
@@ -938,7 +938,7 @@ pub(crate) fn action_cost(
 /// actions are spent and the surcharge sources are marked spent for the
 /// round. **Mutates on success**, so call it after every other precondition
 /// for the action has passed. Falls back to cost 1 with no surcharge when
-/// no registry is installed (bare unit tests). Shared by move/fight/evade.
+/// no registry is installed. Shared by move/fight/evade.
 fn charge_action(
     cx: &mut Cx,
     investigator: InvestigatorId,

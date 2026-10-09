@@ -3,7 +3,7 @@ use crate::state::{CardInstanceId, GameStateBuilder, LocationId, TimingPointFram
 use crate::test_support;
 
 const INV: InvestigatorId = InvestigatorId(1);
-/// Deliberately resolved by no registry — these tests install none. The
+/// Deliberately resolved by no registry — the test registry knows none. The
 /// withdrawal sweep moves candidates between frames and never looks a code
 /// up. The prefix is this module's, per ADR 0016.
 const CODE: &str = "_rw_reaction";

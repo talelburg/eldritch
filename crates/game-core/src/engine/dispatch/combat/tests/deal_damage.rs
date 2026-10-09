@@ -7,7 +7,6 @@ fn soak_and_place_with_no_soakers_matches_old_behavior() {
     // of 2 damage / 1 horror against an investigator controlling no
     // soak-bearing assets must land entirely on the investigator, just
     // as the pre-rewrite direct apply_damage/horror_numeric path did.
-    test_support::install_test_registry();
     let id = InvestigatorId(1);
     let inv = test_support::test_investigator(1);
     // max_health()/max_sanity() now read from the registry (TEST_INV = 8/8).
@@ -116,7 +115,6 @@ fn resume_damage_distribution_rejects_invalid_pick_and_keeps_frame() {
 /// exactly the gap this walk opens (ADR 0009).
 #[test]
 fn deal_damage_cursor_walks_distribute_announce_place_finish() {
-    test_support::install_test_registry();
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))

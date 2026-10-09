@@ -225,7 +225,7 @@ mod tests {
         state
     }
 
-    /// Flag off: the frame drives straight through (no registry ⇒ no reverse) and
+    /// Flag off: the frame drives straight through (no reverse served) and
     /// the agenda cursor bumps at Finalize, the frame popping itself.
     #[test]
     fn advance_reverse_drives_through_when_not_interactive() {
@@ -313,7 +313,6 @@ mod tests {
     /// `scenarios/tests/the_gathering_resolutions.rs`.
     #[test]
     fn a_terminal_act_pauses_on_the_flip_acknowledge_before_its_reverse_ends_the_scenario() {
-        test_support::install_test_registry();
         let mut state = state_advancing_act(true, AdvanceTrigger::Forced);
         // One act, and it is the one advancing — so it is the terminal one.
         state.act_deck = vec![Act {
@@ -378,8 +377,8 @@ mod tests {
 
     /// A terminal card whose reverse reaches no ending fails **loudly**, at the
     /// card rather than as a cursor running off the end of the deck (ADR 0013).
-    /// `_a1` is the only agenda here and no registry is installed, so its reverse
-    /// fires nothing — the shape a scenario author ships by forgetting the
+    /// `_a1` is the only agenda here and the test registry serves no reverse for
+    /// it, so its reverse fires nothing — the shape a scenario author ships by forgetting the
     /// `reach_resolution` on the last card's reverse.
     #[test]
     #[should_panic(expected = "terminal agenda 0 finished without an ending latched")]
@@ -399,7 +398,7 @@ mod tests {
     /// Deliberate + interactive: the advance was already the player's choice, so
     /// the frame skips the ack and drives straight to `FireReverse` — no pause,
     /// cursor not yet bumped (#558). Single-step `drive` so the frame doesn't run
-    /// all the way to Finalize (no registry ⇒ the reverse is a no-op).
+    /// all the way to Finalize (no reverse served ⇒ the reverse is a no-op).
     #[test]
     fn deliberate_interactive_advance_skips_the_ack() {
         let mut state = state_advancing_act(true, AdvanceTrigger::Deliberate);

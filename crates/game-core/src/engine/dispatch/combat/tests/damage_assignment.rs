@@ -39,12 +39,10 @@ fn assign_attack_overflows_to_investigator_past_capacity() {
 #[test]
 fn place_assignment_accumulates_on_asset_and_investigator() {
     // Pre-construct an Assignment placing 1 damage + 1 horror on an
-    // in-play asset and 1 damage on the investigator. Registry installed
-    // so max_health() / max_sanity() can resolve; TEST_INV = 8/8 and the
-    // investigator damage is 1 < 8, so no defeat fires.
+    // in-play asset and 1 damage on the investigator. TEST_INV = 8/8 and
+    // the investigator damage is 1 < 8, so no defeat fires.
     // Asset defeat-on-overflow needs the real `cards` registry and is
     // covered by the EU5 integration test.
-    test_support::install_test_registry();
 
     let id = InvestigatorId(1);
     let inst = CardInstanceId(7);
@@ -111,7 +109,6 @@ fn assign_attack_soaks_damage_and_horror_independently() {
 
 #[test]
 fn damage_application_accumulates_on_the_investigator_card() {
-    test_support::install_test_registry();
     let id = InvestigatorId(1);
     let mut state = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))

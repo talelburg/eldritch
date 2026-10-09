@@ -164,10 +164,6 @@ fn every_enumerated_action_is_accepted_by_its_handler() {
     // dispatch goes through `ResolveInput(PickSingle(OptionId))`, not the
     // typed arms). Apply to a fresh clone per action. The board has a
     // connected, revealed destination so a Move is enumerated and checked too.
-    //
-    // install_test_registry: EndTurn (and other actions) reads max_health /
-    // max_sanity on the investigator card; the test registry provides those.
-    test_support::install_test_registry();
     let mut state = GameStateBuilder::default()
         .with_investigator(test_support::test_investigator(1))
         // Investigate is applied below, and a skill test rejects on an empty
@@ -242,9 +238,6 @@ fn resolve_input_optionid_dispatches_enumerated_turn_action() {
     // EndTurn is always OptionId of its position in legal_actions; submitting it
     // via ResolveInput must dispatch (not reject) even while the open turn still
     // idles Done (pre-flip).
-    //
-    // install_test_registry: EndTurn reads max_health / max_sanity.
-    test_support::install_test_registry();
     let state = GameStateBuilder::default()
         .with_investigator(test_support::test_investigator(1))
         .open_turn(InvestigatorId(1))

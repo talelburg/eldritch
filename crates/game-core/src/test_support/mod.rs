@@ -186,6 +186,10 @@ pub fn metadata_for_test_inv(code: &CardCode) -> Option<&'static CardMetadata> {
 /// whose act/agenda deck ends in a terminal card — without the registry its
 /// reverse never fires and the advance finds no ending latched.
 ///
+/// game-core's own unit tests never call it: a `#[ctor]` installs it before
+/// that binary's harness runs. The callers are the other test binaries:
+/// game-core's integration tests and doctests, and other crates' tests.
+///
 /// One registry for the whole crate because `OnceLock<CardRegistry>` is
 /// process-global: a second per-test install would collide.
 pub fn install_test_registry() {
@@ -203,6 +207,21 @@ pub fn install_test_registry() {
             ..CardRegistry::EMPTY
         });
     });
+}
+
+/// Install [`install_test_registry`] before the harness `main` of game-core's
+/// own unit-test binary, the way every integration binary installs its registry
+/// from a `#[ctor]` (#473). No unit test calls the install itself: a per-test
+/// call is one to forget, and a test that forgot it passed in the full suite
+/// only because an earlier test had installed the registry, then failed when
+/// run on its own (#971).
+///
+/// `cfg(test)` scopes it to this crate's unit tests; integration binaries and
+/// other crates link game-core without it and keep installing their own.
+#[cfg(test)]
+#[ctor::ctor(unsafe)]
+fn install_for_unit_tests() {
+    install_test_registry();
 }
 
 pub use fixtures::{

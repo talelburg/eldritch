@@ -27,7 +27,7 @@ fn advance_current_act_non_terminal_bumps_cursor() {
     );
     assert_eq!(out, EngineOutcome::Done);
     // The advance is deferred to an AdvanceReverse frame (#482); drive it
-    // (no registry ⇒ the reverse fires nothing ⇒ it drives straight through).
+    // (the test registry serves no reverse for it ⇒ it drives straight through).
     dispatch::drive(&mut cx, EngineOutcome::Done);
     assert_eq!(state.act_index, 1);
     assert!(state.ending.is_none());
@@ -39,7 +39,6 @@ fn advance_current_act_non_terminal_bumps_cursor() {
 /// (ADR 0013).
 #[test]
 fn advance_current_act_on_a_terminal_act_lets_its_reverse_end_the_scenario() {
-    test_support::install_test_registry();
     let mut state = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))
         .with_turn_order([InvestigatorId(1)])
