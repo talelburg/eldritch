@@ -8,7 +8,7 @@
 //! fixture that fires twice where it should fire once shows up as the lead's
 //! ordering prompt (`TestSession::finish` refuses to finish at one).
 
-use card_dsl::card_data::{CardKind, CardMetadata};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{
     self, Ability, AttackerScope, EventPattern, EventTiming, InvestigatorTarget, SkillTestKind,
     TargetScope, TestOutcome, TestedLocationScope,
@@ -59,6 +59,13 @@ const GAME_END_WEAKNESS: &str = "_ts_game_end_weakness";
 const GAME_END_NON_WEAKNESS: &str = "_ts_game_end_non_weakness";
 /// *"Forced - At the end of the round"*, on whatever card prints it.
 const ON_ROUND_END: &str = "_ts_on_round_end";
+/// *"[reaction] After an enemy is defeated"*, wherever it is printed: deals 1
+/// horror to the investigator who used it, so the horror names who was offered
+/// the option they picked.
+const REACT_ON_DEFEAT: &str = "_ts_react_on_defeat";
+/// A cost-0 Fast event: *"Fast. Play after an enemy is defeated."*, dealing 1
+/// horror to the investigator who played it.
+const FAST_REACT_ON_DEFEAT: &str = "_ts_fast_react_on_defeat";
 
 fn treachery(code: &'static str, weakness: bool) -> CardMetadata {
     CardMetadata {
@@ -76,6 +83,39 @@ fn treachery(code: &'static str, weakness: bool) -> CardMetadata {
             quantity: 1,
         },
     }
+}
+
+fn fast_event(code: &'static str) -> CardMetadata {
+    CardMetadata {
+        code: code.to_owned(),
+        name: code.to_owned(),
+        traits: vec![],
+        text: None,
+        back_name: None,
+        back_text: None,
+        pack_code: "_test".to_owned(),
+        weakness: false,
+        kind: CardKind::Event {
+            class: Class::Neutral,
+            cost: Some(0),
+            xp: Some(0),
+            skill_icons: SkillIcons::default(),
+            is_fast: true,
+            deck_limit: 2,
+            play_only_during_turn: false,
+        },
+    }
+}
+
+fn react_on_defeat() -> Vec<Ability> {
+    vec![dsl::reaction_on_event(
+        EventPattern::EnemyDefeated {
+            by_controller: false,
+            code: None,
+        },
+        EventTiming::After,
+        dsl::deal_horror(InvestigatorTarget::You, 1u8),
+    )]
 }
 
 const MARK: &str = "test:mark-the-bound-investigator";
@@ -135,6 +175,9 @@ fn install_mock_registry() {
         .with_abilities(ON_ROUND_END, || {
             horror_on(EventPattern::RoundEnded, EventTiming::At)
         })
+        .with_abilities(REACT_ON_DEFEAT, react_on_defeat)
+        .with_abilities(FAST_REACT_ON_DEFEAT, react_on_defeat)
+        .with_card(fast_event(FAST_REACT_ON_DEFEAT))
         .install();
 }
 
@@ -515,5 +558,165 @@ fn a_board_wide_condition_reaches_every_kind_of_source_in_walk_order() {
             Some(OptionTarget::Act),
         ],
         "investigators, then locations, then enemies' attachments, then the act"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// #966: a reaction is offered to each investigator who can reach its source
+// (ADR 0010), and to nobody else.
+// ---------------------------------------------------------------------------
+
+/// The anchors of the options the reaction window offers after `event`.
+fn offered(state: GameState, event: TimingEvent) -> Vec<Option<OptionTarget>> {
+    TestSession::new(state)
+        .fire_at(event)
+        .prompt()
+        .options
+        .iter()
+        .map(|o| o.target.clone())
+        .collect()
+}
+
+/// Fire `event`, pick the `n`th reaction option, and return the state.
+fn react_with(state: GameState, event: TimingEvent, n: u32) -> GameState {
+    TestSession::new(state)
+        .fire_at(event)
+        .apply(Action::Player(PlayerAction::ResolveInput {
+            response: InputResponse::PickSingle(OptionId(n)),
+        }))
+        .state()
+        .clone()
+}
+
+#[test]
+fn a_reaction_on_a_co_located_location_is_offered_to_each_investigator_there() {
+    let mut state = table();
+    print_on_location(&mut state, 10, REACT_ON_DEFEAT);
+    assert_eq!(
+        offered(state.clone(), defeat(None)),
+        vec![
+            Some(OptionTarget::Location(LocationId(10))),
+            Some(OptionTarget::Location(LocationId(10))),
+        ],
+        "both investigators stand at the Study"
+    );
+    let first = react_with(state.clone(), defeat(None), 0);
+    assert_eq!((horror(&first, 1), horror(&first, 2)), (1, 0));
+    let second = react_with(state, defeat(None), 1);
+    assert_eq!((horror(&second, 1), horror(&second, 2)), (0, 1));
+}
+
+#[test]
+fn a_reaction_on_a_location_nobody_stands_at_is_not_offered() {
+    let mut state = table();
+    print_on_location(&mut state, 11, REACT_ON_DEFEAT);
+    let result = fire(state, defeat(None));
+    assert_eq!((horror(&result.state, 1), horror(&result.state, 2)), (0, 0));
+}
+
+#[test]
+fn a_reaction_on_another_investigators_asset_is_offered_only_to_its_controller() {
+    let mut state = table();
+    state
+        .investigators
+        .get_mut(&InvestigatorId(2))
+        .unwrap()
+        .cards_in_play
+        .push(instance(REACT_ON_DEFEAT, 80));
+    assert_eq!(
+        offered(state.clone(), defeat(None)),
+        vec![Some(OptionTarget::CardInstance(CardInstanceId(80)))],
+        "investigator 1 stands beside the asset but does not control it"
+    );
+    let after = react_with(state, defeat(None), 0);
+    assert_eq!((horror(&after, 1), horror(&after, 2)), (0, 1));
+}
+
+#[test]
+fn a_reaction_on_a_co_located_enemy_or_threat_area_card_is_offered_to_each_investigator_there() {
+    let mut state = table();
+    let mut enemy = test_support::test_enemy(3, "Ghoul");
+    enemy.code = CardCode::new(REACT_ON_DEFEAT);
+    enemy.current_location = Some(LocationId(10));
+    state.enemies.insert(EnemyId(3), enemy);
+    state
+        .investigators
+        .get_mut(&InvestigatorId(2))
+        .unwrap()
+        .threat_area
+        .push(instance(REACT_ON_DEFEAT, 90));
+    assert_eq!(
+        offered(state, defeat(None)),
+        vec![
+            Some(OptionTarget::CardInstance(CardInstanceId(90))),
+            Some(OptionTarget::CardInstance(CardInstanceId(90))),
+            Some(OptionTarget::Enemy(EnemyId(3))),
+            Some(OptionTarget::Enemy(EnemyId(3))),
+        ],
+    );
+}
+
+#[test]
+fn a_reaction_on_an_enemy_elsewhere_is_not_offered() {
+    let mut state = table();
+    let mut enemy = test_support::test_enemy(3, "Ghoul");
+    enemy.code = CardCode::new(REACT_ON_DEFEAT);
+    enemy.current_location = Some(LocationId(11));
+    state.enemies.insert(EnemyId(3), enemy);
+    let result = fire(state, defeat(None));
+    assert_eq!((horror(&result.state, 1), horror(&result.state, 2)), (0, 0));
+}
+
+#[test]
+fn a_reaction_on_the_agenda_is_offered_once_bound_to_the_lead() {
+    let mut state = table();
+    state.agenda_deck = vec![Agenda {
+        code: CardCode::new(REACT_ON_DEFEAT),
+        doom_threshold: 10,
+    }];
+    assert_eq!(
+        offered(state.clone(), defeat(None)),
+        vec![Some(OptionTarget::Agenda)]
+    );
+    let after = react_with(state, defeat(None), 0);
+    assert_eq!((horror(&after, 1), horror(&after, 2)), (1, 0));
+}
+
+#[test]
+fn reaction_options_are_grouped_by_investigator_then_board_then_act() {
+    let mut state = table();
+    for (id, inst) in [(2, 81), (1, 80)] {
+        state
+            .investigators
+            .get_mut(&InvestigatorId(id))
+            .unwrap()
+            .cards_in_play
+            .push(instance(REACT_ON_DEFEAT, inst));
+    }
+    state
+        .investigators
+        .get_mut(&InvestigatorId(1))
+        .unwrap()
+        .hand
+        .push(CardCode::new(FAST_REACT_ON_DEFEAT));
+    print_on_location(&mut state, 10, REACT_ON_DEFEAT);
+    state.act_deck = vec![Act {
+        code: CardCode::new(REACT_ON_DEFEAT),
+        clue_threshold: 10,
+    }];
+    assert_eq!(
+        offered(state, defeat(None)),
+        vec![
+            Some(OptionTarget::CardInstance(CardInstanceId(80))),
+            Some(OptionTarget::HandCardByCode {
+                investigator: InvestigatorId(1),
+                code: CardCode::new(FAST_REACT_ON_DEFEAT),
+            }),
+            Some(OptionTarget::CardInstance(CardInstanceId(81))),
+            Some(OptionTarget::Location(LocationId(10))),
+            Some(OptionTarget::Location(LocationId(10))),
+            Some(OptionTarget::Act),
+        ],
+        "each investigator's cards then hand, then the board, then the act"
     );
 }
