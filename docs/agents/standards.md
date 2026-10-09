@@ -9,7 +9,7 @@ Standards live in exactly one place each. A few have a home elsewhere — this f
 | Standard | Where |
 |---|---|
 | Validate-first / mutate-second handler contract, and the `apply_via` rollback that backstops it | [`architecture.md`](architecture.md) → Event-sourced state |
-| Card text and rules citation policy (read the vendored text locally, always read the FAQ, never fetch) | `CLAUDE.md` → Cite card text and rules from the vendored sources |
+| Card text and rules citation policy (read the vendored text locally, always read the FAQ, never fetch; a quoted ruling carries its `https://arkhamdb.com/card/<code>` URL, which review has caught missing from a doc comment and an ADR) | `CLAUDE.md` → Cite card text and rules from the vendored sources |
 | Running local checks with CI's exact strict flags | `CLAUDE.md` → Commands |
 | Domain vocabulary — use the glossary's words in names and test titles | `GLOSSARY.md` |
 | How the docs are written, not the code — the file to read before adding a rule to `CLAUDE.md` or writing an ADR, since both have a bar this file does not state | [`docs/agents/writing.md`](writing.md) |
@@ -114,6 +114,18 @@ A debug assertion on `ContinuationStack::push` backstops the class: pushing a ph
 Rust `///` comments attach to the *next* item, so an `Edit` whose `old_string` matches only the existing function's signature line drops the new function **between** that function's doc block and its `fn` — silently re-attaching the existing doc to the new function and leaving the existing one undocumented. Either include the whole `///` block in `old_string` and place the new function cleanly before it, or insert after an unambiguous boundary (the prior function's closing `}` plus a blank line) and then check that every `fn` still carries its own doc.
 
 **Why:** nothing is broken, only misattributed, so `RUSTDOCFLAGS="-D warnings" cargo doc` says nothing — this is caught by eye or not at all. Review caught the same mistake twice: `drive_fast_window` inserted above `enumerate_fast_plays` (#476), and `run_mythos_draws` above `anchor_on_child_pop` (#482).
+
+### Check `doc` and doctests after narrowing visibility or deleting a re-export
+
+Making a module private, demoting an item to `pub(crate)`, or deleting a re-export breaks two things `cargo check` and `cargo clippy` never compile: **intra-doc links** that named the item by its old path, and **doctests** that imported it through the old path. Both dangle in files the diff never touched. Run `scripts/ci-local.sh --only doc,test` before moving on.
+
+**Why:** the #900 import sweep (PR #910) ran a ten-minute full gauntlet three times, and each failed only on `doc` or a doctest: an unresolved link to `GameStateBuilder`, a `builder.rs` doctest importing through a deleted facade, and `card-dsl` links to `Ability`. #925 repeated the pattern: a public doc on `top_of` linked to the crate-private `top_mut`.
+
+### Remove a deleted symbol's mentions from the docs in the same PR
+
+When a diff deletes or renames a symbol, a module, or a mechanism, grep for its name across `docs/adr/`, `GLOSSARY.md`, `docs/agents/`, and `//!`/`///` comments. Bring every hit up to date in the same PR. An ADR describing the removed shape is **folded**, per [`writing.md`](writing.md) → Fold, don't append. If the deletion contradicts the decision itself, that is a gate (`CLAUDE.md` → Gates, item 3), not a fold. Review reads the diff's deletions for exactly this.
+
+**Why:** these mentions sit in files the diff never touched, so neither the compiler nor `cargo doc` sees them. PR #968 deleted `forced_point` and the per-zone collector scans. Its review then found ADR 0009 still calling a `forced_point()` returning `Some` "dead code", `initiation.rs` still describing collector arms, and `GLOSSARY.md` still pointing the reaction lead-proxy binding at `reaction_windows.rs`. Fixing them took a separate round after review.
 
 ### Let an absent derive speak for itself
 
