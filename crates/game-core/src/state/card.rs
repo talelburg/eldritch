@@ -78,10 +78,13 @@ pub enum Zone {
     /// location (Obscuring Fog 01168). Used as the `from` zone when an
     /// attachment is discarded.
     LocationAttachment,
-    /// A card **put into play at** a location, under no investigator's
-    /// control — act 01109b's *"Put the set-aside Lita Chantler into play in
-    /// the Parlor"*. Not an attachment: see
+    /// A card **put into play at** a location rather than into an
+    /// investigator's area — act 01109b's *"Put the set-aside Lita Chantler
+    /// into play in the Parlor"*. Not an attachment: see
     /// [`Event::CardPutIntoPlayAtLocation`](crate::event::Event::CardPutIntoPlayAtLocation).
+    /// A card that leaves this zone for a player's control (Lita after a
+    /// Parley) is in that player's play area from then on, so it leaves play
+    /// from [`InPlay`](Self::InPlay).
     AtLocation,
     /// A card attached to an enemy.
     EnemyAttachment,
@@ -90,11 +93,10 @@ pub enum Zone {
     /// Out of the game entirely.
     /// `glossary/Removed_from_Game.md`: *"A card that has been removed from the
     /// game is placed away from the game area and has no further interaction
-    /// with the game in any manner for the duration of its removal."* Used as
-    /// the `to` zone of
-    /// [`Event::CardRemovedFromGame`](crate::event::Event::CardRemovedFromGame) — the
-    /// zone the field docs above already anticipated (*"out-of-game zones land
-    /// when they're needed"*).
+    /// with the game in any manner for the duration of its removal."* No event
+    /// names it yet: [`Event::CardRemovedFromGame`](crate::event::Event::CardRemovedFromGame)
+    /// names only the zone a card was removed *from*, and nothing in the corpus
+    /// returns a removed card to the game.
     RemovedFromGame,
 }
 

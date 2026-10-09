@@ -8,11 +8,11 @@ use card_dsl::dsl::{ActionDesignator, Cost, Effect, Trigger, UsageLimit};
 
 use crate::card_registry;
 use crate::engine::dispatch::{
-    cards, combat, initiation, reaction_windows, threat_area, ActivateCheckResult,
+    combat, initiation, reaction_windows, threat_area, ActivateCheckResult,
 };
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::EngineOutcome;
-use crate::engine::{abilities_in_effect, ability_source, Cx};
+use crate::engine::{abilities_in_effect, ability_source, board, Cx};
 use crate::event::Event;
 use crate::state::{
     AbilityAddress, AbilitySource, ActionResolutionFrame, ActionResume, CandidateSource, CardCode,
@@ -377,10 +377,9 @@ fn pay_activation_costs(
                 // Unreachable today: `reject_incompatible_costs` refuses
                 // `DiscardSelf` alongside `Exhaust`/`SpendUses` at validation, so
                 // nothing can have removed the source before this arm runs. Kept
-                // because the alternative on a missing source is
-                // `discard_card_from_play`'s `unreachable!` — if that validation
-                // rejection is ever lifted, this is the difference between a
-                // rejection and a panic reachable from player input.
+                // so that, if that validation rejection is ever lifted, a missing
+                // source rejects with a reason naming the cost rather than
+                // reaching the discard at all.
                 let instance_id =
                     require_source_reachable(cx, investigator, source, cost, source_code)?
                         .instance_id;
@@ -426,7 +425,7 @@ fn require_source_reachable<'a>(
 ///
 /// The investigator card is the one reachable source that cannot be discarded —
 /// it is a permanent, and nothing in the rules removes it as a cost — so it
-/// rejects rather than reaching `discard_card_from_play`'s `unreachable!`. A
+/// rejects rather than reaching the in-play discard's `expect` below. A
 /// **panic reachable from player input must not ship**, and widening which
 /// sources an activation can name (#707) is what made that branch reachable.
 /// Deliberately unlifted with no tracking issue (YAGNI, as with
@@ -446,7 +445,7 @@ fn discard_source(
         .iter()
         .any(|c| c.instance_id == instance_id)
     {
-        cards::discard_card_from_play(cx, investigator, instance_id);
+        board::discard_from_play(cx, instance_id).expect("checked in cards_in_play above");
         return Ok(());
     }
     if threat_area::discard_from_threat_area(cx, investigator, instance_id) {

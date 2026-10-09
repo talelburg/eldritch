@@ -20,9 +20,8 @@ use card_dsl::card_data::{CardKind, SkillKind};
 use card_dsl::dsl::{self, Ability};
 use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
-use game_core::engine::{self, ChoiceResolution, Cx, EngineOutcome, OptionTarget};
-use game_core::event::Event;
-use game_core::state::{CardInstanceId, DiscardPile, InvestigatorId, Zone};
+use game_core::engine::{self, board, ChoiceResolution, Cx, EngineOutcome, OptionTarget};
+use game_core::state::{CardInstanceId, InvestigatorId};
 
 /// `ArkhamDB` code for Crypt Chill.
 pub const CODE: &str = "01167";
@@ -75,7 +74,7 @@ fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
                 reason: "01167 crypt-chill-fail: chosen_option out of range".into(),
             };
         };
-        return discard_asset_instance(cx, controller, instance);
+        return discard_asset_instance(cx, instance);
     }
 
     match engine::resolve_choice_count(assets.len(), cx.state.interactive_acknowledge) {
@@ -86,7 +85,7 @@ fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
             EngineOutcome::Done
         }
         // Exactly one → auto-discard, no input.
-        ChoiceResolution::Auto(i) => discard_asset_instance(cx, controller, assets[i]),
+        ChoiceResolution::Auto(i) => discard_asset_instance(cx, assets[i]),
         // 2+ → suspend for the controller's choice.
         ChoiceResolution::Suspend => {
             let options = assets
@@ -104,39 +103,22 @@ fn crypt_chill_fail(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
     }
 }
 
-/// Discard the named asset instance from the controller's play area.
-fn discard_asset_instance(
-    cx: &mut Cx,
-    controller: InvestigatorId,
-    instance: CardInstanceId,
-) -> EngineOutcome {
-    let Some(inv) = cx.state.investigators.get_mut(&controller) else {
-        return EngineOutcome::Rejected {
-            reason: "01167 crypt-chill-fail: controller not in state".into(),
-        };
-    };
-    let Some(pos) = inv
-        .cards_in_play
-        .iter()
-        .position(|c| c.instance_id == instance)
-    else {
-        return EngineOutcome::Rejected {
+/// Discard the chosen asset through the engine's discard-from-play exit, which
+/// files it by its **owner** — so a Parleyed Lita Chantler 01117 is removed
+/// from the game rather than discarded (#918, <https://arkhamdb.com/card/01117>).
+fn discard_asset_instance(cx: &mut Cx, instance: CardInstanceId) -> EngineOutcome {
+    match board::discard_from_play(cx, instance) {
+        Some(_) => EngineOutcome::Done,
+        None => EngineOutcome::Rejected {
             reason: "01167 crypt-chill-fail: chosen asset no longer in play".into(),
-        };
-    };
-    let code = inv.cards_in_play.remove(pos).code;
-    inv.discard.push(code.clone());
-    cx.events.push(Event::CardDiscarded {
-        code,
-        from: Zone::InPlay,
-        to: DiscardPile::Investigator(controller),
-    });
-    EngineOutcome::Done
+        },
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::Effect;
+    use game_core::event::Event;
     use game_core::state::{CardCode, CardInPlay, GameStateBuilder, Owner};
     use game_core::test_support;
 

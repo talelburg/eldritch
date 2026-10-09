@@ -43,6 +43,17 @@
 //! **The lookup is unfiltered.** It finds instances in an eliminated
 //! investigator's areas too: Cover Up's game-end trauma resolves at elimination
 //! step 0, after its holder has left `Active`, and must still find its card.
+//!
+//! # Leaving play
+//!
+//! [`discard_from_play`] and [`remove_from_game`] are the exits a card takes
+//! out of play, wherever it sits. Both file the card by its **owner** through
+//! one router and apply the Leaves Play consequences in the same step; see
+//! [`leave_play`].
+
+pub mod leave_play;
+
+pub use leave_play::{discard_from_play, remove_from_game, LeavingCard};
 
 use std::collections::BTreeMap;
 
@@ -335,24 +346,50 @@ pub fn find_instance_mut(
     instance_id: CardInstanceId,
 ) -> Option<(&mut CardInPlay, Placement)> {
     let (_, placement) = find_instance(state, instance_id)?;
-    let zone = match placement {
-        Placement::InvestigatorCard(id) => {
-            let card = &mut state.investigators.get_mut(&id)?.investigator_card;
-            return Some((card, placement));
-        }
-        Placement::PlayArea(id) => &mut state.investigators.get_mut(&id)?.cards_in_play,
-        Placement::ThreatArea(id) => &mut state.investigators.get_mut(&id)?.threat_area,
-        Placement::LocationAttachment(id) => &mut state.locations.get_mut(&id)?.attachments,
-        Placement::AtLocation(id) => &mut state.locations.get_mut(&id)?.cards_at_location,
-        Placement::EnemyAttachment(id) => &mut state.enemies.get_mut(&id)?.attachments,
-        // `find_instance` answers only with an instance's placement.
-        Placement::Location(_) | Placement::Enemy(_) | Placement::Act | Placement::Agenda => {
-            return None;
-        }
-    };
-    zone.iter_mut()
+    if let Placement::InvestigatorCard(id) = placement {
+        let card = &mut state.investigators.get_mut(&id)?.investigator_card;
+        return Some((card, placement));
+    }
+    instance_zone_mut(state, placement)?
+        .iter_mut()
         .find(|card| card.instance_id == instance_id)
         .map(|card| (card, placement))
+}
+
+/// Take the card instance `instance_id` off the board, with the [`Placement`]
+/// it left. `None` when it is not on the board, and for an investigator card,
+/// which is not in a zone a card can be taken out of.
+///
+/// The removal half of the leave-play exits in [`leave_play`]; a card taken
+/// out here and not filed somewhere is a card lost, so nothing else calls it.
+fn take_instance(
+    state: &mut GameState,
+    instance_id: CardInstanceId,
+) -> Option<(CardInPlay, Placement)> {
+    let (_, placement) = find_instance(state, instance_id)?;
+    let zone = instance_zone_mut(state, placement)?;
+    let index = zone
+        .iter()
+        .position(|card| card.instance_id == instance_id)?;
+    Some((zone.remove(index), placement))
+}
+
+/// The zone of card instances a [`Placement`] names, or `None` for a placement
+/// that is not one: an investigator card, a location, an enemy, the act and the
+/// agenda.
+fn instance_zone_mut(state: &mut GameState, placement: Placement) -> Option<&mut Vec<CardInPlay>> {
+    match placement {
+        Placement::PlayArea(id) => Some(&mut state.investigators.get_mut(&id)?.cards_in_play),
+        Placement::ThreatArea(id) => Some(&mut state.investigators.get_mut(&id)?.threat_area),
+        Placement::LocationAttachment(id) => Some(&mut state.locations.get_mut(&id)?.attachments),
+        Placement::AtLocation(id) => Some(&mut state.locations.get_mut(&id)?.cards_at_location),
+        Placement::EnemyAttachment(id) => Some(&mut state.enemies.get_mut(&id)?.attachments),
+        Placement::InvestigatorCard(_)
+        | Placement::Location(_)
+        | Placement::Enemy(_)
+        | Placement::Act
+        | Placement::Agenda => None,
+    }
 }
 
 #[cfg(test)]

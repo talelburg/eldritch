@@ -22,7 +22,7 @@
 //! `cards_in_play`, carrying its accumulated damage and horror, its uses pool
 //! and its per-ability usage counters with it. What it does *not* carry is a
 //! new owner, which is what later routes it out of the game rather than into a
-//! discard pile (`cards::discard_card_from_play`).
+//! discard pile ([`board::discard_from_play`](crate::engine::board::discard_from_play)).
 
 use crate::engine::dispatch::slots;
 use crate::engine::outcome::EngineOutcome;

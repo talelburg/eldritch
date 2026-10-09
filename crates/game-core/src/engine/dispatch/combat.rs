@@ -10,7 +10,7 @@ use crate::engine::dispatch::{cards, choice, elimination, emit, reaction_windows
 use crate::engine::outcome::{
     ChoiceOption, EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken,
 };
-use crate::engine::Cx;
+use crate::engine::{board, Cx};
 use crate::event::Event;
 use crate::state::{
     Assignment, AttackLoopFrame, AttackLoopStage, CardCode, CardInPlay, CardInstanceId,
@@ -316,10 +316,10 @@ fn find_controlled_mut(
 ///
 /// Reads printed health/sanity from the card registry; an asset whose
 /// metadata can't be resolved (no registry installed, or a non-asset
-/// kind) is never defeated here. For each defeated asset: remove it from
-/// `cards_in_play` and emit [`Event::CardDiscarded`] with
-/// `from: Zone::InPlay` (matching the discard event shape used elsewhere
-/// — see `dispatch/cards.rs`).
+/// kind) is never defeated here. Each defeated asset leaves play through
+/// [`board::discard_from_play`], which files it by its owner
+/// (`glossary/Defeat.md`: *"A defeated asset is placed on its owner's discard
+/// pile."*).
 ///
 /// The **investigator card** is the other soaker subject to the same
 /// `accumulated >= printed capacity` defeat rule (#448), but it is
@@ -358,7 +358,7 @@ fn defeat_overflowed_assets(cx: &mut Cx, investigator: InvestigatorId) {
 
     for inst in defeated {
         // RR p.7: a defeated asset goes to its owner's discard pile.
-        cards::discard_card_from_play(cx, investigator, inst);
+        board::discard_from_play(cx, inst).expect("soak defeat: the defeated asset is in play");
     }
 }
 

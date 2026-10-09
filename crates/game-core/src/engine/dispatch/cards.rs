@@ -18,8 +18,8 @@ use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    ActionResolutionFrame, ActionResume, AssetEntry, CardCode, CardInPlay, CardInstanceId,
-    DiscardPile, InvestigatorId, MulliganFrame, Owner, PlayFromHandFrame, Zone,
+    ActionResolutionFrame, ActionResume, AssetEntry, CardCode, CardInPlay, DiscardPile,
+    InvestigatorId, MulliganFrame, Owner, PlayFromHandFrame, Zone,
 };
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
@@ -373,87 +373,6 @@ pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Op
         to: DiscardPile::Investigator(investigator),
     });
     Some(card)
-}
-
-/// Take `instance_id` out of `investigator`'s `cards_in_play` and file it where
-/// its **owner** says. Shared by
-/// [`Cost::DiscardSelf`](card_dsl::dsl::Cost::DiscardSelf) payment, uses-depletion
-/// auto-discard, soak-defeat asset removal, and slot make-room (#498/#119). A
-/// missing instance is a state-corruption invariant violation (callers locate it
-/// first).
-///
-/// **Where a card goes when it leaves play is a question about its owner, not
-/// its controller** (#772). Those are the same investigator for every card in
-/// the corpus but one, so the ordinary case is unchanged — an owned card lands
-/// in its owner's discard with [`Event::CardDiscarded`] `{ from: Zone::InPlay }`.
-/// A card no investigator owns ([`Owner::Scenario`], or [`Owner::EncounterDeck`],
-/// which no card in a play area has in the corpus) has no discard pile here to
-/// land in and is removed from the game instead, with
-/// [`Event::CardRemovedFromGame`](crate::event::Event::CardRemovedFromGame). Lita
-/// Chantler 01117's ruling states the derivation
-/// (<https://arkhamdb.com/card/01117>): *"If Lita leaves play while a player
-/// controls her temporarily during 'The Gathering' scenario **(i.e. while she is
-/// technically not a part of that player's deck)**, remove her from the game (do
-/// not place her into any discard pile)."*
-///
-/// The parenthetical is why the question is *"whose is it"* rather than *"is it
-/// mine"*: a card another **player** owns is that player's to file, and
-/// `glossary/Ownership_and_Control.md` sends it to their pile — *"If a card
-/// would enter an out-of-play area that does not belong to the card's owner, the
-/// card is physically placed in its owner's equivalent out-of-play area
-/// instead."* Nothing in Core takes control off a teammate, but
-/// `control::take_control` accepts it, so the routing answers it rather than
-/// removing the card from the game by default.
-pub(in crate::engine) fn discard_card_from_play(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    instance_id: CardInstanceId,
-) {
-    let inv = cx
-        .state
-        .investigators
-        .get_mut(&investigator)
-        .expect("discard_card_from_play: investigator present");
-    let pos = inv
-        .cards_in_play
-        .iter()
-        .position(|c| c.instance_id == instance_id)
-        .unwrap_or_else(|| {
-            unreachable!("discard_card_from_play: instance {instance_id:?} not in cards_in_play")
-        });
-    let card = inv.cards_in_play.remove(pos);
-    place_card_leaving_play(cx, card);
-}
-
-/// File `card`, just taken out of play, by its **owner** —
-/// the routing [`discard_card_from_play`]'s docs describe.
-///
-/// Separated so the owner lookup can borrow `cx.state` fresh: the owner may be
-/// somebody other than the controller whose collection the card was removed
-/// from, and an owner who has left the game has no pile either.
-fn place_card_leaving_play(cx: &mut Cx, card: CardInPlay) {
-    let owners_pile = match card.owner {
-        Owner::Investigator(owner) => cx
-            .state
-            .investigators
-            .get_mut(&owner)
-            .map(|inv| (owner, inv)),
-        Owner::EncounterDeck | Owner::Scenario => None,
-    };
-    if let Some((owner, inv)) = owners_pile {
-        inv.discard.push(card.code.clone());
-        cx.events.push(Event::CardDiscarded {
-            code: card.code,
-            from: Zone::InPlay,
-            to: DiscardPile::Investigator(owner),
-        });
-    } else {
-        cx.state.removed_from_game.push(card.code.clone());
-        cx.events.push(Event::CardRemovedFromGame {
-            code: card.code,
-            from: Zone::InPlay,
-        });
-    }
 }
 
 /// Grant `amount` resources to `investigator`: saturating-add to the

@@ -14,7 +14,7 @@ use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::{cards, choice};
 use crate::engine::outcome::{EngineOutcome, InputRequest, OptionId, OptionTarget, ResumeToken};
-use crate::engine::Cx;
+use crate::engine::{board, Cx};
 use crate::state::{
     AssetEntry, CardCode, CardInPlay, CardInstanceId, GameState, InvestigatorId, SlotDiscardFrame,
 };
@@ -202,7 +202,7 @@ pub(in crate::engine) fn enter_asset_making_room(
         return prompt_slot_discard(cx, investigator, &deficit);
     }
     let (inst, _) = candidates[0];
-    cards::discard_card_from_play(cx, investigator, inst);
+    board::discard_from_play(cx, inst).expect("slot make-room: the candidate is in play");
     enter_asset_making_room(cx, investigator, card, entry)
 }
 
@@ -273,7 +273,7 @@ pub(super) fn resume_slot_discard(cx: &mut Cx, response: &InputResponse) -> Engi
     };
     // Valid: pop the frame we validated against, discard the choice, continue.
     cx.state.continuations.pop_expect::<SlotDiscardFrame>();
-    cards::discard_card_from_play(cx, investigator, inst);
+    board::discard_from_play(cx, inst).expect("slot make-room: the candidate is in play");
     enter_asset_making_room(cx, investigator, card, entry)
 }
 
