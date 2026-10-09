@@ -232,7 +232,7 @@ mod tests {
     use game_core::engine::evaluator::EvalContext;
     use game_core::state::{
         AbilitySource, CardCode, CardInPlay, CardInstanceId, Continuation, EnemyId, GameState,
-        GameStateBuilder, InvestigatorId, LocationId, SkillTestFollowUp, SkillTestId,
+        GameStateBuilder, InvestigatorId, LocationId, Owner, SkillTestFollowUp, SkillTestId,
     };
     use game_core::test_support;
 
@@ -342,6 +342,7 @@ mod tests {
         lita_controller.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new(super::CODE),
             CardInstanceId(9),
+            Owner::Investigator(InvestigatorId(1)),
         ));
 
         let mut other = test_support::test_investigator(2);

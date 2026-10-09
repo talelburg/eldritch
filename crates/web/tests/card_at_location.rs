@@ -20,6 +20,7 @@ use cards::REGISTRY;
 use game_core::engine::{ChoiceOption, EngineOutcome, OptionId, OptionTarget};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, GameState, GameStateBuilder, LocationId,
+    Owner as CardOwner,
 };
 use game_core::test_support;
 use leptos::prelude::*;
@@ -44,13 +45,17 @@ fn parlor_state(attached: bool) -> GameState {
     let mut parlor = test_support::test_location(5, "Parlor");
     parlor.code = CardCode::new("01115");
     parlor.revealed = true;
-    parlor
-        .cards_at_location
-        .push(CardInPlay::enter_play(CardCode::new("01117"), LITA));
+    parlor.cards_at_location.push(CardInPlay::enter_play(
+        CardCode::new("01117"),
+        LITA,
+        CardOwner::Scenario,
+    ));
     if attached {
-        parlor
-            .attachments
-            .push(CardInPlay::enter_play(CardCode::new("01168"), FOG));
+        parlor.attachments.push(CardInPlay::enter_play(
+            CardCode::new("01168"),
+            FOG,
+            CardOwner::EncounterDeck,
+        ));
     }
     let inv = test_support::test_investigator(1);
     GameStateBuilder::new()

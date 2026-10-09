@@ -53,7 +53,7 @@ use game_core::scenario::{
 };
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    DiscardPile, GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind,
+    DiscardPile, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind,
     TokenModifiers, TokenResolution, Zone,
 };
 use game_core::test_support::{self, ChoiceResolver, MockRegistry, TakeOneFastPlay};
@@ -234,6 +234,7 @@ fn board_with(in_play: &[&str], hand: &[&str], bag: ChaosBag) -> (GameState, Inv
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new(*code),
             CardInstanceId(u32::try_from(i).expect("a handful of mocks")),
+            Owner::Investigator(InvestigatorId(1)),
         ));
     }
 

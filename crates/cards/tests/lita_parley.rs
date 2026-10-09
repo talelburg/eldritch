@@ -57,8 +57,8 @@ use game_core::engine::{ApplyResult, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    ContinuationStack, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, SkillKind,
-    Zone,
+    ContinuationStack, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase,
+    SkillKind, Zone,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
 
@@ -129,7 +129,11 @@ fn board(token: ChaosToken) -> GameState {
         .get_mut(&PARLOR_ID)
         .expect("the Parlor is on the board")
         .cards_at_location
-        .push(CardInPlay::enter_play(CardCode::new(LITA), LITA_INST));
+        .push(CardInPlay::enter_play(
+            CardCode::new(LITA),
+            LITA_INST,
+            Owner::Scenario,
+        ));
     state
 }
 
@@ -308,6 +312,17 @@ fn taking_control_preserves_her_instance() {
     );
 }
 
+/// **Taking control leaves her the scenario's.** *"Taking control of her doesn't
+/// make her a part of your deck"* (<https://arkhamdb.com/card/01117>): she
+/// enters the investigator's play area still owned by the scenario.
+#[test]
+fn after_a_parley_she_is_still_scenario_owned() {
+    let result = drive_parley(board(ChaosToken::Numeric(0)));
+    let lita = &result.state.investigators[&INV].cards_in_play[0];
+    assert_eq!(lita.code.as_str(), LITA);
+    assert_eq!(lita.owner, Owner::Scenario);
+}
+
 /// **Gaining control contests the ally slot.** With Beat Cop already filling
 /// the investigator's one ally slot, the make-room machinery runs on the way in — and with
 /// exactly one occupier there is no choice to offer, so it is discarded
@@ -321,7 +336,11 @@ fn taking_control_makes_room_in_the_ally_slot() {
         .get_mut(&INV)
         .expect("investigator present")
         .cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(BEAT_COP), COP_INST).owned_by(Some(INV)));
+        .push(CardInPlay::enter_play(
+            CardCode::new(BEAT_COP),
+            COP_INST,
+            Owner::Investigator(INV),
+        ));
 
     let result = drive_parley(state);
     let inv = &result.state.investigators[&INV];

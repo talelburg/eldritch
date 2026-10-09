@@ -223,7 +223,7 @@ mod tests {
     use game_core::state::{
         Act, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, Agenda, CardCode, CardInPlay,
         CardInstanceId, ChaosToken, Continuation, GameStateBuilder, InvestigatorId,
-        TokenResolution, UseKind,
+        Owner as CardOwner, TokenResolution, UseKind,
     };
     use game_core::{card_registry, test_support};
 
@@ -273,7 +273,11 @@ mod tests {
     /// First Aid in play, so a `CardInstance` anchor resolves.
     fn board_with_first_aid() -> GameState {
         let mut inv = test_support::test_investigator(1);
-        let mut kit = CardInPlay::enter_play(CardCode::new(FIRST_AID), KIT);
+        let mut kit = CardInPlay::enter_play(
+            CardCode::new(FIRST_AID),
+            KIT,
+            CardOwner::Investigator(InvestigatorId(1)),
+        );
         kit.uses.insert(UseKind::Supplies, 3);
         inv.cards_in_play.push(kit);
         GameStateBuilder::new().with_investigator(inv).build()
@@ -330,12 +334,16 @@ mod tests {
         let lita = CardInstanceId(60);
         let fog = CardInstanceId(61);
         let mut parlor = test_support::test_location(5, "Parlor");
-        parlor
-            .cards_at_location
-            .push(CardInPlay::enter_play(CardCode::new("01117"), lita));
-        parlor
-            .attachments
-            .push(CardInPlay::enter_play(CardCode::new("01168"), fog));
+        parlor.cards_at_location.push(CardInPlay::enter_play(
+            CardCode::new("01117"),
+            lita,
+            CardOwner::Scenario,
+        ));
+        parlor.attachments.push(CardInPlay::enter_play(
+            CardCode::new("01168"),
+            fog,
+            CardOwner::EncounterDeck,
+        ));
         let game = GameStateBuilder::new()
             .with_investigator(test_support::test_investigator(1))
             .with_location(parlor)

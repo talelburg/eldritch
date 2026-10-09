@@ -83,7 +83,7 @@ use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 use game_core::card_registry::{EligibilityFn, NativeEffectFn};
 use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{self, Cx, EngineOutcome};
-use game_core::state::GameState;
+use game_core::state::{GameState, Owner};
 
 /// `ArkhamDB` code for Act 2, "The Barrier".
 pub const CODE: &str = "01109";
@@ -222,11 +222,15 @@ fn reverse(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     }
     // All checks passed — mutate, in the order the card prints.
     engine::reveal_location(cx, parlor);
-    let lita = engine::put_set_aside_card_into_play(cx, LITA_CHANTLER, Some(PARLOR));
+    // Lita has no pile to return to, so she is the scenario's; the Ghoul
+    // Priest is an encounter-set enemy, so he is the encounter deck's
+    // (`GLOSSARY.md`, **Owner / Controller**).
+    let lita =
+        engine::put_set_aside_card_into_play(cx, LITA_CHANTLER, Some(PARLOR), Owner::Scenario);
     if !matches!(lita, EngineOutcome::Done) {
         return lita;
     }
-    engine::put_set_aside_card_into_play(cx, GHOUL_PRIEST, Some(HALLWAY))
+    engine::put_set_aside_card_into_play(cx, GHOUL_PRIEST, Some(HALLWAY), Owner::EncounterDeck)
 }
 
 #[cfg(test)]

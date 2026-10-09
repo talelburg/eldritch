@@ -16,7 +16,7 @@ use game_core::event::{Event, TraumaKind};
 use game_core::scenario::ScenarioId;
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, TimingMode, TimingPointWindowFrame,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, TimingMode, TimingPointWindowFrame,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
 use game_core::{assert_event_sequence, assert_no_event};
@@ -36,7 +36,11 @@ fn install() {
 
 /// A Cover-Up instance carrying `clues`, pre-placed in the threat area.
 fn cover_up(clues: u8) -> CardInPlay {
-    let mut c = CardInPlay::enter_play(CardCode::new(COVER_UP), CardInstanceId(1));
+    let mut c = CardInPlay::enter_play(
+        CardCode::new(COVER_UP),
+        CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
+    );
     c.clues = clues;
     c
 }

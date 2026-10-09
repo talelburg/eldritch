@@ -32,7 +32,7 @@ use game_core::engine::{ApplyResult, OptionId};
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
-    GameStateBuilder, InvestigatorId, LocationId,
+    GameStateBuilder, InvestigatorId, LocationId, Owner,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 
@@ -88,6 +88,7 @@ fn board_with(codes: &[&str], location_clues: u8) -> GameState {
         inv.threat_area.push(CardInPlay::enter_play(
             CardCode::new(*code),
             CardInstanceId(u32::try_from(i).expect("fixture card count fits u32")),
+            Owner::EncounterDeck,
         ));
     }
     let mut location = test_support::test_location(10, "Study");

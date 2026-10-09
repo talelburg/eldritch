@@ -37,7 +37,7 @@ use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome};
 use game_core::event::Event;
-use game_core::state::{CardCode, DiscardPile, Zone};
+use game_core::state::{CardCode, DiscardPile, Owner, Zone};
 
 /// `ArkhamDB` code for Obscuring Fog.
 pub const CODE: &str = "01168";
@@ -106,7 +106,8 @@ fn limit1_attach(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
         });
         return EngineOutcome::Done;
     }
-    engine::attach_to_location(cx, loc_id, CardCode::new(CODE));
+    // Revealed from the encounter deck, so the encounter deck owns it.
+    engine::attach_to_location(cx, loc_id, CardCode::new(CODE), Owner::EncounterDeck);
     EngineOutcome::Done
 }
 

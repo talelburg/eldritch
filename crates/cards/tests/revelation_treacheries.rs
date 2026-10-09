@@ -13,7 +13,7 @@ use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     Agenda, CardCode, CardInPlay, CardInstanceId, ChaosToken, DiscardPile, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Zone,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, Zone,
 };
 use game_core::test_support::{self, ScriptedResolver};
 use game_core::{assert_event, assert_event_count};
@@ -138,6 +138,7 @@ fn crypt_chill_with_an_asset_discards_the_asset_not_damage() {
         .push(CardInPlay::enter_play(
             CardCode::new("01059"),
             CardInstanceId(1),
+            Owner::Investigator(InvestigatorId(1)),
         ));
 
     let result = reveal_top(state);
@@ -173,10 +174,12 @@ fn crypt_chill_with_two_assets_suspends_and_discards_the_chosen_one() {
         in_play.push(CardInPlay::enter_play(
             CardCode::new("01059"),
             CardInstanceId(1),
+            Owner::Investigator(InvestigatorId(1)),
         ));
         in_play.push(CardInPlay::enter_play(
             CardCode::new("01030"),
             CardInstanceId(2),
+            Owner::Investigator(InvestigatorId(1)),
         ));
     }
 

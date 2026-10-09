@@ -21,7 +21,7 @@ use game_core::engine::{ApplyResult, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -49,7 +49,11 @@ fn board(enemy_count: u32) -> GameState {
 fn board_with(engaged: u32, unengaged: u32) -> GameState {
     let mut inv = test_support::test_investigator(1);
     inv.skills.combat = 4;
-    let machete = CardInPlay::enter_play(CardCode::new(MACHETE), MACHETE_INST);
+    let machete = CardInPlay::enter_play(
+        CardCode::new(MACHETE),
+        MACHETE_INST,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     inv.cards_in_play.push(machete);
 
     let location = test_support::test_location(10, "Study");

@@ -10,7 +10,8 @@ use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers, UseKind,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, TokenModifiers,
+    UseKind,
 };
 use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -33,7 +34,11 @@ fn install() {
 fn board(loc_clues: u8) -> GameState {
     let mut inv = test_support::test_investigator(1);
     inv.skills.combat = 3;
-    let mut weapon = CardInPlay::enter_play(CardCode::new(SPECIAL), WEAPON_INST);
+    let mut weapon = CardInPlay::enter_play(
+        CardCode::new(SPECIAL),
+        WEAPON_INST,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     weapon.uses.insert(UseKind::Ammo, 4);
     inv.cards_in_play.push(weapon);
 

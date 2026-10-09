@@ -17,7 +17,8 @@ use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers, UseKind,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers,
+    UseKind,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -37,7 +38,11 @@ fn install() {
 fn board(intellect: i8, shroud: u8, revealed: bool) -> GameState {
     let mut inv = test_support::test_investigator(1);
     inv.skills.intellect = intellect;
-    let mut torch = CardInPlay::enter_play(CardCode::new(FLASHLIGHT), TORCH_INST);
+    let mut torch = CardInPlay::enter_play(
+        CardCode::new(FLASHLIGHT),
+        TORCH_INST,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     torch.uses.insert(UseKind::Supplies, 3);
     inv.cards_in_play.push(torch);
 
@@ -146,6 +151,7 @@ fn fogged_board(intellect: i8, shroud: u8) -> GameState {
         .push(CardInPlay::enter_play(
             CardCode::new(FOG),
             CardInstanceId(1),
+            Owner::EncounterDeck,
         ));
     state
 }

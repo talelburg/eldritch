@@ -12,7 +12,11 @@ fn discard_self_removes_threat_area_instance_to_encounter_discard() {
         .get_mut(&InvestigatorId(1))
         .unwrap()
         .threat_area
-        .push(CardInPlay::enter_play(CardCode::new("01165"), inst));
+        .push(CardInPlay::enter_play(
+            CardCode::new("01165"),
+            inst,
+            Owner::EncounterDeck,
+        ));
     let mut events = Vec::new();
     let outcome = {
         let mut cx = Cx {
@@ -40,6 +44,7 @@ fn discard_self_removes_location_attachment_to_encounter_discard() {
     loc.attachments.push(CardInPlay::enter_play(
         CardCode::new("01168"),
         CardInstanceId(9),
+        Owner::EncounterDeck,
     ));
     let mut state = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))

@@ -21,7 +21,7 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, TokenModifiers,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase, TokenModifiers,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 
@@ -145,7 +145,11 @@ fn board_with_enemies(
 
     let mut inv = test_support::test_investigator(1);
     inv.skills.combat = 3;
-    let mut weapon = CardInPlay::enter_play(CardCode::new(WEAPON), weapon_inst);
+    let mut weapon = CardInPlay::enter_play(
+        CardCode::new(WEAPON),
+        weapon_inst,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     weapon.uses.insert(UseKind::Ammo, 4); // seeded as play_card would
     inv.cards_in_play.push(weapon);
 
@@ -312,7 +316,11 @@ fn weapon_fight_rejects_an_enemy_at_a_different_location() {
 
     let mut inv = test_support::test_investigator(1);
     inv.skills.combat = 3;
-    let mut weapon = CardInPlay::enter_play(CardCode::new(WEAPON), weapon_inst);
+    let mut weapon = CardInPlay::enter_play(
+        CardCode::new(WEAPON),
+        weapon_inst,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     weapon.uses.insert(UseKind::Ammo, 4);
     inv.cards_in_play.push(weapon);
 
@@ -457,8 +465,11 @@ fn a_designated_fight_is_a_fight_action() {
         let (mut state, id, inst) = board_with_weapon(1);
         let card = state.investigators.get_mut(&id).expect("controller");
         card.cards_in_play.clear();
-        card.cards_in_play
-            .push(CardInPlay::enter_play(CardCode::new(BARE), inst));
+        card.cards_in_play.push(CardInPlay::enter_play(
+            CardCode::new(BARE),
+            inst,
+            Owner::Investigator(id),
+        ));
         (state, id, inst)
     }
 

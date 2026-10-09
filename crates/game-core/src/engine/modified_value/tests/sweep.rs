@@ -123,7 +123,15 @@ fn with_no_registry_only_the_base_answers() {
 fn granting_card_board(controlled: bool) -> (GameState, InvestigatorId) {
     let id = InvestigatorId(1);
     let loc = LocationId(3);
-    let card = CardInPlay::enter_play(CardCode::new("self-granting-combat"), CardInstanceId(0));
+    let card = CardInPlay::enter_play(
+        CardCode::new("self-granting-combat"),
+        CardInstanceId(0),
+        if controlled {
+            Owner::Investigator(id)
+        } else {
+            Owner::Scenario
+        },
+    );
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(loc);
     let mut location = test_support::test_location(3, "Study");

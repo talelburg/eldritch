@@ -10,7 +10,7 @@ use crate::card_registry;
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    CardCode, CardInPlay, CardInstanceId, DiscardPile, InvestigatorId, LocationId, Zone,
+    CardCode, CardInPlay, CardInstanceId, DiscardPile, InvestigatorId, LocationId, Owner, Zone,
 };
 
 /// Mint a fresh in-play instance of `code`: allocate its id, build the
@@ -20,28 +20,17 @@ use crate::state::{
 /// attachments and emits the zone-specific event.
 ///
 /// The single construction point shared by `place_in_threat_area`,
-/// `attach_to_location`, and `play_card`'s in-play branch ([#296]) — and, since
-/// #772, the single place a card's [`owner`](CardInPlay::owner) is written.
+/// `attach_to_location`, `put_into_play_at_location`, and `play_card`'s in-play
+/// branch ([#296]).
 ///
-/// `owner` is the player whose deck the card came from, `None` for a
-/// scenario-owned card. **It is not "who controls it"**: control is which
-/// collection the instance ends up in, and it can change later while the owner
-/// does not (`glossary/Ownership_and_Control.md`).
-///
-/// A card entering a *threat area* or a location's *attachment* zone is
-/// scenario-owned here, which is right for the encounter cards that occupy both
-/// zones in the corpus today and wrong for the two player cards that can —
-/// Cover Up 01007 (a weakness, threat area) and Barricade 01038 (a location
-/// attachment). Neither exit reads `owner`: only the `cards_in_play` exit
-/// (`cards::discard_card_from_play`) does. `TODO(#829)`: thread the real owner
-/// through those two zones when something reads it there.
+/// `owner` is the card's [`Owner`], which every caller states (#977): the
+/// player whose deck it came from, the encounter deck, or the scenario. **It is
+/// not "who controls it"**: control is which collection the instance ends up
+/// in, and it can change later while the owner does not
+/// (`glossary/Ownership_and_Control.md`).
 ///
 /// [#296]: https://github.com/talelburg/eldritch/issues/296
-pub(super) fn new_in_play_instance(
-    cx: &mut Cx,
-    code: CardCode,
-    owner: Option<InvestigatorId>,
-) -> CardInPlay {
+pub(super) fn new_in_play_instance(cx: &mut Cx, code: CardCode, owner: Owner) -> CardInPlay {
     let instance_id = cx.state.card_instance_ids.mint();
     let uses = card_registry::current()
         .and_then(|reg| (reg.metadata_for)(&code))
@@ -49,16 +38,20 @@ pub(super) fn new_in_play_instance(
             CardKind::Asset { uses, .. } => *uses,
             _ => None,
         });
-    let mut card = CardInPlay::enter_play(code, instance_id).owned_by(owner);
+    let mut card = CardInPlay::enter_play(code, instance_id, owner);
     if let Some(u) = uses {
         card.uses.insert(u.kind, u.count);
     }
     card
 }
 
-/// Place `code` into `investigator`'s threat area as a fresh in-play
-/// instance, minting an instance id from the per-state counter, and
+/// Place `code`, owned by `owner`, into `investigator`'s threat area as a fresh
+/// in-play instance, minting an instance id from the per-state counter, and
 /// emit [`Event::CardEnteredThreatArea`]. Returns the minted id.
+///
+/// The owner is the caller's to state, because a threat area holds both kinds:
+/// an encounter treachery is the encounter deck's, and a weakness such as Cover
+/// Up 01007 is its bearer's.
 ///
 /// No-op (returns `None`) if the investigator isn't in state — callers
 /// in dispatch have already validated the investigator exists, but the
@@ -73,11 +66,12 @@ pub fn place_in_threat_area(
     cx: &mut Cx,
     investigator: InvestigatorId,
     code: CardCode,
+    owner: Owner,
 ) -> Option<CardInstanceId> {
     if !cx.state.investigators.contains_key(&investigator) {
         return None;
     }
-    let card = new_in_play_instance(cx, code.clone(), None);
+    let card = new_in_play_instance(cx, code.clone(), owner);
     let instance_id = card.instance_id;
     let inv = cx
         .state
@@ -93,10 +87,13 @@ pub fn place_in_threat_area(
     Some(instance_id)
 }
 
-/// Attach `code` to `location` as a fresh in-play instance, minting an
-/// instance id from the per-state counter, and emit
+/// Attach `code`, owned by `owner`, to `location` as a fresh in-play instance,
+/// minting an instance id from the per-state counter, and emit
 /// [`Event::CardAttachedToLocation`]. Returns the minted id, or `None`
 /// if the location isn't in state.
+///
+/// The owner is the caller's to state: Obscuring Fog 01168 is the encounter
+/// deck's, and a played Barricade 01038 is its player's.
 ///
 /// **No limit enforcement** — "Limit 1 per location" is printed on
 /// specific cards (Obscuring Fog 01168), not a property of all
@@ -111,11 +108,12 @@ pub fn attach_to_location(
     cx: &mut Cx,
     location: LocationId,
     code: CardCode,
+    owner: Owner,
 ) -> Option<CardInstanceId> {
     if !cx.state.locations.contains_key(&location) {
         return None;
     }
-    let card = new_in_play_instance(cx, code.clone(), None);
+    let card = new_in_play_instance(cx, code.clone(), owner);
     let instance_id = card.instance_id;
     let loc = cx
         .state
@@ -131,8 +129,8 @@ pub fn attach_to_location(
     Some(instance_id)
 }
 
-/// Put `code` into play **at** `location` as a fresh in-play instance
-/// under no investigator's control, minting an instance id from the
+/// Put `code`, owned by `owner`, into play **at** `location` as a fresh in-play
+/// instance under no investigator's control, minting an instance id from the
 /// per-state counter, and emit [`Event::CardPutIntoPlayAtLocation`].
 /// Returns the minted id, or `None` if the location isn't in state.
 ///
@@ -153,11 +151,12 @@ pub(super) fn put_into_play_at_location(
     cx: &mut Cx,
     location: LocationId,
     code: CardCode,
+    owner: Owner,
 ) -> Option<CardInstanceId> {
     if !cx.state.locations.contains_key(&location) {
         return None;
     }
-    let card = new_in_play_instance(cx, code.clone(), None);
+    let card = new_in_play_instance(cx, code.clone(), owner);
     let instance_id = card.instance_id;
     let loc = cx
         .state
@@ -226,7 +225,12 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            attach_to_location(&mut cx, LocationId(7), CardCode::new("01168"))
+            attach_to_location(
+                &mut cx,
+                LocationId(7),
+                CardCode::new("01168"),
+                Owner::EncounterDeck,
+            )
         };
         assert_eq!(id, Some(CardInstanceId(0)));
         let loc = &state.locations[&LocationId(7)];
@@ -250,7 +254,12 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            place_in_threat_area(&mut cx, InvestigatorId(1), CardCode::new("01164"))
+            place_in_threat_area(
+                &mut cx,
+                InvestigatorId(1),
+                CardCode::new("01164"),
+                Owner::EncounterDeck,
+            )
         };
         assert_eq!(id, Some(CardInstanceId(0)));
         let inv = &state.investigators[&InvestigatorId(1)];
@@ -273,8 +282,13 @@ mod tests {
                 state: &mut state,
                 events: &mut events,
             };
-            place_in_threat_area(&mut cx, InvestigatorId(1), CardCode::new("01164"))
-                .expect("placed")
+            place_in_threat_area(
+                &mut cx,
+                InvestigatorId(1),
+                CardCode::new("01164"),
+                Owner::EncounterDeck,
+            )
+            .expect("placed")
         };
         events.clear();
         let removed = {

@@ -19,7 +19,7 @@ use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     ActionResolutionFrame, ActionResume, AssetEntry, CardCode, CardInPlay, CardInstanceId,
-    DiscardPile, InvestigatorId, MulliganFrame, PlayFromHandFrame, Zone,
+    DiscardPile, InvestigatorId, MulliganFrame, Owner, PlayFromHandFrame, Zone,
 };
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
@@ -213,10 +213,12 @@ pub(in crate::engine) fn resolve_drawn_weaknesses(cx: &mut Cx, investigator: Inv
             .map(|a| a.effect)
             .collect();
         if !effects.is_empty() {
+            // A weakness drawn from `investigator`'s deck is theirs: they are
+            // its bearer (`glossary/Weakness.md`).
             evaluator::push_effect(
                 cx,
                 &Effect::Seq(effects),
-                EvalContext::for_controller(investigator),
+                EvalContext::for_revelation(investigator, Owner::Investigator(investigator)),
             );
         }
     }
@@ -384,8 +386,9 @@ pub fn discard_random_from_hand(cx: &mut Cx, investigator: InvestigatorId) -> Op
 /// its controller** (#772). Those are the same investigator for every card in
 /// the corpus but one, so the ordinary case is unchanged — an owned card lands
 /// in its owner's discard with [`Event::CardDiscarded`] `{ from: Zone::InPlay }`.
-/// A **scenario-owned** card (`owner: None`) has no discard pile to land in and
-/// is removed from the game instead, with
+/// A card no investigator owns ([`Owner::Scenario`], or [`Owner::EncounterDeck`],
+/// which no card in a play area has in the corpus) has no discard pile here to
+/// land in and is removed from the game instead, with
 /// [`Event::CardRemovedFromGame`](crate::event::Event::CardRemovedFromGame). Lita
 /// Chantler 01117's ruling states the derivation
 /// (<https://arkhamdb.com/card/01117>): *"If Lita leaves play while a player
@@ -429,12 +432,14 @@ pub(in crate::engine) fn discard_card_from_play(
 /// somebody other than the controller whose collection the card was removed
 /// from, and an owner who has left the game has no pile either.
 fn place_card_leaving_play(cx: &mut Cx, card: CardInPlay) {
-    let owners_pile = card.owner.and_then(|owner| {
-        cx.state
+    let owners_pile = match card.owner {
+        Owner::Investigator(owner) => cx
+            .state
             .investigators
             .get_mut(&owner)
-            .map(|inv| (owner, inv))
-    });
+            .map(|inv| (owner, inv)),
+        Owner::EncounterDeck | Owner::Scenario => None,
+    };
     if let Some((owner, inv)) = owners_pile {
         inv.discard.push(card.code.clone());
         cx.events.push(Event::CardDiscarded {
@@ -1138,7 +1143,8 @@ pub(super) fn dispose_play_from_hand(cx: &mut Cx) -> EngineOutcome {
         PlayDestination::InPlay => {
             // Play from hand mints the instance here, at the door: the card is
             // its owner's, so the mint carries that ownership in.
-            let instance = threat_area::new_in_play_instance(cx, card, Some(investigator));
+            let instance =
+                threat_area::new_in_play_instance(cx, card, Owner::Investigator(investigator));
             slots::enter_asset_making_room(cx, investigator, instance, AssetEntry::PlayedFromHand)
         }
     }

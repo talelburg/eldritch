@@ -41,6 +41,7 @@ use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{self, Cx, EngineOutcome};
 use game_core::event::Event;
+use game_core::state::Owner;
 
 /// `ArkhamDB` code for Act 1, "Trapped".
 pub const CODE: &str = "01108";
@@ -101,7 +102,8 @@ fn board_build(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
     // Put the set-aside rooms into play; each mints its id and wires its
     // printed connections to the rooms already there.
     for code in ROOMS {
-        match engine::put_set_aside_card_into_play(cx, code, None) {
+        // A location records no owner, so the owner argument is unused here.
+        match engine::put_set_aside_card_into_play(cx, code, None, Owner::Scenario) {
             EngineOutcome::Done => {}
             other => return other,
         }

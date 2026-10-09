@@ -19,7 +19,7 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{ApplyResult, Cx, EngineOutcome, OptionId, OptionTarget, TimingEvent};
 use game_core::state::{
     Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Status, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, Status, TokenModifiers,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 
@@ -202,8 +202,8 @@ fn table() -> GameState {
         .build()
 }
 
-fn instance(code: &str, id: u32) -> CardInPlay {
-    CardInPlay::enter_play(CardCode::new(code), CardInstanceId(id))
+fn instance(code: &str, id: u32, owner: Owner) -> CardInPlay {
+    CardInPlay::enter_play(CardCode::new(code), CardInstanceId(id), owner)
 }
 
 fn print_on_location(state: &mut GameState, location: u32, code: &str) {
@@ -252,7 +252,11 @@ fn an_in_play_assets_forced_ability_fires_on_an_enemy_defeat_bound_to_its_contro
         .get_mut(&InvestigatorId(2))
         .unwrap()
         .cards_in_play
-        .push(instance(ON_DEFEAT, 50));
+        .push(instance(
+            ON_DEFEAT,
+            50,
+            Owner::Investigator(InvestigatorId(2)),
+        ));
     let result = fire(state, defeat(Some(1)));
     assert_eq!(horror(&result.state, 2), 1, "its controller takes it");
     assert_eq!(horror(&result.state, 1), 0);
@@ -327,7 +331,7 @@ fn leaving_a_location_fires_only_its_attachments_ability() {
             .get_mut(&LocationId(loc))
             .unwrap()
             .attachments
-            .push(instance(ON_LEAVE, inst));
+            .push(instance(ON_LEAVE, inst, Owner::EncounterDeck));
     }
     let result = fire(
         state,
@@ -352,11 +356,11 @@ fn investigating_a_location_fires_only_its_attachments_ability() {
     studied.clues = 1;
     studied
         .attachments
-        .push(instance(ON_ATTACHED_INVESTIGATED, 70));
+        .push(instance(ON_ATTACHED_INVESTIGATED, 70, Owner::EncounterDeck));
     let mut elsewhere = test_support::test_location(11, "Hallway");
     elsewhere
         .attachments
-        .push(instance(ON_ATTACHED_INVESTIGATED, 71));
+        .push(instance(ON_ATTACHED_INVESTIGATED, 71, Owner::EncounterDeck));
     let state = GameStateBuilder::new()
         .open_turn(InvestigatorId(1))
         .with_investigator(inv)
@@ -417,7 +421,7 @@ fn the_end_of_a_turn_fires_only_the_ending_investigators_card() {
             .get_mut(&InvestigatorId(id))
             .unwrap()
             .threat_area
-            .push(instance(ON_END_OF_TURN, 80 + id));
+            .push(instance(ON_END_OF_TURN, 80 + id, Owner::EncounterDeck));
     }
     let result = fire(
         state,
@@ -468,7 +472,11 @@ fn elimination_fires_only_the_eliminated_investigators_weaknesses() {
             .get_mut(&InvestigatorId(id))
             .unwrap()
             .threat_area
-            .push(instance(GAME_END_WEAKNESS, 90 + id));
+            .push(instance(
+                GAME_END_WEAKNESS,
+                90 + id,
+                Owner::Investigator(InvestigatorId(id)),
+            ));
     }
     // Neither of these is "a weakness the eliminated investigator owns": a
     // non-weakness in their own play area, and the weakness's ability printed
@@ -478,7 +486,11 @@ fn elimination_fires_only_the_eliminated_investigators_weaknesses() {
         .get_mut(&InvestigatorId(2))
         .unwrap()
         .cards_in_play
-        .push(instance(GAME_END_NON_WEAKNESS, 95));
+        .push(instance(
+            GAME_END_NON_WEAKNESS,
+            95,
+            Owner::Investigator(InvestigatorId(2)),
+        ));
     print_on_location(&mut state, 10, GAME_END_WEAKNESS);
     state
         .investigators
@@ -509,7 +521,7 @@ fn an_eliminated_investigators_cards_are_not_walked() {
             .get_mut(&InvestigatorId(id))
             .unwrap()
             .threat_area
-            .push(instance(ON_ROUND_END, 100 + id));
+            .push(instance(ON_ROUND_END, 100 + id, Owner::EncounterDeck));
     }
     state
         .investigators
@@ -533,10 +545,12 @@ fn a_board_wide_condition_reaches_every_kind_of_source_in_walk_order() {
         .get_mut(&InvestigatorId(2))
         .unwrap()
         .threat_area
-        .push(instance(ON_ROUND_END, 110));
+        .push(instance(ON_ROUND_END, 110, Owner::EncounterDeck));
     print_on_location(&mut state, 10, ON_ROUND_END);
     let mut enemy = test_support::test_enemy(3, "Ghoul");
-    enemy.attachments.push(instance(ON_ROUND_END, 111));
+    enemy
+        .attachments
+        .push(instance(ON_ROUND_END, 111, Owner::EncounterDeck));
     state.enemies.insert(EnemyId(3), enemy);
     state.act_deck = vec![Act {
         code: CardCode::new(ON_ROUND_END),
@@ -622,7 +636,11 @@ fn a_reaction_on_another_investigators_asset_is_offered_only_to_its_controller()
         .get_mut(&InvestigatorId(2))
         .unwrap()
         .cards_in_play
-        .push(instance(REACT_ON_DEFEAT, 80));
+        .push(instance(
+            REACT_ON_DEFEAT,
+            80,
+            Owner::Investigator(InvestigatorId(2)),
+        ));
     assert_eq!(
         offered(state.clone(), defeat(None)),
         vec![Some(OptionTarget::CardInstance(CardInstanceId(80)))],
@@ -644,7 +662,7 @@ fn a_reaction_on_a_co_located_enemy_or_threat_area_card_is_offered_to_each_inves
         .get_mut(&InvestigatorId(2))
         .unwrap()
         .threat_area
-        .push(instance(REACT_ON_DEFEAT, 90));
+        .push(instance(REACT_ON_DEFEAT, 90, Owner::EncounterDeck));
     assert_eq!(
         offered(state, defeat(None)),
         vec![
@@ -691,7 +709,11 @@ fn reaction_options_are_grouped_by_investigator_then_board_then_act() {
             .get_mut(&InvestigatorId(id))
             .unwrap()
             .cards_in_play
-            .push(instance(REACT_ON_DEFEAT, inst));
+            .push(instance(
+                REACT_ON_DEFEAT,
+                inst,
+                Owner::Investigator(InvestigatorId(id)),
+            ));
     }
     state
         .investigators

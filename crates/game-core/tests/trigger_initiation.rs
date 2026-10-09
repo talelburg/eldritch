@@ -16,7 +16,7 @@ use game_core::engine::{Cx, EngineOutcome, OptionTarget, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
     Assignment, CardCode, CardInPlay, CardInstanceId, DamageSource, EnemyId, GameState,
-    GameStateBuilder, Investigator, InvestigatorId, LocationId,
+    GameStateBuilder, Investigator, InvestigatorId, LocationId, Owner,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 
@@ -141,9 +141,11 @@ fn instance(i: usize) -> CardInstanceId {
 fn holding(codes: &[&str]) -> Investigator {
     let mut investigator = test_support::test_investigator(1);
     for (i, code) in codes.iter().enumerate() {
-        investigator
-            .threat_area
-            .push(CardInPlay::enter_play(CardCode::new(*code), instance(i)));
+        investigator.threat_area.push(CardInPlay::enter_play(
+            CardCode::new(*code),
+            instance(i),
+            Owner::EncounterDeck,
+        ));
     }
     investigator
 }

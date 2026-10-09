@@ -28,7 +28,7 @@ use game_core::engine::{ApplyResult, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, SkillKind, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, Owner, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, TakeOneFastPlay};
 use game_core::{assert_event, assert_no_event};
@@ -55,6 +55,7 @@ fn state_with_hyperawareness() -> (GameState, InvestigatorId, CardInstanceId) {
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(HYPERAWARENESS),
         instance_id,
+        Owner::Investigator(InvestigatorId(1)),
     ));
 
     let state = GameStateBuilder::new()

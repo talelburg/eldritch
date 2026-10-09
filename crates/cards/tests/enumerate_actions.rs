@@ -10,7 +10,8 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::state::{
     AbilityAddress, AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
-    ChaosToken, EnemyId, GameStateBuilder, Investigator, InvestigatorId, LocationId, UseKind,
+    ChaosToken, EnemyId, GameStateBuilder, Investigator, InvestigatorId, LocationId, Owner,
+    UseKind,
 };
 use game_core::test_support;
 
@@ -55,7 +56,11 @@ fn play_card_offered_for_a_playable_hand_card() {
 /// Flashlight in play with 3 Supplies uses, ready — its `ability_index: 0`
 /// activated ability is usable.
 fn flashlight_in_play(instance: CardInstanceId) -> CardInPlay {
-    let mut torch = CardInPlay::enter_play(CardCode::new(FLASHLIGHT), instance);
+    let mut torch = CardInPlay::enter_play(
+        CardCode::new(FLASHLIGHT),
+        instance,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     torch.uses.insert(UseKind::Supplies, 3);
     torch
 }

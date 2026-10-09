@@ -4,7 +4,7 @@
 use card_dsl::card_data::Prey;
 use serde::{Deserialize, Serialize};
 
-use crate::state::{CardCode, CardInPlay, InvestigatorId, LocationId};
+use crate::state::{CardCode, CardInPlay, InvestigatorId, LocationId, Owner};
 
 crate::state::define_id! {
     /// Stable identifier for an enemy within a scenario.
@@ -97,6 +97,13 @@ pub struct Enemy {
     /// and no enemy counterpart — so it is empty on every board the
     /// engine builds today. Required on the wire (#453).
     pub attachments: Vec<CardInPlay>,
+    /// **Who owns this enemy** — the same three-valued [`Owner`] a card in
+    /// play carries, fixed when the enemy enters play. An enemy drawn from the
+    /// encounter deck is the encounter deck's; a weakness enemy is its
+    /// bearer's (`glossary/Weakness.md`: *"The bearer of a weakness is the
+    /// investigator who started the game with the weakness in his or her deck
+    /// or play area."*). Required on the wire (#453).
+    pub owner: Owner,
 }
 
 #[cfg(test)]
@@ -125,6 +132,7 @@ mod hunter_prey_field_tests {
             code: CardCode::new("01116"),
             victory: Some(2),
             attachments: Vec::new(),
+            owner: Owner::EncounterDeck,
         };
         assert!(e.hunter);
         assert_eq!(e.prey, Prey::Default);

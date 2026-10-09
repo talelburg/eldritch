@@ -18,7 +18,7 @@ use card_dsl::dsl::{self, EventPattern, EventTiming};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{Cx, EngineOutcome, OptionTarget};
 use game_core::state::{
-    Act, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId,
+    Act, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, Owner,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 
@@ -75,6 +75,7 @@ fn round_end_window() -> TestSession {
     investigator.threat_area.push(CardInPlay::enter_play(
         CardCode::new(TEST_X),
         CardInstanceId(0),
+        Owner::EncounterDeck,
     ));
     let mut state = GameStateBuilder::new()
         .ending_upkeep_phase()

@@ -19,7 +19,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, DiscardPile, Enemy, EnemyId, GameState, GameStateBuilder,
-    Investigator, InvestigatorId, Location, LocationId, Zone,
+    Investigator, InvestigatorId, Location, LocationId, Owner, Zone,
 };
 use game_core::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
@@ -96,6 +96,34 @@ fn playing_barricade_attaches_one_card_and_does_not_discard_the_event() {
     assert_event!(r.events, Event::CardAttachedToLocation { .. });
 }
 
+/// **A played Barricade is its player's**, although it sits in a location's
+/// attachments beside encounter cards: it came from their hand.
+#[test]
+fn a_played_barricade_is_owned_by_its_player() {
+    let mut inv = test_support::test_investigator(1);
+    inv.current_location = Some(A);
+    inv.hand = vec![CardCode::new(BARRICADE)];
+    let state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(test_support::test_location(1, "Study"))
+        .open_turn(INV)
+        .build();
+
+    let r = test_support::take_turn_action(
+        state,
+        &TurnAction::PlayCard {
+            investigator: INV,
+            hand_index: 0,
+        },
+    );
+    let barricade = r.state.locations[&A]
+        .attachments
+        .iter()
+        .find(|c| c.code == CardCode::new(BARRICADE))
+        .expect("Barricade attached");
+    assert_eq!(barricade.owner, Owner::Investigator(INV));
+}
+
 /// Linear map A—B with a Barricade attached at B, the investigator at `inv_at`,
 /// and `enemy` on the board.
 fn map_with_barricade_at_b(inv_at: LocationId, enemy: Enemy) -> GameState {
@@ -117,7 +145,11 @@ fn map_with_barricade_at_b(inv_at: LocationId, enemy: Enemy) -> GameState {
         .get_mut(&B)
         .unwrap()
         .attachments
-        .push(CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST));
+        .push(CardInPlay::enter_play(
+            CardCode::new(BARRICADE),
+            ATT_INST,
+            Owner::Investigator(INV),
+        ));
     state
 }
 
@@ -271,7 +303,11 @@ fn leaving_the_barricaded_location_discards_barricade() {
         .get_mut(&A)
         .unwrap()
         .attachments
-        .push(CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST));
+        .push(CardInPlay::enter_play(
+            CardCode::new(BARRICADE),
+            ATT_INST,
+            Owner::Investigator(INV),
+        ));
 
     let r = test_support::take_turn_action(
         state,
@@ -387,6 +423,7 @@ fn an_engaged_enemy_still_disengages_on_the_move_that_discards_barricade() {
         .push(CardInPlay::enter_play(
             CardCode::new(BARRICADE),
             CardInstanceId(901),
+            Owner::Investigator(INV),
         ));
 
     let r = test_support::take_turn_action(
@@ -440,7 +477,11 @@ fn map_leaving_barricaded_a(enemy: Option<Enemy>) -> GameState {
         .get_mut(&A)
         .unwrap()
         .attachments
-        .push(CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST));
+        .push(CardInPlay::enter_play(
+            CardCode::new(BARRICADE),
+            ATT_INST,
+            Owner::Investigator(INV),
+        ));
     state
 }
 
@@ -513,6 +554,7 @@ fn board(
             .push(CardInPlay::enter_play(
                 CardCode::new(BARRICADE),
                 CardInstanceId(900 + u32::try_from(i).unwrap()),
+                Owner::Investigator(INV),
             ));
     }
     state

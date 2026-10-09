@@ -17,7 +17,7 @@ use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     EnemyId, FastActorScope, FastWindowKind, GameStateBuilder, InvestigationPhaseFrame,
-    InvestigationResume, InvestigatorId, LocationId, Phase, PhaseStep,
+    InvestigationResume, InvestigatorId, LocationId, Owner, Phase, PhaseStep,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_count};
@@ -112,8 +112,11 @@ fn turn_begins_window() -> GameStateBuilder {
 fn board_with(in_play: &[(&str, CardInstanceId)]) -> GameStateBuilder {
     let mut inv = test_support::test_investigator(1);
     for &(code, inst) in in_play {
-        inv.cards_in_play
-            .push(CardInPlay::enter_play(CardCode::new(code), inst));
+        inv.cards_in_play.push(CardInPlay::enter_play(
+            CardCode::new(code),
+            inst,
+            Owner::Investigator(InvestigatorId(1)),
+        ));
     }
     let mut first = test_support::test_enemy(FIRST.0, "First");
     first.current_location = Some(HERE);
@@ -265,8 +268,11 @@ fn pick_of_an_unoffered_target_panics() {
 fn pick_chooses_an_investigator_by_their_card() {
     let mut mine = test_support::test_investigator(1);
     mine.investigator_card.accumulated_damage = 1;
-    mine.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(HEAL), HEAL_INST));
+    mine.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(HEAL),
+        HEAL_INST,
+        Owner::Investigator(InvestigatorId(1)),
+    ));
     let mut other = test_support::test_investigator(2);
     other.investigator_card.accumulated_damage = 1;
     let session = GameStateBuilder::new()

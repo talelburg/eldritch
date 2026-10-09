@@ -219,7 +219,7 @@ fn put_into_threat_area_with_clues_seeds_the_placed_instance() {
     let outcome = run(
         &mut cx,
         &dsl::put_into_threat_area_with_clues("01007", 3),
-        EvalContext::for_controller(id),
+        EvalContext::for_revelation(id, Owner::Investigator(id)),
     );
     assert!(matches!(outcome, EngineOutcome::Done));
     let placed = state.investigators[&id]
@@ -228,4 +228,52 @@ fn put_into_threat_area_with_clues_seeds_the_placed_instance() {
         .find(|c| c.code.as_str() == "01007")
         .expect("Cover Up placed in threat area");
     assert_eq!(placed.clues, 3, "Cover Up enters with 3 clues");
+}
+
+/// The card a Revelation puts into play is the revealed card, so it takes the
+/// revealed card's owner — whichever deck it was revealed from.
+#[test]
+fn put_into_threat_area_records_the_revealed_cards_owner() {
+    for owner in [Owner::Investigator(InvestigatorId(1)), Owner::EncounterDeck] {
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_support::test_investigator(1))
+            .build();
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+        let outcome = run(
+            &mut cx,
+            &dsl::put_into_threat_area("01164"),
+            EvalContext::for_revelation(InvestigatorId(1), owner),
+        );
+        assert!(matches!(outcome, EngineOutcome::Done));
+        assert_eq!(
+            state.investigators[&InvestigatorId(1)].threat_area[0].owner,
+            owner
+        );
+    }
+}
+
+/// Outside a Revelation nothing says who owns the card, and an owner is never
+/// guessed: the effect rejects rather than minting an ownerless instance.
+#[test]
+fn put_into_threat_area_outside_a_revelation_rejects() {
+    let mut state = GameStateBuilder::new()
+        .with_investigator(test_support::test_investigator(1))
+        .build();
+    let mut events = Vec::new();
+    let outcome = run(
+        &mut Cx {
+            state: &mut state,
+            events: &mut events,
+        },
+        &dsl::put_into_threat_area("01164"),
+        EvalContext::for_controller(InvestigatorId(1)),
+    );
+    assert!(matches!(outcome, EngineOutcome::Rejected { .. }));
+    assert!(state.investigators[&InvestigatorId(1)]
+        .threat_area
+        .is_empty());
 }

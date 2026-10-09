@@ -37,7 +37,7 @@ use game_core::event::Event;
 use game_core::state::{
     AttackLoopFrame, CardCode, CardInPlay, CardInstanceId, Continuation, DiscardPile,
     EliminationCause, Enemy, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
-    Status, Zone,
+    Owner, Status, Zone,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -82,7 +82,13 @@ fn soak_state(
     inv.current_location = Some(loc_id);
     inv.cards_in_play = assets
         .into_iter()
-        .map(|(code, inst)| CardInPlay::enter_play(CardCode::new(code), inst))
+        .map(|(code, inst)| {
+            CardInPlay::enter_play(
+                CardCode::new(code),
+                inst,
+                Owner::Investigator(InvestigatorId(1)),
+            )
+        })
         .collect();
     // A deck with cards left in it. The Upkeep draw these cases cascade through
     // otherwise draws from an empty deck, whose penalty is 1 horror (#429) —
@@ -672,7 +678,11 @@ fn move_attack_of_opportunity_guard_dog_retaliates_and_move_completes() {
 
     let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(from);
-    investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog)];
+    investigator.cards_in_play = vec![CardInPlay::enter_play(
+        CardCode::new(GUARD_DOG),
+        dog,
+        Owner::Investigator(InvestigatorId(1)),
+    )];
 
     // Engaged ready attacker dealing 2 damage; Guard Dog (health 3) soaks
     // all of it and survives (2 < 3).

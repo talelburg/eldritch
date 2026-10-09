@@ -6,7 +6,9 @@ use cards::REGISTRY;
 use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
-use game_core::state::{CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase};
+use game_core::state::{
+    CardCode, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase,
+};
 use game_core::test_support;
 
 const COVER_UP: &str = "01007";
@@ -74,6 +76,27 @@ fn drawing_cover_up_reveals_it_into_the_threat_area() {
             .any(|e| matches!(e, Event::CardRevealed { code, .. } if code.as_str() == COVER_UP)),
         "a CardRevealed event must fire for the drawn weakness",
     );
+}
+
+/// **A weakness drawn from your deck is yours.** Cover Up enters the threat area
+/// owned by the investigator who drew it, who is its bearer
+/// (`glossary/Weakness.md`: *"The bearer of a weakness is the investigator who
+/// started the game with the weakness in his or her deck or play area."*) —
+/// not by the encounter deck, although a threat area otherwise holds encounter
+/// cards.
+#[test]
+fn a_drawn_cover_up_is_owned_by_its_bearer() {
+    let (state, id) = draw_state(COVER_UP);
+
+    let result =
+        test_support::dispatch_turn_action_unchecked(state, &TurnAction::Draw { investigator: id });
+
+    let placed = result.state.investigators[&id]
+        .threat_area
+        .iter()
+        .find(|c| c.code.as_str() == COVER_UP)
+        .expect("Cover Up is in the threat area after being drawn");
+    assert_eq!(placed.owner, Owner::Investigator(id));
 }
 
 #[test]

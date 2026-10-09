@@ -23,7 +23,7 @@ use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInPlay, CardInstanceId, ChaosBag,
     ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
-    TokenModifiers,
+    Owner, TokenModifiers,
 };
 use game_core::test_support::{self, MockRegistry};
 use game_core::{assert_event, assert_no_event};
@@ -154,6 +154,7 @@ fn fight_to_defeat_scenario(
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new(*code),
             CardInstanceId(*instance),
+            Owner::Investigator(InvestigatorId(1)),
         ));
     }
     let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
@@ -444,6 +445,7 @@ fn by_controller_filter_excludes_unrelated_investigators() {
     byst.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(ROLAND_REACTION),
         CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(2)),
     ));
     let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 3;
@@ -500,6 +502,7 @@ fn unqualified_pattern_matches_any_defeat() {
     byst.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(BYSTANDER_REACTION),
         CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(2)),
     ));
     let byst_resources_before = byst.resources;
     let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
@@ -778,6 +781,7 @@ fn reaction_window_closes_before_on_skill_test_resolution_fires() {
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(ROLAND_REACTION),
         CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
     ));
     inv.hand = vec![CardCode::new("COMMITTED")];
     let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
@@ -890,12 +894,14 @@ fn pending_triggers_order_active_investigator_first_then_turn_order() {
     atk.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(BYSTANDER_REACTION),
         CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
     ));
     let mut byst = test_support::test_investigator(2);
     byst.current_location = Some(loc_id);
     byst.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(BYSTANDER_REACTION),
         CardInstanceId(2),
+        Owner::Investigator(InvestigatorId(2)),
     ));
     let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 3;
@@ -1030,6 +1036,7 @@ fn reaction_trigger_in_threat_area_opens_window() {
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode::new(ROLAND_REACTION),
         CardInstanceId(7),
+        Owner::EncounterDeck,
     ));
     let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 3;
@@ -1117,6 +1124,7 @@ fn pick_index_fires_threat_area_reaction_and_closes_window() {
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode::new(ROLAND_REACTION),
         CardInstanceId(7),
+        Owner::EncounterDeck,
     ));
     let mut enemy = test_support::test_enemy(100, "Mock Ghoul");
     enemy.fight = 3;
@@ -1188,6 +1196,7 @@ fn investigate_to_success_scenario(
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new(*code),
             CardInstanceId(*instance),
+            Owner::Investigator(InvestigatorId(1)),
         ));
     }
     let mut loc_meta = test_support::test_location(10, "Study");
@@ -1226,6 +1235,7 @@ fn investigate_with_a_bystander(
     other.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(bystander_card),
         CardInstanceId(7),
+        Owner::Investigator(InvestigatorId(2)),
     ));
 
     let mut loc_meta = test_support::test_location(10, "Study");

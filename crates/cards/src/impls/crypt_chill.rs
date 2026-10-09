@@ -137,7 +137,7 @@ fn discard_asset_instance(
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::Effect;
-    use game_core::state::{CardCode, CardInPlay, GameStateBuilder};
+    use game_core::state::{CardCode, CardInPlay, GameStateBuilder, Owner};
     use game_core::test_support;
 
     use super::*;
@@ -174,6 +174,7 @@ mod tests {
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new("01020"),
             CardInstanceId(1),
+            Owner::Investigator(InvestigatorId(1)),
         ));
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
         state.interactive_acknowledge = true;
@@ -206,6 +207,7 @@ mod tests {
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new("01020"),
             CardInstanceId(1),
+            Owner::Investigator(InvestigatorId(1)),
         ));
         let mut state = GameStateBuilder::new().with_investigator(inv).build();
         let mut events: Vec<Event> = Vec::new();

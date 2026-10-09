@@ -1,6 +1,6 @@
 use super::*;
 use crate::state::{
-    Act, Agenda, CardInPlay, CardInstanceId, EnemyId, GameStateBuilder, LocationId,
+    Act, Agenda, CardInPlay, CardInstanceId, EnemyId, GameStateBuilder, LocationId, Owner,
 };
 use crate::test_support;
 
@@ -42,8 +42,11 @@ fn a_hand_candidate_is_present_only_while_the_code_is_in_hand() {
 fn an_in_play_candidate_is_present_only_while_its_instance_is() {
     let instance = CardInstanceId(7);
     let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(SOME_CODE), instance));
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(SOME_CODE),
+        instance,
+        Owner::Investigator(InvestigatorId(1)),
+    ));
     let state = GameStateBuilder::default().with_investigator(inv).build();
     assert!(candidate_source_present(
         &state,
@@ -69,9 +72,11 @@ fn an_in_play_candidate_is_present_only_while_its_instance_is() {
 fn an_attachment_candidate_is_present_though_no_investigator_controls_it() {
     let instance = CardInstanceId(12);
     let mut location = test_support::test_location(10, "Study");
-    location
-        .attachments
-        .push(CardInPlay::enter_play(CardCode::new(SOME_CODE), instance));
+    location.attachments.push(CardInPlay::enter_play(
+        CardCode::new(SOME_CODE),
+        instance,
+        Owner::EncounterDeck,
+    ));
     let state = GameStateBuilder::default()
         .with_investigator(test_support::test_investigator(1))
         .with_location(location)

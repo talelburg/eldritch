@@ -37,7 +37,7 @@ use game_core::engine::OptionTarget;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameStateBuilder, InvestigatorId,
-    LocationId,
+    LocationId, Owner,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -331,7 +331,11 @@ fn guard_dog_retaliates_against_aoo_and_move_completes() {
     let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(from);
     // Guard Dog in play, no Dodge in hand — so no before-attack cancel window.
-    investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog)];
+    investigator.cards_in_play = vec![CardInPlay::enter_play(
+        CardCode::new(GUARD_DOG),
+        dog,
+        Owner::Investigator(InvestigatorId(1)),
+    )];
 
     // Attacker deals 2 damage; Guard Dog (health 3) survives (2 < 3) and
     // retaliates. Max health 5 ensures the attacker survives the 1 retaliate.

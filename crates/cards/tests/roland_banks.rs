@@ -21,7 +21,7 @@ use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityUsageRecord, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, TokenModifiers,
 };
 use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -58,6 +58,7 @@ fn roland_at_location_with_enemy(
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(ROLAND),
         CardInstanceId(ROLAND_INSTANCE),
+        Owner::Investigator(InvestigatorId(1)),
     ));
 
     let mut enemy = test_support::test_enemy(100, "Mock Ghoul");

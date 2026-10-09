@@ -358,7 +358,7 @@ pub fn find_instance_mut(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{CardCode, GameStateBuilder, Status};
+    use crate::state::{CardCode, GameStateBuilder, Owner, Status};
     use crate::test_support;
 
     const STUDY: LocationId = LocationId(1);
@@ -366,8 +366,8 @@ mod tests {
     const ROLAND: InvestigatorId = InvestigatorId(1);
     const GHOUL: EnemyId = EnemyId(1);
 
-    fn card(code: &str, instance: u32) -> CardInPlay {
-        CardInPlay::enter_play(CardCode::new(code), CardInstanceId(instance))
+    fn card(code: &str, instance: u32, owner: Owner) -> CardInPlay {
+        CardInPlay::enter_play(CardCode::new(code), CardInstanceId(instance), owner)
     }
 
     /// One card in every zone: investigator 1's investigator card (10), play
@@ -377,16 +377,26 @@ mod tests {
     fn board() -> GameState {
         let mut roland = test_support::test_investigator(1);
         roland.investigator_card.instance_id = CardInstanceId(10);
-        roland.cards_in_play.push(card("01020", 11));
-        roland.threat_area.push(card("01007", 12));
+        roland
+            .cards_in_play
+            .push(card("01020", 11, Owner::Investigator(ROLAND)));
+        roland
+            .threat_area
+            .push(card("01007", 12, Owner::Investigator(ROLAND)));
 
         let mut study = test_support::test_location(1, "Study");
-        study.attachments.push(card("01168", 40));
-        study.cards_at_location.push(card("01117", 60));
+        study
+            .attachments
+            .push(card("01168", 40, Owner::EncounterDeck));
+        study
+            .cards_at_location
+            .push(card("01117", 60, Owner::Scenario));
 
         let mut ghoul = test_support::test_enemy(1, "Ghoul");
         ghoul.current_location = Some(HALLWAY);
-        ghoul.attachments.push(card("02256", 50));
+        ghoul
+            .attachments
+            .push(card("02256", 50, Owner::EncounterDeck));
 
         GameStateBuilder::new()
             .with_investigator_at(roland, STUDY)
