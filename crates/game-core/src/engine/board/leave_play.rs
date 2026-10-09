@@ -274,41 +274,16 @@ mod tests {
     fn board_with(owner: Owner, zone: Placement) -> (GameState, LeavingCard) {
         let mut state = empty_board();
         let card = instance(LEAVING_CODE, LEAVING.0, owner);
-        let leaving = LeavingCard::Instance(LEAVING);
-        match zone {
-            Placement::PlayArea(id) => state
-                .investigators
-                .get_mut(&id)
-                .unwrap()
-                .cards_in_play
-                .push(card),
-            Placement::ThreatArea(id) => state
-                .investigators
-                .get_mut(&id)
-                .unwrap()
-                .threat_area
-                .push(card),
-            Placement::LocationAttachment(id) => {
-                state.locations.get_mut(&id).unwrap().attachments.push(card)
-            }
-            Placement::AtLocation(id) => state
-                .locations
-                .get_mut(&id)
-                .unwrap()
-                .cards_at_location
-                .push(card),
-            Placement::EnemyAttachment(id) => {
-                state.enemies.get_mut(&id).unwrap().attachments.push(card)
-            }
-            Placement::Enemy(id) => {
-                let ghoul = state.enemies.get_mut(&id).unwrap();
-                ghoul.code = CardCode::new(LEAVING_CODE);
-                ghoul.owner = owner;
-                return (state, LeavingCard::Enemy(id));
-            }
-            other => unreachable!("no card leaves play from {other:?}"),
+        if let Placement::Enemy(id) = zone {
+            let ghoul = state.enemies.get_mut(&id).unwrap();
+            ghoul.code = CardCode::new(LEAVING_CODE);
+            ghoul.owner = owner;
+            return (state, LeavingCard::Enemy(id));
         }
-        (state, leaving)
+        super::super::instance_zone_mut(&mut state, zone)
+            .unwrap_or_else(|| panic!("no card leaves play from {zone:?}"))
+            .push(card);
+        (state, LeavingCard::Instance(LEAVING))
     }
 
     /// The zone a discard or removal event names for a card leaving `placement`.
