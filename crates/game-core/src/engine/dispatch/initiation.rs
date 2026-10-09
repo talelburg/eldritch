@@ -148,13 +148,16 @@ enum Check {
 ///   themselves: the round-end and game-end arms reach only Active
 ///   investigators, while the elimination game-end collector deliberately
 ///   reaches the investigator being eliminated.
-/// - **Potential to change the game state, and eligibility.** Every kind. A
-///   forced ability gets exactly these (`glossary/Ability.md`: *"If a forced
-///   ability does not have the potential to change the game state, the ability
-///   does not initiate."*).
-/// - **Usage limit.** Reaction and Activated — the triggered abilities a player
-///   chooses to initiate. A forced ability gets only the two checks above, and
-///   a played card has no ability whose limit the gate could count.
+/// - **Potential to change the game state, and eligibility.** Every kind
+///   (`glossary/Ability.md`: *"If a forced ability does not have the potential
+///   to change the game state, the ability does not initiate."*).
+/// - **Usage limit.** Forced, Reaction and Activated — every ability that
+///   initiates. `glossary/Limits_and_Maximums.md`: *"Each instance of an
+///   ability with such a limit may be initiated X times during the designated
+///   period."* It makes no exception for forced abilities, and
+///   `glossary/Ability.md` says they initiate too: *"Forced abilities initiate
+///   and interact with the game state automatically at a specified timing
+///   point."* A played card has no ability whose limit the gate could count.
 /// - **Play-ban.** Play only. A ban on playing a card type says nothing about
 ///   an in-play card's abilities.
 /// - **Cost.** Every kind but Forced, which is not paid for.
@@ -163,7 +166,7 @@ const fn applies(check: Check, kind: InitiationKind) -> bool {
     match check {
         Check::Status => matches!(kind, Reaction | Activated | Play),
         Check::StateChange | Check::Eligibility => true,
-        Check::UsageLimit => matches!(kind, Reaction | Activated),
+        Check::UsageLimit => matches!(kind, Forced | Reaction | Activated),
         Check::PlayBan => matches!(kind, Play),
         Check::Cost => !matches!(kind, Forced),
     }

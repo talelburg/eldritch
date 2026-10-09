@@ -4,7 +4,8 @@
 //! timing event as a reaction would.
 //!
 //! Synthetic probes only (ADR 0016). Each `_ti_*` code models one primitive —
-//! a usage-limited forced ability at the end of the round, a second forced
+//! a usage-limited forced ability at the end of the round, a forced ability
+//! that names the attacking enemy or the discovered count, a second forced
 //! ability at the same timing point, a Fast event that names the attacking
 //! enemy — and none stands in for a printed card.
 
@@ -15,7 +16,7 @@ use game_core::engine::{Cx, EngineOutcome, OptionTarget, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
     Assignment, CardCode, CardInPlay, CardInstanceId, DamageSource, EnemyId, GameState,
-    GameStateBuilder, Investigator, InvestigatorId,
+    GameStateBuilder, Investigator, InvestigatorId, LocationId,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 
@@ -24,6 +25,15 @@ const LIMITED: &str = "_ti_forced_limited";
 /// `Forced - At the end of the round: mark 2.` A sibling at the same timing
 /// point, so [`LIMITED`] fires in an ordered run rather than alone.
 const SIBLING: &str = "_ti_forced_sibling";
+/// `Forced - When an enemy attack deals damage to this card: mark the
+/// attacking enemy.` / `Forced - When you discover clues at your location:
+/// mark that many.` Each names what its timing event supplies.
+const NAMES_WHAT_IT_HEARS: &str = "_ti_forced_names_what_it_hears";
+/// `Forced - When an enemy attack deals damage to this card: mark 2.` /
+/// `Forced - When you discover clues at your location: mark 2.` A sibling at
+/// both of [`NAMES_WHAT_IT_HEARS`]'s timing points, so it fires in an ordered
+/// run rather than alone.
+const HEARS_THE_SAME: &str = "_ti_forced_hears_the_same";
 /// Fast event. `[reaction] When an enemy attack deals damage: mark the
 /// attacking enemy.`
 const NAMES_ATTACKER: &str = "_ti_fast_names_attacker";
@@ -37,6 +47,12 @@ fn mark(cx: &mut Cx, ctx: &EvalContext, amount: u8) -> EngineOutcome {
         amount,
     });
     EngineOutcome::Done
+}
+
+/// Marks the bound clue-discovery count, or 0 when nothing was bound.
+fn mark_count(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
+    let amount = ctx.clue_discovery_count().unwrap_or(0);
+    mark(cx, ctx, amount)
 }
 
 /// Marks the bound attacking enemy's id, or 0 when nothing was bound.
@@ -90,6 +106,34 @@ fn install() {
                 dsl::native("_ti:mark2"),
             )]
         })
+        .with_abilities(NAMES_WHAT_IT_HEARS, || {
+            vec![
+                dsl::forced_on_event(
+                    EventPattern::EnemyAttackDamagedSelf,
+                    EventTiming::When,
+                    dsl::native("_ti:mark_attacker"),
+                ),
+                dsl::forced_on_event(
+                    EventPattern::DiscoverClues,
+                    EventTiming::When,
+                    dsl::native("_ti:mark_count"),
+                ),
+            ]
+        })
+        .with_abilities(HEARS_THE_SAME, || {
+            vec![
+                dsl::forced_on_event(
+                    EventPattern::EnemyAttackDamagedSelf,
+                    EventTiming::When,
+                    dsl::native("_ti:mark2"),
+                ),
+                dsl::forced_on_event(
+                    EventPattern::DiscoverClues,
+                    EventTiming::When,
+                    dsl::native("_ti:mark2"),
+                ),
+            ]
+        })
         .with_card(fast_event_metadata())
         .with_abilities(NAMES_ATTACKER, || {
             vec![dsl::reaction_on_event(
@@ -101,6 +145,7 @@ fn install() {
         .with_native_effect("_ti:mark1", |cx, ctx| mark(cx, ctx, 1))
         .with_native_effect("_ti:mark2", |cx, ctx| mark(cx, ctx, 2))
         .with_native_effect("_ti:mark_attacker", mark_attacker)
+        .with_native_effect("_ti:mark_count", mark_count)
         .install();
 }
 
@@ -181,6 +226,90 @@ fn a_forced_ability_fired_alone_records_its_use_like_one_in_an_ordered_run() {
         recorded_uses(alone.state(), instance(0)),
         1,
         "the same ability fired alone counts the same one use"
+    );
+}
+
+#[test]
+fn a_forced_ability_at_its_usage_limit_does_not_initiate() {
+    // The round has not ended between the two timing points, so the second is
+    // in the same period as the first.
+    let session = session_holding(&[LIMITED])
+        .fire_at(TimingEvent::RoundEnded)
+        .fire_at(TimingEvent::RoundEnded);
+
+    assert_eq!(
+        marks(&session),
+        vec![(INV, 1)],
+        "the second timing point found the once-per-round ability already used"
+    );
+}
+
+/// An enemy attack by enemy 7 dealing 1 damage to each of the first `cards`
+/// instances.
+fn enemy_7_damages(cards: usize) -> TimingEvent {
+    TimingEvent::DamageAssigned {
+        source: DamageSource::EnemyAttack { enemy: EnemyId(7) },
+        investigator: INV,
+        assignment: Assignment {
+            asset_damage: (0..cards).map(|i| (instance(i), 1)).collect(),
+            ..Assignment::default()
+        },
+    }
+}
+
+#[test]
+fn a_forced_ability_fired_alone_names_the_attacking_enemy_like_one_in_an_ordered_run() {
+    let alone = session_holding(&[NAMES_WHAT_IT_HEARS]).fire_at(enemy_7_damages(1));
+    let in_run = session_holding(&[NAMES_WHAT_IT_HEARS, HEARS_THE_SAME])
+        .fire_at(enemy_7_damages(2))
+        .pick(OptionTarget::CardInstance(instance(0)))
+        .pick(OptionTarget::CardInstance(instance(1)));
+
+    assert_eq!(
+        marks(&alone),
+        vec![(INV, 7)],
+        "the lone ability was bound to the attacking enemy"
+    );
+    assert_eq!(
+        marks(&in_run),
+        vec![(INV, 7), (INV, 2)],
+        "the same ability in a run was bound to the same attacking enemy"
+    );
+}
+
+/// The investigator holding `codes`, at a location with 5 clues, about to
+/// discover 3 of them.
+fn discovering_3(codes: &[&str]) -> TestSession {
+    let mut location = test_support::test_location(1, "Mock location");
+    location.clues = 5;
+    GameStateBuilder::new()
+        .with_location(location)
+        .with_investigator_at(holding(codes), LocationId(1))
+        .with_turn_order([INV])
+        .session()
+        .fire_at(TimingEvent::DiscoverClues {
+            investigator: INV,
+            location: LocationId(1),
+            count: 3,
+        })
+}
+
+#[test]
+fn a_forced_ability_fired_alone_names_the_discovered_count_like_one_in_an_ordered_run() {
+    let alone = discovering_3(&[NAMES_WHAT_IT_HEARS]);
+    let in_run = discovering_3(&[NAMES_WHAT_IT_HEARS, HEARS_THE_SAME])
+        .pick(OptionTarget::CardInstance(instance(0)))
+        .pick(OptionTarget::CardInstance(instance(1)));
+
+    assert_eq!(
+        marks(&alone),
+        vec![(INV, 3)],
+        "the lone ability was bound to the discovered count"
+    );
+    assert_eq!(
+        marks(&in_run),
+        vec![(INV, 3), (INV, 2)],
+        "the same ability in a run was bound to the same count"
     );
 }
 
