@@ -23,7 +23,7 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionId, OptionTarget
 use game_core::event::Event;
 use game_core::state::{
     self, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation,
-    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, TokenModifiers,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, TokenModifiers,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 use game_core::{assert_event, assert_event_sequence, assert_no_event};
@@ -586,6 +586,7 @@ fn end_of_turn_forced_resolves_threat_area_ability() {
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode(END_OF_TURN_CARD.into()),
         CardInstanceId(1),
+        Owner::EncounterDeck,
     ));
     let state = GameStateBuilder::new()
         .with_investigator(inv)
@@ -650,6 +651,7 @@ fn end_turn_fires_end_of_turn_forced_for_the_ending_investigator() {
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode(END_OF_TURN_CARD.into()),
         CardInstanceId(1),
+        Owner::EncounterDeck,
     ));
     let state = GameStateBuilder::new()
         .with_investigator(inv)
@@ -690,6 +692,7 @@ fn after_investigate_forced_resolves_threat_area_ability() {
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode(AFTER_INVESTIGATE_CARD.into()),
         CardInstanceId(1),
+        Owner::EncounterDeck,
     ));
     let state = GameStateBuilder::new()
         .with_investigator(inv)
@@ -759,6 +762,7 @@ fn successful_investigate_fires_after_location_investigated_forced() {
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode(AFTER_INVESTIGATE_CARD.into()),
         CardInstanceId(1),
+        Owner::EncounterDeck,
     ));
     let mut loc = test_support::test_location(10, "Study");
     loc.shroud = 0;
@@ -982,6 +986,7 @@ fn suspending_left_location_forced_still_engages_and_fires_entered_location() {
     from.attachments.push(CardInPlay::enter_play(
         CardCode(DOUBLE_LEFT_LOCATION.into()),
         CardInstanceId(7),
+        Owner::EncounterDeck,
     ));
     // The destination has its own on-enter forced (1 horror) and a ready enemy.
     let mut attic = test_support::test_location(11, "Attic");
@@ -1076,6 +1081,7 @@ fn a_when_cell_left_location_forced_resolves_before_the_departure_lands() {
     from.attachments.push(CardInPlay::enter_play(
         CardCode(WHEN_LEFT_LOCATION.into()),
         CardInstanceId(7),
+        Owner::EncounterDeck,
     ));
     // The destination has its own on-enter forced (1 horror) and a ready enemy,
     // so the whole tail of the move is visible in one event log.
@@ -1140,6 +1146,7 @@ fn the_destination_reveal_belongs_to_the_arrival_not_the_departure() {
     from.attachments.push(CardInPlay::enter_play(
         CardCode(WHEN_LEFT_LOCATION.into()),
         CardInstanceId(7),
+        Owner::EncounterDeck,
     ));
     let mut attic = test_support::test_location(11, "Attic");
     attic.code = CardCode(HORROR_ATTIC.into());
@@ -1188,6 +1195,7 @@ fn a_suspended_when_cell_sees_the_investigator_still_at_the_location_they_are_le
     from.attachments.push(CardInPlay::enter_play(
         CardCode(DOUBLE_WHEN_LEFT_LOCATION.into()),
         CardInstanceId(7),
+        Owner::EncounterDeck,
     ));
     let mut attic = test_support::test_location(11, "Attic");
     attic.connections = vec![LocationId(10)];

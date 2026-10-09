@@ -9,7 +9,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Zone,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, Zone,
 };
 use game_core::{assert_event, assert_no_event, test_support};
 
@@ -28,8 +28,11 @@ fn install() {
 /// `enemy_present`) a 3-health enemy co-located at `LOC`.
 fn board(enemy_present: bool) -> GameState {
     let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(BEAT_COP), COP_INST));
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(BEAT_COP),
+        COP_INST,
+        Owner::Investigator(InvestigatorId(1)),
+    ));
 
     let mut builder = GameStateBuilder::new()
         .with_investigator_at(inv, LOC)

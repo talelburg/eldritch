@@ -44,13 +44,17 @@ fn parlor_state(attached: bool) -> GameState {
     let mut parlor = test_support::test_location(5, "Parlor");
     parlor.code = CardCode::new("01115");
     parlor.revealed = true;
-    parlor
-        .cards_at_location
-        .push(CardInPlay::enter_play(CardCode::new("01117"), LITA));
+    parlor.cards_at_location.push(CardInPlay::enter_play(
+        CardCode::new("01117"),
+        LITA,
+        Owner::Scenario,
+    ));
     if attached {
-        parlor
-            .attachments
-            .push(CardInPlay::enter_play(CardCode::new("01168"), FOG));
+        parlor.attachments.push(CardInPlay::enter_play(
+            CardCode::new("01168"),
+            FOG,
+            Owner::EncounterDeck,
+        ));
     }
     let inv = test_support::test_investigator(1);
     GameStateBuilder::new()

@@ -14,7 +14,7 @@ use crate::event::Event;
 use crate::scenario::ScenarioEnding;
 use crate::state::{
     CardCode, CardInPlay, CardInstanceId, EliminationCause, EliminationFrame, EliminationStep,
-    EmitStep, EnemyId, GameState, InvestigatorId, Status,
+    EmitStep, EnemyId, GameState, InvestigatorId, Owner, Status,
 };
 #[cfg(test)]
 use crate::state::{LocationId, Phase};
@@ -257,7 +257,7 @@ fn take_limbo_cards(cx: &mut Cx, investigator: InvestigatorId) -> (Vec<CardCode>
     let mut scenarios = Vec::new();
     for frame in cx.state.continuations.frames_mut() {
         if let Some((card, owner)) = frame.take_play_in_progress(investigator) {
-            if owner == Some(investigator) {
+            if owner == Owner::Investigator(investigator) {
                 theirs.push(card);
             } else {
                 scenarios.push(card);
@@ -341,7 +341,7 @@ fn run_elimination_steps(cx: &mut Cx, investigator: InvestigatorId) {
     let (owned, controlled_only): (Vec<CardInPlay>, Vec<CardInPlay>) = inv
         .cards_in_play
         .drain(..)
-        .partition(|card| card.owner == Some(investigator));
+        .partition(|card| card.owner == Owner::Investigator(investigator));
     removed.extend(owned.into_iter().map(|c| c.code));
     // Partition the threat area: owned weaknesses leave with their owner here;
     // the rest stay for step 4. No metadata (no registry, or engine-only tests

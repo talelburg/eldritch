@@ -24,7 +24,7 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::EngineOutcome;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId,
+    GameStateBuilder, InvestigatorId, LocationId, Owner,
 };
 use game_core::test_support::{self, MockRegistry, TEST_INV};
 
@@ -137,11 +137,17 @@ fn install_probe_registry() {
 /// must not matter, and it is #708 that makes their threat area reachable.
 fn board() -> GameState {
     let mut mine = test_support::test_investigator(1);
-    mine.threat_area
-        .push(CardInPlay::enter_play(CardCode::new(WARD), WARD_INST));
+    mine.threat_area.push(CardInPlay::enter_play(
+        CardCode::new(WARD),
+        WARD_INST,
+        Owner::EncounterDeck,
+    ));
     let mut them = test_support::test_investigator(2);
-    them.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(THEIRS), THEIRS_INST));
+    them.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(THEIRS),
+        THEIRS_INST,
+        Owner::Investigator(InvestigatorId(2)),
+    ));
 
     GameStateBuilder::new()
         .with_investigator_at(mine, LOC)

@@ -15,7 +15,7 @@ use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     EnemyId, FastActorScope, FastWindowKind, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, Phase, PhaseStep,
+    LocationId, Owner, Phase, PhaseStep,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -216,7 +216,11 @@ fn weapon_fight_substituting_uses_intellect_and_keeps_weapon_damage() {
     inv.skills.intellect = 4;
     inv.current_location = Some(LOC);
     inv.hand = vec![CardCode::new(MOM)];
-    let mut weapon = CardInPlay::enter_play(CardCode::new(SPECIAL), WEAPON_INST);
+    let mut weapon = CardInPlay::enter_play(
+        CardCode::new(SPECIAL),
+        WEAPON_INST,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     weapon.uses.insert(UseKind::Ammo, 4);
     inv.cards_in_play.push(weapon);
 

@@ -10,6 +10,7 @@ fn elimination_step1_removes_controlled_and_owned_cards() {
     inv.cards_in_play = vec![CardInPlay::enter_play(
         CardCode("p1".into()),
         CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
     )];
 
     let mut state = GameStateBuilder::default().with_investigator(inv).build();
@@ -351,6 +352,7 @@ fn elimination_without_card_metadata_treats_threat_area_as_scenario_owned() {
     inv.threat_area = vec![CardInPlay::enter_play(
         CardCode::new("01165"),
         CardInstanceId(1),
+        Owner::EncounterDeck,
     )];
 
     let mut state = GameStateBuilder::default().with_investigator(inv).build();

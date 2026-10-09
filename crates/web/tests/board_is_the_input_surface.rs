@@ -171,8 +171,11 @@ async fn a_whole_turn_is_driven_from_the_board_alone() {
     inv.actions_remaining = 1;
     // A real investigator card: this test's subject is the rendered board, and
     // a rendering test's substrate is the real corpus (ADR 0016).
-    inv.investigator_card =
-        CardInPlay::enter_play(CardCode::new(ROLAND), CardInstanceId(u32::MAX - 1));
+    inv.investigator_card = CardInPlay::enter_play(
+        CardCode::new(ROLAND),
+        CardInstanceId(u32::MAX - 1),
+        Owner::Investigator(InvestigatorId(1)),
+    );
     inv.deck = vec![CardCode::new("01020"), CardCode::new("01021")];
     let mut state = GameStateBuilder::default()
         .with_investigator(inv)
@@ -267,11 +270,18 @@ async fn a_choice_printed_on_one_card_presents_itself_without_a_second_click() {
     // your location` is offered on the asset.
     let mut inv = test_support::test_investigator(1);
     inv.actions_remaining = 2;
-    inv.investigator_card =
-        CardInPlay::enter_play(CardCode::new(ROLAND), CardInstanceId(u32::MAX - 1));
+    inv.investigator_card = CardInPlay::enter_play(
+        CardCode::new(ROLAND),
+        CardInstanceId(u32::MAX - 1),
+        Owner::Investigator(InvestigatorId(1)),
+    );
     inv.investigator_card.accumulated_damage = 2;
     inv.investigator_card.accumulated_horror = 2;
-    let mut kit = CardInPlay::enter_play(CardCode::new(FIRST_AID), KIT);
+    let mut kit = CardInPlay::enter_play(
+        CardCode::new(FIRST_AID),
+        KIT,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     kit.uses.insert(UseKind::Supplies, 3);
     inv.cards_in_play.push(kit);
     let state = GameStateBuilder::default()

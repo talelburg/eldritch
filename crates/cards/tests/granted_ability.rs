@@ -33,7 +33,7 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::EngineOutcome;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId,
+    GameStateBuilder, InvestigatorId, LocationId, Owner,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -139,10 +139,12 @@ fn board(granter_code: &str) -> GameState {
     at_location.push(CardInPlay::enter_play(
         CardCode::new(RECIPIENT),
         RECIPIENT_INST,
+        Owner::Scenario,
     ));
     at_location.push(CardInPlay::enter_play(
         CardCode::new(SECOND_HAND),
         SECOND_INST,
+        Owner::Scenario,
     ));
     state
 }

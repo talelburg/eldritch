@@ -12,7 +12,7 @@ use game_core::action::{Action, EngineRecord};
 use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
-    LocationId,
+    LocationId, Owner,
 };
 use game_core::test_support::{self, ScriptedResolver};
 
@@ -28,6 +28,7 @@ fn board_with_soaker(treachery: &str, soaker: &str, token: ChaosToken) -> GameSt
     inv.cards_in_play = vec![CardInPlay::enter_play(
         CardCode::new(soaker),
         CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
     )];
     let mut state = GameStateBuilder::new()
         .with_investigator_at(inv, LocationId(20))

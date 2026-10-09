@@ -120,7 +120,11 @@ fn last_card_classes() -> String {
 async fn in_play_exhausted_asset_dims_badges_and_shows_soak() {
     test_support::install_registry_with_test_cards(REGISTRY);
     // Beat Cop 01018: ally asset, health 2 / sanity 2.
-    let mut inst = CardInPlay::enter_play(CardCode::new("01018"), CardInstanceId(0));
+    let mut inst = CardInPlay::enter_play(
+        CardCode::new("01018"),
+        CardInstanceId(0),
+        Owner::Investigator(InvestigatorId(1)),
+    );
     inst.exhausted = true;
     inst.accumulated_damage = 1;
     mount_to_body(move || view! { <Card code=CardCode::new("01018") in_play=inst.clone()/> });
@@ -147,7 +151,11 @@ async fn treachery_renders_generic_face_with_clues() {
     test_support::install_registry_with_test_cards(REGISTRY);
     // Cover Up 01007: treachery/weakness, traits "Task.", Revelation text;
     // enters the threat area with clues on the card.
-    let mut inst = CardInPlay::enter_play(CardCode::new("01007"), CardInstanceId(0));
+    let mut inst = CardInPlay::enter_play(
+        CardCode::new("01007"),
+        CardInstanceId(0),
+        Owner::Investigator(InvestigatorId(1)),
+    );
     inst.clues = 3;
     mount_to_body(move || view! { <Card code=CardCode::new("01007") in_play=inst.clone()/> });
     task::tick().await;
@@ -168,7 +176,11 @@ async fn treachery_renders_generic_face_with_clues() {
 #[wasm_bindgen_test]
 async fn in_play_ready_asset_is_not_dimmed() {
     test_support::install_registry_with_test_cards(REGISTRY);
-    let inst = CardInPlay::enter_play(CardCode::new("01018"), CardInstanceId(0));
+    let inst = CardInPlay::enter_play(
+        CardCode::new("01018"),
+        CardInstanceId(0),
+        Owner::Investigator(InvestigatorId(1)),
+    );
     mount_to_body(move || view! { <Card code=CardCode::new("01018") in_play=inst.clone()/> });
     task::tick().await;
     assert!(

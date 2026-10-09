@@ -15,8 +15,8 @@ use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
     CardCode, Continuation, EncounterCardFrame, EncounterDisposition, EncounterDrawFrame, Enemy,
-    FastWindowKind, InvestigatorId, LocationId, PhaseStep, PlayerDrawFrame, SpawnEngagePending,
-    Status,
+    FastWindowKind, InvestigatorId, LocationId, Owner, PhaseStep, PlayerDrawFrame,
+    SpawnEngagePending, Status,
 };
 
 /// Hard cap on a single Mythos draw chain. Real scenarios surge ≤2
@@ -195,9 +195,9 @@ pub fn resolve_encounter_card(
     // Push the Revelation effects (combined into one `Seq`) for the global
     // `drive` loop to step; push nothing when there are none (the disposal
     // frame is then top and the loop disposes immediately). The drawing
-    // investigator controls the Revelation.
+    // investigator controls the Revelation; the card is the encounter deck's.
     if !revelation_effects.is_empty() {
-        let eval_ctx = EvalContext::for_controller(investigator);
+        let eval_ctx = EvalContext::for_revelation(investigator, Owner::EncounterDeck);
         evaluator::push_effect(cx, &Effect::Seq(revelation_effects), eval_ctx);
     }
     EngineOutcome::Done
@@ -375,7 +375,7 @@ fn spawn_enemy(
             }
         },
     };
-    spawn_enemy_at(cx, code, metadata, location_id)
+    spawn_enemy_at(cx, code, metadata, location_id, Owner::EncounterDeck)
 }
 
 /// Mint an enemy from `metadata` at an explicit `location_id`, resolving
@@ -385,12 +385,16 @@ fn spawn_enemy(
 /// supplies a location named by the bringing effect (The Gathering's Act-2
 /// reverse spawns the Ghoul Priest in the Hallway). The engagement
 /// candidates come from `location_id` itself.
+///
+/// `owner` is the enemy's [`Owner`], stated by the caller: the encounter deck
+/// for an enemy drawn from it, and whichever owner a set-aside enemy has.
 #[allow(clippy::too_many_lines)]
 pub(super) fn spawn_enemy_at(
     cx: &mut Cx,
     code: CardCode,
     metadata: &CardMetadata,
     location_id: LocationId,
+    owner: Owner,
 ) -> EngineOutcome {
     // spawn_enemy_at is only reached for Enemy cards; pull the
     // enemy-specific stats out of the kind.
@@ -456,6 +460,7 @@ pub(super) fn spawn_enemy_at(
         retaliate: *retaliate,
         victory: *victory,
         attachments: Vec::new(),
+        owner,
     };
     cx.state.enemies.insert(enemy_id, enemy);
 

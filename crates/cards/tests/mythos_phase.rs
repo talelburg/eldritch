@@ -70,7 +70,8 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, InputKind};
 use game_core::event::Event;
 use game_core::state::{
     Agenda, CardCode, CardInPlay, ChaosBag, ChaosToken, Continuation, FastWindowFrame,
-    FastWindowKind, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase, PhaseStep,
+    FastWindowKind, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase,
+    PhaseStep,
 };
 use game_core::{assert_event, test_support};
 
@@ -540,7 +541,11 @@ fn at_mythos_draw_with_beat_cop_in_play() -> GameState {
         .get_mut(&InvestigatorId(1))
         .expect("inv1 must be present")
         .cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(BEAT_COP), instance));
+        .push(CardInPlay::enter_play(
+            CardCode::new(BEAT_COP),
+            instance,
+            Owner::Investigator(InvestigatorId(1)),
+        ));
     with_encounter_deck(&mut state, &[FLESH_EATER]);
     state
 }

@@ -27,7 +27,7 @@ use game_core::engine::{ApplyResult, Cx, EngineOutcome, TimingEvent};
 use game_core::event::Event;
 use game_core::state::{
     self, Act, CardCode, CardInPlay, CardInstanceId, EmitStep, GameState, GameStateBuilder,
-    InvestigatorId,
+    InvestigatorId, Owner,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 
@@ -219,6 +219,7 @@ fn the_game_ending_is_a_bare_milestone_that_walks_its_when_cell() {
     investigator.threat_area.push(CardInPlay::enter_play(
         CardCode::new(GAME_END_CARD),
         CardInstanceId(1),
+        Owner::EncounterDeck,
     ));
     let state = GameStateBuilder::new()
         .with_investigator(investigator)

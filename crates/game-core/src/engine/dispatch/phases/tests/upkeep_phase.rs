@@ -103,7 +103,11 @@ fn ready_exhausted_cards_readies_investigator_cards_and_enemies() {
     let inv_id = InvestigatorId(1);
     let enemy_id = EnemyId(1);
     let mut inv = test_support::test_investigator(1);
-    let mut card = CardInPlay::enter_play(CardCode("filler0".into()), CardInstanceId(1));
+    let mut card = CardInPlay::enter_play(
+        CardCode("filler0".into()),
+        CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
+    );
     card.exhausted = true;
     inv.cards_in_play = vec![card];
     let mut enemy = test_support::test_enemy(1, "Test Enemy");
@@ -432,7 +436,11 @@ fn end_turn_cascades_through_upkeep_to_mythos_draw_prompt() {
     let mut inv = test_support::test_investigator(1);
     inv.actions_remaining = 0;
     inv.deck = vec![CardCode::new("filler0"), CardCode::new("filler1")];
-    let mut card = CardInPlay::enter_play(CardCode::new("filler2"), CardInstanceId(1));
+    let mut card = CardInPlay::enter_play(
+        CardCode::new("filler2"),
+        CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
+    );
     card.exhausted = true;
     inv.cards_in_play = vec![card];
     let res_before = inv.resources;

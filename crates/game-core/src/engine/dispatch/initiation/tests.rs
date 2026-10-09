@@ -14,7 +14,9 @@ use card_dsl::dsl::{
 
 use super::*;
 use crate::card_registry::EligibilityFn;
-use crate::state::{AbilityAddress, CardInPlay, CardInstanceId, GameStateBuilder, LocationId};
+use crate::state::{
+    AbilityAddress, CardInPlay, CardInstanceId, GameStateBuilder, LocationId, Owner,
+};
 use crate::test_support;
 
 /// The card carrying every ability primitive under test, one per printed index.
@@ -198,8 +200,11 @@ fn registry() -> CardRegistry {
 /// `COSTED_EVENT` in hand.
 fn state() -> GameState {
     let mut inv = test_support::test_investigator(CONTROLLER.0);
-    inv.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(PRIMITIVES), INSTANCE));
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(PRIMITIVES),
+        INSTANCE,
+        Owner::Investigator(CONTROLLER),
+    ));
     inv.hand.push(CardCode::new(COSTED_EVENT));
     GameStateBuilder::new()
         .with_investigator_at(inv, LOCATION)
@@ -609,6 +614,7 @@ fn ban_events(state: &mut GameState) {
         .push(CardInPlay::enter_play(
             CardCode::new(EVENT_BAN),
             CardInstanceId(2),
+            Owner::EncounterDeck,
         ));
 }
 

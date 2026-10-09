@@ -39,7 +39,7 @@ use game_core::engine::{
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, Status, Zone,
+    LocationId, Owner, Status, Zone,
 };
 use game_core::test_support::{self, ChoiceResolver, ScriptedResolver, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -68,9 +68,17 @@ fn board_at_lethal_range(damage: u8, hand: &[&str], threat: &[(&str, u8)]) -> Ga
         .iter()
         .enumerate()
         .map(|(i, (code, clues))| {
+            // Cover Up is a weakness, so its bearer owns it; everything else
+            // here is an encounter card.
+            let owner = if *code == COVER_UP {
+                Owner::Investigator(InvestigatorId(1))
+            } else {
+                Owner::EncounterDeck
+            };
             let mut card = CardInPlay::enter_play(
                 CardCode::new(*code),
                 CardInstanceId(u32::try_from(i).expect("fits") + 1),
+                owner,
             );
             card.clues = *clues;
             card

@@ -11,7 +11,7 @@ use game_core::engine::{EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, Phase, Zone,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, Phase, Zone,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -129,8 +129,11 @@ fn discard_self_removes_source_from_play_and_runs_the_effect() {
     let inst = CardInstanceId(0);
     let mut inv = test_support::test_investigator(1);
     let before = inv.resources;
-    inv.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(TRINKET), inst));
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(TRINKET),
+        inst,
+        Owner::Investigator(InvestigatorId(1)),
+    ));
     let state = GameStateBuilder::new()
         .open_turn(id)
         .with_investigator(inv)
@@ -175,8 +178,11 @@ fn board_with_cop(enemy_at_loc: bool) -> (GameState, InvestigatorId, CardInstanc
     let inst = CardInstanceId(0);
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(1));
-    inv.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(COP), inst));
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(COP),
+        inst,
+        Owner::Investigator(InvestigatorId(1)),
+    ));
     let mut builder = GameStateBuilder::new()
         .open_turn(id)
         .with_location(test_support::test_location(1, "A"));
@@ -214,8 +220,11 @@ fn discard_self_combined_with_exhaust_rejects_before_paying() {
     let id = InvestigatorId(1);
     let inst = CardInstanceId(0);
     let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(COMBO), inst));
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(COMBO),
+        inst,
+        Owner::Investigator(InvestigatorId(1)),
+    ));
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_active_investigator(id)
@@ -273,7 +282,11 @@ fn board_with_kit(code: &str) -> (GameState, InvestigatorId, CardInstanceId) {
     let id = InvestigatorId(1);
     let inst = CardInstanceId(0);
     let mut inv = test_support::test_investigator(1);
-    let mut kit = CardInPlay::enter_play(CardCode::new(code), inst);
+    let mut kit = CardInPlay::enter_play(
+        CardCode::new(code),
+        inst,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     kit.uses.insert(UseKind::Supplies, 1);
     inv.cards_in_play.push(kit);
     let state = GameStateBuilder::new()

@@ -22,6 +22,7 @@ fn an_investigations_difficulty_is_the_locations_modified_shroud() {
         .push(CardInPlay::enter_play(
             CardCode::new("shroud-plus-2"),
             CardInstanceId(0),
+            Owner::EncounterDeck,
         ));
     assert_eq!(difficulty_of(&state), 4, "Obscuring Fog's +2, read live");
 }
@@ -50,6 +51,7 @@ fn a_recorded_row_on_a_location_composes_with_its_attachments() {
     loc.attachments.push(CardInPlay::enter_play(
         CardCode::new("shroud-plus-2"),
         CardInstanceId(0),
+        Owner::EncounterDeck,
     ));
     state.recorded_modifiers.push(RecordedModifier::targeting(
         ModifierTarget::Location(LocationId(3)),

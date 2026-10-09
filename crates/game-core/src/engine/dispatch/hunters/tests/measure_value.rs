@@ -3,7 +3,7 @@ use card_dsl::dsl::{self, Ability, ModifierScope, Stat};
 
 use super::*;
 use crate::card_registry::CardRegistry;
-use crate::state::{CardCode, CardInPlay, CardInstanceId, GameStateBuilder};
+use crate::state::{CardCode, CardInPlay, CardInstanceId, GameStateBuilder, Owner};
 use crate::test_support;
 
 fn no_metadata(_: &CardCode) -> Option<&'static CardMetadata> {
@@ -55,6 +55,7 @@ fn state_with(cards: &[&str], damage: u8) -> GameState {
                 CardCode::new(*c),
                 #[allow(clippy::cast_possible_truncation)]
                 CardInstanceId(i as u32),
+                Owner::Investigator(InvestigatorId(1)),
             )
         })
         .collect();

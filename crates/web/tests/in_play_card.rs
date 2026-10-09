@@ -38,7 +38,11 @@ async fn mount(outcome: EngineOutcome) -> UnboundedReceiver<ClientMessage> {
     store.update(|s| s.outcome = Some(outcome));
     let (tx, rx) = mpsc::unbounded::<ClientMessage>();
     let tx_for_mount: OutboundTx = tx;
-    let inst = CardInPlay::enter_play(CardCode::new("01020"), CardInstanceId(3));
+    let inst = CardInPlay::enter_play(
+        CardCode::new("01020"),
+        CardInstanceId(3),
+        Owner::Investigator(InvestigatorId(1)),
+    );
     mount_to_body(move || {
         provide_context(store);
         provide_context::<OutboundTx>(tx_for_mount.clone());

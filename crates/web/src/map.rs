@@ -442,7 +442,7 @@ pub fn location_map(game: &GameState) -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use game_core::engine::OptionId;
-    use game_core::state::CardInstanceId;
+    use game_core::state::{CardInstanceId, Owner as CardOwner};
     use game_core::test_support;
 
     use super::*;
@@ -514,9 +514,11 @@ mod tests {
     fn a_rail_card_anchored_option_is_seen_by_the_node() {
         let lita = CardInstanceId(60);
         let mut parlor = test_support::test_location(5, "Parlor");
-        parlor
-            .cards_at_location
-            .push(CardInPlay::enter_play(CardCode::new("01117"), lita));
+        parlor.cards_at_location.push(CardInPlay::enter_play(
+            CardCode::new("01117"),
+            lita,
+            CardOwner::Scenario,
+        ));
         let anchored =
             vec![ChoiceOption::new(OptionId(0), "Parley").at(OptionTarget::CardInstance(lita))];
         assert!(rail_has_options(&parlor, &anchored));
@@ -535,9 +537,11 @@ mod tests {
     fn an_attachment_anchored_option_is_seen_too() {
         let fog = CardInstanceId(61);
         let mut parlor = test_support::test_location(5, "Parlor");
-        parlor
-            .attachments
-            .push(CardInPlay::enter_play(CardCode::new("01168"), fog));
+        parlor.attachments.push(CardInPlay::enter_play(
+            CardCode::new("01168"),
+            fog,
+            CardOwner::EncounterDeck,
+        ));
         let anchored =
             vec![ChoiceOption::new(OptionId(0), "Discard").at(OptionTarget::CardInstance(fog))];
         assert!(rail_has_options(&parlor, &anchored));

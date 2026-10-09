@@ -18,7 +18,7 @@ use game_core::engine::{EngineOutcome, OptionId, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId,
+    GameStateBuilder, InvestigatorId, LocationId, Owner,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -36,8 +36,11 @@ fn install() {
 /// a known 4-card deck (top 3 distinct, plus a 4th below the searched region).
 fn board() -> GameState {
     let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(OLD_BOOK), BOOK_INST));
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(OLD_BOOK),
+        BOOK_INST,
+        Owner::Investigator(InvestigatorId(1)),
+    ));
     inv.deck = vec![
         CardCode::new("90001"),
         CardCode::new("90002"),

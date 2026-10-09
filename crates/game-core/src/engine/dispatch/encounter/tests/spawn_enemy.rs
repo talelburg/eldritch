@@ -2,7 +2,7 @@ use card_dsl::card_data::{CardKind, CardMetadata, HealthValue, Prey, Spawn, Spaw
 
 use super::*;
 use crate::engine::outcome::OptionId;
-use crate::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Phase};
+use crate::state::{CardCode, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase};
 use crate::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
 fn synth_enemy_metadata(spawn: Option<Spawn>) -> CardMetadata {
@@ -91,6 +91,7 @@ fn spawn_enemy_at_places_enemy_at_the_given_location_not_the_drawers() {
         CardCode("_synth_enemy".into()),
         &metadata,
         LocationId(11),
+        Owner::EncounterDeck,
     );
     assert_eq!(outcome, EngineOutcome::Done);
     let enemy = state.enemies.values().next().expect("enemy spawned");

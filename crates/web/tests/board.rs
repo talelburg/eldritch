@@ -233,6 +233,7 @@ async fn investigators_panel_renders_stats_and_hand() {
     inv.cards_in_play = vec![CardInPlay::enter_play(
         CardCode::new(MAGNIFYING_GLASS),
         CardInstanceId(0),
+        Owner::Investigator(InvestigatorId(id)),
     )];
     let state = GameStateBuilder::new().with_investigator(inv).build();
 
@@ -441,7 +442,11 @@ async fn threat_area_treachery_renders_as_card() {
     let mut inv = roland(1);
     // Seeded the way its Revelation puts it into play — "with 3 clues on it" —
     // so the state matches the card rather than merely occupying the zone.
-    let mut cover_up = CardInPlay::enter_play(CardCode::new(COVER_UP), CardInstanceId(0));
+    let mut cover_up = CardInPlay::enter_play(
+        CardCode::new(COVER_UP),
+        CardInstanceId(0),
+        Owner::Investigator(InvestigatorId(1)),
+    );
     cover_up.clues = 3;
     inv.threat_area = vec![cover_up];
     let state = GameStateBuilder::new().with_investigator(inv).build();

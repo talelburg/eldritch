@@ -50,7 +50,7 @@ use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, Enemy, EnemyId, FastActorScope,
     FastWindowFrame, FastWindowKind, GameState, GameStateBuilder, InvestigatorId, LocationId,
-    Phase, PhaseStep,
+    Owner, Phase, PhaseStep,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -87,6 +87,7 @@ fn board(beat_cop: bool, enemy_health: u8) -> (GameState, InvestigatorId, EnemyI
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new(BEAT_COP),
             BEAT_COP_INSTANCE,
+            Owner::Investigator(InvestigatorId(1)),
         ));
     }
     // Something for the round-ending cascade's Upkeep step-4.4 draw to take.

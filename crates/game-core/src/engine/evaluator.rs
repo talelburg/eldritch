@@ -89,7 +89,7 @@ use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
     AbilitySource, AdvanceTrigger, CardCode, CardInstanceId, Continuation, DamageSource,
     DifficultyBasis, EffectFrame, EnemyId, GameState, Investigator, InvestigatorId, Lifetime,
-    LocationId, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp, Zone,
+    LocationId, Owner, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp, Zone,
 };
 
 /// Failure margin of the just-resolved skill test (bound only while running an
@@ -110,6 +110,18 @@ pub struct SkillTestBinding {
 pub struct DiscoveryBinding {
     /// Clues the discovery moves — what a `when` replacement is replacing.
     pub clue_discovery_count: u8,
+}
+
+/// The owner of the card whose Revelation is resolving (bound only while
+/// resolving a Revelation). A Revelation that puts its own card into play —
+/// [`Effect::PutIntoThreatArea`] — reads it to state the instance's owner,
+/// because the effect is shared by encounter treacheries (the encounter deck's)
+/// and weaknesses like Cover Up 01007 (their bearer's), and only the site that
+/// revealed the card knows which deck it came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RevelationBinding {
+    /// Who owns the revealed card.
+    pub revealed_card_owner: Owner,
 }
 
 /// Attacking enemy bound while resolving a `DamageAssigned` reaction whose
@@ -162,6 +174,9 @@ pub struct EvalContext {
     /// enemy-attack `DamageAssigned` reaction. Read via [`Self::attacking_enemy`].
     /// `None` outside that window. (C5b #237.)
     pub enemy_attack: Option<EnemyAttackBinding>,
+    /// Revealed-card binding, bound only while resolving a Revelation. Read via
+    /// [`Self::revealed_card_owner`]. `None` outside that window.
+    pub revelation: Option<RevelationBinding>,
     /// Grounded `*::Chosen` picks, bound during a grounded-choice evaluation
     /// (Axis A #334). Read via [`Self::chosen_investigator`] /
     /// [`Self::chosen_location`] / [`Self::chosen_enemy`] /
@@ -200,8 +215,22 @@ impl EvalContext {
             skill_test: None,
             discovery: None,
             enemy_attack: None,
+            revelation: None,
             choice: None,
             ability_source: None,
+        }
+    }
+
+    /// Construct a context for the Revelation of a card owned by
+    /// `revealed_card_owner`, resolved by `controller` (the investigator who
+    /// drew it). See [`Self::revealed_card_owner`].
+    #[must_use]
+    pub fn for_revelation(controller: InvestigatorId, revealed_card_owner: Owner) -> Self {
+        Self {
+            revelation: Some(RevelationBinding {
+                revealed_card_owner,
+            }),
+            ..Self::for_controller(controller)
         }
     }
 
@@ -265,6 +294,12 @@ impl EvalContext {
     #[must_use]
     pub fn clue_discovery_count(&self) -> Option<u8> {
         self.discovery.map(|b| b.clue_discovery_count)
+    }
+    /// Owner of the card whose Revelation is resolving (bound only while
+    /// resolving a Revelation).
+    #[must_use]
+    pub fn revealed_card_owner(&self) -> Option<Owner> {
+        self.revelation.map(|b| b.revealed_card_owner)
     }
     /// Attacking enemy bound while resolving an enemy-attack `DamageAssigned`
     /// reaction (Guard Dog 01021's retaliate).
@@ -681,10 +716,22 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
         Effect::Cancel => cancel_current_impact(cx),
         Effect::PutIntoThreatArea { code, clues } => {
+            // The card going into play is the one being revealed, so its owner
+            // is whoever owns the revealed card.
+            let Some(owner) = eval_ctx.revealed_card_owner() else {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "PutIntoThreatArea ({code}) resolved outside a Revelation: no owner \
+                         for the card entering play"
+                    )
+                    .into(),
+                };
+            };
             let inst = threat_area::place_in_threat_area(
                 cx,
                 eval_ctx.controller,
                 CardCode::new(code.clone()),
+                owner,
             );
             let placed = inst.and_then(|id| {
                 cx.state
@@ -1060,14 +1107,14 @@ fn apply_attach_self_to_location(cx: &mut Cx) -> EngineOutcome {
         };
     };
     // Validated: take the card off its frame so it is re-homed, not discarded.
-    let (code, _owner) = cx
+    let (code, owner) = cx
         .state
         .continuations
         .frames_mut()
         .nth(frame_idx)
         .and_then(|frame| frame.take_play_in_progress(investigator))
         .expect("AttachSelfToLocation: the located frame still holds its card");
-    threat_area::attach_to_location(cx, location, code);
+    threat_area::attach_to_location(cx, location, code, owner);
     EngineOutcome::Done
 }
 

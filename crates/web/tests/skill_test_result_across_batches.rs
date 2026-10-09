@@ -41,7 +41,7 @@ use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers,
 };
 use game_core::test_support;
 use protocol::ServerMessage;
@@ -70,6 +70,7 @@ fn board(lita_in_play: bool) -> GameState {
         keeper.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new(LITA),
             CardInstanceId(50),
+            Owner::Scenario,
         ));
     }
 

@@ -196,6 +196,7 @@ mod tests {
     use card_dsl::dsl::{Effect, Trigger};
     use game_core::state::{
         AbilitySource, CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId,
+        Owner,
     };
     use game_core::test_support;
 
@@ -261,7 +262,11 @@ mod tests {
         // Predicate: true while the source instance holds clues, false at 0.
         let pred = native_eligibility_for("01007:has_clues").expect("registered");
         let mut inv = test_support::test_investigator(1);
-        let mut card = CardInPlay::enter_play(CardCode::new("01007"), CardInstanceId(0));
+        let mut card = CardInPlay::enter_play(
+            CardCode::new("01007"),
+            CardInstanceId(0),
+            Owner::Investigator(InvestigatorId(1)),
+        );
         card.clues = 3;
         inv.threat_area.push(card);
         let mut state = GameStateBuilder::new().with_investigator(inv).build();

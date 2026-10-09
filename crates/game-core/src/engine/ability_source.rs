@@ -455,14 +455,14 @@ fn unreachable_reason(investigator: InvestigatorId, source: AbilitySource) -> Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{EnemyId, GameStateBuilder, LocationId};
+    use crate::state::{EnemyId, GameStateBuilder, LocationId, Owner};
     use crate::test_support;
 
     const STUDY: LocationId = LocationId(1);
     const HALLWAY: LocationId = LocationId(2);
 
-    fn card(code: &str, instance: u32) -> CardInPlay {
-        CardInPlay::enter_play(CardCode::new(code), CardInstanceId(instance))
+    fn card(code: &str, instance: u32, owner: Owner) -> CardInPlay {
+        CardInPlay::enter_play(CardCode::new(code), CardInstanceId(instance), owner)
     }
 
     /// Two investigators in the Study and one in the Hallway, each with a
@@ -473,27 +473,42 @@ mod tests {
     fn board() -> GameState {
         let mut mine = test_support::test_investigator(1);
         mine.investigator_card.instance_id = CardInstanceId(10);
-        mine.cards_in_play.push(card("01020", 11));
-        mine.threat_area.push(card("01098", 12));
+        mine.cards_in_play
+            .push(card("01020", 11, Owner::Investigator(InvestigatorId(1))));
+        mine.threat_area
+            .push(card("01098", 12, Owner::Investigator(InvestigatorId(1))));
 
         let mut neighbour = test_support::test_investigator(2);
         neighbour.investigator_card.instance_id = CardInstanceId(20);
-        neighbour.threat_area.push(card("01099", 21));
+        neighbour
+            .threat_area
+            .push(card("01099", 21, Owner::Investigator(InvestigatorId(2))));
 
         let mut elsewhere = test_support::test_investigator(3);
         elsewhere.investigator_card.instance_id = CardInstanceId(30);
-        elsewhere.threat_area.push(card("01100", 31));
+        elsewhere
+            .threat_area
+            .push(card("01100", 31, Owner::Investigator(InvestigatorId(3))));
 
         let mut study = test_support::test_location(1, "Study");
-        study.attachments.push(card("01168", 40));
-        study.cards_at_location.push(card("01117", 60));
+        study
+            .attachments
+            .push(card("01168", 40, Owner::EncounterDeck));
+        study
+            .cards_at_location
+            .push(card("01117", 60, Owner::Scenario));
         let mut hallway = test_support::test_location(2, "Hallway");
-        hallway.attachments.push(card("01168", 41));
-        hallway.cards_at_location.push(card("01117", 61));
+        hallway
+            .attachments
+            .push(card("01168", 41, Owner::EncounterDeck));
+        hallway
+            .cards_at_location
+            .push(card("01117", 61, Owner::Scenario));
 
         let mut here = test_support::test_enemy(1, "Ghoul");
         here.current_location = Some(STUDY);
-        here.attachments.push(card("02256", 50));
+        here.attachments
+            .push(card("02256", 50, Owner::EncounterDeck));
         let mut there = test_support::test_enemy(2, "Acolyte");
         there.current_location = Some(HALLWAY);
 
@@ -645,7 +660,7 @@ mod tests {
             .get_mut(&InvestigatorId(2))
             .expect("neighbour is on the board")
             .cards_in_play
-            .push(card("01020", 22));
+            .push(card("01020", 22, Owner::Investigator(InvestigatorId(2))));
         let sources = sources_for(&state, InvestigatorId(1));
         assert!(
             !sources.contains(&AbilitySource::InPlay(CardInstanceId(22))),

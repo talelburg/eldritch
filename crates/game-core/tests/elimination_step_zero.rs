@@ -24,7 +24,7 @@ use game_core::engine::{ApplyResult, Cx, EngineOutcome, OptionTarget};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Continuation, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Status,
+    InvestigatorId, LocationId, Owner, Status,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -124,7 +124,8 @@ fn install() {
 fn board(code: &str, clues: u8, in_threat_area: bool) -> GameState {
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(10));
-    let mut card = CardInPlay::enter_play(CardCode::new(code), CardInstanceId(1));
+    let mut card =
+        CardInPlay::enter_play(CardCode::new(code), CardInstanceId(1), Owner::EncounterDeck);
     card.clues = clues;
     if in_threat_area {
         inv.threat_area.push(card);

@@ -228,7 +228,7 @@ mod tests {
     use game_core::state::{
         Act, AdvanceReverseFrame, AdvanceStep, AdvanceTrigger, Agenda, CardCode, CardInPlay,
         CardInstanceId, ChaosToken, Continuation, GameStateBuilder, InvestigatorId,
-        TokenResolution, UseKind,
+        Owner as CardOwner, TokenResolution, UseKind,
     };
     use game_core::{card_registry, test_support};
 
@@ -278,7 +278,11 @@ mod tests {
     /// First Aid in play, so a `CardInstance` anchor resolves.
     fn board_with_first_aid() -> GameState {
         let mut inv = test_support::test_investigator(1);
-        let mut kit = CardInPlay::enter_play(CardCode::new(FIRST_AID), KIT);
+        let mut kit = CardInPlay::enter_play(
+            CardCode::new(FIRST_AID),
+            KIT,
+            CardOwner::Investigator(InvestigatorId(1)),
+        );
         kit.uses.insert(UseKind::Supplies, 3);
         inv.cards_in_play.push(kit);
         GameStateBuilder::new().with_investigator(inv).build()

@@ -86,7 +86,7 @@ use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
     ChaosToken, EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, MythosPhaseFrame,
-    MythosResume, Phase, SkillKind,
+    MythosResume, Owner, Phase, SkillKind,
 };
 use game_core::test_support::{self, MockRegistry};
 use game_core::{assert_event, assert_no_event};
@@ -182,14 +182,18 @@ fn board() -> GameState {
     mine.actions_remaining = ACTIONS;
 
     let mut neighbour = test_support::test_investigator(2);
-    neighbour
-        .threat_area
-        .push(CardInPlay::enter_play(CardCode::new(WARD), NEIGHBOURS_WARD));
+    neighbour.threat_area.push(CardInPlay::enter_play(
+        CardCode::new(WARD),
+        NEIGHBOURS_WARD,
+        Owner::EncounterDeck,
+    ));
 
     let mut stranger = test_support::test_investigator(3);
-    stranger
-        .threat_area
-        .push(CardInPlay::enter_play(CardCode::new(WARD), STRANGERS_WARD));
+    stranger.threat_area.push(CardInPlay::enter_play(
+        CardCode::new(WARD),
+        STRANGERS_WARD,
+        Owner::EncounterDeck,
+    ));
 
     let mut here = test_support::test_location(1, "Ten-Acre Meadow");
     here.code = CardCode::new(HALL);

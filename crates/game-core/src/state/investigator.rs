@@ -340,6 +340,7 @@ pub enum EliminationCause {
 #[cfg(test)]
 mod threat_area_tests {
     use super::*;
+    use crate::state::Owner;
     use crate::test_support;
 
     #[test]
@@ -386,10 +387,12 @@ mod threat_area_tests {
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new("in-play"),
             CardInstanceId(1),
+            Owner::Investigator(InvestigatorId(1)),
         ));
         inv.threat_area.push(CardInPlay::enter_play(
             CardCode::new("threat"),
             CardInstanceId(2),
+            Owner::EncounterDeck,
         ));
         let codes: Vec<&str> = inv
             .controlled_card_instances()

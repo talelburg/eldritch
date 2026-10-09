@@ -16,7 +16,7 @@ use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{Cx, EngineOutcome, OptionTarget, TimingEvent};
 use game_core::event::{Event, LapseReason};
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, LocationId,
+    CardCode, CardInPlay, CardInstanceId, GameStateBuilder, InvestigatorId, LocationId, Owner,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 
@@ -88,9 +88,11 @@ fn instance(i: usize) -> CardInstanceId {
 fn round_ends_holding(codes: &[&str]) -> TestSession {
     let mut investigator = test_support::test_investigator(1);
     for (i, code) in codes.iter().enumerate() {
-        investigator
-            .threat_area
-            .push(CardInPlay::enter_play(CardCode::new(*code), instance(i)));
+        investigator.threat_area.push(CardInPlay::enter_play(
+            CardCode::new(*code),
+            instance(i),
+            Owner::EncounterDeck,
+        ));
     }
     let mut location = test_support::test_location(1, "Mock location");
     location.clues = 2;

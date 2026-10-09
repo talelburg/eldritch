@@ -47,7 +47,7 @@ use game_core::engine::{self, ApplyResult};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, ChaosBag, ChaosToken, ContinuationStack, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Phase, TokenModifiers,
+    InvestigatorId, LocationId, Owner, Phase, TokenModifiers,
 };
 use game_core::{assert_event, test_support};
 
@@ -66,6 +66,7 @@ fn install_real_registry() {
 /// to defeat.
 fn solo_investigator_facing(
     code: &str,
+    owner: Owner,
     health: u8,
     fight: i8,
     victory: Option<u8>,
@@ -84,6 +85,7 @@ fn solo_investigator_facing(
     enemy.max_health = health;
     enemy.damage = health - 1;
     enemy.victory = victory;
+    enemy.owner = owner;
     enemy.engaged_with = Some(inv_id);
     enemy.current_location = Some(loc_id); // Fight is location-gated (#401)
 
@@ -125,7 +127,8 @@ fn fight_to_defeat(state: GameState, inv_id: InvestigatorId, enemy_id: EnemyId) 
 
 #[test]
 fn defeated_ghoul_minion_is_drawn_again_once_the_encounter_deck_runs_out() {
-    let (inv_id, enemy_id, state) = solo_investigator_facing(GHOUL_MINION, 2, 2, None);
+    let (inv_id, enemy_id, state) =
+        solo_investigator_facing(GHOUL_MINION, Owner::EncounterDeck, 2, 2, None);
     let after = fight_to_defeat(state, inv_id, enemy_id).state;
 
     assert_eq!(
@@ -169,7 +172,13 @@ fn defeated_ghoul_minion_is_drawn_again_once_the_encounter_deck_runs_out() {
 
 #[test]
 fn defeated_enemy_weakness_lands_in_its_owners_discard_pile() {
-    let (inv_id, enemy_id, state) = solo_investigator_facing(MOB_ENFORCER, 3, 4, None);
+    let (inv_id, enemy_id, state) = solo_investigator_facing(
+        MOB_ENFORCER,
+        Owner::Investigator(InvestigatorId(1)),
+        3,
+        4,
+        None,
+    );
     let after = fight_to_defeat(state, inv_id, enemy_id).state;
 
     let inv = &after.investigators[&inv_id];
@@ -193,7 +202,8 @@ fn defeated_enemy_weakness_lands_in_its_owners_discard_pile() {
 
 #[test]
 fn defeated_victory_enemy_goes_to_the_victory_display_and_no_discard_pile() {
-    let (inv_id, enemy_id, state) = solo_investigator_facing(GHOUL_PRIEST, 5, 4, Some(2));
+    let (inv_id, enemy_id, state) =
+        solo_investigator_facing(GHOUL_PRIEST, Owner::EncounterDeck, 5, 4, Some(2));
     let after = fight_to_defeat(state, inv_id, enemy_id).state;
 
     assert_eq!(after.victory_display, vec![CardCode::new(GHOUL_PRIEST)]);

@@ -7,7 +7,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::OptionTarget;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, GameState, GameStateBuilder, InvestigatorId,
-    LocationId,
+    LocationId, Owner,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -36,7 +36,13 @@ fn attack_state(assets: Vec<(&str, CardInstanceId)>, enemy: Enemy) -> (GameState
     inv.current_location = Some(loc_id);
     inv.cards_in_play = assets
         .into_iter()
-        .map(|(code, inst)| CardInPlay::enter_play(CardCode::new(code), inst))
+        .map(|(code, inst)| {
+            CardInPlay::enter_play(
+                CardCode::new(code),
+                inst,
+                Owner::Investigator(InvestigatorId(1)),
+            )
+        })
         .collect();
     // Non-empty deck so the post-attack Upkeep draw doesn't trigger the
     // draw-from-empty horror penalty (which, per K5a, soaks onto a sanity asset
