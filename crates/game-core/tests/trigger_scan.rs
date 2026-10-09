@@ -233,7 +233,7 @@ fn fire(state: GameState, event: TimingEvent) -> ApplyResult {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn an_agendas_forced_ability_fires_on_an_enemy_defeat_bound_to_the_lead() {
+fn an_agendas_forced_ability_fires_on_an_enemy_defeat_bound_to_the_lead_proxy() {
     let mut state = table();
     state.agenda_deck = vec![Agenda {
         code: CardCode::new(ON_DEFEAT),
@@ -268,7 +268,7 @@ fn a_locations_forced_ability_fires_on_an_enemy_defeat_bound_to_the_defeating_in
 }
 
 #[test]
-fn an_uncontrolled_cards_forced_ability_with_no_subject_binds_to_the_lead() {
+fn an_uncontrolled_cards_forced_ability_with_no_subject_binds_to_the_lead_proxy() {
     let mut state = table();
     print_on_location(&mut state, 11, ON_DEFEAT);
     let result = fire(state, defeat(None));
@@ -668,7 +668,7 @@ fn a_reaction_on_an_enemy_elsewhere_is_not_offered() {
 }
 
 #[test]
-fn a_reaction_on_the_agenda_is_offered_once_bound_to_the_lead() {
+fn a_reaction_on_the_agenda_is_offered_once_bound_to_the_lead_proxy() {
     let mut state = table();
     state.agenda_deck = vec![Agenda {
         code: CardCode::new(REACT_ON_DEFEAT),

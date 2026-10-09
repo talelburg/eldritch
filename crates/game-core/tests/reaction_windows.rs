@@ -14,7 +14,7 @@
 
 use card_dsl::dsl::{
     self, Ability, EventPattern, EventTiming, InvestigatorTarget, LocationTarget, SkillTestKind,
-    TestOutcome,
+    TestOutcome, TestedLocationScope,
 };
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
@@ -70,7 +70,7 @@ fn investigated(by_controller: bool) -> EventPattern {
         outcome: TestOutcome::Success,
         kind: Some(SkillTestKind::Investigate),
         by_controller,
-        tested_location: dsl::TestedLocationScope::Any,
+        tested_location: TestedLocationScope::Any,
     }
 }
 

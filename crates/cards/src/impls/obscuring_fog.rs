@@ -31,7 +31,7 @@
 
 use card_dsl::dsl::{
     self, Ability, EventPattern, EventTiming, ModifierAudience, ModifierScope, SkillTestKind, Stat,
-    TestOutcome,
+    TestOutcome, TestedLocationScope,
 };
 use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
@@ -59,7 +59,7 @@ pub fn abilities() -> Vec<Ability> {
                 outcome: TestOutcome::Success,
                 kind: Some(SkillTestKind::Investigate),
                 by_controller: true,
-                tested_location: dsl::TestedLocationScope::Attached,
+                tested_location: TestedLocationScope::Attached,
             },
             EventTiming::After,
             dsl::discard_self(),
@@ -145,7 +145,7 @@ mod tests {
                     outcome: TestOutcome::Success,
                     kind: Some(SkillTestKind::Investigate),
                     by_controller: true,
-                    tested_location: dsl::TestedLocationScope::Attached,
+                    tested_location: TestedLocationScope::Attached,
                 },
                 timing: EventTiming::After,
                 ..

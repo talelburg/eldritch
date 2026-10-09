@@ -125,10 +125,10 @@ fn resolution_event_fires_without_a_registered_module() {
 }
 
 #[test]
-fn game_end_forced_point_is_noop_without_matching_cards() {
-    // The GameEnd forced point (C5a #236) fires at resolution but is a
-    // no-op with no controlled cards carrying a GameEnd ability: the
-    // resolution still fires, and no TraumaSuffered is emitted.
+fn game_end_is_a_noop_without_a_game_end_ability_in_play() {
+    // The GameEnd condition (C5a #236) is emitted at resolution but is a
+    // no-op with no card in play carrying a GameEnd ability: the resolution
+    // still fires, and no TraumaSuffered is emitted.
     let state = terminal_act_state(Some("unknown"));
     let result = take_turn_action_with_registry(
         state,

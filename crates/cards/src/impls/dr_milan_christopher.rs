@@ -31,7 +31,7 @@
 
 use card_dsl::dsl::{
     self, Ability, EventPattern, EventTiming, InvestigatorTarget, ModifierScope, SkillTestKind,
-    Stat, TestOutcome,
+    Stat, TestOutcome, TestedLocationScope,
 };
 
 /// `ArkhamDB` code for the original-Core printing.
@@ -48,7 +48,7 @@ pub fn abilities() -> Vec<Ability> {
                 outcome: TestOutcome::Success,
                 kind: Some(SkillTestKind::Investigate),
                 by_controller: true,
-                tested_location: dsl::TestedLocationScope::Any,
+                tested_location: TestedLocationScope::Any,
             },
             EventTiming::After,
             dsl::gain_resources(InvestigatorTarget::You, 1),
@@ -60,7 +60,7 @@ pub fn abilities() -> Vec<Ability> {
 mod tests {
     use card_dsl::dsl::{
         Effect, EventPattern, EventTiming, InvestigatorTarget, ModifierAudience, ModifierScope,
-        SkillTestKind, Stat, TestOutcome, Trigger, TriggerKind,
+        SkillTestKind, Stat, TestOutcome, TestedLocationScope, Trigger, TriggerKind,
     };
 
     #[test]
@@ -86,7 +86,7 @@ mod tests {
                     outcome: TestOutcome::Success,
                     kind: Some(SkillTestKind::Investigate),
                     by_controller: true,
-                    tested_location: card_dsl::dsl::TestedLocationScope::Any,
+                    tested_location: TestedLocationScope::Any,
                 },
                 timing: EventTiming::After,
                 kind: TriggerKind::Reaction,

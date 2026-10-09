@@ -4,10 +4,10 @@
 //! timing event as a reaction would.
 //!
 //! Synthetic probes only (ADR 0016). Each `_ti_*` code models one primitive —
-//! a usage-limited forced ability at the end of the round, a forced ability
-//! that names the attacking enemy or the discovered count, a second forced
-//! ability at the same timing point, a Fast event that names the attacking
-//! enemy — and none stands in for a printed card.
+//! a usage-limited forced ability that names the attacking enemy or the
+//! discovered count, a second forced ability at the same timing point, a Fast
+//! event that names the attacking enemy — and none stands in for a printed
+//! card.
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, EventPattern, EventTiming, UsageLimit, UsagePeriod};
@@ -20,14 +20,10 @@ use game_core::state::{
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 
-/// `Forced - At the end of the round: mark 1. (Limit once per round.)`
-const LIMITED: &str = "_ti_forced_limited";
-/// `Forced - At the end of the round: mark 2.` A sibling at the same timing
-/// point, so [`LIMITED`] fires in an ordered run rather than alone.
-const SIBLING: &str = "_ti_forced_sibling";
 /// `Forced - When an enemy attack deals damage to this card: mark the
-/// attacking enemy.` / `Forced - When you discover clues at your location:
-/// mark that many.` Each names what its timing event supplies.
+/// attacking enemy. (Limit once per round.)` / `Forced - When you discover
+/// clues at your location: mark that many. (Limit once per round.)` Each names
+/// what its timing event supplies, and each records its use.
 const NAMES_WHAT_IT_HEARS: &str = "_ti_forced_names_what_it_hears";
 /// `Forced - When an enemy attack deals damage to this card: mark 2.` /
 /// `Forced - When you discover clues at your location: mark 2.` A sibling at
@@ -88,36 +84,24 @@ fn fast_event_metadata() -> CardMetadata {
 #[ctor::ctor(unsafe)]
 fn install() {
     MockRegistry::new()
-        .with_abilities(LIMITED, || {
-            vec![dsl::forced_on_event(
-                EventPattern::RoundEnded,
-                EventTiming::At,
-                dsl::native("_ti:mark1"),
-            )
-            .with_usage_limit(UsageLimit {
+        .with_abilities(NAMES_WHAT_IT_HEARS, || {
+            let once_per_round = UsageLimit {
                 count: 1,
                 period: UsagePeriod::Round,
-            })]
-        })
-        .with_abilities(SIBLING, || {
-            vec![dsl::forced_on_event(
-                EventPattern::RoundEnded,
-                EventTiming::At,
-                dsl::native("_ti:mark2"),
-            )]
-        })
-        .with_abilities(NAMES_WHAT_IT_HEARS, || {
+            };
             vec![
                 dsl::forced_on_event(
                     EventPattern::EnemyAttackDamagedSelf,
                     EventTiming::When,
                     dsl::native("_ti:mark_attacker"),
-                ),
+                )
+                .with_usage_limit(once_per_round),
                 dsl::forced_on_event(
                     EventPattern::DiscoverClues,
                     EventTiming::When,
                     dsl::native("_ti:mark_count"),
-                ),
+                )
+                .with_usage_limit(once_per_round),
             ]
         })
         .with_abilities(HEARS_THE_SAME, || {
@@ -142,7 +126,6 @@ fn install() {
                 dsl::native("_ti:mark_attacker"),
             )]
         })
-        .with_native_effect("_ti:mark1", |cx, ctx| mark(cx, ctx, 1))
         .with_native_effect("_ti:mark2", |cx, ctx| mark(cx, ctx, 2))
         .with_native_effect("_ti:mark_attacker", mark_attacker)
         .with_native_effect("_ti:mark_count", mark_count)
@@ -187,61 +170,18 @@ fn marks(session: &TestSession) -> Vec<(InvestigatorId, u8)> {
         .collect()
 }
 
-/// How many uses of `instance`'s first printed ability are recorded this round.
-fn recorded_uses(state: &GameState, instance: CardInstanceId) -> u8 {
+/// How many uses of `instance`'s printed ability `ability` are recorded this
+/// round.
+fn recorded_uses(state: &GameState, instance: CardInstanceId, ability: u8) -> u8 {
     let card = state.investigators[&INV]
         .threat_area
         .iter()
         .find(|c| c.instance_id == instance)
         .expect("the card is still in the threat area");
     card.ability_usage
-        .get(&0)
+        .get(&ability)
         .filter(|record| record.round == state.round)
         .map_or(0, |record| record.count)
-}
-
-#[test]
-fn a_forced_ability_fired_alone_records_its_use_like_one_in_an_ordered_run() {
-    // Alone: the only forced ability at the end of the round.
-    let alone = session_holding(&[LIMITED]).fire_at(TimingEvent::RoundEnded);
-
-    // In a run: the lead orders it alongside a sibling, and picks it first.
-    let in_run = session_holding(&[LIMITED, SIBLING])
-        .fire_at(TimingEvent::RoundEnded)
-        .pick(OptionTarget::CardInstance(instance(0)))
-        .pick(OptionTarget::CardInstance(instance(1)));
-
-    assert_eq!(marks(&alone), vec![(INV, 1)], "the lone ability resolved");
-    assert_eq!(
-        marks(&in_run),
-        vec![(INV, 1), (INV, 2)],
-        "both abilities in the run resolved, in the lead's order"
-    );
-    assert_eq!(
-        recorded_uses(in_run.state(), instance(0)),
-        1,
-        "the ability fired in a run counts one use"
-    );
-    assert_eq!(
-        recorded_uses(alone.state(), instance(0)),
-        1,
-        "the same ability fired alone counts the same one use"
-    );
-}
-
-#[test]
-fn a_forced_ability_at_its_usage_limit_does_not_initiate() {
-    // The round has not ended between the two timing points, so the second is
-    // in the same period as the first.
-    let session = session_holding(&[LIMITED])
-        .fire_at(TimingEvent::RoundEnded)
-        .fire_at(TimingEvent::RoundEnded);
-
-    assert_eq!(
-        marks(&session),
-        vec![(INV, 1)],
-        "the second timing point found the once-per-round ability already used"
-    );
 }
 
 /// An enemy attack by enemy 7 dealing 1 damage to each of the first `cards`
@@ -258,8 +198,11 @@ fn enemy_7_damages(cards: usize) -> TimingEvent {
 }
 
 #[test]
-fn a_forced_ability_fired_alone_names_the_attacking_enemy_like_one_in_an_ordered_run() {
+fn a_forced_ability_fired_alone_names_the_attacking_enemy_and_records_its_use_like_one_in_an_ordered_run(
+) {
+    // Alone: the only forced ability the damage reaches.
     let alone = session_holding(&[NAMES_WHAT_IT_HEARS]).fire_at(enemy_7_damages(1));
+    // In a run: the lead orders it alongside a sibling, and picks it first.
     let in_run = session_holding(&[NAMES_WHAT_IT_HEARS, HEARS_THE_SAME])
         .fire_at(enemy_7_damages(2))
         .pick(OptionTarget::CardInstance(instance(0)))
@@ -274,6 +217,31 @@ fn a_forced_ability_fired_alone_names_the_attacking_enemy_like_one_in_an_ordered
         marks(&in_run),
         vec![(INV, 7), (INV, 2)],
         "the same ability in a run was bound to the same attacking enemy"
+    );
+    assert_eq!(
+        recorded_uses(in_run.state(), instance(0), 0),
+        1,
+        "the ability fired in a run counts one use"
+    );
+    assert_eq!(
+        recorded_uses(alone.state(), instance(0), 0),
+        1,
+        "the same ability fired alone counts the same one use"
+    );
+}
+
+#[test]
+fn a_forced_ability_at_its_usage_limit_does_not_initiate() {
+    // The round has not ended between the two timing points, so the second is
+    // in the same period as the first.
+    let session = session_holding(&[NAMES_WHAT_IT_HEARS])
+        .fire_at(enemy_7_damages(1))
+        .fire_at(enemy_7_damages(1));
+
+    assert_eq!(
+        marks(&session),
+        vec![(INV, 7)],
+        "the second timing point found the once-per-round ability already used"
     );
 }
 
@@ -310,6 +278,14 @@ fn a_forced_ability_fired_alone_names_the_discovered_count_like_one_in_an_ordere
         marks(&in_run),
         vec![(INV, 3), (INV, 2)],
         "the same ability in a run was bound to the same count"
+    );
+    assert_eq!(
+        (
+            recorded_uses(alone.state(), instance(0), 1),
+            recorded_uses(in_run.state(), instance(0), 1),
+        ),
+        (1, 1),
+        "alone and in a run, the ability counts the same one use"
     );
 }
 

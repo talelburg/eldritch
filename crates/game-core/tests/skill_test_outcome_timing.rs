@@ -7,7 +7,9 @@
 //! install a mock registry without colliding with other `tests/*.rs`. Mirrors
 //! `on_skill_test_resolution.rs`.
 
-use card_dsl::dsl::{self, EventPattern, EventTiming, InvestigatorTarget, TestOutcome};
+use card_dsl::dsl::{
+    self, EventPattern, EventTiming, InvestigatorTarget, TestOutcome, TestedLocationScope,
+};
 use game_core::assert_event;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
@@ -34,7 +36,7 @@ fn install_mock_registry() {
                     outcome: TestOutcome::Success,
                     kind: None,
                     by_controller: true,
-                    tested_location: dsl::TestedLocationScope::Any,
+                    tested_location: TestedLocationScope::Any,
                 },
                 EventTiming::After,
                 dsl::deal_horror(InvestigatorTarget::You, 1u8),

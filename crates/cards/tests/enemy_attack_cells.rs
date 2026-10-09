@@ -25,7 +25,10 @@
 
 use std::mem;
 
-use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget};
+use card_dsl::dsl::{
+    self, Ability, AttackerScope, Effect, EventPattern, EventTiming, InvestigatorTarget,
+    TargetScope,
+};
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::assert_event;
 use game_core::engine::enumerate::TurnAction;
@@ -63,8 +66,8 @@ const ENEMY_FORCED_WHEN: &str = "_ea_enemy_forced_when";
 fn on_attack(timing: EventTiming, amount: u8) -> Ability {
     dsl::reaction_on_event(
         EventPattern::EnemyAttacks {
-            attacker: dsl::AttackerScope::Any,
-            target: dsl::TargetScope::AtYourLocation,
+            attacker: AttackerScope::Any,
+            target: TargetScope::AtYourLocation,
         },
         timing,
         dsl::gain_resources(InvestigatorTarget::You, amount),
@@ -81,8 +84,8 @@ const PLAIN_ENEMY: &str = "_ea_plain";
 fn enemy_forced(timing: EventTiming, amount: u8) -> Ability {
     dsl::forced_on_event(
         EventPattern::EnemyAttacks {
-            attacker: dsl::AttackerScope::This,
-            target: dsl::TargetScope::Any,
+            attacker: AttackerScope::This,
+            target: TargetScope::Any,
         },
         timing,
         dsl::gain_resources(InvestigatorTarget::You, amount),
@@ -99,8 +102,8 @@ fn install() {
         .with_abilities(CANCEL, || {
             vec![dsl::reaction_on_event(
                 EventPattern::EnemyAttacks {
-                    attacker: dsl::AttackerScope::Any,
-                    target: dsl::TargetScope::AtYourLocation,
+                    attacker: AttackerScope::Any,
+                    target: TargetScope::AtYourLocation,
                 },
                 EventTiming::When,
                 Effect::Cancel,

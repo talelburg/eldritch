@@ -128,7 +128,7 @@
 
 use card_dsl::dsl::{
     self, Ability, ControlStatus, EventPattern, EventTiming, GrantTarget, ModifierAudience,
-    ModifierScope, SkillTestKind, Stat, TestOutcome,
+    ModifierScope, SkillTestKind, Stat, TestOutcome, TestedLocationScope,
 };
 use game_core::card_registry::EligibilityFn;
 use game_core::engine::evaluator::EvalContext;
@@ -168,7 +168,7 @@ pub fn abilities() -> Vec<Ability> {
                     outcome: TestOutcome::Success,
                     kind: Some(SkillTestKind::Fight),
                     by_controller: false,
-                    tested_location: dsl::TestedLocationScope::Any,
+                    tested_location: TestedLocationScope::Any,
                 },
                 EventTiming::When,
                 dsl::boost_attack_damage(1),
@@ -226,7 +226,8 @@ mod tests {
     use card_dsl::card_data::SkillKind;
     use card_dsl::dsl::{
         Ability, Condition, ControlStatus, Effect, EventPattern, EventTiming, GrantTarget,
-        ModifierAudience, ModifierScope, SkillTestKind, Stat, TestOutcome, Trigger, TriggerKind,
+        ModifierAudience, ModifierScope, SkillTestKind, Stat, TestOutcome, TestedLocationScope,
+        Trigger, TriggerKind,
     };
     use game_core::engine::evaluator::EvalContext;
     use game_core::state::{
@@ -308,7 +309,7 @@ mod tests {
                     outcome: TestOutcome::Success,
                     kind: Some(SkillTestKind::Fight),
                     by_controller: false,
-                    tested_location: card_dsl::dsl::TestedLocationScope::Any,
+                    tested_location: TestedLocationScope::Any,
                 },
                 timing: EventTiming::When,
                 kind: TriggerKind::Reaction,

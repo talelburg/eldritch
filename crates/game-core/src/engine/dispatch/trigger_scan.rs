@@ -1,6 +1,6 @@
 //! The trigger scan: which triggered abilities a timing event reaches (#962).
 //!
-//! Three pieces, each written once so the forced and reaction paths cannot
+//! Four pieces, each written once so the forced and reaction paths cannot
 //! disagree about them:
 //!
 //! - [`board_walk`] — **every** card an ability could be printed on, in one
@@ -202,9 +202,9 @@ pub(super) fn collect_forced(
     event: &TimingEvent,
     bucket: EventTiming,
 ) -> Vec<ResolutionCandidate> {
-    if card_registry::current().is_none() {
+    let Some(reg) = card_registry::current() else {
         return Vec::new();
-    }
+    };
     let lead = cursor::first_active_investigator(state);
     let mut hits = Vec::new();
     for walked in board_walk(state, event) {
@@ -222,32 +222,26 @@ pub(super) fn collect_forced(
         let Some(controller) = bound else {
             continue;
         };
-        let Some(abilities) = abilities_in_effect::for_source(state, source, walked.code) else {
-            continue;
-        };
-        for (address, ability) in abilities {
-            let Trigger::OnEvent {
-                pattern,
-                timing,
-                kind,
-            } = &ability.trigger
-            else {
-                continue;
-            };
-            // Kind and cell are load-bearing: the coordinator scans the same
-            // (event, bucket) for both kinds (#434), and act 01109 carries a
-            // `when`-`RoundEnded` *reaction* this scan must not collect.
-            if *kind == TriggerKind::Forced
-                && *timing == bucket
-                && pattern_matches(
-                    state,
-                    event,
-                    pattern,
-                    walked.source,
-                    walked.code,
-                    controller,
-                )
-            {
+        // Kind and cell are load-bearing: the coordinator scans the same
+        // (event, bucket) for both kinds (#434), and act 01109 carries a
+        // `when`-`RoundEnded` *reaction* this scan must not collect.
+        let forced = triggers_at(
+            state,
+            reg,
+            walked.source,
+            walked.code,
+            TriggerKind::Forced,
+            bucket,
+        );
+        for (address, pattern) in forced {
+            if pattern_matches(
+                state,
+                event,
+                &pattern,
+                walked.source,
+                walked.code,
+                controller,
+            ) {
                 hits.push(ResolutionCandidate {
                     code: walked.code.clone(),
                     controller,
@@ -304,8 +298,14 @@ pub(super) fn collect_reactions(
     let mut reach: Option<Vec<(InvestigatorId, Vec<AbilitySource>)>> = None;
     let mut hits = Vec::new();
     for walked in board_walk(state, event) {
-        let reactions: Vec<(AbilityAddress, EventPattern)> =
-            reactions_at(state, reg, walked.source, walked.code, bucket);
+        let reactions = triggers_at(
+            state,
+            reg,
+            walked.source,
+            walked.code,
+            TriggerKind::Reaction,
+            bucket,
+        );
         if reactions.is_empty() {
             continue;
         }
@@ -379,15 +379,16 @@ pub(super) fn collect_reactions(
     hits
 }
 
-/// The reaction abilities of the card at `source` in the `bucket` cell, with
-/// their addresses: through the side-in-effect / grant funnel for a board
+/// The `kind` triggered abilities of the card at `source` in the `bucket` cell,
+/// with their addresses: through the side-in-effect / grant funnel for a board
 /// source, the printed front for a card in hand (nothing grants to a card out
 /// of play).
-fn reactions_at(
+fn triggers_at(
     state: &GameState,
     reg: &CardRegistry,
     source: CandidateSource,
     code: &CardCode,
+    kind: TriggerKind,
     bucket: EventTiming,
 ) -> Vec<(AbilityAddress, EventPattern)> {
     abilities_in_effect::for_candidate_source_with(state, reg, source, code)
@@ -397,8 +398,8 @@ fn reactions_at(
             Trigger::OnEvent {
                 pattern,
                 timing,
-                kind: TriggerKind::Reaction,
-            } if timing == bucket => Some((address, pattern)),
+                kind: k,
+            } if k == kind && timing == bucket => Some((address, pattern)),
             _ => None,
         })
         .collect()
@@ -451,13 +452,15 @@ pub(super) fn trigger_matches(
         // "after **you** defeat an enemy" (Roland Banks 01001) and "if the
         // Ghoul Priest is defeated" (What Have You Done? 01110), for both kinds.
         TimingEvent::EnemyDefeated { by, code, .. } => {
-            // Same condition, so this is the one pattern that has it.
             let EventPattern::EnemyDefeated {
                 by_controller,
                 code: narrow,
             } = pattern
             else {
-                return false;
+                unreachable!(
+                    "trigger_matches: the condition check paired {pattern:?} with EnemyDefeated, \
+                     but only EventPattern::EnemyDefeated has that condition"
+                )
             };
             (!*by_controller || *by == Some(controller))
                 && narrow.as_deref().is_none_or(|c| c == code.as_str())
@@ -493,7 +496,6 @@ pub(super) fn trigger_matches(
             kind,
             outcome,
         } => {
-            // Same condition, so this is the one pattern that has it.
             let EventPattern::SkillTestResolved {
                 outcome: p_out,
                 kind: p_kind,
@@ -501,7 +503,10 @@ pub(super) fn trigger_matches(
                 tested_location: _,
             } = pattern
             else {
-                return false;
+                unreachable!(
+                    "trigger_matches: the condition check paired {pattern:?} with \
+                     SkillTestResolved, but only EventPattern::SkillTestResolved has that condition"
+                )
             };
             (!*by_controller || *investigator == controller)
                 && outcome == p_out
@@ -574,7 +579,10 @@ fn scope_matches(
             investigator,
         } => {
             let EventPattern::EnemyAttacks { attacker, target } = pattern else {
-                return false;
+                unreachable!(
+                    "scope_matches: trigger_matches paired {pattern:?} with EnemyAttacks, but \
+                     only EventPattern::EnemyAttacks has that condition"
+                )
             };
             let attacker_ok = match attacker {
                 AttackerScope::This => {
@@ -621,11 +629,7 @@ fn scope_matches(
         // "When you would discover 1 or more clues **at your location**" (Cover
         // Up 01007).
         TimingEvent::DiscoverClues { location, .. } => {
-            state
-                .investigators
-                .get(&controller)
-                .and_then(|inv| inv.current_location)
-                == Some(*location)
+            location_of(state, controller) == Some(*location)
         }
         // Board-wide conditions, and conditions whose only scope is the
         // controller (read in `trigger_matches`): no card's position narrows
@@ -645,9 +649,9 @@ fn scope_matches(
 /// with no instance (a location, an enemy, the act, the agenda) never does.
 ///
 /// A Fast event in hand passes unread. It has no instance on the board for the
-/// self to be, and the hand scan has never applied the self filter, so a Fast
-/// event declaring the pattern is played in that condition's window unscoped
-/// by it — as `trigger_initiation.rs` relies on (#964).
+/// self to be, so a Fast event declaring the pattern is played in that
+/// condition's window unscoped by it — as `trigger_initiation.rs` relies on
+/// (#964).
 fn self_scoped(source: CandidateSource, is_self: impl Fn(CardInstanceId) -> bool) -> bool {
     match source {
         CandidateSource::Ability(source) => source.instance().is_some_and(is_self),
@@ -698,13 +702,15 @@ fn controlled_instance(
 /// Whether investigators `a` and `b` share a current location. Two
 /// investigators at no location never match.
 fn same_location(state: &GameState, a: InvestigatorId, b: InvestigatorId) -> bool {
-    let loc = |id| {
-        state
-            .investigators
-            .get(&id)
-            .and_then(|i| i.current_location)
-    };
-    loc(a).is_some_and(|la| loc(b) == Some(la))
+    location_of(state, a).is_some_and(|la| location_of(state, b) == Some(la))
+}
+
+/// The location investigator `id` is at, if any.
+fn location_of(state: &GameState, id: InvestigatorId) -> Option<LocationId> {
+    state
+        .investigators
+        .get(&id)
+        .and_then(|inv| inv.current_location)
 }
 
 /// Map the engine's `state::Phase` to the `card-dsl` mirror so a
