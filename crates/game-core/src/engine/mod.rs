@@ -12,6 +12,7 @@
 
 pub(crate) mod abilities_in_effect;
 pub(crate) mod ability_source;
+pub mod board;
 mod cx;
 pub use cx::Cx;
 pub(crate) mod designator;
