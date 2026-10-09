@@ -12,6 +12,9 @@
 //! - [`collect_forced`] — the forced filter over the two: one candidate per
 //!   hit, bound to one controller by the forced-binding rule, not filtered by
 //!   reachability.
+//! - [`collect_reactions`] — the reaction filter: one candidate per
+//!   investigator who can reach the hit's source (ADR 0010), plus the Fast
+//!   events in each investigator's hand.
 //!
 //! Why the walk is the whole board, rather than a table of zones per
 //! condition, is `docs/adr/0018-one-trigger-scan-walks-the-whole-board.md`.
@@ -22,14 +25,14 @@ use card_dsl::dsl::{
     TriggerKind,
 };
 
-use crate::card_registry;
-use crate::engine::abilities_in_effect;
+use crate::card_registry::{self, CardRegistry};
 use crate::engine::dispatch::cursor;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::initiation::{self, InitiationKind};
+use crate::engine::{abilities_in_effect, ability_source};
 use crate::state::{
-    self, AbilitySource, CandidateSource, CardCode, CardInPlay, CardInstanceId, DamageSource,
-    GameState, InvestigatorId, LocationId, ResolutionCandidate, Status,
+    self, AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInPlay, CardInstanceId,
+    DamageSource, GameState, InvestigatorId, LocationId, ResolutionCandidate, Status,
 };
 
 /// One card the walk visits: where its abilities are, its code, and the
@@ -69,7 +72,7 @@ pub(super) struct BoardSource<'a> {
 ///
 /// The walk does not filter by kind, timing or pattern. The forced collector
 /// ignores the hand slot (no corpus card prints a forced ability that works
-/// from hand); the reaction path uses it for Fast events (#966).
+/// from hand); [`collect_reactions`] uses it for Fast events.
 ///
 /// [`Investigator::controlled_card_instances`]: crate::state::Investigator::controlled_card_instances
 pub(super) fn board_walk<'a>(state: &'a GameState, event: &'a TimingEvent) -> Vec<BoardSource<'a>> {
@@ -262,6 +265,143 @@ pub(super) fn collect_forced(
     // Cover Up prompted at game end (#786).
     hits.retain(|hit| initiation::check(state, hit, InitiationKind::Forced).is_ok());
     hits
+}
+
+/// Every reaction `event` reaches in the `bucket` cell, as candidates that pass
+/// the initiation gate (ADR 0017), in [`board_walk`] order — the one reaction
+/// scan, which the coordinator, the window's re-validation and its fire-time
+/// check all ask (#568).
+///
+/// A reaction is a player's choice, so a hit becomes **one candidate per
+/// investigator who can reach its source** — ADR 0010's
+/// [`reachable_sources`](ability_source::reachable_sources), the predicate an
+/// activation answers to, asked here in the walk's investigator order. A forced
+/// ability is not filtered this way ([`collect_forced`]):
+///
+/// - a controlled card → its controller, and, for an encounter card in a threat
+///   area, every other investigator at that location (Haunted 01098's ruling);
+/// - a location, a card attached to or put into play at it, an enemy and its
+///   attachments → each investigator at that location;
+/// - the current **act** or **agenda** → **one** candidate, bound to the lead
+///   proxy: every investigator reaches it, and its corpus reaction (The Barrier
+///   01109's round-end advance) is the group's one offer, not one per seat;
+/// - a **Fast event in hand** → the investigator holding it, gated as a
+///   [`Play`](InitiationKind::Play), and offered once per copy however many of
+///   its abilities match.
+///
+/// Every other candidate is gated as a [`Reaction`](InitiationKind::Reaction).
+pub(super) fn collect_reactions(
+    state: &GameState,
+    event: &TimingEvent,
+    bucket: EventTiming,
+) -> Vec<ResolutionCandidate> {
+    let Some(reg) = card_registry::current() else {
+        return Vec::new();
+    };
+    let lead = cursor::first_active_investigator(state);
+    // Each investigator's reachable sources, asked once per scan and only if a
+    // board hit needs them.
+    let mut reach: Option<Vec<(InvestigatorId, Vec<AbilitySource>)>> = None;
+    let mut hits = Vec::new();
+    for walked in board_walk(state, event) {
+        let reactions: Vec<(AbilityAddress, EventPattern)> =
+            reactions_at(state, reg, walked.source, walked.code, bucket);
+        if reactions.is_empty() {
+            continue;
+        }
+        let (reachers, kind) = match walked.source {
+            CandidateSource::Hand => (
+                walked.controller.into_iter().collect(),
+                InitiationKind::Play,
+            ),
+            CandidateSource::Ability(AbilitySource::Act | AbilitySource::Agenda) => {
+                (lead.into_iter().collect(), InitiationKind::Reaction)
+            }
+            CandidateSource::Ability(source) => {
+                let reach = reach.get_or_insert_with(|| {
+                    investigator_order(state)
+                        .into_iter()
+                        .map(|id| {
+                            let sources = ability_source::reachable_sources(state, id)
+                                .into_iter()
+                                .map(|(source, _)| source)
+                                .collect();
+                            (id, sources)
+                        })
+                        .collect()
+                });
+                let reachers: Vec<InvestigatorId> = reach
+                    .iter()
+                    .filter(|(_, sources)| sources.contains(&source))
+                    .map(|(id, _)| *id)
+                    .collect();
+                (reachers, InitiationKind::Reaction)
+            }
+        };
+        for controller in reachers {
+            for (address, pattern) in &reactions {
+                if !pattern_matches(
+                    state,
+                    event,
+                    pattern,
+                    walked.source,
+                    walked.code,
+                    controller,
+                ) {
+                    continue;
+                }
+                let candidate = ResolutionCandidate {
+                    code: walked.code.clone(),
+                    controller,
+                    address: address.clone(),
+                    source: walked.source,
+                };
+                // The initiation gate (ADR 0017). For a Fast event this is the
+                // play gate — its effect must be able to change the game state
+                // (Evidence! 01022 at a 0-clue location, #495), no "cannot
+                // play" may forbid it (Dissonant Voices 01165, #917), and its
+                // cost must be payable (#501). Filtering keeps the offer honest;
+                // it is not the binding check — the wallet is shared, so a
+                // sibling option can empty it after this ran, and initiation
+                // re-asks (#568).
+                if initiation::check(state, &candidate, kind).is_err() {
+                    continue;
+                }
+                hits.push(candidate);
+                // One option per copy of a Fast event: a card with two matching
+                // abilities is still played once. No in-scope card has two.
+                if walked.source == CandidateSource::Hand {
+                    break;
+                }
+            }
+        }
+    }
+    hits
+}
+
+/// The reaction abilities of the card at `source` in the `bucket` cell, with
+/// their addresses: through the side-in-effect / grant funnel for a board
+/// source, the printed front for a card in hand (nothing grants to a card out
+/// of play).
+fn reactions_at(
+    state: &GameState,
+    reg: &CardRegistry,
+    source: CandidateSource,
+    code: &CardCode,
+    bucket: EventTiming,
+) -> Vec<(AbilityAddress, EventPattern)> {
+    abilities_in_effect::for_candidate_source_with(state, reg, source, code)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(address, ability)| match ability.trigger {
+            Trigger::OnEvent {
+                pattern,
+                timing,
+                kind: TriggerKind::Reaction,
+            } if timing == bucket => Some((address, pattern)),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Whether an ability declaring `pattern`, on the card at `source`, bound to

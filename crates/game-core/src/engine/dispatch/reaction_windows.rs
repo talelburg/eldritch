@@ -1,14 +1,12 @@
 //! Reaction-window and fast-window helpers.
 //!
-//! Contains the open/scan/fire/close pipeline for after-event reaction
-//! windows ([`scan_pending_triggers`], [`open_queued_reaction_window`],
-//! [`resume_reaction_window`], [`fire_pending_trigger`],
-//! [`close_reaction_window`]) and the fast-window
+//! Contains the open/fire/close pipeline for reaction windows
+//! ([`open_queued_reaction_window`], [`resume_reaction_window`],
+//! [`fire_pending_trigger`], [`close_reaction_window`]) and the fast-window
 //! eligibility checks
 //! ([`check_play_card`], [`check_activate_ability`],
-//! [`any_fast_play_eligible`], [`open_fast_window`]). Whether a pattern hears
-//! an event is the trigger scan's one matcher,
-//! [`trigger_scan::pattern_matches`].
+//! [`any_fast_play_eligible`], [`open_fast_window`]). Which reactions a window
+//! offers is the trigger scan's, [`trigger_scan::collect_reactions`].
 
 use std::borrow::Cow;
 
@@ -60,21 +58,6 @@ fn push_reaction_window(
     });
 }
 
-/// All reaction candidates (in-play + hand Fast + current act/agenda) for
-/// `event` at `bucket` — the `EmitEvent`/`TimingPoint` coordinator's per-cell
-/// reaction scan (#434). The caller names the cell it is resolving; a cell is
-/// populated iff this finds something in it (#702 deleted the per-event table of
-/// whether a condition opens a reaction window at all).
-pub(super) fn scan_reactions_at(
-    state: &GameState,
-    event: &TimingEvent,
-    bucket: EventTiming,
-) -> Vec<ResolutionCandidate> {
-    let mut candidates = scan_pending_triggers(state, event, bucket);
-    candidates.extend(scan_hand_fast_events(state, event, bucket));
-    candidates
-}
-
 /// Push a reaction window for the coordinator's pre-scanned `candidates` and
 /// open it (the round-end `when` act-advance window, #434). `bucket` is the cell
 /// the caller scanned, recorded on the frame so the fire-time re-validation can
@@ -85,7 +68,7 @@ pub(super) fn scan_reactions_at(
 /// This is also the one path where re-validation is provably a no-op — the caller
 /// scanned this cell moments ago and nothing between then and here mutates what
 /// the scan reads — so it carries the debug-only tripwire for #568's re-scan. A
-/// withdrawal *here* means [`scan_reactions_at`] disagrees with itself over
+/// withdrawal *here* means [`trigger_scan::collect_reactions`] disagrees with itself over
 /// unchanged state, which is a bug in the scan, not in the re-check. The other
 /// prompt site can't assert this: its window was queued an emit ago, and the
 /// forced abilities that resolved in between are entitled to have withdrawn
@@ -137,286 +120,6 @@ pub(super) fn open_forced_resolution(
         candidates,
     });
     open_queued_reaction_window(cx)
-}
-
-/// Scan every investigator's `cards_in_play` **and the current act/agenda** for
-/// `Trigger::OnEvent` reaction abilities matching `event` whose `EventTiming`
-/// equals `bucket`, building a pending-trigger list in active-investigator-first
-/// / turn-order resolution order (act/agenda board candidates, controlled by the
-/// lead, appended last).
-///
-/// The `bucket` filter is what lets the coordinator scan one timing cell at a
-/// time (#434): on `RoundEnded`, `When` surfaces act 01109's group advance while
-/// `At`/`After` surface nothing (its doom is *forced*, not a reaction). Since
-/// #702 every condition is scanned this way; the three that still bypass the
-/// coordinator pass the one cell they open at.
-///
-/// Returns an empty vec when the registry isn't installed (tests that
-/// don't touch card data) or no cards match.
-fn scan_pending_triggers(
-    state: &GameState,
-    event: &TimingEvent,
-    bucket: EventTiming,
-) -> Vec<ResolutionCandidate> {
-    if card_registry::current().is_none() {
-        return Vec::new();
-    }
-    // Active investigator first, then the rest of turn_order in their
-    // listed order. Investigators not in turn_order are skipped
-    // entirely — a bare plain skill-test path can run without a
-    // turn order populated, but no scenario opens a reaction window
-    // outside an action initiated by a turn-order investigator.
-    let mut order: Vec<InvestigatorId> = Vec::with_capacity(state.turn_order.len());
-    if let Some(active) = state.active_investigator {
-        order.push(active);
-    }
-    for id in &state.turn_order {
-        if Some(*id) != state.active_investigator {
-            order.push(*id);
-        }
-    }
-
-    let mut pending: Vec<ResolutionCandidate> = Vec::new();
-    for id in order {
-        let Some(inv) = state.investigators.get(&id) else {
-            continue;
-        };
-        for card in inv.controlled_card_instances() {
-            // The funnel (#774/#772): the side in effect, plus whatever the
-            // board grants this instance.
-            let Some(abilities) = abilities_in_effect::for_source(
-                state,
-                AbilitySource::InPlay(card.instance_id),
-                &card.code,
-            ) else {
-                continue;
-            };
-            for (address, ability) in &abilities {
-                let Trigger::OnEvent {
-                    pattern,
-                    timing,
-                    kind,
-                } = &ability.trigger
-                else {
-                    continue;
-                };
-                // Reaction abilities only, at the cell being scanned (#434): the
-                // coordinator scans the same (event, bucket) for both forced and
-                // reaction, so kind filtering keeps a Forced ability out of the
-                // reaction window (symmetric to `trigger_scan::collect_forced`). For single-bucket
-                // events `bucket` is the event's natural timing — behaviour-preserving.
-                if *kind != TriggerKind::Reaction || *timing != bucket {
-                    continue;
-                }
-                // The one matcher (#965): every narrowing — Dodge 01023's "at
-                // your location", Cover Up 01007's discoverer, Guard Dog 01021's
-                // and Research Librarian 01032's self-binding — is the pattern's
-                // and the event's, read against this card's source.
-                let source = CandidateSource::Ability(AbilitySource::InPlay(card.instance_id));
-                if !trigger_scan::pattern_matches(state, event, pattern, source, &card.code, id) {
-                    continue;
-                }
-                // Reaction candidates always have a source instance — an
-                // in-play / threat-area card, or the investigator card itself
-                // (#448 cp3a, now folded into `controlled_card_instances()`);
-                // abilities resolve by `code`.
-                let candidate = ResolutionCandidate {
-                    code: card.code.clone(),
-                    controller: id,
-                    address: address.clone(),
-                    source,
-                };
-                // The initiation gate (ADR 0017): change-state, eligibility, the
-                // "Limit X per [period]" counter, and cost.
-                if initiation::check(state, &candidate, InitiationKind::Reaction).is_ok() {
-                    pending.push(candidate);
-                }
-            }
-        }
-    }
-    pending.extend(scan_act_agenda_reactions(state, event, bucket));
-    pending
-}
-
-/// Scan the current act + agenda for `Trigger::OnEvent` reaction abilities
-/// matching `event` at `bucket` — act 01109's "When the round ends,
-/// investigators … may … advance" group window (#434). The act/agenda are not
-/// in any `cards_in_play` zone, so [`scan_pending_triggers`] can't reach them in
-/// its per-investigator loop. Binds as the forced scan binds the act and
-/// agenda (`trigger_scan::collect_forced`): controller = the lead proxy, the first Active investigator in `turn_order`
-/// ([`cursor::first_active_investigator`]; GLOSSARY "Lead investigator"), so
-/// the reaction outlives the first seat's elimination and the gate's status
-/// check never refuses it for that; the act's or the agenda's own
-/// [`AbilitySource`] kind; no per-instance usage cap (acts have none). Empty
-/// when the registry isn't installed, no investigator is Active, or nothing
-/// matches.
-fn scan_act_agenda_reactions(
-    state: &GameState,
-    event: &TimingEvent,
-    bucket: EventTiming,
-) -> Vec<ResolutionCandidate> {
-    if card_registry::current().is_none() {
-        return Vec::new();
-    }
-    let Some(lead) = cursor::first_active_investigator(state) else {
-        return Vec::new();
-    };
-    let mut hits = Vec::new();
-    // Each slot carries the source kind it *is* — the candidate never has to be
-    // matched back to a board card by its code afterwards (#735).
-    for (code, source) in [
-        state
-            .act_deck
-            .get(state.act_index)
-            .map(|a| (&a.code, AbilitySource::Act)),
-        state
-            .agenda_deck
-            .get(state.agenda_index)
-            .map(|a| (&a.code, AbilitySource::Agenda)),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        let Some(abilities) = abilities_in_effect::for_source(state, source, code) else {
-            continue;
-        };
-        for (address, ability) in &abilities {
-            let Trigger::OnEvent {
-                pattern,
-                timing,
-                kind,
-            } = &ability.trigger
-            else {
-                continue;
-            };
-            if *kind != TriggerKind::Reaction
-                || *timing != bucket
-                || !trigger_scan::pattern_matches(
-                    state,
-                    event,
-                    pattern,
-                    CandidateSource::Ability(source),
-                    code,
-                    lead,
-                )
-            {
-                continue;
-            }
-            let candidate = ResolutionCandidate {
-                code: code.clone(),
-                controller: lead,
-                address: address.clone(),
-                source: CandidateSource::Ability(source),
-            };
-            // The initiation gate (ADR 0017): suppress an act/agenda reaction
-            // that cannot initiate (e.g. The Barrier 01109's round-end advance
-            // when the Hallway group can't afford the clue threshold).
-            if initiation::check(state, &candidate, InitiationKind::Reaction).is_ok() {
-                hits.push(candidate);
-            }
-        }
-    }
-    hits
-}
-
-/// Scan every window-eligible investigator's hand for Fast **events** whose
-/// `Trigger::OnEvent` ability matches `kind` (Axis C, #335). The play-timing
-/// predicate is the same [`trigger_scan::pattern_matches`] used for in-play reactions — per
-/// Rules Reference p.11 a Fast reaction event plays "as if the described
-/// timing point were a triggering condition", so a hand Fast event is its
-/// in-play twin sourced from hand.
-///
-/// Returns [`CandidateSource::Hand`] candidates in active-investigator-first
-/// / turn-order order, like [`scan_pending_triggers`]. Empty when the registry
-/// isn't installed (tests that don't touch card data) or nothing matches.
-fn scan_hand_fast_events(
-    state: &GameState,
-    event: &TimingEvent,
-    bucket: EventTiming,
-) -> Vec<ResolutionCandidate> {
-    let Some(reg) = card_registry::current() else {
-        return Vec::new();
-    };
-    let mut order: Vec<InvestigatorId> = Vec::with_capacity(state.turn_order.len());
-    if let Some(active) = state.active_investigator {
-        order.push(active);
-    }
-    for id in &state.turn_order {
-        if Some(*id) != state.active_investigator {
-            order.push(*id);
-        }
-    }
-
-    let mut plays = Vec::new();
-    for id in order {
-        let Some(inv) = state.investigators.get(&id) else {
-            continue;
-        };
-        for code in &inv.hand {
-            let Some(meta) = (reg.metadata_for)(code) else {
-                continue;
-            };
-            if !meta.is_fast() || meta.card_type() != CardType::Event {
-                continue;
-            }
-            let Some(abilities) = (reg.abilities_for)(code) else {
-                continue;
-            };
-            for (idx, ability) in abilities.iter().enumerate() {
-                let Trigger::OnEvent {
-                    pattern,
-                    timing,
-                    kind,
-                } = &ability.trigger
-                else {
-                    continue;
-                };
-                // Reaction abilities only, at the cell being scanned (#434): the
-                // coordinator scans the same (event, bucket) for both forced and
-                // reaction, so kind filtering keeps a Forced ability out of the
-                // reaction window (symmetric to `trigger_scan::collect_forced`). For single-bucket
-                // events `bucket` is the event's natural timing — behaviour-preserving.
-                if *kind != TriggerKind::Reaction || *timing != bucket {
-                    continue;
-                }
-                if !trigger_scan::pattern_matches(
-                    state,
-                    event,
-                    pattern,
-                    CandidateSource::Hand,
-                    code,
-                    id,
-                ) {
-                    continue;
-                }
-                let ability_index = u8::try_from(idx)
-                    .expect("abilities vec exceeds u8::MAX — card-impl bug, abilities are tiny");
-                let candidate = ResolutionCandidate {
-                    code: code.clone(),
-                    controller: id,
-                    // A card in hand is not in play, so nothing grants to it.
-                    address: AbilityAddress::Printed(ability_index),
-                    source: CandidateSource::Hand,
-                };
-                // The initiation gate, as a *play* (ADR 0017): a Fast event is
-                // played, so it is checked like any other play — its effect must
-                // be able to change the game state (Evidence! 01022 at a 0-clue
-                // location, #495), no "cannot play" may forbid it (Dissonant
-                // Voices 01165, #917), and its resource cost must be payable
-                // (#501). Filtering here keeps the offer honest; it is not the
-                // binding check — the wallet is shared, so a sibling option can
-                // empty it after this ran, and initiation re-asks (#568).
-                if initiation::check(state, &candidate, InitiationKind::Play).is_err() {
-                    continue;
-                }
-                plays.push(candidate);
-                // One option per card: a card with two matching abilities is
-                // still offered once. No in-scope card has two.
-                break;
-            }
-        }
-    }
-    plays
 }
 
 /// The board anchor for a resolution candidate's source: a Fast hand event by
@@ -490,7 +193,7 @@ fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOpt
 ///
 /// # Why a re-scan rather than a re-check
 ///
-/// [`scan_reactions_at`] *is* the definition of "may be offered here". Re-running
+/// [`trigger_scan::collect_reactions`] *is* the definition of "may be offered here". Re-running
 /// it and intersecting cannot drift from the gates the first scan applied, and
 /// inherits any gate added later for free. The intersection
 ///
@@ -537,7 +240,7 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
         return 0;
     }
 
-    let mut fresh = scan_reactions_at(cx.state, &event, bucket);
+    let mut fresh = trigger_scan::collect_reactions(cx.state, &event, bucket);
     let mut kept: Vec<ResolutionCandidate> = Vec::with_capacity(stored.len());
     let mut lapsed: Vec<ResolutionCandidate> = Vec::new();
     for candidate in stored {
@@ -722,7 +425,7 @@ fn candidate_still_offerable(state: &GameState, candidate: &ResolutionCandidate)
     let Some((event, bucket)) = open_reaction_cell(state) else {
         return true;
     };
-    scan_reactions_at(state, event, bucket).contains(candidate)
+    trigger_scan::collect_reactions(state, event, bucket).contains(candidate)
 }
 
 /// Return [`AwaitingInput`] for the reaction window / forced run
@@ -1859,7 +1562,7 @@ pub(crate) fn check_activate_ability(
 ///
 /// Returns `false` when the card registry isn't installed (tests
 /// that don't touch card data) — same fallback as
-/// [`scan_pending_triggers`].
+/// [`trigger_scan::collect_reactions`].
 pub(super) fn any_fast_play_eligible(state: &GameState) -> bool {
     !enumerate_fast_plays(state).is_empty()
 }

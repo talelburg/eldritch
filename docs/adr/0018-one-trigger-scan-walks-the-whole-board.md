@@ -30,6 +30,21 @@ A forced hit is one candidate, and it is not filtered by reachability. ADR 0010:
 
 The subject is `TimingEvent::subject`, another exhaustive match: the investigator who entered, left, was attacked, tested, discovered, was dealt harm, ended their turn or was eliminated, and `by` for an enemy defeat. Phase boundaries, advances and the round's and game's end have none. The rule reproduces every binding the per-point arms made. It also reaches cards they never did: a location's *"after an enemy is defeated"* binds the investigator who defeated it.
 
+## Reactions are filtered by reachability; forced abilities are not
+
+The two kinds share the walk and the matcher, and differ only in how a hit becomes candidates.
+
+**A reaction is a player choosing to use an ability, so it is offered only to an investigator who may use its source.** ADR 0010's `reachable_sources` is the one predicate that answers that, and activation already asks it. `trigger_scan::collect_reactions` asks it too, and turns a hit into one candidate per investigator whose reachable sources include the hit's source, in the walk's investigator order:
+
+- a controlled card → its controller. An encounter card in a threat area also goes to each other investigator at that location, the clause Haunted 01098's ruling settles (ADR 0010);
+- a location, a card attached to it or put into play at it, an enemy and its attachments → each investigator at that location;
+- the current act or agenda → **one** candidate, bound to the lead proxy. Every investigator reaches it, and the corpus reaction printed there is a group's single offer: The Barrier 01109's *"When the round ends, investigators in the hallway may, as a group, spend the requisite number of clues to advance."*;
+- a Fast event in hand → the investigator holding it, gated as a play.
+
+Before this, the reaction scans reached only the investigators' controlled cards and the act and agenda, so a reaction on a location or an encounter card at your location was never offered. That contradicted ADR 0010's list of sources.
+
+**A forced ability is one candidate whatever reaches it.** ADR 0010: *"a forced ability is not restricted to the sources its controller could legally use"*. Silver Twilight Acolyte 01102 places its doom whether or not the investigator it attacked could use the enemy. Filtering forced hits by reachability would make whether a card's forced text happens depend on where the investigators stand.
+
 ## Considered options
 
 **One shared per-condition zone table**, used by both kinds: `ForcedTriggerPoint`'s tables, lifted out so reactions read them too. It fixes the forced/reaction drift and keeps today's scan cost. It was rejected because it keeps the failure that produced #698. The table is still a prediction of where a listening card can sit, made before the card exists, so it stays wrong until someone hand-edits the arm. A missing zone is also silent, because a card the table never visits is neither collected nor rejected. With the whole-board walk, a new kind of source is added once, in the walk, and both kinds see it. A wrong narrowing becomes a failing assertion about a card's printed word. The cost is a walk over every card at every cell, and the board is small. #117's event-keyed index is the remedy if it stops being small, and the walk is the shape such an index would index.
