@@ -102,7 +102,7 @@ pub(in crate::engine) fn dispatch_emit_event(cx: &mut Cx) -> EngineOutcome {
     let caller_owned = matches!(resolution, ConditionResolution::Caller);
     // Per-cell re-scan (#434): the prior cell may have changed board state.
     let has_forced = !trigger_scan::collect_forced(cx.state, &event, bucket).is_empty();
-    let has_reaction = !reaction_windows::scan_reactions_at(cx.state, &event, bucket).is_empty();
+    let has_reaction = !trigger_scan::collect_reactions(cx.state, &event, bucket).is_empty();
     if caller_owned && step == EmitStep::When {
         if has_forced || has_reaction {
             return EngineOutcome::Rejected {
@@ -188,7 +188,7 @@ pub(in crate::engine) fn dispatch_timing_point(cx: &mut Cx) -> EngineOutcome {
             }
         }
         TimingSub::Reaction => {
-            let candidates = reaction_windows::scan_reactions_at(cx.state, &event, bucket);
+            let candidates = trigger_scan::collect_reactions(cx.state, &event, bucket);
             if candidates.is_empty() {
                 finish_timing_point(cx);
                 EngineOutcome::Done

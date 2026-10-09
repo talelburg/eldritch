@@ -2,7 +2,7 @@
 //! that must reject when the Hallway group can't afford the act's clue
 //! threshold. Exercises the predicate through the installed `cards::REGISTRY` —
 //! the same `native_eligibility_for("01109:can_advance")` lookup the reaction
-//! scan performs in `scan_act_agenda_reactions`.
+//! scan performs through the initiation gate (`trigger_scan::collect_reactions`).
 
 use cards::REGISTRY;
 use game_core::engine::evaluator::EvalContext;

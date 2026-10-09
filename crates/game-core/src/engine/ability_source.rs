@@ -161,9 +161,9 @@ pub(crate) fn reachable_sources(
         return Vec::new();
     };
 
-    // The control bullet: `controlled_card_instances` is what the forced and
-    // reaction scans walk, and using it here is what makes the activation path
-    // agree with them (#707).
+    // The control bullet: `controlled_card_instances` is what the trigger
+    // scan's board walk visits for each investigator, and using it here is what
+    // makes the activation path agree with it (#707).
     //
     // It is a slightly *wider* set than "a card in play and under his or her
     // control", and deliberately so for this use: the threat area also holds
