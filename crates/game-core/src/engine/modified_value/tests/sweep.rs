@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::Status;
 
 /// The investigator card lives in `investigator_card`, not in
 /// `cards_in_play`; the sweep walks `controlled_card_instances()`,
@@ -193,4 +194,77 @@ fn a_granted_modifier_vanishes_when_the_grants_condition_flips() {
          keeping the modifier out",
     );
     assert_eq!(breakdown.total(), 3);
+}
+
+/// Investigator 2's combat, with investigator 1 beside them in the Study
+/// controlling a `combat-plus-1-here` card and holding `status`.
+fn neighbours_combat_with_buffer(status: Status) -> i32 {
+    let study = LocationId(3);
+    let mut buffer = test_support::test_investigator(1);
+    buffer.status = status;
+    buffer.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new("combat-plus-1-here"),
+        CardInstanceId(0),
+    ));
+    let state = GameStateBuilder::new()
+        .with_investigator_at(buffer, study)
+        .with_investigator_at(test_support::test_investigator(2), study)
+        .with_location(test_support::test_location(3, "Study"))
+        .build();
+    skill(&state, InvestigatorId(2), SkillKind::Combat)
+}
+
+/// An eliminated investigator's cards stop projecting modifiers. This is the
+/// elimination step-0 window, where the investigator is off `Active` but their
+/// cards have not yet been removed from play (Rules Reference p.10).
+#[test]
+fn an_eliminated_investigators_card_modifier_no_longer_applies() {
+    assert_eq!(
+        neighbours_combat_with_buffer(Status::Active),
+        4,
+        "an Active investigator's card buffs the investigator beside them",
+    );
+    assert_eq!(
+        neighbours_combat_with_buffer(Status::Defeated),
+        3,
+        "a defeated investigator's card no longer does",
+    );
+}
+
+/// Investigator 2's combat, with investigator 1 holding `status` and
+/// controlling a card that grants investigator 2's `grant-recipient` a combat
+/// modifier.
+fn combat_granted_by_neighbour_with(status: Status) -> i32 {
+    let mut granter = test_support::test_investigator(1);
+    granter.status = status;
+    granter.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new("grants-combat-to-recipient"),
+        CardInstanceId(0),
+    ));
+    let mut recipient = test_support::test_investigator(2);
+    recipient.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new("grant-recipient"),
+        CardInstanceId(1),
+    ));
+    let state = GameStateBuilder::new()
+        .with_investigator(granter)
+        .with_investigator(recipient)
+        .build();
+    skill(&state, InvestigatorId(2), SkillKind::Combat)
+}
+
+/// An eliminated investigator's cards stop granting abilities, so a modifier
+/// they grant another investigator's card goes with them.
+#[test]
+fn an_eliminated_investigators_card_no_longer_grants() {
+    assert_eq!(
+        combat_granted_by_neighbour_with(Status::Active),
+        4,
+        "an Active investigator's card grants the modifier",
+    );
+    assert_eq!(
+        combat_granted_by_neighbour_with(Status::Defeated),
+        3,
+        "a defeated investigator's card no longer does",
+    );
 }

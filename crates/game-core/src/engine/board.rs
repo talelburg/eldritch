@@ -1,5 +1,31 @@
-//! The board as a set of zones a card instance can sit in, and the one way to
-//! find an instance in them.
+//! The board as a set of zones a card sits in: the one walk over them, and the
+//! one way to find an instance in them.
+//!
+//! # The walk
+//!
+//! `walk` visits every card on the board, each with its [`Placement`], in
+//! ADR 0018's order:
+//!
+//! 1. each investigator — the active one first, then the rest of `turn_order`,
+//!    then anyone else by id — their investigator card, the cards in their play
+//!    area, then their threat area;
+//! 2. each location by [`LocationId`] — the location, its attachments, then the
+//!    cards put into play at it;
+//! 3. each enemy by its id, then its attachments;
+//! 4. the current act, then the current agenda.
+//!
+//! The trigger scan, the modifier sweep, the grant sweep, reachability and the
+//! instance lookup all read it, and none keeps a zone list of its own, so a new
+//! kind of source (Dunwich's) is added here once and every one of them sees it
+//! (`docs/adr/0018-one-trigger-scan-walks-the-whole-board.md`).
+//!
+//! **The walk is unfiltered; each caller filters it.** An eliminated
+//! investigator's cards are on it: the trigger scan, the modifier sweep and the
+//! grant sweep skip them with [`Placement::in_eliminated_area`], and the
+//! instance lookup does not. Fast events in hand are not on it at all — they
+//! are not on the board — and the trigger scan adds them itself.
+//!
+//! # Finding an instance
 //!
 //! [`find_instance`] and [`find_instance_mut`] answer *"where is the card with
 //! this instance id"* for the engine, for natives in `cards`, and for the web
@@ -18,10 +44,18 @@
 //! investigator's areas too: Cover Up's game-end trauma resolves at elimination
 //! step 0, after its holder has left `Active`, and must still find its card.
 
-use crate::state::{CardInPlay, CardInstanceId, EnemyId, GameState, InvestigatorId, LocationId};
+use std::collections::BTreeMap;
 
-/// Where a card instance sits on the board: which zone, and whose or which
-/// location's.
+use crate::state::{
+    AbilitySource, Act, Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState,
+    InvestigatorId, Location, LocationId, Status, UseKind,
+};
+
+/// Where a card sits on the board: which zone, and whose or which location's.
+///
+/// [`find_instance`] only ever answers with the six placements a card
+/// *instance* can have. `walk` also yields the four board cards that are not
+/// instances — a location, an enemy, the act and the agenda.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Placement {
     /// The investigator's own investigator card.
@@ -30,19 +64,27 @@ pub enum Placement {
     PlayArea(InvestigatorId),
     /// In the investigator's threat area.
     ThreatArea(InvestigatorId),
+    /// A location's own card.
+    Location(LocationId),
     /// Attached to a location (Obscuring Fog 01168).
     LocationAttachment(LocationId),
     /// Put into play **at** a location and controlled by nobody (Lita Chantler
-    /// 01117 in the Parlor).
+    /// 01117 in the Parlor). Its location is that location, but it is not an
+    /// attachment.
     AtLocation(LocationId),
+    /// An enemy's own card.
+    Enemy(EnemyId),
     /// Attached to an enemy.
     EnemyAttachment(EnemyId),
+    /// The current act. It is at no location.
+    Act,
+    /// The current agenda. It is at no location.
+    Agenda,
 }
 
 impl Placement {
     /// The investigator whose area holds the card — their investigator card,
-    /// play area or threat area — or `None` for a card at a location or on an
-    /// enemy.
+    /// play area or threat area — or `None` for any other placement.
     ///
     /// This is the investigator the engine treats as the card's controller, and
     /// the "you" of a card in a threat area: `glossary/You_Your.md`, *"the
@@ -51,68 +93,238 @@ impl Placement {
     pub fn investigator(self) -> Option<InvestigatorId> {
         match self {
             Self::InvestigatorCard(id) | Self::PlayArea(id) | Self::ThreatArea(id) => Some(id),
-            Self::LocationAttachment(_) | Self::AtLocation(_) | Self::EnemyAttachment(_) => None,
+            Self::Location(_)
+            | Self::LocationAttachment(_)
+            | Self::AtLocation(_)
+            | Self::Enemy(_)
+            | Self::EnemyAttachment(_)
+            | Self::Act
+            | Self::Agenda => None,
         }
     }
 
-    /// The location the card is at: the location it is attached to or put
-    /// into play at, the location of the investigator whose area holds it, or
-    /// the location of the enemy it is attached to. `None` when that
-    /// investigator or enemy is at no location.
+    /// The location the card is at: the location itself, the location it is
+    /// attached to or put into play at, the location of the investigator whose
+    /// area holds it, or the location of the enemy it is or is attached to.
+    /// `None` when that investigator or enemy is at no location, and for the act
+    /// and the agenda, which are nowhere.
     #[must_use]
     pub fn location(self, state: &GameState) -> Option<LocationId> {
         match self {
             Self::InvestigatorCard(id) | Self::PlayArea(id) | Self::ThreatArea(id) => {
                 state.investigators.get(&id)?.current_location
             }
-            Self::LocationAttachment(id) | Self::AtLocation(id) => Some(id),
-            Self::EnemyAttachment(id) => state.enemies.get(&id)?.current_location,
+            Self::Location(id) | Self::LocationAttachment(id) | Self::AtLocation(id) => Some(id),
+            Self::Enemy(id) | Self::EnemyAttachment(id) => state.enemies.get(&id)?.current_location,
+            Self::Act | Self::Agenda => None,
         }
     }
+
+    /// Whether the card sits in the area of an investigator who has been
+    /// eliminated — any status but `Active`. Rules Reference p.10 removes an
+    /// eliminated investigator's cards from play, all but the investigator card,
+    /// and this is the filter that keeps that card, and anything still on the
+    /// board in the step-0 window, from acting (#567).
+    #[must_use]
+    pub fn in_eliminated_area(self, state: &GameState) -> bool {
+        self.investigator()
+            .and_then(|id| state.investigators.get(&id))
+            .is_some_and(|inv| inv.status != Status::Active)
+    }
+}
+
+/// The record behind a card on the board, whichever kind of thing it is.
+///
+/// Callers need four things from one — its card code, whether it is exhausted,
+/// its remaining uses, and its card instance (if it has one) — and only the
+/// first is available uniformly. A location is a [`Location`] keyed by
+/// `LocationId`, an enemy is an [`Enemy`] keyed by `EnemyId`, and neither
+/// carries the per-instance state a [`CardInPlay`] does. Answering all four
+/// here is what keeps every caller from re-deriving "does this kind of card
+/// have an instance behind it".
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum SourceCard<'a> {
+    /// A card instance in play — an investigator card, a card in play, a
+    /// threat-area card, a card attached to or put into play at a location, or
+    /// an attachment on an enemy.
+    Instance(&'a CardInPlay),
+    /// A location card itself.
+    Location(&'a Location),
+    /// An enemy in play.
+    Enemy(&'a Enemy),
+    /// The current act card.
+    Act(&'a Act),
+    /// The current agenda card.
+    Agenda(&'a Agenda),
+}
+
+impl<'a> SourceCard<'a> {
+    /// The printed code the card's abilities are looked up by in the card
+    /// registry.
+    pub(crate) fn code(&self) -> &'a CardCode {
+        match *self {
+            SourceCard::Instance(card) => &card.code,
+            SourceCard::Location(location) => &location.code,
+            SourceCard::Enemy(enemy) => &enemy.code,
+            SourceCard::Act(act) => &act.code,
+            SourceCard::Agenda(agenda) => &agenda.code,
+        }
+    }
+
+    /// The card instance behind this card, if it has one. `None` for a
+    /// location (locations do not exhaust and carry no uses); for an enemy — an
+    /// enemy readies and exhausts through its own `exhausted` field, which is
+    /// not the card-instance state an `Exhaust` cost pays against; and for the
+    /// act and the agenda, which are `Act` / `Agenda` records in the scenario
+    /// decks and carry no per-instance state at all.
+    pub(crate) fn instance(&self) -> Option<&'a CardInPlay> {
+        match *self {
+            SourceCard::Instance(card) => Some(card),
+            SourceCard::Location(_)
+            | SourceCard::Enemy(_)
+            | SourceCard::Act(_)
+            | SourceCard::Agenda(_) => None,
+        }
+    }
+
+    /// Whether an `Exhaust` cost is already spent on this card. Only a card
+    /// instance can carry one; see [`instance`](Self::instance).
+    pub(crate) fn exhausted(&self) -> bool {
+        self.instance().is_some_and(|card| card.exhausted)
+    }
+
+    /// Remaining uses by kind — empty for a card with no card instance.
+    pub(crate) fn uses(&self) -> BTreeMap<UseKind, u8> {
+        self.instance()
+            .map(|card| card.uses.clone())
+            .unwrap_or_default()
+    }
+}
+
+/// One card the [`walk`] visits: the record behind it, and where it sits.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BoardCard<'a> {
+    /// The record behind the card.
+    pub(crate) card: SourceCard<'a>,
+    /// Where the card sits.
+    pub(crate) placement: Placement,
+    /// The [`AbilitySource`] that names the card's abilities.
+    pub(crate) source: AbilitySource,
+}
+
+impl<'a> BoardCard<'a> {
+    /// The card's code.
+    pub(crate) fn code(&self) -> &'a CardCode {
+        self.card.code()
+    }
+}
+
+/// Every card on the board, each with its [`Placement`], in ADR 0018's order —
+/// see the [module docs](self). Unfiltered: an eliminated investigator's cards
+/// are on it, and each caller decides whether to skip them.
+pub(crate) fn walk(state: &GameState) -> Vec<BoardCard<'_>> {
+    fn instances(
+        cards: &[CardInPlay],
+        placement: Placement,
+    ) -> impl Iterator<Item = BoardCard<'_>> {
+        cards.iter().map(move |card| BoardCard {
+            card: SourceCard::Instance(card),
+            placement,
+            source: AbilitySource::InPlay(card.instance_id),
+        })
+    }
+    let mut walked = Vec::new();
+    for id in investigator_order(state) {
+        let Some(inv) = state.investigators.get(&id) else {
+            continue;
+        };
+        walked.push(BoardCard {
+            card: SourceCard::Instance(&inv.investigator_card),
+            placement: Placement::InvestigatorCard(id),
+            source: AbilitySource::InPlay(inv.investigator_card.instance_id),
+        });
+        walked.extend(instances(&inv.cards_in_play, Placement::PlayArea(id)));
+        walked.extend(instances(&inv.threat_area, Placement::ThreatArea(id)));
+    }
+    for (&id, location) in &state.locations {
+        walked.push(BoardCard {
+            card: SourceCard::Location(location),
+            placement: Placement::Location(id),
+            source: AbilitySource::Location(id),
+        });
+        walked.extend(instances(
+            &location.attachments,
+            Placement::LocationAttachment(id),
+        ));
+        walked.extend(instances(
+            &location.cards_at_location,
+            Placement::AtLocation(id),
+        ));
+    }
+    for (&id, enemy) in &state.enemies {
+        walked.push(BoardCard {
+            card: SourceCard::Enemy(enemy),
+            placement: Placement::Enemy(id),
+            source: AbilitySource::Enemy(id),
+        });
+        walked.extend(instances(
+            &enemy.attachments,
+            Placement::EnemyAttachment(id),
+        ));
+    }
+    if let Some(act) = state.act_deck.get(state.act_index) {
+        walked.push(BoardCard {
+            card: SourceCard::Act(act),
+            placement: Placement::Act,
+            source: AbilitySource::Act,
+        });
+    }
+    if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
+        walked.push(BoardCard {
+            card: SourceCard::Agenda(agenda),
+            placement: Placement::Agenda,
+            source: AbilitySource::Agenda,
+        });
+    }
+    walked
+}
+
+/// The order the [`walk`] visits investigators in: the active investigator,
+/// then the rest of `turn_order`, then every other investigator by id — so an
+/// investigator a fixture never seated in `turn_order` is still walked, last.
+pub(crate) fn investigator_order(state: &GameState) -> Vec<InvestigatorId> {
+    let mut order: Vec<InvestigatorId> = state.active_investigator.into_iter().collect();
+    for id in state.turn_order.iter().chain(state.investigators.keys()) {
+        if !order.contains(id) {
+            order.push(*id);
+        }
+    }
+    order
 }
 
 /// The card instance `instance_id` names, wherever it sits on the board, with
 /// its [`Placement`]. `None` once it has left play.
 ///
-/// Searches every investigator's investigator card, play area and threat area
-/// (eliminated investigators included), every location's attachments and the
-/// cards put into play at it, and every enemy's attachments.
+/// The first instance on the board walk with that id, unfiltered: every
+/// investigator's investigator card, play area and threat area (eliminated
+/// investigators included), every location's attachments and the cards put
+/// into play at it, and every enemy's attachments.
 #[must_use]
 pub fn find_instance(
     state: &GameState,
     instance_id: CardInstanceId,
 ) -> Option<(&CardInPlay, Placement)> {
-    let is_it = |card: &&CardInPlay| card.instance_id == instance_id;
-    for (&id, inv) in &state.investigators {
-        if inv.investigator_card.instance_id == instance_id {
-            return Some((&inv.investigator_card, Placement::InvestigatorCard(id)));
-        }
-        if let Some(card) = inv.cards_in_play.iter().find(is_it) {
-            return Some((card, Placement::PlayArea(id)));
-        }
-        if let Some(card) = inv.threat_area.iter().find(is_it) {
-            return Some((card, Placement::ThreatArea(id)));
-        }
-    }
-    for (&id, location) in &state.locations {
-        if let Some(card) = location.attachments.iter().find(is_it) {
-            return Some((card, Placement::LocationAttachment(id)));
-        }
-        if let Some(card) = location.cards_at_location.iter().find(is_it) {
-            return Some((card, Placement::AtLocation(id)));
-        }
-    }
-    state.enemies.iter().find_map(|(&id, enemy)| {
-        enemy
-            .attachments
-            .iter()
-            .find(is_it)
-            .map(|card| (card, Placement::EnemyAttachment(id)))
+    walk(state).into_iter().find_map(|walked| {
+        walked
+            .card
+            .instance()
+            .filter(|card| card.instance_id == instance_id)
+            .map(|card| (card, walked.placement))
     })
 }
 
-/// The mutable twin of [`find_instance`]: the same zones, searched in the same
-/// order.
+/// The mutable twin of [`find_instance`]: the same instance, found by the same
+/// walk, then borrowed mutably out of the zone its placement names.
 ///
 /// Addressing by identity rather than by position is the #706 contract: a cost
 /// that removes a card mid-payment invalidates any position cached earlier, and
@@ -122,33 +334,25 @@ pub fn find_instance_mut(
     state: &mut GameState,
     instance_id: CardInstanceId,
 ) -> Option<(&mut CardInPlay, Placement)> {
-    let is_it = |card: &&mut CardInPlay| card.instance_id == instance_id;
-    for (&id, inv) in &mut state.investigators {
-        if inv.investigator_card.instance_id == instance_id {
-            return Some((&mut inv.investigator_card, Placement::InvestigatorCard(id)));
+    let (_, placement) = find_instance(state, instance_id)?;
+    let zone = match placement {
+        Placement::InvestigatorCard(id) => {
+            let card = &mut state.investigators.get_mut(&id)?.investigator_card;
+            return Some((card, placement));
         }
-        if let Some(card) = inv.cards_in_play.iter_mut().find(is_it) {
-            return Some((card, Placement::PlayArea(id)));
+        Placement::PlayArea(id) => &mut state.investigators.get_mut(&id)?.cards_in_play,
+        Placement::ThreatArea(id) => &mut state.investigators.get_mut(&id)?.threat_area,
+        Placement::LocationAttachment(id) => &mut state.locations.get_mut(&id)?.attachments,
+        Placement::AtLocation(id) => &mut state.locations.get_mut(&id)?.cards_at_location,
+        Placement::EnemyAttachment(id) => &mut state.enemies.get_mut(&id)?.attachments,
+        // `find_instance` answers only with an instance's placement.
+        Placement::Location(_) | Placement::Enemy(_) | Placement::Act | Placement::Agenda => {
+            return None;
         }
-        if let Some(card) = inv.threat_area.iter_mut().find(is_it) {
-            return Some((card, Placement::ThreatArea(id)));
-        }
-    }
-    for (&id, location) in &mut state.locations {
-        if let Some(card) = location.attachments.iter_mut().find(is_it) {
-            return Some((card, Placement::LocationAttachment(id)));
-        }
-        if let Some(card) = location.cards_at_location.iter_mut().find(is_it) {
-            return Some((card, Placement::AtLocation(id)));
-        }
-    }
-    state.enemies.iter_mut().find_map(|(&id, enemy)| {
-        enemy
-            .attachments
-            .iter_mut()
-            .find(is_it)
-            .map(|card| (card, Placement::EnemyAttachment(id)))
-    })
+    };
+    zone.iter_mut()
+        .find(|card| card.instance_id == instance_id)
+        .map(|card| (card, placement))
 }
 
 #[cfg(test)]
@@ -230,6 +434,77 @@ mod tests {
                 "the write landed on instance {instance}",
             );
         }
+    }
+
+    /// ADR 0018's order: the active investigator's cards first, then the rest
+    /// of `turn_order`; each location with its attachments and the cards put
+    /// into play at it; each enemy with its attachments; the act; the agenda.
+    #[test]
+    fn the_walk_visits_every_card_in_adr_0018_order() {
+        const SECOND: InvestigatorId = InvestigatorId(2);
+        let mut state = board();
+        let mut second = test_support::test_investigator(2);
+        second.investigator_card.instance_id = CardInstanceId(20);
+        state.investigators.insert(SECOND, second);
+        state.turn_order = vec![ROLAND, SECOND];
+        state.active_investigator = Some(SECOND);
+        state.act_deck = vec![Act {
+            code: CardCode::new("01108"),
+            clue_threshold: 2,
+        }];
+        state.agenda_deck = vec![Agenda {
+            code: CardCode::new("01105"),
+            doom_threshold: 3,
+        }];
+
+        let walked: Vec<_> = walk(&state)
+            .iter()
+            .map(|card| (card.placement, card.source))
+            .collect();
+        let instance = |id| AbilitySource::InPlay(CardInstanceId(id));
+        assert_eq!(
+            walked,
+            vec![
+                (Placement::InvestigatorCard(SECOND), instance(20)),
+                (Placement::InvestigatorCard(ROLAND), instance(10)),
+                (Placement::PlayArea(ROLAND), instance(11)),
+                (Placement::ThreatArea(ROLAND), instance(12)),
+                (Placement::Location(STUDY), AbilitySource::Location(STUDY)),
+                (Placement::LocationAttachment(STUDY), instance(40)),
+                (Placement::AtLocation(STUDY), instance(60)),
+                (
+                    Placement::Location(HALLWAY),
+                    AbilitySource::Location(HALLWAY)
+                ),
+                (Placement::Enemy(GHOUL), AbilitySource::Enemy(GHOUL)),
+                (Placement::EnemyAttachment(GHOUL), instance(50)),
+                (Placement::Act, AbilitySource::Act),
+                (Placement::Agenda, AbilitySource::Agenda),
+            ],
+        );
+    }
+
+    /// Eliminated investigators are on the walk; each caller filters them.
+    #[test]
+    fn a_card_in_an_eliminated_investigators_area_is_flagged_and_no_other_is() {
+        let mut state = board();
+        let flagged = |state: &GameState| -> Vec<bool> {
+            walk(state)
+                .iter()
+                .map(|card| card.placement.in_eliminated_area(state))
+                .collect()
+        };
+        assert!(flagged(&state).iter().all(|f| !f));
+        state
+            .investigators
+            .get_mut(&ROLAND)
+            .expect("Roland is on the board")
+            .status = Status::Resigned;
+        assert_eq!(
+            flagged(&state),
+            vec![true, true, true, false, false, false, false, false, false],
+            "Roland's investigator card, play area and threat area; nothing else",
+        );
     }
 
     #[test]
