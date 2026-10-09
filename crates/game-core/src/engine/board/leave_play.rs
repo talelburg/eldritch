@@ -54,7 +54,7 @@
 //!
 //! A verb is added only when a card prints a new way out of play. A new exit is
 //! a sibling verb over the same router, so the owner rule and the cascade stay
-//! in one place: the victory display is one more [`Exit`] arm, and a location
+//! in one place: the victory display is one more `Exit` arm, and a location
 //! leaving play takes its attachments and the cards put into play at it through
 //! `discard_attachments`. There is deliberately no public destination enum: a
 //! caller always knows which exit it means.
