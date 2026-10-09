@@ -46,14 +46,19 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, ApplyResult};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, ChaosBag, ChaosToken, ContinuationStack, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Owner, Phase, TokenModifiers,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, ContinuationStack, DiscardPile,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase, TokenModifiers,
+    Zone,
 };
-use game_core::{assert_event, test_support};
+use game_core::{assert_event, assert_event_sequence, test_support};
 
 const GHOUL_MINION: &str = "01160";
 const MOB_ENFORCER: &str = "01101";
 const GHOUL_PRIEST: &str = "01116";
+/// A card attached to the enemy under test. No core card attaches to an enemy,
+/// so this models the primitive — an attachment with an owner — rather than a
+/// printed card (ADR 0016).
+const ATTACHMENT: &str = "_enemy_attachment";
 
 #[ctor::ctor(unsafe)]
 fn install_real_registry() {
@@ -212,4 +217,89 @@ fn defeated_victory_enemy_goes_to_the_victory_display_and_no_discard_pile() {
         "the victory display is instead of the discard pile"
     );
     assert!(after.investigators[&inv_id].discard.is_empty());
+}
+
+/// Attach an investigator-owned card to `enemy_id`.
+fn attach_investigators_card(state: &mut GameState, enemy_id: EnemyId, owner: InvestigatorId) {
+    state
+        .enemies
+        .get_mut(&enemy_id)
+        .expect("the enemy under test")
+        .attachments
+        .push(CardInPlay::enter_play(
+            CardCode::new(ATTACHMENT),
+            CardInstanceId(500),
+            Owner::Investigator(owner),
+        ));
+}
+
+/// **A defeated enemy's attachment is discarded by its own owner.**
+/// `glossary/Leaves_Play.md`: *"If a card leaves play, the following
+/// consequences occur simultaneously with the card leaving play: … All
+/// attachments on the card are discarded."* — and a discarded card goes to its
+/// owner's pile (`glossary/Discard_Piles.md`). The Ghoul Minion is the encounter
+/// deck's; the card attached to it is the investigator's. The disposal events
+/// follow `EnemyDefeated`, the enemy's first.
+#[test]
+fn a_defeated_enemys_attachment_is_discarded_by_its_owner() {
+    let (inv_id, enemy_id, mut state) =
+        solo_investigator_facing(GHOUL_MINION, Owner::EncounterDeck, 2, 2, None);
+    attach_investigators_card(&mut state, enemy_id, inv_id);
+    let result = fight_to_defeat(state, inv_id, enemy_id);
+
+    assert_eq!(
+        result.state.encounter_discard,
+        vec![CardCode::new(GHOUL_MINION)]
+    );
+    assert_eq!(
+        result.state.investigators[&inv_id].discard,
+        vec![CardCode::new(ATTACHMENT)],
+        "the attachment goes to its owner's discard, not the encounter discard"
+    );
+    assert_event_sequence!(
+        result.events,
+        Event::EnemyDefeated { enemy, .. } if *enemy == enemy_id,
+        Event::CardDiscarded {
+            code,
+            from: Zone::Enemy,
+            to: DiscardPile::Encounter,
+        } if code.as_str() == GHOUL_MINION,
+        Event::CardDiscarded {
+            code,
+            from: Zone::EnemyAttachment,
+            to: DiscardPile::Investigator(to),
+        } if code.as_str() == ATTACHMENT && *to == inv_id,
+    );
+}
+
+/// **A Victory enemy's attachment is discarded too.** The enemy goes to the
+/// victory display instead of a discard pile, but it still leaves play, so
+/// Leaves Play's *"All attachments on the card are discarded"* applies to it as
+/// to any other.
+#[test]
+fn a_defeated_victory_enemys_attachment_is_discarded_by_its_owner() {
+    let (inv_id, enemy_id, mut state) =
+        solo_investigator_facing(GHOUL_PRIEST, Owner::EncounterDeck, 5, 4, Some(2));
+    attach_investigators_card(&mut state, enemy_id, inv_id);
+    let result = fight_to_defeat(state, inv_id, enemy_id);
+
+    assert_eq!(
+        result.state.victory_display,
+        vec![CardCode::new(GHOUL_PRIEST)]
+    );
+    assert!(result.state.encounter_discard.is_empty());
+    assert_eq!(
+        result.state.investigators[&inv_id].discard,
+        vec![CardCode::new(ATTACHMENT)]
+    );
+    assert_event_sequence!(
+        result.events,
+        Event::EnemyDefeated { enemy, .. } if *enemy == enemy_id,
+        Event::EnteredVictoryDisplay { code, victory: 2 } if code.as_str() == GHOUL_PRIEST,
+        Event::CardDiscarded {
+            code,
+            from: Zone::EnemyAttachment,
+            to: DiscardPile::Investigator(to),
+        } if code.as_str() == ATTACHMENT && *to == inv_id,
+    );
 }

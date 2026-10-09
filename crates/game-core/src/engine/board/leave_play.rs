@@ -27,6 +27,11 @@
 //! longer in the game has no pile either, and their card is removed to the
 //! game's pile.
 //!
+//! [`place_in_victory_display`] is the one exit the owner does not route: the
+//! victory display is *"an out-of-play game area shared by all players"*
+//! (`glossary/Victory_Display_Victory_Points.md`), so every card that takes it
+//! lands in the one display.
+//!
 //! # Leaves Play's consequences
 //!
 //! `glossary/Leaves_Play.md`: *"If a card leaves play, the following
@@ -46,9 +51,10 @@
 //! # One event per card
 //!
 //! Every card that leaves emits exactly one event: [`Event::CardDiscarded`]
-//! naming the pile it landed in, or [`Event::CardRemovedFromGame`]. The leaving
-//! card's event comes first, then one per attachment in attachment order. Each
-//! names the [`Zone`] the card left.
+//! naming the pile it landed in, [`Event::CardRemovedFromGame`], or
+//! [`Event::EnteredVictoryDisplay`]. The leaving card's event comes first, then
+//! one per attachment in attachment order. A discard or a removal names the
+//! [`Zone`] the card left.
 //!
 //! # Adding an exit
 //!
@@ -118,6 +124,27 @@ pub fn remove_from_game(cx: &mut Cx, card: impl Into<LeavingCard>) -> Option<Pla
     leave_play(cx, card.into(), Exit::RemoveFromGame)
 }
 
+/// **Place `card` in the victory display**, wherever it sits, worth `victory`
+/// points. The victory display is *"an out-of-play game area shared by all
+/// players"* (`glossary/Victory_Display_Victory_Points.md`), so the card goes
+/// there whoever owns it, and emits [`Event::EnteredVictoryDisplay`]. Its
+/// attachments are *discarded*, each by its own owner, and its tokens go away,
+/// as for every exit.
+///
+/// The defeat of a Victory enemy takes this exit: *"As a victory point enemy is
+/// defeated, place the card in the victory display instead of in the discard
+/// pile."*
+///
+/// Returns the [`Placement`] the card left; `None`, with nothing changed and no
+/// event, as for [`discard_from_play`].
+pub fn place_in_victory_display(
+    cx: &mut Cx,
+    card: impl Into<LeavingCard>,
+    victory: u8,
+) -> Option<Placement> {
+    leave_play(cx, card.into(), Exit::VictoryDisplay { victory })
+}
+
 /// Which exit a card takes. Private: each variant has its own public verb.
 #[derive(Debug, Clone, Copy)]
 enum Exit {
@@ -125,6 +152,8 @@ enum Exit {
     Discard,
     /// [`remove_from_game`].
     RemoveFromGame,
+    /// [`place_in_victory_display`], worth `victory` points.
+    VictoryDisplay { victory: u8 },
 }
 
 /// The router: take `card` off the board, file it through `exit` by its owner,
@@ -167,6 +196,11 @@ fn file(cx: &mut Cx, code: CardCode, owner: Owner, from: Zone, exit: Exit) {
         Owner::EncounterDeck | Owner::Scenario => None,
     };
     let event = match (exit, owner, owning_investigator) {
+        // Shared by all players, so whoever owns the card.
+        (Exit::VictoryDisplay { victory }, _, _) => {
+            state.victory_display.push(code.clone());
+            Event::EnteredVictoryDisplay { code, victory }
+        }
         (Exit::Discard, Owner::Investigator(_), Some((id, inv))) => {
             inv.discard.push(code.clone());
             Event::CardDiscarded {
@@ -419,6 +453,63 @@ mod tests {
                         from: zone_of(zone),
                     }],
                     "{case}: one event",
+                );
+            }
+        }
+    }
+
+    /// **Place in the victory display, owner × zone.** The display is *"an
+    /// out-of-play game area shared by all players"*
+    /// (`glossary/Victory_Display_Victory_Points.md`), so every owner's card
+    /// lands in it, and in no pile of its owner's. An enemy's attachments are
+    /// still discarded, each by its own owner (`glossary/Leaves_Play.md`).
+    #[test]
+    fn place_in_victory_display_takes_each_owner_from_each_zone() {
+        for owner in OWNERS {
+            for zone in ZONES {
+                let (mut state, card) = board_with(owner, zone);
+                state
+                    .enemies
+                    .get_mut(&GHOUL)
+                    .unwrap()
+                    .attachments
+                    .push(instance("MINE", 71, Owner::Investigator(OWNER)));
+                let (left, events) = run(
+                    &mut state,
+                    |cx, card| place_in_victory_display(cx, card, 2),
+                    card,
+                );
+                let case = format!("{owner:?} leaving {zone:?}");
+                assert_eq!(left, Some(zone), "{case}: reports where it left");
+                assert!(!still_on_board(&state, card), "{case}: off the board");
+                assert_eq!(
+                    state.victory_display,
+                    vec![CardCode::new(LEAVING_CODE)],
+                    "{case}: in the display"
+                );
+                assert_eq!(
+                    events[0],
+                    Event::EnteredVictoryDisplay {
+                        code: CardCode::new(LEAVING_CODE),
+                        victory: 2,
+                    },
+                    "{case}: its one event comes first"
+                );
+                let cascaded = matches!(zone, Placement::Enemy(_));
+                let expected_piles = if cascaded {
+                    only("MINE", 0)
+                } else {
+                    Default::default()
+                };
+                assert_eq!(
+                    piles(&state),
+                    expected_piles,
+                    "{case}: no pile but the cascade's"
+                );
+                assert_eq!(
+                    events.len(),
+                    if cascaded { 2 } else { 1 },
+                    "{case}: {events:?}"
                 );
             }
         }

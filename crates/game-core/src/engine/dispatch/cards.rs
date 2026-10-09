@@ -31,9 +31,8 @@ pub(super) const INITIAL_HAND_SIZE: u8 = 5;
 /// engine's unit tests, whose test registry knows no real card, behave as if no
 /// card is a weakness.
 ///
-/// Two consumers: the opening-hand set-aside below, and the defeated-enemy
-/// disposal in [`combat`](super::combat) (a defeated weakness enemy goes to its
-/// owner's discard pile rather than the encounter discard, #632).
+/// One consumer: the opening-hand set-aside below. Where a card goes when it
+/// leaves play is its owner's question, not this one's (#976).
 pub(super) fn is_weakness_code(code: &CardCode) -> bool {
     card_registry::current()
         .and_then(|reg| (reg.metadata_for)(code))

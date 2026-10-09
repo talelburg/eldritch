@@ -50,9 +50,13 @@
 //! out of play, wherever it sits. Both file the card by its **owner** through
 //! one router and apply the Leaves Play consequences in the same step; see
 //! [`leave_play`].
+//!
+//! [`place_in_victory_display`] is the victory display's exit, which a
+//! defeated Victory enemy takes.
 
 pub mod leave_play;
 
+pub use leave_play::place_in_victory_display;
 pub use leave_play::{discard_from_play, remove_from_game, LeavingCard};
 
 use std::collections::BTreeMap;
