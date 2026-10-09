@@ -26,6 +26,7 @@ use card_dsl::dsl::{
 };
 
 use crate::card_registry::{self, CardRegistry};
+use crate::engine::board::{self, Placement};
 use crate::engine::dispatch::cursor;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::initiation::{self, InitiationKind};
@@ -661,13 +662,10 @@ fn self_scoped(source: CandidateSource, is_self: impl Fn(CardInstanceId) -> bool
 
 /// Whether `source` is a card instance attached to `location`.
 fn attached_to(state: &GameState, source: CandidateSource, location: LocationId) -> bool {
-    let Some(instance) = source.instance() else {
-        return false;
-    };
-    state
-        .locations
-        .get(&location)
-        .is_some_and(|loc| loc.attachments.iter().any(|c| c.instance_id == instance))
+    source
+        .instance()
+        .and_then(|instance| board::find_instance(state, instance))
+        .is_some_and(|(_, placement)| placement == Placement::LocationAttachment(location))
 }
 
 /// Whether `source` is a weakness `investigator` controls.
@@ -676,27 +674,16 @@ fn controlled_weakness(
     source: CandidateSource,
     investigator: InvestigatorId,
 ) -> bool {
-    let Some(instance) = source.instance() else {
+    let Some((card, placement)) = source
+        .instance()
+        .and_then(|instance| board::find_instance(state, instance))
+    else {
         return false;
     };
-    let Some(card) = controlled_instance(state, investigator, instance) else {
-        return false;
-    };
-    card_registry::current()
-        .and_then(|reg| (reg.metadata_for)(&card.code))
-        .is_some_and(|meta| meta.weakness)
-}
-
-fn controlled_instance(
-    state: &GameState,
-    investigator: InvestigatorId,
-    instance: CardInstanceId,
-) -> Option<&CardInPlay> {
-    state
-        .investigators
-        .get(&investigator)?
-        .controlled_card_instances()
-        .find(|card| card.instance_id == instance)
+    placement.investigator() == Some(investigator)
+        && card_registry::current()
+            .and_then(|reg| (reg.metadata_for)(&card.code))
+            .is_some_and(|meta| meta.weakness)
 }
 
 /// Whether investigators `a` and `b` share a current location. Two
