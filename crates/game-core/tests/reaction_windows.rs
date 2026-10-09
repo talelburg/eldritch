@@ -14,7 +14,7 @@
 
 use card_dsl::dsl::{
     self, Ability, EventPattern, EventTiming, InvestigatorTarget, LocationTarget, SkillTestKind,
-    TestOutcome,
+    TestOutcome, TestedLocationScope,
 };
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
@@ -38,7 +38,7 @@ const ROLAND_REACTION: &str = "MOCK-OE-ROLAND";
 const BYSTANDER_REACTION: &str = "MOCK-OE-BYSTANDER";
 
 /// Mock: a card with two `OnEvent` abilities. Exercises the
-/// per-ability-index loop inside `scan_pending_triggers` so each
+/// per-ability-index loop inside the reaction scan so each
 /// ability gets its own pending-trigger entry.
 const TWO_REACTIONS: &str = "MOCK-OE-TWO";
 
@@ -70,6 +70,7 @@ fn investigated(by_controller: bool) -> EventPattern {
         outcome: TestOutcome::Success,
         kind: Some(SkillTestKind::Investigate),
         by_controller,
+        tested_location: TestedLocationScope::Any,
     }
 }
 
@@ -1205,9 +1206,9 @@ fn investigate_to_success_scenario(
 /// holds `bystander_card` and stands elsewhere. The first investigator takes
 /// the test; the second is the one whose card may or may not react to it.
 ///
-/// The second is in `turn_order`, which is what `scan_pending_triggers` walks —
-/// an investigator outside it is skipped before any pattern is consulted, so
-/// leaving them out would have made both tests below pass for the wrong reason.
+/// The second is seated in `turn_order`, as in a real game, so the reaction
+/// scan walks their cards for the reason the tests below are about rather than
+/// by the walk's fallback for an unseated fixture investigator.
 fn investigate_with_a_bystander(
     bystander_card: &str,
 ) -> (InvestigatorId, InvestigatorId, GameState) {

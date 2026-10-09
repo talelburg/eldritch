@@ -20,7 +20,7 @@
 //! `Act.round_end_advance` was deleted with the coordinator remodel).
 //!
 //! The **reverse** is a Forced on-advance ability that fires via
-//! `ForcedTriggerPoint::ActAdvanced` when the act advances
+//! the act's own `ActAdvanced` condition when the act advances
 //! (Rules Reference p.3: flip the card, follow the reverse). It reveals
 //! the Parlor (01115), puts the set-aside Lita Chantler (01117) into play there,
 //! and spawns the set-aside Ghoul Priest (01116) in the Hallway (01112), making

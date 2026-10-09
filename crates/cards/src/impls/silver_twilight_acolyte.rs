@@ -51,7 +51,7 @@
 //! cancel abandons the condition's whole sequence (#714), so the `after` cell
 //! this ability sits in is never walked.
 
-use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
+use card_dsl::dsl::{self, Ability, AttackerScope, EventPattern, EventTiming, TargetScope};
 
 /// `ArkhamDB` code for Silver Twilight Acolyte.
 pub const CODE: &str = "01102";
@@ -59,7 +59,10 @@ pub const CODE: &str = "01102";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::forced_on_event(
-        EventPattern::EnemyAttacks,
+        EventPattern::EnemyAttacks {
+            attacker: AttackerScope::This,
+            target: TargetScope::Any,
+        },
         EventTiming::After,
         dsl::place_doom_on_current_agenda(1u8),
     )]
@@ -78,7 +81,10 @@ mod tests {
         assert_eq!(
             abilities[0].trigger,
             Trigger::OnEvent {
-                pattern: EventPattern::EnemyAttacks,
+                pattern: EventPattern::EnemyAttacks {
+                    attacker: AttackerScope::This,
+                    target: TargetScope::Any,
+                },
                 timing: EventTiming::After,
                 kind: TriggerKind::Forced,
             },

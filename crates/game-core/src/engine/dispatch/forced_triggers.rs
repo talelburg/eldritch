@@ -1,161 +1,28 @@
-//! Forced-trigger dispatch: fires `Trigger::OnEvent` abilities printed
-//! on scenario-structure cards (locations, acts, agendas) at framework
-//! timing points, via an immediate path separate from the player
-//! reaction-window machinery. Multiple simultaneous triggers resolve in
-//! a fixed deterministic order (see [`queue_forced_triggers`]), beneath the
-//! universal [`queue_event`](super::emit::queue_event) chokepoint.
+//! The lone forced hit's firing path and its #466 acknowledge.
+//!
+//! Which forced abilities a timing event reaches is the one trigger scan's
+//! answer ([`trigger_scan::collect_forced`]); two or more simultaneous hits
+//! are ordered by the lead (`open_forced_resolution`, #213). What is left here
+//! is the single hit: fire it through [`initiation::initiate`], the path the
+//! ordered run and reactions share, and in interactive play surface it as a
+//! one-option acknowledge before it resolves (#466).
 
-use card_dsl::dsl::{
-    self, Effect, EventPattern, EventTiming, SkillTestKind, TestOutcome, Trigger, TriggerKind,
-};
+use std::borrow::Cow;
+
+use card_dsl::dsl::{Effect, EventTiming};
 
 use crate::action::InputResponse;
 use crate::card_registry;
-use crate::engine::dispatch::cursor;
-use crate::engine::dispatch::initiation::{self, InitiationKind};
-use crate::engine::dispatch::reaction_windows;
-use crate::engine::evaluator::{self, EvalContext};
+use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::{initiation, reaction_windows, trigger_scan};
 use crate::engine::outcome::{ChoiceOption, EngineOutcome, InputRequest, OptionId, ResumeToken};
-use crate::engine::{abilities_in_effect, Cx};
-use crate::state::{
-    self, AbilitySource, AcknowledgeForcedFrame, CandidateSource, CardCode, EnemyId, GameState,
-    InvestigatorId, LocationId, ResolutionCandidate, Status,
-};
+use crate::engine::Cx;
+use crate::state::{AcknowledgeForcedFrame, CardCode};
 
-/// A framework timing point at which Forced (`Trigger::OnEvent`)
-/// abilities on scenario-structure cards may fire. Each variant carries
-/// the binding context the fired effect needs.
-///
-/// `pub(crate)` — not part of the public API. Tests reach a timing point
-/// through `TestSession::fire_at`, which takes the public
-/// [`TimingEvent`](crate::engine::TimingEvent).
-/// Wired into `move_action` (`EnteredLocation`) and all eight phase boundaries
-/// (`PhaseStarted` / `PhaseEnded`, #697).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ForcedTriggerPoint {
-    /// An investigator entered a location. Scans that location's card
-    /// for `EventPattern::EnteredLocation` forced abilities; binds
-    /// controller = the entering investigator.
-    EnteredLocation {
-        /// The investigator who entered the location.
-        investigator: InvestigatorId,
-        /// The location that was entered.
-        location: LocationId,
-    },
-    /// A phase began (`Appendix_II_Timing_and_Gameplay.md` steps 1.1 / 2.1 /
-    /// 3.1 / 4.1). Scans the current act and agenda for
-    /// `EventPattern::PhaseStarted { phase }` forced abilities; binds
-    /// controller = the lead investigator (board-wide effects ignore it).
-    /// The mirror of [`PhaseEnded`](Self::PhaseEnded), sharing its scan.
-    PhaseStarted { phase: state::Phase },
-    /// A phase ended. Scans the current act and agenda for
-    /// `EventPattern::PhaseEnded { phase }` forced abilities; binds
-    /// controller = the lead investigator (board-wide effects ignore it).
-    PhaseEnded { phase: state::Phase },
-    /// An act advanced (its reverse side resolves). Scans the *leaving*
-    /// act's card for `EventPattern::ActAdvanced` forced abilities; binds
-    /// controller = the lead investigator.
-    ActAdvanced {
-        /// Printed code of the act that advanced.
-        code: CardCode,
-    },
-    /// An agenda advanced (its reverse side resolves on doom). Scans the
-    /// *leaving* agenda's card for `EventPattern::AgendaAdvanced` forced
-    /// abilities; binds controller = the lead investigator. The mirror of
-    /// [`ActAdvanced`](Self::ActAdvanced) — fired from `advance_agenda`.
-    AgendaAdvanced {
-        /// Printed code of the agenda that advanced.
-        code: CardCode,
-    },
-    /// An enemy was defeated. Scans the *current act* for
-    /// `EventPattern::EnemyDefeated` forced abilities whose `code` narrow
-    /// matches (or is `None`); binds controller = the lead investigator.
-    /// The act-3 objective (01110) advances on the Ghoul Priest's defeat
-    /// through this point.
-    EnemyDefeated {
-        /// Printed code of the defeated enemy (for `code`-narrow matching).
-        code: CardCode,
-    },
-    /// An enemy attacked an investigator (RR p.25 step 3.3). Scans the
-    /// **attacking enemy's own card** for `EventPattern::EnemyAttacks` forced
-    /// abilities — Silver Twilight Acolyte 01102's *"**Forced** - After Silver
-    /// Twilight Acolyte attacks: Place 1 doom on the current agenda."* Binds
-    /// controller = the attacked investigator (a board-wide effect ignores it;
-    /// nothing in the corpus reads it).
-    ///
-    /// The only forced point whose scan source is an enemy: the attack is the
-    /// only triggering condition an enemy's own printed ability keys off in the
-    /// Core/Dunwich corpus. Which zones a point reaches is #698's question, not
-    /// this variant's.
-    EnemyAttacks {
-        /// The attacking enemy — the instance whose card is scanned.
-        enemy: EnemyId,
-        /// The investigator being attacked (controller binding).
-        investigator: InvestigatorId,
-    },
-    /// The round ended (step 4.6). Scans the current act and agenda for
-    /// `EventPattern::RoundEnded` forced abilities; binds controller =
-    /// the lead investigator (board-wide effects ignore it).
-    RoundEnded,
-    /// An investigator's turn ended (step 2.2.2). Scans that
-    /// investigator's controlled card instances (threat area + in play)
-    /// for `EventPattern::EndOfTurn` forced abilities; binds controller
-    /// = that investigator. First consumer: Frozen in Fear (01164), C4c.
-    EndOfTurn {
-        /// The investigator whose turn ended.
-        investigator: InvestigatorId,
-    },
-    /// A skill test resolved (RR ST.6). Forced side of
-    /// [`TimingEvent::SkillTestResolved`](super::emit::TimingEvent::SkillTestResolved).
-    /// Scans the resolving investigator's controlled card instances (threat
-    /// area + in play) **and** the investigated location's attachment zone
-    /// (Obscuring Fog 01168) for matching `EventPattern::SkillTestResolved`
-    /// forced abilities; binds controller = that investigator. The location is
-    /// derived from the in-flight `SkillTest` frame's `tested_location` at scan
-    /// time, so this point carries no location of its own.
-    SkillTestResolved {
-        /// The investigator who took the test.
-        investigator: InvestigatorId,
-        /// The test kind — matched against a listener's `kind` narrowing.
-        kind: SkillTestKind,
-        /// The test outcome — matched against a listener's `outcome`.
-        outcome: TestOutcome,
-    },
-    /// The game ended (a scenario resolution latched). Scans every
-    /// investigator's controlled card instances (threat area + in play)
-    /// for `EventPattern::GameEnd` forced abilities; binds controller =
-    /// each instance's controller. First consumer: Cover Up 01007's
-    /// game-end mental-trauma forced (C5a #236).
-    GameEnd,
-    /// The game has ended for one **eliminated** investigator, for the purpose
-    /// of resolving weakness cards — Rules Reference p.10 Elimination step 0
-    /// (#638). Scans only that investigator's controlled in-play instances that
-    /// are **weaknesses** (Cover Up 01007) for `EventPattern::GameEnd` forced
-    /// abilities; binds controller = that investigator, source = the instance.
-    ///
-    /// Deliberately *not* the [`GameEnd`](Self::GameEnd) scan with a narrower
-    /// input: that one skips non-`Active` investigators (#567) and fires every
-    /// controlled card, both of which are wrong here.
-    EliminationGameEnd {
-        /// The investigator being eliminated.
-        investigator: InvestigatorId,
-    },
-    /// An investigator left a location. Scans that location's attachment zone
-    /// for `EventPattern::LeftLocation` forced abilities (Barricade 01038's
-    /// self-discard); binds controller = the leaving investigator, source =
-    /// the firing attachment instance. Mirrors the attachment scan in
-    /// [`SkillTestResolved`](Self::SkillTestResolved).
-    LeftLocation {
-        /// The investigator who left.
-        investigator: InvestigatorId,
-        /// The location they left.
-        location: LocationId,
-    },
-}
-
-/// Queue the lone Forced ability matching `point`: push its effect frame (plus
-/// an [`AcknowledgeForced`](crate::state::Continuation::AcknowledgeForced) above
-/// it in interactive mode) for the `drive` loop to resolve.
+/// Queue the lone forced ability `event` reaches in the `bucket` cell: push its
+/// effect frame (plus an
+/// [`AcknowledgeForced`](crate::state::Continuation::AcknowledgeForced) above it
+/// in interactive mode) for the `drive` loop to resolve.
 ///
 /// **Queues; does not resolve.** `Done` here means *the frame is on the stack*,
 /// not *the effect has happened* — nothing is evaluated synchronously under the
@@ -167,16 +34,18 @@ pub(crate) enum ForcedTriggerPoint {
 /// At most one hit reaches here: 2+ simultaneous forced abilities route to the
 /// lead-ordered run (`open_forced_resolution`, #213, Rules Reference p.17 — the
 /// player orders simultaneous triggers, even in solo), so this path has no
-/// ordering to choose. Never returns `AwaitingInput`; a missing registry entry
-/// at resolve time returns `Rejected`.
+/// ordering to choose. It fires through [`initiation::initiate`], the path the
+/// ordered run and reactions share, so `event` supplies the same bindings
+/// either way. Never returns `AwaitingInput`; an ability that no longer
+/// resolves at its address returns `Rejected`.
 #[must_use = "queue_forced_triggers only pushes the forced effect's frame; the \
               effect has not run when this returns (ADR 0003)"]
 pub(crate) fn queue_forced_triggers(
     cx: &mut Cx,
-    point: &ForcedTriggerPoint,
+    event: &TimingEvent,
     bucket: EventTiming,
 ) -> EngineOutcome {
-    // Frame-driven forced run (Slice D, #423): `resolve_one` pushes the
+    // Frame-driven forced run (Slice D, #423): `initiate` pushes the
     // candidate's effect root frame for the global `drive` loop to own; this
     // function does not drive. Callers under the loop (effect-eval emits) get the
     // forced effect driven next; callers with post-forced work (`end_turn`'s
@@ -187,504 +56,49 @@ pub(crate) fn queue_forced_triggers(
     // At most one hit reaches here: the coordinator / emit `<2` guard routes 2+
     // simultaneous forced abilities to the ordered forced-run frame
     // (`open_forced_resolution`, #213), so there is no ordering to preserve.
-    let hits = collect_forced_hits(cx.state, point, bucket);
+    let hits = trigger_scan::collect_forced(cx.state, event, bucket);
     debug_assert!(
         hits.len() <= 1,
         "queue_forced_triggers: expected 0/1 forced hit (2+ routes through \
          open_forced_resolution); got {}",
         hits.len(),
     );
-    match hits.first() {
-        Some(hit) => {
-            let (out, effect) = resolve_one(cx, hit);
-            // #466: in interactive play, surface the lone forced effect as a
-            // one-option pick *before* it resolves. resolve_one already pushed the
-            // effect root frame and returned Done; push the ack *above* it so the
-            // `drive` loop hits the ack first (suspend), and on resume pops it —
-            // then resolves the effect. queue_forced_triggers still returns Done
-            // (push-frame contract), so emit callers stay correct. Scoped to this
-            // single-hit path: the 2+ ordered run resolves via the forced-window's
-            // own path (never `resolve_one`), so its ordering pick is the only
-            // confirmation (no per-effect ack).
-            //
-            // …except when the effect *is* an advance (#558's slice 4, #562).
-            // See `is_only_an_advance`.
-            if cx.state.interactive_acknowledge
-                && matches!(out, EngineOutcome::Done)
-                && !effect.as_ref().is_some_and(is_only_an_advance)
-            {
-                cx.state.continuations.push(AcknowledgeForcedFrame {
-                    candidate: hit.clone(),
-                });
-            }
-            out
-        }
-        None => EngineOutcome::Done,
-    }
-}
-
-// dispatcher: one match arm per ForcedTriggerPoint.
-#[allow(clippy::too_many_lines)]
-pub(super) fn collect_forced_hits(
-    state: &GameState,
-    point: &ForcedTriggerPoint,
-    bucket: EventTiming,
-) -> Vec<ResolutionCandidate> {
-    let Some(reg) = card_registry::current() else {
-        return Vec::new();
+    let Some(hit) = hits.first() else {
+        return EngineOutcome::Done;
     };
-    let mut hits = Vec::new();
-    match point {
-        ForcedTriggerPoint::EnteredLocation {
-            investigator,
-            location,
-        } => {
-            let Some(loc) = state.locations.get(location) else {
-                return hits;
+    // The one firing path (#964): the lone hit resolves, binds from `event`
+    // and records its use exactly as it would had a sibling triggered alongside
+    // it and sent both to the lead's ordered run.
+    let effect = match initiation::initiate(cx, hit, event) {
+        Ok(effect) => effect,
+        Err(refusal) => {
+            return EngineOutcome::Rejected {
+                reason: format!(
+                    "queue_forced_triggers: {} at {:?} cannot be fired: {}",
+                    hit.code,
+                    hit.address,
+                    Cow::from(refusal),
+                )
+                .into(),
             };
-            push_matching(
-                state,
-                &loc.code,
-                *investigator,
-                CandidateSource::Ability(AbilitySource::Location(*location)),
-                &mut hits,
-                bucket,
-                |p| matches!(p, EventPattern::EnteredLocation),
-            );
         }
-        ForcedTriggerPoint::PhaseStarted { phase } => {
-            let want_phase = dsl_phase(*phase);
-            push_scenario_structure_matching(
-                state,
-                &mut hits,
-                bucket,
-                |p| matches!(p, EventPattern::PhaseStarted { phase } if *phase == want_phase),
-            );
-        }
-        ForcedTriggerPoint::PhaseEnded { phase } => {
-            let want_phase = dsl_phase(*phase);
-            push_scenario_structure_matching(
-                state,
-                &mut hits,
-                bucket,
-                |p| matches!(p, EventPattern::PhaseEnded { phase } if *phase == want_phase),
-            );
-        }
-        ForcedTriggerPoint::ActAdvanced { code } => {
-            let Some(lead) = cursor::first_active_investigator(state) else {
-                return hits;
-            };
-            push_matching(
-                state,
-                code,
-                lead,
-                CandidateSource::Ability(AbilitySource::Act),
-                &mut hits,
-                bucket,
-                |p| matches!(p, EventPattern::ActAdvanced),
-            );
-        }
-        ForcedTriggerPoint::AgendaAdvanced { code } => {
-            let Some(lead) = cursor::first_active_investigator(state) else {
-                return hits;
-            };
-            push_matching(
-                state,
-                code,
-                lead,
-                CandidateSource::Ability(AbilitySource::Agenda),
-                &mut hits,
-                bucket,
-                |p| matches!(p, EventPattern::AgendaAdvanced),
-            );
-        }
-        ForcedTriggerPoint::EnemyDefeated { code } => {
-            let Some(lead) = cursor::first_active_investigator(state) else {
-                return hits;
-            };
-            if let Some(act) = state.act_deck.get(state.act_index) {
-                push_matching(
-                    state,
-                    &act.code,
-                    lead,
-                    CandidateSource::Ability(AbilitySource::Act),
-                    &mut hits,
-                    bucket,
-                    |p| {
-                        matches!(
-                            p,
-                            EventPattern::EnemyDefeated { code: narrow, .. }
-                                if narrow.as_deref().is_none_or(|c| c == code.as_str())
-                        )
-                    },
-                );
-            }
-        }
-        ForcedTriggerPoint::EnemyAttacks {
-            enemy,
-            investigator,
-        } => {
-            let Some(attacker) = state.enemies.get(enemy) else {
-                // The attacker was removed mid-sequence (a `when` reaction
-                // defeated it). Nothing to scan; the cell is simply empty.
-                return hits;
-            };
-            push_matching(
-                state,
-                &attacker.code,
-                *investigator,
-                CandidateSource::Ability(AbilitySource::Enemy(*enemy)),
-                &mut hits,
-                bucket,
-                |p| matches!(p, EventPattern::EnemyAttacks),
-            );
-        }
-        ForcedTriggerPoint::RoundEnded => {
-            let Some(lead) = cursor::first_active_investigator(state) else {
-                return hits;
-            };
-            if let Some(act) = state.act_deck.get(state.act_index) {
-                push_matching(
-                    state,
-                    &act.code,
-                    lead,
-                    CandidateSource::Ability(AbilitySource::Act),
-                    &mut hits,
-                    bucket,
-                    |p| matches!(p, EventPattern::RoundEnded),
-                );
-            }
-            if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
-                push_matching(
-                    state,
-                    &agenda.code,
-                    lead,
-                    CandidateSource::Ability(AbilitySource::Agenda),
-                    &mut hits,
-                    bucket,
-                    |p| matches!(p, EventPattern::RoundEnded),
-                );
-            }
-            // Persistent threat-area treacheries discard on RoundEnded
-            // (Dissonant Voices 01165). Scan every investigator's
-            // controlled instances; bind source = the instance so
-            // `Effect::DiscardSelf` finds itself.
-            //
-            // Skip eliminated investigators: Rules Reference p.10 Elimination
-            // removes their cards from the game (step 1) / to the encounter
-            // discard (step 4), so their in-play instances are already gone —
-            // except `investigator_card`, which is a non-Option identity/harm
-            // field (#448) that cannot be drained. This filter is that card's
-            // only guard (#567). `investigators` is a BTreeMap, so filtering
-            // preserves the frozen enumeration order (#570).
-            for (inv_id, inv) in state
-                .investigators
-                .iter()
-                .filter(|(_, inv)| inv.status == Status::Active)
-            {
-                for card in inv.controlled_card_instances() {
-                    push_matching(
-                        state,
-                        &card.code,
-                        *inv_id,
-                        CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
-                        &mut hits,
-                        bucket,
-                        |p| matches!(p, EventPattern::RoundEnded),
-                    );
-                }
-            }
-        }
-        ForcedTriggerPoint::EndOfTurn { investigator } => {
-            let Some(inv) = state.investigators.get(investigator) else {
-                return hits;
-            };
-            // Scan the ending investigator's controlled instances
-            // (threat area + in play). Code-based registry lookup is
-            // fine — abilities are static per code; C4c threads the
-            // source instance when an effect needs to discard itself.
-            for card in inv.controlled_card_instances() {
-                push_matching(
-                    state,
-                    &card.code,
-                    *investigator,
-                    CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
-                    &mut hits,
-                    bucket,
-                    |p| matches!(p, EventPattern::EndOfTurn),
-                );
-            }
-        }
-        ForcedTriggerPoint::SkillTestResolved {
-            investigator,
-            kind,
-            outcome,
-        } => {
-            let Some(inv) = state.investigators.get(investigator) else {
-                return hits;
-            };
-            // Match the card-facing narrowing: same outcome, and either an
-            // unnarrowed (`None`) or kind-matching listener.
-            //
-            // `by_controller` is not read here, and the scan is why: the two
-            // loops below walk *this* investigator's controlled instances and
-            // the investigated location, so every card reached is already one
-            // whose "you" is the testing investigator. `true` is therefore
-            // satisfied and `false` — an unqualified *"after a skill test is
-            // resolved"* — is satisfied for the cards the scan reaches and
-            // simply not offered to a bystander's card, which is the scan's
-            // pre-existing shape rather than a decision this field makes. The
-            // one corpus card wanting the wider reach (Lita Chantler 01117) is
-            // a **reaction**, and `reaction_windows::trigger_matches` does read
-            // the field.
-            let want = |p: &EventPattern| {
-                let EventPattern::SkillTestResolved {
-                    outcome: o,
-                    kind: k,
-                    by_controller: _,
-                } = p
-                else {
-                    return false;
-                };
-                *o == *outcome && (k.is_none() || *k == Some(*kind))
-            };
-            // Scan the investigator's controlled instances (threat area + in
-            // play). Bind source = the firing instance so `Effect::DiscardSelf`
-            // finds itself.
-            for card in inv.controlled_card_instances() {
-                push_matching(
-                    state,
-                    &card.code,
-                    *investigator,
-                    CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
-                    &mut hits,
-                    bucket,
-                    want,
-                );
-            }
-            // Scan the investigated location's attachment zone (Obscuring Fog
-            // 01168 attaches to the location, not the threat area). Derive the
-            // location from the still-live in-flight `SkillTest` frame —
-            // teardown is at `PostOnResolution`, well after this fires.
-            if let Some(loc_id) = state.current_skill_test().and_then(|t| t.tested_location) {
-                if let Some(loc) = state.locations.get(&loc_id) {
-                    for att in &loc.attachments {
-                        push_matching(
-                            state,
-                            &att.code,
-                            *investigator,
-                            CandidateSource::Ability(AbilitySource::InPlay(att.instance_id)),
-                            &mut hits,
-                            bucket,
-                            want,
-                        );
-                    }
-                }
-            }
-        }
-        ForcedTriggerPoint::GameEnd => {
-            // Scan every investigator's controlled instances; bind
-            // controller = each card's controller, source = the instance.
-            // `state.investigators` is a BTreeMap, so iteration order is
-            // deterministic — consistent with the fixed-order contract.
-            //
-            // Skip eliminated investigators: Rules Reference p.10 Elimination
-            // removes their cards from the game (step 1) / to the encounter
-            // discard (step 4), so their in-play instances are already gone —
-            // except `investigator_card`, which is a non-Option identity/harm
-            // field (#448) that cannot be drained. This filter is that card's
-            // only guard (#567). Filtering the BTreeMap preserves the frozen
-            // enumeration order (#570).
-            for (inv_id, inv) in state
-                .investigators
-                .iter()
-                .filter(|(_, inv)| inv.status == Status::Active)
-            {
-                for card in inv.controlled_card_instances() {
-                    push_matching(
-                        state,
-                        &card.code,
-                        *inv_id,
-                        CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
-                        &mut hits,
-                        bucket,
-                        |p| matches!(p, EventPattern::GameEnd),
-                    );
-                }
-            }
-        }
-        ForcedTriggerPoint::EliminationGameEnd { investigator } => {
-            let Some(inv) = state.investigators.get(investigator) else {
-                return hits;
-            };
-            // Rules Reference p.10 Elimination step 0: *"Trigger any 'when the
-            // game ends' abilities on each weakness the eliminated investigator
-            // owns that is in play."* Two narrowings the ordinary `GameEnd` scan
-            // does not make:
-            //
-            // - **weaknesses only.** A non-weakness card this investigator
-            //   controls has no game-end trigger point here — the game has not
-            //   ended for anyone else. `metadata_for` answers for the corpus, so
-            //   a card with no metadata is not a weakness and is skipped.
-            //
-            //   The rule says *owns*; this iterates what the investigator
-            //   **controls**. The two coincide for every weakness the engine can
-            //   represent today: a weakness enters its own owner's threat area,
-            //   and nothing models one player controlling another's card. RR p.10
-            //   step 1 already carries the sub-clause that would separate them
-            //   ("Any card that player owns but does not control…"), so if
-            //   cross-player control ever lands, this scan needs an ownership
-            //   field to filter on rather than a re-reading.
-            // - **no `Status` filter.** `apply_investigator_elimination` flips status
-            //   before running the steps, so the investigator this point names is
-            //   never `Active` — filtering on it (as `GameEnd`/`RoundEnded` do,
-            //   #567) would drop every hit.
-            for card in inv
-                .controlled_card_instances()
-                .filter(|c| (reg.metadata_for)(&c.code).is_some_and(|m| m.weakness))
-            {
-                push_matching(
-                    state,
-                    &card.code,
-                    *investigator,
-                    CandidateSource::Ability(AbilitySource::InPlay(card.instance_id)),
-                    &mut hits,
-                    bucket,
-                    |p| matches!(p, EventPattern::GameEnd),
-                );
-            }
-        }
-        ForcedTriggerPoint::LeftLocation {
-            investigator,
-            location,
-        } => {
-            // Scan the left location's attachment zone (Barricade 01038);
-            // bind source = the firing attachment instance for DiscardSelf.
-            if let Some(loc) = state.locations.get(location) {
-                for att in &loc.attachments {
-                    push_matching(
-                        state,
-                        &att.code,
-                        *investigator,
-                        CandidateSource::Ability(AbilitySource::InPlay(att.instance_id)),
-                        &mut hits,
-                        bucket,
-                        |p| matches!(p, EventPattern::LeftLocation),
-                    );
-                }
-            }
-        }
-    }
-    // The initiation gate (ADR 0017), asked once at the single chokepoint feeding
-    // both the lone-hit path (`queue_forced_triggers`) and the 2+ ordered run
-    // (`open_forced_resolution`), so a forced ability that cannot initiate neither
-    // resolves nor (post-#466) prompts. As `Forced` it gets the change-state and
-    // eligibility checks: Cover Up 01007's "if there are any clues on Cover Up"
-    // lives in an opaque native effect the generic change-state check can't
-    // introspect, and without its eligibility tag a clueless Cover Up initiated —
-    // and prompted — at game end (#786).
-    hits.retain(|hit| initiation::check(state, hit, InitiationKind::Forced).is_ok());
-    hits
-}
-
-/// Scan the current act and the current agenda for forced abilities matching
-/// `want`, binding controller = the lead investigator.
-///
-/// The scan both phase-boundary points share: the milestone is board-wide, so
-/// the controller it binds is the lead proxy, the first Active investigator in
-/// `turn_order` ([`cursor::first_active_investigator`]; GLOSSARY "Lead
-/// investigator"), and the board-wide effects that key off a phase boundary
-/// ignore it. With no Active investigator it finds nothing rather than
-/// panicking — there is no lead to bind.
-///
-/// **Act and agenda only.** An enemy or asset in play printing a phase-boundary
-/// Forced — Wizard of the Order 01170, Hunting Horror 02141, Peter Clover
-/// 02079 — is not reached, because there is no doom-on-a-card model for the
-/// first of them to place onto and no Dunwich corpus for the other two. #792
-/// carries the doom model, this scan's in-play arm, and 01170 together, since
-/// none of the three is assertable without the other two.
-fn push_scenario_structure_matching(
-    state: &GameState,
-    hits: &mut Vec<ResolutionCandidate>,
-    bucket: EventTiming,
-    want: impl Fn(&EventPattern) -> bool + Copy,
-) {
-    let Some(lead) = cursor::first_active_investigator(state) else {
-        return;
     };
-    if let Some(act) = state.act_deck.get(state.act_index) {
-        push_matching(
-            state,
-            &act.code,
-            lead,
-            CandidateSource::Ability(AbilitySource::Act),
-            hits,
-            bucket,
-            want,
-        );
+    // #466: in interactive play, surface the lone forced effect as a one-option
+    // pick *before* it resolves. `initiate` already pushed the effect root frame;
+    // push the ack *above* it so the `drive` loop hits the ack first (suspend),
+    // and on resume pops it — then resolves the effect. queue_forced_triggers
+    // still returns Done (push-frame contract), so emit callers stay correct.
+    // Scoped to this single-hit path: in the 2+ ordered run the lead's ordering
+    // pick is the only confirmation (no per-effect ack).
+    //
+    // …except when the effect *is* an advance (#558's slice 4, #562). See
+    // `is_only_an_advance`.
+    if cx.state.interactive_acknowledge && !is_only_an_advance(&effect) {
+        cx.state.continuations.push(AcknowledgeForcedFrame {
+            candidate: hit.clone(),
+        });
     }
-    if let Some(agenda) = state.agenda_deck.get(state.agenda_index) {
-        push_matching(
-            state,
-            &agenda.code,
-            lead,
-            CandidateSource::Ability(AbilitySource::Agenda),
-            hits,
-            bucket,
-            want,
-        );
-    }
-}
-
-/// Map the engine's `state::Phase` to the `card-dsl` mirror so a
-/// `PhaseStarted` / `PhaseEnded` pattern can be compared.
-fn dsl_phase(phase: state::Phase) -> dsl::Phase {
-    match phase {
-        state::Phase::Mythos => dsl::Phase::Mythos,
-        state::Phase::Investigation => dsl::Phase::Investigation,
-        state::Phase::Enemy => dsl::Phase::Enemy,
-        state::Phase::Upkeep => dsl::Phase::Upkeep,
-    }
-}
-
-fn push_matching(
-    state: &GameState,
-    code: &CardCode,
-    controller: InvestigatorId,
-    source: CandidateSource,
-    out: &mut Vec<ResolutionCandidate>,
-    bucket: EventTiming,
-    want: impl Fn(&EventPattern) -> bool,
-) {
-    let Some(abilities) = abilities_in_effect::for_candidate_source(state, source, code) else {
-        return;
-    };
-    for (address, ability) in &abilities {
-        if let Trigger::OnEvent {
-            pattern,
-            timing,
-            kind,
-        } = &ability.trigger
-        {
-            // Forced abilities only. The coordinator scans the *same*
-            // (event, bucket) for both forced and reaction (#434) — e.g. act
-            // 01109 carries a `When`-`RoundEnded` *reaction* the forced scan must
-            // not collect — so `kind` filtering is load-bearing, not cosmetic.
-            // Scan only the bucket being resolved (the EmitEvent coordinator's
-            // current cell). Since #702 every condition walks all three, so a
-            // card is collected in the cell its printed trigger word names.
-            if *kind == TriggerKind::Forced && *timing == bucket && want(pattern) {
-                out.push(ResolutionCandidate {
-                    code: code.clone(),
-                    controller,
-                    address: address.clone(),
-                    // Origin set by the caller: an in-play / threat-area instance,
-                    // a scenario board card, or a location's own forced ability.
-                    source,
-                });
-            }
-        }
-    }
+    EngineOutcome::Done
 }
 
 /// Whether a forced ability's effect does nothing but advance the act — in which
@@ -714,44 +128,6 @@ fn push_matching(
 /// pick was never stacked on top of one.
 fn is_only_an_advance(effect: &Effect) -> bool {
     matches!(effect, Effect::AdvanceCurrentAct)
-}
-
-/// Push `hit`'s effect root frame for the `drive` loop to resolve, and hand the
-/// effect back so the caller can decide whether it warrants a #466 acknowledge.
-fn resolve_one(cx: &mut Cx, hit: &ResolutionCandidate) -> (EngineOutcome, Option<Effect>) {
-    if card_registry::current().is_none() {
-        return (
-            EngineOutcome::Rejected {
-                reason: "queue_forced_triggers: registry vanished between collect and resolve"
-                    .into(),
-            },
-            None,
-        );
-    }
-    let Some(ability) = abilities_in_effect::resolve(cx.state, hit.source, &hit.code, &hit.address)
-    else {
-        return (
-            EngineOutcome::Rejected {
-                reason: format!(
-                    "queue_forced_triggers: {} no longer has the ability at {:?} at resolve time",
-                    hit.code, hit.address,
-                )
-                .into(),
-            },
-            None,
-        );
-    };
-    let effect = ability.effect;
-    // A forced run holds only in-play / board candidates (`Hand` ⇒ `None` is
-    // harmless — hand Fast events are reaction-window plays, never forced).
-    // The source rides along as an `AbilitySource` too, so an effect-internal
-    // `ChooseOne` can anchor its options to the card the ability is printed on
-    // — the act's reverse (01110) and the agenda's (01105) both fire here, and
-    // both have `instance() == None` (#555).
-    let ctx =
-        EvalContext::for_controller_with_optional_source(hit.controller, hit.source.ability());
-    evaluator::push_effect(cx, &effect, ctx);
-    (EngineOutcome::Done, Some(effect))
 }
 
 /// Display name for the card a forced ability is printed on, for the
@@ -805,7 +181,10 @@ pub(crate) fn resume_acknowledge_forced(cx: &mut Cx, response: &InputResponse) -
 mod tests {
     use super::*;
     use crate::engine::outcome::OptionTarget;
-    use crate::state::{AbilityAddress, Agenda, CardInstanceId, Continuation, GameStateBuilder};
+    use crate::state::{
+        AbilityAddress, AbilitySource, Agenda, CandidateSource, CardInstanceId, Continuation,
+        GameStateBuilder, InvestigatorId, LocationId, ResolutionCandidate,
+    };
 
     #[test]
     fn acknowledge_forced_suspends_then_pops_on_pick() {

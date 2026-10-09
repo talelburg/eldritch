@@ -1,54 +1,5 @@
 use super::*;
 
-/// `EventPattern::CardRevealed { card_type: Some(...) }` and
-/// `{ card_type: None }` are distinct variants with serde
-/// round-tripping. Locks the wire shape now so #52's persistence
-/// doesn't surprise later.
-#[test]
-fn card_revealed_pattern_round_trips_through_serde_json() {
-    let any = EventPattern::CardRevealed { card_type: None };
-    let treachery = EventPattern::CardRevealed {
-        card_type: Some(CardType::Treachery),
-    };
-    for original in [any, treachery] {
-        let json = serde_json::to_string(&original).expect("serialize");
-        let recovered: EventPattern = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(original, recovered);
-    }
-}
-
-#[test]
-fn card_revealed_distinct_from_enemy_defeated() {
-    let revealed_treachery = EventPattern::CardRevealed {
-        card_type: Some(CardType::Treachery),
-    };
-    let enemy_defeated = EventPattern::EnemyDefeated {
-        by_controller: true,
-        code: None,
-    };
-    assert_ne!(revealed_treachery, enemy_defeated);
-}
-
-#[test]
-fn enemy_spawned_pattern_round_trips_through_serde_json() {
-    let original = EventPattern::EnemySpawned;
-    let json = serde_json::to_string(&original).expect("serialize");
-    let recovered: EventPattern = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(original, recovered);
-}
-
-#[test]
-fn enemy_spawned_distinct_from_other_patterns() {
-    let spawned = EventPattern::EnemySpawned;
-    let defeated = EventPattern::EnemyDefeated {
-        by_controller: true,
-        code: None,
-    };
-    let revealed = EventPattern::CardRevealed { card_type: None };
-    assert_ne!(spawned, defeated);
-    assert_ne!(spawned, revealed);
-}
-
 #[test]
 fn entered_location_pattern_round_trips() {
     let p = EventPattern::EnteredLocation;
@@ -83,10 +34,16 @@ fn cancel_effect_and_enemy_attacks_pattern_round_trip() {
         serde_json::from_str(&json).expect("deserialize")
     );
 
-    let p = EventPattern::EnemyAttacks;
+    let p = EventPattern::EnemyAttacks {
+        attacker: AttackerScope::Any,
+        target: TargetScope::Any,
+    };
     let json = serde_json::to_string(&p).expect("serialize");
     assert_eq!(
-        EventPattern::EnemyAttacks,
+        EventPattern::EnemyAttacks {
+            attacker: AttackerScope::Any,
+            target: TargetScope::Any,
+        },
         serde_json::from_str(&json).expect("deserialize")
     );
 }
@@ -97,6 +54,7 @@ fn skill_test_resolved_round_trips() {
         outcome: TestOutcome::Success,
         kind: Some(SkillTestKind::Investigate),
         by_controller: true,
+        tested_location: TestedLocationScope::Any,
     };
     let json = serde_json::to_string(&p).expect("serialize");
     let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
@@ -113,6 +71,7 @@ fn skill_test_resolved_unqualified_round_trips() {
         outcome: TestOutcome::Success,
         kind: Some(SkillTestKind::Fight),
         by_controller: false,
+        tested_location: TestedLocationScope::Any,
     };
     let json = serde_json::to_string(&p).expect("serialize");
     let back: EventPattern = serde_json::from_str(&json).expect("deserialize");
@@ -123,6 +82,7 @@ fn skill_test_resolved_unqualified_round_trips() {
             outcome: TestOutcome::Success,
             kind: Some(SkillTestKind::Fight),
             by_controller: true,
+            tested_location: TestedLocationScope::Any,
         }
     );
 }

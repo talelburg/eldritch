@@ -14,6 +14,7 @@
 
 use card_dsl::dsl::{
     self, Ability, EventPattern, EventTiming, InvestigatorTarget, SkillTestKind, TestOutcome,
+    TestedLocationScope,
 };
 use game_core::action::{Action, InputResponse, PlayerAction};
 use game_core::engine::enumerate::{self, TurnAction};
@@ -205,6 +206,7 @@ fn install_mock_registry() {
                     outcome: TestOutcome::Success,
                     kind: Some(SkillTestKind::Investigate),
                     by_controller: true,
+                    tested_location: TestedLocationScope::Any,
                 },
                 EventTiming::After,
                 1,

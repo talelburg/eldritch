@@ -30,7 +30,7 @@
 //! [`Trigger::OnEvent`]: card_dsl::dsl::Trigger::OnEvent
 //! [`Effect::Cancel`]: card_dsl::dsl::Effect::Cancel
 
-use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming};
+use card_dsl::dsl::{self, Ability, AttackerScope, Effect, EventPattern, EventTiming, TargetScope};
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01023";
@@ -40,7 +40,10 @@ pub const CODE: &str = "01023";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::reaction_on_event(
-        EventPattern::EnemyAttacks,
+        EventPattern::EnemyAttacks {
+            attacker: AttackerScope::Any,
+            target: TargetScope::AtYourLocation,
+        },
         EventTiming::When,
         Effect::Cancel,
     )]
@@ -48,7 +51,9 @@ pub fn abilities() -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
-    use card_dsl::dsl::{Effect, EventPattern, EventTiming, Trigger, TriggerKind};
+    use card_dsl::dsl::{
+        AttackerScope, Effect, EventPattern, EventTiming, TargetScope, Trigger, TriggerKind,
+    };
 
     #[test]
     fn one_before_enemy_attack_reaction_that_cancels() {
@@ -57,7 +62,10 @@ mod tests {
         assert_eq!(
             abilities[0].trigger,
             Trigger::OnEvent {
-                pattern: EventPattern::EnemyAttacks,
+                pattern: EventPattern::EnemyAttacks {
+                    attacker: AttackerScope::Any,
+                    target: TargetScope::AtYourLocation,
+                },
                 timing: EventTiming::When,
                 kind: TriggerKind::Reaction,
             },

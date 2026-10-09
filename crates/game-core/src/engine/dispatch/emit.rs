@@ -22,17 +22,15 @@
 //! sites read `Done` as "nothing happened" and ran their tails *above* the
 //! abilities they had just queued (#569).
 //!
-//! `TimingEvent` is the merge of the engine's two pre-existing
-//! binding-carrying dispatch keys: [`ForcedTriggerPoint`] (forced) and the
-//! event-driven reaction-window points (reaction). T5a is a behavior-
-//! preserving facade that delegates to those; it does **not** push the
-//! logged [`Event`](crate::event::Event) — call sites still emit their own
-//! (e.g. `EnemyDefeated`, `InvestigatorMoved`).
+//! Which abilities a cell holds is the one trigger scan's answer
+//! ([`trigger_scan`](super::trigger_scan)): a walk over the whole board, the same
+//! for every condition (ADR 0018). `queue_event` does **not** push the logged
+//! [`Event`](crate::event::Event) — call sites still emit their own (e.g.
+//! `EnemyDefeated`, `InvestigatorMoved`).
 
-use card_dsl::dsl::{SkillTestKind, TestOutcome};
+use card_dsl::dsl::{SkillTestKind, TestOutcome, TriggeringCondition};
 use serde::{Deserialize, Serialize};
 
-use crate::engine::dispatch::forced_triggers::ForcedTriggerPoint;
 use crate::engine::dispatch::{actions, combat};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
@@ -44,13 +42,12 @@ use crate::state::{
 /// A game/framework timing point at which forced and/or reaction triggers
 /// may fire, with the binding context the fired effects need.
 ///
-/// The union of `ForcedTriggerPoint` (the forced dispatch key) and the
-/// event-driven reaction-window points (the reaction dispatch key). Each
-/// variant maps to an optional forced point (`forced_point`) and to who resolves
-/// the condition itself (`condition_resolution`); `EnemyDefeated` and
-/// `SkillTestResolved` are **dual** (both forced and reaction at the
-/// same point). Whether a cell holds a reaction is **not** tabulated — the
-/// coordinator's per-cell scan answers it (#702).
+/// Each variant maps, through exhaustive matches, to the triggering condition
+/// its patterns listen to (`condition`), the investigator it is about
+/// (`subject`), and who resolves the condition itself (`condition_resolution`).
+/// Which zones hold its abilities is **not** tabulated: every condition walks
+/// the whole board, and whether a cell holds a forced or reaction ability is the
+/// coordinator's per-cell scan's answer (#702, ADR 0018).
 ///
 /// `SkillTestResolved` is the general skill-test-outcome timing point (RR
 /// ST.6), of which "after you successfully investigate" (Obscuring Fog forced +
@@ -161,11 +158,12 @@ pub enum TimingEvent {
     /// A skill test resolved (RR ST.6). **Dual:** forced + reaction. The
     /// general timing point of which "after you successfully investigate"
     /// (Obscuring Fog 01168 forced + Dr. Milan 01033 reaction) is the
-    /// `{ Investigate, Success }` narrowing. Carries no location: the forced
-    /// collector derives the investigated location from the still-live
-    /// in-flight `SkillTest` frame (`current_skill_test().tested_location`) —
-    /// teardown is at `PostOnResolution`, well after this fires. Both phases
-    /// fire at one timing point, RR p.2 forced-before-reaction.
+    /// `{ Investigate, Success }` narrowing. Carries no location: the matcher
+    /// reads the investigated location, for Obscuring Fog's *"attached
+    /// location"*, from the still-live in-flight `SkillTest` frame
+    /// (`current_skill_test().tested_location`) — teardown is at
+    /// `PostOnResolution`, well after this fires. Both phases fire at one
+    /// timing point, RR p.2 forced-before-reaction.
     SkillTestResolved {
         investigator: InvestigatorId,
         kind: SkillTestKind,
@@ -212,8 +210,8 @@ pub enum TimingEvent {
         /// The investigator who controls it.
         controller: InvestigatorId,
     },
-    /// An investigator left a location (forced only — Barricade 01038's
-    /// self-discard). Scans the left location's attachment zone.
+    /// An investigator left a location — Barricade 01038's self-discard, heard
+    /// on the left location's attachments.
     ///
     /// Coordinator-owned since #721: the departure itself resolves at
     /// `resolve_left_location`, so a `when` ability sees the investigator
@@ -233,75 +231,67 @@ pub enum TimingEvent {
 }
 
 impl TimingEvent {
-    /// The forced dispatch point for this timing event, if it fires forced
-    /// abilities. `None` for the reaction-only ones — including both halves of
-    /// dealing damage, whose forced takers (Baron Samedi 05019, Extraterrestrial
-    /// Physiology 85007) are all outside the corpus, so a `Some` here would be a scan with
-    /// nothing to find.
-    /// `pub(super)` so the coordinator ([`super::coordinator`]) can re-scan a
-    /// bucket's forced abilities (#434).
-    pub(super) fn forced_point(&self) -> Option<ForcedTriggerPoint> {
+    /// The investigator this condition is **about** — who entered, left, was
+    /// attacked, tested, discovered, was dealt harm, ended their turn, was
+    /// eliminated, or defeated the enemy. `None` for the board-wide conditions:
+    /// phase boundaries, advances, the round's and the game's end, and an
+    /// enemy defeat no investigator is credited with.
+    ///
+    /// The forced-binding rule's third arm (ADR 0018): a forced ability on an
+    /// uncontrolled card other than the act or agenda — a location, an enemy,
+    /// an encounter attachment — is bound to the subject, falling back to the
+    /// lead proxy when there is none. An **exhaustive** match, so a new timing
+    /// event cannot compile without saying who it is about.
+    pub(crate) fn subject(&self) -> Option<InvestigatorId> {
         match self {
-            TimingEvent::EnteredLocation {
-                investigator,
-                location,
-            } => Some(ForcedTriggerPoint::EnteredLocation {
-                investigator: *investigator,
-                location: *location,
-            }),
-            TimingEvent::PhaseStarted { phase } => {
-                Some(ForcedTriggerPoint::PhaseStarted { phase: *phase })
+            TimingEvent::EnteredLocation { investigator, .. }
+            | TimingEvent::EndOfTurn { investigator }
+            | TimingEvent::EliminationGameEnd { investigator }
+            | TimingEvent::DamageAssigned { investigator, .. }
+            | TimingEvent::DamagePlaced { investigator, .. }
+            | TimingEvent::SkillTestResolved { investigator, .. }
+            | TimingEvent::EnemyAttacks { investigator, .. }
+            | TimingEvent::DiscoverClues { investigator, .. }
+            | TimingEvent::LeftLocation { investigator, .. } => Some(*investigator),
+            TimingEvent::EnteredPlay { controller, .. } => Some(*controller),
+            TimingEvent::EnemyDefeated { by, .. } => *by,
+            TimingEvent::PhaseStarted { .. }
+            | TimingEvent::PhaseEnded { .. }
+            | TimingEvent::ActAdvanced { .. }
+            | TimingEvent::AgendaAdvanced { .. }
+            | TimingEvent::RoundEnded
+            | TimingEvent::GameEnd => None,
+        }
+    }
+
+    /// The triggering condition this event announces: the engine's side of the
+    /// pattern ↔ condition pairing whose card side is
+    /// [`EventPattern::condition`](card_dsl::dsl::EventPattern::condition). An
+    /// **exhaustive** match, so a new timing event cannot compile without
+    /// naming the condition whose patterns it matches. The reaction matcher
+    /// refuses a pattern of another condition before it reads any narrowing.
+    pub(crate) fn condition(&self) -> TriggeringCondition {
+        match self {
+            TimingEvent::EnteredLocation { .. } => TriggeringCondition::EnteredLocation,
+            TimingEvent::PhaseStarted { .. } => TriggeringCondition::PhaseStarted,
+            TimingEvent::PhaseEnded { .. } => TriggeringCondition::PhaseEnded,
+            TimingEvent::ActAdvanced { .. } => TriggeringCondition::ActAdvanced,
+            TimingEvent::AgendaAdvanced { .. } => TriggeringCondition::AgendaAdvanced,
+            TimingEvent::EnemyDefeated { .. } => TriggeringCondition::EnemyDefeated,
+            TimingEvent::RoundEnded => TriggeringCondition::RoundEnded,
+            TimingEvent::EndOfTurn { .. } => TriggeringCondition::EndOfTurn,
+            // One card-facing condition with two scans: a weakness prints one
+            // *"when the game ends"*, which elimination step 0 also triggers.
+            TimingEvent::GameEnd | TimingEvent::EliminationGameEnd { .. } => {
+                TriggeringCondition::GameEnd
             }
-            TimingEvent::PhaseEnded { phase } => {
-                Some(ForcedTriggerPoint::PhaseEnded { phase: *phase })
-            }
-            TimingEvent::ActAdvanced { code } => {
-                Some(ForcedTriggerPoint::ActAdvanced { code: code.clone() })
-            }
-            TimingEvent::AgendaAdvanced { code } => {
-                Some(ForcedTriggerPoint::AgendaAdvanced { code: code.clone() })
-            }
-            TimingEvent::EnemyDefeated { code, .. } => {
-                Some(ForcedTriggerPoint::EnemyDefeated { code: code.clone() })
-            }
-            TimingEvent::RoundEnded => Some(ForcedTriggerPoint::RoundEnded),
-            TimingEvent::EndOfTurn { investigator } => Some(ForcedTriggerPoint::EndOfTurn {
-                investigator: *investigator,
-            }),
-            TimingEvent::GameEnd => Some(ForcedTriggerPoint::GameEnd),
-            TimingEvent::EliminationGameEnd { investigator } => {
-                Some(ForcedTriggerPoint::EliminationGameEnd {
-                    investigator: *investigator,
-                })
-            }
-            TimingEvent::SkillTestResolved {
-                investigator,
-                kind,
-                outcome,
-            } => Some(ForcedTriggerPoint::SkillTestResolved {
-                investigator: *investigator,
-                kind: *kind,
-                outcome: *outcome,
-            }),
-            TimingEvent::LeftLocation {
-                investigator,
-                location,
-                destination: _,
-            } => Some(ForcedTriggerPoint::LeftLocation {
-                investigator: *investigator,
-                location: *location,
-            }),
-            TimingEvent::EnemyAttacks {
-                enemy,
-                investigator,
-            } => Some(ForcedTriggerPoint::EnemyAttacks {
-                enemy: *enemy,
-                investigator: *investigator,
-            }),
-            TimingEvent::DamageAssigned { .. }
-            | TimingEvent::DamagePlaced { .. }
-            | TimingEvent::EnteredPlay { .. }
-            | TimingEvent::DiscoverClues { .. } => None,
+            TimingEvent::DamageAssigned { .. } => TriggeringCondition::DamageAssigned,
+            TimingEvent::DamagePlaced { .. } => TriggeringCondition::DamagePlaced,
+            TimingEvent::SkillTestResolved { .. } => TriggeringCondition::SkillTestResolved,
+            TimingEvent::EnemyAttacks { .. } => TriggeringCondition::EnemyAttacks,
+            TimingEvent::DiscoverClues { .. } => TriggeringCondition::DiscoverClues,
+            TimingEvent::EnteredPlay { .. } => TriggeringCondition::EnteredPlay,
+            TimingEvent::LeftLocation { .. } => TriggeringCondition::LeftLocation,
         }
     }
 

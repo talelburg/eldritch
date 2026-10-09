@@ -16,8 +16,11 @@
 //! >   this sequence.
 //!
 //! [`check`] answers both, for every path that offers or fires something, and
-//! [`record_initiation`] counts a use at step 3. Each path keeps its own *when*
-//! question — timing cells, `trigger_matches`, the scans' scoping, the
+//! [`record_initiation`] counts a use at step 3. [`initiate`] is the one path
+//! that *fires* a triggered ability — forced or reaction, alone or in a run —
+//! and [`push_bound_effect`] is the tail it shares with a Fast event played from
+//! a reaction window. Each path keeps its own *when*
+//! question — timing cells, the trigger scan's matcher and board walk, the
 //! turn/Fast matrix, slots and the action economy — and asks this module only
 //! *whether*. The checks each [`InitiationKind`] gets are one table,
 //! [`applies`].
@@ -25,25 +28,26 @@
 use std::borrow::Cow;
 
 use card_dsl::card_data::{CardMetadata, CardType};
-use card_dsl::dsl::{Ability, ActionDesignator, Trigger, UsageLimit};
+use card_dsl::dsl::{Ability, ActionDesignator, Effect, Trigger, UsageLimit};
 
 use crate::card_registry::{self, CardRegistry};
 use crate::engine::dispatch::abilities;
+use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::evaluator::{self, EvalContext};
-use crate::engine::{abilities_in_effect, ability_source};
+use crate::engine::{abilities_in_effect, ability_source, Cx};
 use crate::state::{
-    AbilitySource, CandidateSource, CardCode, GameState, Investigator, InvestigatorId,
-    ResolutionCandidate, Status,
+    AbilitySource, CandidateSource, CardCode, DamageSource, GameState, Investigator,
+    InvestigatorId, ResolutionCandidate, Status,
 };
 
 /// Which path is asking. The kind decides which of the gate's checks apply
 /// ([`applies`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum InitiationKind {
-    /// A forced ability at its timing point — the forced collector.
+    /// A forced ability at its timing point — `trigger_scan::collect_forced`.
     Forced,
-    /// A `[reaction]` ability on an ability source — the in-play and act/agenda
-    /// reaction scans.
+    /// A `[reaction]` ability on an ability source —
+    /// `trigger_scan::collect_reactions`.
     Reaction,
     /// An `[action]` or `[fast]` activated ability — the activation validator.
     Activated,
@@ -140,17 +144,20 @@ enum Check {
 /// - **Status.** Reaction, Activated and Play — an eliminated investigator
 ///   initiates nothing (`glossary/Elimination.md`: *"The only manner in which
 ///   eliminated investigators interact with the game is when establishing "per
-///   investigator" values"*). A forced ability's collector arms decide for
-///   themselves: the round-end and game-end arms reach only Active
-///   investigators, while the elimination game-end collector deliberately
-///   reaches the investigator being eliminated.
-/// - **Potential to change the game state, and eligibility.** Every kind. A
-///   forced ability gets exactly these (`glossary/Ability.md`: *"If a forced
-///   ability does not have the potential to change the game state, the ability
-///   does not initiate."*).
-/// - **Usage limit.** Reaction and Activated — the triggered abilities a player
-///   chooses to initiate. A forced ability gets only the two checks above, and
-///   a played card has no ability whose limit the gate could count.
+///   investigator" values"*). A forced ability's status filter is the trigger
+///   scan's board walk (ADR 0018), which skips eliminated investigators except
+///   the one the elimination game end names, whose weaknesses it deliberately
+///   reaches.
+/// - **Potential to change the game state, and eligibility.** Every kind
+///   (`glossary/Ability.md`: *"If a forced ability does not have the potential
+///   to change the game state, the ability does not initiate."*).
+/// - **Usage limit.** Forced, Reaction and Activated — every ability that
+///   initiates. `glossary/Limits_and_Maximums.md`: *"Each instance of an
+///   ability with such a limit may be initiated X times during the designated
+///   period."* It makes no exception for forced abilities, and
+///   `glossary/Ability.md` says they initiate too: *"Forced abilities initiate
+///   and interact with the game state automatically at a specified timing
+///   point."* A played card has no ability whose limit the gate could count.
 /// - **Play-ban.** Play only. A ban on playing a card type says nothing about
 ///   an in-play card's abilities.
 /// - **Cost.** Every kind but Forced, which is not paid for.
@@ -159,7 +166,7 @@ const fn applies(check: Check, kind: InitiationKind) -> bool {
     match check {
         Check::Status => matches!(kind, Reaction | Activated | Play),
         Check::StateChange | Check::Eligibility => true,
-        Check::UsageLimit => matches!(kind, Reaction | Activated),
+        Check::UsageLimit => matches!(kind, Forced | Reaction | Activated),
         Check::PlayBan => matches!(kind, Play),
         Check::Cost => !matches!(kind, Forced),
     }
@@ -641,6 +648,86 @@ pub(super) fn record_initiation(
             )
         }
     }
+}
+
+/// **Fire** the triggered ability `candidate` names, at the timing point
+/// `event` — the one firing path for every forced and reaction ability: a lone
+/// forced hit, an ability the lead picks from an ordered forced run, and a
+/// reaction a player picks from a window. Three steps, in Appendix I's order:
+///
+/// 1. resolve the ability at its address through the side-in-effect / grant
+///    funnel ([`abilities_in_effect::resolve`]);
+/// 2. record the initiation ([`record_initiation`], Appendix I step 3 — before
+///    the effect is pushed, so a use whose effects are cancelled still counts);
+/// 3. bind what `event` supplies and push the effect for the `drive` loop
+///    ([`push_bound_effect`]).
+///
+/// Step 2 applies to forced abilities exactly as to reactions.
+/// `glossary/Limits_and_Maximums.md`: *"Each instance of an ability with such
+/// a limit may be initiated X times during the designated period."* — with no
+/// exception for forced abilities, which `glossary/Ability.md` says *"initiate
+/// and interact with the game state automatically at a specified timing
+/// point."*
+///
+/// Returns the pushed effect, so the lone forced path can decide whether it
+/// warrants a #466 acknowledge. Refuses with [`Refusal::SideNotInEffect`],
+/// having changed nothing, when no ability resolves at the address.
+///
+/// **Not the activation path.** An activated ability runs the effect it
+/// snapshotted before paying its costs (a cost may discard the source), has no
+/// timing event to bind from, and records its own use. A Fast event from hand
+/// is not fired here either: it is *played*, and shares only the bind-and-push
+/// tail.
+pub(super) fn initiate(
+    cx: &mut Cx,
+    candidate: &ResolutionCandidate,
+    event: &TimingEvent,
+) -> Result<Effect, Refusal> {
+    let ability = abilities_in_effect::resolve(
+        cx.state,
+        candidate.source,
+        &candidate.code,
+        &candidate.address,
+    )
+    .ok_or(Refusal::SideNotInEffect)?;
+    // The source rides along as an `AbilitySource`, so an effect that refers to
+    // itself (`DiscardSelf`) finds the firing card, and an effect-internal
+    // `ChooseOne` anchors its options to it — including the act's and agenda's
+    // reverses, which have no card instance (#555).
+    let ctx = EvalContext::for_controller_with_optional_source(
+        candidate.controller,
+        candidate.source.ability(),
+    );
+    record_initiation(cx.state, candidate, ability.usage_limit);
+    push_bound_effect(cx, &ability.effect, ctx, event);
+    Ok(ability.effect)
+}
+
+/// Bind what `event` supplies into `ctx`, then push `effect` for the `drive`
+/// loop — the tail [`initiate`] shares with a Fast event played from a
+/// reaction window, so an effect naming *"that enemy"* or *"that many"* gets the
+/// same binding however it was reached.
+///
+/// - An enemy attack's damage assignment binds the **attacking enemy** — Guard
+///   Dog 01021's retaliate names it.
+/// - A clue discovery binds the **capped** count. `discover_clue` caps at the
+///   location's clues before emitting (#471), so *"that many"* (Cover Up 01007)
+///   is what would actually have been discovered, not what was requested.
+pub(super) fn push_bound_effect(
+    cx: &mut Cx,
+    effect: &Effect,
+    mut ctx: EvalContext,
+    event: &TimingEvent,
+) {
+    match event {
+        TimingEvent::DamageAssigned {
+            source: DamageSource::EnemyAttack { enemy },
+            ..
+        } => ctx.set_attacking_enemy(*enemy),
+        TimingEvent::DiscoverClues { count, .. } => ctx.set_clue_discovery_count(*count),
+        _ => {}
+    }
+    evaluator::push_effect(cx, effect, ctx);
 }
 
 #[cfg(test)]
