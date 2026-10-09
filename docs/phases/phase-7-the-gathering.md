@@ -281,7 +281,7 @@ predicate is no longer evaluated at reaction-scan time
 more at initiation, so a sibling option that resolves first can withdraw a
 candidate the scan had cleared. Scan-time filtering is now the optimisation;
 initiation is the binding check. The equivalent gap on the **forced** side, where
-`collect_forced_hits` applies the same gate at collect time, is #607.)*
+`collect_forced_hits` applied the same gate at collect time, was #607, closed by #967.)*
 
 **3. #695 — an investigator can only activate abilities on cards they control.**
 `glossary/Triggered_Abilities.md` lists four sources an investigator may use a

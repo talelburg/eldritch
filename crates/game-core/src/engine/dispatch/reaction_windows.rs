@@ -122,8 +122,9 @@ pub(super) fn open_reaction_run(
 /// re-dispatches the exposed parent frame. The caller returns the `AwaitingInput`.
 ///
 /// `bucket` is the cell the caller collected at. The frame is the same variant a
-/// reaction window uses, so every one records its cell; only the reaction path
-/// reads it back, to re-validate (#568 — and TODO(#607) for this path).
+/// reaction window uses, so every one records its cell, and both read it back
+/// to re-validate before each prompt (#568, #607 — see
+/// [`withdraw_lapsed_candidates`]).
 pub(super) fn open_forced_resolution(
     cx: &mut Cx,
     event: &TimingEvent,
@@ -464,10 +465,10 @@ fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOpt
         .collect()
 }
 
-/// Re-run the reaction scan behind the open **reaction** window on top of the
+/// Re-run the scan behind the open reaction window or forced run on top of the
 /// stack and withdraw every candidate it no longer produces, emitting an
-/// [`Event::ReactionOptionLapsed`] for each (#568). Called at both prompt sites,
-/// so the option list a player sees is never older than the board.
+/// [`Event::ReactionOptionLapsed`] for each (#568, #607). Called at both prompt
+/// sites, so the option list a player sees is never older than the board.
 ///
 /// # Why an offered option can stop being legal
 ///
@@ -490,9 +491,11 @@ fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOpt
 ///
 /// # Why a re-scan rather than a re-check
 ///
-/// [`scan_reactions_at`] *is* the definition of "may be offered here". Re-running
-/// it and intersecting cannot drift from the gates the first scan applied, and
-/// inherits any gate added later for free. The intersection
+/// The scan that filled the frame — [`scan_reactions_at`] for a reaction
+/// window, [`trigger_scan::collect_forced`] for a forced run ([`rescan`]) —
+/// *is* the definition of "may be offered here". Re-running it and intersecting
+/// cannot drift from the gates the first scan applied, and inherits any gate
+/// added later for free. The intersection
 ///
 /// - **keeps multiplicity** — two copies of a card in hand are two candidates,
 ///   and one leaving hand withdraws exactly one of them;
@@ -500,32 +503,39 @@ fn build_resolution_options(candidates: &[ResolutionCandidate]) -> Vec<ChoiceOpt
 ///   play when the triggering condition occurred, so a fresh scan naming it is
 ///   not an invitation to offer it.
 ///
-/// Two frames are deliberately skipped.
+/// # A forced run is re-checked the same way (#607)
 ///
-/// A [`FastWindow`](Continuation::FastWindow) has no reaction candidates by
-/// construction ([`open_fast_window`] pushes an empty list) and no timing cell to
-/// re-scan.
+/// A 2+ lead-ordered run (#213) is a snapshot too, and resolving one of its
+/// abilities can leave a later one with nothing to do. `glossary/Ability.md`:
 ///
-/// A **forced run** is skipped as *scope*, not because the rule spares it — it
-/// does not: *"If a forced ability does not have the potential to change the game
-/// state, the ability does not initiate"*, and *"The initiation of a forced
-/// ability **that has the potential to change the game state** is mandatory each
-/// time its specified timing point is met."* `trigger_scan::collect_forced`
-/// applies that gate at collect time, so a 2+ lead-ordered run (#213) carries the same stale
-/// verdict this function fixes for reactions. It is left alone here because
-/// withdrawing from a *mandatory* run is a different shape — the run rejects
-/// `Skip`, so an emptied one has to close itself rather than re-prompt — and
-/// because no in-corpus forced effect charges a cost, which is what makes the
-/// reaction case reachable harm. **TODO(#607):** re-validate the forced run once
-/// that shape is decided.
+/// > - If a forced ability does not have the potential to change the game
+/// >   state, the ability does not initiate.
+/// > - The initiation of a forced ability that has the potential to change the
+/// >   game state is mandatory each time its specified timing point is met.
+///
+/// Mandatory, then, only while it can still change the game state — so the
+/// run re-scans its cell with the forced collector before each prompt, exactly
+/// as a reaction window does.
+///
+/// **A lapsed forced ability is withdrawn and logged, not silently skipped.**
+/// The lead was shown it in an earlier prompt, so its disappearance is
+/// observable; the [`Event::ReactionOptionLapsed`] says why, with the reason
+/// the initiation gate gives when asked as [`InitiationKind::Forced`]. A run
+/// emptied this way closes itself at both prompt sites, as a skipped reaction
+/// window would — the run rejects `Skip`, so leaving it open with no options
+/// would strand the lead at a mandatory prompt they cannot answer.
+///
+/// A [`FastWindow`](Continuation::FastWindow) is skipped: it has no reaction
+/// candidates by construction ([`open_fast_window`] pushes an empty list) and no
+/// timing cell to re-scan.
 ///
 /// Returns how many candidates were withdrawn, which only [`open_reaction_run`]
 /// reads (as a debug-only tripwire).
 fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
-    let Some((event, bucket)) = open_reaction_cell(cx.state) else {
+    let Some((event, bucket, mode)) = open_window_cell(cx.state) else {
         return 0;
     };
-    let (event, bucket) = (event.clone(), bucket);
+    let (event, bucket, mode) = (event.clone(), bucket, mode.clone());
     let stored = cx
         .state
         .continuations
@@ -537,7 +547,7 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
         return 0;
     }
 
-    let mut fresh = scan_reactions_at(cx.state, &event, bucket);
+    let mut fresh = rescan(cx.state, &event, bucket, &mode);
     let mut kept: Vec<ResolutionCandidate> = Vec::with_capacity(stored.len());
     let mut lapsed: Vec<ResolutionCandidate> = Vec::new();
     for candidate in stored {
@@ -557,7 +567,7 @@ fn withdraw_lapsed_candidates(cx: &mut Cx) -> usize {
         cx.events.push(Event::ReactionOptionLapsed {
             investigator: candidate.controller,
             code: candidate.code.clone(),
-            reason: lapse_reason(cx.state, candidate),
+            reason: lapse_reason(cx.state, candidate, &mode),
         });
     }
     cx.state
@@ -629,21 +639,35 @@ fn withdraw_suppressed_candidates(cx: &mut Cx) -> usize {
     suppressed.len()
 }
 
-/// The `(event, cell)` an open **reaction** window on top of the stack was
-/// scanned at — the question a re-scan has to re-ask, and the single place the
-/// "which frames are re-validated" test lives (#568).
+/// The `(event, cell, mode)` an open reaction window or forced run on top of
+/// the stack was scanned at — the question a re-scan has to re-ask, and the
+/// single place the "which frames are re-validated" test lives (#568, #607).
 ///
-/// `None` for a forced run, for a [`FastWindow`](Continuation::FastWindow), and
-/// for every non-window frame; the two callers turn that into their own no-op.
-fn open_reaction_cell(state: &GameState) -> Option<(&TimingEvent, EventTiming)> {
+/// `None` for a [`FastWindow`](Continuation::FastWindow) and for every
+/// non-window frame; the two callers turn that into their own no-op.
+fn open_window_cell(state: &GameState) -> Option<(&TimingEvent, EventTiming, &TimingMode)> {
     match state.continuations.top() {
         Some(Continuation::TimingPointWindow(TimingPointWindowFrame {
             event,
             bucket,
-            mode: TimingMode::Reaction,
+            mode,
             ..
-        })) => Some((event, *bucket)),
+        })) => Some((event, *bucket, mode)),
         _ => None,
+    }
+}
+
+/// The scan that filled a window of `mode`, re-run at its recorded cell: the
+/// reaction scan for a reaction window, the forced collector for a forced run.
+fn rescan(
+    state: &GameState,
+    event: &TimingEvent,
+    bucket: EventTiming,
+    mode: &TimingMode,
+) -> Vec<ResolutionCandidate> {
+    match mode {
+        TimingMode::Reaction => scan_reactions_at(state, event, bucket),
+        TimingMode::Forced => trigger_scan::collect_forced(state, event, bucket),
     }
 }
 
@@ -653,17 +677,24 @@ fn open_reaction_cell(state: &GameState) -> Option<(&TimingEvent, EventTiming)> 
 ///
 /// A source that is gone is [`LapseReason::SourceGone`]. Otherwise the
 /// initiation gate is asked the question the scan asked of this candidate —
+/// [`InitiationKind::Forced`] for an ability in a forced run,
 /// [`InitiationKind::Play`] for a Fast event in hand, which is played, and
-/// [`InitiationKind::Reaction`] for an ability source — and its [`Refusal`] is
-/// the reason. A candidate the gate still passes dropped out of the scan's own
-/// scoping instead, which the gate does not own: [`LapseReason::OutOfScope`].
-fn lapse_reason(state: &GameState, candidate: &ResolutionCandidate) -> LapseReason {
+/// [`InitiationKind::Reaction`] for an ability source in a reaction window —
+/// and its [`Refusal`] is the reason. A candidate the gate still passes dropped
+/// out of the scan's own scoping instead, which the gate does not own:
+/// [`LapseReason::OutOfScope`].
+fn lapse_reason(
+    state: &GameState,
+    candidate: &ResolutionCandidate,
+    mode: &TimingMode,
+) -> LapseReason {
     if !candidate_source_present(state, candidate) {
         return LapseReason::SourceGone;
     }
-    let kind = match candidate.source {
-        CandidateSource::Hand => InitiationKind::Play,
-        CandidateSource::Ability(_) => InitiationKind::Reaction,
+    let kind = match (mode, candidate.source) {
+        (TimingMode::Forced, _) => InitiationKind::Forced,
+        (TimingMode::Reaction, CandidateSource::Hand) => InitiationKind::Play,
+        (TimingMode::Reaction, CandidateSource::Ability(_)) => InitiationKind::Reaction,
     };
     match initiation::check(state, candidate, kind) {
         Ok(()) => LapseReason::OutOfScope,
@@ -708,21 +739,20 @@ fn candidate_source_present(state: &GameState, candidate: &ResolutionCandidate) 
 }
 
 /// Whether `candidate` still survives a fresh scan of the open reaction window's
-/// own timing cell — the single-candidate form of
+/// or forced run's own timing cell — the single-candidate form of
 /// [`withdraw_lapsed_candidates`], used as the fire-time gate in
-/// [`fire_pending_trigger`] (#568).
+/// [`fire_pending_trigger`] (#568, #607).
 ///
 /// Membership, not multiplicity: the question is "may *this* option still be
 /// initiated", and one surviving match answers it. `true` for any other top
-/// frame — a forced run is never withdrawn, and a [`FastWindow`] carries no
-/// reaction candidates to re-scan.
+/// frame — a [`FastWindow`] carries no reaction candidates to re-scan.
 ///
 /// [`FastWindow`]: Continuation::FastWindow
 fn candidate_still_offerable(state: &GameState, candidate: &ResolutionCandidate) -> bool {
-    let Some((event, bucket)) = open_reaction_cell(state) else {
+    let Some((event, bucket, mode)) = open_window_cell(state) else {
         return true;
     };
-    scan_reactions_at(state, event, bucket).contains(candidate)
+    rescan(state, event, bucket, mode).contains(candidate)
 }
 
 /// Return [`AwaitingInput`] for the reaction window / forced run
