@@ -35,8 +35,9 @@
 //! mock registry (prior art: `advance_act_interactive_reverse`).
 //!
 //! The condition under test is `SkillTestResolved` (RR ST.6), picked because
-//! both its forced and its reaction scan read the investigator's own controlled
-//! instances, so one synthetic card in the threat area is the whole fixture.
+//! the trigger scan's board walk reaches a card in the investigator's threat
+//! area for forced and reaction abilities alike, so one synthetic card there is
+//! the whole fixture.
 //! Since #773 it is **coordinator-owned** — a bare milestone, since a
 //! determination mutates nothing and ST.7 applies the results on the re-exposed
 //! `SkillTest` frame — so all three of its cells are walked here. The
@@ -46,6 +47,7 @@
 
 use card_dsl::dsl::{
     self, Ability, Effect, EventPattern, EventTiming, InvestigatorTarget, TestOutcome,
+    TestedLocationScope,
 };
 use game_core::engine::OptionId;
 use game_core::event::Event;
@@ -75,7 +77,7 @@ fn succeeded() -> EventPattern {
         outcome: TestOutcome::Success,
         kind: None,
         by_controller: true,
-        tested_location: dsl::TestedLocationScope::Any,
+        tested_location: TestedLocationScope::Any,
     }
 }
 

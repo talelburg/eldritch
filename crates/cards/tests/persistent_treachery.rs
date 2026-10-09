@@ -81,9 +81,9 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
     // Forced — after the attached location is successfully investigated,
     // discard Obscuring Fog. Drive a real (passing) Investigate so the
     // in-flight SkillTest frame is live when SkillTestResolved fires: the
-    // forced collector reads `tested_location` off that frame to scan the
-    // location's attachment zone (the lean, location-free timing event derives
-    // the location from the stack rather than carrying it).
+    // trigger scan reads `tested_location` off that frame to match Obscuring
+    // Fog's *"attached location"* scope (the lean, location-free timing event
+    // derives the location from the stack rather than carrying it).
     let mut loc = test_support::test_location(20, "Here");
     loc.shroud = 0; // effective 0 + 2 (Obscuring Fog) = 2; intellect 3 clears it
     loc.clues = 1;

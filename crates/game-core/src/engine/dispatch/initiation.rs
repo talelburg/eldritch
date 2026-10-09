@@ -20,7 +20,7 @@
 //! that *fires* a triggered ability — forced or reaction, alone or in a run —
 //! and [`push_bound_effect`] is the tail it shares with a Fast event played from
 //! a reaction window. Each path keeps its own *when*
-//! question — timing cells, `trigger_matches`, the scans' scoping, the
+//! question — timing cells, the trigger scan's matcher and board walk, the
 //! turn/Fast matrix, slots and the action economy — and asks this module only
 //! *whether*. The checks each [`InitiationKind`] gets are one table,
 //! [`applies`].
@@ -44,10 +44,10 @@ use crate::state::{
 /// ([`applies`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum InitiationKind {
-    /// A forced ability at its timing point — the forced collector.
+    /// A forced ability at its timing point — `trigger_scan::collect_forced`.
     Forced,
-    /// A `[reaction]` ability on an ability source — the in-play and act/agenda
-    /// reaction scans.
+    /// A `[reaction]` ability on an ability source —
+    /// `trigger_scan::collect_reactions`.
     Reaction,
     /// An `[action]` or `[fast]` activated ability — the activation validator.
     Activated,
@@ -144,10 +144,10 @@ enum Check {
 /// - **Status.** Reaction, Activated and Play — an eliminated investigator
 ///   initiates nothing (`glossary/Elimination.md`: *"The only manner in which
 ///   eliminated investigators interact with the game is when establishing "per
-///   investigator" values"*). A forced ability's collector arms decide for
-///   themselves: the round-end and game-end arms reach only Active
-///   investigators, while the elimination game-end collector deliberately
-///   reaches the investigator being eliminated.
+///   investigator" values"*). A forced ability's status filter is the trigger
+///   scan's board walk (ADR 0018), which skips eliminated investigators except
+///   the one the elimination game end names, whose weaknesses it deliberately
+///   reaches.
 /// - **Potential to change the game state, and eligibility.** Every kind
 ///   (`glossary/Ability.md`: *"If a forced ability does not have the potential
 ///   to change the game state, the ability does not initiate."*).
@@ -653,16 +653,16 @@ pub(super) fn record_initiation(
 /// **Fire** the triggered ability `candidate` names, at the timing point
 /// `event` — the one firing path for every forced and reaction ability: a lone
 /// forced hit, an ability the lead picks from an ordered forced run, and a
-/// reaction a player picks from a window. Four steps, in Appendix I's order:
+/// reaction a player picks from a window. Three steps, in Appendix I's order:
 ///
 /// 1. resolve the ability at its address through the side-in-effect / grant
 ///    funnel ([`abilities_in_effect::resolve`]);
-/// 2. bind what `event` supplies ([`push_bound_effect`]);
-/// 3. record the initiation ([`record_initiation`], step 3 — before the effect
-///    is pushed, so a use whose effects are cancelled still counts);
-/// 4. push the effect for the `drive` loop.
+/// 2. record the initiation ([`record_initiation`], Appendix I step 3 — before
+///    the effect is pushed, so a use whose effects are cancelled still counts);
+/// 3. bind what `event` supplies and push the effect for the `drive` loop
+///    ([`push_bound_effect`]).
 ///
-/// Step 3 applies to forced abilities exactly as to reactions.
+/// Step 2 applies to forced abilities exactly as to reactions.
 /// `glossary/Limits_and_Maximums.md`: *"Each instance of an ability with such
 /// a limit may be initiated X times during the designated period."* — with no
 /// exception for forced abilities, which `glossary/Ability.md` says *"initiate

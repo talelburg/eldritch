@@ -19,6 +19,4 @@ Appendix I puts the question in one place for every path (`data/rules-reference/
 
 **A refusal is a typed `Refusal`, kept local to the gate.** One variant per check, so the reaction window's lapse reason reads why an option lapsed instead of re-deriving it. A withdrawn option the gate still passes has fallen out of its scan's scoping, which the gate does not own, and is labelled `OutOfScope`. It renders to the existing `Cow<'static, str>` where it meets `EngineOutcome::Rejected`. Engine-wide typed rejections were out of scope, and handlers keep returning strings at their boundary, so `EngineOutcome` does not change. The event stream does: `Event::ReactionOptionLapsed` reaches the client, and its `LapseReason` gains `UsageLimitReached`, `NotActive`, `PlayBanned` and `OutOfScope`, while `NoLongerEligible` narrows from the unexplained residual to a false eligibility condition.
 
----
-
-*Folded in: [#965](https://github.com/talelburg/eldritch/issues/965) — the forced status filter moved from the per-point collector arms into the one board walk; [#967](https://github.com/talelburg/eldritch/issues/967) — forced abilities get the usage-limit check.*
+*Folded #965 (the forced status filter moved from the per-point collector arms into the one trigger scan's board walk, [ADR 0018](0018-one-trigger-scan-walks-the-whole-board.md)), #967 (forced abilities get the usage-limit check).*
