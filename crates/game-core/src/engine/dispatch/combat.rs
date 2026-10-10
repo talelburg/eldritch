@@ -573,7 +573,7 @@ pub(super) fn drive_aoo(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
 /// the two sequential suspension points are tracked by [`AttackLoopStage`]. Returns
 /// [`AwaitingInput`] if a window suspends, [`Done`] otherwise. Non-exhausting
 /// (RR p.18) — honored by [`EnemyAttackSource::Retaliate`] (exhaust is
-/// `EnemyPhase`-gated). Caller (`fire_retaliate_if_any`) has already confirmed the
+/// `EnemyPhase`-gated). Caller (`fight::fire_retaliate_if_any`) has already confirmed the
 /// enemy is ready + has the retaliate keyword.
 ///
 /// [`AwaitingInput`]: crate::engine::EngineOutcome::AwaitingInput

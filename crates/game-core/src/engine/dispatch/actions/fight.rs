@@ -1,5 +1,6 @@
-//! The Fight basic action, its candidates and target validation, and the
-//! fight primary shared with the designated Fight.
+//! The Fight basic action, its candidates and target validation, the fight
+//! primary shared with the designated Fight, its after-test damage, and the
+//! retaliate attack a failed fight provokes.
 
 use card_dsl::dsl::{IntExpr, SkillTestKind, Stat};
 
@@ -165,4 +166,143 @@ pub(crate) fn perform_fight(
             delta,
         }),
     )
+}
+
+/// A fight's after-test step (RR ST.7), run on success only: deal
+/// `1 + extra_damage + bonus_attack_damage` to `enemy_id`.
+///
+/// The attacked enemy is still here. An enemy that left play *before* ST.6
+/// abandons the test outright (#682, the skill-test driver's preamble), which is
+/// what keeps `damage_enemy`'s enemy-missing panic loud rather than reachable.
+/// The residue it does not cover — an enemy removed by something firing in the
+/// post-ST.6 `SkillTestResolved` run, before this step — has no corpus card that
+/// can do it: the fast hand events are Dodge, Working a Hunch, Evidence and Mind
+/// over Matter, none of which removes an enemy.
+///
+/// A weapon's bonus damage (.38 Special's +1) rides on `extra_damage`; a
+/// committed skill's bonus (Vicious Blow's +1) accumulates on the in-flight
+/// record at commit time (#307). The in-flight test is still present here —
+/// it's torn down only at the end of resolution — so the accumulator is
+/// readable.
+pub(in crate::engine::dispatch) fn after_test(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    enemy_id: EnemyId,
+    extra_damage: u8,
+) {
+    let bonus = cx
+        .state
+        .current_skill_test()
+        .map_or(0, |t| t.bonus_attack_damage);
+    combat::damage_enemy(
+        cx,
+        enemy_id,
+        1u8.saturating_add(extra_damage).saturating_add(bonus),
+        Some(investigator),
+    );
+}
+
+/// Fire a Retaliate attack if the just-resolved test was a *failed Fight*
+/// against a ready enemy with the retaliate keyword. Only an attack triggers
+/// retaliate, which is why it lives with Fight.
+///
+/// `glossary/Retaliate.md`: *"Each time an investigator fails a skill test
+/// while attacking a ready enemy with the retaliate keyword, after applying all
+/// results for that skill test, that enemy performs an attack against the
+/// attacking investigator. An enemy does not exhaust after performing a
+/// retaliate attack."*
+///
+/// The skill-test driver calls this at its `PostRetaliate` step — after
+/// `fire_on_skill_test_resolution` (the rest of ST.7) and before the
+/// `PostOnResolution` teardown (ST.8) — matching "after applying all results."
+/// Routes through [`combat::drive_retaliate`] so the attack opens its
+/// before-attack cancel window (Dodge 01023) and per-soaked-asset soak window
+/// (Guard Dog 01021) (#379). Returns [`AwaitingInput`] if a window suspends,
+/// [`Done`] otherwise. Non-exhausting — honored by
+/// [`EnemyAttackSource::Retaliate`] inside `drive_retaliate`.
+///
+/// No-op unless every condition holds: the test failed; its follow-up was
+/// `Fight`; the enemy is still in play, ready (`!exhausted`), and has
+/// `retaliate`. A missing enemy is skipped quietly — a failed fight deals
+/// no damage, so the target can't have been defeated mid-test; this only
+/// guards against future enemy-removing commit effects.
+///
+/// [`AwaitingInput`]: crate::engine::EngineOutcome::AwaitingInput
+/// [`Done`]: crate::engine::EngineOutcome::Done
+/// [`EnemyAttackSource::Retaliate`]: crate::state::EnemyAttackSource::Retaliate
+pub(in crate::engine::dispatch) fn fire_retaliate_if_any(
+    cx: &mut Cx,
+    investigator: InvestigatorId,
+    succeeded: bool,
+) -> EngineOutcome {
+    if succeeded {
+        return EngineOutcome::Done;
+    }
+    let follow_up = cx.state.current_skill_test().map(|t| t.follow_up);
+    let Some(SkillTestFollowUp::Fight { enemy, .. }) = follow_up else {
+        return EngineOutcome::Done;
+    };
+    let retaliates = cx
+        .state
+        .enemies
+        .get(&enemy)
+        .is_some_and(|e| e.retaliate && !e.exhausted);
+    if retaliates {
+        // Route through the attack loop (#379) so the retaliate opens its cancel
+        // (Dodge) and soak (Guard Dog) windows; non-exhausting.
+        combat::drive_retaliate(cx, enemy, investigator)
+    } else {
+        EngineOutcome::Done
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::{Continuation, GameStateBuilder, InFlightSkillTest, SkillTestId};
+    use crate::test_support;
+
+    /// The `Fight` follow-up deals `1 + extra_damage + bonus_attack_damage`,
+    /// reading the commit-time accumulator off the in-flight record
+    /// (Vicious Blow 01025). With `extra_damage: 1` (a weapon bonus) and
+    /// `bonus_attack_damage: 2`, the attack deals `1 + 1 + 2 = 4`.
+    #[test]
+    fn fight_follow_up_adds_bonus_attack_damage() {
+        let inv = InvestigatorId(1);
+        let mut enemy = test_support::test_enemy(7, "Goon");
+        enemy.max_health = 10; // avoid clamping so the dealt damage is observable
+        let mut state = GameStateBuilder::new()
+            .with_investigator(test_support::test_investigator(1))
+            .with_enemy(enemy)
+            .build();
+        state
+            .continuations
+            .push(Continuation::SkillTest(InFlightSkillTest {
+                follow_up: SkillTestFollowUp::Fight {
+                    enemy: EnemyId(7),
+                    extra_damage: 1,
+                },
+                bonus_attack_damage: 2,
+                ..test_support::test_skill_test(
+                    SkillTestId(0),
+                    inv,
+                    SkillKind::Combat,
+                    SkillTestKind::Fight,
+                    2,
+                )
+            }));
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        after_test(&mut cx, inv, EnemyId(7), 1);
+
+        assert_eq!(
+            state.enemies[&EnemyId(7)].damage,
+            4,
+            "1 base + 1 extra_damage + 2 bonus_attack_damage"
+        );
+    }
 }

@@ -84,7 +84,7 @@ use crate::engine::dispatch::{
     self, act_agenda, actions, cards, choice, combat, elimination, emit, skill_test, threat_area,
 };
 use crate::engine::outcome::{EngineOutcome, OptionId, OptionTarget};
-use crate::engine::{designator, Cx};
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
@@ -534,10 +534,13 @@ fn perform_designated(
         // ability's whole content is its residual effect.
         ActionDesignator::Parley => EngineOutcome::Done,
         // Unreachable through the activation path: `can_perform` rejects both
-        // pre-cost, since no implemented card prints either (`TODO(#818)`).
-        // Shares that rejection's wording so the two cannot drift.
-        ActionDesignator::Evade | ActionDesignator::Move => EngineOutcome::Rejected {
-            reason: designator::unimplemented_designator(designator),
+        // pre-cost, since no implemented card prints either. Each module owns
+        // its rejection (and its `TODO(#818)`), so the two sites share a wording.
+        ActionDesignator::Evade => EngineOutcome::Rejected {
+            reason: actions::evade::designated_unimplemented(),
+        },
+        ActionDesignator::Move => EngineOutcome::Rejected {
+            reason: actions::move_action::designated_unimplemented(),
         },
     }
 }

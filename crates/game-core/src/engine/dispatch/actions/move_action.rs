@@ -1,6 +1,8 @@
 //! The Move basic action, and the departure and enter steps a move
 //! resolves through.
 
+use std::borrow::Cow;
+
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{emit, hunters, movement, reveal};
@@ -22,7 +24,7 @@ use crate::state::{ActionResume, EnemyId, GameState, InvestigatorId, LocationId,
 /// menu. Empty for a locationless investigator, and for one whose
 /// `current_location` dangles: that corruption is the handler's to surface
 /// loudly, so the menu offers nothing rather than panicking. A designated
-/// **Move** is not implemented yet (`TODO(#818)`).
+/// **Move** is not implemented yet ([`designated_unimplemented`]).
 pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Vec<LocationId> {
     let Some(from) = state
         .investigators
@@ -44,6 +46,22 @@ pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Vec
                 && movement::investigator_can_enter_location(state, dest)
         })
         .collect()
+}
+
+/// Why a designated **Move** rejects: it is not implemented (`TODO(#818)`).
+///
+/// The `ActionDesignator::Move` variant carries no modification because no
+/// corpus card prints a bold **Move** at all, so there is no printed shape to
+/// take one from. Printings outside the corpus suggest a destination or a
+/// repeat count rather than a stat row (#818 lists them). When #818 lands, a
+/// designated Move performs through this module as the basic Move does.
+///
+/// Read pre-cost by `designator::can_perform` and again by the evaluator's
+/// perform dispatch, so the two sites share one wording.
+pub(crate) fn designated_unimplemented() -> Cow<'static, str> {
+    "a designated Move is not implemented: no card the build compiles declares one, \
+     so the modification it would carry has no shape yet (TODO(#818))"
+        .into()
 }
 
 /// Handler for `TurnAction::Move`.

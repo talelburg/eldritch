@@ -9,13 +9,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use card_dsl::card_data::CardKind;
 use card_dsl::dsl::{
-    self, Determination, Effect, HarmKind, IntExpr, InvestigatorTarget, LocationTarget,
-    SkillTestKind, Stat, TestOutcome, Trigger,
+    Determination, Effect, HarmKind, IntExpr, InvestigatorTarget, SkillTestKind, Stat, TestOutcome,
+    Trigger,
 };
 
 use crate::action::InputResponse;
+use crate::engine::dispatch::actions::{evade, fight, investigate};
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{choice, combat, emit, reaction_windows};
+use crate::engine::dispatch::{choice, emit, reaction_windows};
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::modified_value::{
     self, ContributionSource, ModifiedQuantity, ModifierBreakdown, ModifierTarget, ReadContext,
@@ -657,8 +658,19 @@ fn apply_follow_up_step(cx: &mut Cx, investigator: InvestigatorId) {
         .expect("the SkillTest frame was present immediately above")
         .continuation = SkillTestStep::ApplyResultEffect;
 
-    if resolved(cx).succeeded {
-        apply_skill_test_follow_up(cx, investigator, follow_up);
+    if !resolved(cx).succeeded {
+        return;
+    }
+    // Each basic action owns its after-test step; the test procedure only
+    // dispatches by kind.
+    match follow_up {
+        SkillTestFollowUp::None => {}
+        SkillTestFollowUp::Investigate => investigate::after_test(cx, investigator),
+        SkillTestFollowUp::Fight {
+            enemy,
+            extra_damage,
+        } => fight::after_test(cx, investigator, enemy, extra_damage),
+        SkillTestFollowUp::Evade { enemy } => evade::after_test(cx, investigator, enemy),
     }
 }
 
@@ -1168,7 +1180,7 @@ pub(super) fn advance(cx: &mut Cx) -> EngineOutcome {
                     .current_skill_test_mut()
                     .expect("the SkillTest frame must persist across driver steps")
                     .continuation = SkillTestStep::PostOnResolution;
-                let outcome = fire_retaliate_if_any(cx, investigator, succeeded);
+                let outcome = fight::fire_retaliate_if_any(cx, investigator, succeeded);
                 if matches!(outcome, EngineOutcome::AwaitingInput { .. }) {
                     return outcome; // parked on the retaliate's window; resume via advance
                 }
@@ -1537,167 +1549,6 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed:
             from: Zone::Hand,
             to: DiscardPile::Investigator(investigator),
         });
-    }
-}
-
-/// Dispatch the action-specific on-success follow-up for the resolving
-/// skill test (RR ST.7). Runs only on success (the caller gates on it).
-///
-/// The Investigate follow-up *pushes* its `discover_clue` effect — one
-/// discovery of `1 + bonus_clues_discovered` at the tested location — for the
-/// global drive loop (Slice D #423). `advance` then yields, the loop drives the
-/// discovery (suspending on Cover Up 01007's before-interrupt if needed), and on
-/// completion re-dispatches the `SkillTest` at
-/// [`ApplyResultEffect`](SkillTestStep::ApplyResultEffect). The "after you
-/// successfully investigate" timing point already fired at the preceding
-/// [`DetermineOutcome`](SkillTestStep::DetermineOutcome) step — on the
-/// ST.6 success, before this ST.7 discovery. Fight / Evade / None mutate
-/// synchronously and push nothing.
-fn apply_skill_test_follow_up(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    follow_up: SkillTestFollowUp,
-) {
-    match follow_up {
-        SkillTestFollowUp::None => {}
-        SkillTestFollowUp::Investigate => {
-            // Push discover_clue for the drive loop. It may suspend on a
-            // before-timing interrupt (Cover Up 01007); the loop drives it to
-            // completion either way, then re-dispatches this SkillTest at
-            // `ApplyResultEffect`. The "after you successfully investigate"
-            // timing point already fired at the preceding DetermineOutcome
-            // step, before this discovery. The Investigate follow-up has no
-            // source card, so `for_controller` is correct.
-            //
-            // **One** discovery, whose count carries any commit-time bonus
-            // (Deduction 01039's `bonus_clues_discovered`, the clue-side twin
-            // of the Fight arm's `bonus_attack_damage` below). "Discover 1
-            // additional clue" raises this discovery's count; it does not make
-            // a second one — see the **Discovery** entry in `GLOSSARY.md` and
-            // #471. The in-flight test is still present here (torn down only at
-            // the end of resolution), so the accumulator is readable.
-            //
-            // `TestedLocation` — the test's start-of-test location snapshot —
-            // is the **default** target, not an invariant: several cards
-            // replace or redirect this discovery. Burglary 01045 (Core):
-            // "If you succeed, instead of discovering clues, gain 3
-            // resources." Seeking Answers 02023 (Dunwich) discovers at a
-            // *connecting* location instead. It differs from `YourLocation`
-            // only if the investigator moves mid-test — no in-corpus path does
-            // today, but the snapshot is what "at that location" means for
-            // every card that reads it.
-            //
-            // A mid-test move is not a reason to abandon the test, which is
-            // what makes the snapshot the right thing to keep rather than a
-            // case to reject. `data/official-faq/Frequently_Asked_Questions.md`:
-            // *"Once you initiate a skill test or ability, you'll resolve that
-            // test or ability as completely as possible, regardless of your
-            // location (unless another effect cancels or interrupts it)."*
-            let bonus = cx
-                .state
-                .current_skill_test()
-                .map_or(0, |t| t.bonus_clues_discovered);
-            let effect =
-                dsl::discover_clue(LocationTarget::TestedLocation, 1u8.saturating_add(bonus));
-            evaluator::push_effect(cx, &effect, EvalContext::for_controller(investigator));
-        }
-        SkillTestFollowUp::Fight {
-            enemy,
-            extra_damage,
-        } => {
-            // The attacked enemy is still here. An enemy that left play
-            // *before* ST.6 abandons the test outright (#682,
-            // `advance`'s preamble), which is what keeps damage_enemy's
-            // enemy-missing panic loud rather than reachable. The residue
-            // it does not cover — an enemy removed by something firing in
-            // the post-ST.6 `SkillTestResolved` run, before this step —
-            // has no corpus card that can do it: the fast hand events are
-            // Dodge, Working a Hunch, Evidence and Mind over Matter, none
-            // of which removes an enemy. A weapon's
-            // bonus damage (.38 Special's +1) rides on `extra_damage`; a
-            // committed skill's bonus (Vicious Blow's +1) accumulates on
-            // the in-flight record at commit time (#307). The in-flight
-            // test is still present here — it's torn down only at the end
-            // of resolution — so the accumulator is readable.
-            let bonus = cx
-                .state
-                .current_skill_test()
-                .map_or(0, |t| t.bonus_attack_damage);
-            combat::damage_enemy(
-                cx,
-                enemy,
-                1u8.saturating_add(extra_damage).saturating_add(bonus),
-                Some(investigator),
-            );
-        }
-        SkillTestFollowUp::Evade { enemy } => {
-            let e = cx.state.enemies.get_mut(&enemy).unwrap_or_else(|| {
-                unreachable!(
-                    "Evade follow-up: enemy {enemy:?} vanished while test was in flight; \
-                     this is a state-corruption invariant violation"
-                )
-            });
-            e.engaged_with = None;
-            e.exhausted = true;
-            cx.events.push(Event::EnemyDisengaged {
-                enemy,
-                investigator,
-            });
-            cx.events.push(Event::EnemyExhausted { enemy });
-        }
-    }
-}
-
-/// Fire a Retaliate attack if the just-resolved test was a *failed Fight*
-/// against a ready enemy with the retaliate keyword.
-///
-/// Rules Reference p.18: *"Each time an investigator fails a skill test
-/// while attacking a ready enemy with the retaliate keyword, after
-/// applying all results for that skill test, that enemy performs an
-/// attack against the attacking investigator. An enemy does not exhaust
-/// after performing a retaliate attack."*
-///
-/// Runs at the `PostRetaliate` step — after `fire_on_skill_test_resolution`
-/// (the rest of ST.7) and before the `PostOnResolution` teardown (ST.8) —
-/// matching "after applying all results." Routes through
-/// [`super::combat::drive_retaliate`] so the attack opens its before-attack
-/// cancel window (Dodge 01023) and per-soaked-asset soak window (Guard Dog
-/// 01021) (#379). Returns [`AwaitingInput`] if a window suspends, [`Done`]
-/// otherwise. Non-exhausting (RR p.18) — honored by
-/// [`EnemyAttackSource::Retaliate`] inside `drive_retaliate`.
-///
-/// No-op unless every condition holds: the test failed; its follow-up was
-/// `Fight`; the enemy is still in play, ready (`!exhausted`), and has
-/// `retaliate`. A missing enemy is skipped quietly — a failed fight deals
-/// no damage, so the target can't have been defeated mid-test; this only
-/// guards against future enemy-removing commit effects.
-///
-/// [`AwaitingInput`]: crate::engine::EngineOutcome::AwaitingInput
-/// [`Done`]: crate::engine::EngineOutcome::Done
-/// [`EnemyAttackSource::Retaliate`]: crate::state::EnemyAttackSource::Retaliate
-fn fire_retaliate_if_any(
-    cx: &mut Cx,
-    investigator: InvestigatorId,
-    succeeded: bool,
-) -> EngineOutcome {
-    if succeeded {
-        return EngineOutcome::Done;
-    }
-    let follow_up = cx.state.current_skill_test().map(|t| t.follow_up);
-    let Some(SkillTestFollowUp::Fight { enemy, .. }) = follow_up else {
-        return EngineOutcome::Done;
-    };
-    let retaliates = cx
-        .state
-        .enemies
-        .get(&enemy)
-        .is_some_and(|e| e.retaliate && !e.exhausted);
-    if retaliates {
-        // Route through the attack loop (#379) so the retaliate opens its cancel
-        // (Dodge) and soak (Guard Dog) windows; non-exhausting (RR p.18).
-        combat::drive_retaliate(cx, enemy, investigator)
-    } else {
-        EngineOutcome::Done
     }
 }
 
