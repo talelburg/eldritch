@@ -1037,6 +1037,184 @@ impl Ability {
         self.eligibility = Some(tag.into());
         self
     }
+
+    /// Every native tag this ability references, each with the registry
+    /// namespace it resolves in — the `cards` crate's corpus test checks each
+    /// one is registered (#986).
+    ///
+    /// Walks the whole ability: its own eligibility, the trigger's action
+    /// designator and elder-sign modifier, and the effect tree, descending
+    /// into every [`Effect`], [`Condition`] and [`IntExpr`] it holds,
+    /// granted abilities included. The matches carry no wildcard arms, so a
+    /// new variant does not compile until someone decides whether it can
+    /// carry a tag. Order follows the walk; a tag referenced twice is
+    /// reported twice.
+    #[must_use]
+    pub fn native_refs(&self) -> Vec<NativeRef<'_>> {
+        let mut refs = Vec::new();
+        self.collect_native_refs(&mut refs);
+        refs
+    }
+
+    fn collect_native_refs<'a>(&'a self, refs: &mut Vec<NativeRef<'a>>) {
+        if let Some(tag) = &self.eligibility {
+            refs.push(NativeRef {
+                kind: NativeKind::Eligibility,
+                tag,
+            });
+        }
+        match &self.trigger {
+            Trigger::Constant
+            | Trigger::OnPlay
+            | Trigger::OnCommit
+            | Trigger::Revelation
+            | Trigger::OnSkillTestResolution { .. }
+            | Trigger::Activated {
+                designator: None, ..
+            } => {}
+            // An event pattern names what happened, never a condition on it.
+            Trigger::OnEvent { .. } => {}
+            Trigger::Activated {
+                designator: Some(designator),
+                ..
+            } => match designator {
+                ActionDesignator::Fight {
+                    combat_modifier,
+                    extra_damage,
+                } => {
+                    combat_modifier.collect_native_refs(refs);
+                    extra_damage.collect_native_refs(refs);
+                }
+                ActionDesignator::Investigate { shroud_modifier } => {
+                    shroud_modifier.collect_native_refs(refs);
+                }
+                ActionDesignator::Evade
+                | ActionDesignator::Move
+                | ActionDesignator::Parley
+                | ActionDesignator::Resign => {}
+            },
+            Trigger::ElderSign { modifier } => modifier.collect_native_refs(refs),
+        }
+        self.effect.collect_native_refs(refs);
+    }
+}
+
+/// Which registry namespace a native tag resolves in. The three are separate
+/// slots of `game_core::card_registry::CardRegistry`, so a tag registered in
+/// the wrong one is never found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NativeKind {
+    /// An [`Effect::Native`], resolved by `native_effect_for`.
+    Effect,
+    /// An [`Ability::eligibility`] tag, resolved by `native_eligibility_for`.
+    Eligibility,
+    /// A [`Condition::Native`], resolved by `native_condition_for`.
+    Condition,
+}
+
+/// One native tag an [`Ability`] references — see [`Ability::native_refs`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NativeRef<'a> {
+    pub kind: NativeKind,
+    pub tag: &'a str,
+}
+
+impl Effect {
+    fn collect_native_refs<'a>(&'a self, refs: &mut Vec<NativeRef<'a>>) {
+        match self {
+            Effect::Native { tag } => refs.push(NativeRef {
+                kind: NativeKind::Effect,
+                tag,
+            }),
+            Effect::Deal { amount, .. } => amount.collect_native_refs(refs),
+            Effect::PlaceDoomOnCurrentAgenda { count, .. } => count.collect_native_refs(refs),
+            Effect::Seq(effects) => {
+                for effect in effects {
+                    effect.collect_native_refs(refs);
+                }
+            }
+            Effect::If {
+                condition,
+                then,
+                else_,
+            } => {
+                condition.collect_native_refs(refs);
+                then.collect_native_refs(refs);
+                if let Some(else_) = else_ {
+                    else_.collect_native_refs(refs);
+                }
+            }
+            Effect::ForEach { body, .. } => body.collect_native_refs(refs),
+            Effect::ChooseOne(branches) => {
+                for branch in branches {
+                    branch.effect.collect_native_refs(refs);
+                }
+            }
+            Effect::SkillTest {
+                on_success,
+                on_fail,
+                ..
+            } => {
+                for effect in [on_success, on_fail].into_iter().flatten() {
+                    effect.collect_native_refs(refs);
+                }
+            }
+            Effect::Grant {
+                condition,
+                abilities,
+                ..
+            } => {
+                if let Some(condition) = condition {
+                    condition.collect_native_refs(refs);
+                }
+                for ability in abilities {
+                    ability.collect_native_refs(refs);
+                }
+            }
+            Effect::GainResources { .. }
+            | Effect::DiscoverClue { .. }
+            | Effect::DealDamageToEnemy { .. }
+            | Effect::Heal { .. }
+            | Effect::Modify { .. }
+            | Effect::AutoResolve { .. }
+            | Effect::AdvanceCurrentAct
+            | Effect::ReachResolution(_)
+            | Effect::DiscardSelf
+            | Effect::Cancel
+            | Effect::PutIntoThreatArea { .. }
+            | Effect::DrawCards { .. }
+            | Effect::BoostAttackDamage(_)
+            | Effect::DiscoverAdditionalClues(_)
+            | Effect::Restrict(_)
+            | Effect::SearchDeck { .. }
+            | Effect::AttachSelfToLocation
+            | Effect::TakeControl { .. } => {}
+        }
+    }
+}
+
+impl Condition {
+    fn collect_native_refs<'a>(&'a self, refs: &mut Vec<NativeRef<'a>>) {
+        match self {
+            Condition::Native { tag } => refs.push(NativeRef {
+                kind: NativeKind::Condition,
+                tag,
+            }),
+            Condition::SkillTest { .. }
+            | Condition::SkillTestKind(_)
+            | Condition::Compare { .. }
+            | Condition::ControlStatus { .. } => {}
+        }
+    }
+}
+
+impl IntExpr {
+    fn collect_native_refs<'a>(&'a self, refs: &mut Vec<NativeRef<'a>>) {
+        match self {
+            IntExpr::Cond { when, .. } => when.collect_native_refs(refs),
+            IntExpr::Lit(_) | IntExpr::Count(_) => {}
+        }
+    }
 }
 
 // ---- effects ---------------------------------------------------
