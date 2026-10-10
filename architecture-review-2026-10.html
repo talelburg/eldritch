@@ -1,0 +1,1134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Architecture review 2026-10: eldritch</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose", flowchart: { useMaxWidth: true } });
+</script>
+<style>
+  .deep { background: linear-gradient(135deg, #0f172a, #1e293b); color: #f8fafc; }
+  .chip { font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
+  .schem { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+  .leakbox { border: 2px solid #dc2626; }
+  .seam { border-style: dashed; }
+  pre.mermaid { background: transparent; }
+  .mass { display:flex; gap:6px; align-items:flex-end; }
+  .mass > div { width: 72px; border:1px solid #94a3b8; text-align:center; font-size:10px; display:flex; align-items:center; justify-content:center; }
+  table.grid td, table.grid th { padding: 2px 6px; border-bottom: 1px solid #e2e8f0; }
+</style>
+</head>
+<body class="bg-stone-50 text-slate-900 font-sans">
+<main class="max-w-6xl mx-auto px-6 py-12 space-y-14">
+
+<header class="space-y-4">
+  <p class="text-xs uppercase tracking-widest text-slate-500">Architecture review · run of 2026-10-11 · main @ 5e2d4629 · follows <a class="underline normal-case" href="https://github.com/talelburg/eldritch/issues/921">#921</a> (2026-09)</p>
+  <h1 class="font-serif text-4xl">eldritch: deepening opportunities, second pass</h1>
+  <div class="text-slate-600 max-w-3xl space-y-2 text-sm">
+    <p>Six parallel reads covered the <strong>whole workspace</strong>: kernel state and dispatch; the evaluator, board, initiation and actions; skill tests, combat, encounter and elimination; card-dsl, cards and the pipeline; web, server, protocol and scenarios; the test harness and every test directory. Nine of the 2026-09 review's items have landed since (01–05, 11, 12, 18, 19). Every open item was re-read against the current code and re-judged, not carried over. The <a class="underline" href="#reeval">re-evaluation table</a> says what each became.</p>
+    <p>Phase 7.5 (four investigators, ~40 level-0 cards, four elder signs) is the next body of work and the stated stress test of the DSL. Each card below says whether it should land <span class="px-1 rounded bg-emerald-100 text-emerald-800">BEFORE</span> 7.5, <span class="px-1 rounded bg-sky-100 text-sky-800">DURING</span> a named slice, or <span class="px-1 rounded bg-stone-200 text-stone-700">AFTER</span>, once 7.5 has supplied the evidence. The <a class="underline" href="#forecast">7.5 forecast</a> lists what the 49 printed texts will force.</p>
+  </div>
+  <div class="flex flex-wrap gap-4 text-xs text-slate-600">
+    <span class="flex items-center gap-2"><span class="inline-block w-5 h-4 border border-slate-400 bg-white"></span>module</span>
+    <span class="flex items-center gap-2"><span class="inline-block w-5 h-4 border-2 border-dashed border-slate-500"></span>seam</span>
+    <span class="flex items-center gap-2"><span class="inline-block w-5 h-4 leakbox"></span>leak / drift</span>
+    <span class="flex items-center gap-2"><span class="inline-block w-5 h-4 deep"></span>deep module</span>
+    <span class="flex items-center gap-2"><span class="px-2 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 rounded bg-slate-200 text-slate-700">Speculative</span></span>
+    <span class="flex items-center gap-2"><span class="px-2 rounded bg-violet-100 text-violet-800">new</span><span class="px-2 rounded bg-stone-200 text-stone-700">re-evaluated 2026-09 item</span></span>
+  </div>
+  <nav class="grid md:grid-cols-4 gap-3 text-sm pt-2">
+    <div><p class="schem text-slate-400 mb-1">Engine kernel</p>
+      <a class="block hover:underline" href="#c1">01 Native context</a>
+      <a class="block hover:underline" href="#c2">02 Registries on Cx</a>
+      <a class="block hover:underline" href="#c3">03 Token outcome</a>
+      <a class="block hover:underline" href="#c4">04 Harm announces</a>
+      <a class="block hover:underline" href="#c5">05 One reveal procedure</a>
+      <a class="block hover:underline" href="#c6">06 Enemy engagement</a>
+      <a class="block hover:underline" href="#c7">07 Constants sweep</a>
+      <a class="block hover:underline" href="#c8">08 Evaluator families</a>
+      <a class="block hover:underline" href="#c9">09 Phase skeleton</a>
+      <a class="block hover:underline" href="#c10">10 Step vs apply result</a>
+      <a class="block hover:underline" href="#c11">11 Scenario ending</a>
+      <a class="block hover:underline" href="#c12">12 Modified base values</a></div>
+    <div><p class="schem text-slate-400 mb-1">Content</p>
+      <a class="block hover:underline" href="#c13">13 Trait vocabulary</a>
+      <a class="block hover:underline" href="#c14">14 Eligibility is a Condition</a>
+      <a class="block hover:underline" href="#c15">15 ForEach runs</a>
+      <a class="block hover:underline" href="#c16">16 CardRecord in game-core</a>
+      <a class="block hover:underline" href="#c17">17 Typed pipeline</a></div>
+    <div><p class="schem text-slate-400 mb-1">Client &amp; server</p>
+      <a class="block hover:underline" href="#c18">18 Seat with a deck</a>
+      <a class="block hover:underline" href="#c19">19 Skill-test result</a>
+      <a class="block hover:underline" href="#c20">20 Prompt layout</a>
+      <a class="block hover:underline" href="#c21">21 Prompt identity</a>
+      <a class="block hover:underline" href="#c22">22 Scenario spec</a></div>
+    <div><p class="schem text-slate-400 mb-1">Test harness</p>
+      <a class="block hover:underline" href="#c23">23 Seat fixture + test_skill</a>
+      <p class="schem text-slate-400 mt-3 mb-1">Also</p>
+      <a class="block hover:underline" href="#reeval">Re-evaluation of #921</a>
+      <a class="block hover:underline" href="#forecast">Phase 7.5 forecast</a>
+      <a class="block hover:underline" href="#sequencing">Sequencing &amp; order</a>
+      <a class="block hover:underline" href="#gates">Gates surfaced</a>
+      <a class="block hover:underline" href="#disagreements">Where the reads disagreed</a>
+      <a class="block hover:underline" href="#cleanups">Small cleanups</a>
+      <a class="block hover:underline" href="#top">Top recommendation</a></div>
+  </nav>
+</header>
+
+<section id="reeval" class="space-y-4">
+  <h2 class="font-serif text-2xl border-b border-slate-300 pb-2">Re-evaluation of the open #921 items</h2>
+  <p class="text-sm text-slate-600 max-w-3xl">Each open item was re-read in the current tree. The verdicts: <strong>still valid</strong> (fresh evidence, same shape), <strong>changed shape</strong> (the landed refactors moved it), <strong>weaker now</strong>, or <strong>obsolete</strong>.</p>
+  <table class="grid w-full text-sm bg-white rounded-lg border border-slate-200">
+    <thead class="text-left text-slate-500"><tr><th>#921 item</th><th>Verdict</th><th>What changed</th><th>Now</th></tr></thead>
+    <tbody>
+      <tr><td>06 Phase skeleton</td><td><span class="px-1 rounded bg-amber-100">weaker now</span></td><td>The correctness half landed with #936: an anchor pushed over a queued ability panics at the push. What is left is ~290 lines of fourfold duplication, 6 <code>state.phase =</code> sites and <code>set_enemy_anchor</code>'s silent no-op. The wire blast radius is smaller than assumed: only <code>AdvanceReverse</code> is matched outside game-core.</td><td><a class="underline" href="#c9">09</a></td></tr>
+      <tr><td>07 Evaluator families</td><td><span class="px-1 rounded bg-amber-100">changed shape</span></td><td>Five per-effect matches, not four (<code>legality::check_activation_target_available</code> is the fifth). The silent defaults are still silent. New drift found: seven run-time arms treat amount 0 as inert, only two are inert at the gate.</td><td><a class="underline" href="#c8">08</a></td></tr>
+      <tr><td>08 Enemy engagement</td><td><span class="px-1 rounded bg-emerald-100">still valid, stronger</span></td><td>7 write sites and 6 inline filters remain; #611 is half done (accessor has 2 users). New evidence it is a missing module: #662 and #650 are both "one copy skipped a step the other runs". #781's bearer-prey enemies need it.</td><td><a class="underline" href="#c6">06</a></td></tr>
+      <tr><td>09 Registries on Cx</td><td><span class="px-1 rounded bg-emerald-100">still valid, changed shape</span></td><td>The explicit seam is half-built: 20 <code>x()</code>/<code>x_with(reg)</code> pairs across six modules. 50 <code>current()</code> sites, ~12 distinct "no registry" behaviours (one is <code>true</code>, one is a silent no-op on the Elder Sign path), 136 <code>#[ctor]</code> installs, 302 hand-built <code>Cx {</code> literals in tests.</td><td><a class="underline" href="#c2">02</a></td></tr>
+      <tr><td>10 Modified base values</td><td><span class="px-1 rounded bg-slate-200">still valid, still latent</span></td><td>Unchanged. 0 cards name <code>Stat::MaxHealth</code>; none of the four 7.5 pools does either. First consumer is Towering Beasts 02256 / Duke 02014.</td><td><a class="underline" href="#c12">12</a></td></tr>
+      <tr><td>13 Typed pipeline</td><td><span class="px-1 rounded bg-amber-100">still valid</span></td><td>Pipeline still depends on serde only; 24 <code>contains(</code> assertions; spawn resolution untested. Three field bugs sit on 7.5's path (<code>is_fast</code> for On the Lam 01010, weakness kind, bearer prey) and are cheaper as field fixes than as the refactor.</td><td><a class="underline" href="#c17">17</a></td></tr>
+      <tr><td>14a Eligibility → Condition</td><td><span class="px-1 rounded bg-emerald-100">still valid, trigger fired</span></td><td>Lita's <code>monster_attacked_here</code> is a second compound, target-referencing predicate, hidden by being registered as eligibility rather than condition. #609's own promotion trigger has fired.</td><td><a class="underline" href="#c14">14</a></td></tr>
+      <tr><td>14b CardFilter::matches</td><td><span class="px-1 rounded bg-emerald-100">still valid, stronger</span></td><td>6 string-compared trait checks in 3 crates; trait counting hand-rolled twice; 8 of 49 incoming texts read a trait.</td><td><a class="underline" href="#c13">13</a></td></tr>
+      <tr><td>14c Put set-aside into play</td><td><span class="px-1 rounded bg-slate-200">weaker now</span></td><td><code>engine::put_set_aside_card_into_play</code> already is the deep exit; the two natives are thin sequences over it. The "each investigator" half is really the <code>ForEach</code> stub.</td><td><a class="underline" href="#c15">15</a></td></tr>
+      <tr><td>15 Prompt layout</td><td><span class="px-1 rounded bg-emerald-100">still valid</span></td><td>Counts re-verified: 7 entity copies, 13 free predicates (not 9), two submit paths, 25 of 26 web test files wasm-only. #954 narrowed the un-anchored branch to the two ADR 0015 exceptions.</td><td><a class="underline" href="#c20">20</a></td></tr>
+      <tr><td>16 Skill-test result</td><td><span class="px-1 rounded bg-emerald-100">still valid, gap made precise</span></td><td>The frame is live at the acknowledge pause and carries the verdict. The one missing datum is the revealed token: the engine never stores it. The client's reconstruction is already wrong whenever difficulty changes mid-test.</td><td><a class="underline" href="#c19">19</a></td></tr>
+      <tr><td>17 Session core</td><td><span class="px-1 rounded bg-red-100">obsolete as a module</span></td><td>The three mapping sites share eight lines; <code>GameSession</code> is 251 lines, 16 non-sqlx. A pure session fails the deletion test. The tickets (#580, #582, #583, #585) stand. The one architectural residue, prompt identity, is its own card.</td><td><a class="underline" href="#c21">21</a></td></tr>
+      <tr><td>Note (a): native context</td><td><span class="px-1 rounded bg-violet-100">new, converged ×3</span></td><td>Three reads reached it independently from the kernel, the evaluator and the cards crate. 6–8 raw zone/event writes in 5 natives; 20 engine exits already form a de-facto interface the type does not state.</td><td><a class="underline" href="#c1">01</a></td></tr>
+      <tr><td>Note (b): CardRecord down</td><td><span class="px-1 rounded bg-violet-100">new</span></td><td>Confirmed from three sides: <code>MockRegistry</code> is already field-for-field a <code>CardRecord</code> table over a second <code>OnceLock</code>. 10 struct literals (19 textual hits). Pays off only once 02 lands.</td><td><a class="underline" href="#c16">16</a></td></tr>
+      <tr><td>#937 EngineOutcome two layers</td><td><span class="px-1 rounded bg-amber-100">changed shape</span></td><td>The frame profile is now the authority on "waiting" and <code>apply_via</code> asserts it, so the step layer need not carry suspension. 182 fns return <code>EngineOutcome</code>; <code>queue_event</code> still returns <code>Done</code> (22 callers).</td><td><a class="underline" href="#c10">10</a></td></tr>
+      <tr><td>#593 cleanup batch</td><td><span class="px-1 rounded bg-red-100">mostly closed or moved</span></td><td>Its fixture checkboxes landed with #934/#949; the synthetic Cover Up fixture is gone. What is live is four cards' behavioural tests (card work) and the 01110 doom seam (engine). Not a harness candidate.</td><td>close after (a)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="candidates" class="space-y-12">
+<h2 class="font-serif text-2xl border-b border-slate-300 pb-2">Engine kernel: <span class="font-mono text-lg">game-core</span></h2>
+
+<!-- 01 -->
+<article id="c1" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">01</span><h3 class="font-serif text-2xl">A native context: card natives stop receiving raw <code>&amp;mut GameState</code></h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">new · converged ×3</span><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">BEFORE 7.5</span></div>
+  <p class="font-mono text-sm text-slate-600">card_registry.rs:50 (NativeEffectFn = fn(&amp;mut Cx, &amp;EvalContext)) · engine/cx.rs:26-33 ("no helper methods by design") · engine/mod.rs:26-47 (the pub use list natives already live on) · evaluator.rs:882-915 step_native, tripwire :900-905 · 15 native fns in 11 files under cards/src/impls/</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: the interface is "everything in GameState"</p>
+      <table class="grid w-full text-xs">
+        <thead><tr class="text-slate-500"><th class="text-left">native</th><th class="text-left">raw write</th><th class="text-left">exit that should own it</th></tr></thead>
+        <tbody>
+          <tr><td>rise_of_the_ghouls.rs:88,93</td><td class="text-red-700">encounter_deck.pop_front / encounter_discard.push</td><td>none (deck search)</td></tr>
+          <tr><td>mind_over_matter.rs:43</td><td class="text-red-700">skill_substitutions.push</td><td>none</td></tr>
+          <tr><td>obscuring_fog.rs:99-110</td><td class="text-red-700">encounter_discard.push + hand-built CardDiscarded</td><td>none (discard from limbo)</td></tr>
+          <tr><td>theyre_getting_out.rs:300</td><td class="text-red-700">agenda_doom +=</td><td>act_agenda::place_doom_on_agenda exists, pub(crate), skips its guard</td></tr>
+          <tr><td>trapped.rs:116-134</td><td class="text-red-700">current_location = + hand-built InvestigatorMoved</td><td>none (relocate_enemy exists)</td></tr>
+          <tr><td>cover_up.rs:133,160 · theyre_getting_out.rs:215</td><td class="text-red-700">clues -= · hand-built TraumaSuffered ×2</td><td>none; no engine exit emits TraumaSuffered</td></tr>
+        </tbody>
+      </table>
+      <p class="text-xs text-slate-500 mt-2">Beside these, natives call 20 distinct engine exits (<code>location_id_by_code</code> ×7, <code>put_set_aside_card_into_play</code> ×3, <code>take_damage</code> ×2, <code>resolve_grounded_choice</code> ×2 …). The interface exists; the type doesn't state it. <code>standards.md</code> demands the rule; the compiler doesn't.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After: one small interface, the engine's exits behind it</p>
+      <div class="flex gap-2 text-xs"><div class="border rounded px-2 py-1">15 natives today</div><div class="border rounded px-2 py-1">#777 Dark Memory, FK</div><div class="border rounded px-2 py-1">#780 Abandoned and Alone</div><div class="border rounded px-2 py-1">#781 seven weaknesses</div></div>
+      <div class="border-t-2 border-dashed border-slate-400"></div>
+      <div class="deep rounded-lg p-4 space-y-2">
+        <p class="schem text-slate-300">NativeCx&lt;'a&gt; (wraps Cx privately)</p>
+        <code class="text-xs text-emerald-300 block">state(&amp;self) -&gt; &amp;GameState</code>
+        <code class="text-xs text-emerald-300 block">discard_from_play · remove_from_game · take_damage · take_horror · place_doom_on_agenda · relocate_investigator · suffer_trauma · remove_clues · spend_uses · discard_from_limbo · choose(…)</code>
+        <p class="text-[10px] text-slate-400">dirty flag set by every exit → step_native rejects a native that suspends after writing, in all builds (#571)</p>
+      </div>
+      <p class="text-xs text-slate-500">Plain <code>fn</code> pointers stay <code>Copy</code>; the <code>OnceLock</code> registry and <code>EMPTY</code> are untouched. 15 signatures change, six writes become six calls, four exits of 10–20 lines are new over code dispatch already has.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>A native's interface is the whole of <code>GameState</code>, so the owner/controller rule, the one-event-per-move rule and the agenda's empty-deck guard are each kept by convention in <code>cards</code>. Six writes already skip one of them. #571's only guard is a debug-only event-count assert, blind to state writes.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>Natives take a <code>NativeCx</code>: read access plus the engine's exits as methods. A hand-rolled zone write stops compiling in <code>cards</code>. <code>game-core</code> keeps its plain <code>pub</code> fields for builders, tests and serde.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>locality: zone invariants stay in <code>board</code> / <code>dispatch</code></li><li>the native contract becomes an engine test</li><li>#571 closed structurally</li><li>#353's depletion check is one exit (<code>spend_uses</code>)</li><li>every 7.5 native written first is a migration later</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-sky-50 border border-sky-200 px-3 py-2 text-sm">Deletion test: delete the context and each native regrows its zone writes; six already have. Composes with <a class="underline" href="#c2">02</a>: if <code>Cx</code> carries the registry, <code>NativeCx</code> is where natives read it. Related: #571, #353, #728, #290 (Obscuring Fog's never-attached copy is its limbo question).</div>
+</article>
+
+<!-- 02 -->
+<article id="c2" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">02</span><h3 class="font-serif text-2xl">Registries resolved once per apply, carried on <code>Cx</code></h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">local-substitutable</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">was 09 · still valid, changed shape</span><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">BEFORE 7.5, with 01</span></div>
+  <p class="font-mono text-sm text-slate-600">card_registry.rs:174-199 · scenario_registry.rs:38-63 · scenario.rs:274-305 · engine/mod.rs:119-148, 196-199 (Cx built once in production) · state/investigator.rs:213-224 (state reads the global, panics) · 50 current() sites in 24 files · 136 #[ctor] installs · 302 hand-built Cx { … } in game-core tests</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: one process global, ~12 answers to "no registry"</p>
+      <pre class="mermaid">
+flowchart LR
+  G["OnceLock (global)"] --> R["reject ×8"]
+  G --> T["<b>true</b> ability_source.rs:179"]
+  G --> S["silent return ×4 incl. Elder Sign skill_test.rs:557"]
+  G --> F["false ×3 · cost 0 · skip ST.2 icon check"]
+  G --> P["panic: state/investigator.rs:214"]
+  G --> L["Refusal::SideNotInEffect → client sees SourceGone"]
+  W["20 x()/x_with(reg) pairs: abilities_in_effect ×6, initiation ×6, modified_value ×4 …"] -.half-built seam.-> G
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class T,S,P,L leak
+      </pre>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">After</p>
+      <pre class="mermaid">
+flowchart LR
+  AP["apply_via resolves once"] --> CX["Cx { state, events, cards: &amp;CardRegistry, scenario: Option&lt;&amp;ScenarioModule&gt; }"]
+  CX --> H["handlers · evaluator · trigger scan · modified_value · NativeCx (01)"]
+  P1["production: cards::REGISTRY"] -.adapter.-> AP
+  P2["tests: &amp;[CardRecord] per test (16)"] -.adapter.-> AP
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class CX deep
+      </pre>
+      <p class="text-xs text-slate-500">Missing registry = <code>CardRegistry::EMPTY</code>, so the only absence left is "unknown card". The 20 pairs merge. <code>max_health()</code> leaves <code>state</code>.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd><code>architecture.md</code> says handlers "reject cleanly on None". 8 of 50 do. The rest take eleven other shapes, one of which answers <code>true</code> and one of which silently drops the Elder Sign contribution, the path #776 lands on. Four process-globals force one test binary per registry shape.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>One lookup adapter, resolved at the apply boundary and read from <code>Cx</code>. A <code>Cx::for_test(state, events)</code> constructor keeps the 302 test literals mechanical.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>one absence rule instead of twelve</li><li>136 <code>#[ctor]</code> installs go</li><li>per-test registries become values (<a class="underline" href="#c16">16</a>)</li><li>scenario-end finalize can leave the apply boundary (<a class="underline" href="#c11">11</a>)</li><li>#776's path cannot no-op silently</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm">⚠ Touches the "only cross-crate bridge" sentence in CLAUDE.md and the registry paragraph in <code>architecture.md</code>. Neither is an ADR. The bridge stays fn pointers and the layering is unchanged; only how the registry is passed changes. The seam is real (two adapters exist today).</div>
+</article>
+
+<!-- 03 -->
+<article id="c3" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">03</span><h3 class="font-serif text-2xl">A revealed token's outcome is one shape, scenario symbol and elder sign alike</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">new · this is #776's design</span><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">BEFORE 7.5 (= #776)</span></div>
+  <p class="font-mono text-sm text-slate-600">scenario.rs:185-202 (SymbolOutcome { modifier, immediate, on_fail }) · skill_test.rs:482-508 (symbols → effects at ST.3), :542-600 record_token_contribution, :1134-1151 ApplySymbolOnFail · modified_value.rs:790-801 elder_sign_expr · continuation.rs:1277-1285 InFlightSkillTest.symbol_on_fail · dsl.rs:415-435 Trigger::ElderSign { modifier }</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4 space-y-2">
+      <p class="schem text-slate-500">Before: two adapters for the same question</p>
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        <div class="border rounded p-2"><p class="schem text-slate-400">scenario symbol</p><p><code>SymbolOutcome { modifier, immediate, on_fail }</code> → pushed at ST.3, <code>on_fail</code> stashed on the frame, pushed at ST.7</p></div>
+        <div class="border rounded p-2 leakbox"><p class="schem text-slate-400">elder sign</p><p>one unevaluated <code>IntExpr</code> row, <code>source: None</code>, no effect slot, no on-success, no row source for Agnes's "horror on you"</p></div>
+      </div>
+      <table class="grid w-full text-xs mt-2">
+        <tr><td>Agnes 01004</td><td>+1 per horror on Agnes</td><td>modifier, needs a source instance</td></tr>
+        <tr><td>Skids 01003</td><td>+2. If you succeed, gain 2 resources</td><td class="text-red-700">on_success: no slot</td></tr>
+        <tr><td>Daisy 01002</td><td>+0. If you succeed, draw 1 per Tome</td><td class="text-red-700">on_success + trait count (13)</td></tr>
+        <tr><td>Wendy 01005</td><td>auto-succeed if Amulet in play</td><td>immediate: <code>If(ControlStatus, AutoResolve)</code>, machinery exists</td></tr>
+      </table>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After</p>
+      <div class="deep rounded-lg p-4 space-y-1">
+        <p class="schem text-slate-300">TokenOutcome</p>
+        <code class="text-xs text-emerald-300 block">{ modifier: IntExpr, immediate: Effect, on_success: Effect, on_fail: Effect }</code>
+        <p class="text-[10px] text-slate-400">built once per revealed token from the scenario's symbol table or the investigator card; <code>symbol_on_fail</code> becomes <code>token_effects</code> on the frame; ST.3 pushes <code>immediate</code>, ST.7 pushes the result arm</p>
+      </div>
+      <p class="text-xs text-slate-500"><code>dsl.rs:425-429</code> already says it: "build a full <code>SymbolOutcome</code> from the investigator card for uniformity". ADR 0007 / 0005 unchanged: the modifier stays an unevaluated row. Wendy's ruling (<a class="underline" href="https://arkhamdb.com/card/01005">01005</a>) holds by construction: "continue with Steps 3 and 4, as normal".</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>The elder sign is modelled as a number a token contributes. Appendix II ST.4 says the <code>[elder_sign]</code> ability on the investigator card "must initiate". Three of the four 7.5 elder signs are effects, not numbers.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>Merge the two existing adapters into one <code>TokenOutcome</code> on the frame. <code>Trigger::ElderSign</code> grows the scenario-symbol shape.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>#776 is a merge, not new machinery</li><li>one ST.7 tail for symbol and elder sign</li><li>no scattered latches</li><li>Agnes's row gets a source</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm">Gate (rules): is "If you succeed, …" an ST.7 result the performer orders (#642) or part of the ST.4-initiated ability? The engine already answers "ST.7, fixed order" for the Cultist's on-fail. Recommend the same placement and inheriting #642. Code-vs-doc: <code>dsl.rs:418-420</code> says the modifier resolves "when the token is revealed", contradicting ADR 0007. Do <a class="underline" href="#c19">19</a>'s engine half in the same PR: both touch ST.3 and ST.7.</div>
+</article>
+
+<!-- 04 -->
+<article id="c4" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">04</span><h3 class="font-serif text-2xl">Investigator harm has two adapters, and the synchronous one never announces</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-red-100 text-red-800">live for #777</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">new framing of #728</span><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">BEFORE #777</span></div>
+  <p class="font-mono text-sm text-slate-600">combat.rs:468-472 soak_and_place · :485-491 begin_deal_damage (DealDamage frame, 2 callers) · elimination.rs:502-535 take_horror / take_damage (TODO(#728) in both) · callers: cards.rs:528 (deck-out penalty), crypt_chill.rs:78, dynamite_blast.rs:124, and every Cost::TakeHorror · place_assignment :321 (4 of 5 harm writes)</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: storage is consolidated, announcement is not</p>
+      <pre class="mermaid">
+flowchart TB
+  A["Effect::Deal · enemy attack"] --> B["begin_deal_damage → DealDamage frame"]
+  B --> C["DamageAssigned (when/at/after)"] --> D["DamagePlaced"] --> E["place_assignment"]
+  F["deck-out penalty · Crypt Chill · Dynamite Blast · Cost::TakeHorror (Forbidden Knowledge)"] --> G["take_horror / take_damage"]
+  G --> H["soak_and_place: no conditions emitted"] --> E
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class G,H leak
+      </pre>
+      <p class="text-xs text-red-700 mt-2">Agnes Baker 01004 (verbatim): <em>"[reaction] After 1 or more horror is placed on Agnes Baker: Deal 1 damage to an enemy at your location."</em> Forbidden Knowledge 01058, in the same slice: <em>"Exhaust Forbidden Knowledge and take 1 horror: …"</em>. Paying FK's cost goes through <code>take_horror</code>, so Agnes's own signature slice ships a card that cannot trigger her. #781 adds two more consumers: Psychosis 01099 <em>"<b>Forced</b> - After you take 1 or more horror: Take 1 direct damage."</em> and Hypochondria 01100 <em>"<b>Forced</b> - After you take 1 or more damage: Take 1 direct horror."</em>, whose rulings (<a class="underline" href="https://arkhamdb.com/card/01099">01099</a>, <a class="underline" href="https://arkhamdb.com/card/01100">01100</a>) say they trigger <em>"even if you assign horror to an asset you control"</em>. Both are dead on the three synchronous paths.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After: one adapter</p>
+      <div class="deep rounded-lg p-4 space-y-1">
+        <p class="schem text-slate-300">deal harm to an investigator</p>
+        <code class="text-xs text-emerald-300 block">begin_deal_damage(cx, who, damage, horror, source) → frame</code>
+        <p class="text-[10px] text-slate-400">every caller parks its tail on a frame (ADR 0003); assign → when/at/after → place; <code>take_*</code> become thin names over it or go</p>
+      </div>
+      <p class="text-xs text-slate-500">Dynamite Blast's per-investigator loop is the hard caller (<a class="underline" href="#c15">15</a>'s <code>ForEach</code> frame is how it parks). #427/#429's interactive soak falls out of the frame. Enemy damage has no assign step at all (<code>combat.rs:90</code>): record only, Massive will want it.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>ADR 0009's "nothing in Core observes the gap" ends with #777. <code>DamagePlaced</code> also has no <code>EventPattern</code> yet, and needs self-scoping at <code>trigger_scan.rs:613</code>.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>Retire <code>soak_and_place</code> as a public path; the three callers and <code>Cost::TakeHorror</code> ride the frame.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>one adapter, one announcement</li><li>Agnes, Psychosis and Hypochondria fire on every harm</li><li>#427 / #429 become a frame choice</li><li>#119 closes against ADR 0009 (storage already met)</li></ul></dd></div>
+  </dl>
+</article>
+
+<!-- 05 -->
+<article id="c5" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">05</span><h3 class="font-serif text-2xl">One reveal procedure for a drawn card, whichever deck it came from</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">new</span><span class="px-2 py-0.5 rounded bg-sky-100 text-sky-800">DURING #781, first commit</span></div>
+  <p class="font-mono text-sm text-slate-600">cards.rs:61-131 (opening-hand set-aside) · :166-230 resolve_drawn_weaknesses (persistent treacheries only; no frame, no spawn) · encounter.rs:134-204 (EncounterCardFrame / EncounterDisposition; owner hard-coded EncounterDeck at :200, :378) · :878-884 one-shot discard, eventless · cards.rs:950-957 (the one EnteredPlay emit of 5 entry paths) · card_data.rs:231-244 (no Prey::Bearer; hunters.rs:115-121 panics on a new variant)</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: four entrances, two reveal implementations</p>
+      <table class="grid w-full text-xs">
+        <thead><tr class="text-slate-500"><th class="text-left">basic weakness (pool of 8)</th><th class="text-left">shape</th><th class="text-left">path today</th></tr></thead>
+        <tbody>
+          <tr><td>Haunted · Psychosis · Hypochondria</td><td>persistent treachery</td><td>player draw ✓</td></tr>
+          <tr><td>Amnesia · Paranoia</td><td>one-shot → bearer's discard</td><td class="text-red-700">none</td></tr>
+          <tr><td>Mob Enforcer · Stubborn Detective</td><td>enemy, "Prey – Bearer only", owner = bearer</td><td class="text-red-700">none: spawn hard-codes the encounter deck as owner</td></tr>
+          <tr><td>Silver Twilight Acolyte 01102</td><td>enemy, "Prey – Bearer only", <code>subtype_code: basicweakness</code></td><td class="text-red-700">already implemented as a Gathering encounter enemy; prey approximated to <code>Prey::Default</code> (#654). Missing from #781's list and the phase doc's "seven".</td></tr>
+        </tbody>
+      </table>
+      <p class="text-xs text-slate-500 mt-2"><code>glossary/Weakness.md</code>: an encounter-type weakness drawn from the player deck is resolved <em>"as if it were just drawn from the encounter deck"</em>. The engine has two reveal implementations that disagree on frames, owner and disposition.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After</p>
+      <div class="deep rounded-lg p-4 space-y-1">
+        <p class="schem text-slate-300">reveal</p>
+        <code class="text-xs text-emerald-300 block">reveal_card(cx, code, drawer, owner) → RevealedCardFrame</code>
+        <p class="text-[10px] text-slate-400">one mint point (<code>new_in_play_instance</code> already is), one disposition, one <code>EnteredPlay</code> emit, owner passed not assumed</p>
+      </div>
+      <p class="text-xs text-slate-500">Absorbs #514 (drawn weakness reveal), #645 (<code>EnteredPlay</code> on 1 of 5 paths), the owner half of #654, and optionally #290 (mint at reveal). <a class="underline" href="#c6">06</a> supplies <code>spawn_engaged_with(bearer)</code>.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>The pool is eight cards, not seven: 01102 is a basic weakness the corpus already compiles, approximated on exactly this gap. Five of the eight have no path, and the three that do take a path that skips the disposition frame the encounter path has.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>One reveal module both decks call, with the owner as a parameter.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>#781 is "add seven cards and fix one", not "add two paths"</li><li>locality: disposition decided once</li><li>#645 closes by construction</li></ul></dd></div>
+  </dl>
+</article>
+
+<!-- 06 -->
+<article id="c6" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">06</span><h3 class="font-serif text-2xl">Enemy engagement changes in one module</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">was 08 · still valid, stronger</span><span class="px-2 py-0.5 rounded bg-sky-100 text-sky-800">DURING #781</span></div>
+  <p class="font-mono text-sm text-slate-600">engage: hunters.rs:296 + inline copy actions/engage.rs:118 · disengage ×3: elimination.rs:428, actions/move.rs:282, actions/evade.rs:157 · exhaust ×2: combat.rs:650, evade.rs:158 · filters "engaged_with == Some(inv)" ×6: elimination.rs:421, combat.rs:558,614, move.rs:259, evade.rs:33, engage.rs:32,74 (+ web/board.rs:81) · accessor enemies_engaged_with (game_state.rs:860): 2 users</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: copies that have already diverged</p>
+      <pre class="mermaid">
+flowchart LR
+  D1["move.rs:282 disengage"] -. "no re-engage check" .-> X1["#662: stranded enemy never engages the stayers"]
+  D2["elimination.rs:434 disengage + re-engage"]
+  S["encounter spawn, no Spawn line"] -. "prey-resolves" .-> X2["#650: should engage the drawer"]
+  F["6 inline filters"] -. "Massive = 6 edits + web" .-> X3["#652"]
+  A["4 auto-engage sites"] -. "Aloof = 4 edits + fight filter" .-> X4["#653"]
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class D1,S,F,A leak
+      </pre>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">After</p>
+      <pre class="mermaid">
+flowchart LR
+  C["evade · engage action · hunters · elimination · retaliate · spawn (05)"] --> M["engagement: engage / disengage / exhaust / follow-move / re-engage / spawn_engaged_with + events"]
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class M deep
+      </pre>
+      <p class="text-xs text-slate-500 mt-2">The one place <code>engaged_with: Option&lt;InvestigatorId&gt;</code> is read is the one place Massive changes it.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>Two filed bugs (#662, #650) are each "one copy skips a step another copy runs". #781's Mob Enforcer and Stubborn Detective print <em>"Prey – Bearer only."</em> and <em>"Hunter."</em>: they spawn engaged with the bearer and hunt only the bearer, which is a transition no copy has.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>One module owns the transitions and their events; #611 finishes as its first commit.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>#662 and #650 fixed once</li><li>Massive and Aloof become one edit each</li><li>consistent events (#656 items 1–2)</li></ul></dd></div>
+  </dl>
+</article>
+<!-- 07 -->
+<article id="c7" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">07</span><h3 class="font-serif text-2xl">Constant-ability readers are a third sweep, outside the funnel and the walk</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">new · code vs ADR 0018</span><span class="px-2 py-0.5 rounded bg-sky-100 text-sky-800">DURING #777</span></div>
+  <p class="font-mono text-sm text-slate-600">evaluator.rs:2348-2370 play_is_prohibited · :2397-2443 pending_action_surcharge (both iterate controlled_card_instances() + registry.abilities_for directly) · movement.rs:54-90 (location via abilities_in_effect :75, attachments via raw abilities_for :89) · the right funnels: modified_value::sweep :549-609 (walk_active + audience_reaches :722-759) · abilities_in_effect::granted_to :286-343 · actions/take.rs:383-392 action_surcharge (a shallow wrapper making the evaluator fn registry-optional)</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: three readers of <code>Restrict</code>, each with its own zone list</p>
+      <table class="grid w-full text-xs">
+        <thead><tr class="text-slate-500"><th class="text-left">reader</th><th>walk</th><th>side in effect</th><th>granted</th><th>audience</th></tr></thead>
+        <tbody class="text-center">
+          <tr><td class="text-left">modified_value::sweep (Modify)</td><td>board::walk</td><td>✓</td><td>✓</td><td>✓</td></tr>
+          <tr><td class="text-left">granted_to (Grant)</td><td>board::walk</td><td>✓</td><td>–</td><td>✓</td></tr>
+          <tr><td class="text-left">play_is_prohibited (Restrict)</td><td class="text-red-700">own list</td><td class="text-red-700">✗</td><td class="text-red-700">✗</td><td class="text-red-700">✗</td></tr>
+          <tr><td class="text-left">pending_action_surcharge (Restrict)</td><td class="text-red-700">own list</td><td class="text-red-700">✗</td><td class="text-red-700">✗</td><td class="text-red-700">✗</td></tr>
+          <tr><td class="text-left">movement restrictions</td><td class="text-red-700">location + attachments</td><td>½</td><td class="text-red-700">✗</td><td>–</td></tr>
+        </tbody>
+      </table>
+      <p class="text-xs text-slate-500 mt-2">ADR 0018: <em>"All of them read <code>board::walk</code>, and none keeps a zone list of its own."</em> A granted <code>Restrict</code> is invisible everywhere; a <code>Restrict</code> printed on a location, enemy, act or agenda is invisible to the play-ban and the surcharge. No corpus card trips it today.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After</p>
+      <div class="deep rounded-lg p-4 space-y-1">
+        <p class="schem text-slate-300">abilities_in_effect::constants_reaching(state, reg, target)</p>
+        <p class="text-[10px] text-slate-400"><code>sweep</code>'s walk-and-audience core, generalised; <code>Modify</code>, <code>Grant</code>, <code>Restrict</code> and new constant kinds are its consumers; <code>Restrict</code> gains an audience</p>
+      </div>
+      <p class="text-xs text-slate-600">Four 7.5 constants with no reader today: Daisy 01002 <em>"You may take an additional action … only … on [[Tome]] [action] abilities"</em>; Tote Bag 01008 <em>"2 additional hand slots … only … [[Tome]] assets"</em> (<code>slots.rs:637-645</code> has the TODO); Forbidden Knowledge 01058 <em>"If Forbidden Knowledge has no secrets, discard it"</em>; Necronomicon 01009 <em>"Treat each [elder_sign] you reveal … as a [auto_fail]"</em> (read at <code>chaos_bag.rs:102-112</code>, must pre-empt <code>elder_sign_expr</code>).</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>Each new kind of constant gets a fourth hand-rolled walk unless the one sweep is the only way to ask "which constants reach this target".</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>Lift the sweep's core out of <code>modified_value</code>; the three <code>Restrict</code> readers and <code>take::action_surcharge</code> become consumers. This is also where the prior review's "surcharge → 04, play-ban → 01" moves finally happen.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>ADR 0018 actually holds</li><li>a new constant kind is one consumer</li><li>Daisy's two and FK's one ride it</li></ul></dd></div>
+  </dl>
+</article>
+
+<!-- 08 -->
+<article id="c8" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">08</span><h3 class="font-serif text-2xl">Split the evaluator into effect families</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">was 07 · changed shape</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">AFTER 7.5</span><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">one micro-fix BEFORE</span></div>
+  <p class="font-mono text-sm text-slate-600">evaluator.rs (2454 lines, was 2571): step_leaf :617-780 (exhaustive, 27 variants) · ground_chosen_targets :1896-1939 · effect_can_change_state :2182-2260 (_ =&gt; true :2258) · investigator_target_eligible :2290-2305 (_ =&gt; true :2303) · any_eligible_investigator_target :2262-2288 re-enumerates candidates by hand · the fifth match: legality.rs:315-339</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: one effect's meaning in five matches</p>
+      <table class="grid w-full text-xs">
+        <thead><tr class="text-slate-500"><th class="text-left">variant</th><th>step_leaf</th><th>ground</th><th>can_change</th><th>eligible</th><th>legality</th></tr></thead>
+        <tbody class="text-center">
+          <tr><td class="text-left">GainResources</td><td>0 ⇒ Done</td><td>✓</td><td class="text-red-700">_ ⇒ true</td><td>_</td><td>–</td></tr>
+          <tr><td class="text-left">DiscoverClue</td><td>0 ⇒ Done</td><td>✓</td><td>✓</td><td>n/a</td><td>–</td></tr>
+          <tr><td class="text-left">Deal · DrawCards · PlaceDoom</td><td>0 ⇒ Done</td><td>✓</td><td class="text-red-700">_ ⇒ true</td><td>_</td><td>–</td></tr>
+          <tr><td class="text-left">DealDamageToEnemy</td><td>0 ⇒ Done</td><td>✓</td><td class="text-red-700">_ ⇒ true</td><td>n/a</td><td>✓</td></tr>
+          <tr><td class="text-left">Heal · SearchDeck</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>–</td></tr>
+          <tr><td class="text-left">other 16</td><td>one arm each</td><td>–</td><td>mostly _</td><td>–</td><td>–</td></tr>
+        </tbody>
+      </table>
+      <p class="text-xs text-slate-500 mt-2">Seven run-time arms treat amount 0 as a no-op; only two are inert at the initiation gate. Latent until an amount can evaluate to 0 at the gate: Daisy's "1 card for each Tome" with zero Tomes is the first.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After: rows become modules</p>
+      <div class="space-y-1 text-xs">
+        <div class="deep rounded px-3 py-1">Harm family: targets · can-change · eligible · run</div>
+        <div class="deep rounded px-3 py-1">Clues family</div>
+        <div class="deep rounded px-3 py-1">Cards / zones family</div>
+        <div class="deep rounded px-3 py-1">Test-scoped family</div>
+        <div class="deep rounded px-3 py-1">Scenario-progress family</div>
+        <div class="border rounded px-3 py-1">Evaluator: frame walker + dispatch</div>
+      </div>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>Adding an <code>Effect</code> is five edits and three of them fall back silently. The gate and the grounding agree only because one re-enumerates the other's candidates by hand.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>One <code>EffectFamily</code> per group owning all five aspects. Wait for 7.5: the forecast adds 5–7 variants and will show which families are real.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>locality: one effect, one file</li><li>silent defaults become explicit</li><li><strong>BEFORE</strong>: fold "amount == 0 ⇒ inert" into <code>effect_can_change_state</code> for the five arms, a 20-line fix</li></ul></dd></div>
+  </dl>
+</article>
+
+<!-- 09 -->
+<article id="c9" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">09</span><h3 class="font-serif text-2xl">One phase skeleton instead of four copies</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">was 06 · weaker now</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">AFTER</span></div>
+  <p class="font-mono text-sm text-slate-600">phases.rs openers :289-313, :448-482, :633-655, :1050-1072 · ends :391-410, :702-725, :754-775, :1142-1156 · transitions :419-429, :733-740, :782-789, :1194-1210 · setters :344, :509, :619 (silent no-op :624-626), :1180 · state.phase = at 6 production sites + 4 in builder.rs · four *Resume enums repeating Entry / AfterPhaseStartForced / AfterPhaseEndForced</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: ~290 lines in 16 fns, the same bookends four times</p>
+      <div class="grid grid-cols-4 gap-1 text-[10px] text-center">
+        <div class="schem">Mythos</div><div class="schem">Investigation</div><div class="schem">Enemy</div><div class="schem">Upkeep</div>
+        <div class="border rounded p-1">enter · Started · queue</div><div class="border rounded p-1">enter · Started · queue</div><div class="border rounded p-1">enter · Started · queue</div><div class="border rounded p-1">enter · Started · queue</div>
+        <div class="border rounded p-1">set_resume (expect)</div><div class="border rounded p-1">set_resume (expect)</div><div class="border rounded p-1 leakbox">set_anchor (silent)</div><div class="border rounded p-1">set_resume (expect)</div>
+        <div class="border rounded p-1">Ended · queue · transition</div><div class="border rounded p-1">Ended · queue · transition</div><div class="border rounded p-1">Ended · queue · transition</div><div class="border rounded p-1">Ended · queue · transition</div>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">What landed since: a phase anchor pushed over a queued ability now panics at the push (<code>stack.rs:160-171</code>), so the #569 class is caught structurally. The duplication is what remains.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After</p>
+      <div class="deep rounded-lg p-4 space-y-1">
+        <p class="schem text-slate-300">Continuation::Phase(PhaseFrame { phase, resume: PhaseResume, attacking })</p>
+        <p class="text-[10px] text-slate-400">one open / end / transition / set_resume; each phase supplies its middle steps; <code>state.phase</code> derived or written once</p>
+      </div>
+      <p class="text-xs text-slate-500">Wire blast radius re-measured: <code>web</code>, <code>server</code> and <code>protocol</code> match only <code>Continuation::AdvanceReverse</code>, and the persisted seed stack is <code>[Mulligan]</code>, never an anchor. Smaller than the prior report assumed, still a replay-log change.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>ADR 0003's ordering is written four times and the four setters have already drifted. #534 (surface the phase sub-step) and #792 (phase-boundary doom scan) would each touch all four.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>One skeleton. Land it when #534 or #792 is the consumer, not before.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>ADR 0003 enforced once</li><li>phases.rs shrinks by ~¼</li><li>the mirrored <code>phase</code> field can't drift</li></ul></dd></div>
+  </dl>
+</article>
+
+<!-- 10 -->
+<article id="c10" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">10</span><h3 class="font-serif text-2xl">The drive-step result is not the apply result; the prompt is a function of the profile</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong for prompt()-on-profile</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">#937 · changed shape</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">AFTER</span></div>
+  <p class="font-mono text-sm text-slate-600">182 fns return EngineOutcome (+17 in cards) · 41 hand-written propagation matches · 10 Result&lt;_, EngineOutcome&gt; · Err(Done) as "skip" evaluator.rs:1989 · unreachable! on Rejected ×3 · queue_event returns Done: 22 callers, 2 discard it (cards.rs:951, combat.rs:139) · Done has three meanings inside drive_frames (dispatch/mod.rs:262, :273-277, :339-360) · prompts built under two conventions: when driven (4 sites) vs when pushed (:391-399) · reaction_windows.rs:490-507 ≡ :837-851 · 31 ResumeToken(0)</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before</p>
+      <pre class="mermaid">
+flowchart TB
+  S["every step fn"] --> O["EngineOutcome { Done | AwaitingInput{request, token:0} | Rejected }"]
+  O --> M["41 propagation matches"]
+  O --> Q["queue_event → Done = 'queued'"]
+  O --> D["drive_frames: Done = finished | parked | no progress"]
+  P1["prompt built when driven"] --> O
+  P2["prompt built when pushed"] --> O
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class Q,D,P2 leak
+      </pre>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">After</p>
+      <pre class="mermaid">
+flowchart TB
+  S["every step fn"] --> ST["Step = Continue | Reject(Rejection)"]
+  F["frame profile (03 landed)"] --> PR["Continuation::prompt(&amp;self, state) → Option&lt;InputRequest&gt;"]
+  ST --> AV["apply_via emits once: Done | AwaitingInput { top.prompt(), token: hash(stack) } | Rejected"]
+  PR --> AV
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class PR,AV deep
+      </pre>
+      <p class="text-xs text-slate-500 mt-2">The stack is the suspension channel; <code>apply_via</code> already asserts <code>Done ⇒ empty</code>, <code>AwaitingInput ⇒ prompt on top</code> (<code>engine/mod.rs:221-234</code>). Wire type unchanged.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>One enum serves the step layer and the host. Inside the engine <code>Done</code> means three things; a prompt is assembled in two conventions; the resume token is a constant.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>Steps return <code>Step</code>; the profile owns the prompt; <code>apply_via</code> builds the one host-facing outcome. The <code>#[must_use] Queued</code> marker for <code>queue_event</code> is the smallest slice and can land any time.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>41 matches → <code>?</code></li><li>one prompt builder; the duplicate 15 lines go</li><li>#458's deterministic token falls out (<a class="underline" href="#c21">21</a>)</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm">Sequence <a class="underline" href="#c23">23</a> first: 269 <code>assert_eq!(…, Done)</code> in tests, mostly from one-shot drivers on no-turn fixtures, would read wrong on their face under the split. Gate: <code>drive_frames</code>'s no-progress park (<code>:273-277</code>) returns <code>Done</code> with an anchor on top, reachable through #31's empty-<code>turn_order</code> hole, where <code>apply_via</code> debug-asserts the opposite.</div>
+</article>
+
+<!-- 11 -->
+<article id="c11" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">11</span><h3 class="font-serif text-2xl">The scenario ending in one module</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">new</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">AFTER (phase 9's #766 / #75 is the consumer)</span></div>
+  <p class="font-mono text-sm text-slate-600">latch act_agenda.rs:377-382 (callers evaluator.rs:1828, elimination.rs:641) · drive step dispatch/mod.rs:386-390 · cancel :416-422, :256-258 · finalize incl. victory-display scan engine/mod.rs:272-333, "because this is the only place holding the ScenarioRegistry" (:264) · two latches that must agree (state.ending + frame, assert :283) · AllInvestigatorsEliminated and ScenarioResolved{NoResolution} double-announce</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: four files, two latches, finalize at the apply boundary</p>
+      <div class="space-y-1 text-xs">
+        <div class="border-l-4 border-slate-400 pl-2 h-7 flex items-center">act_agenda.rs: latch <code>state.ending</code>, push ScenarioEnd</div>
+        <div class="border-l-4 border-slate-400 pl-2 h-7 flex items-center">dispatch/mod.rs: drive step + two cancel sites</div>
+        <div class="border-l-4 border-red-500 pl-2 h-7 flex items-center">engine/mod.rs: finalize (registry only reachable here)</div>
+        <div class="border-l-4 border-slate-400 pl-2 h-7 flex items-center">elimination.rs / evaluator.rs: two callers of the latch</div>
+      </div>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After</p>
+      <div class="deep rounded-lg p-4 space-y-1">
+        <p class="schem text-slate-300">dispatch/scenario_end.rs</p>
+        <p class="text-[10px] text-slate-400">latch · drive · finalize, finalize running from the frame once <code>Cx</code> carries the scenario module (<a class="underline" href="#c2">02</a>); one latch; one announcement; #766's campaign-log record and #648's victory-point card land here</p>
+      </div>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>Finalize sits at the apply boundary only because the registry is a global, which is 02's symptom, and ADR 0012's one ending is kept by an assertion that two latches agree.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>One module after 02; phase 9 is its consumer.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>one latch</li><li>#766 / #75 / #648 have a home</li></ul></dd></div>
+  </dl>
+</article>
+
+<!-- 12 -->
+<article id="c12" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">12</span><h3 class="font-serif text-2xl">Base values stop masquerading as modified values</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-slate-200 text-slate-700">Speculative</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">was 10 · unchanged, latent</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">AFTER · gate on the first +1 health card</span></div>
+  <p class="font-mono text-sm text-slate-600">modified_value.rs:470-504 base_value (:479/:483 inv.max_health(), :497 e.max_health) · defeat reads raw: combat.rs:89,96 (enemy), :405, :438 (investigator) · prey ranking reads modified: hunters.rs:59-62 · web renders printed: board.rs:91-92, map.rs:297-298, enemy_card.rs:22, card.rs:295-312 (asset soak capacity) · 0 cards name Stat::MaxHealth / MaxSanity</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: mass diagram</p>
+      <div class="mass h-40">
+        <div style="height:85%" class="bg-white">interface: pub max_health, max_sanity, fight, evade … + modified_value()</div>
+        <div style="height:100%" class="bg-slate-100">implementation: fold</div>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">Defeat reads the printed value, prey ranking the modified one. They cannot disagree in the compiled corpus; none of the four 7.5 pools modifies max health or sanity.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">After</p>
+      <div class="mass h-40">
+        <div style="height:25%" class="deep">value_of(target, qty)</div>
+        <div style="height:100%" class="bg-slate-100">fold + printed_* fields</div>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">Keep as a gate: first consumer is Towering Beasts 02256 or Duke 02014 (#673), both phase 10.</p>
+    </div>
+  </div>
+</article>
+<h2 class="font-serif text-2xl border-b border-slate-300 pb-2">Content: <span class="font-mono text-lg">card-dsl · cards · card-data-pipeline</span></h2>
+
+<!-- 13 -->
+<article id="c13" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">13</span><h3 class="font-serif text-2xl">Trait vocabulary: <code>has_trait</code>, <code>CardFilter::matches</code>, a counting <code>Quantity</code></h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">was 14b · still valid, stronger</span><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">BEFORE 7.5</span></div>
+  <p class="font-mono text-sm text-slate-600">card-dsl/src/dsl.rs:1737-1740 CardFilter { trait_, kind } (one consumer: research_librarian.rs:51,84) · :2254-2259 Quantity (3 variants) · string-compared trait checks ×6 in 3 crates: rise_of_the_ghouls.rs:76 · theyre_getting_out.rs:225 · lita_chantler.rs:213 · the_gathering.rs:137 · movement.rs:125 ("Elite") · evaluator.rs:1040-1048 filter_matches (private) · hand-rolled trait counting ×2: theyre_getting_out.rs:288-300, the_gathering.rs:129-140 · eval_quantity evaluator.rs:1268-1297</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: "has trait" written six times, "count matching" twice</p>
+      <pre class="mermaid">
+flowchart LR
+  T1["cards ×3 natives"] --> S["traits.iter().any(|t| t == X)"]
+  T2["scenarios"] --> S
+  T3["game-core ×2"] --> S
+  C1["agenda 01107 count Ghouls"] --> K["hand-rolled count"]
+  C2["The Gathering"] --> K
+  C3["Daisy's elder sign: 1 per Tome"] -.-> K
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class S,K leak
+      </pre>
+      <p class="text-xs text-slate-500">8 of the 49 incoming 7.5 texts read a trait: Daisy 01002 (×2), Tote Bag 01008, Heirloom 01012, Arcane Initiate 01063, On the Lam 01010 and Stray Cat 01076 (non-Elite), Scavenging 01073.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After: in <code>card-dsl</code>, pure, testable without a registry</p>
+      <div class="deep rounded-lg p-4 space-y-1">
+        <code class="text-xs text-emerald-300 block">CardMetadata::has_trait(&amp;self, t) · CardFilter::matches(&amp;self, &amp;CardMetadata)</code>
+        <code class="text-xs text-emerald-300 block">Quantity::Matching { filter: CardFilter, among: EntityScope }</code>
+        <p class="text-[10px] text-slate-400">evaluated once at <code>eval_quantity</code>; the six checks and the two counts become calls</p>
+      </div>
+      <p class="text-xs text-slate-500">Answers the phase doc's open question "does trait-counting belong to #776 or #779?": neither, it is vocabulary that lands before both.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>Trait membership is past the two-consumer threshold six times over. Each copy is a string compare that no test checks against the corpus spelling.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>Three small additions to the data crate; one evaluator arm.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>one definition of "has trait"</li><li>Daisy's and the agenda's counter is the same code</li><li>smallest change on this list</li></ul></dd></div>
+  </dl>
+</article>
+
+<!-- 14 -->
+<article id="c14" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">14</span><h3 class="font-serif text-2xl">Eligibility is a <code>Condition</code>; #609's trigger has already fired</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">was 14a · trigger fired</span><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">BEFORE #777</span></div>
+  <p class="font-mono text-sm text-slate-600">card_registry.rs:58 EligibilityFn ≡ :69 NativeConditionFn (identical fn type, two slots :107-123, doc :114-120 says only Machete) · dsl.rs:1006 Ability.eligibility: Option&lt;String&gt; (a third, stringly hatch) · call sites initiation.rs:434, evaluator.rs:1242 · predicates: the_barrier.rs:153, cover_up.rs:81, lita_chantler.rs:195-211, machete.rs:46, theyre_getting_out.rs:181</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: one fn type, two namespaces, one doc that the split hid from</p>
+      <table class="grid w-full text-xs">
+        <thead><tr class="text-slate-500"><th class="text-left">predicate</th><th class="text-left">slot</th><th class="text-left">expressible as</th></tr></thead>
+        <tbody>
+          <tr><td>at_act_three (agenda 01107)</td><td>condition</td><td><code>Compare(act_index, 2)</code></td></tr>
+          <tr><td>has_clues (The Barrier)</td><td>eligibility</td><td><code>Compare(source clues, &gt;0)</code></td></tr>
+          <tr><td>can_advance (Cover Up)</td><td>eligibility</td><td>pass-through to an engine query</td></tr>
+          <tr><td>sole_engaged_target (Machete)</td><td>condition</td><td class="text-red-700">compound + target-referencing (the #609 case)</td></tr>
+          <tr><td>monster_attacked_here (Lita)</td><td>eligibility</td><td class="text-red-700">compound + target-referencing: in-flight Fight target, its traits, co-location</td></tr>
+        </tbody>
+      </table>
+      <p class="text-xs text-slate-500 mt-2"><code>card_registry.rs:114-120</code>: "two cards register here … Machete holds a compound, target-referencing condition … don't grow it by registering a third card's tag". Lita is that card, registered in the other slot.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After</p>
+      <div class="deep rounded-lg p-4 space-y-1">
+        <code class="text-xs text-emerald-300 block">Ability.eligibility: Option&lt;Condition&gt;</code>
+        <p class="text-[10px] text-slate-400"><code>initiation::check</code> calls <code>eval_condition</code>; one native slot (<code>Condition::Native</code>) as the single escape hatch until #609 adds <code>All</code>/<code>Any</code> and target-referencing quantities; three of five predicates become <code>Compare</code> at once</p>
+      </div>
+      <p class="text-xs text-slate-500">ADR 0017 unchanged: eligibility stays inside the gate; only its vocabulary changes. Incoming reactions with an "only if it would do something" clause: Agnes, Pickpocketing, Rabbit's Foot, Scavenging, Heirloom.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>Two registry slots and two tag namespaces for one fn type, so the promotion rule written on one slot never saw the second consumer arrive in the other.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>A type change at two call sites; delete the eligibility slot. Then update #609: its trigger has fired.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>one escape hatch, not three</li><li>eligibility gets the declarative vocabulary</li><li>the every-tag-resolves test covers one namespace</li></ul></dd></div>
+  </dl>
+</article>
+
+<!-- 15 -->
+<article id="c15" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">15</span><h3 class="font-serif text-2xl"><code>ForEach</code> is a DSL variant with a stub evaluator; four natives loop by hand</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">was 14c's "each investigator" half · #363</span><span class="px-2 py-0.5 rounded bg-sky-100 text-sky-800">DURING #778</span></div>
+  <p class="font-mono text-sm text-slate-600">dsl.rs:1356-1370 Effect::ForEach, builder :2692 · evaluator.rs:693 → awaiting_input_stub("ForEach"), the evaluator's only stub arm · hand-rolled loops: whats_going_on.rs:95-101 · trapped.rs:117-128 · theyre_getting_out.rs:203-220 · dynamite_blast.rs blast_location · architecture.md:45 lists ForEach among effects the evaluator walks</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: the DSL names a fan-out it cannot run</p>
+      <table class="grid w-full text-xs">
+        <thead><tr class="text-slate-500"><th class="text-left">native</th><th>skips eliminated?</th><th>order</th></tr></thead>
+        <tbody class="text-center">
+          <tr><td class="text-left">theyre_getting_out.rs:206</td><td>✓ Active only</td><td>map order</td></tr>
+          <tr><td class="text-left">whats_going_on.rs:96</td><td class="text-red-700">✗</td><td>map order</td></tr>
+          <tr><td class="text-left">trapped.rs:117</td><td class="text-red-700">✗</td><td>map order</td></tr>
+          <tr><td class="text-left">dynamite_blast (mixed kinds)</td><td>–</td><td>map order</td></tr>
+        </tbody>
+      </table>
+      <p class="text-xs text-slate-500 mt-2">The prior "order gate" is settled by <code>Priority_of_Simultaneous_Resolution.md</code>: choices in player order, resolution simultaneous. The live divergence is eliminated-player skipping.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After</p>
+      <div class="deep rounded-lg p-4 space-y-1">
+        <code class="text-xs text-emerald-300 block">ForEach { set: InvestigatorTargetSet::{All, AtControllerLocation} | EnemySet::{EngagedWithYou, AtYourLocation}, effect }</code>
+        <p class="text-[10px] text-slate-400">one <code>Continuation::Effect</code> frame per target in <code>turn_order</code>, non-Active skipped; the frame is also where <a class="underline" href="#c4">04</a>'s Dynamite loop parks</p>
+      </div>
+      <p class="text-xs text-slate-500">7.5 adds three enemy fan-outs: Elusive 01050, Cunning Distraction 01078, Survival Instinct 01081. #363's general <code>EntityTarget</code> stays unfinalised; this fills the two sets the corpus prints.</p>
+    </div>
+  </div>
+</article>
+
+<!-- 16 -->
+<article id="c16" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">16</span><h3 class="font-serif text-2xl"><code>CardRecord</code> moves into game-core; mock registries become data</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-slate-100">local-substitutable</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">user note (b) · follow-up to 12</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">AFTER · needs 02</span></div>
+  <p class="font-mono text-sm text-slate-600">cards/src/impls/mod.rs:149-220 CardRecord · :224-275 ALL · cards/src/lib.rs:77-108 six one-line adapters, :114-121 REGISTRY · test_support/mock_registry.rs:16-22 six parallel tables, :209-215 a second find_tag scan, TABLES OnceLock :27 · test_support/mod.rs:225 a third OnceLock (BASE) · CardRegistry { … } struct literals: 10 (19 textual hits; card_registry.rs:143-147 says "~37")</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: the same record, projected three ways</p>
+      <pre class="mermaid">
+flowchart LR
+  R["CardRecord ×50 in cards::impls::ALL"] --> A["6 search adapters (lib.rs)"] --> REG["CardRegistry: 6 fn slots"]
+  M["MockRegistry: 6 Vec tables + find_tag"] --> OL["TABLES OnceLock"] --> REG
+  B["install_registry_with_test_cards"] --> OL2["BASE OnceLock"] --> REG
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class M,OL,OL2 leak
+      </pre>
+      <p class="text-xs text-slate-500">45 of 128 <code>#[ctor]</code> binaries install a mock; 146 <code>with_abilities</code> calls are <code>|| vec![…]</code> literals; one file captures (<code>forced_run_lapse.rs:70-76</code>, rewritable as a fn).</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">After</p>
+      <pre class="mermaid">
+flowchart LR
+  R["game_core::card_registry::CardRecord"] --> REG["CardRegistry::from_records(metadata_for, &amp;[CardRecord])"]
+  P["cards::impls::ALL"] -.adapter.-> REG
+  T["&amp;[CardRecord::new(AT, at_abilities)] per test"] -.adapter.-> REG
+  REG --> CX["Cx.cards (02)"]
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class REG deep
+      </pre>
+      <p class="text-xs text-slate-500 mt-2">Six adapters, two scans and five tables go; the four corpus tests move to game-core and run against probe cards too. Under 02, no <code>#[ctor]</code>, no <code>TABLES</code>, no <code>BASE</code>, and the 92 <code>cards/tests</code> binaries (1.37 GB of debug executables) can collapse to a handful.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd><code>MockRegistry</code> is field-for-field a <code>CardRecord</code> table over a second <code>OnceLock</code>. It exists only because fn pointers cannot capture and the registry is a process global.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>Prefactor (record type down, <code>ALL</code> its consumer) can land any time; the payoff needs 02.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>mocks are data</li><li>per-binary isolation serves nothing</li><li>one lookup, not six slots</li></ul></dd></div>
+  </dl>
+</article>
+
+<!-- 17 -->
+<article id="c17" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">17</span><h3 class="font-serif text-2xl">Pipeline normalises into <code>CardMetadata</code>; three field fixes first</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong for the field fixes</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">was 13 · still valid</span><span class="px-2 py-0.5 rounded bg-sky-100 text-sky-800">fixes DURING #778 / #781</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">refactor AFTER</span></div>
+  <p class="font-mono text-sm text-slate-600">card-data-pipeline/Cargo.toml (serde only; architecture.md:11 says it consumes card-dsl) · main.rs:613-667 NormalizedCard (41 fields, class: &amp;str, card_type: &amp;str) · :898-993 render_kind · :438-522 run() with spawn resolution inline :466-496 · :471-475 loc_index keeps the last duplicate (#578) · 24 contains( assertions in 5 test files · :680-683 is_fast = text.starts_with("Fast.") · :705-708 weakness: bool · no Prey::Bearer</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">On 7.5's path, verified against the generated corpus</p>
+      <table class="grid w-full text-xs">
+        <tbody>
+          <tr><td>On the Lam 01010 (#778)</td><td><em>"Skids" O'Toole deck only.\nFast. …</em></td><td class="text-red-700">ships <code>is_fast: false</code> (#576, milestoned phase 9)</td></tr>
+          <tr><td>eight basic weaknesses (#781 lists seven)</td><td><code>"basicweakness"</code></td><td class="text-red-700">collapsed into <code>weakness: bool</code>; the random pool is not derivable, which is how 01102 went unlisted</td></tr>
+          <tr><td>Mob Enforcer 01101 · Silver Twilight Acolyte 01102 · Stubborn Detective 01103 (#781)</td><td><em>"Prey – Bearer only."</em></td><td class="text-red-700">ingests as <code>Prey::Default</code> (#654)</td></tr>
+          <tr><td>Necronomicon 01009 (#779)</td><td>cost X</td><td><code>cost: None</code>, minor (#577)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">After</p>
+      <pre class="mermaid">
+flowchart LR
+  J["snapshot JSON"] --> B["build_corpus(raw) → CardMetadata map + warnings"]
+  B --> E["emitter: exhaustive match on CardKind"]
+  E --> G["generated/cards.rs"]
+  D["card-dsl types"] -.-> B
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class B deep
+      </pre>
+      <p class="text-xs text-slate-500 mt-2">The refactor's payoff is phase 9's deck import (#765 <code>deck_requirements</code> lands on <code>CardKind::Investigator</code>). For 7.5, the three field fixes are small and should move to the slices they break.</p>
+    </div>
+  </div>
+</article>
+
+<!-- forecast -->
+<section id="forecast" class="rounded-xl border border-indigo-200 bg-indigo-50/40 p-6 space-y-4">
+  <h3 class="font-serif text-2xl">What phase 7.5 will force: the 49 texts against the two-consumer rule</h3>
+  <p class="text-sm text-slate-600 max-w-3xl">Read from <code>core.json</code> and checked against <code>dsl.rs</code>. Eight clusters each have two or more consumers <em>inside</em> 7.5, so the rule's trigger fires in-slice, provided the slice issue names the cluster up front rather than letting the first card ship as a native and the second graduate it. The cheaper middle the rule already allows is a card-local fn registered through <code>CardRecord</code>; what makes that expensive today is <a class="underline" href="#c1">01</a>, not registration. ~10 singletons stay natives by the rule.</p>
+  <table class="grid w-full text-sm bg-white rounded-lg border border-slate-200">
+    <thead class="text-left text-slate-500"><tr><th>Cluster</th><th>7.5 consumers</th><th>Exists today</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr><td>Trait filter / count</td><td>8 cards + Daisy's elder sign</td><td>6 string sites</td><td><a class="underline" href="#c13">13</a>, BEFORE</td></tr>
+      <tr><td>Elder sign on-success / immediate effect</td><td>Skids, Daisy, Wendy</td><td>scenario <code>SymbolOutcome</code></td><td><a class="underline" href="#c3">03</a> = #776, BEFORE</td></tr>
+      <tr><td><code>EventPattern::HarmTaken { kind }</code></td><td>Agnes 01004, Psychosis 01099, Hypochondria 01100</td><td>none; <code>DamagePlaced</code> has no pattern, and the synchronous harm paths never emit it</td><td>DSL + <a class="underline" href="#c4">04</a>, DURING #777; 04 itself BEFORE</td></tr>
+      <tr><td><code>EventPattern::ChaosTokenRevealed { symbols }</code></td><td>Shrivelling 01060, Blinding Light 01066, Baseball Bat 01074 (+ Necronomicon)</td><td>none</td><td>DSL, DURING #777</td></tr>
+      <tr><td>Skill substitution on Fight / Evade</td><td>Backstab 01051, Shrivelling, Blinding Light</td><td>Mind over Matter native</td><td>DSL field, DURING #777; retires a native</td></tr>
+      <tr><td><code>Quantity::SkillTestSucceededBy</code></td><td>Switchblade 01044, .41 Derringer 01047, Opportunist 01053, Scavenging 01073</td><td>mirror of <code>FailedBy</code></td><td>DSL, DURING #778</td></tr>
+      <tr><td><code>ForEach</code> over enemies</td><td>Elusive 01050, Cunning Distraction 01078, Survival Instinct 01081</td><td>stub arm, 4 natives</td><td><a class="underline" href="#c15">15</a>, DURING #778</td></tr>
+      <tr><td><code>Deal { direct: true }</code></td><td>Abandoned and Alone 01015, Psychosis, Hypochondria</td><td>none</td><td>DSL, DURING #780 / #781</td></tr>
+      <tr><td>Auto-evade without a test</td><td>Stray Cat 01076, Cunning Distraction</td><td>none; distinct from <code>AutoResolve</code> (Hope/Patrice ruling)</td><td>DSL, DURING #780</td></tr>
+      <tr><td>Round-scoped lasting effect</td><td>On the Lam 01010 (+ Mind over Matter today)</td><td><code>Lifetime</code> has one variant; MoM lives in a bespoke list cleared after <code>RoundEnded</code> (#643)</td><td><code>Lifetime::Round</code>, DURING #778</td></tr>
+      <tr><td>Extra action, unrestricted / restricted</td><td>Leo De Luca 01048, Skids, Daisy</td><td><code>actions_remaining: u8</code>; <code>take::quote</code> is the one price point</td><td>ordered pool {count, restriction}, #778 then #779</td></tr>
+      <tr><td>Replacement beyond cancel (#366)</td><td>Wendy, Wendy's Amulet 01014, Necronomicon, Burglary 01045, Lucky! 01080, Ward of Protection 01065</td><td><code>pending_cancellation: bool</code> at two emit sites</td><td>leaving-play as a coordinator-owned condition with a rewritable payload + <code>Effect::Redirect { to }</code>; DURING #780. <strong>Gate:</strong> the phase doc says #366 blocks Wendy alone; 3–6 texts say "instead"/"cancel".</td></tr>
+      <tr><td>Uses pool written by an effect</td><td>Forbidden Knowledge 01058</td><td>one writer (<code>Cost::SpendUses</code>), depletion check inline</td><td><code>spend_uses</code> exit inside <a class="underline" href="#c1">01</a>; DURING #777. Answers the phase doc: FK <em>does</em> force #353's minimal form (the secret moves in the <em>effect</em>, not the cost).</td></tr>
+      <tr><td>Singletons</td><td>Scrying, Amnesia, Paranoia, Hospital Debts, Tote Bag, Stubborn Detective, Dark Memory, Drawn to the Flame, Arcane Initiate (#792), FK's <code>Cost::TakeHorror</code></td><td>–</td><td>natives, via <a class="underline" href="#c1">01</a></td></tr>
+    </tbody>
+  </table>
+</section>
+<h2 class="font-serif text-2xl border-b border-slate-300 pb-2">Client &amp; server: <span class="font-mono text-lg">web · server · protocol · scenarios</span></h2>
+
+<!-- 18 -->
+<article id="c18" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">18</span><h3 class="font-serif text-2xl">"Seat an investigator with a deck" has no home</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">new · 7.5 critical path</span><span class="px-2 py-0.5 rounded bg-sky-100 text-sky-800">first step of #781 / #782</span></div>
+  <p class="font-mono text-sm text-slate-600">web/src/picker.rs:20-39 ROLAND_DEFAULT_DECK (the only decklist in the repo, in web), :82 hardcoded scenario · game-core/src/action.rs:62-70 RosterEntry ("taken verbatim") · phases.rs start_scenario (validates investigator kind only; deck unchecked) · cards/src/lib.rs:65-75 is_playable, "refused by the deck-import gate": zero callers outside cards · server/src/session.rs:110-132 (roster seated into the persisted seed RNG) · server/tests/common/mod.rs:56-61 deck: vec![]</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: four crates, no seam, a gate that was never wired</p>
+      <pre class="mermaid">
+flowchart LR
+  W["web: picker + ROLAND_DEFAULT_DECK"] --> S["server: seed RNG, persist"]
+  S --> E["engine: start_scenario seats deck verbatim"]
+  C["cards::is_playable (0 callers)"] -. "docs call it the gate" .-> E
+  X["#781 random basic weakness: must draw inside the frozen seed"] -.-> E
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class W,C leak
+      </pre>
+      <p class="text-xs text-slate-500">Two doc comments rely on the gate (<code>cards/src/lib.rs:65-69</code>, <code>modified_value.rs:290-293</code>). An unimplemented code seats and plays silently.</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After</p>
+      <div class="deep rounded-lg p-4 space-y-1">
+        <p class="schem text-slate-300">cards::decks (const data) + the gate in start_scenario</p>
+        <code class="text-xs text-emerald-300 block">starter_deck(investigator) · BASIC_WEAKNESSES · validate(roster) (#783)</code>
+        <code class="text-xs text-emerald-300 block">RosterEntry.basic_weakness: WeaknessSlot { Random | Fixed(code) | None }</code>
+        <p class="text-[10px] text-slate-400">a <code>CardRegistry::is_playable</code> fn pointer (same shape as <code>metadata_for</code>, or a record field under <a class="underline" href="#c16">16</a>) makes <code>start_scenario</code>'s validate-first block the gate; <code>Random</code> draws with <code>cx.state.rng</code> before the shuffle</p>
+      </div>
+      <p class="text-xs text-slate-500">The picker submits <code>{ investigator, deck: starter_deck(..), basic_weakness: Random }</code>. Server tests, phase 9's import and the picker share one list.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>#781 and #782 are the phase's last two issues and touch four crates with no agreed home. The random draw must happen inside the seed RNG, so it belongs in <code>start_scenario</code>, not the picker.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>One crate for deck questions (<code>cards</code> already owns class, xp, <code>deck_limit</code>, <code>weakness</code>), one roster slot, one gate.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>#782, #781, #783 become three thin changes on one interface</li><li>legality and the draw are native registry-only tests</li><li>the gate the docs promise exists</li></ul></dd></div>
+  </dl>
+</article>
+
+<!-- 19 -->
+<article id="c19" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">19</span><h3 class="font-serif text-2xl">Skill-test result read from engine state: the engine stores the token</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">was 16 · gap made precise</span><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">engine half with 03</span><span class="px-2 py-0.5 rounded bg-sky-100 text-sky-800">client half DURING</span></div>
+  <p class="font-mono text-sm text-slate-600">web/src/store.rs:42-73, :108-162 (3 latches, 55-line ordered walk, 12 of 20 unit tests for #787/#853), :89-91 Hello clears them · skill_test_result.rs:49-83 reconstructs total = ST.1 difficulty ± margin · continuation.rs:1287-1300 ResolvedTest { succeeded, failed_by, margin, fail_reason } · skill_test.rs:479 token emitted, :542-572 only a Delta row recorded · :184-189 documents the reconstruction as wrong when difficulty changes mid-test</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <pre class="mermaid">
+sequenceDiagram
+  participant S as Server
+  participant St as store.rs
+  S->>St: batch 1 (difficulty)
+  St->>St: latch
+  S->>St: batch 2 (token, result)
+  St->>St: latch, 55-line ordering
+  S->>St: Hello (reconnect)
+  St->>St: latches cleared, modal blank
+      </pre>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4">
+      <pre class="mermaid">
+sequenceDiagram
+  participant S as Server
+  participant M as result modal
+  S->>M: GameState (acknowledge frame on top)
+  M->>M: current_skill_test(): revealed token, difficulty, total, outcome
+      </pre>
+      <p class="text-xs text-slate-500 mt-2">Engine: <code>InFlightSkillTest.revealed: Option&lt;(ChaosToken, TokenResolution)&gt;</code> set at <code>:479</code>; <code>ResolvedTest.total</code>. Difficulty is already a public query (<code>modified_value.rs:299-306</code>). Client: <code>summarize(&amp;GameState)</code>; the store loses three fields and the walk.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>The client patches over one kernel omission. 7.5's elder signs (success-conditional effects, Wendy's no-token auto-succeed) are new batch shapes the latch walk would have to be right about.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>One field on the frame, then delete the state machine.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>survives reconnect (#587 half 2)</li><li>a fourth batch-splitter cannot recreate #787 / #853</li><li>~60 lines + 12 tests deleted</li></ul></dd></div>
+  </dl>
+</article>
+
+<!-- 20 -->
+<article id="c20" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">20</span><h3 class="font-serif text-2xl">One pure prompt-layout module in <code>web</code></h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">was 15 · still valid</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">AFTER · or BEFORE #588 / #788</span></div>
+  <p class="font-mono text-sm text-slate-600">7 entity copies of context-read + options_for + #[cfg] RwSignal + #[cfg] menu_layer: act_agenda.rs:91-97,144-150 · map.rs:235-238,336-342 · card.rs:471-477,500-506 · enemy_card.rs:72-78 (+ controls.rs:35-42) · 13 free predicates in 5 files (interaction.rs:32-139, decision.rs:61-102, skill_test_result.rs:53-108, act_agenda.rs:34, map.rs:256) · 4 context newtypes app.rs:34-57 · prompt_banner.rs:60-122 filters inside a wasm-only view! · two submit paths controls.rs:54-62 / interaction.rs:180-186 · 26 test files, 25 wasm-only · 58 #[cfg(target_arch)] lines in 14 files</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <pre class="mermaid">
+flowchart TB
+  P["13 free predicates"] --- A["7 entity copies + 8th in controls"]
+  P --- B["banner filters, wasm-only"]
+  A --> S2["ContextMenu sends directly"]
+  A --> S1["controls::submit"]
+  classDef leak stroke:#dc2626,stroke-width:2px
+  class B,A,S2 leak
+      </pre>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4">
+      <pre class="mermaid">
+flowchart TB
+  L["prompt_layout::layout(&amp;ClientState) → PromptLayout { modal, banner, per_target, confirm_anchor, multi_select, menus_suppressed }"]
+  L --> AN["&lt;Anchored target=..&gt; (one wrapper)"]
+  L --> BN["banner adapter"]
+  AN --> S["controls::submit"]
+  BN --> S
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a
+  class L,AN deep
+      </pre>
+      <p class="text-xs text-slate-500 mt-2">Pure, native-tested; one <code>Memo&lt;PromptLayout&gt;</code> replaces 11 whole-state <code>store.get()</code> clones (#587's render half). #588 and #788 become fields on <code>multi_select</code>.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>#847, #541, #856 all came from "which surface does this option land on" having no home. #954 narrowed the un-anchored branch to the two ADR 0015 exceptions; the counts otherwise hold.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>One pure function decides every surface. Not on 7.5's card path; schedule with #588 / #788.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>native test: every option lands on exactly one surface</li><li>cfg noise leaves the entity files</li><li>one submit path</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-sm">Gate (code vs ADR 0011): <code>PickMultiple</code> is the one prompt kind where the client decides the surface (<code>outcome.rs:264-266</code> "host derives hand-card candidates"; <code>card.rs:452-470</code> makes every hand card selectable). Options: the engine lists eligible hand cards as anchored options (then #788 closes by construction), or record the exception in the ADR. Recommend the former.</div>
+</article>
+
+<!-- 21 -->
+<article id="c21" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">21</span><h3 class="font-serif text-2xl">A prompt identity on the wire: the resume token the engine already reserves</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-slate-100">ports &amp; adapters</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">new · what survives of 17</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">AFTER · phase 8's wire break with #581 / #583</span></div>
+  <p class="font-mono text-sm text-slate-600">outcome.rs:33-39, :394 ResumeToken, always 0 (31 sites) · protocol/src/lib.rs:20-26, :51-62 · web/src/store.rs:71-73, :163-167 pending_label assumes the next Applied is mine · drag.rs:180 Drag::per_prompt keyed on st.log.len() · session.rs:79 the server already has the action-log seq</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: three client proxies for "which prompt is this"</p>
+      <ul class="text-xs space-y-1">
+        <li class="leakbox rounded px-2 py-1"><code>pending_label</code>: the next <code>Applied</code> is mine (false with two tabs, #581)</li>
+        <li class="leakbox rounded px-2 py-1">drag offset keyed to the unbounded log length (capping the log for #587 silently breaks it)</li>
+        <li class="leakbox rounded px-2 py-1">nothing stops a stale tab answering the <em>next</em> prompt with an in-range <code>OptionId</code> (#588, #458)</li>
+      </ul>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After</p>
+      <div class="deep rounded-lg p-4 space-y-1">
+        <code class="text-xs text-emerald-300 block">PromptId = action-log seq, on AwaitingInput · echoed in Submit { prompt, action } · stamped on Applied { prompt_answered }</code>
+        <p class="text-[10px] text-slate-400">server rejects a mismatch before <code>apply</code>; the action log stays token-free; <a class="underline" href="#c10">10</a>'s <code>hash(stack)</code> is the engine-side twin</p>
+      </div>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>Consecutive prompts of identical shape are byte-identical, so every proxy is a guess.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>Name the prompt once. Plan it with #581 and #583 as one wire break.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>#458's engine half</li><li>#588 / #587 / #581 stop guessing</li></ul></dd></div>
+  </dl>
+</article>
+
+<!-- 22 -->
+<article id="c22" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">22</span><h3 class="font-serif text-2xl"><code>ScenarioModule</code> is a hypothetical seam; The Gathering's <code>setup</code> is data written as code</h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Worth exploring</span><span class="px-2 py-0.5 rounded bg-slate-100">in-process</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">new</span><span class="px-2 py-0.5 rounded bg-stone-200 text-stone-700">AFTER · at the second scenario (phase 9)</span></div>
+  <p class="font-mono text-sm text-slate-600">game-core/src/scenario.rs:224-263 · scenarios/src/lib.rs:36-41 (match on the_gathering::ID) · the_gathering.rs:38-99 three generic corpus readers, :68-88 hand-transcribed encounter codes (#579), :107-126 standard_chaos_bag (a campaign datum in a scenario file), :151-174 resolve_symbol (the only real behaviour), :198-288 setup · web/src/map.rs:21-30 Gathering codes → grid cells (scenario data in the client) · server/tests/common/mod.rs:37-46 the only second adapter (a mock)</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">A second scenario costs today</p>
+      <ul class="text-xs list-disc ml-4 space-y-1">
+        <li>~100 lines, ~60 of them data, copying the readers and the scaffold</li>
+        <li>a symbol fn, a layout, a <code>match</code> arm in <code>lib.rs</code></li>
+        <li class="text-red-700">a web release, for <code>map.rs:21-30</code></li>
+        <li><code>apply_resolution</code> has no campaign-log parameter (#75 / #766 change its signature); no difficulty parameter (#862)</li>
+      </ul>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After</p>
+      <div class="deep rounded-lg p-4 space-y-1">
+        <code class="text-xs text-emerald-300 block">ScenarioSpec { id, acts, agendas, encounter, set_aside, starting_location, layout, grid } + scenario::build(&amp;ScenarioSpec)</code>
+        <code class="text-xs text-emerald-300 block">ScenarioModule { spec, resolve_symbol(difficulty, ..), apply_resolution(.., log) }</code>
+        <p class="text-[10px] text-slate-400">bag moves to campaign/difficulty; registry becomes a record slice with <code>id</code> on it (mirrors <a class="underline" href="#c16">16</a>); the client reads <code>grid</code></p>
+      </div>
+      <p class="text-xs text-slate-500">Two cleanups now: move the corpus readers beside <code>cards::by_code</code>; put <code>id</code> on <code>ScenarioModule</code>.</p>
+    </div>
+  </div>
+</article>
+
+<h2 class="font-serif text-2xl border-b border-slate-300 pb-2">Test harness: <span class="font-mono text-lg">test_support · builder · */tests</span></h2>
+
+<!-- 23 -->
+<article id="c23" class="rounded-xl border border-slate-200 bg-white p-6 space-y-5 shadow-sm">
+  <div class="flex items-baseline gap-3"><span class="font-mono text-slate-400">23</span><h3 class="font-serif text-2xl">Finish the fixture half of step-wise driving: a <code>Seat</code> fixture, <code>test_skill</code>, <code>answer_with</code></h3></div>
+  <div class="flex flex-wrap gap-2 chip"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Strong</span><span class="px-2 py-0.5 rounded bg-slate-100">mock</span><span class="px-2 py-0.5 rounded bg-violet-100 text-violet-800">new · what 18 left</span><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">BEFORE 7.5</span></div>
+  <p class="font-mono text-sm text-slate-600">test_support/resolver.rs:328-334, :393-404, :423-425, :451-463, :540-548, :569-596 (7 public drivers; 5 are ≤8 lines over the one loop) · session.rs:82 (script: ScriptedResolver only), :284-289 (take panics on a no-turn fixture) · builder.rs:106-177 (19 setters) · fixtures.rs:42-72 · 384 let mut inv = test_investigator(..) · 418 .current_location = Some( · 150 hand/deck lines in 75 files · 98 cards_in_play.push( · 36 local seat helpers (23 cards/tests, 13 game-core/tests)</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <p class="schem text-slate-500 mb-2">Before: driving is deep, seating is a setter pile; two driver families</p>
+      <table class="grid w-full text-xs">
+        <thead><tr class="text-slate-500"><th class="text-left">pattern</th><th>2026-09</th><th>at #949</th><th>HEAD</th></tr></thead>
+        <tbody class="text-center">
+          <tr><td class="text-left">fire_forced_* helpers / calls</td><td>10–13 / 45–80</td><td>0</td><td>0</td></tr>
+          <tr><td class="text-left">drain loops</td><td>2</td><td>1</td><td>1</td></tr>
+          <tr><td class="text-left">hand-built ResolveInput</td><td>284</td><td>192</td><td class="text-red-700">184 (80 files)</td></tr>
+          <tr><td class="text-left">positional OptionId(n)</td><td>136</td><td>80</td><td class="text-red-700">78 (+34 inside scripts)</td></tr>
+          <tr><td class="text-left">continuations peeks in tests</td><td>~97</td><td>68</td><td class="text-red-700">65</td></tr>
+          <tr><td class="text-left">one-shot driver calls</td><td>–</td><td>~330</td><td class="text-red-700">371 (vs 86 .take)</td></tr>
+          <tr><td class="text-left">with_active_investigator w/o open_turn</td><td>–</td><td>–</td><td class="text-red-700">81 sites / 30 files</td></tr>
+        </tbody>
+      </table>
+      <p class="text-xs text-slate-500 mt-2">"Migrate when next touched" moved 8 sites across 7 PRs that touched 214 test files. <code>cover_up.rs</code> was touched by 5 PRs and kept all its residue. One card test today: <code>roland_elder_sign.rs:31-73</code> is 43 lines for "seat Roland at a location with n clues, bag = [ElderSign], run a Willpower test".</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3">
+      <p class="schem text-slate-500">After: one seat, one session</p>
+      <div class="deep rounded-lg p-4 space-y-1">
+        <code class="text-xs text-emerald-300 block">with_seat(seat(1).at(LOC).as_card("01003").hand([..]).deck([..]).in_play([(FIRST_AID, uses(Supplies, 3))]).harm(2, 2))</code>
+        <code class="text-xs text-emerald-300 block">TestSession::test_skill(inv, SkillKind, difficulty) · submit(&amp;TurnAction) · answer_with(impl ChoiceResolver)</code>
+        <p class="text-[10px] text-slate-400"><code>as_card</code> sets only the code; the real registry supplies the card, so ADR 0016 holds. Then retire the five ≤8-line wrappers and convert the 30 no-turn fixtures.</p>
+      </div>
+      <p class="text-xs text-slate-500">Two things keep the old family alive: the session has no skill-test step (78 calls), and no "submit past the menu" step (<code>dispatch_turn_action_unchecked</code>: 104 calls, up from 98, against a doc naming two legitimate uses). The 5 test-local <code>ChoiceResolver</code> adapters cannot run under a session at all.</p>
+    </div>
+  </div>
+  <dl class="grid md:grid-cols-3 gap-4 text-sm">
+    <div><dt class="schem text-slate-500">Problem</dt><dd>#949 made driving deep and left seating shallow. 7.5 writes ~40 tests by copying the nearest file, and the nearest file hand-rolls 20–45 lines of seat.</dd></div>
+    <div><dt class="schem text-slate-500">Solution</dt><dd>A <code>Seat</code> in <code>fixtures</code> (the only place that can build the non-exhaustive <code>Investigator</code>), three session steps, then a targeted sweep of the five files holding 63/184 <code>ResolveInput</code> and 31/78 positional picks (<code>reaction_windows.rs</code>, <code>the_gathering_resolutions.rs</code>, <code>forced_triggers.rs</code>, <code>cover_up.rs</code>, <code>dodge.rs</code>), the files a 7.5 author will copy.</dd></div>
+    <div><dt class="schem text-slate-500">Wins</dt><dd><ul class="list-disc ml-4"><li>40 tests at ~8 setup lines, not 25–45</li><li>four elder-sign tests are one <code>test_skill</code> step</li><li>269 <code>Done</code> assertions become state assertions (unblocks <a class="underline" href="#c10">10</a>)</li><li>36 local helpers go</li></ul></dd></div>
+  </dl>
+  <div class="rounded bg-sky-50 border border-sky-200 px-3 py-2 text-sm">Code vs doc: <code>standards.md</code> § Test layering still teaches <code>.with_phase(…).with_investigator(…).with_active_investigator(…).build()</code>, the shape <code>open_turn</code> replaced; <code>resolver.rs:61-64</code> says hosts "will implement" <code>ChoiceResolver</code> (none does; all 8 adapters are test-side). Item 19 (TEST_INV) landed with no residue: the 11 remaining <code>investigator_card.code = "0100x"</code> writes are all tests <em>about</em> that investigator.</div>
+</article>
+</section>
+<section id="sequencing" class="space-y-4">
+  <h2 class="font-serif text-2xl border-b border-slate-300 pb-2">Sequencing and recommended order</h2>
+  <p class="text-sm text-slate-600 max-w-3xl">Solid arrow: lands better first. Dashed: makes the next one testable or cheaper. Phase 7.5's own order (#776 → #777 → #778 → #366 → #779 → #780 → #781 → #782) is the spine; each candidate is pinned to the slice that first needs it.</p>
+  <div class="rounded-lg border border-slate-200 bg-white p-4">
+    <pre class="mermaid">
+flowchart LR
+  subgraph B["BEFORE 7.5"]
+    n13["13 trait vocabulary"] --> n14["14 eligibility → Condition"]
+    n01["01 native context"] --- n02["02 registries on Cx"]
+    n23["23 seat fixture + test_skill"]
+    n04["04 harm announces"]
+    n03["03 token outcome (= #776)"] --- n19["19 token on the frame"]
+  end
+  subgraph D["DURING 7.5"]
+    s777["#777 Agnes: 07 constants sweep · spend_uses · HarmTaken · ChaosTokenRevealed"]
+    s778["#778 Skids: 15 ForEach · is_fast fix · Lifetime::Round · action pool"]
+    s779["#779 Daisy: Quantity::Matching · restricted action"]
+    s780["#780 Wendy: #366 as Redirect + leaving-play condition"]
+    s781["#781 weaknesses: 05 reveal · 06 engagement · 18 seat with deck"]
+    s782["#782 decks: 18"]
+  end
+  subgraph A["AFTER 7.5 (next review)"]
+    n08["08 effect families"]
+    n09["09 phase skeleton"]
+    n10["10 step vs apply"]
+    n11["11 scenario ending"]
+    n12["12 base values"]
+    n16["16 CardRecord down"]
+    n17["17 typed pipeline"]
+    n20["20 prompt layout"]
+    n21["21 prompt identity"]
+    n22["22 scenario spec"]
+  end
+  n13 --> s779
+  n01 --> s777
+  n01 -.-> s781
+  n04 --> s777
+  n03 --> s777
+  n23 -.-> s777
+  n02 -.-> n16
+  n02 --> n11
+  n23 --> n10
+  n10 -.-> n21
+  s782 -.-> n22
+  n03 -.-> n08
+  classDef strong fill:#d1fae5,stroke:#047857
+  classDef worth fill:#fef3c7,stroke:#b45309
+  classDef spec fill:#e2e8f0,stroke:#475569
+  class n01,n02,n03,n04,n13,n14,n19,n23,n20 strong
+  class n08,n09,n10,n11,n15,n16,n17,n21,n22 worth
+  class n12 spec
+    </pre>
+  </div>
+  <div class="grid md:grid-cols-3 gap-4 text-sm">
+    <div class="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4 space-y-2">
+      <p class="schem text-emerald-800">Before 7.5, in this order</p>
+      <ol class="list-decimal ml-4 space-y-1">
+        <li><a class="underline" href="#c13">13</a> + <a class="underline" href="#c14">14</a>: content-side, one afternoon, no kernel risk. Lands the vocabulary 8 of 49 cards read.</li>
+        <li><a class="underline" href="#c1">01</a> native context, with the <code>spend_uses</code> exit. 15 signatures, six writes. Every 7.5 native written before it is a migration after.</li>
+        <li><a class="underline" href="#c23">23</a> seat fixture + <code>test_skill</code>: the file 7.5 copies should be the right shape first.</li>
+        <li><a class="underline" href="#c4">04</a> harm announces: Agnes's slice is where ADR 0009's gap stops being unobserved.</li>
+        <li><a class="underline" href="#c3">03</a> + <a class="underline" href="#c19">19</a>'s engine field, as #776 itself.</li>
+        <li><a class="underline" href="#c2">02</a> registries on Cx: strongly recommended before, acceptable right after #776 if the budget runs out. It is the largest sweep (50 sites, 136 ctors, 302 test literals) and the one with a <code>Cx::for_test</code> escape that keeps it mechanical.</li>
+      </ol>
+    </div>
+    <div class="rounded-lg border border-sky-200 bg-sky-50/50 p-4 space-y-2">
+      <p class="schem text-sky-800">During, pinned to a slice</p>
+      <ul class="list-disc ml-4 space-y-1">
+        <li>#777: <a class="underline" href="#c7">07</a> (Forbidden Knowledge's constant), <code>HarmTaken</code>, <code>ChaosTokenRevealed</code>, substitution-on-Fight field.</li>
+        <li>#778: <a class="underline" href="#c15">15</a>, <code>SucceededBy</code>, <code>Lifetime::Round</code> (#643), the <code>is_fast</code> fix (#576 re-milestoned), the ordered action pool.</li>
+        <li>#779: <code>Quantity::Matching</code> consumer, restricted action, Tote Bag slots via 07.</li>
+        <li>#780: #366 as a rewritable leaving-play payload + <code>Effect::Redirect</code>; auto-evade.</li>
+        <li>#781: <a class="underline" href="#c5">05</a>, <a class="underline" href="#c6">06</a>, bearer prey, weakness kind, then <a class="underline" href="#c18">18</a>'s slot.</li>
+        <li>#782: <a class="underline" href="#c18">18</a>.</li>
+      </ul>
+    </div>
+    <div class="rounded-lg border border-stone-300 bg-stone-100/60 p-4 space-y-2">
+      <p class="schem text-stone-700">After: the next review</p>
+      <p>7.5 is the DSL stress test and will supply the evidence 08 needs (which families are real), what 16 saves (how many mock binaries), and whether 09 / 10 / 11 have a consumer in phase 8 or 9. Run <code>/improve-codebase-architecture</code> again after #782, not before.</p>
+      <p>20, 21 and 22 ride their own consumers: #588 / #788, the phase-8 wire break, and the second scenario.</p>
+    </div>
+  </div>
+</section>
+
+<section id="gates" class="space-y-4">
+  <h2 class="font-serif text-2xl border-b border-slate-300 pb-2">Gates surfaced along the way</h2>
+  <p class="text-sm text-slate-600 max-w-3xl">Not refactors. Under CLAUDE.md's gate rules these need your decision. Card text below was read from the vendored snapshot and FAQ files; rulings cite their ArkhamDB page.</p>
+  <div class="grid md:grid-cols-2 gap-4 text-sm">
+    <div class="rounded-lg border border-slate-200 bg-white p-4 space-y-2">
+      <p class="schem text-slate-500">Rules questions (gate 2)</p>
+      <ul class="list-disc ml-4 space-y-2">
+        <li><strong>Elder sign "If you succeed, …"</strong> (<a class="underline" href="#c3">03</a>): an ST.7 result the performer orders (#642: <em>"applies those results in the order of his or her choice"</em>), or part of the ST.4-initiated ability? The vendored sources don't say whether a token clause is a distinct "result". Recommend: same placement as the Cultist's on-fail, inherit #642.</li>
+        <li><strong>Daisy's extra action</strong> (#779): ruling at <a class="underline" href="https://arkhamdb.com/card/01002">01002</a>: <em>"if you are instructed to lose 1 or more actions, those must be the ones that are 'lost' first. If you have no more of those actions to lose, then you start losing 'additional' actions, of your choice."</em> So the pool is ordered, normal first.</li>
+        <li><strong>Wendy's Amulet</strong> (#780 / #366): errata text is a destination replacement on two exits, neither a timing point. Ruling at <a class="underline" href="https://arkhamdb.com/card/01014">01014</a>: <em>"If your deck is empty, and Wendy's Amulet would have you place an event 'on the bottom of your deck,' that event becomes your new deck."</em></li>
+        <li><strong>"Each investigator" and eliminated players</strong> (<a class="underline" href="#c15">15</a>): <code>theyre_getting_out.rs:206</code> skips non-Active; <code>whats_going_on.rs:96</code> and <code>trapped.rs:117</code> don't. Order is settled by <code>Priority_of_Simultaneous_Resolution.md</code>; the skip is the open call.</li>
+        <li><strong>#366's consumer count</strong>: the phase doc says it blocks Wendy alone; Wendy's Amulet, Necronomicon, Burglary 01045, Lucky! 01080 and Ward of Protection 01065 all print "instead" or "cancel". Decide whether #366 is a prefactor like #776 or stays in #780.</li>
+      </ul>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white p-4 space-y-2">
+      <p class="schem text-slate-500">Code vs doc / ADR (gate 3)</p>
+      <ul class="list-disc ml-4 space-y-1">
+        <li><code>architecture.md</code>: "handlers reject cleanly on None" (8 of 50 do); the pipeline "consumes card-dsl" (it doesn't); <code>ForEach</code> listed as walked (stub); <code>dispatch.rs</code> path stale.</li>
+        <li>ADR 0018 vs three constant-ability readers keeping their own zone lists (<a class="underline" href="#c7">07</a>).</li>
+        <li>The "deck-import gate" (<code>cards/src/lib.rs:65-69</code>, <code>modified_value.rs:290-293</code>) does not exist (<a class="underline" href="#c18">18</a>).</li>
+        <li>ADR 0011 vs <code>PickMultiple</code>'s host-derived candidates (<a class="underline" href="#c20">20</a>).</li>
+        <li><code>card_registry.rs:114-120</code> and <code>impls/mod.rs:206-211</code>: "only Machete" has a compound predicate; Lita's is the second (<a class="underline" href="#c14">14</a>). #609's trigger has fired.</li>
+        <li><code>dsl.rs:418-420</code>: elder-sign modifier "resolves when the token is revealed", vs ADR 0007's unevaluated row.</li>
+        <li><code>card_registry.rs:28-33</code> "no test mocks card data" (false); <code>EMPTY</code> doc's "~37" literals (10).</li>
+        <li><code>resolver.rs:560-568</code> two legitimate uses vs 104 calls; <code>standards.md</code> builder idiom predates <code>open_turn</code>.</li>
+        <li><code>set_enemy_anchor</code> (<code>phases.rs:619-627</code>) silently no-ops where its three siblings panic. Unchanged since 2026-09.</li>
+        <li><code>drive_frames</code>'s no-progress park returns <code>Done</code> with an anchor on top, where <code>apply_via</code> debug-asserts the opposite; reachable via #31.</li>
+        <li><code>initiation.rs:223, :298</code> map "no registry" to <code>Refusal::SideNotInEffect</code>, which the client renders as <code>SourceGone</code>.</li>
+        <li>#576 (<code>is_fast</code>) is milestoned phase 9 but breaks On the Lam 01010, a #778 card.</li>
+        <li>#781 and the phase doc say "the seven basic weaknesses"; the snapshot has eight (<code>subtype_code: basicweakness</code>, 01096–01103). Silver Twilight Acolyte 01102 is the eighth, already implemented as a Gathering enemy with its bearer-only prey approximated (#654). Commented on #781.</li>
+        <li>Phase doc open questions answered from code: Forbidden Knowledge <strong>does</strong> force #353's minimal form (its secret moves in the effect, not via <code>Cost::SpendUses</code>); trait counting belongs to <strong>neither</strong> #776 nor #779 (<a class="underline" href="#c13">13</a>).</li>
+        <li>The old item-03 doc gate (<code>awaits_input</code> vs <code>resolve_input</code>) is <strong>resolved</strong> by #936: <code>resolve_input</code> gates on the profile; no second list exists.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="disagreements" class="space-y-4">
+  <h2 class="font-serif text-2xl border-b border-slate-300 pb-2">Where the six reads disagreed</h2>
+  <table class="grid w-full text-sm bg-white rounded-lg border border-slate-200">
+    <thead class="text-left text-slate-500"><tr><th>Point</th><th>Read A</th><th>Read B</th><th>This report</th></tr></thead>
+    <tbody>
+      <tr><td>Does Forbidden Knowledge force #353?</td><td>evaluator read: yes, a second <code>uses</code> writer</td><td>content read: no, it depletes via <code>Cost::SpendUses</code></td><td><strong>Yes.</strong> Verified from <code>core.json</code>: <em>"Exhaust Forbidden Knowledge and take 1 horror: Move 1 secret … to your resource pool"</em>. The cost is exhaust + horror; the secret moves in the effect. Also: that cost goes through <code>take_horror</code>, which never announces (<a class="underline" href="#c4">04</a>).</td></tr>
+      <tr><td><code>CardRegistry { … }</code> literals</td><td>kernel read: 19 in 9 files</td><td>content read: 10 struct literals</td><td>10 struct literals; 19 counts impl headers, signatures and a doc example. The doc says ~37.</td></tr>
+      <tr><td>Raw writes in natives</td><td>6 lines / 6 sites / 7 lines</td><td>8 sites in 5 cards</td><td>Different counting (events vs state, lines vs sites). The union is the table in <a class="underline" href="#c1">01</a>.</td></tr>
+      <tr><td>Item 08's strength</td><td>2026-09: Worth exploring</td><td>this walk: Strong</td><td>Strong, because two filed bugs (#662, #650) are each a skipped copy, and #781 needs a transition no copy has.</td></tr>
+      <tr><td>#937 as a candidate</td><td>kernel read: Worth exploring (full split), Strong for <code>prompt()</code>-on-profile</td><td>harness read: weaker as a harness item</td><td>Both: the engine item stands; the harness half is <a class="underline" href="#c23">23</a>, which must precede it.</td></tr>
+      <tr><td>Item 17 (session core)</td><td>2026-09: Worth exploring</td><td>this walk: obsolete as a module</td><td>Obsolete. Eight shared lines fail the deletion test; the tickets and <a class="underline" href="#c21">21</a> survive.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="cleanups" class="space-y-3">
+  <h2 class="font-serif text-2xl border-b border-slate-300 pb-2">Small cleanups, not ranked</h2>
+  <ul class="text-sm list-disc ml-5 columns-2 gap-8 space-y-1">
+    <li>Export <code>place_doom_on_agenda</code> and use it at <code>theyre_getting_out.rs:300</code> (lands with 01).</li>
+    <li><code>forced_triggers.rs</code> (333 lines) fails the deletion test as "forced triggers": fold <code>queue_forced_triggers</code> into the coordinator's <code>Forced</code> arm, rename the rest for the <code>AcknowledgeForced</code> frame.</li>
+    <li><code>reaction_windows.rs</code> (1124 lines) is two modules and a residue pile: split into <code>resolution_window.rs</code> / <code>fast_window.rs</code>; move <code>after_enemy_phase_attacks</code> and <code>play_fast_event</code>; fix the <code>open_windows</code> doc rot at :521, :965-977; dedupe the prompt build :490-507 / :837-851.</li>
+    <li><code>enumerate_fast_plays</code> (:1078-1121) ≈ <code>enumerate::push_card_actions</code> (:237-278): one enumerator with a filter.</li>
+    <li>Three copies of the "Investigation phase and your turn" predicate (<code>legality.rs:210, :524</code>, <code>take.rs:214-233</code>).</li>
+    <li><code>start_skill_test</code> takes <code>cx</code> + 9 params; 4 of 5 callers pass <code>None, None</code>. A <code>TestConsequence::{Action, Effect}</code> enum.</li>
+    <li><code>peril_check</code> stub with 4 unused params (<code>skill_test.rs:1660</code>); stale <code>aloof</code> doc <code>enemy.rs:16-20</code>; <code>resolve_prey</code>'s <code>unreachable!</code> will panic on <code>Prey::Bearer</code>.</li>
+    <li><code>take_damage</code> / <code>take_horror</code> live in <code>elimination.rs</code>, not beside <code>begin_deal_damage</code>.</li>
+    <li>#645's two missing <code>EnteredPlay</code> emits (or 05).</li>
+    <li><code>legality.rs:50-55</code> <code>PlayCheckResult.abilities</code> under <code>#[allow(dead_code)]</code>; <code>slots.rs:217-235</code> hand-builds <code>AwaitingInput</code> beside private <code>choice::awaiting_selection</code>.</li>
+    <li><code>obscuring_fog.rs:106-110</code> emits <code>CardDiscarded { from: LocationAttachment }</code> for a never-attached copy.</li>
+    <li><code>lib.rs:166-183</code> hand-lists 9 playable codes; the <code>ALL</code> test covers all 50. <code>every_card_module_has_an_all_entry</code> string-parses source.</li>
+    <li><code>theyre_getting_out.rs:455,501,571</code> install the registry by hand inside unit tests (#971's ban).</li>
+    <li>Split <code>dsl.rs</code> (2883 lines) into <code>dsl/{targets,conditions,effects,triggers,builders}.rs</code>, a pure move. <code>Quantity</code>'s doc states no admission rule.</li>
+    <li><code>trapped.rs:112,131</code> <code>unreachable!</code> after a validated lookup.</li>
+    <li><code>picker.rs:82</code> hardcoded scenario; <code>names::location_name</code> has no non-test caller; <code>ContextMenu</code> duplicates <code>controls::submit</code>.</li>
+    <li><code>web/tests</code> has no <code>common/</code>; two harnesses copy the apply→<code>Applied</code> fold. <code>card.rs:1-4</code> says "display-only" (stale). <code>scenario_registry.rs:28-32</code> describes <code>apply_via</code> as future.</li>
+    <li><code>ws.rs:166-168</code> leaks error text; <code>ws.rs:58-66</code> drops the socket with no close reason (#582). <code>transport.rs:78-83</code>'s <code>Unreachable</code> arm may be dead (#585's claim, unverified).</li>
+    <li><code>the_gathering.rs:38-99</code> corpus readers belong beside <code>cards::by_code</code>; <code>id</code> on <code>ScenarioModule</code>.</li>
+    <li>Harness: last per-file <code>resolve</code> helper <code>game-core/tests/weapon_fight.rs:500</code>; 34 <code>pick_single(OptionId(n))</code> inside scripts; 147 hand-rolled <code>.iter().any(matches!)</code> beside 674 macro uses; <code>test_support/mod.rs</code> mixes synthetic-card metadata with install fns.</li>
+    <li>The two latches for the scenario ending double-announce <code>AllInvestigatorsEliminated</code> and <code>ScenarioResolved{NoResolution}</code>.</li>
+  </ul>
+</section>
+
+<section id="top" class="rounded-xl border-2 border-emerald-300 bg-emerald-50/60 p-8 space-y-4">
+  <h2 class="font-serif text-3xl">Top recommendation</h2>
+  <p class="text-lg"><a class="underline" href="#c1">01 · A native context</a>, with <a class="underline" href="#c13">13</a> + <a class="underline" href="#c14">14</a> as the same week's content-side prelude.</p>
+  <p class="text-sm text-slate-700 max-w-3xl">Three of the six reads reached 01 independently, from the kernel, the evaluator and the cards crate, and it is the only candidate whose cost is strictly lower now than after 7.5: 15 signatures and six raw writes today, versus a migration of every native 7.5 adds (the seven basic weaknesses, Abandoned and Alone, Dark Memory, Scrying, Hospital Debts, Stubborn Detective). It is the structural fix for #571, the home for #353's <code>spend_uses</code> exit, and the place a card author will feel the engine's exits as an interface instead of a convention in <code>standards.md</code>. It does not touch the registry global, so it does not wait on 02.</p>
+  <p class="text-sm text-slate-700 max-w-3xl"><strong>13 and 14 go first because they are an afternoon</strong>: three additions to <code>card-dsl</code> and a type change at two call sites, with no kernel risk, and they settle two of the phase doc's open questions before #776 opens.</p>
+  <p class="text-sm text-slate-700 max-w-3xl"><strong>Then 23, 04, 03 in that order</strong>, each pinned to the slice that first observes its absence: the harness before the first card test is copied, harm announcement before Agnes, and the token outcome as #776 itself.</p>
+  <p class="text-sm text-slate-700 max-w-3xl"><strong>The counter-view</strong> is 02 first: it is the biggest locality win on the list, its seam is already half-built, and 01 composes better on top of it. The case against is budget: 50 sites, 136 ctors and 302 test literals is the one sweep that could eat the window before 7.5, and 01 does not need it.</p>
+  <p class="text-sm text-slate-700 max-w-3xl">Everything in the AFTER column waits for 7.5's evidence, as the phase doc intends. Run this review again after #782.</p>
+</section>
+
+<footer class="text-xs text-slate-400 pt-8 border-t border-slate-200">Generated 2026-10-11 against main @ 5e2d4629 by six parallel read-only walks of the workspace, merged and spot-verified against the live tree and the vendored card text.</footer>
+</main>
+</body>
+</html>
