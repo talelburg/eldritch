@@ -1,7 +1,9 @@
 //! **Taking an action** (see `GLOSSARY.md`): deciding whether an investigator
 //! may take it, paying its actions, and deciding whether it provokes attacks of
-//! opportunity. Every basic action is taken through [`take`]; the turn menu
-//! asks [`check`] what taking one would cost.
+//! opportunity. Every action is taken through [`take`]: the basic actions, a
+//! non-fast play, and an action-cost ability. A fast play or fast ability spends
+//! no action, so it takes none and never reaches the step. The turn menu asks
+//! [`check`] what taking a basic action would cost.
 //!
 //! `glossary/Action.md`: *"When performing an action, all costs of the action
 //! are first paid. Then, the consequences of the action resolve."* And
@@ -17,6 +19,7 @@
 //! an action against.
 
 use std::borrow::Cow;
+use std::fmt;
 
 use card_dsl::dsl::{ActionClass, ActionDesignator};
 
@@ -29,14 +32,18 @@ use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
 use crate::event::Event;
 use crate::state::{
-    ActionResolutionFrame, ActionResume, CardInstanceId, GameState, InvestigatorId, Phase, Status,
+    AbilitySource, ActionResolutionFrame, ActionResume, CardCode, CardInstanceId, GameState,
+    InvestigatorId, Phase, Status,
 };
 
 /// What kind of action is being taken: one of the seven basic actions
 /// (`glossary/Action.md`, FAQ 1.30: *"The following are basic actions:
 /// **Draw**, **Resource**, **Move**, **Investigate**, **Fight**, **Engage**,
-/// and **Evade**."*).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// and **Evade**."*), a **Play** of the card `code`, or an **Activate** of an
+/// ability on `source`. The last two carry their source so a rule that applies
+/// to some actions by what they are taken from can be tested against the
+/// description (Daisy Walker 01002, #779).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ActionKind {
     Draw,
     Resource,
@@ -45,29 +52,42 @@ pub(crate) enum ActionKind {
     Fight,
     Engage,
     Evade,
+    Play { code: CardCode },
+    Activate { source: AbilitySource },
 }
 
 impl ActionKind {
-    /// The action's name, for refusal reasons.
-    fn name(self) -> &'static str {
-        match self {
-            Self::Draw => "Draw",
-            Self::Resource => "Resource",
-            Self::Move => "Move",
-            Self::Investigate => "Investigate",
-            Self::Fight => "Fight",
-            Self::Engage => "Engage",
-            Self::Evade => "Evade",
-        }
-    }
-
     /// The [`ActionClass`] a surcharge keys on, for the three kinds one names.
-    fn action_class(self) -> Option<ActionClass> {
+    /// A play or an activation names none of its own; an activation's class
+    /// comes from its designator ([`ActionDescription::action_class`]).
+    fn action_class(&self) -> Option<ActionClass> {
         match self {
             Self::Move => Some(ActionClass::Move),
             Self::Fight => Some(ActionClass::Fight),
             Self::Evade => Some(ActionClass::Evade),
-            Self::Draw | Self::Resource | Self::Investigate | Self::Engage => None,
+            Self::Draw
+            | Self::Resource
+            | Self::Investigate
+            | Self::Engage
+            | Self::Play { .. }
+            | Self::Activate { .. } => None,
+        }
+    }
+}
+
+/// The action's name, for refusal reasons.
+impl fmt::Display for ActionKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Draw => f.write_str("Draw"),
+            Self::Resource => f.write_str("Resource"),
+            Self::Move => f.write_str("Move"),
+            Self::Investigate => f.write_str("Investigate"),
+            Self::Fight => f.write_str("Fight"),
+            Self::Engage => f.write_str("Engage"),
+            Self::Evade => f.write_str("Evade"),
+            Self::Play { code } => write!(f, "Play {code}"),
+            Self::Activate { source } => write!(f, "Activate {source:?}"),
         }
     }
 }
@@ -92,6 +112,31 @@ impl ActionDescription {
         }
     }
 
+    /// A non-fast play of the card `code`, which costs one action. An event
+    /// carries no designator until #778 gives it one; Backstab 01051's
+    /// **Fight** then makes its play exempt with no change here.
+    pub(crate) fn play(code: CardCode) -> Self {
+        Self {
+            kind: ActionKind::Play { code },
+            action_cost: 1,
+            designator: None,
+        }
+    }
+
+    /// An activation of an ability on `source` printing `action_cost` actions
+    /// (at least one; a fast ability is not taken) and `designator`.
+    pub(crate) fn activate(
+        source: AbilitySource,
+        action_cost: u8,
+        designator: Option<ActionDesignator>,
+    ) -> Self {
+        Self {
+            kind: ActionKind::Activate { source },
+            action_cost,
+            designator,
+        }
+    }
+
     /// The class a surcharge keys on: the designator's if it prints one,
     /// otherwise the kind's.
     fn action_class(&self) -> Option<ActionClass> {
@@ -112,6 +157,10 @@ impl ActionDescription {
     /// and, added in FAQ 1.1, *"Attacks of Opportunity are only triggered when 1
     /// or more of an investigator’s actions are being spent or used to trigger
     /// an ability or action."* So an action costing nothing never provokes.
+    ///
+    /// The same entry: *"An ability that costs more than one action only
+    /// provokes one attack of opportunity from each engaged enemy."* So the
+    /// answer is whether, never how many; `drive_aoo` attacks once per enemy.
     ///
     /// A function of the description, not of the board: a provoking action
     /// parks behind its attacks even with no enemy engaged.
@@ -158,7 +207,7 @@ fn quote(
     investigator: InvestigatorId,
     description: &ActionDescription,
 ) -> Result<Quote, Cow<'static, str>> {
-    let name = description.kind.name();
+    let name = &description.kind;
     let Some(inv) = state.investigators.get(&investigator) else {
         return Err(format!("{name}: investigator {investigator:?} is not in state").into());
     };
@@ -203,7 +252,8 @@ fn quote(
 ///
 /// `before_attacks` pays the caller's own costs and returns the rest of the
 /// action as an [`ActionResume`]. A basic action has no other cost, so its hook
-/// just returns its resume. If the action provokes, the resume is parked on an
+/// just returns its resume. A play's pays the resource cost and commences the
+/// play; an activation's pays the ability's other costs and announces it. If the action provokes, the resume is parked on an
 /// [`ActionResolution`](crate::state::Continuation::ActionResolution) frame and
 /// the attacks are driven; the action is performed when the frame resumes.
 /// Otherwise it is performed immediately, by the same [`perform`] the frame
@@ -243,6 +293,14 @@ pub(crate) fn take(
         new_count,
     });
 
+    // TODO(#649): the hook runs ahead of the attacks, and for a play it
+    // commences the play: `CardPlayed` is emitted and the card leaves hand. So
+    // the engine's order is pay action → pay resources → commence play →
+    // attacks of opportunity. The rules' order commences after the attacks:
+    // `glossary/Limbo.md`, *"An event card enters limbo during step 3 of the
+    // Initiation Sequence, after costs are paid and attacks of opportunity are
+    // made."* Reordering needs a binding for the hand card that survives the
+    // attacks, which the resume carries only once commence has minted it.
     let resume = match before_attacks(cx) {
         Ok(resume) => resume,
         Err(reason) => return EngineOutcome::Rejected { reason },
@@ -317,9 +375,10 @@ pub(in crate::engine::dispatch) fn perform(
 /// no registry, or no card data for a code, means no surcharge. Pure, so a
 /// caller can price an action before deciding to pay for it.
 ///
-/// [`check`] and [`take`] read it for every action they price, and so does the
-/// activation validator for an ability whose bold designator names the class
-/// via [`ActionDesignator::action_class`] (#754). Sharing it is the point: a
+/// [`check`] and [`take`] read it for every action they price, an activation
+/// included, whose bold designator names the class via
+/// [`ActionDesignator::action_class`] (#754). The activation validator reads it
+/// too, to refuse an activation the investigator can't afford. Sharing it is the point: a
 /// surcharge only one path applies is the bug that made shooting a weapon
 /// cheaper than punching.
 pub(crate) fn action_surcharge(
