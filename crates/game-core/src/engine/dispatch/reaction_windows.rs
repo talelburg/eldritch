@@ -18,11 +18,12 @@ use card_dsl::dsl::{
 use crate::action::InputResponse;
 use crate::card_registry;
 use crate::engine::dispatch::abilities::ActivatedAbility;
+use crate::engine::dispatch::actions::take;
 use crate::engine::dispatch::emit::{ConditionResolution, TimingEvent};
 use crate::engine::dispatch::initiation::{self, InitiationKind, Refusal};
 use crate::engine::dispatch::{
-    abilities, actions, cards, combat, cursor, phases, skill_test, slots, trigger_scan,
-    ActivateCheckResult, PlayCheckResult,
+    abilities, cards, combat, cursor, phases, skill_test, slots, trigger_scan, ActivateCheckResult,
+    PlayCheckResult,
 };
 use crate::engine::enumerate::TurnAction;
 use crate::engine::evaluator::EvalContext;
@@ -1307,8 +1308,8 @@ fn check_activation_target_available(
 /// or Investigate) count as an action of that type."* Frozen in Fear 01164's
 /// ruling names the case directly: *"Also applies to \[action\] card abilities
 /// with action designators (**Move**, **Fight**, **Evade**)."* Read through the
-/// same `action_surcharge` the basic-action handlers use, so the two can't
-/// drift apart.
+/// same [`take::action_surcharge`] that taking a basic action prices with, so
+/// the two can't drift apart.
 ///
 /// Scoped to action-cost abilities: the same ruling taxes *fast* designated
 /// abilities too, which no corpus card can reach and which needs a decision
@@ -1324,7 +1325,7 @@ fn designated_action_surcharge(
         return (0, Vec::new());
     }
     match designator.and_then(ActionDesignator::action_class) {
-        Some(class) => actions::action_surcharge(state, investigator, class),
+        Some(class) => take::action_surcharge(state, investigator, class),
         None => (0, Vec::new()),
     }
 }

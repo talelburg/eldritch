@@ -1,19 +1,13 @@
 //! The Move basic action, and the departure and enter steps a move
 //! resolves through.
 
-use card_dsl::dsl::ActionClass;
-
+use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::emit::TimingEvent;
-use crate::engine::dispatch::{combat, emit, hunters, movement, reveal};
+use crate::engine::dispatch::{emit, hunters, movement, reveal};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::Event;
-use crate::state::{
-    ActionResolutionFrame, ActionResume, EnemyId, InvestigatorId, LocationId, MoveEnterFrame,
-    Phase, Status,
-};
-
-use super::charge_action;
+use crate::state::{ActionResume, EnemyId, InvestigatorId, LocationId, MoveEnterFrame};
 
 /// Handler for `TurnAction::Move`.
 ///
@@ -24,58 +18,20 @@ use super::charge_action;
 /// with the investigator. Both behaviors land alongside enemy state
 /// in #67; this handler covers only the bare movement.
 ///
-/// The `AoO` loop now runs as an [`ActionResolution`] frame (#293): the
-/// frame is pushed, then [`combat::drive_aoo`] drives the loop. If a
-/// cancel/soak window opens the loop suspends; `drive` resumes the
-/// frame once the window closes, calling [`move_primary_effect`].
-///
-/// [`ActionResolution`]: crate::state::Continuation::ActionResolution
+/// Validate-first: the investigator may take the action, surcharge included
+/// ([`take::check`]), then the destination checks. Then take it
+/// ([`take::take`]). Move is not on the attack-of-opportunity exempt list, so
+/// each ready engaged enemy attacks before [`move_primary_effect`] relocates.
 pub(in crate::engine::dispatch) fn move_action(
     cx: &mut Cx,
     investigator: InvestigatorId,
     destination: LocationId,
 ) -> EngineOutcome {
-    // Validate-first.
-    if cx.state.phase != Phase::Investigation {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Move is only valid during the Investigation phase (was {:?})",
-                cx.state.phase
-            )
-            .into(),
-        };
+    let description = ActionDescription::basic(ActionKind::Move);
+    if let Err(reason) = take::check(cx.state, investigator, &description) {
+        return EngineOutcome::Rejected { reason };
     }
-    if cx.state.active_investigator != Some(investigator) {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Move: {investigator:?} is not the active investigator ({:?})",
-                cx.state.active_investigator,
-            )
-            .into(),
-        };
-    }
-    // Active-investigator + missing-from-map is a state-corruption
-    // invariant violation (active_investigator is engine-set; the
-    // pairing with the map entry is an invariant), so surface loudly.
-    let inv = cx
-        .state
-        .investigators
-        .get(&investigator)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "Move: active_investigator {investigator:?} is not in the investigators map; \
-             this is a state-corruption invariant violation"
-            )
-        });
-    if inv.status != Status::Active {
-        return EngineOutcome::Rejected {
-            reason: format!(
-                "Move: {investigator:?} is not Active (status {:?})",
-                inv.status,
-            )
-            .into(),
-        };
-    }
+    let inv = &cx.state.investigators[&investigator];
     let Some(from) = inv.current_location else {
         return EngineOutcome::Rejected {
             reason: format!("Move: {investigator:?} has no current_location to move from").into(),
@@ -119,20 +75,11 @@ pub(in crate::engine::dispatch) fn move_action(
         };
     }
 
-    // Mutate-second. Charge the action (base 1 + surcharge) last — after
-    // every move precondition has passed — so a rejected move spends nothing.
-    if let Err(rejected) = charge_action(cx, investigator, ActionClass::Move, "Move") {
-        return rejected;
-    }
-
-    // Park the move over its attack-of-opportunity loop (#293): push the
-    // resume frame, then drive the AoO. If a cancel/soak window opens the loop
-    // suspends here; otherwise `drive` resumes the frame and relocates.
-    cx.state.continuations.push(ActionResolutionFrame {
-        investigator,
-        resume: ActionResume::Move { destination },
-    });
-    combat::drive_aoo(cx, investigator)
+    // Mutate-second: take the action last, after every move precondition has
+    // passed, so a rejected move spends nothing.
+    take::take(cx, investigator, &description, |_| {
+        Ok(ActionResume::Move { destination })
+    })
 }
 
 /// The relocation half of a Move, run after its attack-of-opportunity loop

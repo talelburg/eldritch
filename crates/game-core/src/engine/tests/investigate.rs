@@ -165,16 +165,16 @@ fn investigate_on_an_unrevealed_location_is_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "state-corruption invariant violation")]
-fn investigate_with_active_investigator_missing_from_map_panics() {
-    // Same corruption pattern as `move_with_active_investigator_missing_from_map_panics`
+fn investigate_with_active_investigator_missing_from_map_rejects() {
+    // Same case as `move_with_active_investigator_missing_from_map_rejects`
     // (`move_action.rs`), applied to Investigate.
     let (inv_id, _, mut state) = investigate_scenario(2, 2);
     state.investigators.remove(&inv_id);
-    let _ = test_support::dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::Investigate {
             investigator: inv_id,
         },
     );
+    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
 }

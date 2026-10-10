@@ -3,15 +3,14 @@
 //! (2b) — this module shares the handlers' legality predicates so the
 //! enumeration matches handler-acceptance by construction.
 
-use card_dsl::dsl::ActionClass;
-
 use crate::card_registry;
-use crate::engine::dispatch::{act_agenda, actions, movement, reaction_windows};
+use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
+use crate::engine::dispatch::{act_agenda, movement, reaction_windows};
 use crate::engine::outcome::OptionTarget;
 use crate::engine::{abilities_in_effect, ability_source};
 use crate::state::{
     AbilityAddress, AbilitySource, EnemyId, GameState, InvestigatorId, InvestigatorTurnFrame,
-    LocationId, Phase, Status,
+    LocationId,
 };
 
 /// The enumerated open-turn actions for the active investigator.
@@ -292,16 +291,15 @@ fn push_combat_engage_actions(
     investigator: InvestigatorId,
     out: &mut Vec<TurnAction>,
 ) {
-    // The shared basic-action prologue gates Fight/Evade/Engage alike; if it
-    // fails (wrong phase / not active / no action), none are legal.
-    let Ok(inv) = actions::validate_basic_action(state, "enumerate", investigator) else {
+    // Whether each action may be taken at all — phase, turn, Status, and its
+    // cost, surcharge included — is the step's question, asked per kind since
+    // Frozen in Fear prices Fight and Evade but not Engage.
+    let fight_takeable = may_take(state, investigator, ActionKind::Fight);
+    let evade_takeable = may_take(state, investigator, ActionKind::Evade);
+    let engage_takeable = may_take(state, investigator, ActionKind::Engage);
+    let Some(inv) = state.investigators.get(&investigator) else {
         return;
     };
-    let actions_remaining = inv.actions_remaining;
-    let fight_affordable =
-        actions::action_cost(state, investigator, ActionClass::Fight) <= actions_remaining;
-    let evade_affordable =
-        actions::action_cost(state, investigator, ActionClass::Evade) <= actions_remaining;
     let inv_location = inv.current_location;
 
     // One pass over the enemies; the three actions' conditions are independent
@@ -314,21 +312,21 @@ fn push_combat_engage_actions(
         let engaged_with_me = enemy.engaged_with == Some(investigator);
 
         // Fight: any co-located enemy, non-negative difficulty, affordable.
-        if co_located && fight_affordable && enemy.fight >= 0 {
+        if co_located && fight_takeable && enemy.fight >= 0 {
             out.push(TurnAction::Fight {
                 investigator,
                 enemy: enemy_id,
             });
         }
         // Evade: only an enemy engaged with the investigator.
-        if engaged_with_me && evade_affordable && enemy.evade >= 0 {
+        if engaged_with_me && evade_takeable && enemy.evade >= 0 {
             out.push(TurnAction::Evade {
                 investigator,
                 enemy: enemy_id,
             });
         }
         // Engage: a co-located enemy not already engaged with the investigator.
-        if co_located && !engaged_with_me {
+        if co_located && !engaged_with_me && engage_takeable {
             out.push(TurnAction::Engage {
                 investigator,
                 enemy: enemy_id,
@@ -339,17 +337,25 @@ fn push_combat_engage_actions(
 
 /// Append the basic actions legal for `investigator`. `EndTurn` is always legal
 /// at the open turn (the handler only needs an active investigator, guaranteed
-/// here). Later tasks add Resource/Draw/Investigate/Move.
+/// here). Resource, Draw, Investigate and Move follow, each offered only if the
+/// investigator may take it.
 fn push_basic_actions(state: &GameState, investigator: InvestigatorId, out: &mut Vec<TurnAction>) {
     // EndTurn: always legal at the open turn (no action point required).
     out.push(TurnAction::EndTurn);
 
-    // Resource / Draw / Investigate share the basic-action prologue (phase +
-    // active + Status::Active + actions_remaining >= 1). Investigate adds a
-    // revealed-current-location gate.
-    if let Ok(inv) = actions::validate_basic_action(state, "enumerate", investigator) {
+    // Whether each may be taken at all — phase, turn, Status, and its cost,
+    // surcharge included — is the step's question. Frozen in Fear prices Move
+    // but none of the other three.
+    if may_take(state, investigator, ActionKind::Resource) {
         out.push(TurnAction::Resource { investigator });
+    }
+    if may_take(state, investigator, ActionKind::Draw) {
         out.push(TurnAction::Draw { investigator });
+    }
+    let Some(inv) = state.investigators.get(&investigator) else {
+        return;
+    };
+    if may_take(state, investigator, ActionKind::Investigate) {
         if let Some(loc_id) = inv.current_location {
             if state.locations.get(&loc_id).is_some_and(|l| l.revealed) {
                 out.push(TurnAction::Investigate { investigator });
@@ -357,24 +363,13 @@ fn push_basic_actions(state: &GameState, investigator: InvestigatorId, out: &mut
         }
     }
 
-    // Move uses its own prefix (the action-point check folds into the cost):
-    // phase Investigation + active + Status::Active + a current location +
-    // affordable, with one option per connected destination in state.
-    let Some(inv) = state.investigators.get(&investigator) else {
-        return;
-    };
-    if state.phase != Phase::Investigation
-        || state.active_investigator != Some(investigator)
-        || inv.status != Status::Active
-    {
+    // Move: one option per connected destination in state.
+    if !may_take(state, investigator, ActionKind::Move) {
         return;
     }
     let Some(from) = inv.current_location else {
         return;
     };
-    if actions::action_cost(state, investigator, ActionClass::Move) > inv.actions_remaining {
-        return;
-    }
     let Some(from_loc) = state.locations.get(&from) else {
         return;
     };
@@ -393,6 +388,13 @@ fn push_basic_actions(state: &GameState, investigator: InvestigatorId, out: &mut
             });
         }
     }
+}
+
+/// Whether `investigator` may take the basic action `kind` now, cost included —
+/// the step's own [`take::check`], so the menu offers exactly
+/// what taking the action accepts.
+fn may_take(state: &GameState, investigator: InvestigatorId, kind: ActionKind) -> bool {
+    take::check(state, investigator, &ActionDescription::basic(kind)).is_ok()
 }
 
 #[cfg(test)]

@@ -14,7 +14,8 @@
 //! the shared `Effect::PutIntoThreatArea`. The surcharge is
 //! `Restriction::ExtraActionCost { first_each_round: true }` over
 //! move/fight/evade, read via `pending_action_surcharge` by **both** ways of
-//! taking one of those actions: the basic move/fight/evade handlers, and an
+//! taking one of those actions: the engine's take-an-action step, which every
+//! basic move, fight and evade is taken through, and an
 //! activated ability whose bold designator names the class (#754) — a weapon's
 //! *"\[action\] … **Fight**"* is a Fight action, so the first one each round
 //! costs 2 exactly as punching does. The three actions share one

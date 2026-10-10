@@ -1,38 +1,32 @@
 //! The Engage basic action: engage an enemy at the investigator's location.
 
-use crate::engine::dispatch::combat;
+use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::Event;
-use crate::state::{ActionResolutionFrame, ActionResume, EnemyId, InvestigatorId};
-
-use super::{spend_one_action, validate_basic_action};
+use crate::state::{ActionResume, EnemyId, InvestigatorId};
 
 /// Handler for `TurnAction::Engage`. Engage an enemy at the
 /// investigator's location that they are not already engaged with
 /// (Rules Reference p.4) — it becomes engaged with the investigator.
 ///
-/// Validate-first: Investigation phase, active + `Status::Active`,
-/// `actions_remaining >= 1`, enemy in state, enemy at the investigator's
-/// `current_location`, not already engaged with the investigator.
-/// Mutate-second: spend 1 action, then park the engagement over its
-/// attack-of-opportunity loop (#293). The target enemy is not yet engaged
-/// so it cannot `AoO`; only OTHER ready engaged enemies do. If the
-/// investigator survives, [`engage_primary_effect`] runs the engagement.
-///
-/// The `AoO` loop now runs as an [`ActionResolution`] frame (#293): the
-/// frame is pushed, then [`combat::drive_aoo`] drives the loop.
-///
-/// [`ActionResolution`]: crate::state::Continuation::ActionResolution
+/// Validate-first: the investigator may take the action ([`take::check`]),
+/// the enemy is in state, at the investigator's `current_location`, and not
+/// already engaged with the investigator. Then take it ([`take::take`]). Engage
+/// is not on the attack-of-opportunity exempt list; the target enemy is not
+/// yet engaged so it cannot attack, but every other ready engaged enemy does.
+/// If the investigator survives, [`engage_primary_effect`] runs the
+/// engagement.
 pub(in crate::engine::dispatch) fn engage(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
 ) -> EngineOutcome {
-    let inv = match validate_basic_action(cx.state, "Engage", investigator) {
-        Ok(inv) => inv,
-        Err(rejection) => return rejection,
-    };
+    let description = ActionDescription::basic(ActionKind::Engage);
+    if let Err(reason) = take::check(cx.state, investigator, &description) {
+        return EngineOutcome::Rejected { reason };
+    }
+    let inv = &cx.state.investigators[&investigator];
     // A `None` location can't host an engage (matches `investigate`'s
     // guard); without it the `enemy.current_location != inv_location`
     // check below would let a locationless investigator engage a
@@ -63,17 +57,9 @@ pub(in crate::engine::dispatch) fn engage(
         };
     }
 
-    // Mutate-second: spend the action, then park the engagement over its
-    // attack-of-opportunity loop (#293). Push the resume frame, then drive
-    // the AoO. Engage is NOT on the AoO-exempt list (only Fight, Evade,
-    // Parley, Resign are). The target is not yet engaged so it cannot AoO;
-    // only OTHER ready engaged enemies do.
-    spend_one_action(cx, investigator);
-    cx.state.continuations.push(ActionResolutionFrame {
-        investigator,
-        resume: ActionResume::Engage { enemy: enemy_id },
-    });
-    combat::drive_aoo(cx, investigator)
+    take::take(cx, investigator, &description, |_| {
+        Ok(ActionResume::Engage { enemy: enemy_id })
+    })
 }
 
 /// The engagement half of an Engage action, run after its `AoO` loop (#293).

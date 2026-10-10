@@ -1,17 +1,17 @@
 //! The Draw basic action: draw 1 card.
 
-use crate::engine::dispatch::{cards, combat};
+use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
+use crate::engine::dispatch::cards;
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
-use crate::state::{ActionResolutionFrame, ActionResume, InvestigatorId};
-
-use super::{spend_one_action, validate_basic_action};
+use crate::state::{ActionResume, InvestigatorId};
 
 /// Handler for `TurnAction::Draw`.
 ///
-/// Validate-first: Investigation phase, investigator is active and
-/// `Status::Active`, has at least 1 action remaining. Then spend the
-/// action and resolve the draw per the Rules Reference:
+/// Draw has no target, so taking it ([`take::take`]) is the whole handler.
+/// Draw is not on the attack-of-opportunity exempt list, so each ready engaged
+/// enemy attacks before the card is drawn. The draw itself, in
+/// [`draw_primary_effect`], resolves per the Rules Reference:
 ///
 /// - **Non-empty deck**: draw 1 to hand.
 /// - **Empty deck, non-empty discard**: shuffle discard into deck,
@@ -25,29 +25,16 @@ use super::{spend_one_action, validate_basic_action};
 ///   ("would-draw-from-empty triggers the penalty"), and the case
 ///   is rare enough in practice (only high-cycle decks burn through
 ///   both zones) that the difference is mostly theoretical.
-///
-/// The draw logic itself is delegated to [`draw_primary_effect`] after
-/// the attack-of-opportunity loop runs as an
-/// [`ActionResolution`](crate::state::Continuation::ActionResolution) frame (#293).
 pub(in crate::engine::dispatch) fn draw(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
-    if let Err(rejection) = validate_basic_action(cx.state, "Draw", investigator) {
-        return rejection;
-    }
-
-    // Mutate-second: spend the action, then park the draw over its
-    // attack-of-opportunity loop (#293). Push the resume frame, then
-    // drive the AoO. Draw is NOT on the AoO-exempt list (only Fight,
-    // Evade, Parley, Resign are), so each ready engaged enemy attacks
-    // before the card is drawn (RR p.5).
-    spend_one_action(cx, investigator);
-    cx.state.continuations.push(ActionResolutionFrame {
+    take::take(
+        cx,
         investigator,
-        resume: ActionResume::Draw,
-    });
-    combat::drive_aoo(cx, investigator)
+        &ActionDescription::basic(ActionKind::Draw),
+        |_| Ok(ActionResume::Draw),
+    )
 }
 
 /// The draw half of a Draw action, run after its `AoO` loop (#293).
