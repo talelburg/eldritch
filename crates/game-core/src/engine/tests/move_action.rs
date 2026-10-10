@@ -134,21 +134,20 @@ fn move_with_dangling_current_location_panics() {
 }
 
 #[test]
-#[should_panic(expected = "state-corruption invariant violation")]
-fn move_with_active_investigator_missing_from_map_panics() {
-    // Corruption: active_investigator points at an id that isn't
-    // in state.investigators. The active-investigator check passes
-    // (Some(id) == active), so this case is only reachable from
-    // corrupt state — panic to match end_turn / rotate_to_active.
+fn move_with_active_investigator_missing_from_map_rejects() {
+    // active_investigator names an id that isn't in state.investigators. An
+    // investigator id can arrive in a client message, so taking an action
+    // refuses an unknown one rather than panicking.
     let (inv_id, _a, b, mut state) = move_scenario();
     state.investigators.remove(&inv_id);
-    let _ = test_support::dispatch_turn_action_unchecked(
+    let result = test_support::dispatch_turn_action_unchecked(
         state,
         &TurnAction::Move {
             investigator: inv_id,
             destination: b,
         },
     );
+    assert!(matches!(result.outcome, EngineOutcome::Rejected { .. }));
 }
 
 #[test]

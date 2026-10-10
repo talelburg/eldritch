@@ -21,10 +21,11 @@ use crate::state::{
 /// The scope of enemies a Fight (basic action or designated **Fight** ability)
 /// may target: any enemy *at your location*. Per RR you choose an enemy at your
 /// location to attack and need not already be engaged, so this is co-located
-/// (`At(Here)`), not engaged-only (#451). Single source of truth, read through
-/// `designator::fight_candidates` by the basic action's target validation, the
-/// activation pre-cost gate (`can_perform`) and the evaluator's target
-/// grounding (`ground_fight_target_choice`) alike, so the three can't drift.
+/// (`At(Here)`), not engaged-only (#451). Its only reader is the Fight action's
+/// [`candidates`](crate::engine::dispatch::actions::fight::candidates), which
+/// is what the basic action's target validation, the turn menu, the activation
+/// pre-cost gate (`designator::can_perform`) and the evaluator's target
+/// grounding (`ground_fight_target_choice`) all read in turn.
 pub(crate) fn fight_target_scope() -> EntityScope {
     EntityScope::At(LocationSet::Here)
 }
@@ -572,7 +573,7 @@ pub(super) fn drive_aoo(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutc
 /// the two sequential suspension points are tracked by [`AttackLoopStage`]. Returns
 /// [`AwaitingInput`] if a window suspends, [`Done`] otherwise. Non-exhausting
 /// (RR p.18) — honored by [`EnemyAttackSource::Retaliate`] (exhaust is
-/// `EnemyPhase`-gated). Caller (`fire_retaliate_if_any`) has already confirmed the
+/// `EnemyPhase`-gated). Caller (`fight::fire_retaliate_if_any`) has already confirmed the
 /// enemy is ready + has the retaliate keyword.
 ///
 /// [`AwaitingInput`]: crate::engine::EngineOutcome::AwaitingInput

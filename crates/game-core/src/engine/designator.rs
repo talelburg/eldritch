@@ -13,29 +13,27 @@
 //! check only one of the paths applies is precisely the bug shape #754 was for
 //! the action surcharge.
 //!
-//! Two levels, because the two ways of taking an action ask slightly different
-//! questions:
+//! [`can_perform`] answers *"can this designated ability initiate at all"* —
+//! whether **some** legal target exists, never which one. Its caller is the
+//! activation validator (`check_activate_ability`), pre-cost, which the
+//! turn-menu enumerator filters through in turn, so menu and handler cannot
+//! disagree about what is offerable.
 //!
-//! - [`can_perform`] answers *"can this designated ability initiate at all"* —
-//!   whether **some** legal target exists, never which one. Its caller is the
-//!   activation validator (`check_activate_ability`), pre-cost, which the
-//!   turn-menu enumerator filters through in turn, so menu and handler cannot
-//!   disagree about what is offerable.
-//! - [`fight_candidates`] and [`investigate_location`] are what it answers
-//!   *from*, and the basic-action handlers read them directly, because a basic
-//!   action names its target up front rather than choosing among them:
-//!   `actions::validate_fight_target` asks whether *this* enemy is in the
-//!   candidate list, which is a question `can_perform` deliberately does not
-//!   ask. Sharing the list rather than the predicate is what keeps a designated
-//!   **Fight** and the basic Fight action agreeing on what a legal target is —
-//!   the evaluator's target grounding reads the same list a third time.
+//! What it answers *from* is the basic action's own `candidates`
+//! (`actions::fight::candidates`, `actions::investigate::candidates`), the one
+//! list the basic action's handler and the turn menu read too. A basic action
+//! names its target up front, so its handler asks whether *this* enemy is in the
+//! list, a question `can_perform` deliberately does not ask. Sharing the list
+//! rather than the predicate is what keeps a designated **Fight** and the basic
+//! Fight action agreeing on what a legal target is; the evaluator's target
+//! grounding reads the same list again.
 
 use std::borrow::Cow;
 
 use card_dsl::dsl::ActionDesignator;
 
-use crate::engine::dispatch::combat;
-use crate::state::{EnemyId, GameState, InvestigatorId, LocationId};
+use crate::engine::dispatch::actions::{self, fight, investigate};
+use crate::state::{GameState, InvestigatorId};
 
 /// Whether `investigator` can perform the action `designator` names, ignoring
 /// which of several legal targets will end up chosen.
@@ -57,14 +55,14 @@ use crate::state::{EnemyId, GameState, InvestigatorId, LocationId};
 ///   gate asks separately.
 /// - **Resign** — eliminating the controller is always available to an
 ///   investigator who reached the ability at all.
-/// - **Evade** / **Move** — rejected, with [`unimplemented_designator`]'s
-///   reason (`TODO(#818)`). Neither variant carries a modification, and no
-///   implemented card prints either, so the engine says so rather than
-///   performing a guess. Note the two differ in *why*: ten corpus cards print
-///   **Evade** and disagree about the payload's shape (Fire Extinguisher
-///   02114's `+3 [agility]` row vs Strange Solution 02264's base-value
-///   replacement), while **Move** is printed by no corpus card at all. See the
-///   variants' own docs.
+/// - **Evade** / **Move** — rejected, with the reason one shared helper gives
+///   ([`actions::designated_unimplemented`], `TODO(#818)`). Neither variant
+///   carries a modification, and no implemented card prints either, so the
+///   engine says so rather than performing a guess. Note the two differ in
+///   *why*: ten corpus cards print **Evade** and disagree about the payload's
+///   shape (Fire Extinguisher 02114's `+3 [agility]` row vs Strange Solution
+///   02264's base-value replacement), while **Move** is printed by no corpus
+///   card at all. See the variants' own docs.
 pub(crate) fn can_perform(
     state: &GameState,
     investigator: InvestigatorId,
@@ -72,7 +70,7 @@ pub(crate) fn can_perform(
 ) -> Result<(), Cow<'static, str>> {
     match designator {
         ActionDesignator::Fight { .. } => {
-            if fight_candidates(state, investigator).is_empty() {
+            if fight::candidates(state, investigator).is_empty() {
                 return Err(
                     "a Fight ability needs an enemy at your location (none co-located)".into(),
                 );
@@ -80,7 +78,7 @@ pub(crate) fn can_perform(
             Ok(())
         }
         ActionDesignator::Investigate { .. } => {
-            if investigate_location(state, investigator).is_none() {
+            if investigate::candidates(state, investigator).is_none() {
                 return Err(
                     "an Investigate ability needs a revealed location to investigate".into(),
                 );
@@ -88,53 +86,9 @@ pub(crate) fn can_perform(
             Ok(())
         }
         ActionDesignator::Parley | ActionDesignator::Resign => Ok(()),
-        ActionDesignator::Evade | ActionDesignator::Move => {
-            Err(unimplemented_designator(designator))
-        }
+        ActionDesignator::Evade => Err(actions::designated_unimplemented("Evade")),
+        ActionDesignator::Move => Err(actions::designated_unimplemented("Move")),
     }
-}
-
-/// The rejection reason for a designator no implemented card prints —
-/// **Evade** and **Move**, the two `ActionDesignator` variants that neither
-/// carry a modification nor perform anything (`TODO(#818)`).
-///
-/// "No implemented card", deliberately, rather than "no corpus card": ten
-/// corpus cards print **Evade** (none built yet), and none prints **Move**.
-///
-/// One helper rather than the same prose at both sites: this is read pre-cost
-/// by [`can_perform`] and again by the evaluator's perform dispatch, where the
-/// arm is unreachable through the activation path precisely *because*
-/// `can_perform` rejected first. Two copies of one blocker's wording would
-/// drift the moment #818 lands.
-pub(crate) fn unimplemented_designator(designator: &ActionDesignator) -> Cow<'static, str> {
-    format!(
-        "a designated {designator:?} is not implemented: no card the build compiles \
-         declares one, so the modification it would carry has no shape yet (TODO(#818))",
-    )
-    .into()
-}
-
-/// The enemies a **Fight** may target: every enemy at `investigator`'s
-/// location, in ascending [`EnemyId`] order.
-///
-/// The same list the evaluator's target grounding offers, so the pre-cost gate
-/// and the pick cannot disagree about what counts as a candidate.
-pub(crate) fn fight_candidates(state: &GameState, investigator: InvestigatorId) -> Vec<EnemyId> {
-    combat::enemies_in_scope(state, investigator, combat::fight_target_scope())
-}
-
-/// The location an **Investigate** would test: `investigator`'s current
-/// location, if it exists and is revealed. `None` is the lapsed/ineligible
-/// case, which reads as a rejection pre-cost and as a suppression on resume.
-pub(crate) fn investigate_location(
-    state: &GameState,
-    investigator: InvestigatorId,
-) -> Option<LocationId> {
-    state
-        .investigators
-        .get(&investigator)
-        .and_then(|inv| inv.current_location)
-        .filter(|id| state.locations.get(id).is_some_and(|loc| loc.revealed))
 }
 
 #[cfg(test)]
@@ -142,7 +96,7 @@ mod tests {
     use card_dsl::dsl::IntExpr;
 
     use super::*;
-    use crate::state::GameStateBuilder;
+    use crate::state::{GameStateBuilder, LocationId};
     use crate::test_support;
 
     const ME: InvestigatorId = InvestigatorId(1);

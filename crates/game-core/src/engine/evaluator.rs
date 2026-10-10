@@ -84,7 +84,7 @@ use crate::engine::dispatch::{
     self, act_agenda, actions, cards, choice, combat, elimination, emit, skill_test, threat_area,
 };
 use crate::engine::outcome::{EngineOutcome, OptionId, OptionTarget};
-use crate::engine::{designator, Cx};
+use crate::engine::Cx;
 use crate::event::Event;
 use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
@@ -489,7 +489,7 @@ fn step_designated(
 /// > described by the ability.
 ///
 /// Every arm routes through the **same primary the basic action uses**
-/// (`actions::perform_fight` / `actions::perform_investigate` /
+/// (`actions::fight::perform` / `actions::investigate::perform` /
 /// `elimination::resign_investigator`), passing the modification as its only
 /// difference — so *"a designated Fight is a Fight action"* holds in code rather
 /// than by parallel construction.
@@ -510,16 +510,16 @@ fn perform_designated(
             extra_damage,
         } => perform_designated_fight(cx, eval_ctx, combat_modifier, extra_damage),
         ActionDesignator::Investigate { shroud_modifier } => {
-            let Some(location_id) = designator::investigate_location(cx.state, eval_ctx.controller)
-            else {
+            // Reject rather than reach `perform`'s lapse suppression: a board
+            // that changed underneath the activation is a rejection here.
+            if actions::investigate::candidates(cx.state, eval_ctx.controller).is_none() {
                 return EngineOutcome::Rejected {
                     reason: "Investigate: no revealed location to investigate".into(),
                 };
-            };
-            actions::perform_investigate(
+            }
+            actions::investigate::perform(
                 cx,
                 eval_ctx.controller,
-                location_id,
                 Some(shroud_modifier.clone()),
                 eval_ctx.ability_source,
             )
@@ -534,10 +534,14 @@ fn perform_designated(
         // ability's whole content is its residual effect.
         ActionDesignator::Parley => EngineOutcome::Done,
         // Unreachable through the activation path: `can_perform` rejects both
-        // pre-cost, since no implemented card prints either (`TODO(#818)`).
-        // Shares that rejection's wording so the two cannot drift.
-        ActionDesignator::Evade | ActionDesignator::Move => EngineOutcome::Rejected {
-            reason: designator::unimplemented_designator(designator),
+        // pre-cost, since no implemented card prints either. One shared helper
+        // owns the rejection (and its `TODO(#818)`), so the two sites share a
+        // wording.
+        ActionDesignator::Evade => EngineOutcome::Rejected {
+            reason: actions::designated_unimplemented("Evade"),
+        },
+        ActionDesignator::Move => EngineOutcome::Rejected {
+            reason: actions::designated_unimplemented("Move"),
         },
     }
 }
@@ -579,7 +583,7 @@ fn perform_designated_fight(
         cx.state.enemies.contains_key(&enemy_id),
         "Fight chosen_enemy returned an id absent from state.enemies",
     );
-    actions::perform_fight(
+    actions::fight::perform(
         cx,
         eval_ctx.controller,
         enemy_id,
@@ -2051,12 +2055,12 @@ fn ground_enemy_choice(
 
 /// Ground a designated **Fight**'s target against the co-located-enemy list.
 ///
-/// Candidates are `combat::enemies_in_scope` under
-/// [`combat::fight_target_scope`](crate::engine::dispatch::combat::fight_target_scope)
-/// — every enemy *at the controller's location* (not engaged-only), in
-/// ascending [`EnemyId`] order. Per RR you choose an enemy at your location to
-/// attack and need not already be engaged, matching the basic Fight action
-/// (#451). Delegates to [`choice::resolve_grounded_choice`]:
+/// Candidates are the Fight action's own
+/// [`candidates`](crate::engine::dispatch::actions::fight::candidates) — every
+/// enemy *at the controller's location* (not engaged-only), in ascending
+/// [`EnemyId`] order, the list the basic Fight action validates against (#451).
+/// Unlike the basic action, the grounding does not also filter out a malformed
+/// fight value. Delegates to [`choice::resolve_grounded_choice`]:
 /// - 0 candidates → `Rejected` ("Fight: no enemy at your location").
 /// - 1 candidate → auto-bind (no suspend; preserves single-enemy behaviour).
 /// - 2+ candidates → suspend `AwaitingInput { PickSingle }`.
@@ -2068,8 +2072,7 @@ fn ground_fight_target_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
 ) -> Result<EvalContext, EngineOutcome> {
-    let candidates =
-        combat::enemies_in_scope(cx.state, eval_ctx.controller, combat::fight_target_scope());
+    let candidates = actions::fight::candidates(cx.state, eval_ctx.controller);
     let id = picked_or_reject(
         choice::resolve_grounded_choice(
             cx.state,

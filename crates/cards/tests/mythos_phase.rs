@@ -116,7 +116,7 @@ fn agenda_doom_threshold(code: &str) -> u8 {
 /// come off card 01113 rather than from a fixture wearing its code, which is
 /// the impersonation ADR 0016 forbids. Its *"**Forced** - After you enter the
 /// Attic: Take 1 horror."* is live in the installed registry and simply never
-/// fires — only `move_action` emits `EnteredLocation`, and `seat_and_open`
+/// fires — only the Move action emits `EnteredLocation`, and `seat_and_open`
 /// *places* the roster rather than moving it.
 fn board() -> (GameState, LocationId) {
     let mut state = GameStateBuilder::new()

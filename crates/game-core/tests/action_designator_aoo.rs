@@ -36,8 +36,8 @@
 //!
 //! The real-corpus half — Machete 01020 (**Fight**, exempt), Flashlight 01087
 //! (**Investigate**, not exempt), First Aid 01019 (no designator, not exempt) —
-//! is `crates/cards/tests/activate_ability_aoo.rs`. The predicate's own
-//! exhaustive table over the six designators is `provokes_aoo`'s unit test.
+//! is `crates/cards/tests/activate_ability_aoo.rs`, and the attack-of-opportunity
+//! table over every way of taking an action is `crates/cards/tests/taking_an_action.rs`.
 
 use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons};
 use card_dsl::dsl::{self, Ability, ActionDesignator, Effect, InvestigatorTarget};

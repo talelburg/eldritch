@@ -37,7 +37,7 @@
 //!   corpus metadata (`GameState::add_location`) rather than hand-stamped onto a
 //!   `test_location`, which is the impersonation ADR 0016 forbids. Its
 //!   *"**Forced** - After you enter the Attic: Take 1 horror."* is live in the
-//!   installed registry and simply never fires — only `move_action` emits
+//!   installed registry and simply never fires — only the Move action emits
 //!   `EnteredLocation`, and these tests place their investigators. Its ruling —
 //!   *"The **Forced** ability triggers each time an investigator enters this
 //!   location"* (<https://arkhamdb.com/card/01113>) — scopes that same entry.

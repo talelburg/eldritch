@@ -974,7 +974,7 @@ fn two_forced_at_enemy_phase_end_resolve_and_the_phase_still_transitions() {
 /// A `LeftLocation` forced that suspends (two attachment abilities → an ordering
 /// run) must not cost the move its entered-location half.
 ///
-/// Regression (#569): `move_primary_effect` returned the suspension, and nothing
+/// Regression (#569): `move::perform` returned the suspension, and nothing
 /// resumed it — `engage_ready_enemies_on_enter` and the `EnteredLocation` emit
 /// were skipped permanently. Both now ride the `MoveEnter` frame parked beneath
 /// the emit, which also fixes their order: leaving resolves before entering.
@@ -1135,7 +1135,7 @@ fn a_when_cell_left_location_forced_resolves_before_the_departure_lands() {
 /// the whole `LeftLocation` sequence and before the entered location's own
 /// forced ability.
 ///
-/// #721 moved it there. Left in `move_primary_effect` it would have revealed
+/// #721 moved it there. Left in `move::perform` it would have revealed
 /// the destination before the investigator had even left the location they
 /// were on — Rules Reference p.14 reveals a location when an investigator
 /// *enters* it.

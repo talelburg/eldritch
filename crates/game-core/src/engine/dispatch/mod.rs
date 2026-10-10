@@ -8,9 +8,6 @@
 //! human-initiated actions, [`apply_engine_record`] for engine-emitted
 //! ones.
 
-use card_dsl::card_data::CardType;
-use card_dsl::dsl::{Ability, ActionDesignator, Cost, Effect, UsageLimit};
-
 use crate::action::{EngineRecord, InputResponse, PlayerAction, RosterEntry};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::enumerate::TurnAction;
@@ -19,9 +16,8 @@ use crate::engine::outcome::{
 };
 use crate::engine::{enumerate, evaluator, Cx};
 use crate::state::{
-    ActionResolutionFrame, ActionResume, CardInstanceId, Continuation, FastWindowFrame,
-    FrameActivity, GameState, InvestigatorTurnFrame, ResolutionCandidate, ScenarioEndFrame,
-    ScenarioEndStep, Status,
+    ActionResolutionFrame, ActionResume, Continuation, FastWindowFrame, FrameActivity, GameState,
+    InvestigatorTurnFrame, ScenarioEndFrame, ScenarioEndStep, Status,
 };
 pub(crate) use control::take_control;
 
@@ -52,6 +48,9 @@ pub(super) mod elimination;
 pub(super) mod encounter;
 pub(super) mod forced_triggers;
 pub(crate) mod hunters;
+// Play and activate legality: the validators the handlers, the turn menu and
+// the Fast-window enumeration ask.
+pub(crate) mod legality;
 mod trigger_scan;
 // The initiation gate (ADR 0017): every play and ability path asks it whether.
 mod initiation;
@@ -80,22 +79,22 @@ pub(crate) fn dispatch_turn_action(cx: &mut Cx, action: &TurnAction) -> EngineOu
         TurnAction::Move {
             investigator,
             destination,
-        } => actions::move_action(cx, *investigator, *destination),
-        TurnAction::Investigate { investigator } => actions::investigate(cx, *investigator),
-        TurnAction::Resource { investigator } => actions::resource_action(cx, *investigator),
-        TurnAction::Draw { investigator } => cards::draw(cx, *investigator),
+        } => actions::r#move::handle(cx, *investigator, *destination),
+        TurnAction::Investigate { investigator } => actions::investigate::handle(cx, *investigator),
+        TurnAction::Resource { investigator } => actions::resource::handle(cx, *investigator),
+        TurnAction::Draw { investigator } => actions::draw::handle(cx, *investigator),
         TurnAction::Fight {
             investigator,
             enemy,
-        } => actions::fight(cx, *investigator, *enemy),
+        } => actions::fight::handle(cx, *investigator, *enemy),
         TurnAction::Evade {
             investigator,
             enemy,
-        } => actions::evade(cx, *investigator, *enemy),
+        } => actions::evade::handle(cx, *investigator, *enemy),
         TurnAction::Engage {
             investigator,
             enemy,
-        } => actions::engage(cx, *investigator, *enemy),
+        } => actions::engage::handle(cx, *investigator, *enemy),
         TurnAction::PlayCard {
             investigator,
             hand_index,
@@ -326,7 +325,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // The entered-location half of a Move, re-exposed once the left
             // location's queued `LeftLocation` abilities resolved (#569):
             // auto-engage at the destination and emit `EnteredLocation`.
-            Continuation::MoveEnter(_) => actions::resume_move_enter(cx),
+            Continuation::MoveEnter(_) => actions::r#move::resume_move_enter(cx),
             // A per-drawer Mythos surge chain: draw the next card (first step or
             // a pending surge), or — chain over — pop itself and advance the
             // loop to the next drawer / post-1.4 window.
@@ -423,8 +422,8 @@ fn scenario_end_cancels_top(state: &GameState) -> bool {
 }
 
 /// Resume a parked [`ActionResolution`](crate::state::Continuation::ActionResolution)
-/// frame (#293): pop it, run the §D re-validation gate, then dispatch to the
-/// action's primary effect. The gate suppresses the primary (returns `Done`,
+/// frame (#293): pop it, run the §D re-validation gate, then perform the action
+/// ([`actions::take::perform`]). The gate suppresses the primary (returns `Done`,
 /// leaving the spent action + AoO/window effects in place) if the actor was
 /// defeated mid-action; each primary effect additionally re-checks its own
 /// target precondition. Called only by [`drive`] with such a frame on top.
@@ -462,37 +461,7 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
         }
         return EngineOutcome::Done;
     }
-    match resume {
-        ActionResume::Move { destination } => {
-            actions::move_primary_effect(cx, investigator, destination)
-        }
-        ActionResume::Investigate => actions::investigate_primary_effect(cx, investigator),
-        ActionResume::Resource => actions::resource_primary_effect(cx, investigator),
-        ActionResume::Engage { enemy } => actions::engage_primary_effect(cx, investigator, enemy),
-        ActionResume::Draw => cards::draw_primary_effect(cx, investigator),
-        ActionResume::ActivateAbility {
-            source,
-            designator,
-            effect,
-        } => abilities::resume_activate_ability(
-            cx,
-            investigator,
-            source,
-            designator.as_ref(),
-            &effect,
-        ),
-        ActionResume::PlayCard { card } => {
-            let Some(card) = card else {
-                unreachable!(
-                    "resume_action_resolution: the play frame for {investigator:?} lost its \
-                     card while they are still Active — elimination is the only thing that \
-                     empties an ActionResolution frame (see \
-                     Continuation::take_play_in_progress), and it flips status first"
-                );
-            };
-            cards::resume_play_card(cx, investigator, card)
-        }
-    }
+    actions::take::perform(cx, investigator, resume)
 }
 
 /// Seat a roster and drive to the first `AwaitingInput` (the setup mulligan),
@@ -545,68 +514,6 @@ pub(super) enum PlayDestination {
     InPlay,
     /// Card moves to the discard after on-play effects resolve (event).
     Discard,
-}
-
-/// Validated payload returned by [`check_play_card`] on success.
-/// Carries the data `play_card`'s mutation step needs without
-/// re-running the validation.
-///
-/// `is_fast` is consumed by [`any_fast_play_eligible`]; `abilities` is kept for
-/// future consumers (e.g. reaction-window dispatch).
-///
-/// The card's destination is deliberately **not** here: commencing a play is
-/// destination-agnostic (asset and event alike leave hand at RR Appendix I step
-/// 3), and the disposal that needs it re-derives it from the code at step 4
-/// (#604).
-///
-/// `#[allow(dead_code)]` covers `abilities` (not yet read outside validation)
-/// and suppresses the rustc `dead_code` lint on struct fields that are only read
-/// by a `pub(super)` function not yet wired up.
-#[derive(Debug)]
-#[allow(dead_code)]
-pub(crate) struct PlayCheckResult {
-    pub abilities: Vec<Ability>,
-    pub is_fast: bool,
-    pub card_type: CardType,
-}
-
-/// Validated payload returned by [`check_activate_ability`] on success.
-/// Carries the data `activate_ability`'s mutation step needs without
-/// re-running the validation.
-#[derive(Debug)]
-#[allow(dead_code)] // Fields consumed by any_fast_play_eligible in T05.
-pub(super) struct ActivateCheckResult {
-    /// The activation as the initiation gate checked it — the source card's
-    /// code, the activating investigator, the ability's address and its source.
-    /// What `initiation::record_initiation` counts the use against, so the
-    /// handler records the very candidate the gate approved.
-    pub candidate: ResolutionCandidate,
-    /// Action points this activation costs: the ability's
-    /// `Trigger::Activated` cost **plus** any `ExtraActionCost` surcharge on
-    /// the action class its designator names (#754). What the affordability
-    /// check compares and what payment spends — the printed cost alone is not
-    /// what the investigator pays.
-    pub action_cost: u8,
-    /// The `first_each_round` surcharge sources that `action_cost` charged
-    /// for, to mark spent once the activation commits. Empty unless the
-    /// surcharge applied. Kept beside the cost so the peek stays read-only
-    /// for validate-first.
-    pub surcharge_sources: Vec<CardInstanceId>,
-    /// The bold action designator the ability prints, if any — what the
-    /// attack-of-opportunity exemption reads (#696) and what names the action
-    /// class the surcharge keys on (#754).
-    pub designator: Option<ActionDesignator>,
-    /// Payment costs (beyond the action cost).
-    pub costs: Vec<Cost>,
-    /// The effect to dispatch after paying costs.
-    pub effect: Effect,
-    /// The *"Limit X per \[period\]"* cap, if the ability prints one — what
-    /// `initiation::record_initiation` counts the activation against.
-    pub usage_limit: Option<UsageLimit>,
-    /// Whether the source card was exhausted at validation time —
-    /// load-bearing for activated abilities whose payment includes
-    /// `Cost::Exhaust`.
-    pub source_exhausted: bool,
 }
 
 /// Resume the open window at the top of the stack: drive its reaction

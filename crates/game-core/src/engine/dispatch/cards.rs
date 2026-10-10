@@ -8,18 +8,19 @@ use card_dsl::dsl::{Ability, Effect, Trigger};
 
 use crate::action::InputResponse;
 use crate::card_registry;
+use crate::engine::dispatch::actions::take::{self, ActionDescription};
 use crate::engine::dispatch::emit::TimingEvent;
+use crate::engine::dispatch::legality::PlayCheckResult;
 use crate::engine::dispatch::{
-    actions, combat, elimination, emit, encounter, phases, reaction_windows, slots, threat_area,
-    PlayCheckResult, PlayDestination,
+    elimination, emit, encounter, legality, phases, slots, threat_area, PlayDestination,
 };
 use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    ActionResolutionFrame, ActionResume, AssetEntry, CardCode, CardInPlay, DiscardPile,
-    InvestigatorId, MulliganFrame, Owner, PlayFromHandFrame, Zone,
+    ActionResume, AssetEntry, CardCode, CardInPlay, DiscardPile, InvestigatorId, MulliganFrame,
+    Owner, PlayFromHandFrame, Zone,
 };
 
 /// Starting hand size at scenario setup. Per the Rules Reference,
@@ -434,7 +435,7 @@ pub(super) fn pay_play_cost(cx: &mut Cx, investigator: InvestigatorId, code: &Ca
 }
 
 /// Reshuffle the discard pile back into the deck for the named
-/// investigator. Used by [`draw`] when the deck runs empty. Drains
+/// investigator. Used by [`draw`](actions::draw::handle) when the deck runs empty. Drains
 /// `discard` into `deck`, then calls [`shuffle_player_deck`] (which
 /// emits [`Event::DeckShuffled`] when ≥ 2 cards land in the deck).
 fn reshuffle_discard_into_deck(cx: &mut Cx, investigator: InvestigatorId) {
@@ -536,59 +537,6 @@ pub(in crate::engine) fn draw_with_deckout(cx: &mut Cx, investigator: Investigat
     // already used; it now also governs the `Effect::DrawCards` path, which
     // previously ran the revelation with no horror in between.
     resolve_drawn_weaknesses(cx, investigator);
-}
-
-/// Handler for `TurnAction::Draw`.
-///
-/// Validate-first: Investigation phase, investigator is active and
-/// `Status::Active`, has at least 1 action remaining. Then spend the
-/// action and resolve the draw per the Rules Reference:
-///
-/// - **Non-empty deck**: draw 1 to hand.
-/// - **Empty deck, non-empty discard**: shuffle discard into deck,
-///   draw 1, then take 1 horror — the horror penalty fires when an
-///   investigator with an empty deck needs to draw.
-/// - **Both empty**: no shuffle (per the Rules Reference's "any
-///   ability that would shuffle a discard pile of zero cards back
-///   into a deck does not shuffle the deck"), no card drawn — but
-///   the 1 horror still applies. The rules don't explicitly address
-///   this corner case; we apply the horror as the safer reading
-///   ("would-draw-from-empty triggers the penalty"), and the case
-///   is rare enough in practice (only high-cycle decks burn through
-///   both zones) that the difference is mostly theoretical.
-///
-/// The draw logic itself is delegated to [`draw_primary_effect`] after
-/// the attack-of-opportunity loop runs as an
-/// [`ActionResolution`](crate::state::Continuation::ActionResolution) frame (#293).
-pub(super) fn draw(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    if let Err(rejection) = actions::validate_basic_action(cx.state, "Draw", investigator) {
-        return rejection;
-    }
-
-    // Mutate-second: spend the action, then park the draw over its
-    // attack-of-opportunity loop (#293). Push the resume frame, then
-    // drive the AoO. Draw is NOT on the AoO-exempt list (only Fight,
-    // Evade, Parley, Resign are), so each ready engaged enemy attacks
-    // before the card is drawn (RR p.5).
-    actions::spend_one_action(cx, investigator);
-    cx.state.continuations.push(ActionResolutionFrame {
-        investigator,
-        resume: ActionResume::Draw,
-    });
-    combat::drive_aoo(cx, investigator)
-}
-
-/// The draw half of a Draw action, run after its `AoO` loop (#293).
-///
-/// Draw has no target precondition (unlike Move or Investigate), so
-/// there is no secondary precondition re-check here. The `resume_action_resolution`
-/// `Status::Active` gate upstream already guarantees the investigator is
-/// present and Active; a missing map entry here is therefore a
-/// state-corruption invariant violation — it must panic (via
-/// `draw_one_with_deckout`'s `expect`), never silently return `Done`.
-pub(super) fn draw_primary_effect(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    draw_one_with_deckout(cx, investigator);
-    EngineOutcome::Done
 }
 
 /// Push a [`Continuation::Mulligan`](crate::state::Continuation::Mulligan)
@@ -931,7 +879,7 @@ pub(super) fn play_card(
         abilities: _,
         is_fast,
         card_type: _,
-    } = match reaction_windows::check_play_card(cx.state, investigator, hand_index) {
+    } = match legality::check_play_card(cx.state, investigator, hand_index) {
         Ok(r) => r,
         Err(reason) => return EngineOutcome::Rejected { reason },
     };
@@ -947,38 +895,26 @@ pub(super) fn play_card(
         .hand[idx]
         .clone();
 
-    // Mutate. A non-fast play costs one action (validated in `check_play_card`),
-    // spent before the card is announced — RR p.5 / the Dynamite Blast FAQ
-    // ("spend an action and pay the cost, then … attack of opportunity"). Fast
-    // plays are not actions (#378).
-    if !is_fast {
-        actions::spend_one_action(cx, investigator);
+    // Mutate. A fast play is not an action (`glossary/Fast.md`: *"A fast card
+    // does not cost an action to be played and is not played using the "Play"
+    // action."*), so it pays its resource cost, commences and resolves at once.
+    if is_fast {
+        pay_play_cost(cx, investigator, &code);
+        let card = commence_play(cx, investigator, idx);
+        return complete_play(cx, investigator, card);
     }
-    // Pay the resource cost (RR p.22): both Fast and non-Fast plays pay it —
-    // Fast only skips the *action* cost. Affordability was validated in
-    // `check_play_card`; the deduction happens before the card is announced and
-    // before any attack of opportunity resolves (#501).
-    pay_play_cost(cx, investigator, &code);
-    // The card is announced (`CardPlayed`) and commences being played — asset or
-    // event alike it leaves hand here and rides the frames below until it is
-    // placed (RR Appendix I step 3 → 4).
-    let card = commence_play(cx, investigator, idx);
-
-    // RR p.5: playing a card is an action, so a non-fast play provokes an AoO
-    // from each engaged ready enemy — fired *after* the card is announced + cost
-    // paid and *before* its effect resolves (Dynamite Blast 01024 FAQ). Park the
-    // rest of the play — the card itself included — on an `ActionResolution`
-    // frame and drive the AoO loop (which may open the Dodge cancel / Guard Dog
-    // soak windows); `complete_play` runs on resume. Fast plays are not actions
-    // and resolve immediately. (#378.)
-    if !is_fast {
-        cx.state.continuations.push(ActionResolutionFrame {
-            investigator,
-            resume: ActionResume::PlayCard { card: Some(card) },
-        });
-        return combat::drive_aoo(cx, investigator);
-    }
-    complete_play(cx, investigator, card)
+    // A non-fast play is taken as an action: the step pays its one action, and
+    // provokes attacks of opportunity before the play completes on resume. Its
+    // hook pays the resource cost (RR p.22, before any attack resolves, #501)
+    // and commences the play: `CardPlayed` is announced and the card leaves hand
+    // to ride the frames until it is placed (RR Appendix I step 3 → 4). The
+    // card itself rides the `ActionResolution` frame through the attacks.
+    let description = ActionDescription::play(code.clone());
+    take::take(cx, investigator, &description, |cx| {
+        pay_play_cost(cx, investigator, &code);
+        let card = commence_play(cx, investigator, idx);
+        Ok(ActionResume::PlayCard { card: Some(card) })
+    })
 }
 
 /// Move the asset **instance** `card` into `investigator`'s play area (RR
