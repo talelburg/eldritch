@@ -1,9 +1,17 @@
 use super::*;
 
-/// A tag the walker should report, by kind.
+/// A tag the walker should report as an [`Effect::Native`].
 fn effect_ref(tag: &str) -> NativeRef<'_> {
     NativeRef {
         kind: NativeKind::Effect,
+        tag,
+    }
+}
+
+/// A tag the walker should report as a [`Condition::Native`].
+fn condition_ref(tag: &str) -> NativeRef<'_> {
+    NativeRef {
+        kind: NativeKind::Condition,
         tag,
     }
 }
@@ -54,25 +62,13 @@ fn a_native_condition_inside_an_int_expr_cond_is_reported_as_a_condition() {
         InvestigatorTarget::You,
         IntExpr::cond(native_condition("x:in-cond"), 2, 1),
     ));
-    assert_eq!(
-        ability.native_refs(),
-        [NativeRef {
-            kind: NativeKind::Condition,
-            tag: "x:in-cond",
-        }]
-    );
+    assert_eq!(ability.native_refs(), [condition_ref("x:in-cond")]);
 }
 
 #[test]
 fn a_native_condition_inside_an_if_is_reported_as_a_condition() {
     let ability = on_play(if_(native_condition("x:in-if"), discard_self()));
-    assert_eq!(
-        ability.native_refs(),
-        [NativeRef {
-            kind: NativeKind::Condition,
-            tag: "x:in-if",
-        }]
-    );
+    assert_eq!(ability.native_refs(), [condition_ref("x:in-if")]);
 }
 
 #[test]
@@ -104,11 +100,5 @@ fn a_native_condition_carried_by_an_action_designator_is_reported_as_a_condition
         vec![],
         seq([]),
     );
-    assert_eq!(
-        ability.native_refs(),
-        [NativeRef {
-            kind: NativeKind::Condition,
-            tag: "x:in-designator",
-        }]
-    );
+    assert_eq!(ability.native_refs(), [condition_ref("x:in-designator")]);
 }

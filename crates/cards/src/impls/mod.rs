@@ -275,7 +275,7 @@ pub const ALL: &[CardRecord] = &[
 ];
 
 /// The record registered for `code`.
-fn record(code: &str) -> Option<&'static CardRecord> {
+pub(crate) fn record(code: &str) -> Option<&'static CardRecord> {
     ALL.iter().find(|record| record.code == code)
 }
 
@@ -300,11 +300,14 @@ pub fn back_abilities_for(code: &str) -> Option<Vec<Ability>> {
     record(code)?.back_abilities.map(|back| back())
 }
 
-/// The fn registered under `tag` in the namespace `slice` picks out of each
-/// record.
-fn native<F: Copy>(tag: &str, slice: fn(&CardRecord) -> &'static [(&'static str, F)]) -> Option<F> {
+/// The fn registered under `tag` in the namespace `namespace` picks out of
+/// each record.
+fn registered_native<F: Copy>(
+    tag: &str,
+    namespace: fn(&CardRecord) -> &'static [(&'static str, F)],
+) -> Option<F> {
     ALL.iter()
-        .flat_map(slice)
+        .flat_map(namespace)
         .find(|(registered, _)| *registered == tag)
         .map(|(_, f)| *f)
 }
@@ -313,20 +316,20 @@ fn native<F: Copy>(tag: &str, slice: fn(&CardRecord) -> &'static [(&'static str,
 /// card-local Rust fn that implements it; returns `None` for unregistered tags.
 #[must_use]
 pub fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    native(tag, |record| record.native_effects)
+    registered_native(tag, |record| record.native_effects)
 }
 
 /// Resolve a native eligibility-predicate tag to its card-local predicate;
 /// returns `None` for unregistered tags.
 #[must_use]
 pub fn native_eligibility_for(tag: &str) -> Option<EligibilityFn> {
-    native(tag, |record| record.native_eligibility)
+    registered_native(tag, |record| record.native_eligibility)
 }
 
 /// Resolve a [`Condition::Native`](card_dsl::dsl::Condition::Native) tag to its
-/// card-local predicate; returns `None` for unregistered tags. Its only
-/// registrants are Machete 01020 and 01107 — see [`CardRecord::conditions`].
+/// card-local predicate; returns `None` for unregistered tags. See
+/// [`CardRecord::conditions`] before registering one.
 #[must_use]
 pub fn native_condition_for(tag: &str) -> Option<NativeConditionFn> {
-    native(tag, |record| record.native_conditions)
+    registered_native(tag, |record| record.native_conditions)
 }

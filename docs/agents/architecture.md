@@ -48,7 +48,7 @@ An `OnEvent` ability declares the **timing cell** its printed trigger word names
 
 Cards are **Rust source** (typed, compiler-checked), not JSON: each is a module `crates/cards/src/impls/<name>.rs` exposing `CODE: &str`, `abilities() -> Vec<Ability>` and a `CARD` registration record listed in `impls::ALL`; the `impls` module header gives the add-a-card procedure. Cards needing primitives the DSL lacks get a Rust impl — and a primitive is added only once a second card wants the same pattern ([`standards.md`](standards.md)).
 
-A card is **playable** iff it has an `abilities()` impl (`cards::is_playable(code)`); unimplemented cards appear in deckbuilding but are refused by the deck-import gate (Phase 9). `PlayCard` on an unimplemented card rejects loudly. On play: assets land in `cards_in_play` and stay (their `Trigger::Constant` abilities contribute via the registry while in play); events run their `OnPlay` effects then move to `discard` (emit `CardDiscarded { from: Zone::Hand, … }`). Every other `CardType` rejects.
+A card is **playable** iff it has a record in `cards::impls::ALL` (`cards::is_playable(code)`); unimplemented cards appear in deckbuilding but are refused by the deck-import gate (Phase 9). `PlayCard` on an unimplemented card rejects loudly. On play: assets land in `cards_in_play` and stay (their `Trigger::Constant` abilities contribute via the registry while in play); events run their `OnPlay` effects then move to `discard` (emit `CardDiscarded { from: Zone::Hand, … }`). Every other `CardType` rejects.
 
 ## Card-data pipeline
 

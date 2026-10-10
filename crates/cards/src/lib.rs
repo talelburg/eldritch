@@ -70,7 +70,7 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
 /// but are refused by the deck-import gate.
 #[must_use]
 pub fn is_playable(code: &str) -> bool {
-    impls::ALL.iter().any(|record| record.code == code)
+    impls::record(code).is_some()
 }
 
 /// Adapter from [`CardCode`] to [`by_code`].
@@ -123,6 +123,10 @@ pub const REGISTRY: CardRegistry = CardRegistry {
 #[cfg(test)]
 mod tests {
     use card_dsl::card_data::{CardType, Class};
+    use std::collections::HashSet;
+    use std::fs;
+    use std::path::Path;
+
     use card_dsl::dsl::NativeKind;
 
     use super::*;
@@ -316,8 +320,8 @@ mod tests {
 
     #[test]
     fn no_code_or_tag_is_registered_twice() {
-        let mut codes = std::collections::HashSet::new();
-        let mut tags = std::collections::HashSet::new();
+        let mut codes = HashSet::new();
+        let mut tags = HashSet::new();
         for record in impls::ALL {
             assert!(
                 codes.insert(record.code),
@@ -354,9 +358,9 @@ mod tests {
     /// also catches that half of the two edits.
     #[test]
     fn every_card_module_has_an_all_entry() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/impls");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/impls");
         let mut modules = 0;
-        for entry in std::fs::read_dir(&dir).expect("src/impls is readable") {
+        for entry in fs::read_dir(&dir).expect("src/impls is readable") {
             let path = entry.expect("directory entry").path();
             let Some(module) = path.file_stem().and_then(|s| s.to_str()) else {
                 continue;
@@ -364,14 +368,14 @@ mod tests {
             if path.extension().is_none_or(|e| e != "rs") || module == "mod" {
                 continue;
             }
-            let source = std::fs::read_to_string(&path).expect("card module is readable");
+            let source = fs::read_to_string(&path).expect("card module is readable");
             let code = source
                 .lines()
                 .find_map(|line| line.strip_prefix("pub const CODE: &str = \""))
                 .and_then(|rest| rest.strip_suffix("\";"))
                 .unwrap_or_else(|| panic!("impls/{module}.rs declares no `pub const CODE`"));
             assert!(
-                impls::ALL.iter().any(|record| record.code == code),
+                impls::record(code).is_some(),
                 "impls/{module}.rs ({code}) has no entry in impls::ALL"
             );
             modules += 1;

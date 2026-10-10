@@ -176,6 +176,7 @@ mod tests {
     use game_core::test_support;
 
     use super::*;
+    use crate::impls;
 
     #[test]
     fn revelation_places_with_three_clues_plus_interrupt_and_gameend() {
@@ -228,7 +229,7 @@ mod tests {
         );
 
         // Predicate: true while the source instance holds clues, false at 0.
-        let pred = crate::impls::native_eligibility_for("01007:has-clues").expect("registered");
+        let pred = impls::native_eligibility_for("01007:has-clues").expect("registered");
         let mut inv = test_support::test_investigator(1);
         let mut card = CardInPlay::enter_play(
             CardCode::new("01007"),
