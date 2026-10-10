@@ -434,7 +434,7 @@ pub(super) fn pay_play_cost(cx: &mut Cx, investigator: InvestigatorId, code: &Ca
 }
 
 /// Reshuffle the discard pile back into the deck for the named
-/// investigator. Used by [`draw`] when the deck runs empty. Drains
+/// investigator. Used by [`draw`](actions::draw::draw) when the deck runs empty. Drains
 /// `discard` into `deck`, then calls [`shuffle_player_deck`] (which
 /// emits [`Event::DeckShuffled`] when ≥ 2 cards land in the deck).
 fn reshuffle_discard_into_deck(cx: &mut Cx, investigator: InvestigatorId) {
@@ -536,59 +536,6 @@ pub(in crate::engine) fn draw_with_deckout(cx: &mut Cx, investigator: Investigat
     // already used; it now also governs the `Effect::DrawCards` path, which
     // previously ran the revelation with no horror in between.
     resolve_drawn_weaknesses(cx, investigator);
-}
-
-/// Handler for `TurnAction::Draw`.
-///
-/// Validate-first: Investigation phase, investigator is active and
-/// `Status::Active`, has at least 1 action remaining. Then spend the
-/// action and resolve the draw per the Rules Reference:
-///
-/// - **Non-empty deck**: draw 1 to hand.
-/// - **Empty deck, non-empty discard**: shuffle discard into deck,
-///   draw 1, then take 1 horror — the horror penalty fires when an
-///   investigator with an empty deck needs to draw.
-/// - **Both empty**: no shuffle (per the Rules Reference's "any
-///   ability that would shuffle a discard pile of zero cards back
-///   into a deck does not shuffle the deck"), no card drawn — but
-///   the 1 horror still applies. The rules don't explicitly address
-///   this corner case; we apply the horror as the safer reading
-///   ("would-draw-from-empty triggers the penalty"), and the case
-///   is rare enough in practice (only high-cycle decks burn through
-///   both zones) that the difference is mostly theoretical.
-///
-/// The draw logic itself is delegated to [`draw_primary_effect`] after
-/// the attack-of-opportunity loop runs as an
-/// [`ActionResolution`](crate::state::Continuation::ActionResolution) frame (#293).
-pub(super) fn draw(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    if let Err(rejection) = actions::validate_basic_action(cx.state, "Draw", investigator) {
-        return rejection;
-    }
-
-    // Mutate-second: spend the action, then park the draw over its
-    // attack-of-opportunity loop (#293). Push the resume frame, then
-    // drive the AoO. Draw is NOT on the AoO-exempt list (only Fight,
-    // Evade, Parley, Resign are), so each ready engaged enemy attacks
-    // before the card is drawn (RR p.5).
-    actions::spend_one_action(cx, investigator);
-    cx.state.continuations.push(ActionResolutionFrame {
-        investigator,
-        resume: ActionResume::Draw,
-    });
-    combat::drive_aoo(cx, investigator)
-}
-
-/// The draw half of a Draw action, run after its `AoO` loop (#293).
-///
-/// Draw has no target precondition (unlike Move or Investigate), so
-/// there is no secondary precondition re-check here. The `resume_action_resolution`
-/// `Status::Active` gate upstream already guarantees the investigator is
-/// present and Active; a missing map entry here is therefore a
-/// state-corruption invariant violation — it must panic (via
-/// `draw_one_with_deckout`'s `expect`), never silently return `Done`.
-pub(super) fn draw_primary_effect(cx: &mut Cx, investigator: InvestigatorId) -> EngineOutcome {
-    draw_one_with_deckout(cx, investigator);
-    EngineOutcome::Done
 }
 
 /// Push a [`Continuation::Mulligan`](crate::state::Continuation::Mulligan)

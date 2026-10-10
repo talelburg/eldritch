@@ -80,22 +80,26 @@ pub(crate) fn dispatch_turn_action(cx: &mut Cx, action: &TurnAction) -> EngineOu
         TurnAction::Move {
             investigator,
             destination,
-        } => actions::move_action(cx, *investigator, *destination),
-        TurnAction::Investigate { investigator } => actions::investigate(cx, *investigator),
-        TurnAction::Resource { investigator } => actions::resource_action(cx, *investigator),
-        TurnAction::Draw { investigator } => cards::draw(cx, *investigator),
+        } => actions::move_action::move_action(cx, *investigator, *destination),
+        TurnAction::Investigate { investigator } => {
+            actions::investigate::investigate(cx, *investigator)
+        }
+        TurnAction::Resource { investigator } => {
+            actions::resource::resource_action(cx, *investigator)
+        }
+        TurnAction::Draw { investigator } => actions::draw::draw(cx, *investigator),
         TurnAction::Fight {
             investigator,
             enemy,
-        } => actions::fight(cx, *investigator, *enemy),
+        } => actions::fight::fight(cx, *investigator, *enemy),
         TurnAction::Evade {
             investigator,
             enemy,
-        } => actions::evade(cx, *investigator, *enemy),
+        } => actions::evade::evade(cx, *investigator, *enemy),
         TurnAction::Engage {
             investigator,
             enemy,
-        } => actions::engage(cx, *investigator, *enemy),
+        } => actions::engage::engage(cx, *investigator, *enemy),
         TurnAction::PlayCard {
             investigator,
             hand_index,
@@ -326,7 +330,7 @@ fn drive_frames(cx: &mut Cx) -> EngineOutcome {
             // The entered-location half of a Move, re-exposed once the left
             // location's queued `LeftLocation` abilities resolved (#569):
             // auto-engage at the destination and emit `EnteredLocation`.
-            Continuation::MoveEnter(_) => actions::resume_move_enter(cx),
+            Continuation::MoveEnter(_) => actions::move_action::resume_move_enter(cx),
             // A per-drawer Mythos surge chain: draw the next card (first step or
             // a pending surge), or — chain over — pop itself and advance the
             // loop to the next drawer / post-1.4 window.
@@ -464,12 +468,16 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
     }
     match resume {
         ActionResume::Move { destination } => {
-            actions::move_primary_effect(cx, investigator, destination)
+            actions::move_action::move_primary_effect(cx, investigator, destination)
         }
-        ActionResume::Investigate => actions::investigate_primary_effect(cx, investigator),
-        ActionResume::Resource => actions::resource_primary_effect(cx, investigator),
-        ActionResume::Engage { enemy } => actions::engage_primary_effect(cx, investigator, enemy),
-        ActionResume::Draw => cards::draw_primary_effect(cx, investigator),
+        ActionResume::Investigate => {
+            actions::investigate::investigate_primary_effect(cx, investigator)
+        }
+        ActionResume::Resource => actions::resource::resource_primary_effect(cx, investigator),
+        ActionResume::Engage { enemy } => {
+            actions::engage::engage_primary_effect(cx, investigator, enemy)
+        }
+        ActionResume::Draw => actions::draw::draw_primary_effect(cx, investigator),
         ActionResume::ActivateAbility {
             source,
             designator,

@@ -607,7 +607,7 @@ fn resolve_left_location(cx: &mut Cx, event: &TimingEvent) -> EngineOutcome {
     else {
         unreachable!("resolve_left_location: not a LeftLocation event: {event:?}");
     };
-    actions::resolve_departure(cx, *investigator, *location, *destination);
+    actions::move_action::resolve_departure(cx, *investigator, *location, *destination);
     EngineOutcome::Done
 }
 
