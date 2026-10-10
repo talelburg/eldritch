@@ -3,7 +3,9 @@
 //! opportunity. Every action is taken through [`take`]: the basic actions, a
 //! non-fast play, and an action-cost ability. A fast play or fast ability spends
 //! no action, so it takes none and never reaches the step. The turn menu asks
-//! [`check`] what taking a basic action would cost.
+//! [`check`] what taking a basic action would cost, and the play and activation
+//! validators ask it whether a non-fast play or an action-cost ability can be
+//! afforded.
 //!
 //! `glossary/Action.md`: *"When performing an action, all costs of the action
 //! are first paid. Then, the consequences of the action resolve."* And
@@ -377,11 +379,11 @@ pub(in crate::engine::dispatch) fn perform(
 ///
 /// [`check`] and [`take`] read it for every action they price, an activation
 /// included, whose bold designator names the class via
-/// [`ActionDesignator::action_class`] (#754). The activation validator reads it
-/// too, to refuse an activation the investigator can't afford. Sharing it is the point: a
-/// surcharge only one path applies is the bug that made shooting a weapon
-/// cheaper than punching.
-pub(crate) fn action_surcharge(
+/// [`ActionDesignator::action_class`] (#754). Nothing outside the step prices a
+/// surcharge: the play and activation validators ask [`check`]. One pricing is
+/// the point: a surcharge only one path applies is the bug that made shooting a
+/// weapon cheaper than punching.
+fn action_surcharge(
     state: &GameState,
     investigator: InvestigatorId,
     action_class: ActionClass,

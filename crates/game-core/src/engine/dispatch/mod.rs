@@ -8,9 +8,6 @@
 //! human-initiated actions, [`apply_engine_record`] for engine-emitted
 //! ones.
 
-use card_dsl::card_data::CardType;
-use card_dsl::dsl::{Ability, ActionDesignator, Cost, Effect, UsageLimit};
-
 use crate::action::{EngineRecord, InputResponse, PlayerAction, RosterEntry};
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::enumerate::TurnAction;
@@ -20,7 +17,7 @@ use crate::engine::outcome::{
 use crate::engine::{enumerate, evaluator, Cx};
 use crate::state::{
     ActionResolutionFrame, ActionResume, Continuation, FastWindowFrame, FrameActivity, GameState,
-    InvestigatorTurnFrame, ResolutionCandidate, ScenarioEndFrame, ScenarioEndStep, Status,
+    InvestigatorTurnFrame, ScenarioEndFrame, ScenarioEndStep, Status,
 };
 pub(crate) use control::take_control;
 
@@ -51,6 +48,9 @@ pub(super) mod elimination;
 pub(super) mod encounter;
 pub(super) mod forced_triggers;
 pub(crate) mod hunters;
+// Play and activate legality: the validators the handlers, the turn menu and
+// the Fast-window enumeration ask.
+pub(crate) mod legality;
 mod trigger_scan;
 // The initiation gate (ADR 0017): every play and ability path asks it whether.
 mod initiation;
@@ -518,62 +518,6 @@ pub(super) enum PlayDestination {
     InPlay,
     /// Card moves to the discard after on-play effects resolve (event).
     Discard,
-}
-
-/// Validated payload returned by [`check_play_card`] on success.
-/// Carries the data `play_card`'s mutation step needs without
-/// re-running the validation.
-///
-/// `is_fast` is consumed by [`any_fast_play_eligible`]; `abilities` is kept for
-/// future consumers (e.g. reaction-window dispatch).
-///
-/// The card's destination is deliberately **not** here: commencing a play is
-/// destination-agnostic (asset and event alike leave hand at RR Appendix I step
-/// 3), and the disposal that needs it re-derives it from the code at step 4
-/// (#604).
-///
-/// `#[allow(dead_code)]` covers `abilities` (not yet read outside validation)
-/// and suppresses the rustc `dead_code` lint on struct fields that are only read
-/// by a `pub(super)` function not yet wired up.
-#[derive(Debug)]
-#[allow(dead_code)]
-pub(crate) struct PlayCheckResult {
-    pub abilities: Vec<Ability>,
-    pub is_fast: bool,
-    pub card_type: CardType,
-}
-
-/// Validated payload returned by [`check_activate_ability`] on success.
-/// Carries the data `activate_ability`'s mutation step needs without
-/// re-running the validation.
-#[derive(Debug)]
-#[allow(dead_code)] // Fields consumed by any_fast_play_eligible in T05.
-pub(super) struct ActivateCheckResult {
-    /// The activation as the initiation gate checked it — the source card's
-    /// code, the activating investigator, the ability's address and its source.
-    /// What `initiation::record_initiation` counts the use against, so the
-    /// handler records the very candidate the gate approved.
-    pub candidate: ResolutionCandidate,
-    /// The action points the ability prints (its `Trigger::Activated` cost),
-    /// without any surcharge. Taking the activation as an action adds the
-    /// `ExtraActionCost` surcharge on the class its designator names (#754),
-    /// pays the total and marks the surcharge sources.
-    pub action_cost: u8,
-    /// The bold action designator the ability prints, if any — what the
-    /// attack-of-opportunity exemption reads (#696) and what names the action
-    /// class the surcharge keys on (#754).
-    pub designator: Option<ActionDesignator>,
-    /// Payment costs (beyond the action cost).
-    pub costs: Vec<Cost>,
-    /// The effect to dispatch after paying costs.
-    pub effect: Effect,
-    /// The *"Limit X per \[period\]"* cap, if the ability prints one — what
-    /// `initiation::record_initiation` counts the activation against.
-    pub usage_limit: Option<UsageLimit>,
-    /// Whether the source card was exhausted at validation time —
-    /// load-bearing for activated abilities whose payment includes
-    /// `Cost::Exhaust`.
-    pub source_exhausted: bool,
 }
 
 /// Resume the open window at the top of the stack: drive its reaction
