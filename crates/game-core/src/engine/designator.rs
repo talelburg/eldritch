@@ -13,29 +13,27 @@
 //! check only one of the paths applies is precisely the bug shape #754 was for
 //! the action surcharge.
 //!
-//! Two levels, because the two ways of taking an action ask slightly different
-//! questions:
+//! [`can_perform`] answers *"can this designated ability initiate at all"* —
+//! whether **some** legal target exists, never which one. Its caller is the
+//! activation validator (`check_activate_ability`), pre-cost, which the
+//! turn-menu enumerator filters through in turn, so menu and handler cannot
+//! disagree about what is offerable.
 //!
-//! - [`can_perform`] answers *"can this designated ability initiate at all"* —
-//!   whether **some** legal target exists, never which one. Its caller is the
-//!   activation validator (`check_activate_ability`), pre-cost, which the
-//!   turn-menu enumerator filters through in turn, so menu and handler cannot
-//!   disagree about what is offerable.
-//! - [`fight_candidates`] and [`investigate_location`] are what it answers
-//!   *from*, and the basic-action handlers read them directly, because a basic
-//!   action names its target up front rather than choosing among them:
-//!   `actions::fight::validate_fight_target` asks whether *this* enemy is in the
-//!   candidate list, which is a question `can_perform` deliberately does not
-//!   ask. Sharing the list rather than the predicate is what keeps a designated
-//!   **Fight** and the basic Fight action agreeing on what a legal target is —
-//!   the evaluator's target grounding reads the same list a third time.
+//! What it answers *from* is the basic action's own `candidates`
+//! (`actions::fight::candidates`, `actions::investigate::candidates`), the one
+//! list the basic action's handler and the turn menu read too. A basic action
+//! names its target up front, so its handler asks whether *this* enemy is in the
+//! list, a question `can_perform` deliberately does not ask. Sharing the list
+//! rather than the predicate is what keeps a designated **Fight** and the basic
+//! Fight action agreeing on what a legal target is; the evaluator's target
+//! grounding reads the same list again.
 
 use std::borrow::Cow;
 
 use card_dsl::dsl::ActionDesignator;
 
-use crate::engine::dispatch::combat;
-use crate::state::{EnemyId, GameState, InvestigatorId, LocationId};
+use crate::engine::dispatch::actions::{fight, investigate};
+use crate::state::{GameState, InvestigatorId};
 
 /// Whether `investigator` can perform the action `designator` names, ignoring
 /// which of several legal targets will end up chosen.
@@ -72,7 +70,7 @@ pub(crate) fn can_perform(
 ) -> Result<(), Cow<'static, str>> {
     match designator {
         ActionDesignator::Fight { .. } => {
-            if fight_candidates(state, investigator).is_empty() {
+            if fight::candidates(state, investigator).is_empty() {
                 return Err(
                     "a Fight ability needs an enemy at your location (none co-located)".into(),
                 );
@@ -80,7 +78,7 @@ pub(crate) fn can_perform(
             Ok(())
         }
         ActionDesignator::Investigate { .. } => {
-            if investigate_location(state, investigator).is_none() {
+            if investigate::candidates(state, investigator).is_none() {
                 return Err(
                     "an Investigate ability needs a revealed location to investigate".into(),
                 );
@@ -114,35 +112,12 @@ pub(crate) fn unimplemented_designator(designator: &ActionDesignator) -> Cow<'st
     .into()
 }
 
-/// The enemies a **Fight** may target: every enemy at `investigator`'s
-/// location, in ascending [`EnemyId`] order.
-///
-/// The same list the evaluator's target grounding offers, so the pre-cost gate
-/// and the pick cannot disagree about what counts as a candidate.
-pub(crate) fn fight_candidates(state: &GameState, investigator: InvestigatorId) -> Vec<EnemyId> {
-    combat::enemies_in_scope(state, investigator, combat::fight_target_scope())
-}
-
-/// The location an **Investigate** would test: `investigator`'s current
-/// location, if it exists and is revealed. `None` is the lapsed/ineligible
-/// case, which reads as a rejection pre-cost and as a suppression on resume.
-pub(crate) fn investigate_location(
-    state: &GameState,
-    investigator: InvestigatorId,
-) -> Option<LocationId> {
-    state
-        .investigators
-        .get(&investigator)
-        .and_then(|inv| inv.current_location)
-        .filter(|id| state.locations.get(id).is_some_and(|loc| loc.revealed))
-}
-
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::IntExpr;
 
     use super::*;
-    use crate::state::GameStateBuilder;
+    use crate::state::{GameStateBuilder, LocationId};
     use crate::test_support;
 
     const ME: InvestigatorId = InvestigatorId(1);

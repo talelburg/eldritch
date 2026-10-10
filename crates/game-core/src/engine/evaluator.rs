@@ -510,7 +510,7 @@ fn perform_designated(
             extra_damage,
         } => perform_designated_fight(cx, eval_ctx, combat_modifier, extra_damage),
         ActionDesignator::Investigate { shroud_modifier } => {
-            let Some(location_id) = designator::investigate_location(cx.state, eval_ctx.controller)
+            let Some(location_id) = actions::investigate::candidates(cx.state, eval_ctx.controller)
             else {
                 return EngineOutcome::Rejected {
                     reason: "Investigate: no revealed location to investigate".into(),
@@ -2051,12 +2051,12 @@ fn ground_enemy_choice(
 
 /// Ground a designated **Fight**'s target against the co-located-enemy list.
 ///
-/// Candidates are `combat::enemies_in_scope` under
-/// [`combat::fight_target_scope`](crate::engine::dispatch::combat::fight_target_scope)
-/// — every enemy *at the controller's location* (not engaged-only), in
-/// ascending [`EnemyId`] order. Per RR you choose an enemy at your location to
-/// attack and need not already be engaged, matching the basic Fight action
-/// (#451). Delegates to [`choice::resolve_grounded_choice`]:
+/// Candidates are the Fight action's own
+/// [`candidates`](crate::engine::dispatch::actions::fight::candidates) — every
+/// enemy *at the controller's location* (not engaged-only), in ascending
+/// [`EnemyId`] order, the list the basic Fight action validates against (#451).
+/// Unlike the basic action, the grounding does not also filter out a malformed
+/// fight value. Delegates to [`choice::resolve_grounded_choice`]:
 /// - 0 candidates → `Rejected` ("Fight: no enemy at your location").
 /// - 1 candidate → auto-bind (no suspend; preserves single-enemy behaviour).
 /// - 2+ candidates → suspend `AwaitingInput { PickSingle }`.
@@ -2068,8 +2068,7 @@ fn ground_fight_target_choice(
     cx: &mut Cx,
     eval_ctx: EvalContext,
 ) -> Result<EvalContext, EngineOutcome> {
-    let candidates =
-        combat::enemies_in_scope(cx.state, eval_ctx.controller, combat::fight_target_scope());
+    let candidates = actions::fight::candidates(cx.state, eval_ctx.controller);
     let id = picked_or_reject(
         choice::resolve_grounded_choice(
             cx.state,

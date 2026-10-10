@@ -1,5 +1,5 @@
-//! The Investigate basic action, and the investigate primary shared with
-//! the designated Investigate.
+//! The Investigate basic action, its candidates, and the investigate primary
+//! shared with the designated Investigate.
 
 use card_dsl::dsl::{IntExpr, SkillTestKind, Stat};
 
@@ -7,11 +7,31 @@ use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind
 use crate::engine::dispatch::skill_test;
 use crate::engine::dispatch::skill_test::InitiatorModifier;
 use crate::engine::outcome::EngineOutcome;
-use crate::engine::{designator, Cx};
+use crate::engine::Cx;
 use crate::state::{
-    AbilitySource, ActionResume, DifficultyBasis, InvestigatorId, LocationId, ModifierTarget,
-    SkillKind, SkillTestFollowUp,
+    AbilitySource, ActionResume, DifficultyBasis, GameState, InvestigatorId, LocationId,
+    ModifierTarget, SkillKind, SkillTestFollowUp,
 };
+
+/// The location an Investigate would test: `investigator`'s current location,
+/// if it exists and is revealed. `glossary/Investigate_Action.md`: *"he or she
+/// makes an intellect test against the shroud value of that location"*. At most
+/// one, so an `Option`.
+///
+/// `None` is the ineligible or lapsed case: it reads as a rejection in the
+/// basic action and pre-cost in the designator gate (`designator::can_perform`),
+/// as a suppression on resume, and as no menu entry. It never panics; a
+/// dangling `current_location` is the handler's to surface loudly, ahead of
+/// asking this. Every Investigate path reads it, the designated
+/// **Investigate**'s perform included, so they agree on what a location has to
+/// be to investigate it (#805).
+pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Option<LocationId> {
+    state
+        .investigators
+        .get(&investigator)
+        .and_then(|inv| inv.current_location)
+        .filter(|id| state.locations.get(id).is_some_and(|loc| loc.revealed))
+}
 
 /// Handler for `TurnAction::Investigate`.
 ///
@@ -69,13 +89,14 @@ pub(in crate::engine::dispatch) fn investigate(
     // a state-corruption invariant violation, not a user-facing
     // rejection — match `end_turn` and `rotate_to_active` and surface
     // it loudly.
-    let location = cx.state.locations.get(&location_id).unwrap_or_else(|| {
-        unreachable!(
-            "Investigate: location {location_id:?} (investigator's current_location) \
-             is not in the locations map; this is a state-corruption invariant violation"
-        )
-    });
-    if !location.revealed {
+    // It panics ahead of the candidates check, which is empty on corrupt state
+    // rather than panicking.
+    assert!(
+        cx.state.locations.contains_key(&location_id),
+        "Investigate: location {location_id:?} (investigator's current_location) \
+         is not in the locations map; this is a state-corruption invariant violation"
+    );
+    if candidates(cx.state, investigator).is_none() {
         return EngineOutcome::Rejected {
             reason: format!("Investigate: location {location_id:?} is not revealed").into(),
         };
@@ -107,10 +128,8 @@ pub(in crate::engine::dispatch) fn investigate_primary_effect(
     );
     // Locationless after the AoO, or the location gone / no longer revealed:
     // the precondition lapsed, so suppress the primary rather than rejecting
-    // (the §D contract). Read through the same helper `can_perform` uses, so
-    // the basic action and a designated **Investigate** agree on what a
-    // location has to be to investigate it (#805).
-    let Some(location_id) = designator::investigate_location(cx.state, investigator) else {
+    // (the §D contract).
+    let Some(location_id) = candidates(cx.state, investigator) else {
         return EngineOutcome::Done;
     };
     // A basic investigation carries no modification — the designated one

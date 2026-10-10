@@ -7,7 +7,44 @@ use crate::engine::dispatch::{emit, hunters, movement, reveal};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::event::Event;
-use crate::state::{ActionResume, EnemyId, InvestigatorId, LocationId, MoveEnterFrame};
+use crate::state::{ActionResume, EnemyId, GameState, InvestigatorId, LocationId, MoveEnterFrame};
+
+/// The destinations a Move may take `investigator` to, in the order their
+/// current location lists its connections. `glossary/Move_Action.md`: *"move
+/// that investigator … to any other location that is marked as a connecting
+/// location on his or her current location"*. A connection to a location not
+/// in state (malformed scenario data) is no destination, and neither is one a
+/// movement barrier blocks (#774): the barrier filters the step, never the
+/// graph, so the connection stays on the map for everything that measures
+/// distance across it.
+///
+/// Read by the basic action's validation, its post-`AoO` re-check, and the turn
+/// menu. Empty for a locationless investigator, and for one whose
+/// `current_location` dangles: that corruption is the handler's to surface
+/// loudly, so the menu offers nothing rather than panicking. A designated
+/// **Move** is not implemented yet (`TODO(#818)`).
+pub(crate) fn candidates(state: &GameState, investigator: InvestigatorId) -> Vec<LocationId> {
+    let Some(from) = state
+        .investigators
+        .get(&investigator)
+        .and_then(|inv| inv.current_location)
+    else {
+        return Vec::new();
+    };
+    let Some(from_loc) = state.locations.get(&from) else {
+        return Vec::new();
+    };
+    from_loc
+        .connections
+        .iter()
+        .copied()
+        .filter(|&dest| {
+            dest != from
+                && state.locations.contains_key(&dest)
+                && movement::investigator_can_enter_location(state, dest)
+        })
+        .collect()
+}
 
 /// Handler for `TurnAction::Move`.
 ///
@@ -43,35 +80,31 @@ pub(in crate::engine::dispatch) fn move_action(
         };
     }
     // current_location is engine-set state, so a dangling reference is
-    // an invariant violation and panics. Connection lists, by contrast,
-    // are scenario-data inputs — a connection pointing at a missing
-    // location is malformed input, not engine corruption, so we
-    // reject. Check destination-in-state BEFORE connections so the
-    // error message is informative when both fail.
+    // an invariant violation and panics, ahead of the candidates check (which
+    // is empty on corrupt state rather than panicking). Connection lists, by
+    // contrast, are scenario-data inputs — a connection pointing at a missing
+    // location is malformed input, not engine corruption, so we reject.
     let from_loc = cx.state.locations.get(&from).unwrap_or_else(|| {
         unreachable!(
             "Move: location {from:?} (investigator's current_location) is not in the \
              locations map; this is a state-corruption invariant violation"
         )
     });
-    if !cx.state.locations.contains_key(&destination) {
-        return EngineOutcome::Rejected {
-            reason: format!("Move: destination {destination:?} is not in state").into(),
+    if !candidates(cx.state, investigator).contains(&destination) {
+        // Say why, destination-in-state first so the message is informative
+        // when several fail. The barrier (#774) is the last reason: the `apply`
+        // seam is submittable directly, so a client that never read the menu,
+        // or read a stale one, must still be refused. The Parlor 01115's
+        // unrevealed back is the only card in the corpus that prints one.
+        let reason = if !cx.state.locations.contains_key(&destination) {
+            format!("Move: destination {destination:?} is not in state")
+        } else if !from_loc.connections.contains(&destination) {
+            format!("Move: {destination:?} is not connected to {from:?}")
+        } else {
+            format!("Move: movement into {destination:?} is blocked by a card ability")
         };
-    }
-    if !from_loc.connections.contains(&destination) {
         return EngineOutcome::Rejected {
-            reason: format!("Move: {destination:?} is not connected to {from:?}").into(),
-        };
-    }
-    // The movement barrier (#774). Checked here as well as in `legal_actions`
-    // because the `apply` seam is submittable directly: a client that never
-    // read the menu, or read a stale one, must still be refused. The Parlor
-    // 01115's unrevealed back is the only card in the corpus that prints one.
-    if !movement::investigator_can_enter_location(cx.state, destination) {
-        return EngineOutcome::Rejected {
-            reason: format!("Move: movement into {destination:?} is blocked by a card ability")
-                .into(),
+            reason: reason.into(),
         };
     }
 
@@ -84,9 +117,10 @@ pub(in crate::engine::dispatch) fn move_action(
 
 /// The relocation half of a Move, run after its attack-of-opportunity loop
 /// completes (#293). Re-derives `from` from the live `current_location` (the `AoO`
-/// never moves the actor) and re-checks the destination is still connected and
-/// still enterable — the §D primary-precondition re-check — suppressing the
-/// move (returns `Done`) if either no longer holds. The barrier re-check is
+/// never moves the actor) and re-checks the destination is still one of the
+/// [`candidates`], so still connected and still enterable — the §D
+/// primary-precondition re-check — suppressing the move (returns `Done`) if it
+/// no longer is. The barrier re-check is
 /// there for the same reason the connection one is: the `AoO` loop can resolve
 /// arbitrary card effects between validation and relocation.
 ///
@@ -119,14 +153,7 @@ pub(in crate::engine::dispatch) fn move_primary_effect(
         // (return Done) defensively rather than panic.
         return EngineOutcome::Done;
     };
-    let still_enterable = cx
-        .state
-        .locations
-        .get(&from)
-        .is_some_and(|l| l.connections.contains(&destination))
-        && cx.state.locations.contains_key(&destination)
-        && movement::investigator_can_enter_location(cx.state, destination);
-    if !still_enterable {
+    if !candidates(cx.state, investigator).contains(&destination) {
         return EngineOutcome::Done; // precondition lapsed: suppress
     }
 
