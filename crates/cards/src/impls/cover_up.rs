@@ -44,17 +44,23 @@
 //! interactive play prompted the player to resolve an ability that did nothing.
 
 use card_dsl::dsl::{self, Ability, Effect, EventPattern, EventTiming};
-use game_core::card_registry::{EligibilityFn, NativeEffectFn};
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{board, Cx, EngineOutcome};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::GameState;
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Cover Up.
 pub const CODE: &str = "01007";
 
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities)
+    .effects(&[(DISCARD_TAG, discard_clues), (TRAUMA_TAG, trauma)])
+    .eligibility(&[(HAS_CLUES_TAG, has_clues)]);
+
 /// Native tag: discard the replaced clue count from Cover Up.
-const DISCARD_TAG: &str = "01007:discard_clues";
+const DISCARD_TAG: &str = "01007:discard-clues";
 /// Native tag: suffer 1 mental trauma at game end if clues remain.
 const TRAUMA_TAG: &str = "01007:trauma";
 /// Eligibility tag: both of Cover Up's clue-conditional abilities gate on it —
@@ -62,7 +68,7 @@ const TRAUMA_TAG: &str = "01007:trauma";
 /// clues to discard, and the game-end Forced only initiates while it does
 /// (RR p.2 potential gate, #786). Replaces the former hardcoded
 /// `card.clues == 0` stand-in in the reaction scan.
-const HAS_CLUES_TAG: &str = "01007:has_clues";
+const HAS_CLUES_TAG: &str = "01007:has-clues";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
@@ -98,15 +104,6 @@ pub fn abilities() -> Vec<Ability> {
     ]
 }
 
-#[must_use]
-pub fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    match tag {
-        DISCARD_TAG => Some(discard_clues),
-        TRAUMA_TAG => Some(trauma),
-        _ => None,
-    }
-}
-
 /// True while the Cover Up instance (the firing source) still holds clues to
 /// discard, wherever it sits — so a co-located investigator is offered Roland's
 /// (#974).
@@ -114,14 +111,6 @@ fn has_clues(state: &GameState, ctx: &EvalContext) -> bool {
     ctx.source_instance()
         .and_then(|source| board::find_instance(state, source))
         .is_some_and(|(card, _)| card.clues > 0)
-}
-
-/// Resolve Cover Up's eligibility tag.
-pub(crate) fn native_eligibility_for(tag: &str) -> Option<EligibilityFn> {
-    match tag {
-        HAS_CLUES_TAG => Some(has_clues as EligibilityFn),
-        _ => None,
-    }
 }
 
 /// "Discard that many clues from Cover Up instead" — discard the replaced
@@ -187,6 +176,7 @@ mod tests {
     use game_core::test_support;
 
     use super::*;
+    use crate::impls;
 
     #[test]
     fn revelation_places_with_three_clues_plus_interrupt_and_gameend() {
@@ -223,30 +213,23 @@ mod tests {
     }
 
     #[test]
-    fn native_tags_resolve() {
-        assert!(native_effect_for(DISCARD_TAG).is_some());
-        assert!(native_effect_for(TRAUMA_TAG).is_some());
-        assert!(native_effect_for("nope").is_none());
-    }
-
-    #[test]
     fn has_clues_predicate_gates_on_source_instance_clues() {
         // Both clue-conditional abilities carry the eligibility tag.
         let abilities = abilities();
         assert_eq!(
             abilities[1].eligibility.as_deref(),
-            Some("01007:has_clues"),
+            Some("01007:has-clues"),
             "the discover-replacement reaction declares the potential gate"
         );
         assert_eq!(
             abilities[2].eligibility.as_deref(),
-            Some("01007:has_clues"),
+            Some("01007:has-clues"),
             "the game-end Forced declares it too, so a clueless Cover Up never \
              initiates (#786)"
         );
 
         // Predicate: true while the source instance holds clues, false at 0.
-        let pred = native_eligibility_for("01007:has_clues").expect("registered");
+        let pred = impls::native_eligibility_for("01007:has-clues").expect("registered");
         let mut inv = test_support::test_investigator(1);
         let mut card = CardInPlay::enter_play(
             CardCode::new("01007"),

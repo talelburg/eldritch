@@ -16,8 +16,13 @@
 
 use card_dsl::dsl::{self, Ability, InvestigatorTarget, TestOutcome};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01089";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// On any successful test this is committed to, draw 1 card.
 #[must_use]

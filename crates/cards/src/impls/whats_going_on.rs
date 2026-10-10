@@ -49,12 +49,17 @@
 //! hand (but at least one does)."* (<https://arkhamdb.com/card/01105>).
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
-use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Agenda 1, "What's Going On?!".
 pub const CODE: &str = "01105";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord =
+    CardRecord::new(CODE, abilities).effects(&[(RANDOM_DISCARD_EACH, random_discard_each)]);
 
 const RANDOM_DISCARD_EACH: &str = "01105:random-discard-each";
 
@@ -84,12 +89,6 @@ pub fn abilities() -> Vec<Ability> {
             ),
         ]),
     )]
-}
-
-/// Resolve this agenda's native-effect tag. Wired into the crate registry's
-/// `native_effect_for`.
-pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    (tag == RANDOM_DISCARD_EACH).then_some(random_discard_each as NativeEffectFn)
 }
 
 /// Branch A: every investigator discards 1 card at random from hand. Loops
@@ -150,7 +149,5 @@ mod tests {
             "Each investigator discards 1 card at random from his or her hand"
         );
         assert_eq!(branches[1].label, "The lead investigator takes 2 horror");
-        assert!(super::native_effect_for(super::RANDOM_DISCARD_EACH).is_some());
-        assert!(super::native_effect_for("nope").is_none());
     }
 }

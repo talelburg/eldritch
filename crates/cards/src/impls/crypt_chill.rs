@@ -18,13 +18,18 @@
 
 use card_dsl::card_data::{CardKind, SkillKind};
 use card_dsl::dsl::{self, Ability};
-use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, board, ChoiceResolution, Cx, EngineOutcome, OptionTarget};
 use game_core::state::{CardInstanceId, InvestigatorId};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Crypt Chill.
 pub const CODE: &str = "01167";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord =
+    CardRecord::new(CODE, abilities).effects(&[(CRYPT_CHILL_FAIL, crypt_chill_fail)]);
 
 const CRYPT_CHILL_FAIL: &str = "01167:crypt-chill-fail";
 
@@ -36,12 +41,6 @@ pub fn abilities() -> Vec<Ability> {
         None,
         Some(dsl::native(CRYPT_CHILL_FAIL)),
     ))]
-}
-
-/// Resolve this treachery's native-effect tag. Wired into the crate
-/// registry's `native_effect_for`.
-pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    (tag == CRYPT_CHILL_FAIL).then_some(crypt_chill_fail as NativeEffectFn)
 }
 
 /// The controller's in-play asset instances, in play order. The candidate set
@@ -143,8 +142,6 @@ mod tests {
         assert!(
             matches!(on_fail.as_deref(), Some(Effect::Native { tag }) if tag == CRYPT_CHILL_FAIL)
         );
-        assert!(native_effect_for(CRYPT_CHILL_FAIL).is_some());
-        assert!(native_effect_for("nope").is_none());
     }
 
     #[test]

@@ -22,8 +22,13 @@
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for the Attic.
 pub const CODE: &str = "01113";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// The Attic's Forced "after you enter: take 1 horror".
 #[must_use]

@@ -31,8 +31,13 @@
 use card_dsl::card_data::UseKind;
 use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for First Aid (original-Core printing).
 pub const CODE: &str = "01019";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// Label for the damage mode of the printed *"Heal 1 damage or horror"* choice.
 const HEAL_DAMAGE_LABEL: &str = "Heal 1 damage from an investigator at your location";
@@ -115,8 +120,8 @@ mod tests {
         );
     }
 
-    /// Catches a `pub mod` rename or a fat-fingered match arm in
-    /// `impls::abilities_for` — the registry must dispatch CODE here.
+    /// Catches a `CARD` record wired to the wrong code or abilities fn —
+    /// the registry must dispatch CODE here.
     #[test]
     fn registry_dispatches_to_this_modules_abilities() {
         assert_eq!(crate::abilities_for(CODE), Some(abilities()));

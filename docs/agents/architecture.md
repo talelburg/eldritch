@@ -19,7 +19,7 @@ Why the direction matters: editing the engine must not recompile 5600 lines of g
 
 ## CardRegistry — the only cross-crate bridge
 
-`game_core::card_registry` is a `OnceLock<CardRegistry>` holding two function pointers (`metadata_for: fn(&CardCode) -> Option<&'static CardMetadata>`, `abilities_for: fn(&CardCode) -> Option<Vec<Ability>>`). `cards` provides `pub const REGISTRY`; hosts install once at startup:
+`game_core::card_registry` is a `OnceLock<CardRegistry>` holding six function pointers: `metadata_for` and `abilities_for` / `back_abilities_for` keyed by `&CardCode`, and `native_effect_for` / `native_eligibility_for` / `native_condition_for` keyed by a native tag. `cards` provides `pub const REGISTRY`, whose slots are searches over `cards::impls::ALL`, one registration record per card (#986); hosts install once at startup:
 
 ```rust
 let _ = game_core::card_registry::install(cards::REGISTRY);
@@ -46,9 +46,9 @@ Backstopped structurally since #161: `apply_via` (`crates/game-core/src/engine/m
 
 An `OnEvent` ability declares the **timing cell** its printed trigger word names (**Timing cell** in [`GLOSSARY.md`](../../GLOSSARY.md)). The conventions an author follows when writing one — checking the declared `EventTiming` against the quoted trigger word, and naming the cell in the module's prose — are in [`standards.md`](standards.md); the *why*, and the caller-owned conditions that remain, are in [ADR 0008](../adr/0008-a-triggering-condition-resolves-inside-its-own-sequence.md).
 
-Cards are **Rust source** (typed, compiler-checked), not JSON: each is a module `crates/cards/src/impls/<name>.rs` exposing `CODE: &str` and `abilities() -> Vec<Ability>`. Cards needing primitives the DSL lacks get a Rust impl — and a primitive is added only once a second card wants the same pattern ([`standards.md`](standards.md)).
+Cards are **Rust source** (typed, compiler-checked), not JSON: each is a module `crates/cards/src/impls/<name>.rs` exposing `CODE: &str`, `abilities() -> Vec<Ability>` and a `CARD` registration record listed in `impls::ALL`; the `impls` module header gives the add-a-card procedure. Cards needing primitives the DSL lacks get a Rust impl — and a primitive is added only once a second card wants the same pattern ([`standards.md`](standards.md)).
 
-A card is **playable** iff it has an `abilities()` impl (`cards::is_playable(code)`); unimplemented cards appear in deckbuilding but are refused by the deck-import gate (Phase 9). `PlayCard` on an unimplemented card rejects loudly. On play: assets land in `cards_in_play` and stay (their `Trigger::Constant` abilities contribute via the registry while in play); events run their `OnPlay` effects then move to `discard` (emit `CardDiscarded { from: Zone::Hand, … }`). Every other `CardType` rejects.
+A card is **playable** iff it has a record in `cards::impls::ALL` (`cards::is_playable(code)`); unimplemented cards appear in deckbuilding but are refused by the deck-import gate (Phase 9). `PlayCard` on an unimplemented card rejects loudly. On play: assets land in `cards_in_play` and stay (their `Trigger::Constant` abilities contribute via the registry while in play); events run their `OnPlay` effects then move to `discard` (emit `CardDiscarded { from: Zone::Hand, … }`). Every other `CardType` rejects.
 
 ## Card-data pipeline
 

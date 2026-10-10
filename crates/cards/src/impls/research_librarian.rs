@@ -26,12 +26,17 @@
 //! (recorded in `data/arkhamdb-faq/no-rulings.txt`).
 
 use card_dsl::card_data::CardType;
+
+use crate::impls::CardRecord;
 use card_dsl::dsl::{
     self, Ability, CardFilter, EventPattern, EventTiming, InvestigatorTarget, SearchScope,
 };
 
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01032";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// "`[reaction]` After Research Librarian enters play: Search your deck for a
 /// Tome asset, add it to your hand, shuffle."

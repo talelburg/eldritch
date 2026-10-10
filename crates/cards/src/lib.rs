@@ -64,13 +64,13 @@ pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
 }
 
 /// Whether a card has an effect implementation and can therefore be
-/// taken into a scenario. Derived from [`abilities_for`] so the two
-/// queries can never go out of sync. Cards without an implementation
-/// still appear in [`all`] (deckbuilding tools list them) but are
-/// refused by the deck-import gate.
+/// taken into a scenario: whether it has a record in [`impls::ALL`], the
+/// same list every registry lookup searches. Cards without an
+/// implementation still appear in [`all`] (deckbuilding tools list them)
+/// but are refused by the deck-import gate.
 #[must_use]
 pub fn is_playable(code: &str) -> bool {
-    abilities_for(code).is_some()
+    impls::record(code).is_some()
 }
 
 /// Adapter from [`CardCode`] to [`by_code`].
@@ -123,8 +123,14 @@ pub const REGISTRY: CardRegistry = CardRegistry {
 #[cfg(test)]
 mod tests {
     use card_dsl::card_data::{CardType, Class};
+    use std::collections::HashSet;
+    use std::fs;
+    use std::path::Path;
+
+    use card_dsl::dsl::NativeKind;
 
     use super::*;
+    use crate::impls::CardRecord;
 
     #[test]
     fn corpus_is_sorted_by_code() {
@@ -218,11 +224,184 @@ mod tests {
         assert!(!abilities.is_empty());
     }
 
+    // ---- the registration corpus (#986) ---------------------------------
+    //
+    // Each test walks every `impls::ALL` record and asserts what the engine
+    // will see through `REGISTRY`, so a card left out of a namespace, a
+    // misspelt tag or a module missing from `ALL` fails here rather than when
+    // a player first plays the card.
+
+    /// Every ability on both sides of `record`.
+    fn record_abilities(record: &CardRecord) -> Vec<Ability> {
+        let mut abilities = (record.abilities)();
+        if let Some(back) = record.back_abilities {
+            abilities.extend(back());
+        }
+        abilities
+    }
+
+    /// Every native tag `record` registers, by namespace.
+    fn registered_tags(record: &CardRecord) -> Vec<(NativeKind, &'static str)> {
+        let effects = record
+            .native_effects
+            .iter()
+            .map(|(tag, _)| (NativeKind::Effect, *tag));
+        let eligibility = record
+            .native_eligibility
+            .iter()
+            .map(|(tag, _)| (NativeKind::Eligibility, *tag));
+        let conditions = record
+            .native_conditions
+            .iter()
+            .map(|(tag, _)| (NativeKind::Condition, *tag));
+        effects.chain(eligibility).chain(conditions).collect()
+    }
+
+    /// Whether `tag` resolves through `REGISTRY`'s slot for `kind`.
+    fn resolves(kind: NativeKind, tag: &str) -> bool {
+        match kind {
+            NativeKind::Effect => (REGISTRY.native_effect_for)(tag).is_some(),
+            NativeKind::Eligibility => (REGISTRY.native_eligibility_for)(tag).is_some(),
+            NativeKind::Condition => (REGISTRY.native_condition_for)(tag).is_some(),
+        }
+    }
+
+    /// `<5-digit code>:<kebab-case>`, the tail being `[a-z0-9]+` words joined
+    /// by single hyphens.
+    fn is_well_formed_tag(tag: &str) -> bool {
+        let Some((code, name)) = tag.split_once(':') else {
+            return false;
+        };
+        code.len() == 5
+            && code.bytes().all(|b| b.is_ascii_digit())
+            && name.split('-').all(|word| {
+                !word.is_empty()
+                    && word
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+            })
+    }
+
     #[test]
-    fn registry_constant_returns_none_for_unknown_code() {
-        let reg = REGISTRY;
+    fn every_referenced_native_tag_resolves_in_its_own_namespace() {
+        for record in impls::ALL {
+            for ability in record_abilities(record) {
+                for native in ability.native_refs() {
+                    assert!(
+                        resolves(native.kind, native.tag),
+                        "{}: {:?} tag {:?} is referenced but not registered in that namespace",
+                        record.code,
+                        native.kind,
+                        native.tag,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_registered_tag_is_prefixed_with_its_own_code_and_kebab_case() {
+        for record in impls::ALL {
+            for (kind, tag) in registered_tags(record) {
+                assert!(
+                    tag.strip_prefix(record.code)
+                        .is_some_and(|rest| rest.starts_with(':')),
+                    "{}: {kind:?} tag {tag:?} is not prefixed with the card's own code",
+                    record.code,
+                );
+                assert!(
+                    is_well_formed_tag(tag),
+                    "{}: {kind:?} tag {tag:?} is not `<code>:<kebab-case>`",
+                    record.code,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn no_code_or_tag_is_registered_twice() {
+        let mut codes = HashSet::new();
+        let mut tags = HashSet::new();
+        for record in impls::ALL {
+            assert!(
+                codes.insert(record.code),
+                "{}: listed in ALL twice",
+                record.code
+            );
+            for (kind, tag) in registered_tags(record) {
+                assert!(
+                    tags.insert((kind, tag)),
+                    "{}: {kind:?} tag {tag:?} is registered twice",
+                    record.code,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_registered_native_is_referenced_by_its_own_card() {
+        for record in impls::ALL {
+            let abilities = record_abilities(record);
+            let referenced: Vec<_> = abilities.iter().flat_map(Ability::native_refs).collect();
+            for (kind, tag) in registered_tags(record) {
+                assert!(
+                    referenced.iter().any(|r| r.kind == kind && r.tag == tag),
+                    "{}: {kind:?} tag {tag:?} is registered but no ability of the card references it",
+                    record.code,
+                );
+            }
+        }
+    }
+
+    /// Reads `src/impls/` at test time: every card module's `CODE` must be in
+    /// `ALL`. A module with no `pub mod` line is not compiled at all, so this
+    /// also catches that half of the two edits.
+    #[test]
+    fn every_card_module_has_an_all_entry() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/impls");
+        let mut modules = 0;
+        for entry in fs::read_dir(&dir).expect("src/impls is readable") {
+            let path = entry.expect("directory entry").path();
+            let Some(module) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if path.extension().is_none_or(|e| e != "rs") || module == "mod" {
+                continue;
+            }
+            let source = fs::read_to_string(&path).expect("card module is readable");
+            let code = source
+                .lines()
+                .find_map(|line| line.strip_prefix("pub const CODE: &str = \""))
+                .and_then(|rest| rest.strip_suffix("\";"))
+                .unwrap_or_else(|| panic!("impls/{module}.rs declares no `pub const CODE`"));
+            assert!(
+                impls::record(code).is_some(),
+                "impls/{module}.rs ({code}) has no entry in impls::ALL"
+            );
+            modules += 1;
+        }
+        assert_eq!(
+            modules,
+            impls::ALL.len(),
+            "ALL lists a record no module file declares"
+        );
+    }
+
+    #[test]
+    fn an_unknown_code_or_tag_resolves_to_none_in_every_slot() {
         let code = CardCode::new("99999");
-        assert!((reg.metadata_for)(&code).is_none());
-        assert!((reg.abilities_for)(&code).is_none());
+        assert!((REGISTRY.metadata_for)(&code).is_none());
+        assert!((REGISTRY.abilities_for)(&code).is_none());
+        assert!((REGISTRY.back_abilities_for)(&code).is_none());
+        for kind in [
+            NativeKind::Effect,
+            NativeKind::Eligibility,
+            NativeKind::Condition,
+        ] {
+            assert!(
+                !resolves(kind, "99999:unknown"),
+                "{kind:?} resolved an unknown tag"
+            );
+        }
     }
 }

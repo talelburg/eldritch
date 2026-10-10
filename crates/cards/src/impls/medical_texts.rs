@@ -37,8 +37,13 @@
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Medical Texts (original-Core printing).
 pub const CODE: &str = "01035";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// Medical Texts' `[action]` intellect(2) test: heal 1 damage on success,
 /// deal 1 damage on failure, to a chosen investigator at your location.
@@ -109,8 +114,8 @@ mod tests {
         );
     }
 
-    /// Catches a `pub mod` rename or a fat-fingered match arm in
-    /// `impls::abilities_for` — the registry must dispatch CODE here.
+    /// Catches a `CARD` record wired to the wrong code or abilities fn —
+    /// the registry must dispatch CODE here.
     #[test]
     fn registry_dispatches_to_this_modules_abilities() {
         assert_eq!(crate::abilities_for(CODE), Some(abilities()));

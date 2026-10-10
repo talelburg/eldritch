@@ -19,8 +19,13 @@
 use card_dsl::card_data::UseKind;
 use card_dsl::dsl::{self, Ability, Cost};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for the .45 Automatic (original-Core printing).
 pub const CODE: &str = "01016";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
@@ -71,8 +76,8 @@ mod tests {
         assert_eq!(abilities[0].effect, Effect::Seq(vec![]));
     }
 
-    /// Catches a `pub mod` rename or a fat-fingered match arm in
-    /// `impls::abilities_for` — the registry must dispatch CODE here.
+    /// Catches a `CARD` record wired to the wrong code or abilities fn —
+    /// the registry must dispatch CODE here.
     #[test]
     fn registry_dispatches_to_this_modules_abilities() {
         assert_eq!(crate::abilities_for(CODE), Some(abilities()));

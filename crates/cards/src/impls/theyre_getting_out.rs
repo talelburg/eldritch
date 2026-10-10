@@ -115,14 +115,25 @@
 //! regardless.
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, Phase};
-use game_core::card_registry::{NativeConditionFn, NativeEffectFn};
 use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{self, Cx, EngineOutcome};
 use game_core::event::{Event, TraumaKind};
 use game_core::state::{EnemyId, GameState, InvestigatorId, LocationId, Status};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Agenda 3, "They're Getting Out!".
 pub const CODE: &str = "01107";
+
+/// This card's registration, listed in [`ALL`](super::ALL). Its act-three
+/// branch is one of the two [`CardRecord::conditions`] registrants.
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities)
+    .effects(&[
+        (MOVE_GHOULS, move_ghouls_toward_parlor),
+        (ROUND_END_DOOM, place_round_end_doom),
+        (GHOULS_RUN_RAMPANT, the_ghouls_run_rampant),
+    ])
+    .conditions(&[(AT_ACT_THREE, at_act_three)]);
 
 const MOVE_GHOULS: &str = "01107:move-ghouls";
 const ROUND_END_DOOM: &str = "01107:round-end-doom";
@@ -163,26 +174,6 @@ pub fn abilities() -> Vec<Ability> {
             ),
         ),
     ]
-}
-
-/// Resolve this agenda's native-effect tags. Wired into the crate
-/// registry's `native_effect_for`.
-pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    match tag {
-        MOVE_GHOULS => Some(move_ghouls_toward_parlor as NativeEffectFn),
-        ROUND_END_DOOM => Some(place_round_end_doom as NativeEffectFn),
-        GHOULS_RUN_RAMPANT => Some(the_ghouls_run_rampant as NativeEffectFn),
-        _ => None,
-    }
-}
-
-/// Resolve this agenda's native-condition tags. Wired into the crate
-/// registry's `native_condition_for`.
-pub(crate) fn native_condition_for(tag: &str) -> Option<NativeConditionFn> {
-    match tag {
-        AT_ACT_THREE => Some(at_act_three as NativeConditionFn),
-        _ => None,
-    }
 }
 
 /// *"If the investigators are at Act 3"* — the reverse's branch predicate.
@@ -313,6 +304,7 @@ fn place_round_end_doom(cx: &mut Cx, _ctx: &EvalContext) -> EngineOutcome {
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::{Condition, Effect, Trigger, TriggerKind};
+    use game_core::card_registry::NativeEffectFn;
     use game_core::event::Event;
     use game_core::scenario::ScenarioEnding;
     use game_core::state::{
@@ -322,7 +314,7 @@ mod tests {
     use game_core::{card_registry, test_support};
 
     use super::*;
-    use crate::{impls, REGISTRY};
+    use crate::REGISTRY;
 
     fn ghoul(id: u32, at: LocationId) -> Enemy {
         let mut e = test_support::test_enemy(id, "Ghoul");
@@ -454,16 +446,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn native_condition_for_resolves_the_act_three_tag() {
-        assert!(native_condition_for(AT_ACT_THREE).is_some());
-        assert!(native_condition_for("01107:other").is_none());
-        assert!(
-            impls::native_condition_for(AT_ACT_THREE).is_some(),
-            "and is reachable through the crate-level dispatch",
-        );
-    }
-
     /// The act-3 branch, end to end over the native body: both investigators are
     /// defeated in turn order, each announcing 1 physical trauma, and the
     /// scenario ends at **no resolution point** — Elimination step 6, reached by
@@ -537,14 +519,6 @@ mod tests {
             )),
             "no trauma announced for an investigator this card never defeated",
         );
-    }
-
-    #[test]
-    fn native_effect_for_resolves_every_tag() {
-        assert!(native_effect_for(MOVE_GHOULS).is_some());
-        assert!(native_effect_for(ROUND_END_DOOM).is_some());
-        assert!(native_effect_for(GHOULS_RUN_RAMPANT).is_some());
-        assert!(native_effect_for("01107:other").is_none());
     }
 
     /// No Parlor on the board is a **no-op**, not a rejection: `Done`, no

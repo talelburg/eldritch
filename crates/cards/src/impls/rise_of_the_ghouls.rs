@@ -47,12 +47,16 @@
 
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
-use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Agenda 2, "Rise of the Ghouls".
 pub const CODE: &str = "01106";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities).effects(&[(REVERSE, reverse)]);
 
 /// Native-effect tag for this agenda's reverse.
 const REVERSE: &str = "01106:reverse";
@@ -64,12 +68,6 @@ pub fn abilities() -> Vec<Ability> {
         EventTiming::After,
         dsl::native(REVERSE),
     )]
-}
-
-/// Resolve [`REVERSE`] if `tag` matches. Wired into the crate registry's
-/// `native_effect_for`.
-pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    (tag == REVERSE).then_some(reverse as NativeEffectFn)
 }
 
 /// `true` if `code` is an encounter **enemy** carrying the `Ghoul` trait.
@@ -118,12 +116,6 @@ mod tests {
             "the reverse is a card-local native effect, got {:?}",
             abilities[0].effect
         );
-    }
-
-    #[test]
-    fn native_effect_for_resolves_only_the_reverse_tag() {
-        assert!(super::native_effect_for("01106:reverse").is_some());
-        assert!(super::native_effect_for("01106:other").is_none());
     }
 
     #[test]

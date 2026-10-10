@@ -26,8 +26,13 @@
 use card_dsl::card_data::CardType;
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, Restriction};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Dissonant Voices.
 pub const CODE: &str = "01165";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {

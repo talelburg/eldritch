@@ -34,8 +34,13 @@ use card_dsl::dsl::{
     Stat, TestOutcome, TestedLocationScope,
 };
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01033";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// +1 intellect while in play, and "after you successfully investigate,
 /// gain 1 resource."

@@ -39,14 +39,19 @@
 //! rulings (recorded in `data/arkhamdb-faq/no-rulings.txt`).
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
-use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::{self, EvalContext};
 use game_core::engine::{self, board, Cx, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::Owner;
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Act 1, "Trapped".
 pub const CODE: &str = "01108";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord =
+    CardRecord::new(CODE, abilities).effects(&[(BOARD_BUILD, board_build)]);
 
 /// The Study (01111), removed from the game by this reverse.
 const STUDY: &str = "01111";
@@ -72,12 +77,6 @@ pub fn abilities() -> Vec<Ability> {
         EventTiming::After,
         dsl::native(BOARD_BUILD),
     )]
-}
-
-/// Resolve [`BOARD_BUILD`] if `tag` matches. Wired into the crate
-/// registry's `native_effect_for`.
-pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    (tag == BOARD_BUILD).then_some(board_build as NativeEffectFn)
 }
 
 /// Put the set-aside Hallway/Cellar/Attic/Parlor into play, relocate
@@ -168,11 +167,5 @@ mod tests {
             "board build is a card-local native effect, got {:?}",
             abilities[0].effect
         );
-    }
-
-    #[test]
-    fn native_effect_for_resolves_only_the_board_build_tag() {
-        assert!(super::native_effect_for("01108:board-build").is_some());
-        assert!(super::native_effect_for("01108:other").is_none());
     }
 }

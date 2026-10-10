@@ -8,8 +8,13 @@
 
 use card_dsl::dsl::{self, Ability, InvestigatorTarget};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01088";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// On play, gain 3 resources.
 #[must_use]

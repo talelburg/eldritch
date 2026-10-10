@@ -16,8 +16,13 @@
 
 use card_dsl::dsl::{self, Ability, Cost, InvestigatorTarget, SearchScope};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01031";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// `[action]`, exhaust: a chosen co-located investigator searches the top 3 of
 /// their deck for a card, takes it, and shuffles.

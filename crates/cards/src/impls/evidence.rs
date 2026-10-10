@@ -33,8 +33,13 @@
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, LocationTarget};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01022";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// Evidence!'s "Play after you defeat an enemy. / Discover 1 clue at your
 /// location." — Roland 01001's reaction without the usage limit.
