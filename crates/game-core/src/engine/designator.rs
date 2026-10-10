@@ -32,7 +32,7 @@ use std::borrow::Cow;
 
 use card_dsl::dsl::ActionDesignator;
 
-use crate::engine::dispatch::actions::{fight, investigate};
+use crate::engine::dispatch::actions::{evade, fight, investigate, move_action};
 use crate::state::{GameState, InvestigatorId};
 
 /// Whether `investigator` can perform the action `designator` names, ignoring
@@ -55,8 +55,10 @@ use crate::state::{GameState, InvestigatorId};
 ///   gate asks separately.
 /// - **Resign** — eliminating the controller is always available to an
 ///   investigator who reached the ability at all.
-/// - **Evade** / **Move** — rejected, with [`unimplemented_designator`]'s
-///   reason (`TODO(#818)`). Neither variant carries a modification, and no
+/// - **Evade** / **Move** — rejected, with the reason their own modules give
+///   ([`evade::designated_unimplemented`],
+///   [`move_action::designated_unimplemented`], `TODO(#818)`). Neither variant
+///   carries a modification, and no
 ///   implemented card prints either, so the engine says so rather than
 ///   performing a guess. Note the two differ in *why*: ten corpus cards print
 ///   **Evade** and disagree about the payload's shape (Fire Extinguisher
@@ -86,30 +88,9 @@ pub(crate) fn can_perform(
             Ok(())
         }
         ActionDesignator::Parley | ActionDesignator::Resign => Ok(()),
-        ActionDesignator::Evade | ActionDesignator::Move => {
-            Err(unimplemented_designator(designator))
-        }
+        ActionDesignator::Evade => Err(evade::designated_unimplemented()),
+        ActionDesignator::Move => Err(move_action::designated_unimplemented()),
     }
-}
-
-/// The rejection reason for a designator no implemented card prints —
-/// **Evade** and **Move**, the two `ActionDesignator` variants that neither
-/// carry a modification nor perform anything (`TODO(#818)`).
-///
-/// "No implemented card", deliberately, rather than "no corpus card": ten
-/// corpus cards print **Evade** (none built yet), and none prints **Move**.
-///
-/// One helper rather than the same prose at both sites: this is read pre-cost
-/// by [`can_perform`] and again by the evaluator's perform dispatch, where the
-/// arm is unreachable through the activation path precisely *because*
-/// `can_perform` rejected first. Two copies of one blocker's wording would
-/// drift the moment #818 lands.
-pub(crate) fn unimplemented_designator(designator: &ActionDesignator) -> Cow<'static, str> {
-    format!(
-        "a designated {designator:?} is not implemented: no card the build compiles \
-         declares one, so the modification it would carry has no shape yet (TODO(#818))",
-    )
-    .into()
 }
 
 #[cfg(test)]

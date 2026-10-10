@@ -1,11 +1,12 @@
-//! The Investigate basic action, its candidates, and the investigate primary
-//! shared with the designated Investigate.
+//! The Investigate basic action, its candidates, the investigate primary
+//! shared with the designated Investigate, and its after-test clue discovery.
 
-use card_dsl::dsl::{IntExpr, SkillTestKind, Stat};
+use card_dsl::dsl::{self, IntExpr, LocationTarget, SkillTestKind, Stat};
 
 use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::skill_test;
 use crate::engine::dispatch::skill_test::InitiatorModifier;
+use crate::engine::evaluator::{self, EvalContext};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::Cx;
 use crate::state::{
@@ -184,4 +185,110 @@ pub(crate) fn perform_investigate(
             delta,
         }),
     )
+}
+
+/// An investigation's after-test step (RR ST.7), run on success only: push
+/// **one** discovery of `1 + bonus_clues_discovered` clues at the tested
+/// location, for the global drive loop (Slice D #423).
+///
+/// The discovery may suspend on a before-timing interrupt (Cover Up 01007); the
+/// loop drives it to completion either way, then re-dispatches the skill test
+/// at its `ApplyResultEffect` step. The "after you successfully investigate"
+/// timing point already fired at the preceding `DetermineOutcome` step, on the
+/// ST.6 success, before this discovery. The discovery has no source card, so
+/// `for_controller` is correct.
+///
+/// **One** discovery, whose count carries any commit-time bonus (Deduction
+/// 01039's `bonus_clues_discovered`, the clue-side twin of Fight's
+/// `bonus_attack_damage`). "Discover 1 additional clue" raises this discovery's
+/// count; it does not make a second one — see the **Discovery** entry in
+/// `GLOSSARY.md` and #471. The in-flight test is still present here (torn down
+/// only at the end of resolution), so the accumulator is readable.
+///
+/// `TestedLocation` — the test's start-of-test location snapshot — is the
+/// **default** target, not an invariant: several cards replace or redirect
+/// this discovery. Burglary 01045 (Core): "If you succeed, instead of
+/// discovering clues, gain 3 resources." Seeking Answers 02023 (Dunwich)
+/// discovers at a *connecting* location instead. It differs from
+/// `YourLocation` only if the investigator moves mid-test — no in-corpus path
+/// does today, but the snapshot is what "at that location" means for every
+/// card that reads it.
+///
+/// A mid-test move is not a reason to abandon the test, which is what makes
+/// the snapshot the right thing to keep rather than a case to reject.
+/// `data/official-faq/Frequently_Asked_Questions.md`: *"Once you initiate a
+/// skill test or ability, you'll resolve that test or ability as completely as
+/// possible, regardless of your location (unless another effect cancels or
+/// interrupts it)."*
+pub(in crate::engine::dispatch) fn after_test(cx: &mut Cx, investigator: InvestigatorId) {
+    let bonus = cx
+        .state
+        .current_skill_test()
+        .map_or(0, |t| t.bonus_clues_discovered);
+    let effect = dsl::discover_clue(LocationTarget::TestedLocation, 1u8.saturating_add(bonus));
+    evaluator::push_effect(cx, &effect, EvalContext::for_controller(investigator));
+}
+
+#[cfg(test)]
+mod tests {
+    use card_dsl::dsl::Effect;
+
+    use super::*;
+    use crate::state::{
+        Continuation, EffectFrame, GameStateBuilder, InFlightSkillTest, SkillTestId,
+    };
+    use crate::test_support;
+
+    /// The `Investigate` follow-up pushes **one** `DiscoverClue` of
+    /// `1 + bonus_clues_discovered` at the test's `tested_location`, reading the
+    /// commit-time accumulator off the in-flight record (Deduction 01039). With
+    /// `bonus_clues_discovered: 1` that is a single discovery of 2 — not two of
+    /// 1, which is what Cover Up 01007 would replace twice (#471).
+    #[test]
+    fn investigate_follow_up_pushes_one_discovery_carrying_the_clue_bonus() {
+        let inv = InvestigatorId(1);
+        let loc = LocationId(10);
+        let mut state = GameStateBuilder::new()
+            .with_investigator_at(test_support::test_investigator(1), loc)
+            .with_location(test_support::test_location(10, "Study"))
+            .build();
+        state
+            .continuations
+            .push(Continuation::SkillTest(InFlightSkillTest {
+                tested_location: Some(loc),
+                follow_up: SkillTestFollowUp::Investigate,
+                bonus_clues_discovered: 1,
+                ..test_support::test_skill_test(
+                    SkillTestId(0),
+                    inv,
+                    SkillKind::Intellect,
+                    SkillTestKind::Investigate,
+                    2,
+                )
+            }));
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            state: &mut state,
+            events: &mut events,
+        };
+
+        after_test(&mut cx, inv);
+
+        let Some(Continuation::Effect(EffectFrame::Leaf { effect, .. })) =
+            state.continuations.top()
+        else {
+            panic!(
+                "expected one pushed DiscoverClue leaf, got {:?}",
+                state.continuations.top()
+            );
+        };
+        assert_eq!(
+            **effect,
+            Effect::DiscoverClue {
+                from: LocationTarget::TestedLocation,
+                count: 2,
+            },
+            "one discovery of 1 base + 1 bonus, at the tested location",
+        );
+    }
 }
