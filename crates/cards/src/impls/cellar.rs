@@ -20,8 +20,13 @@
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for the Cellar.
 pub const CODE: &str = "01114";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// The Cellar's Forced "after you enter: take 1 damage".
 #[must_use]

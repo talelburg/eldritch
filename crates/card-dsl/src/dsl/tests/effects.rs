@@ -130,14 +130,14 @@ fn native_effect_round_trips_through_serde_json() {
 /// [`IntExpr::Cond`] — the position Machete 01020 uses it from.
 #[test]
 fn native_condition_round_trips_through_serde_json() {
-    let expr = IntExpr::cond(native_condition("01020:sole_engaged_target"), 1, 0);
+    let expr = IntExpr::cond(native_condition("01020:sole-engaged-target"), 1, 0);
     assert!(matches!(
         &expr,
         IntExpr::Cond {
             when: Condition::Native { tag },
             then: 1,
             otherwise: 0,
-        } if tag == "01020:sole_engaged_target"
+        } if tag == "01020:sole-engaged-target"
     ));
     let json = serde_json::to_string(&expr).expect("serialize");
     let recovered: IntExpr = serde_json::from_str(&json).expect("deserialize");

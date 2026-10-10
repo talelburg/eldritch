@@ -250,7 +250,7 @@ fn deduction_at_a_two_clue_location_discards_two_in_one_window() {
 /// The reaction's RR p.2 potential gate, end-to-end: a Cover Up holding no clues
 /// has nothing to discard, so the before-discover window is never offered and the
 /// Investigate discovers normally. (`cards::impls::cover_up`'s unit test pins the
-/// `01007:has_clues` predicate itself; this pins what the window does with it.)
+/// `01007:has-clues` predicate itself; this pins what the window does with it.)
 ///
 /// Ported from the C5a synthetic binary's `no_interrupt_when_cover_up_has_no_clues`
 /// under #871 — the behaviour had no real-card successor, so it moved rather than

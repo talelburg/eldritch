@@ -33,13 +33,17 @@
 //! plays get their own frames rather than sharing one slot (#604).
 
 use card_dsl::dsl::{self, Ability};
-use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, ChoiceResolution, Cx, EngineOutcome, OptionTarget};
 use game_core::state::{EnemyId, InvestigatorId, LocationId};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Dynamite Blast (original-Core printing).
 pub const CODE: &str = "01024";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities).effects(&[(BLAST, dynamite_blast)]);
 
 const BLAST: &str = "01024:blast";
 
@@ -50,12 +54,6 @@ const DAMAGE: u8 = 3;
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::on_play(dsl::native(BLAST))]
-}
-
-/// Resolve this event's native-effect tag. Wired into the crate registry's
-/// `native_effect_for`.
-pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    (tag == BLAST).then_some(dynamite_blast as NativeEffectFn)
 }
 
 /// Candidate target locations: the controller's location followed by each
@@ -160,12 +158,10 @@ mod tests {
             matches!(&abilities[0].effect, Effect::Native { tag } if tag == BLAST),
             "OnPlay is the blast native",
         );
-        assert!(native_effect_for(BLAST).is_some());
-        assert!(native_effect_for("nope").is_none());
     }
 
-    /// Catches a `pub mod` rename or a fat-fingered match arm in
-    /// `impls::abilities_for` — the registry must dispatch CODE here.
+    /// Catches a `CARD` record wired to the wrong code or abilities fn —
+    /// the registry must dispatch CODE here.
     #[test]
     fn registry_dispatches_to_this_modules_abilities() {
         assert_eq!(crate::abilities_for(CODE), Some(abilities()));

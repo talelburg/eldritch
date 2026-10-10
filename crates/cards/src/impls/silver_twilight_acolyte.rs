@@ -53,8 +53,13 @@
 
 use card_dsl::dsl::{self, Ability, AttackerScope, EventPattern, EventTiming, TargetScope};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Silver Twilight Acolyte.
 pub const CODE: &str = "01102";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {

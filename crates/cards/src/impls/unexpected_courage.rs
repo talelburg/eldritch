@@ -15,8 +15,13 @@
 
 use card_dsl::dsl::Ability;
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01093";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// No triggered ability — the card is entirely its icons + commit cap.
 #[must_use]

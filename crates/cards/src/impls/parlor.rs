@@ -100,8 +100,13 @@
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{self, Ability, ActionDesignator, ControlStatus, GrantTarget, Restriction};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for the Parlor.
 pub const CODE: &str = "01115";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities).back(back_abilities);
 
 /// `ArkhamDB` code for Lita Chantler, the card this location grants to.
 const LITA_CHANTLER: &str = "01117";

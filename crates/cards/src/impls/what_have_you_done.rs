@@ -78,8 +78,13 @@
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Act 3, "What Have You Done?".
 pub const CODE: &str = "01110";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// The first printed bullet of 01110's reverse, verbatim.
 const BURN_IT_DOWN_LABEL: &str = "It was never much of a home. Burn it down! (→R1)";

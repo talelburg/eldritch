@@ -32,8 +32,13 @@
 
 use card_dsl::dsl::{self, Ability, AttackerScope, Effect, EventPattern, EventTiming, TargetScope};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01023";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// Dodge's "Play when an enemy attacks an investigator at your location. /
 /// Cancel that attack." — a Before-timing reaction that cancels the attack.

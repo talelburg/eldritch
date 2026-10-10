@@ -130,12 +130,17 @@ use card_dsl::dsl::{
     self, Ability, ControlStatus, EventPattern, EventTiming, GrantTarget, ModifierAudience,
     ModifierScope, SkillTestKind, Stat, TestOutcome, TestedLocationScope,
 };
-use game_core::card_registry::EligibilityFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::state::{GameState, InvestigatorId, LocationId, SkillTestFollowUp};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Lita Chantler.
 pub const CODE: &str = "01117";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities)
+    .eligibility(&[(MONSTER_ATTACKED_HERE_TAG, monster_attacked_here)]);
 
 /// The trait the reaction filters the attacked enemy on.
 const MONSTER: &str = "Monster";
@@ -144,7 +149,7 @@ const MONSTER: &str = "Monster";
 /// *"an investigator **at your location** successfully attacks a
 /// **\[\[Monster\]\]** enemy"*. Both halves ride one tag because both are
 /// answered off the same in-flight Fight frame.
-const MONSTER_ATTACKED_HERE_TAG: &str = "01117:monster_attacked_here";
+const MONSTER_ATTACKED_HERE_TAG: &str = "01117:monster-attacked-here";
 
 /// What 01117 prints: one `Trigger::Constant` [`Effect::Grant`](card_dsl::dsl::Effect::Grant)
 /// to herself, holding the two abilities she gains while a player controls her.
@@ -176,15 +181,6 @@ pub fn abilities() -> Vec<Ability> {
             .with_eligibility(MONSTER_ATTACKED_HERE_TAG),
         ],
     ))]
-}
-
-/// Resolve Lita's eligibility tag.
-#[must_use]
-pub(crate) fn native_eligibility_for(tag: &str) -> Option<EligibilityFn> {
-    match tag {
-        MONSTER_ATTACKED_HERE_TAG => Some(monster_attacked_here as EligibilityFn),
-        _ => None,
-    }
 }
 
 /// *"an investigator at your location successfully attacks a `[[Monster]]`
@@ -412,7 +408,7 @@ mod tests {
 
     fn eligible(state: &GameState) -> bool {
         let pred =
-            super::native_eligibility_for(super::MONSTER_ATTACKED_HERE_TAG).expect("registered");
+            impls::native_eligibility_for(super::MONSTER_ATTACKED_HERE_TAG).expect("registered");
         pred(
             state,
             &EvalContext::for_controller_with_source(
@@ -447,13 +443,6 @@ mod tests {
     #[test]
     fn with_no_fight_in_flight_nothing_is_eligible() {
         assert!(!eligible(&no_test_in_flight()));
-    }
-
-    #[test]
-    fn the_tag_dispatches_and_an_unknown_one_does_not() {
-        assert!(super::native_eligibility_for(super::MONSTER_ATTACKED_HERE_TAG).is_some());
-        assert!(super::native_eligibility_for("nope").is_none());
-        assert!(impls::native_eligibility_for(super::MONSTER_ATTACKED_HERE_TAG).is_some());
     }
 
     #[test]

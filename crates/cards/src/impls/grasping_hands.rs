@@ -10,8 +10,13 @@
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{self, Ability, IntExpr, InvestigatorTarget, Quantity};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Grasping Hands.
 pub const CODE: &str = "01162";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {

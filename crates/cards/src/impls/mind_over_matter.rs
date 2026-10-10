@@ -17,13 +17,17 @@
 
 use card_dsl::card_data::SkillKind;
 use card_dsl::dsl::{self, Ability};
-use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{Cx, EngineOutcome};
 use game_core::state::SkillSubstitution;
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01036";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities).effects(&[(SUBSTITUTE, substitute)]);
 
 const SUBSTITUTE: &str = "01036:intellect-substitution";
 
@@ -32,12 +36,6 @@ const SUBSTITUTE: &str = "01036:intellect-substitution";
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
     vec![dsl::on_play(dsl::native(SUBSTITUTE))]
-}
-
-/// Resolve this card's native-effect tag. Wired into the crate registry's
-/// `native_effect_for`.
-pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    (tag == SUBSTITUTE).then_some(substitute as NativeEffectFn)
 }
 
 /// Push the round-scoped substitution for the controller.
@@ -60,11 +58,5 @@ mod tests {
         assert_eq!(a.len(), 1);
         assert_eq!(a[0].trigger, Trigger::OnPlay);
         assert!(matches!(&a[0].effect, Effect::Native { tag } if tag == super::SUBSTITUTE));
-    }
-
-    #[test]
-    fn native_resolves_only_its_tag() {
-        assert!(super::native_effect_for(super::SUBSTITUTE).is_some());
-        assert!(super::native_effect_for("01036:other").is_none());
     }
 }

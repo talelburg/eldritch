@@ -22,8 +22,13 @@
 use card_dsl::card_data::UseKind;
 use card_dsl::dsl::{self, Ability, CmpOp, Condition, Cost, IntExpr, Quantity};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Roland's .38 Special.
 pub const CODE: &str = "01006";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {

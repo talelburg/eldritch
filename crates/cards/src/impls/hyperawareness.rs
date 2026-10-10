@@ -31,8 +31,13 @@
 
 use card_dsl::dsl::{self, Ability, Cost, ModifierScope, Stat};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01034";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// Hyperawareness's two activated `[fast]` abilities.
 #[must_use]
@@ -106,8 +111,8 @@ mod tests {
         ));
     }
 
-    /// Catches a `pub mod` rename or a fat-fingered match arm in
-    /// `impls::abilities_for` — the registry must dispatch CODE to
+    /// Catches a `CARD` record wired to the wrong code or abilities fn —
+    /// the registry must dispatch CODE to
     /// this module's `abilities()`.
     #[test]
     fn registry_dispatches_to_this_modules_abilities() {

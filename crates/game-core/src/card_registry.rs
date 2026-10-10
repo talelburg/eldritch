@@ -70,9 +70,9 @@ pub type NativeConditionFn = fn(&GameState, &EvalContext) -> bool;
 
 /// Bundle of card-lookup function pointers.
 ///
-/// The `cards` crate provides a static instance wrapping its own
-/// `by_code` / `abilities_for`; tests can construct ad-hoc instances
-/// with mock function pointers.
+/// The `cards` crate provides a static instance, `cards::REGISTRY`, whose
+/// slots search its per-card registration records; tests can construct ad-hoc
+/// instances with mock function pointers.
 #[derive(Debug, Clone, Copy)]
 pub struct CardRegistry {
     /// Look up static metadata by code. Returns `None` for unknown
@@ -111,10 +111,13 @@ pub struct CardRegistry {
     /// Look up a card-local condition predicate by its [`Condition::Native`]
     /// tag. Returns `None` for unregistered tags.
     ///
-    /// `TODO(#609)`: Machete 01020 is the only consumer. This slot is expected
-    /// to be **deleted** along with [`Condition::Native`] once the compound and
-    /// target-referencing conditions it stands in for exist declaratively —
-    /// don't grow it by registering a second card's tag.
+    /// `TODO(#609)`: two cards register here. Machete 01020 holds a compound,
+    /// target-referencing condition the DSL cannot express; agenda 01107's
+    /// act-three branch is a plain scenario-state read that does not fire
+    /// #609's promotion trigger (its module doc says why). This slot is
+    /// expected to be **deleted** along with [`Condition::Native`] once the
+    /// conditions it stands in for exist declaratively — don't grow it by
+    /// registering a third card's tag.
     ///
     /// [`Condition::Native`]: card_dsl::dsl::Condition::Native
     pub native_condition_for: fn(&str) -> Option<NativeConditionFn>,
@@ -138,7 +141,7 @@ impl CardRegistry {
     /// ```
     ///
     /// This exists because adding a slot used to mean editing **every literal
-    /// in the workspace** — ~37 of them, each gaining one more `|_| None,`.
+    /// in the workspace**, each gaining one more `|_| None,`.
     /// That is churn no reviewer can read, and it buries the one or two
     /// literals where the new slot actually matters. With `EMPTY` as the base,
     /// a new slot touches only the literals that implement it.

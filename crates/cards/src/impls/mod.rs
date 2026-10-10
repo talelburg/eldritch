@@ -1,15 +1,27 @@
 //! Hand-implemented card effects.
 //!
 //! Each implemented card lives in its own submodule, exposing a
-//! [`CODE`](holy_rosary::CODE) constant and an `abilities()` function
-//! returning that card's [`Vec<Ability>`](card_dsl::dsl::Ability).
+//! [`CODE`](holy_rosary::CODE) constant, an `abilities()` function
+//! returning that card's [`Vec<Ability>`](card_dsl::dsl::Ability), and a
+//! `CARD` [`CardRecord`] naming everything the card registers.
 //!
-//! The registry is the [`abilities_for`] dispatch — adding a card
-//! means: drop a `crates/cards/src/impls/<name>.rs` file, declare the
-//! `pub mod <name>;` here, and add a match arm in [`abilities_for`].
-//! The crate's [`is_playable`](super::is_playable) check derives from
-//! `abilities_for(code).is_some()`, so the two queries can never go
-//! out of sync.
+//! # Adding a card
+//!
+//! 1. Write `crates/cards/src/impls/<name>.rs` with `CODE`, `abilities()`
+//!    and `pub const CARD: CardRecord = CardRecord::new(CODE, abilities)`.
+//!    Chain [`back`](CardRecord::back) for a printed reverse, and
+//!    [`effects`](CardRecord::effects) / [`eligibility`](CardRecord::eligibility)
+//!    / [`conditions`](CardRecord::conditions) for each native tag an ability
+//!    names. The native fns stay private to the module.
+//! 2. Declare `pub mod <name>;` below.
+//! 3. Add `<name>::CARD` to [`ALL`].
+//!
+//! Spell a native tag `<code>:<kebab-case>`, prefixed with the card's own
+//! code. The crate's corpus tests then check the registration: every tag an
+//! ability names resolves in its own namespace, every registered native is
+//! referenced, no code or tag is listed twice, and every module file here has
+//! an `ALL` entry. [`is_playable`](super::is_playable) is membership in
+//! `ALL`, so playability and registration cannot disagree.
 //!
 //! # Module-naming convention
 //!
@@ -22,8 +34,7 @@
 //!
 //! # Trigger-shape examples
 //!
-//! The authoritative list of implemented cards is the `pub mod`
-//! declarations below (47 at the 2026-07-17 audit) — this list is NOT
+//! The authoritative list of implemented cards is [`ALL`] — this list is NOT
 //! exhaustive; it survives as a worked example per trigger shape:
 //!
 //! - Holy Rosary (01059) — `Trigger::Constant` + unqualified
@@ -51,7 +62,7 @@
 //!   `deal_damage(You, 1)`.
 //! - Parlor (01115) — `Trigger::Activated { action_cost: 1 }` with the
 //!   nullary **Resign** action designator, which performs the elimination;
-//!   and the corpus's only **back-side** abilities (see [`back_abilities_for`]),
+//!   and the corpus's only **back-side** abilities (its record's [`back`](CardRecord::back)),
 //!   a `Trigger::Constant` `Restrict` that blocks investigator movement while
 //!   the location is unrevealed.
 //! - Lita Chantler (01117) — a `Trigger::Constant` `Effect::Grant` to
@@ -126,118 +137,196 @@ pub mod what_have_you_done;
 pub mod whats_going_on;
 pub mod working_a_hunch;
 
-/// Look up a card's hand-implemented abilities by code. Returns
-/// `None` for unimplemented cards.
+/// One card's whole registration: its code, the abilities on each side, and
+/// the native fns its abilities name by tag. Each card module exports one as
+/// `CARD`, listed once in [`ALL`]; every lookup below is a search over it.
+///
+/// The three native namespaces stay separate because the engine resolves them
+/// through separate [`CardRegistry`](game_core::card_registry::CardRegistry)
+/// slots: an eligibility predicate and a condition share a signature but not a
+/// role, so a tag listed in the wrong slice is never found. Build one with
+/// [`CardRecord::new`] and chain only the setters the card needs.
+#[derive(Debug, Clone, Copy)]
+pub struct CardRecord {
+    /// The card's `ArkhamDB` code.
+    pub code: &'static str,
+    /// The abilities printed on the card's front.
+    pub abilities: fn() -> Vec<Ability>,
+    /// The abilities printed on its reverse, for a card that has any.
+    pub back_abilities: Option<fn() -> Vec<Ability>>,
+    /// [`Effect::Native`](card_dsl::dsl::Effect::Native) tags and their fns.
+    pub native_effects: &'static [(&'static str, NativeEffectFn)],
+    /// [`Ability::eligibility`] tags and their predicates.
+    pub native_eligibility: &'static [(&'static str, EligibilityFn)],
+    /// [`Condition::Native`](card_dsl::dsl::Condition::Native) tags and their
+    /// predicates.
+    pub native_conditions: &'static [(&'static str, NativeConditionFn)],
+}
+
+impl CardRecord {
+    /// A card with front abilities and nothing else registered.
+    #[must_use]
+    pub const fn new(code: &'static str, abilities: fn() -> Vec<Ability>) -> Self {
+        Self {
+            code,
+            abilities,
+            back_abilities: None,
+            native_effects: &[],
+            native_eligibility: &[],
+            native_conditions: &[],
+        }
+    }
+
+    /// Register the abilities printed on the card's reverse.
+    #[must_use]
+    pub const fn back(mut self, back_abilities: fn() -> Vec<Ability>) -> Self {
+        self.back_abilities = Some(back_abilities);
+        self
+    }
+
+    /// Register the card's native effects.
+    #[must_use]
+    pub const fn effects(mut self, effects: &'static [(&'static str, NativeEffectFn)]) -> Self {
+        self.native_effects = effects;
+        self
+    }
+
+    /// Register the card's native eligibility predicates.
+    #[must_use]
+    pub const fn eligibility(
+        mut self,
+        eligibility: &'static [(&'static str, EligibilityFn)],
+    ) -> Self {
+        self.native_eligibility = eligibility;
+        self
+    }
+
+    /// Register the card's native conditions.
+    ///
+    /// `TODO(#609)`: two cards use this namespace, Machete 01020 and 01107, and
+    /// a third should not. Promotion to declarative DSL vocab is triggered by
+    /// the next card wanting a **compound or target-referencing** condition,
+    /// which is what Machete has and the DSL cannot express. 01107's act-deck
+    /// branch is neither: it is a plain scenario-state read (`act_index == 2`),
+    /// so it lands here without firing that trigger.
+    #[must_use]
+    pub const fn conditions(
+        mut self,
+        conditions: &'static [(&'static str, NativeConditionFn)],
+    ) -> Self {
+        self.native_conditions = conditions;
+        self
+    }
+}
+
+/// Every implemented card's registration, one entry per card module. A card
+/// is playable iff it is listed here.
+pub const ALL: &[CardRecord] = &[
+    ancient_evils::CARD,
+    attic::CARD,
+    automatic_45::CARD,
+    barricade::CARD,
+    beat_cop::CARD,
+    cellar::CARD,
+    cover_up::CARD,
+    crypt_chill::CARD,
+    deduction::CARD,
+    dissonant_voices::CARD,
+    dodge::CARD,
+    dr_milan_christopher::CARD,
+    dynamite_blast::CARD,
+    emergency_cache::CARD,
+    evidence::CARD,
+    first_aid::CARD,
+    flashlight::CARD,
+    frozen_in_fear::CARD,
+    grasping_hands::CARD,
+    guard_dog::CARD,
+    guts::CARD,
+    holy_rosary::CARD,
+    hyperawareness::CARD,
+    knife::CARD,
+    lita_chantler::CARD,
+    machete::CARD,
+    magnifying_glass::CARD,
+    manual_dexterity::CARD,
+    medical_texts::CARD,
+    mind_over_matter::CARD,
+    obscuring_fog::CARD,
+    old_book_of_lore::CARD,
+    overpower::CARD,
+    parlor::CARD,
+    perception::CARD,
+    physical_training::CARD,
+    research_librarian::CARD,
+    rise_of_the_ghouls::CARD,
+    roland_38_special::CARD,
+    roland_banks::CARD,
+    rotting_remains::CARD,
+    silver_twilight_acolyte::CARD,
+    the_barrier::CARD,
+    theyre_getting_out::CARD,
+    trapped::CARD,
+    unexpected_courage::CARD,
+    vicious_blow::CARD,
+    what_have_you_done::CARD,
+    whats_going_on::CARD,
+    working_a_hunch::CARD,
+];
+
+/// The record registered for `code`.
+fn record(code: &str) -> Option<&'static CardRecord> {
+    ALL.iter().find(|record| record.code == code)
+}
+
+/// Look up a card's hand-implemented abilities by code. Returns `None` for
+/// unimplemented cards.
 #[must_use]
 pub fn abilities_for(code: &str) -> Option<Vec<Ability>> {
-    match code {
-        ancient_evils::CODE => Some(ancient_evils::abilities()),
-        attic::CODE => Some(attic::abilities()),
-        automatic_45::CODE => Some(automatic_45::abilities()),
-        barricade::CODE => Some(barricade::abilities()),
-        beat_cop::CODE => Some(beat_cop::abilities()),
-        cellar::CODE => Some(cellar::abilities()),
-        cover_up::CODE => Some(cover_up::abilities()),
-        crypt_chill::CODE => Some(crypt_chill::abilities()),
-        deduction::CODE => Some(deduction::abilities()),
-        dissonant_voices::CODE => Some(dissonant_voices::abilities()),
-        dodge::CODE => Some(dodge::abilities()),
-        dr_milan_christopher::CODE => Some(dr_milan_christopher::abilities()),
-        dynamite_blast::CODE => Some(dynamite_blast::abilities()),
-        emergency_cache::CODE => Some(emergency_cache::abilities()),
-        evidence::CODE => Some(evidence::abilities()),
-        first_aid::CODE => Some(first_aid::abilities()),
-        flashlight::CODE => Some(flashlight::abilities()),
-        frozen_in_fear::CODE => Some(frozen_in_fear::abilities()),
-        grasping_hands::CODE => Some(grasping_hands::abilities()),
-        guard_dog::CODE => Some(guard_dog::abilities()),
-        guts::CODE => Some(guts::abilities()),
-        holy_rosary::CODE => Some(holy_rosary::abilities()),
-        hyperawareness::CODE => Some(hyperawareness::abilities()),
-        knife::CODE => Some(knife::abilities()),
-        lita_chantler::CODE => Some(lita_chantler::abilities()),
-        machete::CODE => Some(machete::abilities()),
-        magnifying_glass::CODE => Some(magnifying_glass::abilities()),
-        manual_dexterity::CODE => Some(manual_dexterity::abilities()),
-        medical_texts::CODE => Some(medical_texts::abilities()),
-        mind_over_matter::CODE => Some(mind_over_matter::abilities()),
-        obscuring_fog::CODE => Some(obscuring_fog::abilities()),
-        old_book_of_lore::CODE => Some(old_book_of_lore::abilities()),
-        overpower::CODE => Some(overpower::abilities()),
-        parlor::CODE => Some(parlor::abilities()),
-        perception::CODE => Some(perception::abilities()),
-        physical_training::CODE => Some(physical_training::abilities()),
-        research_librarian::CODE => Some(research_librarian::abilities()),
-        rise_of_the_ghouls::CODE => Some(rise_of_the_ghouls::abilities()),
-        roland_38_special::CODE => Some(roland_38_special::abilities()),
-        roland_banks::CODE => Some(roland_banks::abilities()),
-        rotting_remains::CODE => Some(rotting_remains::abilities()),
-        silver_twilight_acolyte::CODE => Some(silver_twilight_acolyte::abilities()),
-        the_barrier::CODE => Some(the_barrier::abilities()),
-        theyre_getting_out::CODE => Some(theyre_getting_out::abilities()),
-        trapped::CODE => Some(trapped::abilities()),
-        unexpected_courage::CODE => Some(unexpected_courage::abilities()),
-        vicious_blow::CODE => Some(vicious_blow::abilities()),
-        what_have_you_done::CODE => Some(what_have_you_done::abilities()),
-        whats_going_on::CODE => Some(whats_going_on::abilities()),
-        working_a_hunch::CODE => Some(working_a_hunch::abilities()),
-        _ => None,
-    }
+    record(code).map(|record| (record.abilities)())
 }
 
 /// Look up the abilities printed on a card's **reverse side** by code. Returns
 /// `None` for a card with no implemented back-side abilities.
 ///
-/// A separate dispatch from [`abilities_for`], not a second arm of it: which
+/// A separate lookup from [`abilities_for`], not a second arm of it: which
 /// side is in effect is the engine's question (for a location, its `revealed`
 /// flag — `game_core::engine::abilities_in_effect`), and a card declares only
-/// what each side says. The Parlor 01115 is the sole entry today; its back
-/// carries the barrier that blocks investigators until act 01109b reveals the
-/// location.
+/// what each side says. The Parlor 01115 is the sole card with a back today;
+/// its back carries the barrier that blocks investigators until act 01109b
+/// reveals the location.
 #[must_use]
 pub fn back_abilities_for(code: &str) -> Option<Vec<Ability>> {
-    match code {
-        parlor::CODE => Some(parlor::back_abilities()),
-        _ => None,
-    }
+    record(code)?.back_abilities.map(|back| back())
+}
+
+/// The fn registered under `tag` in the namespace `slice` picks out of each
+/// record.
+fn native<F: Copy>(tag: &str, slice: fn(&CardRecord) -> &'static [(&'static str, F)]) -> Option<F> {
+    ALL.iter()
+        .flat_map(slice)
+        .find(|(registered, _)| *registered == tag)
+        .map(|(_, f)| *f)
 }
 
 /// Resolve an [`Effect::Native`](card_dsl::dsl::Effect::Native) tag to the
-/// card-local Rust fn that implements it. Mirrors [`abilities_for`]'s
-/// per-card delegation; returns `None` for unregistered tags.
+/// card-local Rust fn that implements it; returns `None` for unregistered tags.
 #[must_use]
 pub fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    trapped::native_effect_for(tag)
-        .or_else(|| the_barrier::native_effect_for(tag))
-        .or_else(|| whats_going_on::native_effect_for(tag))
-        .or_else(|| rise_of_the_ghouls::native_effect_for(tag))
-        .or_else(|| theyre_getting_out::native_effect_for(tag))
-        .or_else(|| dynamite_blast::native_effect_for(tag))
-        .or_else(|| guard_dog::native_effect_for(tag))
-        .or_else(|| mind_over_matter::native_effect_for(tag))
-        .or_else(|| cover_up::native_effect_for(tag))
-        .or_else(|| crypt_chill::native_effect_for(tag))
-        .or_else(|| obscuring_fog::native_effect_for(tag))
+    native(tag, |record| record.native_effects)
 }
 
-/// Dispatch a native eligibility-predicate tag to its card-local handler;
+/// Resolve a native eligibility-predicate tag to its card-local predicate;
 /// returns `None` for unregistered tags.
 #[must_use]
 pub fn native_eligibility_for(tag: &str) -> Option<EligibilityFn> {
-    cover_up::native_eligibility_for(tag)
-        .or_else(|| the_barrier::native_eligibility_for(tag))
-        .or_else(|| lita_chantler::native_eligibility_for(tag))
+    native(tag, |record| record.native_eligibility)
 }
 
-/// Dispatch a [`Condition::Native`](card_dsl::dsl::Condition::Native) tag to its
-/// card-local predicate; returns `None` for unregistered tags.
-///
-/// `TODO(#609)`: promotion to declarative DSL vocab is triggered by the next card
-/// wanting a **compound or target-referencing** condition — which is what Machete
-/// (01020) has and the DSL cannot express. 01107's act-deck branch is neither: it
-/// is a plain scenario-state read (`act_index == 2`), so it lands here without
-/// firing that trigger.
+/// Resolve a [`Condition::Native`](card_dsl::dsl::Condition::Native) tag to its
+/// card-local predicate; returns `None` for unregistered tags. Its only
+/// registrants are Machete 01020 and 01107 — see [`CardRecord::conditions`].
 #[must_use]
 pub fn native_condition_for(tag: &str) -> Option<NativeConditionFn> {
-    machete::native_condition_for(tag).or_else(|| theyre_getting_out::native_condition_for(tag))
+    native(tag, |record| record.native_conditions)
 }

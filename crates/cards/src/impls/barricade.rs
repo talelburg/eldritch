@@ -30,8 +30,13 @@
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, Restriction};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for the original-Core printing.
 pub const CODE: &str = "01038";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities);
 
 /// Attach-on-play, the constant non-Elite movement block, and the
 /// leave-location forced self-discard.

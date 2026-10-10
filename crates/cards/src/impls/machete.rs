@@ -41,15 +41,20 @@
 //! with nobody.
 
 use card_dsl::dsl::{self, Ability, IntExpr};
-use game_core::card_registry::NativeConditionFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::state::GameState;
+
+use crate::impls::CardRecord;
 
 /// `ArkhamDB` code for Machete (original-Core printing).
 pub const CODE: &str = "01020";
 
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord =
+    CardRecord::new(CODE, abilities).conditions(&[(SOLE_ENGAGED_TAG, sole_engaged_target)]);
+
 /// Native condition tag: the attacked enemy is the only enemy engaged with you.
-const SOLE_ENGAGED_TAG: &str = "01020:sole_engaged_target";
+const SOLE_ENGAGED_TAG: &str = "01020:sole-engaged-target";
 
 #[must_use]
 pub fn abilities() -> Vec<Ability> {
@@ -95,14 +100,6 @@ fn sole_engaged_target(state: &GameState, ctx: &EvalContext) -> bool {
     engaged.next() == Some(target) && engaged.next().is_none()
 }
 
-/// Resolve Machete's native condition tag.
-pub(crate) fn native_condition_for(tag: &str) -> Option<NativeConditionFn> {
-    match tag {
-        SOLE_ENGAGED_TAG => Some(sole_engaged_target as NativeConditionFn),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::{ActionDesignator, Effect, Trigger};
@@ -110,7 +107,6 @@ mod tests {
     use game_core::test_support;
 
     use super::*;
-    use crate::impls;
 
     #[test]
     fn one_costless_activated_fight_ability() {
@@ -145,21 +141,11 @@ mod tests {
         assert_eq!(abilities[0].effect, Effect::Seq(vec![]));
     }
 
-    /// Catches a `pub mod` rename or a fat-fingered match arm in
-    /// `impls::abilities_for` — the registry must dispatch CODE here.
+    /// Catches a `CARD` record wired to the wrong code or abilities fn —
+    /// the registry must dispatch CODE here.
     #[test]
     fn registry_dispatches_to_this_modules_abilities() {
         assert_eq!(crate::abilities_for(CODE), Some(abilities()));
-    }
-
-    #[test]
-    fn native_condition_tag_resolves() {
-        assert!(native_condition_for(SOLE_ENGAGED_TAG).is_some());
-        assert!(native_condition_for("nope").is_none());
-        assert!(
-            impls::native_condition_for(SOLE_ENGAGED_TAG).is_some(),
-            "the crate-level dispatch must route Machete's tag here",
-        );
     }
 
     /// The predicate itself, across the four target/engagement shapes the

@@ -34,12 +34,16 @@
 //! the window binds. (C5b #237.)
 
 use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
-use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Guard Dog (original-Core printing).
 pub const CODE: &str = "01021";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord = CardRecord::new(CODE, abilities).effects(&[(RETALIATE, retaliate)]);
 
 const RETALIATE: &str = "01021:retaliate";
 
@@ -50,15 +54,6 @@ pub fn abilities() -> Vec<Ability> {
         EventTiming::When,
         dsl::native(RETALIATE),
     )]
-}
-
-/// Resolve this card's native-effect tags. Wired into the crate registry's
-/// `native_effect_for`.
-pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    match tag {
-        RETALIATE => Some(retaliate as NativeEffectFn),
-        _ => None,
-    }
 }
 
 /// "Deal 1 damage to the attacking enemy." The attacker is bound on
@@ -82,6 +77,7 @@ fn retaliate(cx: &mut Cx, ctx: &EvalContext) -> EngineOutcome {
 #[cfg(test)]
 mod tests {
     use card_dsl::dsl::{Effect, Trigger, TriggerKind};
+    use game_core::card_registry::NativeEffectFn;
     use game_core::event::Event;
     use game_core::state::{EnemyId, GameState, GameStateBuilder, InvestigatorId};
     use game_core::test_support;
@@ -122,14 +118,8 @@ mod tests {
         assert!(matches!(&abilities[0].effect, Effect::Native { tag } if tag == RETALIATE));
     }
 
-    #[test]
-    fn native_effect_for_resolves_retaliate() {
-        assert!(native_effect_for(RETALIATE).is_some());
-        assert!(native_effect_for("01021:other").is_none());
-    }
-
-    /// Catches a `pub mod` rename or a fat-fingered match arm in
-    /// `impls::abilities_for` — the registry must dispatch CODE here.
+    /// Catches a `CARD` record wired to the wrong code or abilities fn —
+    /// the registry must dispatch CODE here.
     #[test]
     fn registry_dispatches_to_this_modules_abilities() {
         assert_eq!(crate::abilities_for(CODE), Some(abilities()));

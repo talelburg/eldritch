@@ -1064,16 +1064,17 @@ impl Ability {
             });
         }
         match &self.trigger {
+            // None of these holds an effect, condition or integer expression: an
+            // event pattern names what happened, never a condition on it.
             Trigger::Constant
             | Trigger::OnPlay
             | Trigger::OnCommit
             | Trigger::Revelation
             | Trigger::OnSkillTestResolution { .. }
+            | Trigger::OnEvent { .. }
             | Trigger::Activated {
                 designator: None, ..
             } => {}
-            // An event pattern names what happened, never a condition on it.
-            Trigger::OnEvent { .. } => {}
             Trigger::Activated {
                 designator: Some(designator),
                 ..

@@ -33,14 +33,19 @@ use card_dsl::dsl::{
     self, Ability, EventPattern, EventTiming, ModifierAudience, ModifierScope, SkillTestKind, Stat,
     TestOutcome, TestedLocationScope,
 };
-use game_core::card_registry::NativeEffectFn;
 use game_core::engine::evaluator::EvalContext;
 use game_core::engine::{self, Cx, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{CardCode, DiscardPile, Owner, Zone};
 
+use crate::impls::CardRecord;
+
 /// `ArkhamDB` code for Obscuring Fog.
 pub const CODE: &str = "01168";
+
+/// This card's registration, listed in [`ALL`](super::ALL).
+pub const CARD: CardRecord =
+    CardRecord::new(CODE, abilities).effects(&[(LIMIT1_ATTACH, limit1_attach)]);
 
 const LIMIT1_ATTACH: &str = "01168:limit1-attach";
 
@@ -65,12 +70,6 @@ pub fn abilities() -> Vec<Ability> {
             dsl::discard_self(),
         ),
     ]
-}
-
-/// Resolve this treachery's native-effect tag. Wired into the crate
-/// registry's `native_effect_for`.
-pub(crate) fn native_effect_for(tag: &str) -> Option<NativeEffectFn> {
-    (tag == LIMIT1_ATTACH).then_some(limit1_attach as NativeEffectFn)
 }
 
 /// Revelation: attach to the controller's location, enforcing "Limit 1
@@ -158,8 +157,5 @@ mod tests {
             }
         ));
         assert!(matches!(&abilities[2].effect, Effect::DiscardSelf));
-
-        assert!(native_effect_for(LIMIT1_ATTACH).is_some());
-        assert!(native_effect_for("nope").is_none());
     }
 }
