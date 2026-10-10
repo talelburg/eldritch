@@ -65,8 +65,8 @@ use game_core::engine::{ApplyResult, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, ModifierTarget, SkillKind,
-    TokenModifiers,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, ModifierTarget, Owner,
+    SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
 use game_core::{assert_event, card_registry};
@@ -141,9 +141,11 @@ impl Board {
         other.skills.combat = 3;
 
         if self.controlled {
-            keeper
-                .cards_in_play
-                .push(CardInPlay::enter_play(CardCode::new(LITA), LITA_INST));
+            keeper.cards_in_play.push(CardInPlay::enter_play(
+                CardCode::new(LITA),
+                LITA_INST,
+                Owner::Scenario,
+            ));
         }
         {
             let actor = if self.actor == KEEPER {
@@ -152,9 +154,11 @@ impl Board {
                 &mut other
             };
             if self.machete {
-                actor
-                    .cards_in_play
-                    .push(CardInPlay::enter_play(CardCode::new(MACHETE), MACHETE_INST));
+                actor.cards_in_play.push(CardInPlay::enter_play(
+                    CardCode::new(MACHETE),
+                    MACHETE_INST,
+                    Owner::Investigator(actor.id),
+                ));
             }
             if self.dynamite {
                 actor.hand.push(CardCode::new(DYNAMITE));
@@ -200,7 +204,11 @@ impl Board {
                 .get_mut(&PARLOR)
                 .expect("the Parlor is on the board")
                 .cards_at_location
-                .push(CardInPlay::enter_play(CardCode::new(LITA), LITA_INST));
+                .push(CardInPlay::enter_play(
+                    CardCode::new(LITA),
+                    LITA_INST,
+                    Owner::Scenario,
+                ));
         }
         state
     }

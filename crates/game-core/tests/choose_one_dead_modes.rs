@@ -22,7 +22,7 @@ use game_core::engine::{self, ApplyResult, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, SkillKind, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, MockRegistry, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -75,6 +75,7 @@ fn board(damage: u8, horror: u8) -> GameState {
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(MODAL_HEAL_ON_SUCCESS),
         INST,
+        Owner::Investigator(InvestigatorId(1)),
     ));
 
     GameStateBuilder::new()

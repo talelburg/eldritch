@@ -8,7 +8,7 @@ use game_core::event::Event;
 use game_core::scenario::ScenarioId;
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Phase, SkillKind, TokenResolution,
+    InvestigatorId, LocationId, Owner, Phase, SkillKind, TokenResolution,
 };
 use game_core::test_support::{self, ScriptedResolver};
 use game_core::{assert_event, assert_event_count, scenario_registry};
@@ -239,6 +239,7 @@ fn tablet_immediate_damage_suspends_on_soak_without_redrawing() {
         .push(CardInPlay::enter_play(
             CardCode::new("01021"),
             CardInstanceId(1),
+            Owner::Investigator(InvestigatorId(1)),
         ));
 
     let mut resolver = ScriptedResolver::new();
@@ -286,8 +287,11 @@ fn beat_cop_board(cop_damage: u8) -> GameState {
     let mut state = gathering_state(ChaosToken::Tablet, 1);
     // Pushed after `build()`, so it names its own owner: a player card leaving
     // play goes to its owner's discard pile (#772).
-    let mut cop =
-        CardInPlay::enter_play(CardCode::new(BEAT_COP), COP_INST).owned_by(Some(InvestigatorId(1)));
+    let mut cop = CardInPlay::enter_play(
+        CardCode::new(BEAT_COP),
+        COP_INST,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     cop.accumulated_damage = cop_damage;
     state
         .investigators

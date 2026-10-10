@@ -15,8 +15,8 @@
 
 use std::sync::OnceLock;
 
-use card_dsl::card_data::{CardKind, CardMetadata, Class, Skills};
-use card_dsl::dsl::{self, Ability, EventPattern, EventTiming};
+use card_dsl::card_data::{CardKind, CardMetadata, Class, SkillIcons, Skills};
+use card_dsl::dsl::{self, Ability, EventPattern, EventTiming, InvestigatorTarget};
 
 use crate::card_registry::{self, CardRegistry};
 use crate::state::CardCode;
@@ -54,6 +54,91 @@ fn test_inv_metadata() -> &'static CardMetadata {
             health: 8,
             sanity: 8,
         },
+    })
+}
+
+/// Synthetic **player-cardtype** card code for unit tests: an asset, with one
+/// `[action]` ability. Registered by [`install_test_registry`].
+///
+/// For a fixture that needs a card's cardtype to be a player one — a
+/// player card in a threat area, which co-location must not reach (#975) —
+/// without borrowing a real corpus code the unit registry does not know.
+///
+/// **A probe, shared rather than test-local.** ADR 0016 keeps probe cards
+/// in the one binary that reads them, but game-core's unit tests are one
+/// binary with one registry, installed before its harness runs
+/// ([`install_test_registry`]), so a unit-test probe can only be served from
+/// here. Integration binaries define their own.
+pub const TEST_ASSET: &str = "TEST_ASSET";
+
+/// Synthetic **encounter-cardtype** card code for unit tests: a treachery,
+/// with one `[action]` ability. Registered by [`install_test_registry`]. The
+/// encounter counterpart of [`TEST_ASSET`], and shared for the same reason.
+pub const TEST_TREACHERY: &str = "TEST_TREACHERY";
+
+/// Metadata for the synthetic cardtype cards, [`TEST_ASSET`] and
+/// [`TEST_TREACHERY`].
+fn metadata_for_test_cardtypes(code: &CardCode) -> Option<&'static CardMetadata> {
+    fn card(code: &str, name: &str, kind: CardKind) -> CardMetadata {
+        CardMetadata {
+            code: code.to_owned(),
+            name: name.to_owned(),
+            traits: vec![],
+            text: None,
+            back_name: None,
+            back_text: None,
+            pack_code: "_test".to_owned(),
+            weakness: false,
+            kind,
+        }
+    }
+    static ASSET: OnceLock<CardMetadata> = OnceLock::new();
+    static TREACHERY: OnceLock<CardMetadata> = OnceLock::new();
+    match code.as_str() {
+        TEST_ASSET => Some(ASSET.get_or_init(|| {
+            card(
+                TEST_ASSET,
+                "Test Asset",
+                CardKind::Asset {
+                    class: Class::Neutral,
+                    cost: Some(0),
+                    xp: None,
+                    slots: vec![],
+                    health: None,
+                    sanity: None,
+                    skill_icons: SkillIcons::default(),
+                    is_fast: false,
+                    deck_limit: 2,
+                    uses: None,
+                    play_only_during_turn: false,
+                },
+            )
+        })),
+        TEST_TREACHERY => Some(TREACHERY.get_or_init(|| {
+            card(
+                TEST_TREACHERY,
+                "Test Treachery",
+                CardKind::Treachery {
+                    surge: false,
+                    peril: false,
+                    quantity: 1,
+                },
+            )
+        })),
+        _ => None,
+    }
+}
+
+/// Abilities for the synthetic cardtype cards: one `[action]` ability each,
+/// costing nothing else, so a fixture can see which of them a turn menu
+/// offers.
+fn abilities_for_test_cardtypes(code: &CardCode) -> Option<Vec<Ability>> {
+    matches!(code.as_str(), TEST_ASSET | TEST_TREACHERY).then(|| {
+        vec![dsl::activated(
+            1,
+            vec![],
+            dsl::gain_resources(InvestigatorTarget::You, 1),
+        )]
     })
 }
 
@@ -179,7 +264,8 @@ pub fn metadata_for_test_inv(code: &CardCode) -> Option<&'static CardMetadata> {
     (code.as_str() == TEST_INV).then(test_inv_metadata)
 }
 
-/// Install a minimal game-core test registry that knows `TEST_INV` and the
+/// Install a minimal game-core test registry that knows `TEST_INV`, the
+/// synthetic cardtype cards ([`TEST_ASSET`], [`TEST_TREACHERY`]) and the
 /// synthetic terminal cards ([`terminal_code`]), and nothing else. Idempotent;
 /// safe to call from any test. Capacity-reading code (`max_health()` /
 /// `max_sanity()` / soak / defeat) needs this installed, and so does any fixture
@@ -196,10 +282,10 @@ pub fn install_test_registry() {
     static INSTALL: OnceLock<()> = OnceLock::new();
     INSTALL.get_or_init(|| {
         fn metadata_for(code: &CardCode) -> Option<&'static CardMetadata> {
-            (code.as_str() == TEST_INV).then(test_inv_metadata)
+            metadata_for_test_inv(code).or_else(|| metadata_for_test_cardtypes(code))
         }
         fn abilities_for(code: &CardCode) -> Option<Vec<Ability>> {
-            abilities_for_terminal(code)
+            abilities_for_terminal(code).or_else(|| abilities_for_test_cardtypes(code))
         }
         let _ = card_registry::install(CardRegistry {
             metadata_for,

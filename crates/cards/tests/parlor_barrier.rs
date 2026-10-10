@@ -56,7 +56,7 @@ use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::{self, EngineOutcome};
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, GameState, GameStateBuilder, InvestigatorId,
-    Location, LocationId,
+    Location, LocationId, Owner,
 };
 use game_core::test_support;
 
@@ -284,7 +284,11 @@ fn a_barricaded_location_blocks_a_non_elite_enemy_and_not_an_investigator() {
         .get_mut(&ATTIC)
         .expect("Attic is on the board")
         .attachments
-        .push(CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST));
+        .push(CardInPlay::enter_play(
+            CardCode::new(BARRICADE),
+            ATT_INST,
+            Owner::Investigator(INV),
+        ));
 
     let mut ghoul: Enemy = test_support::test_enemy(1, "Ghoul");
     ghoul.code = CardCode::new(GHOUL_MINION);

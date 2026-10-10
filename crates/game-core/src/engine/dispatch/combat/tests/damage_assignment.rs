@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::Owner;
 
 #[test]
 fn assign_attack_fills_soaker_before_investigator() {
@@ -47,7 +48,11 @@ fn place_assignment_accumulates_on_asset_and_investigator() {
     let id = InvestigatorId(1);
     let inst = CardInstanceId(7);
     let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play = vec![CardInPlay::enter_play(CardCode::new("01021"), inst)];
+    inv.cards_in_play = vec![CardInPlay::enter_play(
+        CardCode::new("01021"),
+        inst,
+        Owner::Investigator(InvestigatorId(1)),
+    )];
 
     let mut state = GameStateBuilder::new().with_investigator(inv).build();
     let mut events = Vec::new();

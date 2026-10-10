@@ -18,8 +18,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInstanceId, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
-    Status, Zone,
+    CardCode, CardInstanceId, DiscardPile, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    Phase, Status, Zone,
 };
 use game_core::{assert_event_count, assert_event_sequence, assert_no_event, test_support};
 
@@ -236,7 +236,7 @@ fn play_working_a_hunch_resolves_on_play_and_discards() {
     assert_event_count!(
         result.events,
         1,
-        Event::CardDiscarded { code, from: Zone::Hand, investigator }
+        Event::CardDiscarded { code, from: Zone::Hand, to: DiscardPile::Investigator(investigator) }
             if *investigator == id && code.as_str() == WORKING_A_HUNCH
     );
 

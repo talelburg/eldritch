@@ -317,7 +317,7 @@ mod tests {
     use game_core::scenario::ScenarioEnding;
     use game_core::state::{
         Agenda, CardCode, CardInPlay, CardInstanceId, Enemy, GameStateBuilder, InvestigatorId,
-        Location,
+        Location, Owner,
     };
     use game_core::{card_registry, test_support};
 
@@ -637,6 +637,7 @@ mod tests {
             .push(CardInPlay::enter_play(
                 CardCode::new("01038"),
                 CardInstanceId(900),
+                Owner::Investigator(InvestigatorId(1)),
             ));
     }
 

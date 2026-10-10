@@ -540,7 +540,7 @@ pub(crate) fn render_segments(segments: Vec<TextSegment>) -> Vec<AnyView> {
 
 #[cfg(test)]
 mod tests {
-    use game_core::state::{CardInPlay as TestCardInPlay, CardInstanceId};
+    use game_core::state::{CardInPlay as TestCardInPlay, CardInstanceId, Owner as CardOwner};
 
     use super::*;
 
@@ -710,7 +710,11 @@ mod tests {
     fn live_state_chips_includes_clues_on_card() {
         // A treachery (Cover Up) in the threat area carries clues on the card.
         let meta = cards::by_code("01007").expect("Cover Up in corpus");
-        let mut inst = TestCardInPlay::enter_play(CardCode::new("01007"), CardInstanceId(0));
+        let mut inst = TestCardInPlay::enter_play(
+            CardCode::new("01007"),
+            CardInstanceId(0),
+            CardOwner::Investigator(InvestigatorId(1)),
+        );
         inst.clues = 3;
         assert_eq!(
             live_state_chips(&inst, &meta.kind),
@@ -721,7 +725,11 @@ mod tests {
     #[test]
     fn live_state_chips_omits_clues_when_zero() {
         let meta = cards::by_code("01007").expect("Cover Up in corpus");
-        let inst = TestCardInPlay::enter_play(CardCode::new("01007"), CardInstanceId(0));
+        let inst = TestCardInPlay::enter_play(
+            CardCode::new("01007"),
+            CardInstanceId(0),
+            CardOwner::Investigator(InvestigatorId(1)),
+        );
         assert!(live_state_chips(&inst, &meta.kind).is_empty());
     }
 
@@ -729,7 +737,11 @@ mod tests {
     fn live_state_chips_soak_uses_real_capacity() {
         // Beat Cop 01018 is an ally asset with health 2 / sanity 2.
         let meta = cards::by_code("01018").expect("Beat Cop in corpus");
-        let mut inst = TestCardInPlay::enter_play(CardCode::new("01018"), CardInstanceId(0));
+        let mut inst = TestCardInPlay::enter_play(
+            CardCode::new("01018"),
+            CardInstanceId(0),
+            CardOwner::Investigator(InvestigatorId(1)),
+        );
         inst.accumulated_damage = 1;
         assert_eq!(
             live_state_chips(&inst, &meta.kind),
@@ -741,7 +753,11 @@ mod tests {
     fn live_state_chips_lists_uses_without_soak_for_plain_asset() {
         // Machete 01020 is an asset with no soak capacity.
         let meta = cards::by_code("01020").expect("Machete in corpus");
-        let mut inst = TestCardInPlay::enter_play(CardCode::new("01020"), CardInstanceId(0));
+        let mut inst = TestCardInPlay::enter_play(
+            CardCode::new("01020"),
+            CardInstanceId(0),
+            CardOwner::Investigator(InvestigatorId(1)),
+        );
         inst.uses.insert(UseKind::Ammo, 2);
         assert_eq!(
             live_state_chips(&inst, &meta.kind),
@@ -752,7 +768,11 @@ mod tests {
     #[test]
     fn live_state_chips_empty_for_plain_asset_no_uses() {
         let meta = cards::by_code("01020").expect("Machete in corpus");
-        let inst = TestCardInPlay::enter_play(CardCode::new("01020"), CardInstanceId(0));
+        let inst = TestCardInPlay::enter_play(
+            CardCode::new("01020"),
+            CardInstanceId(0),
+            CardOwner::Investigator(InvestigatorId(1)),
+        );
         assert!(live_state_chips(&inst, &meta.kind).is_empty());
     }
 }

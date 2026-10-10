@@ -2,14 +2,14 @@
 
 "Which triggered abilities does this timing event reach?" was answered once per ability kind, and the answers had drifted apart. The forced side was a private `ForcedTriggerPoint` enum with one hand-written zone table per variant: `EnteredLocation` looked at the entered location's card, `RoundEnded` at the act, the agenda and every Active investigator's controlled cards, `EnemyDefeated` at the current act only. So *"Forced - After an enemy is defeated"* printed on an agenda, an asset or a location was never collected, never rejected and never logged (#698). Each table was a guess about where a card listening to that condition could sit, and every guess was right only until the next card arrived.
 
-**So the scan walks the whole board at every condition, and a condition never chooses where to look.** `engine::dispatch::trigger_scan::board_walk` visits, in one fixed order:
+**So the scan walks the whole board at every condition, and a condition never chooses where to look.** The walk is `engine::board::walk`, which visits, in one fixed order, each card with its `Placement`:
 
-1. each investigator — the active one first, then the rest of `turn_order`, then anyone else by id — their controlled card instances, then the Fast events in their hand;
+1. each investigator — the active one first, then the rest of `turn_order`, then anyone else by id — their investigator card, their play area, then their threat area;
 2. each location by `LocationId`, its attachments, and the cards put into play at it;
 3. each enemy by id, then its attachments;
 4. the current act, then the current agenda.
 
-Eliminated investigators are skipped, since Rules Reference p.10 removes their cards and only this filter keeps their investigator card out (#567). The one exception is the investigator `EliminationGameEnd` names, who is already off `Active` when step 0 fires for their weaknesses. At an advance, the act or agenda slot holds the card the event names: during its reverse it is still the current one, and the event's code is the authority for which card that is.
+The walk itself is unfiltered, and the scan (`trigger_scan::board_walk`) narrows it three ways. It appends the Fast events in each investigator's hand, in the walk's investigator order, after the act and the agenda: a hand is not on the board, so it comes after the whole of it. It skips eliminated investigators, since Rules Reference p.10 removes their cards and only this filter keeps their investigator card out (#567). The one exception is the investigator `EliminationGameEnd` names, who is already off `Active` when step 0 fires for their weaknesses. And at an advance, the act or agenda slot holds the card the event names: during its reverse it is still the current one, and the event's code is the authority for which card that is.
 
 ## What narrows a condition is on the card
 
@@ -45,6 +45,18 @@ Before this, the reaction scans reached only the investigators' controlled cards
 
 **A forced ability is one candidate whatever reaches it.** ADR 0010: *"a forced ability is not restricted to the sources its controller could legally use"*. Silver Twilight Acolyte 01102 places its doom whether or not the investigator it attacked could use the enemy. Filtering forced hits by reachability would make whether a card's forced text happens depend on where the investigators stand.
 
+## The sweeps, reachability and the instance lookup share the walk
+
+The modifier sweep, the grant sweep, the instance lookup and reachability ask the scan's question too: *"which cards are on the board"*. A zone list of their own is a guess that drifts, the way the forced tables did — one that never skips an eliminated investigator, or that reaches a player card in a co-located threat area where the co-location bullet reaches only *"encounter cards in the threat area of any investigator at that location"* (#975). **All of them read `board::walk`**, and none keeps a zone list of its own, so a new kind of source is added once and every reader sees it.
+
+Each caller filters the walk to what it needs:
+
+- **The modifier sweep and the grant sweep** skip an eliminated investigator's cards, as the trigger scan does. In elimination's step-0 window those cards are still on the board, and they no longer project modifiers or grant abilities.
+- **The instance lookup** (`find_instance` and its mutable twin) is unfiltered. Cover Up 01007's game-end trauma resolves at step 0, after its holder has left `Active`, and must still find its card.
+- **Reachability** filters by ADR 0010's bullets, and reads another investigator's threat area through the registry's cardtype. A card with no metadata counts as an encounter card, matching the other metadata fallbacks.
+
+**Every reader takes the walk's order.** No modifier-sweep consumer reads its order, since a breakdown's total is a commutative fold. Reachability's order is observable as the order of turn-menu and player-window options: another investigator's threat-area card is listed in that investigator's block, and a reacher who is not first in the walk sees an earlier investigator's cards before their own. The client routes options per board card, so the order across cards is presentation only, and the order of one card's abilities is unchanged.
+
 ## Considered options
 
 **One shared per-condition zone table**, used by both kinds: `ForcedTriggerPoint`'s tables, lifted out so reactions read them too. It fixes the forced/reaction drift and keeps today's scan cost. It was rejected because it keeps the failure that produced #698. The table is still a prediction of where a listening card can sit, made before the card exists, so it stays wrong until someone hand-edits the arm. A missing zone is also silent, because a card the table never visits is neither collected nor rejected. With the whole-board walk, a new kind of source is added once, in the walk, and both kinds see it. A wrong narrowing becomes a failing assertion about a card's printed word. The cost is a walk over every card at every cell, and the board is small. #117's event-keyed index is the remedy if it stops being small, and the walk is the shape such an index would index.
@@ -52,3 +64,7 @@ Before this, the reaction scans reached only the investigators' controlled cards
 ## Consequences
 
 **Forced order follows the walk.** A 2+ forced run is ordered by the lead, so the order its options are listed in is presentation only. That order moved: at round end, Dissonant Voices 01165 in a threat area is now listed before agenda 01107, where the old `RoundEnded` arm listed the act and agenda first.
+
+---
+
+*Folded #983 (the sweeps, reachability and the instance lookup moved onto the walk, which moved from `trigger_scan` to `engine::board`, and the Fast events in hand to after the whole board), and #975 (the cardtype filter on co-located threat areas).*

@@ -44,7 +44,7 @@ use game_core::engine::{self, EngineOutcome, InputKind, OptionTarget};
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
     EnemyId, FastActorScope, FastWindowKind, GameState, GameStateBuilder, InvestigatorId,
-    LocationId, MythosPhaseFrame, MythosResume, Phase, PhaseStep, SkillKind,
+    LocationId, MythosPhaseFrame, MythosResume, Owner, Phase, PhaseStep, SkillKind,
 };
 use game_core::test_support;
 
@@ -227,6 +227,7 @@ fn board_with_beat_cop(open_window: bool) -> GameState {
     b.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(BEAT_COP),
         CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(2)),
     ));
     let mut enemy = test_support::test_enemy(100, "Ghoul");
     enemy.max_health = 3;
@@ -541,10 +542,12 @@ fn corpus_zero_action_abilities_are_offered_once_per_ability_not_once_per_card()
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new("01034"),
         HYPERAWARENESS,
+        Owner::Investigator(InvestigatorId(1)),
     ));
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new("01017"),
         PHYSICAL_TRAINING,
+        Owner::Investigator(InvestigatorId(1)),
     ));
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)

@@ -15,7 +15,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Phase, SkillKind, TokenModifiers,
+    InvestigatorId, LocationId, Owner, Phase, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -55,6 +55,7 @@ fn state_with_threat_area(threat: &[&str]) -> (GameState, InvestigatorId) {
         inv.threat_area.push(CardInPlay::enter_play(
             CardCode::new(*code),
             CardInstanceId(u32::try_from(i).unwrap() + 1),
+            Owner::EncounterDeck,
         ));
     }
     let state = GameStateBuilder::new()

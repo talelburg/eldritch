@@ -18,8 +18,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
-    Investigator, InvestigatorId, Location, LocationId,
+    CardCode, CardInPlay, CardInstanceId, DiscardPile, Enemy, EnemyId, GameState, GameStateBuilder,
+    Investigator, InvestigatorId, Location, LocationId, Owner, Zone,
 };
 use game_core::{assert_event, assert_event_sequence, assert_no_event, test_support};
 
@@ -96,6 +96,34 @@ fn playing_barricade_attaches_one_card_and_does_not_discard_the_event() {
     assert_event!(r.events, Event::CardAttachedToLocation { .. });
 }
 
+/// **A played Barricade is its player's**, although it sits in a location's
+/// attachments beside encounter cards: it came from their hand.
+#[test]
+fn a_played_barricade_is_owned_by_its_player() {
+    let mut inv = test_support::test_investigator(1);
+    inv.current_location = Some(A);
+    inv.hand = vec![CardCode::new(BARRICADE)];
+    let state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(test_support::test_location(1, "Study"))
+        .open_turn(INV)
+        .build();
+
+    let r = test_support::take_turn_action(
+        state,
+        &TurnAction::PlayCard {
+            investigator: INV,
+            hand_index: 0,
+        },
+    );
+    let barricade = r.state.locations[&A]
+        .attachments
+        .iter()
+        .find(|c| c.code == CardCode::new(BARRICADE))
+        .expect("Barricade attached");
+    assert_eq!(barricade.owner, Owner::Investigator(INV));
+}
+
 /// Linear map A—B with a Barricade attached at B, the investigator at `inv_at`,
 /// and `enemy` on the board.
 fn map_with_barricade_at_b(inv_at: LocationId, enemy: Enemy) -> GameState {
@@ -117,7 +145,11 @@ fn map_with_barricade_at_b(inv_at: LocationId, enemy: Enemy) -> GameState {
         .get_mut(&B)
         .unwrap()
         .attachments
-        .push(CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST));
+        .push(CardInPlay::enter_play(
+            CardCode::new(BARRICADE),
+            ATT_INST,
+            Owner::Investigator(INV),
+        ));
     state
 }
 
@@ -271,7 +303,11 @@ fn leaving_the_barricaded_location_discards_barricade() {
         .get_mut(&A)
         .unwrap()
         .attachments
-        .push(CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST));
+        .push(CardInPlay::enter_play(
+            CardCode::new(BARRICADE),
+            ATT_INST,
+            Owner::Investigator(INV),
+        ));
 
     let r = test_support::take_turn_action(
         state,
@@ -315,6 +351,13 @@ fn barricade_discards_before_the_departure_lands() {
         r.events,
         Event::CardDiscarded { .. },
         Event::InvestigatorMoved { .. },
+    );
+    // A player card attached to a location goes to its player's discard, not
+    // the encounter discard.
+    assert_event!(
+        r.events,
+        Event::CardDiscarded { code, from: Zone::LocationAttachment, to: DiscardPile::Investigator(INV) }
+            if code.as_str() == BARRICADE
     );
     assert!(
         r.state.locations[&A].attachments.is_empty(),
@@ -380,6 +423,7 @@ fn an_engaged_enemy_still_disengages_on_the_move_that_discards_barricade() {
         .push(CardInPlay::enter_play(
             CardCode::new(BARRICADE),
             CardInstanceId(901),
+            Owner::Investigator(INV),
         ));
 
     let r = test_support::take_turn_action(
@@ -433,7 +477,11 @@ fn map_leaving_barricaded_a(enemy: Option<Enemy>) -> GameState {
         .get_mut(&A)
         .unwrap()
         .attachments
-        .push(CardInPlay::enter_play(CardCode::new(BARRICADE), ATT_INST));
+        .push(CardInPlay::enter_play(
+            CardCode::new(BARRICADE),
+            ATT_INST,
+            Owner::Investigator(INV),
+        ));
     state
 }
 
@@ -506,6 +554,7 @@ fn board(
             .push(CardInPlay::enter_play(
                 CardCode::new(BARRICADE),
                 CardInstanceId(900 + u32::try_from(i).unwrap()),
+                Owner::Investigator(INV),
             ));
     }
     state
@@ -643,5 +692,55 @@ fn one_blocked_shortest_step_of_two_leaves_the_other_open() {
         state.enemies[&EnemyId(100)].current_location,
         Some(LocationId(3)),
         "the blocked step is dropped from the destination set, not the graph",
+    );
+}
+
+/// **#371: Barricade goes to the player who played it**, not to whoever left.
+/// Investigator 1 played it at A; investigator 2 leaves A, which fires its
+/// *"**Forced** - When an investigator leaves attached location: Discard
+/// Barricade."* `glossary/Discard_Piles.md`: *"Any time a card is discarded, it
+/// is placed faceup on top of its owner's discard pile."*
+#[test]
+fn another_investigator_leaving_discards_barricade_to_the_player_who_played_it() {
+    let mut state = GameStateBuilder::new()
+        .with_investigator(inv_at(1, A))
+        .with_investigator(inv_at(2, A))
+        .with_location(linked(1, "A", &[B]))
+        .with_location(linked(2, "B", &[A]))
+        .open_turn(INV2)
+        .build();
+    state
+        .locations
+        .get_mut(&A)
+        .unwrap()
+        .attachments
+        .push(CardInPlay::enter_play(
+            CardCode::new(BARRICADE),
+            ATT_INST,
+            Owner::Investigator(INV),
+        ));
+
+    let r = test_support::take_turn_action(
+        state,
+        &TurnAction::Move {
+            investigator: INV2,
+            destination: B,
+        },
+    );
+    assert!(!matches!(r.outcome, EngineOutcome::Rejected { .. }));
+    assert!(r.state.locations[&A].attachments.is_empty(), "discarded");
+    assert_eq!(
+        r.state.investigators[&INV].discard,
+        vec![CardCode::new(BARRICADE)],
+        "in the discard of the player who played it",
+    );
+    assert!(
+        r.state.investigators[&INV2].discard.is_empty(),
+        "not in the leaver's discard",
+    );
+    assert_event!(
+        r.events,
+        Event::CardDiscarded { code, from: Zone::LocationAttachment, to: DiscardPile::Investigator(INV) }
+            if code.as_str() == BARRICADE
     );
 }

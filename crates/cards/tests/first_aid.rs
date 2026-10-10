@@ -13,7 +13,7 @@ use game_core::engine::{ChoiceOption, EngineOutcome, OptionTarget, PromptNature}
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, UseKind,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, UseKind,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -40,7 +40,11 @@ fn board_with_harm(supplies: u8, damage: u8, horror: u8) -> GameState {
     // Harm accumulates on the investigator card after #448 cp2a.
     inv.investigator_card.accumulated_damage = damage;
     inv.investigator_card.accumulated_horror = horror;
-    let mut kit = CardInPlay::enter_play(CardCode::new(FIRST_AID), KIT_INST);
+    let mut kit = CardInPlay::enter_play(
+        CardCode::new(FIRST_AID),
+        KIT_INST,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     kit.uses.insert(UseKind::Supplies, supplies);
     inv.cards_in_play.push(kit);
 
@@ -228,7 +232,11 @@ fn the_turn_menu_does_not_offer_first_aid_with_nothing_to_heal() {
 fn two_investigators(healer_damage: u8, patient_damage: u8) -> GameState {
     let mut healer = test_support::test_investigator(1);
     healer.investigator_card.accumulated_damage = healer_damage;
-    let mut kit = CardInPlay::enter_play(CardCode::new(FIRST_AID), KIT_INST);
+    let mut kit = CardInPlay::enter_play(
+        CardCode::new(FIRST_AID),
+        KIT_INST,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     kit.uses.insert(UseKind::Supplies, 3);
     healer.cards_in_play.push(kit);
 

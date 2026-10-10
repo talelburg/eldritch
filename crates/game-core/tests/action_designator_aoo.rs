@@ -45,7 +45,7 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::EngineOutcome;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId,
+    EnemyId, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -158,8 +158,11 @@ fn install_probe_registry() {
 /// resolves either way.
 fn board() -> GameState {
     let mut mine = test_support::test_investigator(1);
-    mine.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(SATCHEL), BAG));
+    mine.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(SATCHEL),
+        BAG,
+        Owner::Investigator(InvestigatorId(1)),
+    ));
 
     let mut parlor = test_support::test_location(1, "Parlor");
     parlor.code = CardCode::new(PARLOR);

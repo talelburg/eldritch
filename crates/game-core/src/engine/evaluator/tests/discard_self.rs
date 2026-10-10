@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::{DiscardPile, Zone};
 
 #[test]
 fn discard_self_removes_threat_area_instance_to_encounter_discard() {
@@ -11,7 +12,11 @@ fn discard_self_removes_threat_area_instance_to_encounter_discard() {
         .get_mut(&InvestigatorId(1))
         .unwrap()
         .threat_area
-        .push(CardInPlay::enter_play(CardCode::new("01165"), inst));
+        .push(CardInPlay::enter_play(
+            CardCode::new("01165"),
+            inst,
+            Owner::EncounterDeck,
+        ));
     let mut events = Vec::new();
     let outcome = {
         let mut cx = Cx {
@@ -29,7 +34,7 @@ fn discard_self_removes_threat_area_instance_to_encounter_discard() {
     assert_eq!(state.encounter_discard, vec![CardCode::new("01165")]);
     assert!(events.iter().any(|e| matches!(
         e,
-        Event::CardDiscarded { from: Zone::ThreatArea, code, .. } if code.as_str() == "01165"
+        Event::CardDiscarded { from: Zone::ThreatArea, to: DiscardPile::Encounter, code } if code.as_str() == "01165"
     )));
 }
 
@@ -39,6 +44,7 @@ fn discard_self_removes_location_attachment_to_encounter_discard() {
     loc.attachments.push(CardInPlay::enter_play(
         CardCode::new("01168"),
         CardInstanceId(9),
+        Owner::EncounterDeck,
     ));
     let mut state = GameStateBuilder::new()
         .with_investigator(test_support::test_investigator(1))
@@ -61,7 +67,7 @@ fn discard_self_removes_location_attachment_to_encounter_discard() {
     assert_eq!(state.encounter_discard, vec![CardCode::new("01168")]);
     assert!(events.iter().any(|e| matches!(
         e,
-        Event::CardDiscarded { from: Zone::LocationAttachment, code, .. } if code.as_str() == "01168"
+        Event::CardDiscarded { from: Zone::LocationAttachment, to: DiscardPile::Encounter, code } if code.as_str() == "01168"
     )));
 }
 

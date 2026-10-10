@@ -77,6 +77,7 @@ use card_dsl::dsl::{
 use serde::{Deserialize, Serialize};
 
 use crate::card_registry::{self, CardRegistry};
+use crate::engine::board::{self, Placement};
 use crate::engine::dispatch::choice::ChoiceResolution;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::dispatch::{
@@ -89,7 +90,7 @@ use crate::scenario::{ResolutionId, ScenarioEnding};
 use crate::state::{
     AbilitySource, AdvanceTrigger, CardCode, CardInstanceId, Continuation, DamageSource,
     DifficultyBasis, EffectFrame, EnemyId, GameState, Investigator, InvestigatorId, Lifetime,
-    LocationId, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp, Zone,
+    LocationId, Owner, PlayFromHandFrame, RecordedModifier, SkillTestFollowUp,
 };
 
 /// Failure margin of the just-resolved skill test (bound only while running an
@@ -110,6 +111,18 @@ pub struct SkillTestBinding {
 pub struct DiscoveryBinding {
     /// Clues the discovery moves — what a `when` replacement is replacing.
     pub clue_discovery_count: u8,
+}
+
+/// The owner of the card whose Revelation is resolving (bound only while
+/// resolving a Revelation). A Revelation that puts its own card into play —
+/// [`Effect::PutIntoThreatArea`] — reads it to state the instance's owner,
+/// because the effect is shared by encounter treacheries (the encounter deck's)
+/// and weaknesses like Cover Up 01007 (their bearer's), and only the site that
+/// revealed the card knows which deck it came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RevelationBinding {
+    /// Who owns the revealed card.
+    pub revealed_card_owner: Owner,
 }
 
 /// Attacking enemy bound while resolving a `DamageAssigned` reaction whose
@@ -162,6 +175,9 @@ pub struct EvalContext {
     /// enemy-attack `DamageAssigned` reaction. Read via [`Self::attacking_enemy`].
     /// `None` outside that window. (C5b #237.)
     pub enemy_attack: Option<EnemyAttackBinding>,
+    /// Revealed-card binding, bound only while resolving a Revelation. Read via
+    /// [`Self::revealed_card_owner`]. `None` outside that window.
+    pub revelation: Option<RevelationBinding>,
     /// Grounded `*::Chosen` picks, bound during a grounded-choice evaluation
     /// (Axis A #334). Read via [`Self::chosen_investigator`] /
     /// [`Self::chosen_location`] / [`Self::chosen_enemy`] /
@@ -200,8 +216,22 @@ impl EvalContext {
             skill_test: None,
             discovery: None,
             enemy_attack: None,
+            revelation: None,
             choice: None,
             ability_source: None,
+        }
+    }
+
+    /// Construct a context for the Revelation of a card owned by
+    /// `revealed_card_owner`, resolved by `controller` (the investigator who
+    /// drew it). See [`Self::revealed_card_owner`].
+    #[must_use]
+    pub fn for_revelation(controller: InvestigatorId, revealed_card_owner: Owner) -> Self {
+        Self {
+            revelation: Some(RevelationBinding {
+                revealed_card_owner,
+            }),
+            ..Self::for_controller(controller)
         }
     }
 
@@ -265,6 +295,12 @@ impl EvalContext {
     #[must_use]
     pub fn clue_discovery_count(&self) -> Option<u8> {
         self.discovery.map(|b| b.clue_discovery_count)
+    }
+    /// Owner of the card whose Revelation is resolving (bound only while
+    /// resolving a Revelation).
+    #[must_use]
+    pub fn revealed_card_owner(&self) -> Option<Owner> {
+        self.revelation.map(|b| b.revealed_card_owner)
     }
     /// Attacking enemy bound while resolving an enemy-attack `DamageAssigned`
     /// reaction (Guard Dog 01021's retaliate).
@@ -681,18 +717,24 @@ fn step_leaf(cx: &mut Cx, effect: &Effect, eval_ctx: EvalContext) -> EngineOutco
         Effect::DiscardSelf => discard_self(cx, &eval_ctx),
         Effect::Cancel => cancel_current_impact(cx),
         Effect::PutIntoThreatArea { code, clues } => {
+            // The card going into play is the one being revealed, so its owner
+            // is whoever owns the revealed card.
+            let Some(owner) = eval_ctx.revealed_card_owner() else {
+                return EngineOutcome::Rejected {
+                    reason: format!(
+                        "PutIntoThreatArea ({code}) resolved outside a Revelation: no owner \
+                         for the card entering play"
+                    )
+                    .into(),
+                };
+            };
             let inst = threat_area::place_in_threat_area(
                 cx,
                 eval_ctx.controller,
                 CardCode::new(code.clone()),
+                owner,
             );
-            let placed = inst.and_then(|id| {
-                cx.state
-                    .investigators
-                    .get_mut(&eval_ctx.controller)
-                    .and_then(|inv| inv.threat_area.iter_mut().find(|c| c.instance_id == id))
-            });
-            if let Some(card) = placed {
+            if let Some((card, _)) = inst.and_then(|id| board::find_instance_mut(cx.state, id)) {
                 card.clues = *clues;
             }
             EngineOutcome::Done
@@ -1060,14 +1102,14 @@ fn apply_attach_self_to_location(cx: &mut Cx) -> EngineOutcome {
         };
     };
     // Validated: take the card off its frame so it is re-homed, not discarded.
-    let (code, _owner) = cx
+    let (code, owner) = cx
         .state
         .continuations
         .frames_mut()
         .nth(frame_idx)
         .and_then(|frame| frame.take_play_in_progress(investigator))
         .expect("AttachSelfToLocation: the located frame still holds its card");
-    threat_area::attach_to_location(cx, location, code);
+    threat_area::attach_to_location(cx, location, code, owner);
     EngineOutcome::Done
 }
 
@@ -1095,100 +1137,22 @@ fn discover_additional_clues_effect(cx: &mut Cx, amount: u8) -> EngineOutcome {
     EngineOutcome::Done
 }
 
-/// Resolve [`Effect::DiscardSelf`]: remove `eval_ctx.source_instance()` from
-/// whichever threat area or location attachment holds it, push its code
-/// to `encounter_discard`, and emit
-/// [`Event::CardDiscarded`](crate::event::Event::CardDiscarded) with the
-/// matching `from` zone. Rejects loudly if there is no source or the
-/// instance is not found.
-///
-/// TODO: scoped to the two encounter zones (threat area / location
-/// attachment → encounter discard). Extend to player-controlled zones
-/// (cards in play → owner discard) when a player card first needs to
-/// discard itself by source instance.
+/// Resolve [`Effect::DiscardSelf`]: discard `eval_ctx.source_instance()` from
+/// play through [`board::discard_from_play`], wherever it sits, which files it
+/// by its **owner** — Barricade 01038 to the player who played it, whoever's
+/// leaving fired it (#371), and Obscuring Fog 01168 to the encounter discard.
+/// Rejects loudly if there is no source or the instance is not in play.
 fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
     let Some(source) = eval_ctx.source_instance() else {
         return EngineOutcome::Rejected {
             reason: "DiscardSelf: no source instance in context".into(),
         };
     };
-    // Locate first (immutable scan), then mutate — avoids a cross-field
-    // borrow of `cx.state` while iterating one of its maps.
-    let threat_owner = cx.state.investigators.iter().find_map(|(id, inv)| {
-        inv.threat_area
-            .iter()
-            .position(|c| c.instance_id == source)
-            .map(|pos| (*id, pos))
-    });
-    if let Some((inv_id, pos)) = threat_owner {
-        let card = cx
-            .state
-            .investigators
-            .get_mut(&inv_id)
-            .expect("found above")
-            .threat_area
-            .remove(pos);
-        cx.state.encounter_discard.push(card.code.clone());
-        cx.events.push(Event::CardDiscarded {
-            investigator: inv_id,
-            code: card.code,
-            from: Zone::ThreatArea,
-        });
+    if board::discard_from_play(cx, source).is_some() {
         return EngineOutcome::Done;
     }
-
-    let att_owner = cx.state.locations.iter().find_map(|(id, loc)| {
-        loc.attachments
-            .iter()
-            .position(|c| c.instance_id == source)
-            .map(|pos| (*id, pos))
-    });
-    if let Some((loc_id, pos)) = att_owner {
-        let card = cx
-            .state
-            .locations
-            .get_mut(&loc_id)
-            .expect("found above")
-            .attachments
-            .remove(pos);
-        // A player-card-type attachment (Barricade 01038 — `Event`) goes to its
-        // owner's player discard; an encounter attachment (Obscuring Fog 01168 —
-        // `Treachery`) to the encounter discard. Without a registry the type is
-        // unknown, so default to the encounter discard (preserves the
-        // pre-Barricade behavior).
-        let is_player_card = card_registry::current()
-            .and_then(|reg| (reg.metadata_for)(&card.code))
-            .is_some_and(|m| {
-                matches!(
-                    m.card_type(),
-                    CardType::Asset | CardType::Event | CardType::Skill
-                )
-            });
-        if is_player_card {
-            // Solo: the firing controller is the owner. TODO(#371): track the
-            // attachment's owner for multiplayer (owner may differ from the
-            // leaving investigator).
-            if let Some(inv) = cx.state.investigators.get_mut(&eval_ctx.controller) {
-                inv.discard.push(card.code.clone());
-            }
-        } else {
-            cx.state.encounter_discard.push(card.code.clone());
-        }
-        // `CardDiscarded` carries an `investigator`; for a location
-        // attachment, use the controller as the bookkeeping owner.
-        cx.events.push(Event::CardDiscarded {
-            investigator: eval_ctx.controller,
-            code: card.code,
-            from: Zone::LocationAttachment,
-        });
-        return EngineOutcome::Done;
-    }
-
     EngineOutcome::Rejected {
-        reason: format!(
-            "DiscardSelf: source instance {source:?} not found in any threat area or location attachment"
-        )
-        .into(),
+        reason: format!("DiscardSelf: source instance {source:?} is not in play").into(),
     }
 }
 
@@ -1220,11 +1184,9 @@ fn discard_self(cx: &mut Cx, eval_ctx: &EvalContext) -> EngineOutcome {
 /// moves her into a player's `cards_in_play`.
 #[must_use]
 pub(crate) fn card_control_status(state: &GameState, code: &str) -> ControlStatus {
-    let controlled = state
-        .investigators
-        .values()
-        .flat_map(|inv| inv.cards_in_play.iter())
-        .any(|card| card.code.as_str() == code);
+    let controlled = board::walk(state).iter().any(|card| {
+        matches!(card.placement, Placement::PlayArea(_)) && card.code().as_str() == code
+    });
     if controlled {
         ControlStatus::ByAPlayer
     } else {

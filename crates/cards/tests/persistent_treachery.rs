@@ -6,14 +6,16 @@
 
 use cards::REGISTRY;
 use game_core::action::{Action, EngineRecord};
+use game_core::assert_event;
 use game_core::engine::enumerate::{self, TurnAction};
 use game_core::engine::modified_value::{self, ModifiedQuantity, ReadContext};
 use game_core::engine::{ApplyResult, EngineOutcome, OptionId, OptionTarget, TimingEvent};
+use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, Agenda, CardCode, CardInPlay, CardInstanceId, ChaosBag,
-    ChaosToken, Continuation, EnemyId, GameState, GameStateBuilder, InvestigatorId,
-    InvestigatorTurnFrame, Location, LocationId, ModifierTarget, Phase, SkillKind, TokenModifiers,
-    UseKind,
+    ChaosToken, Continuation, DiscardPile, EnemyId, GameState, GameStateBuilder, InvestigatorId,
+    InvestigatorTurnFrame, Location, LocationId, ModifierTarget, Owner, Phase, SkillKind,
+    TokenModifiers, UseKind, Zone,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
 
@@ -46,6 +48,27 @@ fn board_with(treachery: &str) -> GameState {
         .build();
     state.encounter_deck.push_back(CardCode::new(treachery));
     state
+}
+
+/// **A card revealed from the encounter deck is the encounter deck's**
+/// (`glossary/Discard_Piles.md`: *"Encounter cards are owned by the encounter
+/// deck."*), whichever zone its Revelation puts it in: Obscuring Fog 01168
+/// attaches to a location, Frozen in Fear 01164 enters the threat area.
+#[test]
+fn a_revealed_persistent_treachery_is_owned_by_the_encounter_deck() {
+    let fog = reveal_top(board_with("01168"));
+    assert_eq!(fog.outcome, EngineOutcome::Done);
+    assert_eq!(
+        fog.state.locations[&LocationId(20)].attachments[0].owner,
+        Owner::EncounterDeck,
+    );
+
+    let fear = reveal_top(board_with("01164"));
+    assert_eq!(fear.outcome, EngineOutcome::Done);
+    assert_eq!(
+        fear.state.investigators[&InvestigatorId(1)].threat_area[0].owner,
+        Owner::EncounterDeck,
+    );
 }
 
 #[test]
@@ -90,6 +113,7 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
     loc.attachments.push(CardInPlay::enter_play(
         CardCode::new("01168"),
         CardInstanceId(1),
+        Owner::EncounterDeck,
     ));
     let mut inv = test_support::test_investigator(1);
     inv.current_location = Some(LocationId(20));
@@ -119,10 +143,19 @@ fn obscuring_fog_attaches_raises_shroud_and_discards_on_investigate() {
             .is_empty(),
         "Obscuring Fog discards after its location is successfully investigated",
     );
-    assert!(result
-        .state
-        .encounter_discard
-        .contains(&CardCode::new("01168")));
+    // Through the leave-play exit, filed by its owner: the encounter deck.
+    assert_eq!(result.state.encounter_discard, vec![CardCode::new("01168")]);
+    assert!(result.state.investigators[&InvestigatorId(1)]
+        .discard
+        .is_empty());
+    assert_event!(
+        result.events,
+        Event::CardDiscarded {
+            code,
+            from: Zone::LocationAttachment,
+            to: DiscardPile::Encounter,
+        } if code.as_str() == "01168"
+    );
 }
 
 // ---- Dissonant Voices (01165) --------------------------------------
@@ -163,6 +196,7 @@ fn dissonant_voices_forbids_playing_an_asset() {
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode::new("01165"),
         CardInstanceId(0),
+        Owner::EncounterDeck,
     ));
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
@@ -203,6 +237,7 @@ fn dissonant_voices_round_end_coexists_with_agenda_01107_doom() {
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode::new("01165"),
         CardInstanceId(0),
+        Owner::EncounterDeck,
     ));
     let mut state = GameStateBuilder::new()
         .ending_upkeep_phase()
@@ -270,6 +305,7 @@ fn frozen_in_fear_surcharges_first_move_each_round_only() {
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode::new("01164"),
         CardInstanceId(0),
+        Owner::EncounterDeck,
     ));
     let mut state = GameStateBuilder::new()
         .with_investigator(inv)
@@ -318,6 +354,7 @@ fn frozen_in_fear_board(token: ChaosToken) -> GameState {
     inv1.threat_area.push(CardInPlay::enter_play(
         CardCode::new("01164"),
         CardInstanceId(0),
+        Owner::EncounterDeck,
     ));
     let mut state = GameStateBuilder::new()
         .with_investigator(inv1)
@@ -398,10 +435,12 @@ fn two_frozen_in_fear_end_of_turn_tests_both_resolve_then_turn_resumes() {
     inv1.threat_area.push(CardInPlay::enter_play(
         CardCode::new("01164"),
         CardInstanceId(0),
+        Owner::EncounterDeck,
     ));
     inv1.threat_area.push(CardInPlay::enter_play(
         CardCode::new("01164"),
         CardInstanceId(1),
+        Owner::EncounterDeck,
     ));
     let mut state = GameStateBuilder::new()
         .with_investigator(inv1)
@@ -478,6 +517,16 @@ fn obscuring_fog_limit_one_per_location_discards_the_second_copy() {
             .contains(&CardCode::new("01168")),
         "the over-limit copy is discarded",
     );
+    // An encounter card's discard names the encounter pile, not a stand-in
+    // investigator.
+    assert_event!(
+        result.events,
+        Event::CardDiscarded {
+            code,
+            from: Zone::LocationAttachment,
+            to: DiscardPile::Encounter,
+        } if code.as_str() == "01168"
+    );
 }
 
 // ---- Frozen in Fear (01164) × a bold action designator (#754) -------
@@ -495,8 +544,13 @@ fn frozen_in_fear_with_weapon_board() -> GameState {
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode::new("01164"),
         CardInstanceId(0),
+        Owner::EncounterDeck,
     ));
-    let mut weapon = CardInPlay::enter_play(CardCode::new("01016"), CardInstanceId(1));
+    let mut weapon = CardInPlay::enter_play(
+        CardCode::new("01016"),
+        CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
+    );
     weapon.uses.insert(UseKind::Ammo, 4);
     inv.cards_in_play.push(weapon);
 
@@ -636,6 +690,7 @@ fn dissonant_voices_keeps_a_fast_event_out_of_a_player_window() {
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode::new("01165"),
         CardInstanceId(0),
+        Owner::EncounterDeck,
     ));
     let mut loc = test_support::test_location(101, "Study");
     loc.clues = 2;

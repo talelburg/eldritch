@@ -22,7 +22,7 @@
 //! `cards_in_play`, carrying its accumulated damage and horror, its uses pool
 //! and its per-ability usage counters with it. What it does *not* carry is a
 //! new owner, which is what later routes it out of the game rather than into a
-//! discard pile (`cards::discard_card_from_play`).
+//! discard pile ([`board::discard_from_play`](crate::engine::board::discard_from_play)).
 
 use crate::engine::dispatch::slots;
 use crate::engine::outcome::EngineOutcome;
@@ -110,7 +110,7 @@ fn lift_in_play_card(cx: &mut Cx, code: &str) -> Option<CardInPlay> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{CardCode, CardInstanceId, GameState, GameStateBuilder, LocationId};
+    use crate::state::{CardCode, CardInstanceId, GameState, GameStateBuilder, LocationId, Owner};
     use crate::test_support;
 
     const INV: InvestigatorId = InvestigatorId(1);
@@ -129,7 +129,11 @@ mod tests {
             .get_mut(&HERE)
             .expect("HERE is on the board")
             .cards_at_location
-            .push(CardInPlay::enter_play(CardCode::new(CODE), INST));
+            .push(CardInPlay::enter_play(
+                CardCode::new(CODE),
+                INST,
+                Owner::Scenario,
+            ));
         state
     }
 
@@ -173,7 +177,8 @@ mod tests {
 
         assert_eq!(outcome, EngineOutcome::Done);
         assert_eq!(
-            state.investigators[&INV].cards_in_play[0].owner, None,
+            state.investigators[&INV].cards_in_play[0].owner,
+            Owner::Scenario,
             "the card is still scenario-owned",
         );
     }

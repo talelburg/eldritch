@@ -44,7 +44,8 @@ use game_core::engine::{OptionTarget, PromptNature};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    Enemy, EnemyId, GameStateBuilder, Investigator, InvestigatorId, LocationId, Status, UseKind,
+    Enemy, EnemyId, GameStateBuilder, Investigator, InvestigatorId, LocationId, Owner, Status,
+    UseKind,
 };
 use game_core::test_support::{self, TestSession};
 
@@ -85,8 +86,10 @@ fn ready_attacker(id: u32, damage: u8, max_health: u8) -> Enemy {
 /// without it the #639 initiation gate refuses the activation outright and the
 /// `AoO` under test never fires.
 fn first_aid_and_guard_dog(inv: &mut Investigator, dog: CardInstanceId, kit: CardInstanceId) {
-    let guard_dog = CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog);
-    let mut first_aid = CardInPlay::enter_play(CardCode::new(FIRST_AID), kit);
+    let guard_dog =
+        CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog, Owner::Investigator(inv.id));
+    let mut first_aid =
+        CardInPlay::enter_play(CardCode::new(FIRST_AID), kit, Owner::Investigator(inv.id));
     first_aid.uses.insert(UseKind::Supplies, 3);
     inv.cards_in_play = vec![guard_dog, first_aid];
     inv.investigator_card.accumulated_damage = 1;
@@ -191,8 +194,16 @@ fn activating_a_fight_ability_while_engaged_provokes_no_aoo() {
     let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(loc);
     investigator.cards_in_play = vec![
-        CardInPlay::enter_play(CardCode::new(GUARD_DOG), dog),
-        CardInPlay::enter_play(CardCode::new(MACHETE), blade),
+        CardInPlay::enter_play(
+            CardCode::new(GUARD_DOG),
+            dog,
+            Owner::Investigator(InvestigatorId(1)),
+        ),
+        CardInPlay::enter_play(
+            CardCode::new(MACHETE),
+            blade,
+            Owner::Investigator(InvestigatorId(1)),
+        ),
     ];
 
     let attacker = ready_attacker(7, 2, 5);
@@ -259,7 +270,11 @@ fn activating_a_fast_ability_while_engaged_provokes_no_aoo() {
 
     let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(loc);
-    investigator.cards_in_play = vec![CardInPlay::enter_play(CardCode::new(BEAT_COP), cop)];
+    investigator.cards_in_play = vec![CardInPlay::enter_play(
+        CardCode::new(BEAT_COP),
+        cop,
+        Owner::Investigator(InvestigatorId(1)),
+    )];
 
     let attacker = ready_attacker(7, 2, 5);
 
@@ -330,7 +345,11 @@ fn activating_an_investigate_designated_ability_while_engaged_provokes_an_aoo() 
 
     let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(loc);
-    let mut flashlight = CardInPlay::enter_play(CardCode::new(FLASHLIGHT), torch);
+    let mut flashlight = CardInPlay::enter_play(
+        CardCode::new(FLASHLIGHT),
+        torch,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     flashlight.uses.insert(UseKind::Supplies, 3);
     investigator.cards_in_play = vec![flashlight];
 
@@ -401,7 +420,11 @@ fn dodge_cancels_the_activations_aoo_then_the_ability_effect_resumes() {
     investigator.investigator_card.accumulated_damage = 2;
     investigator.investigator_card.accumulated_horror = 2;
     investigator.hand = vec![CardCode::new(DODGE)];
-    let mut first_aid = CardInPlay::enter_play(CardCode::new(FIRST_AID), kit);
+    let mut first_aid = CardInPlay::enter_play(
+        CardCode::new(FIRST_AID),
+        kit,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     first_aid.uses.insert(UseKind::Supplies, 3);
     investigator.cards_in_play = vec![first_aid];
 
@@ -474,7 +497,11 @@ fn aoo_that_defeats_the_actor_suppresses_the_ability_effect() {
     let mut investigator = test_support::test_investigator(1);
     investigator.current_location = Some(loc);
     investigator.investigator_card.accumulated_damage = 2;
-    let mut first_aid = CardInPlay::enter_play(CardCode::new(FIRST_AID), kit);
+    let mut first_aid = CardInPlay::enter_play(
+        CardCode::new(FIRST_AID),
+        kit,
+        Owner::Investigator(InvestigatorId(1)),
+    );
     first_aid.uses.insert(UseKind::Supplies, 3);
     investigator.cards_in_play = vec![first_aid];
 

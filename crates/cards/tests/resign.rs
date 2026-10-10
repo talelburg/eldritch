@@ -40,7 +40,7 @@ use game_core::event::Event;
 use game_core::scenario::ScenarioEnding;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, EliminationCause,
-    GameState, GameStateBuilder, InvestigatorId, LocationId, Status,
+    GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Status,
 };
 use game_core::{assert_event, test_support};
 
@@ -78,6 +78,7 @@ fn board(solo: bool) -> GameState {
     resigner.cards_in_play = vec![CardInPlay::enter_play(
         CardCode::new(MACHETE),
         CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
     )];
 
     let mut parlor = test_support::test_location(1, "Parlor");

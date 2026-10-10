@@ -48,7 +48,7 @@ use game_core::action::{Action, EngineRecord};
 use game_core::engine::{self, EngineOutcome};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Phase,
+    CardCode, Continuation, GameState, GameStateBuilder, InvestigatorId, LocationId, Owner, Phase,
 };
 use game_core::{assert_event_sequence, test_support};
 
@@ -82,6 +82,31 @@ fn seat(state: &mut GameState, id: InvestigatorId, at: LocationId) {
     inv.current_location = Some(at);
     state.investigators.insert(id, inv);
     state.turn_order.push(id);
+}
+
+/// **An enemy drawn from the encounter deck is the encounter deck's**
+/// (`glossary/Discard_Piles.md`: *"Encounter cards are owned by the encounter
+/// deck."*).
+#[test]
+fn a_spawned_encounter_enemy_is_owned_by_the_encounter_deck() {
+    let inv1 = InvestigatorId(1);
+    let (mut state, attic) = board();
+    seat(&mut state, inv1, attic);
+    state.active_investigator = Some(inv1);
+
+    let result = engine::apply(
+        state,
+        Action::Engine(EngineRecord::EncounterCardRevealed { investigator: inv1 }),
+    );
+
+    assert_eq!(result.outcome, EngineOutcome::Done);
+    let enemy = result
+        .state
+        .enemies
+        .values()
+        .next()
+        .expect("Flesh-Eater spawned");
+    assert_eq!(enemy.owner, Owner::EncounterDeck);
 }
 
 #[test]

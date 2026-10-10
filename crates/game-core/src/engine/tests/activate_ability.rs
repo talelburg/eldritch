@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::Owner;
 
 // As with PlayCard (`play_card.rs`), the non-enumeration form is vacuous
 // here (no `InvestigatorTurn` frame; `TEST_INV`-only registry yields no
@@ -11,8 +12,11 @@ fn activate_ability_state(active: bool) -> (GameState, InvestigatorId, CardInsta
     let id = InvestigatorId(1);
     let instance_id = CardInstanceId(7);
     let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new("01059"), instance_id));
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new("01059"),
+        instance_id,
+        Owner::Investigator(InvestigatorId(1)),
+    ));
     let mut builder = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv);
@@ -27,8 +31,11 @@ fn activate_ability_outside_investigation_phase_is_rejected() {
     let id = InvestigatorId(1);
     let instance_id = CardInstanceId(0);
     let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new("01059"), instance_id));
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new("01059"),
+        instance_id,
+        Owner::Investigator(InvestigatorId(1)),
+    ));
     let state = GameStateBuilder::new()
         .with_phase(Phase::Mythos)
         .with_investigator(inv)
@@ -91,8 +98,11 @@ fn activate_ability_when_defeated_is_rejected() {
     let instance_id = CardInstanceId(0);
     let mut inv = test_support::test_investigator(1);
     inv.status = Status::Defeated;
-    inv.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new("01059"), instance_id));
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new("01059"),
+        instance_id,
+        Owner::Investigator(InvestigatorId(1)),
+    ));
     let state = GameStateBuilder::new()
         .with_phase(Phase::Investigation)
         .with_investigator(inv)

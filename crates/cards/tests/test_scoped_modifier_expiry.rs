@@ -30,7 +30,7 @@ use game_core::engine::{ApplyResult, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosToken, GameState, GameStateBuilder, InvestigatorId,
-    Lifetime, LocationId, RecordedModifier, SkillTestId, Status,
+    Lifetime, LocationId, Owner, RecordedModifier, SkillTestId, Status,
 };
 use game_core::test_support::{self, ScriptedResolver};
 
@@ -61,6 +61,7 @@ fn board(damage: u8, soakers: &[&str]) -> GameState {
             CardInPlay::enter_play(
                 CardCode::new(*code),
                 CardInstanceId(u32::try_from(i).expect("fits") + 1),
+                Owner::Investigator(InvestigatorId(1)),
             )
         })
         .collect();

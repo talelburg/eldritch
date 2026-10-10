@@ -17,10 +17,10 @@ use crate::engine::outcome::{EngineOutcome, InputRequest, ResumeToken};
 use crate::engine::Cx;
 use crate::event::Event;
 use crate::state::{
-    CardCode, CardInPlay, Continuation, EncounterDrawFrame, EnemyId, EnemyPhaseFrame, EnemyResume,
-    FastWindowKind, GameState, HandSizeDiscard, InvestigationPhaseFrame, InvestigationResume,
-    Investigator, InvestigatorId, InvestigatorTurnFrame, MythosPhaseFrame, MythosResume, Phase,
-    PhaseStep, Skills, Status, UpkeepPhaseFrame, UpkeepResume, Zone,
+    CardCode, CardInPlay, Continuation, DiscardPile, EncounterDrawFrame, EnemyId, EnemyPhaseFrame,
+    EnemyResume, FastWindowKind, GameState, HandSizeDiscard, InvestigationPhaseFrame,
+    InvestigationResume, Investigator, InvestigatorId, InvestigatorTurnFrame, MythosPhaseFrame,
+    MythosResume, Owner, Phase, PhaseStep, Skills, Status, UpkeepPhaseFrame, UpkeepResume, Zone,
 };
 
 /// Action points granted to an investigator at the start of their
@@ -92,7 +92,8 @@ pub(super) fn start_scenario(cx: &mut Cx, roster: &[RosterEntry]) -> EngineOutco
     for (idx, (skills, name, deck, card_code)) in resolved.into_iter().enumerate() {
         let id = InvestigatorId(u32::try_from(idx).unwrap_or(0) + 1);
         let inv_card_id = cx.state.card_instance_ids.mint();
-        let investigator_card = CardInPlay::enter_play(card_code, inv_card_id);
+        let investigator_card =
+            CardInPlay::enter_play(card_code, inv_card_id, Owner::Investigator(id));
         cx.state.investigators.insert(
             id,
             Investigator {
@@ -1388,9 +1389,9 @@ pub(super) fn resume_hand_size_discard(cx: &mut Cx, response: &InputResponse) ->
     };
     for code in discarded {
         cx.events.push(Event::CardDiscarded {
-            investigator: current,
             code,
             from: Zone::Hand,
+            to: DiscardPile::Investigator(current),
         });
     }
 

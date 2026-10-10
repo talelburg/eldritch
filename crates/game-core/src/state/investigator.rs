@@ -102,12 +102,15 @@ pub struct Investigator {
     /// empty-vector default rather than failing.
     #[serde(default)]
     pub setaside: Vec<CardCode>,
-    /// Cards removed from the game (Rules Reference p.10, "Elimination,"
-    /// step 1). When this investigator is eliminated, every card they
-    /// control in play (`cards_in_play`) and every card they own in an
-    /// out-of-play area (`hand`, `deck`, `discard`) is drained into this
-    /// pile and removed from the game. Stays empty for Active
-    /// investigators. Required on the wire (#453).
+    /// Cards this investigator owns that have been removed from the game.
+    /// Mostly elimination's (Rules Reference p.10, "Elimination," step 1):
+    /// when this investigator is eliminated, every card they control in play
+    /// (`cards_in_play`) and every card they own in an out-of-play area
+    /// (`hand`, `deck`, `discard`) is drained into this pile and removed from
+    /// the game. A card of theirs that
+    /// [`board::remove_from_game`](crate::engine::board::remove_from_game)
+    /// takes out of play lands here too, by its owner, wherever it was.
+    /// Required on the wire (#453).
     pub removed_from_game: Vec<CardCode>,
     /// Source instances whose [`ExtraActionCost`](card_dsl::dsl::Restriction::ExtraActionCost)
     /// with `first_each_round` has already surcharged an action this round
@@ -173,23 +176,6 @@ impl Investigator {
         iter::once(&self.investigator_card)
             .chain(self.cards_in_play.iter())
             .chain(self.threat_area.iter())
-    }
-
-    /// The controlled in-play instance with `instance_id`, mutably — the
-    /// write-side peer of [`controlled_card_instances`](Self::controlled_card_instances),
-    /// walking the same three collections in the same order.
-    ///
-    /// Addressing by identity rather than by position is the #706 contract: a
-    /// cost that removes the source mid-payment invalidates any position cached
-    /// earlier, and this returns `None` in exactly that case.
-    pub fn controlled_card_instance_mut(
-        &mut self,
-        instance_id: CardInstanceId,
-    ) -> Option<&mut CardInPlay> {
-        iter::once(&mut self.investigator_card)
-            .chain(self.cards_in_play.iter_mut())
-            .chain(self.threat_area.iter_mut())
-            .find(|card| card.instance_id == instance_id)
     }
 
     /// Physical damage currently on the investigator — reads
@@ -340,6 +326,7 @@ pub enum EliminationCause {
 #[cfg(test)]
 mod threat_area_tests {
     use super::*;
+    use crate::state::Owner;
     use crate::test_support;
 
     #[test]
@@ -386,10 +373,12 @@ mod threat_area_tests {
         inv.cards_in_play.push(CardInPlay::enter_play(
             CardCode::new("in-play"),
             CardInstanceId(1),
+            Owner::Investigator(InvestigatorId(1)),
         ));
         inv.threat_area.push(CardInPlay::enter_play(
             CardCode::new("threat"),
             CardInstanceId(2),
+            Owner::EncounterDeck,
         ));
         let codes: Vec<&str> = inv
             .controlled_card_instances()

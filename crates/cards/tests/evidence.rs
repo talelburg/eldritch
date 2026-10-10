@@ -15,8 +15,8 @@ use game_core::engine::enumerate::TurnAction;
 use game_core::engine::{self, EngineOutcome, InputKind, OptionId};
 use game_core::event::Event;
 use game_core::state::{
-    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, EnemyId, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, TokenModifiers, Zone,
+    CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, DiscardPile, EnemyId, GameState,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, TokenModifiers, Zone,
 };
 use game_core::test_support::{self, TestSession};
 use game_core::{assert_event, assert_no_event};
@@ -222,7 +222,7 @@ fn picking_evidence_plays_it_and_discovers_a_clue() {
     );
     assert_event!(
         result.events,
-        Event::CardDiscarded { investigator, code, from: Zone::Hand }
+        Event::CardDiscarded { code, from: Zone::Hand, to: DiscardPile::Investigator(investigator) }
             if *investigator == inv_id && code.as_str() == EVIDENCE
     );
 
@@ -343,6 +343,7 @@ fn window_offers_both_in_play_reaction_and_hand_evidence() {
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new("01001"),
         CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
     ));
 
     let mut enemy = test_support::test_enemy(100, "Mock Ghoul");

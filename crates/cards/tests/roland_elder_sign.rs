@@ -13,7 +13,7 @@ use game_core::engine::EngineOutcome;
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, GameStateBuilder, InvestigatorId,
-    LocationId, Phase, SkillKind, TokenModifiers,
+    LocationId, Owner, Phase, SkillKind, TokenModifiers,
 };
 use game_core::test_support::{self, ScriptedResolver};
 
@@ -128,7 +128,11 @@ fn elder_sign_adds_two_clues() {
 /// > Rules Reference, page 7).
 #[test]
 fn clues_on_a_threat_area_card_are_not_clues_at_the_location() {
-    let mut cover_up = CardInPlay::enter_play(CardCode::new(COVER_UP), CardInstanceId(1));
+    let mut cover_up = CardInPlay::enter_play(
+        CardCode::new(COVER_UP),
+        CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
+    );
     cover_up.clues = 3; // Cover Up's Revelation places 3 clues on itself.
 
     let events = run_elder_sign_test_with_threat_area(0, vec![cover_up]);

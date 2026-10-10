@@ -23,11 +23,17 @@ use card_dsl::card_data::CardKind;
 use crate::engine::dispatch::{encounter, threat_area};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{evaluator, Cx};
-use crate::state::{CardCode, GameState, LocationId};
+use crate::state::{CardCode, GameState, LocationId, Owner};
 use crate::{card_registry, scenario};
 
-/// Bring the set-aside card `code` into play, dispatching on its printed
-/// cardtype:
+/// Bring the set-aside card `code` into play, owned by `owner`, dispatching on
+/// its printed cardtype.
+///
+/// **The caller states the owner**, because being set aside does not settle
+/// it: an encounter-set enemy like the Ghoul Priest 01116 is the encounter
+/// deck's, while Lita Chantler 01117 has no pile to return to and is the
+/// scenario's (`GLOSSARY.md`, **Owner / Controller**). A location records no
+/// owner, so the argument is unused for one.
 ///
 /// - **Location** — minted into play (`at` must be `None`; a location
 ///   brings its own place), then wired to every in-play neighbour the
@@ -49,7 +55,12 @@ use crate::{card_registry, scenario};
 /// location isn't in play. A rejection is additionally rolled back
 /// wholesale by `apply_via`'s snapshot-restore, so validate-first here is
 /// about precise reasons, not state safety.
-pub fn put_set_aside_card_into_play(cx: &mut Cx, code: &str, at: Option<&str>) -> EngineOutcome {
+pub fn put_set_aside_card_into_play(
+    cx: &mut Cx,
+    code: &str,
+    at: Option<&str>,
+    owner: Owner,
+) -> EngineOutcome {
     let Some(pos) = cx
         .state
         .set_aside_cards
@@ -106,7 +117,7 @@ pub fn put_set_aside_card_into_play(cx: &mut Cx, code: &str, at: Option<&str>) -
             };
             // All checks passed — mutate.
             cx.state.set_aside_cards.remove(pos);
-            encounter::spawn_enemy_at(cx, CardCode::new(code), metadata, location_id)
+            encounter::spawn_enemy_at(cx, CardCode::new(code), metadata, location_id, owner)
         }
         CardKind::Asset { .. } => {
             let Some(location_code) = at else {
@@ -128,7 +139,7 @@ pub fn put_set_aside_card_into_play(cx: &mut Cx, code: &str, at: Option<&str>) -
             };
             // All checks passed — mutate.
             cx.state.set_aside_cards.remove(pos);
-            threat_area::put_into_play_at_location(cx, location_id, CardCode::new(code));
+            threat_area::put_into_play_at_location(cx, location_id, CardCode::new(code), owner);
             EngineOutcome::Done
         }
         ref kind => EngineOutcome::Rejected {
@@ -176,7 +187,7 @@ mod tests {
     use crate::engine::dispatch::set_aside;
     use crate::engine::outcome::EngineOutcome;
     use crate::engine::Cx;
-    use crate::state::{CardCode, GameStateBuilder, InvestigatorId};
+    use crate::state::{CardCode, GameStateBuilder, InvestigatorId, Owner};
     use crate::test_support;
 
     #[test]
@@ -195,6 +206,7 @@ mod tests {
             },
             "01116",
             Some("01112"),
+            Owner::EncounterDeck,
         );
         assert!(
             matches!(outcome, EngineOutcome::Rejected { .. }),
@@ -222,6 +234,7 @@ mod tests {
             },
             "01116",
             Some("01112"), // not in play
+            Owner::EncounterDeck,
         );
         assert!(
             matches!(outcome, EngineOutcome::Rejected { .. }),

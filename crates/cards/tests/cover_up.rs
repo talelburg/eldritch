@@ -16,7 +16,7 @@ use game_core::event::{Event, TraumaKind};
 use game_core::scenario::ScenarioId;
 use game_core::state::{
     Act, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken, Continuation, GameState,
-    GameStateBuilder, InvestigatorId, LocationId, TimingMode, TimingPointWindowFrame,
+    GameStateBuilder, InvestigatorId, LocationId, Owner, TimingMode, TimingPointWindowFrame,
 };
 use game_core::test_support::{self, ScriptedResolver, TestSession};
 use game_core::{assert_event_sequence, assert_no_event};
@@ -36,7 +36,11 @@ fn install() {
 
 /// A Cover-Up instance carrying `clues`, pre-placed in the threat area.
 fn cover_up(clues: u8) -> CardInPlay {
-    let mut c = CardInPlay::enter_play(CardCode::new(COVER_UP), CardInstanceId(1));
+    let mut c = CardInPlay::enter_play(
+        CardCode::new(COVER_UP),
+        CardInstanceId(1),
+        Owner::Investigator(InvestigatorId(1)),
+    );
     c.clues = clues;
     c
 }
@@ -629,5 +633,161 @@ fn two_simultaneous_game_end_forceds_both_resolve() {
         state.continuations.is_empty(),
         "no stranded frames after the ordering run: {:?}",
         state.continuations,
+    );
+}
+
+// ---- Co-located investigators: anyone at Roland's location (#974) ------
+
+/// The investigator who is *not* Roland, standing at his location.
+const OTHER: InvestigatorId = InvestigatorId(2);
+
+/// Roland (`INV`) holds Cover Up with `held_clues` in his threat area; `OTHER`
+/// shares his 2-clue location and has the open turn.
+fn colocated_investigate_state(held_clues: u8) -> GameState {
+    let mut roland = test_support::test_investigator(1);
+    roland.threat_area.push(cover_up(held_clues));
+    let mut location = test_support::test_location(10, "Study");
+    location.clues = 2;
+    GameStateBuilder::new()
+        .with_investigator_at(roland, LOC)
+        .with_investigator_at(test_support::test_investigator(2), LOC)
+        .with_location(location)
+        .with_turn_order([INV, OTHER])
+        .open_turn(OTHER)
+        .with_chaos_bag(ChaosBag::new([ChaosToken::Numeric(0)]))
+        .with_rng_seed(1)
+        .build()
+}
+
+/// The ruling (<https://arkhamdb.com/card/01007>): *"Any investigator at the
+/// same location as Roland Banks with Cover Up in his threat area may trigger
+/// the [reaction] to discard clues from Cover Up, as per the FAQ [V1.0, section
+/// 2.1]."* The second investigator discovers, is offered the reaction, and the
+/// clue comes off Roland's Cover Up rather than the location.
+#[test]
+fn a_colocated_investigator_discards_from_rolands_cover_up() {
+    let r = TestSession::new(colocated_investigate_state(3))
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+            c.pick_single(OptionId(0));
+        })
+        .take(&TurnAction::Investigate {
+            investigator: OTHER,
+        })
+        .finish();
+
+    assert_eq!(r.state.locations[&LOC].clues, 2, "location untouched");
+    assert_eq!(r.state.investigators[&OTHER].clues, 0, "discovered nothing");
+    assert_eq!(
+        cover_up_clues(&r.state),
+        2,
+        "1 clue discarded from Roland's Cover Up",
+    );
+}
+
+/// The Forced trauma stays Roland's whoever ends the game:
+/// `glossary/You_Your.md` makes "you" on a threat-area card *"the investigator
+/// who has the card in his/her threat area"*.
+#[test]
+fn game_end_trauma_goes_to_the_investigator_holding_cover_up() {
+    let mut roland = test_support::test_investigator(1);
+    roland.threat_area.push(cover_up(2));
+    let mut other = test_support::test_investigator(2);
+    other.clues = 1; // meets the act's clue threshold
+    let mut state = GameStateBuilder::new()
+        .with_investigator_at(roland, LOC)
+        .with_investigator_at(other, LOC)
+        .with_location(test_support::test_location(10, "Study"))
+        .with_turn_order([INV, OTHER])
+        .open_turn(OTHER)
+        .with_scenario_id(ScenarioId::new("unknown"))
+        .build();
+    state.act_deck = vec![Act {
+        code: test_support::terminal_code(1),
+        clue_threshold: 1,
+    }];
+
+    let r = test_support::take_turn_action(
+        state,
+        &TurnAction::AdvanceAct {
+            investigator: OTHER,
+        },
+    );
+
+    let traumas: Vec<_> = r
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            Event::TraumaSuffered {
+                investigator, kind, ..
+            } => Some((*investigator, *kind)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        traumas,
+        vec![(INV, TraumaKind::Mental)],
+        "events = {:?}",
+        r.events
+    );
+}
+
+/// Story 13: the co-located investigator **uses** Cover Up before the game
+/// ends — their Investigate's clue comes off Roland's Cover Up — and Cover Up
+/// still holds clues when it does. The trauma is still Roland's alone: using a
+/// threat-area card's reaction does not make it yours, and "you" on it stays
+/// *"the investigator who has the card in his/her threat area"*
+/// (`glossary/You_Your.md`).
+#[test]
+fn game_end_trauma_stays_rolands_after_a_colocated_investigator_uses_cover_up() {
+    let mut state = colocated_investigate_state(3);
+    state
+        .investigators
+        .get_mut(&OTHER)
+        .expect("the co-located investigator is on the board")
+        .clues = 1; // meets the act's clue threshold
+    state.scenario_id = Some(ScenarioId::new("unknown"));
+    state.act_deck = vec![Act {
+        code: test_support::terminal_code(1),
+        clue_threshold: 1,
+    }];
+
+    let session = TestSession::new(state)
+        .resolve_choices(|c| {
+            c.commit_cards(&[]);
+            c.pick_single(OptionId(0));
+        })
+        .take(&TurnAction::Investigate {
+            investigator: OTHER,
+        });
+    assert_eq!(
+        cover_up_clues(session.state()),
+        2,
+        "the co-located investigator's discovery came off Roland's Cover Up",
+    );
+    assert_eq!(
+        session.state().investigators[&OTHER].clues,
+        1,
+        "and they discovered nothing",
+    );
+
+    let session = session.take(&TurnAction::AdvanceAct {
+        investigator: OTHER,
+    });
+    let traumas: Vec<_> = session
+        .events()
+        .iter()
+        .filter_map(|e| match e {
+            Event::TraumaSuffered {
+                investigator, kind, ..
+            } => Some((*investigator, *kind)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        traumas,
+        vec![(INV, TraumaKind::Mental)],
+        "events = {:?}",
+        session.events(),
     );
 }

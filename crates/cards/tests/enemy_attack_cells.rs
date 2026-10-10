@@ -36,7 +36,7 @@ use game_core::engine::{self, EngineOutcome, OptionId};
 use game_core::event::Event;
 use game_core::state::{
     CardCode, CardInPlay, CardInstanceId, Enemy, EnemyId, GameState, GameStateBuilder,
-    InvestigatorId, LocationId, Phase,
+    InvestigatorId, LocationId, Owner, Phase,
 };
 use game_core::test_support::{self, MockRegistry};
 
@@ -151,6 +151,7 @@ fn board_with(codes: &[&str], enemy_code: &str) -> GameState {
         inv.threat_area.push(CardInPlay::enter_play(
             CardCode::new(*code),
             CardInstanceId(u32::try_from(i).expect("fixture card count fits u32")),
+            Owner::EncounterDeck,
         ));
     }
     GameStateBuilder::new()

@@ -21,8 +21,8 @@ use game_core::engine::{self, EngineOutcome, OptionTarget};
 use game_core::event::Event;
 use game_core::state::{
     AbilityAddress, AbilitySource, CardCode, CardInPlay, CardInstanceId, ChaosBag, ChaosToken,
-    GameState, GameStateBuilder, InvestigatorId, Lifetime, LocationId, Phase, RecordedModifierKind,
-    SkillKind, Status, TokenModifiers,
+    GameState, GameStateBuilder, InvestigatorId, Lifetime, LocationId, Owner, Phase,
+    RecordedModifierKind, SkillKind, Status, TokenModifiers,
 };
 use game_core::test_support::{self, MockRegistry, TakeOneFastPlay, TestSession};
 use game_core::{assert_event, assert_event_count, assert_no_event};
@@ -161,8 +161,11 @@ fn state_with_in_play(code: &str) -> (GameState, InvestigatorId, CardInstanceId)
     let id = InvestigatorId(1);
     let instance_id = CardInstanceId(0);
     let mut inv = test_support::test_investigator(1);
-    inv.cards_in_play
-        .push(CardInPlay::enter_play(CardCode::new(code), instance_id));
+    inv.cards_in_play.push(CardInPlay::enter_play(
+        CardCode::new(code),
+        instance_id,
+        Owner::Investigator(InvestigatorId(1)),
+    ));
 
     let state = GameStateBuilder::new()
         .with_investigator(inv)
@@ -366,6 +369,7 @@ fn activating_with_defeated_status_doesnt_need_registry() {
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(FAST_RESOURCE_LOOP),
         instance_id,
+        Owner::Investigator(InvestigatorId(1)),
     ));
 
     let state = GameStateBuilder::new()
@@ -555,6 +559,7 @@ fn a_limited_ability_on_a_card_the_activator_does_not_control_counts_its_use() {
     loc.attachments.push(CardInPlay::enter_play(
         CardCode::new(ONCE_PER_ROUND_GAIN),
         instance_id,
+        Owner::EncounterDeck,
     ));
     let state = GameStateBuilder::new()
         .with_investigator_at(test_support::test_investigator(1), location)
@@ -620,10 +625,12 @@ fn a_cancelled_use_of_a_limited_activated_ability_still_counts() {
     inv.cards_in_play.push(CardInPlay::enter_play(
         CardCode::new(ONCE_PER_ROUND_DISCOVERY),
         ability_card,
+        Owner::Investigator(InvestigatorId(1)),
     ));
     inv.threat_area.push(CardInPlay::enter_play(
         CardCode::new(CANCEL_DISCOVERY),
         interrupt_card,
+        Owner::EncounterDeck,
     ));
     let mut loc = test_support::test_location(location.0, "Study");
     loc.clues = 2;

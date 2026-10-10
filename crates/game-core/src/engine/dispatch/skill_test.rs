@@ -25,10 +25,10 @@ use crate::engine::Cx;
 use crate::event::{Event, FailureReason};
 use crate::scenario::TokenEffect;
 use crate::state::{
-    self, AbilitySource, CardCode, ChaosToken, Continuation, DifficultyBasis, FastWindowKind,
-    GameState, InFlightSkillTest, InvestigatorId, Lifetime, RecordedModifier, ResolvedTest,
-    SkillKind, SkillTestFollowUp, SkillTestStep, Status, SubstitutionPromptFrame, TokenResolution,
-    Zone,
+    self, AbilitySource, CardCode, ChaosToken, Continuation, DifficultyBasis, DiscardPile,
+    FastWindowKind, GameState, InFlightSkillTest, InvestigatorId, Lifetime, RecordedModifier,
+    ResolvedTest, SkillKind, SkillTestFollowUp, SkillTestStep, Status, SubstitutionPromptFrame,
+    TokenResolution, Zone,
 };
 use crate::{card_registry, scenario};
 
@@ -1533,9 +1533,9 @@ fn discard_committed_cards(cx: &mut Cx, investigator: InvestigatorId, committed:
     inv.discard.extend(committed.iter().cloned());
     for code in committed {
         cx.events.push(Event::CardDiscarded {
-            investigator,
             code: code.clone(),
             from: Zone::Hand,
+            to: DiscardPile::Investigator(investigator),
         });
     }
 }

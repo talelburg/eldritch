@@ -34,7 +34,7 @@ use crate::card_registry::{self, CardRegistry};
 use crate::engine::dispatch::abilities;
 use crate::engine::dispatch::emit::TimingEvent;
 use crate::engine::evaluator::{self, EvalContext};
-use crate::engine::{abilities_in_effect, ability_source, Cx};
+use crate::engine::{abilities_in_effect, ability_source, board, Cx};
 use crate::state::{
     AbilitySource, CandidateSource, CardCode, DamageSource, GameState, Investigator,
     InvestigatorId, ResolutionCandidate, Status,
@@ -594,9 +594,9 @@ fn payable_play_cost(play_cost: Option<i8>, code: &CardCode) -> Result<u8, Cow<'
 ///
 /// The counter is `CardInPlay::ability_usage`, per instance and keyed by
 /// printed index, so this resolves the instance **wherever it sits on the
-/// board** — the same walk `usage_exhausted` reads through
-/// (`ability_source::source_card`). That covers the controller's investigator
-/// card (Roland Banks 01001's seated `[reaction]`), cards in play and threat
+/// board** — the same lookup `usage_exhausted` reads through
+/// (`ability_source::source_card`, over [`board::find_instance`]). That covers
+/// the controller's investigator card (Roland Banks 01001's seated `[reaction]`), cards in play and threat
 /// area, and the sources an activation reaches without controlling them: a
 /// co-located threat area, a location's attachments (#708). A granted ability
 /// has no printed index, so nothing is recorded for one (#829).
@@ -618,14 +618,13 @@ pub(super) fn record_initiation(
     let current_round = state.round;
     match candidate.source {
         CandidateSource::Ability(AbilitySource::InPlay(instance_id)) => {
-            let card =
-                ability_source::instance_in_play_mut(state, instance_id).unwrap_or_else(|| {
-                    unreachable!(
-                        "record_initiation: instance {instance_id:?} vanished from play while \
-                         its ability was initiating; state-corruption invariant violation \
-                         (candidate {candidate:?})"
-                    )
-                });
+            let (card, _) = board::find_instance_mut(state, instance_id).unwrap_or_else(|| {
+                unreachable!(
+                    "record_initiation: instance {instance_id:?} vanished from play while \
+                     its ability was initiating; state-corruption invariant violation \
+                     (candidate {candidate:?})"
+                )
+            });
             if let Some(index) = candidate.address.printed_index() {
                 card.bump_ability_usage(index, current_round);
             }
