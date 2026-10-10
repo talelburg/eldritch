@@ -1,18 +1,17 @@
 //! The Fight basic action, its target validation, and the fight primary
 //! shared with the designated Fight.
 
-use card_dsl::dsl::{ActionClass, IntExpr, SkillTestKind, Stat};
+use card_dsl::dsl::{IntExpr, SkillTestKind, Stat};
 
+use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
 use crate::engine::dispatch::skill_test;
 use crate::engine::dispatch::skill_test::InitiatorModifier;
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{designator, Cx};
 use crate::state::{
-    AbilitySource, DifficultyBasis, EnemyId, GameState, InvestigatorId, ModifierTarget, SkillKind,
-    SkillTestFollowUp,
+    AbilitySource, ActionResume, DifficultyBasis, EnemyId, GameState, InvestigatorId,
+    ModifierTarget, SkillKind, SkillTestFollowUp,
 };
-
-use super::{charge_action, validate_basic_action};
 
 /// Validate that `enemy_id` is a legal Fight target for `investigator`: it is
 /// one of the enemies a Fight may target (RR p.12, *"To fight an enemy **at his
@@ -74,19 +73,19 @@ fn validate_fight_target(
 /// not (unlike Evade, which is engagement-only; RR p.11). The eligibility check
 /// is co-location, mirroring [`engage`](super::engage::engage) (#401).
 ///
-/// Damage > 1 (weapons, card buffs), after-success / after-failure
-/// triggers (#64), and `AoO` from *other* engaged enemies (#78) are all
-/// downstream. `AoO` does NOT fire on Fight itself per the Rules
-/// Reference's `AoO`-exempt list.
+/// Validate-first: the investigator may take the action ([`take::check`]), then
+/// the target checks. Then take it ([`take::take`]). Fight is on the
+/// attack-of-opportunity exempt list, so taking it performs the fight at once.
 pub(in crate::engine::dispatch) fn fight(
     cx: &mut Cx,
     investigator: InvestigatorId,
     enemy_id: EnemyId,
 ) -> EngineOutcome {
-    let inv = match validate_basic_action(cx.state, "Fight", investigator) {
-        Ok(inv) => inv,
-        Err(rejection) => return rejection,
-    };
+    let description = ActionDescription::basic(ActionKind::Fight);
+    if let Err(reason) = take::check(cx.state, investigator, &description) {
+        return EngineOutcome::Rejected { reason };
+    }
+    let inv = &cx.state.investigators[&investigator];
     // A `None` location can't host a fight (mirrors `engage`); `fight_candidates`
     // is empty for a locationless investigator, so the target check below would
     // reject anyway — but with a message about the enemy rather than about the
@@ -99,13 +98,9 @@ pub(in crate::engine::dispatch) fn fight(
     if let Err(rejection) = validate_fight_target(cx.state, investigator, enemy_id) {
         return rejection;
     }
-    if let Err(rejected) = charge_action(cx, investigator, ActionClass::Fight, "Fight") {
-        return rejected;
-    }
-    // A basic attack carries no modification — a designated Fight (every
-    // corpus weapon) reaches the same primary with its combat bonus and its
-    // bonus damage.
-    perform_fight(cx, investigator, enemy_id, None, 0, None)
+    take::take(cx, investigator, &description, |_| {
+        Ok(ActionResume::Fight { enemy: enemy_id })
+    })
 }
 
 /// Perform a **fight** against `enemy_id`: a Combat test whose difficulty *is*

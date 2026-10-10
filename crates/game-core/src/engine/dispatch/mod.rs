@@ -427,8 +427,8 @@ fn scenario_end_cancels_top(state: &GameState) -> bool {
 }
 
 /// Resume a parked [`ActionResolution`](crate::state::Continuation::ActionResolution)
-/// frame (#293): pop it, run the §D re-validation gate, then dispatch to the
-/// action's primary effect. The gate suppresses the primary (returns `Done`,
+/// frame (#293): pop it, run the §D re-validation gate, then perform the action
+/// ([`actions::take::perform`]). The gate suppresses the primary (returns `Done`,
 /// leaving the spent action + AoO/window effects in place) if the actor was
 /// defeated mid-action; each primary effect additionally re-checks its own
 /// target precondition. Called only by [`drive`] with such a frame on top.
@@ -466,41 +466,7 @@ fn resume_action_resolution(cx: &mut Cx) -> EngineOutcome {
         }
         return EngineOutcome::Done;
     }
-    match resume {
-        ActionResume::Move { destination } => {
-            actions::move_action::move_primary_effect(cx, investigator, destination)
-        }
-        ActionResume::Investigate => {
-            actions::investigate::investigate_primary_effect(cx, investigator)
-        }
-        ActionResume::Resource => actions::resource::resource_primary_effect(cx, investigator),
-        ActionResume::Engage { enemy } => {
-            actions::engage::engage_primary_effect(cx, investigator, enemy)
-        }
-        ActionResume::Draw => actions::draw::draw_primary_effect(cx, investigator),
-        ActionResume::ActivateAbility {
-            source,
-            designator,
-            effect,
-        } => abilities::resume_activate_ability(
-            cx,
-            investigator,
-            source,
-            designator.as_ref(),
-            &effect,
-        ),
-        ActionResume::PlayCard { card } => {
-            let Some(card) = card else {
-                unreachable!(
-                    "resume_action_resolution: the play frame for {investigator:?} lost its \
-                     card while they are still Active — elimination is the only thing that \
-                     empties an ActionResolution frame (see \
-                     Continuation::take_play_in_progress), and it flips status first"
-                );
-            };
-            cards::resume_play_card(cx, investigator, card)
-        }
-    }
+    actions::take::perform(cx, investigator, resume)
 }
 
 /// Seat a roster and drive to the first `AwaitingInput` (the setup mulligan),

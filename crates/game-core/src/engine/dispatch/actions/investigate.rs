@@ -3,16 +3,15 @@
 
 use card_dsl::dsl::{IntExpr, SkillTestKind, Stat};
 
+use crate::engine::dispatch::actions::take::{self, ActionDescription, ActionKind};
+use crate::engine::dispatch::skill_test;
 use crate::engine::dispatch::skill_test::InitiatorModifier;
-use crate::engine::dispatch::{combat, skill_test};
 use crate::engine::outcome::EngineOutcome;
 use crate::engine::{designator, Cx};
 use crate::state::{
-    AbilitySource, ActionResolutionFrame, ActionResume, DifficultyBasis, InvestigatorId,
-    LocationId, ModifierTarget, SkillKind, SkillTestFollowUp,
+    AbilitySource, ActionResume, DifficultyBasis, InvestigatorId, LocationId, ModifierTarget,
+    SkillKind, SkillTestFollowUp,
 };
-
-use super::{spend_one_action, validate_basic_action};
 
 /// Handler for `TurnAction::Investigate`.
 ///
@@ -45,23 +44,21 @@ use super::{spend_one_action, validate_basic_action};
 /// Hunch's discover-without-test) implement their own paths; this
 /// handler is the bare turn-action.
 ///
-/// The `AoO` loop now runs as an [`ActionResolution`] frame (#293): the
-/// frame is pushed, then [`combat::drive_aoo`] drives the loop. If a
-/// cancel/soak window opens the loop suspends; `drive` resumes the
-/// frame once the window closes, calling [`investigate_primary_effect`].
+/// Validate-first: the investigator may take the action ([`take::check`]),
+/// then the location checks. Then take it ([`take::take`]). Investigate is not
+/// on the attack-of-opportunity exempt list, so each ready engaged enemy
+/// attacks before the skill test, which [`investigate_primary_effect`] starts.
 ///
 /// [`Effect::DiscoverClue`]: card_dsl::dsl::Effect::DiscoverClue
-/// [`ActionResolution`]: crate::state::Continuation::ActionResolution
 pub(in crate::engine::dispatch) fn investigate(
     cx: &mut Cx,
     investigator: InvestigatorId,
 ) -> EngineOutcome {
-    // Validate-first (the shared basic-action prefix, then the
-    // location-specific checks).
-    let inv = match validate_basic_action(cx.state, "Investigate", investigator) {
-        Ok(inv) => inv,
-        Err(rejection) => return rejection,
-    };
+    let description = ActionDescription::basic(ActionKind::Investigate);
+    if let Err(reason) = take::check(cx.state, investigator, &description) {
+        return EngineOutcome::Rejected { reason };
+    }
+    let inv = &cx.state.investigators[&investigator];
     let Some(location_id) = inv.current_location else {
         return EngineOutcome::Rejected {
             reason: format!("Investigate: {investigator:?} has no current_location to investigate")
@@ -84,17 +81,9 @@ pub(in crate::engine::dispatch) fn investigate(
         };
     }
 
-    // Mutate-second: spend the action, then park the investigate over
-    // its attack-of-opportunity loop (#293). Push the resume frame,
-    // then drive the AoO. Investigate is NOT on the AoO-exempt list
-    // (only Fight, Evade, Parley, Resign are), so each ready engaged
-    // enemy attacks before the skill test resolves.
-    spend_one_action(cx, investigator);
-    cx.state.continuations.push(ActionResolutionFrame {
-        investigator,
-        resume: ActionResume::Investigate,
-    });
-    combat::drive_aoo(cx, investigator)
+    take::take(cx, investigator, &description, |_| {
+        Ok(ActionResume::Investigate)
+    })
 }
 
 /// The skill-test half of an Investigate, run after its `AoO` loop (#293).

@@ -419,8 +419,10 @@ pub enum EffectFrame {
     },
 }
 
-/// Which action's primary effect a parked [`Continuation::ActionResolution`]
-/// frame runs once its attack-of-opportunity loop completes (#293). The
+/// The rest of an action once its costs are paid: what a parked
+/// [`Continuation::ActionResolution`] frame runs once its attack-of-opportunity
+/// loop completes (#293), or what taking an action that provokes none performs
+/// at once. The
 /// basic-action variants carry only the action's *parameters*; board-dependent
 /// values (Investigate difficulty, enemy presence) are re-derived live on
 /// resume so a mid-action board change is reflected. The exception is
@@ -438,6 +440,12 @@ pub enum ActionResume {
     Engage { enemy: EnemyId },
     /// Draw 1 card (with the empty-deck penalty path).
     Draw,
+    /// Fight `enemy`. Never parked: a basic Fight provokes no attack of
+    /// opportunity, so taking it performs it at once.
+    Fight { enemy: EnemyId },
+    /// Evade `enemy`. Never parked, for the same reason as
+    /// [`Fight`](ActionResume::Fight).
+    Evade { enemy: EnemyId },
     /// Resolve the activated ability for `source` after its `AoO` loop (#361):
     /// perform its designated action, then run its residual `effect`. Unlike
     /// the basic actions, this snapshots both rather than re-deriving them: an

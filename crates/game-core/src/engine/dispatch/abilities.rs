@@ -301,8 +301,8 @@ fn pay_activation_costs(
             .expect("validated above");
         inv_mut.actions_remaining = inv_mut.actions_remaining.saturating_sub(action_cost);
         // The surcharge is spent, so its `first_each_round` sources are done
-        // for the round — the same commit-time marking `charge_action` does for
-        // a basic action (#754). Without it Frozen in Fear 01164 would surcharge
+        // for the round — the same marking `actions::take::take` does when a
+        // basic action is paid for (#754). Without it Frozen in Fear 01164 would surcharge
         // a designated Fight *and* the basic Fight that follows.
         inv_mut
             .action_surcharge_spent_this_round

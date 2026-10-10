@@ -347,6 +347,99 @@ fn frozen_in_fear_surcharges_first_move_each_round_only() {
     );
 }
 
+/// The turn menu prices each basic action the way taking it does. Frozen in
+/// Fear 01164 surcharges only *"one of the following actions (move, fight, or
+/// evade)"*, so with a single action left the menu drops Move, Fight and Evade
+/// (each costs 2) and keeps Investigate, Resource, Draw and Engage (each costs
+/// 1). Once a surcharged move has spent the surcharge for the round, a move at
+/// 1 action is offered again.
+#[test]
+fn the_action_menu_offers_only_what_the_frozen_in_fear_surcharge_leaves_affordable() {
+    let me = InvestigatorId(1);
+    let mut inv = test_support::test_investigator(1);
+    inv.current_location = Some(LocationId(1));
+    inv.deck = vec![CardCode::new("01019")];
+    inv.threat_area.push(CardInPlay::enter_play(
+        CardCode::new("01164"),
+        CardInstanceId(0),
+        Owner::EncounterDeck,
+    ));
+    let mut bystander = test_support::test_enemy(8, "Bystander");
+    bystander.current_location = Some(LocationId(1));
+    let mut state = GameStateBuilder::new()
+        .with_investigator(inv)
+        .with_location(test_support::test_location(1, "A"))
+        .with_location(test_support::test_location(2, "B"))
+        .with_enemy(bystander)
+        .open_turn(me)
+        .with_enemy_engaged(test_support::test_enemy(7, "Engaged"), me)
+        .build();
+    state.connect(LocationId(1), LocationId(2));
+    let move_to_b = TurnAction::Move {
+        investigator: me,
+        destination: LocationId(2),
+    };
+    let fight = TurnAction::Fight {
+        investigator: me,
+        enemy: EnemyId(7),
+    };
+    let evade = TurnAction::Evade {
+        investigator: me,
+        enemy: EnemyId(7),
+    };
+    let never_surcharged = [
+        TurnAction::Investigate { investigator: me },
+        TurnAction::Resource { investigator: me },
+        TurnAction::Draw { investigator: me },
+        TurnAction::Engage {
+            investigator: me,
+            enemy: EnemyId(8),
+        },
+    ];
+
+    state
+        .investigators
+        .get_mut(&me)
+        .expect("investigator 1")
+        .actions_remaining = 1;
+    let menu = enumerate::legal_actions(&state);
+    for surcharged in [&move_to_b, &fight, &evade] {
+        assert!(
+            !menu.contains(surcharged),
+            "{surcharged:?} costs 2 under Frozen in Fear, so 1 action can't pay for it",
+        );
+    }
+    for plain in &never_surcharged {
+        assert!(menu.contains(plain), "{plain:?} is never surcharged");
+    }
+
+    state
+        .investigators
+        .get_mut(&me)
+        .expect("investigator 1")
+        .actions_remaining = 2;
+    assert!(
+        enumerate::legal_actions(&state).contains(&move_to_b),
+        "2 actions pay for the surcharged move",
+    );
+
+    // The surcharged move spends 2 of 3 actions and the surcharge for the round.
+    state
+        .investigators
+        .get_mut(&me)
+        .expect("investigator 1")
+        .actions_remaining = 3;
+    let r = test_support::take_turn_action(state, &move_to_b);
+    assert_eq!(r.state.investigators[&me].actions_remaining, 1);
+    assert!(
+        enumerate::legal_actions(&r.state).contains(&TurnAction::Move {
+            investigator: me,
+            destination: LocationId(1),
+        }),
+        "with the surcharge spent this round, a move costs 1",
+    );
+}
+
 /// Build a two-investigator Investigation-phase board with Frozen in Fear
 /// in investigator 1's threat area and a single rigged chaos token.
 fn frozen_in_fear_board(token: ChaosToken) -> GameState {
