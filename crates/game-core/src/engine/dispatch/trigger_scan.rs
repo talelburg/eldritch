@@ -34,7 +34,7 @@ use crate::engine::dispatch::initiation::{self, InitiationKind};
 use crate::engine::{abilities_in_effect, ability_source};
 use crate::state::{
     self, AbilityAddress, AbilitySource, CandidateSource, CardCode, CardInstanceId, DamageSource,
-    GameState, InvestigatorId, LocationId, ResolutionCandidate,
+    GameState, InvestigatorId, LocationId, ResolutionCandidate, Status,
 };
 
 /// One card the walk visits: where its abilities are, its code, and the
@@ -57,17 +57,20 @@ pub(super) struct BoardSource<'a> {
 /// [board walk](board::walk), in its order (ADR 0018), with two changes the scan
 /// alone makes.
 ///
-/// - **Fast events in hand are added**, after each investigator's cards — they
-///   are not on the board, but a Fast event's reaction is played from there.
+/// - **Fast events in hand are added**, after the whole board — the act and
+///   the agenda included — one investigator's hand at a time in the walk's
+///   investigator order. A hand is not on the board, but a Fast event's
+///   reaction is played from there.
 /// - **At an advance, the act or agenda slot holds the card the event names.**
 ///   It is still the current one while its reverse resolves (the cursor moves
 ///   on at the advance's finalize step), and the event's code is the authority
 ///   for which card that is, so the scan fills those two slots — the walk's
 ///   last — itself.
 ///
-/// **Eliminated investigators are skipped** — Rules Reference p.10 removes
-/// their cards from play, all but the investigator card, which only this
-/// filter keeps out of the scan (#567). The one exception is the investigator
+/// **Eliminated investigators are skipped**, their cards and their hands —
+/// Rules Reference p.10 removes their cards from play, all but the
+/// investigator card, which only this filter keeps out of the scan (#567).
+/// The one exception is the investigator
 /// [`TimingEvent::EliminationGameEnd`] names, who has already been flipped off
 /// `Active` when Elimination step 0 fires for their weaknesses.
 ///
@@ -80,7 +83,7 @@ pub(super) fn board_walk<'a>(state: &'a GameState, event: &'a TimingEvent) -> Ve
         _ => None,
     };
     let reg = card_registry::current();
-    // The Fast events in `id`'s hand, which follow their cards on the board.
+    // The Fast events in `id`'s hand.
     let hand = |id: InvestigatorId| {
         let held = reg
             .zip(state.investigators.get(&id))
@@ -102,16 +105,10 @@ pub(super) fn board_walk<'a>(state: &'a GameState, event: &'a TimingEvent) -> Ve
         })
     };
     let mut walked = Vec::new();
-    // Whose cards the walk is in, so their hand is added when it leaves them.
-    let mut holder: Option<InvestigatorId> = None;
     for card in board::walk(state) {
         let controller = card.placement.investigator();
         if card.placement.in_eliminated_area(state) && controller != exempt {
             continue;
-        }
-        if controller != holder {
-            walked.extend(holder.into_iter().flat_map(&hand));
-            holder = controller;
         }
         // The act and agenda slots, the walk's last two, are filled below.
         if matches!(card.placement, Placement::Act | Placement::Agenda) {
@@ -123,7 +120,6 @@ pub(super) fn board_walk<'a>(state: &'a GameState, event: &'a TimingEvent) -> Ve
             controller,
         });
     }
-    walked.extend(holder.into_iter().flat_map(&hand));
     // The event's code fills an advancing slot even when the deck's cursor
     // names no card there, as on a board that fires an advance without loading
     // the deck (`cards/tests/agenda_reverses.rs`): the reverse is still scanned.
@@ -148,6 +144,15 @@ pub(super) fn board_walk<'a>(state: &'a GameState, event: &'a TimingEvent) -> Ve
         code,
         controller: None,
     }));
+    for id in board::investigator_order(state) {
+        let active = state
+            .investigators
+            .get(&id)
+            .is_some_and(|inv| inv.status == Status::Active);
+        if active || Some(id) == exempt {
+            walked.extend(hand(id));
+        }
+    }
     walked
 }
 

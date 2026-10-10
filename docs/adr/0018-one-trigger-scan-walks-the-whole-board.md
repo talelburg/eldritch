@@ -9,7 +9,7 @@
 3. each enemy by id, then its attachments;
 4. the current act, then the current agenda.
 
-The walk itself is unfiltered, and the scan (`trigger_scan::board_walk`) narrows it three ways. It adds the Fast events in each investigator's hand after their cards. It skips eliminated investigators, since Rules Reference p.10 removes their cards and only this filter keeps their investigator card out (#567). The one exception is the investigator `EliminationGameEnd` names, who is already off `Active` when step 0 fires for their weaknesses. And at an advance, the act or agenda slot holds the card the event names: during its reverse it is still the current one, and the event's code is the authority for which card that is.
+The walk itself is unfiltered, and the scan (`trigger_scan::board_walk`) narrows it three ways. It appends the Fast events in each investigator's hand, in the walk's investigator order, after the act and the agenda: a hand is not on the board, so it comes after the whole of it. It skips eliminated investigators, since Rules Reference p.10 removes their cards and only this filter keeps their investigator card out (#567). The one exception is the investigator `EliminationGameEnd` names, who is already off `Active` when step 0 fires for their weaknesses. And at an advance, the act or agenda slot holds the card the event names: during its reverse it is still the current one, and the event's code is the authority for which card that is.
 
 ## What narrows a condition is on the card
 
@@ -47,7 +47,7 @@ Before this, the reaction scans reached only the investigators' controlled cards
 
 ## The sweeps, reachability and the instance lookup share the walk
 
-The same question, *"which cards are on the board"*, had four more answers, each with its own zone list and order. The modifier sweep and the grant sweep walked investigators by id and never skipped an eliminated one. The instance lookup searched its own subset of zones. Reachability listed the reacher's cards, then their location's, then the co-located threat areas, unfiltered by cardtype, although the co-location bullet reaches only *"encounter cards in the threat area of any investigator at that location"* (#975). **All of them now read `board::walk`**, and none keeps a zone list of its own, so a new kind of source is added once and every reader sees it.
+The modifier sweep, the grant sweep, the instance lookup and reachability ask the scan's question too: *"which cards are on the board"*. A zone list of their own is a guess that drifts, the way the forced tables did — one that never skips an eliminated investigator, or that reaches a player card in a co-located threat area where the co-location bullet reaches only *"encounter cards in the threat area of any investigator at that location"* (#975). **All of them read `board::walk`**, and none keeps a zone list of its own, so a new kind of source is added once and every reader sees it.
 
 Each caller filters the walk to what it needs:
 
@@ -55,7 +55,7 @@ Each caller filters the walk to what it needs:
 - **The instance lookup** (`find_instance` and its mutable twin) is unfiltered. Cover Up 01007's game-end trauma resolves at step 0, after its holder has left `Active`, and must still find its card.
 - **Reachability** filters by ADR 0010's bullets, and reads another investigator's threat area through the registry's cardtype. A card with no metadata counts as an encounter card, matching the other metadata fallbacks.
 
-**Every reader takes the walk's order.** No modifier-sweep consumer reads its order, since a breakdown's total is a commutative fold. Reachability's order is observable as the order of turn-menu and player-window options, and it moved: another investigator's threat-area card is now listed in the investigator block, and a reacher who is not first in the walk sees an earlier investigator's cards before their own. The client routes options per board card, so the order across cards is presentation only, and the order of one card's abilities is unchanged.
+**Every reader takes the walk's order.** No modifier-sweep consumer reads its order, since a breakdown's total is a commutative fold. Reachability's order is observable as the order of turn-menu and player-window options: another investigator's threat-area card is listed in that investigator's block, and a reacher who is not first in the walk sees an earlier investigator's cards before their own. The client routes options per board card, so the order across cards is presentation only, and the order of one card's abilities is unchanged.
 
 ## Considered options
 
@@ -67,4 +67,4 @@ Each caller filters the walk to what it needs:
 
 ---
 
-*Folded #983 (the sweeps, reachability and the instance lookup moved onto the walk, which moved from `trigger_scan` to `engine::board`), and #975 (the cardtype filter on co-located threat areas).*
+*Folded #983 (the sweeps, reachability and the instance lookup moved onto the walk, which moved from `trigger_scan` to `engine::board`, and the Fast events in hand to after the whole board), and #975 (the cardtype filter on co-located threat areas).*

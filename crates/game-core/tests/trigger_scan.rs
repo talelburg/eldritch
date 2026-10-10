@@ -700,8 +700,10 @@ fn a_reaction_on_the_agenda_is_offered_once_bound_to_the_lead_proxy() {
     assert_eq!((horror(&after, 1), horror(&after, 2)), (1, 0));
 }
 
+/// The board walk's order — each investigator's cards, the board, the act —
+/// and then the Fast events in hand, which are not on the board.
 #[test]
-fn reaction_options_are_grouped_by_investigator_then_board_then_act() {
+fn reaction_options_follow_the_board_walk_then_the_hands() {
     let mut state = table();
     for (id, inst) in [(2, 81), (1, 80)] {
         state
@@ -730,15 +732,15 @@ fn reaction_options_are_grouped_by_investigator_then_board_then_act() {
         offered(state, defeat(None)),
         vec![
             Some(OptionTarget::CardInstance(CardInstanceId(80))),
-            Some(OptionTarget::HandCardByCode {
-                investigator: InvestigatorId(1),
-                code: CardCode::new(FAST_REACT_ON_DEFEAT),
-            }),
             Some(OptionTarget::CardInstance(CardInstanceId(81))),
             Some(OptionTarget::Location(LocationId(10))),
             Some(OptionTarget::Location(LocationId(10))),
             Some(OptionTarget::Act),
+            Some(OptionTarget::HandCardByCode {
+                investigator: InvestigatorId(1),
+                code: CardCode::new(FAST_REACT_ON_DEFEAT),
+            }),
         ],
-        "each investigator's cards then hand, then the board, then the act"
+        "each investigator's cards, then the board, then the act, then the hands"
     );
 }
